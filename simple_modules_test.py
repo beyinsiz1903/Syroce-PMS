@@ -7,7 +7,7 @@ import requests
 import json
 
 def test_modules():
-    base_url = "https://hotelflow-fix.preview.emergentagent.com/api"
+    base_url = "https://app-audit-9.preview.emergentagent.com/api"
     
     # Login first
     print("🔐 Logging in...")

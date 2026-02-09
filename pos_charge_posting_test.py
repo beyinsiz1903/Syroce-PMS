@@ -12,7 +12,7 @@ Test Scenarios:
 6. Edge Cases (non-existent folio, closed folio, zero/negative amounts)
 7. Void Operations (void charge, audit trail)
 
-Base URL: https://hotelflow-fix.preview.emergentagent.com/api
+Base URL: https://app-audit-9.preview.emergentagent.com/api
 Login: test@hotel.com / test123
 """
 
@@ -23,7 +23,7 @@ from datetime import datetime, timedelta
 import sys
 
 # Configuration
-BASE_URL = "https://hotelflow-fix.preview.emergentagent.com/api"
+BASE_URL = "https://app-audit-9.preview.emergentagent.com/api"
 LOGIN_EMAIL = "test@hotel.com"
 LOGIN_PASSWORD = "test123"
 

@@ -9,7 +9,7 @@ import json
 from datetime import datetime, timezone
 
 # Configuration
-BASE_URL = "https://hotelflow-fix.preview.emergentagent.com/api"
+BASE_URL = "https://app-audit-9.preview.emergentagent.com/api"
 LOGIN_EMAIL = "demo@hotel.com"
 LOGIN_PASSWORD = "demo123"
 

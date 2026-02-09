@@ -18,7 +18,7 @@ import json
 from datetime import datetime
 
 # Base URL from frontend/.env
-BASE_URL = "https://hotelflow-fix.preview.emergentagent.com/api"
+BASE_URL = "https://app-audit-9.preview.emergentagent.com/api"
 
 # Test credentials
 SUPER_ADMIN = {

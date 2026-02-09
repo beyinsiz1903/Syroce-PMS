@@ -9,7 +9,7 @@ import json
 from datetime import datetime, timezone, timedelta
 import uuid
 
-BACKEND_URL = "https://hotelflow-fix.preview.emergentagent.com/api"
+BACKEND_URL = "https://app-audit-9.preview.emergentagent.com/api"
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 

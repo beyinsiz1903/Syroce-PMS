@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import statistics
 
 # Configuration
-BACKEND_URL = "https://hotelflow-fix.preview.emergentagent.com/api"
+BACKEND_URL = "https://app-audit-9.preview.emergentagent.com/api"
 TEST_USER = {
     "email": "admin@hotel.com",
     "password": "admin123"

@@ -27,7 +27,7 @@ import time
 from datetime import datetime, timezone
 
 # Configuration
-BACKEND_URL = "https://hotelflow-fix.preview.emergentagent.com/api"
+BACKEND_URL = "https://app-audit-9.preview.emergentagent.com/api"
 TEST_EMAIL = "admin@hotel.com"
 TEST_PASSWORD = "admin123"
 

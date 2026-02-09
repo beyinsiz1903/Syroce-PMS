@@ -14,7 +14,7 @@ from typing import Dict, List, Any, Optional
 import uuid
 
 # Configuration
-BACKEND_URL = "https://hotelflow-fix.preview.emergentagent.com/api"
+BACKEND_URL = "https://app-audit-9.preview.emergentagent.com/api"
 
 class FocusedGuestPortalTester:
     def __init__(self):
