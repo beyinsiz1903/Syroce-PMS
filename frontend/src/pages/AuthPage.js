@@ -61,20 +61,25 @@ const AuthPage = ({ onLogin }) => {
       console.log('👤 User object from backend:', response.data.user);
       console.log('🎭 User role from backend:', response.data.user?.role);
       
-      // Store auth data first
+      toast.success('Login successful! Redirecting...');
+      
+      // Call onLogin FIRST to update app state
+      await onLogin(response.data.access_token, response.data.user, response.data.tenant);
+      
+      // Store auth data in localStorage
       localStorage.setItem('token', response.data.access_token);
       localStorage.setItem('user', JSON.stringify(response.data.user));
       localStorage.setItem('tenant', response.data.tenant ? JSON.stringify(response.data.tenant) : 'null');
       
-      toast.success('Login successful! Redirecting...');
+      // Set axios header immediately
+      axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.access_token}`;
       
-      // Then call onLogin
-      onLogin(response.data.access_token, response.data.user, response.data.tenant);
+      console.log('✅ Auth data stored, redirecting to dashboard...');
       
-      // Use hard redirect to ensure state is fresh
+      // Use hard redirect to ensure clean state
       setTimeout(() => {
-        window.location.href = '/';
-      }, 500);
+        window.location.href = '/app/dashboard';
+      }, 300);
     } catch (error) {
       console.error('❌ Login error:', error);
       console.error('Error response:', error.response);
