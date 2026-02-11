@@ -90,6 +90,9 @@ test_plan:
     - "Subscription Tier RBAC Validation"
     - "Team Member CRUD Operations"
     - "Subscription Upgrade Flow Testing"
+    - "Hotel Info Update API"
+    - "Plan Change API (Upgrade/Downgrade)"
+    - "Billing History API"
   stuck_tasks: []
   test_all: true
   test_priority: "sequential"
