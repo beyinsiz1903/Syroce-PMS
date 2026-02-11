@@ -18,7 +18,7 @@ from datetime import datetime
 import os
 
 # Configuration from environment
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://unitcare-1.preview.emergentagent.com') + '/api'
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://bug-fix-update.preview.emergentagent.com') + '/api'
 SUPER_ADMIN_EMAIL = "superadmin@syroce.com"
 SUPER_ADMIN_PASSWORD = "Admin123!"
 

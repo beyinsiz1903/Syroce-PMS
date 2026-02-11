@@ -41,7 +41,7 @@ import uuid
 import statistics
 
 # Configuration
-BACKEND_URL = "https://unitcare-1.preview.emergentagent.com/api"
+BACKEND_URL = "https://bug-fix-update.preview.emergentagent.com/api"
 TEST_EMAIL = "admin@hotel.com"
 TEST_PASSWORD = "admin123"
 

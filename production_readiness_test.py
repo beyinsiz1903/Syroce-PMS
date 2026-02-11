@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
 
 # Configuration
-BACKEND_URL = "https://unitcare-1.preview.emergentagent.com/api"
+BACKEND_URL = "https://bug-fix-update.preview.emergentagent.com/api"
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 

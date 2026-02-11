@@ -29,7 +29,7 @@ from typing import List, Dict, Any
 from datetime import datetime
 
 # Configuration
-BACKEND_URL = "https://unitcare-1.preview.emergentagent.com/api"
+BACKEND_URL = "https://bug-fix-update.preview.emergentagent.com/api"
 TEST_USER_EMAIL = "admin@hotel.com"
 TEST_USER_PASSWORD = "admin123"
 

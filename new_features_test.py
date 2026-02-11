@@ -14,7 +14,7 @@ from datetime import datetime
 import os
 
 # Configuration
-BASE_URL = "https://unitcare-1.preview.emergentagent.com/api"
+BASE_URL = "https://bug-fix-update.preview.emergentagent.com/api"
 
 # Test credentials from review request
 BASIC_HOTEL = {"email": "demo@butikotel.com", "password": "demo123"}

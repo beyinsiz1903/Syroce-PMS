@@ -7,7 +7,7 @@ import asyncio
 import aiohttp
 import json
 
-BACKEND_URL = "https://unitcare-1.preview.emergentagent.com/api"
+BACKEND_URL = "https://bug-fix-update.preview.emergentagent.com/api"
 TEST_EMAIL = "muratsutay@hotmail.com"
 TEST_PASSWORD = "murat1903"
 

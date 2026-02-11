@@ -12,7 +12,7 @@ import traceback
 from datetime import datetime
 
 # Backend URL from frontend .env
-BACKEND_URL = "https://unitcare-1.preview.emergentagent.com/api"
+BACKEND_URL = "https://bug-fix-update.preview.emergentagent.com/api"
 
 # Test credentials from review request
 CREDENTIALS = {

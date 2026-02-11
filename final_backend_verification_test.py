@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timedelta
 
 # Configuration
-BASE_URL = "https://unitcare-1.preview.emergentagent.com/api"
+BASE_URL = "https://bug-fix-update.preview.emergentagent.com/api"
 EMAIL = "demo@hotel.com"
 PASSWORD = "demo123"
 

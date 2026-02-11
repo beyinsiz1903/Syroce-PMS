@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 from statistics import mean, median
 
 # Configuration
-BACKEND_URL = "https://unitcare-1.preview.emergentagent.com/api"
+BACKEND_URL = "https://bug-fix-update.preview.emergentagent.com/api"
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 

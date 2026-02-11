@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 
 # Test Configuration
-BASE_URL = "https://unitcare-1.preview.emergentagent.com"
+BASE_URL = "https://bug-fix-update.preview.emergentagent.com"
 API_BASE_URL = f"{BASE_URL}/api"
 
 async def test_connectivity():

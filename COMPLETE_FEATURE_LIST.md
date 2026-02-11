@@ -218,7 +218,7 @@
 ## 📋 QUICK START GUIDE
 
 **Login:**
-- URL: https://unitcare-1.preview.emergentagent.com
+- URL: https://bug-fix-update.preview.emergentagent.com
 - Demo: demo@hotel.com / demo123
 
 **New User Registration:**
