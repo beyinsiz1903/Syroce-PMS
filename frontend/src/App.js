@@ -280,7 +280,8 @@ function App() {
           }
           setIsAuthenticated(true);
           console.log('✅ Auth state restored with fresh data');
-        } catch (e) {
+        })
+        .catch(e => {
           console.error('❌ Failed to verify token or fetch user:', e);
           // Clear invalid data
           localStorage.removeItem('token');
@@ -288,12 +289,9 @@ function App() {
           localStorage.removeItem('tenant');
           localStorage.removeItem('modules');
           setIsAuthenticated(false);
-        } finally {
           setLoading(false);
-        }
-      };
-      
-      verifyAndRefreshUser();
+        });
+      setLoading(false);
     } else {
       console.log('ℹ️ No auth data found in localStorage');
       setLoading(false);
