@@ -359,15 +359,6 @@ const AuthPage = ({ onLogin }) => {
                           className="w-full" 
                           disabled={loading} 
                           data-testid="hotel-login-btn"
-                          onClick={(e) => {
-                            // Ensure form submits when button is clicked
-                            if (!loading) {
-                              const form = e.target.closest('form');
-                              if (form) {
-                                form.requestSubmit();
-                              }
-                            }
-                          }}
                           style={isMobile ? { height: '48px', fontSize: '16px' } : {}}
                         >
                           {loading ? t('common.loading') : t('common.login')}
