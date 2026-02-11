@@ -80,7 +80,7 @@ export const NAV_ITEMS = [
   {
     key: "reports",
     label: "Gelişmiş Raporlar",
-    path: "/app/reports",
+    path: "/app/gelismis-raporlar",
     moduleKey: "reports",
     tier: "professional",
     group: "professional",
