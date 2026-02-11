@@ -33086,8 +33086,195 @@ async def upgrade_subscription(
     }
 
 
+# ============= BILLING HISTORY & PLAN MANAGEMENT =============
 
-# ============= RBAC TIER-BASED ENDPOINTS =============
+class ChangePlanRequest(BaseModel):
+    new_tier: str  # basic, professional, enterprise
+    billing_cycle: str = "monthly"  # monthly, yearly
+
+
+@api_router.post("/subscription/change-plan")
+async def change_subscription_plan(
+    payload: ChangePlanRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Change subscription plan (upgrade or downgrade).
+    Creates a billing history record for the change."""
+    tenant = await db.tenants.find_one({'id': current_user.tenant_id})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        raise HTTPException(status_code=403, detail="Sadece yöneticiler plan değiştirebilir")
+
+    new_tier = payload.new_tier.lower()
+    if new_tier == "pro": new_tier = "professional"
+    if new_tier == "ultra": new_tier = "enterprise"
+
+    if new_tier not in ("basic", "professional", "enterprise"):
+        raise HTTPException(status_code=400, detail="Geçersiz plan")
+
+    current_tier = (tenant.get('subscription_tier', 'basic')).lower()
+    if current_tier == "pro": current_tier = "professional"
+    if current_tier == "ultra": current_tier = "enterprise"
+
+    if current_tier == new_tier:
+        raise HTTPException(status_code=400, detail="Zaten bu plandasınız")
+
+    tier_order = {"basic": 0, "professional": 1, "enterprise": 2}
+    is_downgrade = tier_order.get(new_tier, 0) < tier_order.get(current_tier, 0)
+
+    try:
+        plan = SUBSCRIPTION_PLANS[SubscriptionTier(new_tier)]
+    except (ValueError, KeyError):
+        raise HTTPException(status_code=400, detail="Geçersiz plan")
+
+    # Downgrade checks: room / user limits
+    if is_downgrade:
+        if plan.max_rooms:
+            room_count = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+            if room_count > plan.max_rooms:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Oda sayınız ({room_count}), hedef planın limitini ({plan.max_rooms}) aşıyor. Önce oda sayısını azaltın."
+                )
+        if plan.max_users:
+            user_count = await db.users.count_documents({'tenant_id': current_user.tenant_id})
+            if user_count > plan.max_users:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Kullanıcı sayınız ({user_count}), hedef planın limitini ({plan.max_users}) aşıyor. Önce kullanıcı sayısını azaltın."
+                )
+
+    amount = plan.price_yearly if payload.billing_cycle == 'yearly' else plan.price_monthly
+    new_modules = get_plan_default_modules(new_tier)
+    now = datetime.now(timezone.utc)
+    valid_days = 365 if payload.billing_cycle == 'yearly' else 30
+
+    # Update tenant
+    await db.tenants.update_one(
+        {'id': current_user.tenant_id},
+        {'$set': {
+            'subscription_tier': new_tier,
+            'subscription_status': 'active',
+            'billing_cycle': payload.billing_cycle,
+            'modules': new_modules,
+            'subscription_valid_until': (now + timedelta(days=valid_days)).isoformat(),
+            'last_billing_date': now.isoformat(),
+            'updated_at': now.isoformat(),
+        }}
+    )
+
+    # Create billing history record
+    billing_record = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "user_id": current_user.id,
+        "user_name": current_user.name,
+        "action": "downgrade" if is_downgrade else "upgrade",
+        "from_tier": current_tier,
+        "to_tier": new_tier,
+        "billing_cycle": payload.billing_cycle,
+        "amount": amount,
+        "currency": "EUR",
+        "status": "completed",
+        "description": f"{'Downgrade' if is_downgrade else 'Upgrade'}: {current_tier} → {new_tier} ({payload.billing_cycle})",
+        "created_at": now.isoformat(),
+        "valid_until": (now + timedelta(days=valid_days)).isoformat(),
+    }
+    await db.billing_history.insert_one(billing_record)
+
+    action_label = "düşürüldü" if is_downgrade else "yükseltildi"
+    return {
+        "success": True,
+        "message": f"Plan {new_tier} olarak {action_label}",
+        "is_downgrade": is_downgrade,
+        "tier": new_tier,
+        "amount": amount,
+        "billing_cycle": payload.billing_cycle,
+        "valid_until": (now + timedelta(days=valid_days)).isoformat(),
+    }
+
+
+@api_router.get("/billing/history")
+async def get_billing_history(
+    current_user: User = Depends(get_current_user)
+):
+    """Get billing / plan change history for the current hotel"""
+    records = await db.billing_history.find(
+        {"tenant_id": current_user.tenant_id},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+
+    return {"records": records, "count": len(records)}
+
+
+class UpdateHotelInfoRequest(BaseModel):
+    property_name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    location: Optional[str] = None
+    description: Optional[str] = None
+    total_rooms: Optional[int] = None
+
+
+@api_router.patch("/hotel/info")
+async def update_hotel_info(
+    payload: UpdateHotelInfoRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Update hotel/tenant information (admin only)"""
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        raise HTTPException(status_code=403, detail="Sadece yöneticiler otel bilgilerini güncelleyebilir")
+
+    tenant = await db.tenants.find_one({"id": current_user.tenant_id})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+
+    update_data = {}
+    if payload.property_name is not None:
+        update_data["property_name"] = payload.property_name
+    if payload.phone is not None:
+        update_data["phone"] = payload.phone
+        update_data["contact_phone"] = payload.phone
+    if payload.email is not None:
+        update_data["email"] = payload.email
+        update_data["contact_email"] = payload.email
+    if payload.address is not None:
+        update_data["address"] = payload.address
+    if payload.location is not None:
+        update_data["location"] = payload.location
+    if payload.description is not None:
+        update_data["description"] = payload.description
+    if payload.total_rooms is not None:
+        # Check plan limit
+        tier = (tenant.get("subscription_tier", "basic")).lower()
+        if tier == "pro": tier = "professional"
+        if tier == "ultra": tier = "enterprise"
+        try:
+            plan = SUBSCRIPTION_PLANS[SubscriptionTier(tier)]
+            if plan.max_rooms and payload.total_rooms > plan.max_rooms:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Planınızın oda limiti: {plan.max_rooms}. Daha fazla oda için planınızı yükseltin."
+                )
+        except (ValueError, KeyError):
+            pass
+        update_data["total_rooms"] = payload.total_rooms
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Güncellenecek alan bulunamadı")
+
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.tenants.update_one({"id": current_user.tenant_id}, {"$set": update_data})
+
+    updated = await db.tenants.find_one({"id": current_user.tenant_id}, {"_id": 0})
+    return {
+        "success": True,
+        "message": "Otel bilgileri güncellendi",
+        "tenant": updated,
+    }
 
 @api_router.get("/rbac/roles")
 async def get_available_roles(current_user: User = Depends(get_current_user)):
