@@ -96,3 +96,64 @@ agent_communication:
   - message: "Successfully tested the Basic Hotel Navigation. Encountered technical issues with the testing script that prevented testing the remaining test cases. The Basic hotel UI shows correct navigation items (Dashboard, Takvim, PMS, Raporlar, Ayarlar), displays the Basic badge correctly, and shows an upgrade teaser for Professional plan. Screenshot evidence confirms the implementation is working as expected. Further testing is needed for Professional and Enterprise hotel navigation, as well as the Super Admin features."
   - agent: "testing"
   - message: "Found a configuration issue: the frontend's .env file has REACT_APP_BACKEND_URL set to 'https://unitcare-1.preview.emergentagent.com' but our tests are running against 'http://localhost:3000'. This mismatch likely causes authentication issues when trying to login multiple times in the test script. The backend is responding correctly to login requests, but the login redirection in the UI is failing due to this configuration issue."
+
+backend:
+  - task: "Hotel Team Management API Testing"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+      - agent: "testing"
+      - comment: "Backend endpoints identified: GET/POST /api/hotel/team, PATCH/DELETE /api/hotel/team/{user_id}/role, GET /api/rbac/roles, POST /api/subscription/upgrade. All endpoints present in server.py with proper RBAC tier-based restrictions."
+      - working: true
+      - agent: "testing"
+      - comment: "All 13 hotel team management test cases passed (100% success rate). Verified: Basic hotel tier restrictions (admin only), Professional hotel expanded roles (admin, supervisor, front_desk, housekeeping, finance), RBAC role validation working correctly, team member CRUD operations functional, subscription upgrade flow working from basic to professional with proper tier verification."
+
+  - task: "Subscription Tier RBAC Validation"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+      - agent: "testing"
+      - comment: "RBAC system needs testing for tier-based role restrictions across basic, professional, and enterprise tiers."
+      - working: true
+      - agent: "testing"
+      - comment: "RBAC validation working perfectly. Basic tier correctly restricts to admin role only. Professional tier allows admin, supervisor, front_desk, housekeeping, finance. Role restriction errors properly returned when attempting to assign invalid roles for tier. GET /api/rbac/roles correctly returns tier-specific allowed roles."
+
+  - task: "Team Member CRUD Operations"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+      - agent: "testing"
+      - comment: "Team member Create, Read, Update, Delete operations need validation with proper authorization and data integrity checks."
+      - working: true
+      - agent: "testing"
+      - comment: "All CRUD operations working correctly. POST /api/hotel/team successfully adds team members with role validation. PATCH /api/hotel/team/{user_id}/role updates roles with tier restrictions. DELETE /api/hotel/team/{user_id} removes members properly. GET /api/hotel/team lists team with correct tier info and limits."
+
+  - task: "Subscription Upgrade Flow Testing"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+      - agent: "testing"
+      - comment: "Subscription upgrade endpoint needs testing to ensure proper tier transitions and validation."
+      - working: true
+      - agent: "testing"
+      - comment: "Subscription upgrade working perfectly. POST /api/subscription/upgrade successfully upgraded basic hotel to professional tier with monthly billing cycle. GET /api/subscription/current correctly shows updated tier. Tier transition properly enables additional roles for the upgraded hotel."
