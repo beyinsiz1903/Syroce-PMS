@@ -85,6 +85,11 @@ test_plan:
     - "Enterprise Hotel Navigation Test"
     - "Super Admin - Admin Panel Module Management Test"
     - "Super Admin Badge Test"
+  backend_completed:
+    - "Hotel Team Management API Testing"
+    - "Subscription Tier RBAC Validation"
+    - "Team Member CRUD Operations"
+    - "Subscription Upgrade Flow Testing"
   stuck_tasks: []
   test_all: true
   test_priority: "sequential"
