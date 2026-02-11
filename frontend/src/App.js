@@ -236,14 +236,13 @@ function App() {
     });
     
     if (token && storedUser) {
-      // IMPORTANT: Verify token and refresh user data from backend
-      const verifyAndRefreshUser = async () => {
-        try {
-          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-          
-          // Call /auth/me to get fresh user data with current role
-          console.log('🔍 Fetching fresh user data from /auth/me...');
-          const meResponse = await axios.get('/auth/me');
+      // Set authorization header for all future requests
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      
+      // Call /auth/me to get fresh user data with current role
+      console.log('🔍 Fetching fresh user data from /auth/me...');
+      axios.get('/auth/me')
+        .then(meResponse => {
           const freshUser = meResponse.data;
           
           console.log('✅ Fresh user data received:', freshUser);
