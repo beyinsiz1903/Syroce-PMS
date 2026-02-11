@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -10,36 +10,41 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Home, Hotel, FileText, TrendingUp, Award, ShoppingCart, User, LogOut, Menu, Network, Calendar, DollarSign, Smartphone, Settings as SettingsIcon, ChefHat, Wrench, Building2 } from 'lucide-react';
+import {
+  Home, Hotel, FileText, TrendingUp, Award, ShoppingCart,
+  User, LogOut, Menu, Calendar, DollarSign, Settings as SettingsIcon,
+  Layers, BarChart3, Bot, Building2, Zap, Crown, Lock, Shield, Users
+} from 'lucide-react';
 import LanguageSelector from '@/components/LanguageSelector';
 import NotificationBell from '@/components/NotificationBell';
 import PushSubscriptionManager from '@/components/PushSubscriptionManager';
-import { NAV_ITEMS, PMS_LITE_NAV_KEYS } from '@/config/navItems';
-import { normalizeFeatures } from '@/utils/featureFlags';
+import { NAV_ITEMS } from '@/config/navItems';
+import { UpgradeBanner } from '@/components/UpgradeBanner';
 
+// ─── Icon mapping by nav key ─────────────────────────
 const ICON_BY_KEY = {
   dashboard: Home,
   pms: Hotel,
   reservation_calendar: Calendar,
-  reports: FileText,
+  reports_basic: FileText,
+  reports: BarChart3,
   settings: SettingsIcon,
+  invoices: DollarSign,
+  cost_management: Layers,
+  channel_manager: Layers,
   rms: TrendingUp,
-  ai: Award,
+  ai: Bot,
   marketplace: ShoppingCart,
+  admin_tenants: Shield,
+  admin_module_report: FileText,
+  admin_leads: Users,
 };
 
-const FEATURE_ALIASES = {
-  dashboard: ['dashboard', 'core_dashboard'],
-  pms: ['pms', 'core_pms'],
-  reservation_calendar: ['reservation_calendar', 'core_calendar'],
-  rms: ['rms', 'core_rms', 'hidden_rms'],
-  ai: ['ai', 'hidden_ai'],
-  marketplace: ['marketplace', 'hidden_marketplace'],
-  channel_manager: ['channel_manager', 'core_channel_basic', 'channel_basic'],
-  invoices: ['invoices', 'core_invoice', 'finance_invoices', 'accounting_invoices'],
-  cost_management: ['cost_management', 'finance_costs', 'accounting_costs'],
-  reports_lite: ['reports_lite', 'core_reports_basic', 'reports_basic'],
-  settings_lite: ['settings_lite', 'core_users_roles', 'users_roles', 'settings_basic'],
+// ─── Tier badge in header ─────────────────────────────
+const TIER_CONFIG = {
+  basic: { label: 'Basic', icon: Building2, cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  professional: { label: 'Pro', icon: Zap, cls: 'bg-blue-100 text-blue-700 border-blue-200' },
+  enterprise: { label: 'Enterprise', icon: Crown, cls: 'bg-purple-100 text-purple-700 border-purple-200' },
 };
 
 const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
@@ -48,122 +53,114 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navScrollRef = useRef(null);
 
-  // Normalize feature flags from tenant.features (supports both core_* and lite keys)
-  const normalizedFeatures = normalizeFeatures(tenant?.features || {});
-
-  // --- PLAN / ROLE NORMALIZATION ---
-  const plan =
-    tenant?.subscription_plan ||
-    tenant?.plan ||
-    tenant?.subscription_tier ||
-    'core_small_hotel';
-
-  const isLite = plan === 'pms_lite';
   const isSuperAdmin = user?.role === 'super_admin';
 
-  // --- HARD RULES ---
-  // PMS Lite: sadece whitelist
-  const LITE_KEYS = new Set([
-    'dashboard',
-    'reservation_calendar',
-    'pms',
-    'reports',
-    'settings',
-    // Eğer NAV_ITEMS'te bookings/guests gibi ayrı item'ler varsa buraya eklenebilir
-    // 'bookings',
-    // 'guests',
-  ]);
+  // ─── Get modules from tenant (set by App.js from /subscription/current) ──
+  const modules = useMemo(() => tenant?.modules || {}, [tenant]);
 
-  // Full plan + normal admin: gizlenecek modüller
-  const HIDE_FOR_ADMIN = new Set([
-    'rms',
-    'invoices',
-    'cost_management',
-    'channel_manager',
-    'marketplace',
-    'ai',
-    'admin_leads', // sadece super_admin görsün
-  ]);
+  // ─── Determine current tier ──────────────────────────
+  const currentTier = useMemo(() => {
+    const tier = tenant?.subscription_tier || 'basic';
+    // Handle legacy tier names
+    if (tier === 'pro') return 'professional';
+    if (tier === 'ultra') return 'enterprise';
+    return tier;
+  }, [tenant]);
 
-  // Full planlarda her zaman görünmesi gereken çekirdek menüler
-  const CORE_ALWAYS_ON = new Set([
-    'dashboard',
-    'reservation_calendar',
-    'pms',
-    'reports',
-    'settings',
-  ]);
+  const tierConfig = TIER_CONFIG[currentTier] || TIER_CONFIG.basic;
+  const TierIcon = tierConfig.icon;
 
-  // --- FEATURE CHECK helper (alias destekli) ---
-  const hasFeature = (featureKey) => {
-    if (!featureKey) return true;
-
-    if (CORE_ALWAYS_ON.has(featureKey)) return true;
-
-    const keys = FEATURE_ALIASES[featureKey] || [featureKey];
-    return keys.some((k) => !!normalizedFeatures[k]);
+  // ─── Determine which tier is needed for upgrade ──────
+  const getUpgradeTier = (itemTier) => {
+    if (itemTier === 'professional') return 'professional';
+    return 'enterprise';
   };
 
-  // --- FINAL NAV FILTER ---
-  const navigation = NAV_ITEMS
-    .filter((item) => {
-      // 1) PMS Lite → sadece whitelist
-      if (isLite) {
-        return LITE_KEYS.has(item.key);
-      }
+  // ─── Check if module is enabled ──────────────────────
+  const isModuleEnabled = (moduleKey) => {
+    if (!moduleKey) return true;
+    // If modules aren't loaded yet, default to showing (backward compat)
+    if (!modules || Object.keys(modules).length === 0) return true;
+    // Explicit check
+    return modules[moduleKey] !== false && modules[moduleKey] !== undefined ? !!modules[moduleKey] : false;
+  };
 
-      // 2) Super admin (full) → her şey serbest
-      if (isSuperAdmin) {
-        return true;
-      }
+  // ─── Build navigation items ──────────────────────────
+  const { visibleNav, lockedNav, upgradeTier } = useMemo(() => {
+    const visible = [];
+    const locked = [];
+    let nextUpgradeTier = null;
 
-      // 3) Normal admin (full) → bazı modülleri gizle
-      if (HIDE_FOR_ADMIN.has(item.key)) {
-        return false;
-      }
+    NAV_ITEMS.forEach((item) => {
+      // Hidden items
+      if (item.hidden) return;
 
-      // 4) Full planlarda çekirdek menüler → her zaman görünür
-      if (CORE_ALWAYS_ON.has(item.key)) {
-        return true;
-      }
-
-      // 5) requireSuperAdmin → super_admin değilse gizle
+      // Super admin items
       if (item.requireSuperAdmin) {
-        return false;
+        if (isSuperAdmin) visible.push(item);
+        return;
       }
 
-      // 6) Geri kalanlar → feature flag (alias destekli)
-      if (item.feature) {
-        return hasFeature(item.feature);
+      // Super admin sees everything
+      if (isSuperAdmin) {
+        visible.push(item);
+        return;
       }
 
-      // 7) Default: göster
-      return true;
-    })
-    .map((item) => ({
-      ...item,
-      name: item.i18nKey ? t(item.i18nKey) : item.label,
-    }));
-
-  // Debug logging
-  useEffect(() => {
-    console.log('🔍 Layout Debug - User Info:', {
-      email: user?.email,
-      name: user?.name,
-      role: user?.role,
-      isSuperAdmin: user?.role === 'super_admin'
+      // Check if module is enabled for this tenant
+      if (item.moduleKey && isModuleEnabled(item.moduleKey)) {
+        visible.push(item);
+      } else if (item.moduleKey && !isModuleEnabled(item.moduleKey)) {
+        locked.push(item);
+        // Determine which tier they should upgrade to
+        if (!nextUpgradeTier) {
+          nextUpgradeTier = getUpgradeTier(item.tier);
+        }
+      } else {
+        // No moduleKey, show by default
+        visible.push(item);
+      }
     });
-  }, [user]);
 
-  // Scroll active item into view when currentModule changes
+    return { visibleNav: visible, lockedNav: locked, upgradeTier: nextUpgradeTier };
+  }, [modules, isSuperAdmin]);
+
+  // ─── Scroll active item into view ────────────────────
   useEffect(() => {
     if (navScrollRef.current && currentModule) {
-      const activeButton = navScrollRef.current.querySelector(`[data-testid="nav-${currentModule}"]`);
+      const activeButton = navScrollRef.current.querySelector(`[data-nav-key="${currentModule}"]`);
       if (activeButton) {
         activeButton.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
       }
     }
   }, [currentModule]);
+
+  // ─── Render nav button ───────────────────────────────
+  const renderNavButton = (item, isMobile = false) => {
+    const Icon = ICON_BY_KEY[item.key] || Home;
+    const isActive = currentModule === item.key;
+
+    return (
+      <Button
+        key={item.path + item.key}
+        variant={isActive ? 'default' : 'ghost'}
+        size="sm"
+        onClick={() => {
+          navigate(item.path);
+          if (isMobile) setMobileMenuOpen(false);
+        }}
+        className={`flex items-center space-x-1.5 ${isMobile ? 'w-full justify-start py-2.5' : 'px-3 py-2 text-xs whitespace-nowrap'} ${
+          isActive
+            ? 'bg-blue-600 text-white hover:bg-blue-700'
+            : 'hover:bg-gray-100'
+        }`}
+        data-nav-key={item.key}
+      >
+        <Icon className={isMobile ? "w-4 h-4" : "w-3.5 h-3.5"} />
+        <span className="font-medium">{item.label}</span>
+      </Button>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
@@ -171,67 +168,54 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
         <div className="px-4 py-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <img 
+            {/* Logo & Hotel Name + Tier Badge */}
+            <div className="flex items-center space-x-3">
+              <img
                 src="/syroce-logo.svg"
-                alt="Syroce Logo" 
+                alt="Syroce Logo"
                 className="h-10 w-auto cursor-pointer"
                 onClick={() => navigate('/')}
-                data-testid="logo"
               />
               <div className="flex flex-col leading-tight min-w-0">
                 <span className="text-xs uppercase tracking-[0.2em] text-gray-400 hidden md:block">
                   Syroce PMS
                 </span>
-                <span
-                  className="text-sm font-semibold text-gray-700 truncate max-w-[160px] sm:max-w-[240px] md:max-w-xs"
-                  title={tenant?.property_name || 'Hotel Management'}
-                >
-                  {tenant?.property_name || 'Hotel Management'}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className="text-sm font-semibold text-gray-700 truncate max-w-[140px] sm:max-w-[200px]"
+                    title={tenant?.property_name || 'Hotel Management'}
+                  >
+                    {tenant?.property_name || 'Hotel Management'}
+                  </span>
+                  {/* Tier Badge */}
+                  {!isSuperAdmin && (
+                    <span className={`hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border font-semibold ${tierConfig.cls}`}>
+                      <TierIcon className="w-3 h-3" />
+                      {tierConfig.label}
+                    </span>
+                  )}
+                  {isSuperAdmin && (
+                    <span className="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border font-semibold bg-red-100 text-red-700 border-red-200">
+                      <Shield className="w-3 h-3" />
+                      Super Admin
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Desktop Navigation - Compact & Beautiful with Scroll Preservation */}
-            <nav 
+            {/* Desktop Navigation */}
+            <nav
               ref={navScrollRef}
               className="hidden md:flex items-center space-x-1 max-w-3xl overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
               style={{ scrollBehavior: 'smooth' }}
             >
-              {navigation.map((item) => {
-                // Super Admin kontrolü - sadece super_admin görebilir
-                if (item.requireSuperAdmin && user?.role !== 'super_admin') {
-                  return null;
-                }
-                
-                // Eğer tenant.modules varsa, backend modül yetkilerine göre menüyü filtrele
-                if (tenant?.modules && item.moduleKey) {
-                  if (tenant.modules[item.moduleKey] === false) {
-                    return null;
-                  }
-                }
-                const Icon = item.icon || ICON_BY_KEY[item.key] || Home;
-                const isActive = currentModule === item.id;
-                return (
-                  <Button
-                    key={item.path}
-                    variant={isActive ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={() => navigate(item.path)}
-                    className={`flex items-center space-x-1.5 px-3 py-2 text-xs whitespace-nowrap ${
-                      item.highlight 
-                        ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600' 
-                        : isActive 
-                        ? 'bg-blue-600 text-white hover:bg-blue-700'
-                        : 'hover:bg-gray-100'
-                    }`}
-                    data-testid={`nav-${item.id}`}
-                  >
-                    {Icon ? <Icon className="w-3.5 h-3.5" /> : null}
-                    <span className="font-medium">{item.name}</span>
-                  </Button>
-                );
-              })}
+              {visibleNav.map((item) => renderNavButton(item))}
+
+              {/* Upgrade teaser for locked items - show a subtle indicator */}
+              {!isSuperAdmin && lockedNav.length > 0 && upgradeTier && (
+                <UpgradeBanner requiredTier={upgradeTier} variant="inline" />
+              )}
             </nav>
 
             {/* User Menu and Utilities */}
@@ -245,29 +229,36 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                 variant="ghost"
                 className="md:hidden"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                data-testid="mobile-menu-btn"
               >
                 <Menu className="w-5 h-5" />
               </Button>
-              
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" data-testid="user-menu-btn">
+                  <Button variant="outline" size="sm">
                     <User className="w-4 h-4 mr-2" />
-                    {user.name}
+                    {user?.name || 'User'}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                  <DropdownMenuLabel>Hesabım</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem className="text-sm">
-                    {user.email}
+                    {user?.email}
                   </DropdownMenuItem>
                   <DropdownMenuItem className="text-sm text-gray-500">
-                    Role: {user.role}
+                    Rol: {user?.role}
                   </DropdownMenuItem>
+                  {!isSuperAdmin && (
+                    <DropdownMenuItem className="text-sm text-gray-500">
+                      <span className={`inline-flex items-center gap-1 ${tierConfig.cls} px-2 py-0.5 rounded-full text-[10px] font-semibold`}>
+                        <TierIcon className="w-3 h-3" />
+                        {tierConfig.label} Plan
+                      </span>
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={onLogout} data-testid="logout-btn">
+                  <DropdownMenuItem onClick={onLogout}>
                     <LogOut className="w-4 h-4 mr-2" />
                     {t('common.logout')}
                   </DropdownMenuItem>
@@ -278,41 +269,22 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
 
           {/* Mobile Navigation */}
           {mobileMenuOpen && (
-            <nav className="md:hidden mt-4 pb-2 space-y-2">
-              {/* Language Selector for Mobile */}
-              <div className="px-2 py-2 border-b border-gray-200">
+            <nav className="md:hidden mt-4 pb-2 space-y-1 border-t pt-3">
+              {/* Mobile tier badge */}
+              <div className="px-2 pb-2 flex items-center gap-2">
+                <span className={`inline-flex items-center gap-1 ${tierConfig.cls} px-2.5 py-1 rounded-full text-xs font-semibold border`}>
+                  <TierIcon className="w-3.5 h-3.5" />
+                  {tierConfig.label} Plan
+                </span>
                 <LanguageSelector />
               </div>
-              
-              {navigation.map((item) => {
-                // Super Admin kontrolü - sadece super_admin görebilir
-                if (item.requireSuperAdmin && user?.role !== 'super_admin') {
-                  return null;
-                }
-                
-                // Eğer tenant.modules varsa, backend modül yetkilerine göre menüyü filtrele
-                if (tenant?.modules && item.moduleKey) {
-                  if (tenant.modules[item.moduleKey] === false) {
-                    return null;
-                  }
-                }
-                const Icon = item.icon || ICON_BY_KEY[item.key] || Home;
-                const isActive = currentModule === item.id;
-                return (
-                  <Button
-                    key={item.path}
-                    variant={isActive ? 'default' : 'ghost'}
-                    onClick={() => {
-                      navigate(item.path);
-                      setMobileMenuOpen(false);
-                    }}
-                    className="w-full justify-start flex items-center space-x-2"
-                  >
-                    {Icon ? <Icon className="w-4 h-4" /> : null}
-                    <span>{item.name}</span>
-                  </Button>
-                );
-              })}
+
+              {visibleNav.map((item) => renderNavButton(item, true))}
+
+              {/* Mobile upgrade banner */}
+              {!isSuperAdmin && lockedNav.length > 0 && upgradeTier && (
+                <UpgradeBanner requiredTier={upgradeTier} variant="nav-footer" />
+              )}
             </nav>
           )}
         </div>
