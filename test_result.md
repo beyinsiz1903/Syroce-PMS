@@ -164,3 +164,39 @@ backend:
       - working: true
       - agent: "testing"
       - comment: "Subscription upgrade working perfectly. POST /api/subscription/upgrade successfully upgraded basic hotel to professional tier with monthly billing cycle. GET /api/subscription/current correctly shows updated tier. Tier transition properly enables additional roles for the upgraded hotel."
+
+  - task: "Hotel Info Update API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+      - agent: "testing"
+      - comment: "PATCH /api/hotel/info working perfectly. Successfully updated hotel information (property_name, phone, address, location, description). Correctly enforces room limits based on subscription tier - Basic tier properly rejects requests for >15 rooms. Error messages in Turkish as expected."
+
+  - task: "Plan Change API (Upgrade/Downgrade)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+      - agent: "testing"
+      - comment: "POST /api/subscription/change-plan working perfectly. Successfully tested both upgrade (basic→professional) and downgrade (professional→basic) flows. Correctly sets is_downgrade flag, calculates pricing, and validates against same-plan changes. Returns proper Turkish error message 'Zaten bu plandasınız' for same plan attempts."
+
+  - task: "Billing History API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+      - agent: "testing"
+      - comment: "GET /api/billing/history working perfectly. Returns comprehensive billing records with all required fields (id, tenant_id, action, from_tier, to_tier, amount, currency, status, created_at). Successfully tracks both upgrade and downgrade transactions with proper user information and descriptions."
