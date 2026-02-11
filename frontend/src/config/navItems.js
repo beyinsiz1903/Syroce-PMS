@@ -1,87 +1,147 @@
 // Central navigation configuration for main sidebar/top nav
-// Each item is controlled by a feature flag key coming from normalized tenant.features
+// Each item maps to a module key from the 3-tier subscription system
+// Module keys: pms, reservation_calendar, dashboard, guests, housekeeping, basic_reporting,
+//   settings, pms_mobile, invoices_basic, channel_manager, folio_management, night_audit,
+//   invoices, cost_management, reports, mobile_housekeeping, rate_management, booking_engine,
+//   guest_advanced, revenue_management, multi_property, group_sales, sales_crm, loyalty_program,
+//   gm_dashboards, mobile_revenue, advanced_analytics, api_access, white_label, audit_trail,
+//   ai, ai_chatbot, ai_pricing, ai_whatsapp, ai_predictive, ai_reputation, ai_revenue_autopilot, ai_social_radar
 
-export const PMS_LITE_NAV_KEYS = new Set([
-  'dashboard',
-  'reservation_calendar',
-  'pms',
-  'reports',
-  'settings',
-]);
-
+// Tier that includes this module by default
+// basic = all plans, professional = pro+enterprise, enterprise = enterprise only
 export const NAV_ITEMS = [
+  // ──── CORE (Basic plan) ────────────────────────────
   {
     key: "dashboard",
     label: "Dashboard",
     path: "/app/dashboard",
-    feature: "dashboard",
+    moduleKey: "dashboard",
+    tier: "basic",
+    group: "core",
   },
   {
     key: "reservation_calendar",
     label: "Takvim",
     path: "/app/reservation-calendar",
-    feature: "reservation_calendar",
+    moduleKey: "reservation_calendar",
+    tier: "basic",
+    group: "core",
   },
   {
     key: "pms",
     label: "PMS",
     path: "/app/pms",
-    feature: "pms",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "core",
   },
   {
-    key: "reports",
+    key: "reports_basic",
     label: "Raporlar",
     path: "/app/reports",
-    feature: "reports_lite",
+    moduleKey: "basic_reporting",
+    tier: "basic",
+    group: "core",
   },
   {
     key: "settings",
     label: "Ayarlar",
     path: "/app/settings",
-    feature: "settings_lite",
+    moduleKey: "settings",
+    tier: "basic",
+    group: "core",
   },
 
-  // FULL MODÜLLER (Lite'ta gizli kalacak)
+  // ──── PROFESSIONAL ─────────────────────────────────
   {
     key: "invoices",
-    label: "Fatura",
+    label: "Fatura & Finans",
     path: "/app/invoices",
-    feature: "invoices",
+    moduleKey: "invoices",
+    tier: "professional",
+    group: "professional",
   },
   {
     key: "cost_management",
-    label: "Cost Management",
+    label: "Maliyet",
     path: "/app/cost-management",
-    feature: "cost_management",
+    moduleKey: "cost_management",
+    tier: "professional",
+    group: "professional",
   },
   {
     key: "channel_manager",
     label: "Channel Manager",
     path: "/app/channel-manager",
-    feature: "channel_manager",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
   },
   {
+    key: "reports",
+    label: "Gelişmiş Raporlar",
+    path: "/app/reports",
+    moduleKey: "reports",
+    tier: "professional",
+    group: "professional",
+  },
+
+  // ──── ENTERPRISE ───────────────────────────────────
+  {
     key: "rms",
-    label: "RMS",
+    label: "Revenue (RMS)",
     path: "/app/rms",
-    feature: "rms",
+    moduleKey: "revenue_management",
+    tier: "enterprise",
+    group: "enterprise",
   },
   {
     key: "ai",
-    label: "AI",
+    label: "AI Modülleri",
     path: "/app/ai",
-    feature: "ai",
+    moduleKey: "ai",
+    tier: "enterprise",
+    group: "enterprise",
   },
   {
     key: "marketplace",
     label: "Marketplace",
     path: "/app/marketplace",
-    feature: "marketplace",
+    moduleKey: "marketplace",
+    tier: "enterprise",
+    group: "enterprise",
+    hidden: true, // Henüz aktif değil
+  },
+
+  // ──── SUPER ADMIN ONLY ─────────────────────────────
+  {
+    key: "admin_tenants",
+    label: "Otel Yönetimi",
+    path: "/admin/tenants",
+    requireSuperAdmin: true,
+    group: "admin",
+  },
+  {
+    key: "admin_module_report",
+    label: "Modül Raporu",
+    path: "/admin/module-report",
+    requireSuperAdmin: true,
+    group: "admin",
   },
   {
     key: "admin_leads",
     label: "Leads",
     path: "/app/admin/leads",
     requireSuperAdmin: true,
+    group: "admin",
   },
 ];
+
+// Legacy compatibility
+export const PMS_LITE_NAV_KEYS = new Set([
+  'dashboard',
+  'reservation_calendar',
+  'pms',
+  'reports_basic',
+  'settings',
+]);
