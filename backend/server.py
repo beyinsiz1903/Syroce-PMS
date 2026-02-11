@@ -33086,6 +33086,31 @@ async def upgrade_subscription(
     }
 
 
+
+# ============= RBAC TIER-BASED ENDPOINTS =============
+
+@api_router.get("/rbac/roles")
+async def get_available_roles(current_user: User = Depends(get_current_user)):
+    """Get available roles for the current tenant's subscription tier"""
+    tenant = await db.tenants.find_one({"id": current_user.tenant_id})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    tier = tenant.get("subscription_tier", "basic")
+    tier_lower = (tier or "basic").lower()
+    if tier_lower == "pro":
+        tier_lower = "professional"
+    if tier_lower == "ultra":
+        tier_lower = "enterprise"
+
+    allowed_roles = ROLES_BY_TIER.get(tier_lower, ROLES_BY_TIER["basic"])
+    return {
+        "tier": tier_lower,
+        "allowed_roles": allowed_roles,
+        "all_roles": [r.value for r in UserRole if r.value not in ("super_admin", "guest", "agency_admin", "agency_agent")],
+    }
+
+
 # ============= DEMO ENVIRONMENT ENDPOINTS =============
 
 from demo_data_generator import DemoDataGenerator
