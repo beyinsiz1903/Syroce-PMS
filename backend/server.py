@@ -11594,6 +11594,79 @@ async def get_basic_reports_dashboard(
         'created_at': {'$gte': month_start.isoformat()}
     })
 
+    # --- Ülke bazlı misafir dağılımı ---
+    all_guests = await db.guests.find({'tenant_id': tenant_id}, {'_id': 0, 'nationality': 1, 'country': 1}).to_list(5000)
+    country_dist = {}
+    for g in all_guests:
+        c = g.get('nationality') or g.get('country') or 'Belirtilmemiş'
+        country_dist[c] = country_dist.get(c, 0) + 1
+
+    # --- Oda tipi bazlı doluluk ---
+    room_type_occ = {}
+    for rt_name, rt_count in room_types.items():
+        rt_rooms = [r for r in rooms if r.get('room_type') == rt_name]
+        rt_occ = len([r for r in rt_rooms if r.get('current_status') == 'occupied'])
+        room_type_occ[rt_name] = {
+            'total': rt_count,
+            'occupied': rt_occ,
+            'occupancy': round((rt_occ / rt_count * 100), 1) if rt_count > 0 else 0,
+            'revenue': 0
+        }
+    # Oda tipi gelirleri
+    for bk in recent_bookings:
+        rt = bk.get('room_type', 'Standard')
+        if rt in room_type_occ:
+            room_type_occ[rt]['revenue'] += bk.get('total_amount', 0)
+    for rt in room_type_occ:
+        room_type_occ[rt]['revenue'] = round(room_type_occ[rt]['revenue'], 2)
+
+    # --- Ödemeler özet ---
+    all_payments = await db.payments.find({
+        'tenant_id': tenant_id,
+        'processed_at': {'$gte': month_start.isoformat()}
+    }, {'_id': 0, 'amount': 1, 'method': 1, 'status': 1, 'currency': 1}).to_list(5000)
+    payment_methods = {}
+    total_paid = 0
+    for p in all_payments:
+        method = p.get('method', 'other')
+        amt = p.get('amount', 0)
+        payment_methods[method] = payment_methods.get(method, 0) + amt
+        if p.get('status') == 'paid':
+            total_paid += amt
+    payment_methods = {k: round(v, 2) for k, v in payment_methods.items()}
+
+    # --- Son misafir listesi (son 30 gün) ---
+    recent_guests_data = await db.bookings.find({
+        'tenant_id': tenant_id,
+        'check_in': {'$gte': month_start.isoformat()},
+        'status': {'$in': ['confirmed', 'checked_in', 'checked_out']}
+    }, {'_id': 0, 'guest_name': 1, 'guest_email': 1, 'guest_phone': 1, 'room_number': 1, 'room_type': 1,
+        'check_in': 1, 'check_out': 1, 'total_amount': 1, 'status': 1, 'nationality': 1,
+        'id_number': 1, 'passport_number': 1, 'booking_source': 1}).to_list(500)
+
+    # --- Önceki ay karşılaştırması ---
+    prev_month_start = (today - timedelta(days=60)).replace(hour=0, minute=0, second=0, microsecond=0)
+    prev_month_end = month_start
+    prev_bookings = await db.bookings.find({
+        'tenant_id': tenant_id,
+        'check_in': {'$gte': prev_month_start.isoformat(), '$lt': prev_month_end.isoformat()},
+        'status': {'$in': ['confirmed', 'checked_in', 'checked_out']}
+    }, {'_id': 0, 'total_amount': 1}).to_list(10000)
+    prev_revenue = sum(b.get('total_amount', 0) for b in prev_bookings)
+    prev_room_nights = len(prev_bookings)
+    prev_adr = round(prev_revenue / prev_room_nights, 2) if prev_room_nights > 0 else 0
+
+    # Geçen yıl aynı dönem
+    last_year_start = (today - timedelta(days=365)).replace(hour=0, minute=0, second=0, microsecond=0)
+    last_year_end = (today - timedelta(days=335)).replace(hour=23, minute=59, second=59)
+    ly_bookings = await db.bookings.find({
+        'tenant_id': tenant_id,
+        'check_in': {'$gte': last_year_start.isoformat(), '$lt': last_year_end.isoformat()},
+        'status': {'$in': ['confirmed', 'checked_in', 'checked_out']}
+    }, {'_id': 0, 'total_amount': 1}).to_list(10000)
+    ly_revenue = sum(b.get('total_amount', 0) for b in ly_bookings)
+    ly_room_nights = len(ly_bookings)
+
     return {
         'date': today.strftime('%Y-%m-%d'),
         'summary': {
@@ -11615,15 +11688,28 @@ async def get_basic_reports_dashboard(
             'week_bookings': len(week_bookings),
             'month_revenue': round(month_revenue, 2),
             'month_bookings': len(month_bookings),
+            'prev_month_revenue': round(prev_revenue, 2),
+            'prev_month_bookings': len(prev_bookings),
+            'prev_month_adr': prev_adr,
+            'last_year_revenue': round(ly_revenue, 2),
+            'last_year_bookings': ly_room_nights,
         },
         'occupancy_trend': occupancy_trend,
         'revenue_trend': revenue_trend,
         'room_status': room_status_counts,
         'room_types': room_types,
+        'room_type_occupancy': room_type_occ,
         'booking_sources': {
             'distribution': source_distribution,
             'revenue': {k: round(v, 2) for k, v in source_revenue.items()}
         },
+        'country_distribution': country_dist,
+        'payments': {
+            'by_method': payment_methods,
+            'total_paid': round(total_paid, 2),
+            'total_pending': pending_invoices,
+        },
+        'guest_list': recent_guests_data[:100],
         'housekeeping': {
             'completed': hk_completed,
             'pending': hk_pending,
