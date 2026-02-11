@@ -154,6 +154,7 @@ axios.interceptors.request.use(
       config.headers = {};
     }
 
+    // Get token from localStorage for every request
     // Only attach token for non-public endpoints
     if (!isPublicAuthEndpoint) {
       const token = localStorage.getItem('token');
