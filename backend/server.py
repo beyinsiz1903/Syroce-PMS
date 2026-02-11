@@ -33111,6 +33111,177 @@ async def get_available_roles(current_user: User = Depends(get_current_user)):
     }
 
 
+# ============= HOTEL TEAM MANAGEMENT ENDPOINTS =============
+
+class CreateTeamMemberRequest(BaseModel):
+    email: EmailStr
+    name: str
+    phone: Optional[str] = None
+    role: str = "front_desk"
+    password: str
+
+class UpdateTeamMemberRoleRequest(BaseModel):
+    role: str
+
+
+@api_router.get("/hotel/team")
+async def list_hotel_team(current_user: User = Depends(get_current_user)):
+    """List all team members for the current hotel (hotel admin only)"""
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        raise HTTPException(status_code=403, detail="Sadece yöneticiler ekip üyelerini görebilir")
+
+    users = await db.users.find(
+        {"tenant_id": current_user.tenant_id},
+        {"_id": 0, "hashed_password": 0, "password_hash": 0, "password": 0}
+    ).to_list(200)
+
+    # Get tier info
+    tenant = await db.tenants.find_one({"id": current_user.tenant_id})
+    tier = (tenant.get("subscription_tier", "basic") if tenant else "basic").lower()
+    if tier == "pro": tier = "professional"
+    if tier == "ultra": tier = "enterprise"
+
+    allowed_roles = ROLES_BY_TIER.get(tier, ROLES_BY_TIER["basic"])
+
+    # Max users check
+    plan = SUBSCRIPTION_PLANS.get(SubscriptionTier(tier))
+    max_users = plan.max_users if plan and plan.max_users else 999
+
+    return {
+        "users": users,
+        "count": len(users),
+        "tier": tier,
+        "allowed_roles": allowed_roles,
+        "max_users": max_users,
+        "can_add": len(users) < max_users,
+    }
+
+
+@api_router.post("/hotel/team")
+async def add_team_member(
+    payload: CreateTeamMemberRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Add a new team member to the current hotel"""
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        raise HTTPException(status_code=403, detail="Sadece yöneticiler ekip üyesi ekleyebilir")
+
+    # Get tenant tier
+    tenant = await db.tenants.find_one({"id": current_user.tenant_id})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+
+    tier = (tenant.get("subscription_tier", "basic")).lower()
+    if tier == "pro": tier = "professional"
+    if tier == "ultra": tier = "enterprise"
+
+    # RBAC: Check if role is allowed for tier
+    if not is_role_allowed_for_tier(payload.role, tier):
+        allowed = ROLES_BY_TIER.get(tier, ROLES_BY_TIER["basic"])
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bu plan ({tier}) için '{payload.role}' rolü kullanılamaz. İzin verilen roller: {', '.join(allowed)}"
+        )
+
+    # Max users check
+    plan = SUBSCRIPTION_PLANS.get(SubscriptionTier(tier))
+    max_users = plan.max_users if plan and plan.max_users else 999
+    current_count = await db.users.count_documents({"tenant_id": current_user.tenant_id})
+    if current_count >= max_users:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Kullanıcı limitine ulaşıldı ({max_users}). Daha fazla kullanıcı eklemek için planınızı yükseltin."
+        )
+
+    # Check duplicate email
+    existing = await db.users.find_one({"email": payload.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Bu email adresi zaten kayıtlı")
+
+    hashed = hash_password(payload.password)
+    new_user = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "email": payload.email,
+        "name": payload.name,
+        "phone": payload.phone or "",
+        "role": payload.role,
+        "is_active": True,
+        "hashed_password": hashed,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.users.insert_one(new_user)
+
+    return {
+        "success": True,
+        "message": f"{payload.name} başarıyla eklendi ({payload.role})",
+        "user_id": new_user["id"],
+    }
+
+
+@api_router.patch("/hotel/team/{user_id}/role")
+async def update_team_member_role(
+    user_id: str,
+    payload: UpdateTeamMemberRoleRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Update a team member's role"""
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        raise HTTPException(status_code=403, detail="Sadece yöneticiler rol değiştirebilir")
+
+    # Find team member
+    target = await db.users.find_one({"id": user_id, "tenant_id": current_user.tenant_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="Ekip üyesi bulunamadı")
+
+    # Can't change own role
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Kendi rolünüzü değiştiremezsiniz")
+
+    # Can't change super_admin
+    if target.get("role") == "super_admin":
+        raise HTTPException(status_code=400, detail="Super Admin rolü değiştirilemez")
+
+    # Tier check
+    tenant = await db.tenants.find_one({"id": current_user.tenant_id})
+    tier = (tenant.get("subscription_tier", "basic") if tenant else "basic").lower()
+    if tier == "pro": tier = "professional"
+    if tier == "ultra": tier = "enterprise"
+
+    if not is_role_allowed_for_tier(payload.role, tier):
+        allowed = ROLES_BY_TIER.get(tier, ROLES_BY_TIER["basic"])
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bu plan ({tier}) için '{payload.role}' rolü kullanılamaz. İzin verilen: {', '.join(allowed)}"
+        )
+
+    await db.users.update_one({"id": user_id}, {"$set": {"role": payload.role}})
+    return {"success": True, "message": f"Rol güncellendi: {payload.role}"}
+
+
+@api_router.delete("/hotel/team/{user_id}")
+async def remove_team_member(
+    user_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Remove a team member"""
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        raise HTTPException(status_code=403, detail="Sadece yöneticiler üye silebilir")
+
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Kendinizi silemezsiniz")
+
+    target = await db.users.find_one({"id": user_id, "tenant_id": current_user.tenant_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="Ekip üyesi bulunamadı")
+    if target.get("role") == "super_admin":
+        raise HTTPException(status_code=400, detail="Super Admin silinemez")
+
+    await db.users.delete_one({"id": user_id, "tenant_id": current_user.tenant_id})
+    return {"success": True, "message": "Ekip üyesi silindi"}
+
+
+
 # ============= DEMO ENVIRONMENT ENDPOINTS =============
 
 from demo_data_generator import DemoDataGenerator
