@@ -32913,7 +32913,62 @@ async def get_subscription_plans():
     """Get all available subscription plans"""
     return {
         'plans': [plan.model_dump() for plan in SUBSCRIPTION_PLANS.values()],
-        'currency': 'USD'
+        'currency': 'EUR',
+        'tiers': [tier.value for tier in SubscriptionTier]
+    }
+
+@api_router.get("/subscription/plan-modules")
+async def get_plan_module_defaults():
+    """Get default module mapping for each subscription tier.
+    Used by admin panel to show which modules are included per plan."""
+    return {
+        'plan_modules': PLAN_MODULE_DEFAULTS,
+        'tiers': [tier.value for tier in SubscriptionTier],
+        'all_module_keys': get_all_module_keys()
+    }
+
+@api_router.patch("/admin/tenants/{tenant_id}/tier")
+async def update_tenant_tier(
+    tenant_id: str,
+    payload: dict,
+    current_user: User = Depends(require_super_admin)
+):
+    """Change a tenant's subscription tier and optionally reset modules to tier defaults.
+
+    Body:
+    {
+        "tier": "basic" | "professional" | "enterprise",
+        "reset_modules": true  // optional, default true
+    }
+    """
+    new_tier = (payload.get("tier") or "basic").lower()
+    reset_modules = payload.get("reset_modules", True)
+
+    if new_tier not in ("basic", "professional", "enterprise"):
+        raise HTTPException(status_code=400, detail="Geçersiz plan. Geçerli: basic, professional, enterprise")
+
+    tenant = await db.tenants.find_one({"id": tenant_id})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+
+    update_data = {
+        "subscription_tier": new_tier,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    if reset_modules:
+        update_data["modules"] = get_plan_default_modules(new_tier)
+
+    await db.tenants.update_one({"id": tenant_id}, {"$set": update_data})
+
+    updated_tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+    if updated_tenant:
+        updated_tenant["modules"] = get_tenant_modules(updated_tenant)
+
+    return {
+        "success": True,
+        "message": f"Plan {new_tier} olarak güncellendi",
+        "tenant": updated_tenant,
     }
 
 @api_router.get("/subscription/features")
