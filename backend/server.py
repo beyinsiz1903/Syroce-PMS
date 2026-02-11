@@ -3354,15 +3354,40 @@ def generate_time_based_qr_token(booking_id: str, expiry_hours: int = 72) -> str
 # ============= TENANT MODULE & ADMIN HELPERS =============
 
 MODULE_DEFAULTS: Dict[str, bool] = {
-    # Ana modüller
+    # CORE modüller (tüm planlarda açık)
     "pms": True,
+    "reservation_calendar": True,
+    "dashboard": True,
+    "guests": True,
+    "housekeeping": True,
+    "basic_reporting": True,
+    "settings": True,
     "pms_mobile": True,
-    "mobile_housekeeping": True,
-    "mobile_revenue": True,
-    "gm_dashboards": True,
-    "reports": True,
+    "invoices_basic": True,
+    # PRO modüller
+    "channel_manager": True,
+    "folio_management": True,
+    "night_audit": True,
     "invoices": True,
-    # AI genel anahtar ve alt modüller
+    "cost_management": True,
+    "reports": True,
+    "mobile_housekeeping": True,
+    "rate_management": True,
+    "booking_engine": True,
+    "guest_advanced": True,
+    # ENTERPRISE modüller
+    "revenue_management": True,
+    "multi_property": True,
+    "group_sales": True,
+    "sales_crm": True,
+    "loyalty_program": True,
+    "gm_dashboards": True,
+    "mobile_revenue": True,
+    "advanced_analytics": True,
+    "api_access": True,
+    "white_label": True,
+    "audit_trail": True,
+    # AI modüller
     "ai": True,
     "ai_chatbot": True,
     "ai_pricing": True,
