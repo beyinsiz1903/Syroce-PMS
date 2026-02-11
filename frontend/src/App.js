@@ -79,6 +79,7 @@ import POSDashboard from "@/pages/POSDashboard";
 const AdminTenants = lazy(() => import("@/pages/AdminTenants"));
 const ModuleReport = lazy(() => import("@/pages/ModuleReport"));
 const UserRoleManager = lazy(() => import("@/pages/UserRoleManager"));
+const AIModule = lazy(() => import("@/pages/AIModule"));
 
 // New 5-star hotel features
 const OnlineCheckin = lazy(() => import("@/pages/OnlineCheckin"));
