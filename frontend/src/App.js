@@ -669,6 +669,18 @@ function App() {
             }
           />
           <Route
+            path="/app/marketplace"
+            element={
+              isAuthenticated ? (
+                <Suspense fallback={<LoadingFallback />}>
+                  <MarketplaceModule user={user} tenant={tenant} onLogout={handleLogout} />
+                </Suspense>
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
             path="/hotel-inventory"
             element={
               isAuthenticated ? (
