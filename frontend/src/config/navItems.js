@@ -38,7 +38,7 @@ export const NAV_ITEMS = [
   {
     key: "reports_basic",
     label: "Raporlar",
-    path: "/app/reports",
+    path: "/app/raporlar",
     moduleKey: "basic_reporting",
     tier: "basic",
     group: "core",
