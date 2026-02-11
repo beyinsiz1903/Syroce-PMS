@@ -54,8 +54,13 @@ const AuthPage = ({ onLogin }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      console.log('🔐 Attempting login with:', hotelLoginData);
+      console.log('🔐 Attempting login with:', {
+        email: hotelLoginData.email,
+        passwordLength: hotelLoginData.password?.length
+      });
       console.log('📡 Axios baseURL:', axios.defaults.baseURL);
+      console.log('📡 Full URL will be:', axios.defaults.baseURL + '/auth/login');
+      
       const response = await axios.post('/auth/login', hotelLoginData);
       console.log('✅ Login successful - FULL RESPONSE:', response.data);
       console.log('👤 User object from backend:', response.data.user);
@@ -82,8 +87,13 @@ const AuthPage = ({ onLogin }) => {
       }, 300);
     } catch (error) {
       console.error('❌ Login error:', error);
-      console.error('Error response:', error.response);
-      toast.error(error.response?.data?.detail || 'Login failed');
+      console.error('❌ Error response:', error.response);
+      console.error('❌ Error message:', error.message);
+      console.error('❌ Error config:', error.config);
+      
+      const errorMessage = error.response?.data?.detail || error.message || 'Login failed';
+      console.error('❌ Showing error to user:', errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
