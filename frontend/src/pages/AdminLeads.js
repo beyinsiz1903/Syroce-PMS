@@ -81,8 +81,7 @@ const AdminLeads = ({ user, tenant, onLogout }) => {
 
   useEffect(() => {
     loadLeads();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [statusFilter, search, followUpOnly]);
 
   const handleUpdate = async (leadId, newStatus) => {
     setUpdatingId(leadId);
