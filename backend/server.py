@@ -33022,9 +33022,14 @@ async def upgrade_subscription(
         raise HTTPException(status_code=404, detail="Tenant not found")
     
     current_tier = tenant.get('subscription_tier', 'basic')
+    tier_map = {"pro": "professional", "ultra": "enterprise"}
+    normalized_current = tier_map.get(current_tier, current_tier)
     
-    if SubscriptionTier(current_tier) == new_tier:
-        raise HTTPException(status_code=400, detail="Already on this tier")
+    try:
+        if SubscriptionTier(normalized_current) == new_tier:
+            raise HTTPException(status_code=400, detail="Already on this tier")
+    except ValueError:
+        pass
     
     plan = SUBSCRIPTION_PLANS.get(new_tier)
     if not plan:
@@ -33033,6 +33038,9 @@ async def upgrade_subscription(
     # Calculate price
     amount = plan.price_yearly if billing_cycle == 'yearly' else plan.price_monthly
     
+    # Get default modules for new tier
+    new_modules = get_plan_default_modules(new_tier.value)
+
     # Update subscription
     await db.tenants.update_one(
         {'id': current_user.tenant_id},
@@ -33040,6 +33048,7 @@ async def upgrade_subscription(
             'subscription_tier': new_tier.value,
             'subscription_status': 'active',
             'billing_cycle': billing_cycle,
+            'modules': new_modules,
             'subscription_valid_until': (datetime.now(timezone.utc) + timedelta(days=365 if billing_cycle == 'yearly' else 30)).isoformat(),
             'last_billing_date': datetime.now(timezone.utc).isoformat()
         }}
