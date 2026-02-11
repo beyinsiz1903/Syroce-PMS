@@ -482,6 +482,18 @@ function App() {
             }
           />
           <Route
+            path="/app/ai"
+            element={
+              isAuthenticated ? (
+                <Suspense fallback={<LoadingFallback />}>
+                  <AIModule user={user} tenant={tenant} onLogout={handleLogout} />
+                </Suspense>
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
             path="/pms"
             element={
               isAuthenticated ? (
