@@ -148,7 +148,8 @@
     "dirtyRooms": "Kirli Odalar",
     "maintenanceRooms": "Bakımdaki Odalar",
     "averageDailyRate": "Ortalama Günlük Oran",
-    "revPAR": "Oda Başı Gelir"
+    "revPAR": "Oda Başı Gelir",
+    "overdue": "Vadesi Geçen"
   },
   "pms": {
     "title": "Otel Yönetim Sistemi",

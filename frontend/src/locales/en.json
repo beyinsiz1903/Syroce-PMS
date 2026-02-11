@@ -148,7 +148,8 @@
     "dirtyRooms": "Dirty Rooms",
     "maintenanceRooms": "Maintenance Rooms",
     "averageDailyRate": "Average Daily Rate",
-    "revPAR": "RevPAR"
+    "revPAR": "RevPAR",
+    "overdue": "Overdue"
   },
   "pms": {
     "title": "Property Management System",
