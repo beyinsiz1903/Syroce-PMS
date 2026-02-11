@@ -1228,6 +1228,18 @@ function App() {
             }
           />
           <Route
+            path="/app/admin/leads"
+            element={
+              isAuthenticated && user?.role === 'super_admin' ? (
+                <Suspense fallback={<LoadingFallback />}>
+                  <AdminLeads user={user} tenant={tenant} onLogout={handleLogout} />
+                </Suspense>
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
             path="/admin/module-report"
             element={
               isAuthenticated && user?.role === 'super_admin' ? (
