@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Layout from '@/components/Layout';
@@ -8,659 +8,662 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Settings as SettingsIcon, Mail, MessageSquare, Phone, Key, AlertCircle, Cloud, RefreshCw, Server, Trash2 } from 'lucide-react';
-import { normalizeFeatures } from '@/utils/featureFlags';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
+import {
+  Settings as SettingsIcon, Users, CreditCard, Shield, Plus, Trash2,
+  Building2, Zap, Crown, ArrowRight, CheckCircle2, Lock, AlertTriangle,
+  User, Mail, Phone, Key, ChevronRight, Sparkles, Star
+} from 'lucide-react';
+import { UpgradeBanner } from '@/components/UpgradeBanner';
+
+// ─── Plan Config ──────────────────────────────────
+const PLANS = {
+  basic: {
+    key: 'basic', label: 'Basic', price: 79, priceYearly: 790,
+    maxRooms: 15, maxUsers: 3,
+    icon: Building2, gradient: 'from-emerald-500 to-green-600',
+    lightBg: 'bg-emerald-50', borderColor: 'border-emerald-200',
+    features: ['PMS Core', 'Takvim', 'Dashboard', 'Misafir Yönetimi', 'Kat Hizmetleri', 'Temel Raporlar', 'Mobil PMS', 'Basit Fatura'],
+    description: 'Küçük oteller için (1-15 oda)',
+  },
+  professional: {
+    key: 'professional', label: 'Professional', price: 299, priceYearly: 2990,
+    maxRooms: 80, maxUsers: 15,
+    icon: Zap, gradient: 'from-blue-500 to-indigo-600',
+    lightBg: 'bg-blue-50', borderColor: 'border-blue-200',
+    features: ['Tüm Basic özellikler', 'Channel Manager', 'Folio Yönetimi', 'Gece Denetimi', 'Gelişmiş Fatura & Finans', 'Maliyet Yönetimi', 'Gelişmiş Raporlar', 'Mobil Housekeeping', 'Rate Management', 'Booking Engine'],
+    description: 'Orta ölçekli oteller (15-80 oda)',
+  },
+  enterprise: {
+    key: 'enterprise', label: 'Enterprise', price: 799, priceYearly: 7990,
+    maxRooms: null, maxUsers: null,
+    icon: Crown, gradient: 'from-purple-500 to-pink-600',
+    lightBg: 'bg-purple-50', borderColor: 'border-purple-200',
+    features: ['Tüm Professional özellikler', 'Revenue Management (RMS)', 'AI Modülleri (7 adet)', 'Multi-Property', 'Grup Satış & MICE', 'Satış CRM', 'Loyalty Programı', 'GM Dashboard', 'API Erişimi', 'White Label', 'Audit Trail'],
+    description: 'Büyük oteller ve zincirler (80+ oda)',
+  },
+};
+
+const ROLE_LABELS = {
+  admin: { label: 'Yönetici', color: 'bg-blue-100 text-blue-800' },
+  supervisor: { label: 'Süpervizör', color: 'bg-green-100 text-green-800' },
+  front_desk: { label: 'Resepsiyon', color: 'bg-yellow-100 text-yellow-800' },
+  housekeeping: { label: 'Kat Hizmetleri', color: 'bg-orange-100 text-orange-800' },
+  finance: { label: 'Muhasebe', color: 'bg-pink-100 text-pink-800' },
+  sales: { label: 'Satış', color: 'bg-indigo-100 text-indigo-800' },
+  revenue: { label: 'Revenue', color: 'bg-teal-100 text-teal-800' },
+  maintenance: { label: 'Teknik', color: 'bg-gray-100 text-gray-800' },
+  fnb: { label: 'F&B', color: 'bg-red-100 text-red-800' },
+  spa: { label: 'Spa', color: 'bg-violet-100 text-violet-800' },
+  concierge: { label: 'Concierge', color: 'bg-cyan-100 text-cyan-800' },
+  night_auditor: { label: 'Gece Denetçisi', color: 'bg-slate-100 text-slate-800' },
+  staff: { label: 'Personel', color: 'bg-neutral-100 text-neutral-800' },
+  super_admin: { label: 'Super Admin', color: 'bg-purple-100 text-purple-800' },
+};
 
 const Settings = ({ user, tenant, onLogout }) => {
-  const plan =
-    tenant?.subscription_plan ||
-    tenant?.plan ||
-    tenant?.subscription_tier ||
-    'core_small_hotel';
+  const [activeTab, setActiveTab] = useState('team');
 
-  const isLite = plan === 'pms_lite';
-  const features = normalizeFeatures(tenant?.features || {});
-
-  const [integrations, setIntegrations] = useState({
-    sendgrid: { enabled: false, api_key: '' },
-    twilio: { enabled: false, account_sid: '', auth_token: '', phone_number: '' },
-    whatsapp: { enabled: false, account_sid: '', auth_token: '' }
-  });
-
+  // Team state
+  const [team, setTeam] = useState([]);
+  const [teamLoading, setTeamLoading] = useState(true);
+  const [teamMeta, setTeamMeta] = useState({ tier: 'basic', allowed_roles: ['admin'], max_users: 3, can_add: true });
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newMember, setNewMember] = useState({ email: '', name: '', phone: '', role: 'front_desk', password: '' });
   const [saving, setSaving] = useState(false);
-  const [bookingCreds, setBookingCreds] = useState({
-    property_id: '',
-    username: '',
-    password: '',
-    settings: { base_url: '' }
-  });
-  const [bookingLoading, setBookingLoading] = useState(false);
-  const [bookingLogs, setBookingLogs] = useState([]);
-  const [ariRoom, setAriRoom] = useState({
-    room_code: 'DLX',
-    rate_plan: 'BAR',
-    date: new Date().toISOString().slice(0, 10),
-    price: 150,
-    currency: 'EUR',
-    min_stay: 1,
-    closed: false
-  });
-  const [roomMappings, setRoomMappings] = useState([]);
-  const [newMapping, setNewMapping] = useState({
-    channel_room_type: '',
-    pms_room_type: ''
-  });
 
-  const saveIntegration = async (type, config) => {
+  // Subscription state
+  const [subscription, setSubscription] = useState(null);
+  const [billingCycle, setBillingCycle] = useState('monthly');
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [selectedUpgradePlan, setSelectedUpgradePlan] = useState(null);
+
+  const currentTier = useMemo(() => {
+    const t = tenant?.subscription_tier || 'basic';
+    if (t === 'pro') return 'professional';
+    if (t === 'ultra') return 'enterprise';
+    return t;
+  }, [tenant]);
+
+  const currentPlan = PLANS[currentTier] || PLANS.basic;
+  const PlanIcon = currentPlan.icon;
+
+  // ─── Load team ─────────────────────────────────
+  const loadTeam = async () => {
+    setTeamLoading(true);
+    try {
+      const res = await axios.get('/hotel/team');
+      setTeam(res.data?.users || []);
+      setTeamMeta({
+        tier: res.data?.tier || 'basic',
+        allowed_roles: res.data?.allowed_roles || ['admin'],
+        max_users: res.data?.max_users || 3,
+        can_add: res.data?.can_add !== false,
+      });
+    } catch (err) {
+      console.error('Team load failed', err);
+    } finally {
+      setTeamLoading(false);
+    }
+  };
+
+  // ─── Load subscription ─────────────────────────
+  const loadSubscription = async () => {
+    try {
+      const res = await axios.get('/subscription/current');
+      setSubscription(res.data);
+    } catch (err) {
+      console.error('Subscription load failed', err);
+    }
+  };
+
+  useEffect(() => {
+    loadTeam();
+    loadSubscription();
+  }, []);
+
+  // ─── Add team member ───────────────────────────
+  const handleAddMember = async () => {
+    if (!newMember.email || !newMember.name || !newMember.password) {
+      toast.error('Email, isim ve şifre zorunludur');
+      return;
+    }
     setSaving(true);
     try {
-      await axios.post(`/settings/integrations/${type}`, config);
-      toast.success(`${type} integration saved successfully!`);
-      setIntegrations({
-        ...integrations,
-        [type]: { ...integrations[type], ...config }
-      });
-    } catch (error) {
-      toast.error('Failed to save integration settings');
+      const res = await axios.post('/hotel/team', newMember);
+      toast.success(res.data?.message || 'Ekip üyesi eklendi');
+      setShowAddModal(false);
+      setNewMember({ email: '', name: '', phone: '', role: 'front_desk', password: '' });
+      await loadTeam();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Ekip üyesi eklenemedi');
     } finally {
       setSaving(false);
     }
   };
 
-  const loadBookingCreds = async () => {
+  // ─── Update role ───────────────────────────────
+  const handleUpdateRole = async (userId, newRole) => {
     try {
-      setBookingLoading(true);
-      const res = await axios.get('/ota/booking/credentials');
-      setBookingCreds({
-        property_id: res.data.property_id || '',
-        username: res.data.username || '',
-        password: '',
-        settings: res.data.settings || { base_url: '' }
-      });
-    } catch (error) {
-      // 404 simply means not configured yet
+      await axios.patch(`/hotel/team/${userId}/role`, { role: newRole });
+      toast.success('Rol güncellendi');
+      await loadTeam();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Rol güncellenemedi');
+    }
+  };
+
+  // ─── Remove member ─────────────────────────────
+  const handleRemoveMember = async (userId, name) => {
+    if (!window.confirm(`${name} adlı kullanıcıyı silmek istediğinize emin misiniz?`)) return;
+    try {
+      await axios.delete(`/hotel/team/${userId}`);
+      toast.success('Ekip üyesi silindi');
+      await loadTeam();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Silinemedi');
+    }
+  };
+
+  // ─── Upgrade ───────────────────────────────────
+  const handleUpgrade = async () => {
+    if (!selectedUpgradePlan) return;
+    setSaving(true);
+    try {
+      const res = await axios.post(`/subscription/upgrade?new_tier=${selectedUpgradePlan}&billing_cycle=${billingCycle}`);
+      toast.success(res.data?.message || 'Plan yükseltildi!');
+      setShowUpgradeModal(false);
+      // Reload page to get new modules
+      window.location.reload();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Yükseltme başarısız');
     } finally {
-      setBookingLoading(false);
+      setSaving(false);
     }
   };
 
-  const loadBookingLogs = async () => {
-    try {
-      const res = await axios.get('/ota/booking/logs?limit=10');
-      setBookingLogs(res.data.items || []);
-    } catch (error) {
-      console.error('Failed to load booking logs', error);
-    }
-  };
-
-  useEffect(() => {
-    loadBookingCreds();
-    loadBookingLogs();
-    loadRoomMappings();
-  }, []);
-
-  const saveBookingCredentials = async () => {
-    try {
-      setBookingLoading(true);
-      await axios.post('/ota/booking/credentials', {
-        property_id: bookingCreds.property_id,
-        username: bookingCreds.username,
-        password: bookingCreds.password,
-        settings: bookingCreds.settings
-      });
-      toast.success('Booking.com credentials saved');
-      await loadBookingCreds();
-    } catch (error) {
-      toast.error('Failed to save Booking.com credentials');
-    } finally {
-      setBookingLoading(false);
-    }
-  };
-
-  const triggerAriPush = async () => {
-    try {
-      await axios.post('/ota/booking/ari/push', { rooms: [ariRoom] });
-      toast.success('ARI push queued');
-      loadBookingLogs();
-    } catch (error) {
-      toast.error('ARI push failed');
-    }
-  };
-
-  const triggerReservationPull = async () => {
-    try {
-      await axios.post('/ota/booking/reservations/pull');
-      toast.success('Reservation pull queued');
-      loadBookingLogs();
-    } catch (error) {
-      toast.error('Reservation pull failed');
-    }
-  };
-
-  const loadRoomMappings = async () => {
-    try {
-      const res = await axios.get('/channel-manager/room-mappings');
-      setRoomMappings(res.data.mappings || []);
-    } catch (error) {
-      console.error('Failed to load room mappings', error);
-    }
-  };
-
-  const addRoomMapping = async () => {
-    try {
-      await axios.post('/channel-manager/room-mappings', {
-        channel_name: 'booking',
-        channel_room_type: newMapping.channel_room_type,
-        pms_room_type: newMapping.pms_room_type
-      });
-      toast.success('Room mapping added');
-      setNewMapping({ channel_room_type: '', pms_room_type: '' });
-      await loadRoomMappings();
-    } catch (error) {
-      toast.error('Failed to add room mapping');
-    }
-  };
-  if (isLite) {
-    return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="settings">
-        <div className="p-6 space-y-6 max-w-4xl mx-auto">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Ayarlar (PMS Lite)</h1>
-            <p className="mt-1 text-sm text-gray-600">
-              Otel bilgileriniz ve temel kullanıcı yönetimi.
-            </p>
-          </div>
-
-          {/* Otel Bilgileri */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Otel Bilgileri</CardTitle>
-              <CardDescription>İsim, adres ve iletişim bilgileri</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div>
-                <Label>Otel Adı</Label>
-                <Input value={tenant?.property_name || ''} readOnly />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <Label>Telefon</Label>
-                  <Input value={tenant?.phone || ''} readOnly />
-                </div>
-                <div>
-                  <Label>E-posta</Label>
-                  <Input value={tenant?.email || ''} readOnly />
-                </div>
-              </div>
-              <div>
-                <Label>Adres</Label>
-                <Input value={tenant?.address || ''} readOnly />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Kullanıcılar (rol sadeleştirilmiş) */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Kullanıcılar</CardTitle>
-              <CardDescription>
-                Bu sürümde roller sade tutulmuştur.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-500 mb-3">
-                Roller bu sürümde sade tutulmuştur.
-              </p>
-              {/* Kullanıcı yönetimi bileşeni buraya bağlanacak */}
-            </CardContent>
-              {/* Kullanıcı yönetimi bileşeni buraya bağlanacak */}
-
-          </Card>
-
-          <div className="flex justify-end">
-            <Button variant="outline" onClick={onLogout}>
-              Çıkış Yap
-            </Button>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
-
-
-  const removeRoomMapping = async (mappingId) => {
-    try {
-      await axios.delete(`/channel-manager/room-mappings/${mappingId}`);
-      toast.success('Room mapping removed');
-      await loadRoomMappings();
-    } catch (error) {
-      toast.error('Failed to remove room mapping');
-    }
-  };
+  // Available upgrade tiers
+  const upgradeTiers = useMemo(() => {
+    const tierOrder = ['basic', 'professional', 'enterprise'];
+    const currentIdx = tierOrder.indexOf(currentTier);
+    return tierOrder.filter((_, i) => i > currentIdx);
+  }, [currentTier]);
 
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="settings">
-      <div className="p-6 space-y-6">
+      <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold flex items-center gap-3">
-              <SettingsIcon className="w-8 h-8 text-blue-600" />
-              Settings & Integrations
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              <SettingsIcon className="w-6 h-6 text-gray-600" />
+              Ayarlar
             </h1>
-            <p className="text-gray-600 mt-2">Configure external services and API integrations</p>
+            <p className="text-sm text-gray-500 mt-1">Ekip yönetimi, plan ve abonelik ayarları</p>
+          </div>
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${currentPlan.borderColor} ${currentPlan.lightBg}`}>
+            <PlanIcon className="w-4 h-4" />
+            <span className="text-sm font-semibold">{currentPlan.label}</span>
           </div>
         </div>
 
-        <Tabs defaultValue="integrations" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="integrations">🔌 Integrations</TabsTrigger>
-            <TabsTrigger value="general">⚙️ General</TabsTrigger>
-            <TabsTrigger value="ota">🌐 OTA</TabsTrigger>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="team" className="flex items-center gap-1.5">
+              <Users className="w-4 h-4" /> Ekip
+            </TabsTrigger>
+            <TabsTrigger value="plan" className="flex items-center gap-1.5">
+              <CreditCard className="w-4 h-4" /> Plan & Abonelik
+            </TabsTrigger>
+            <TabsTrigger value="hotel" className="flex items-center gap-1.5">
+              <Building2 className="w-4 h-4" /> Otel Bilgileri
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="integrations" className="space-y-4">
-            {/* SendGrid Email */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Mail className="w-5 h-5" />
-                  SendGrid Email Service
-                </CardTitle>
-                <CardDescription>
-                  Configure SendGrid for sending emails to guests
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                  <div className="text-sm font-semibold text-blue-900 mb-2">📖 How to get API Key:</div>
-                  <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside">
-                    <li>Go to <a href="https://sendgrid.com" target="_blank" rel="noopener" className="text-blue-600 underline">sendgrid.com</a> and sign up/login</li>
-                    <li>Navigate to Settings → API Keys</li>
-                    <li>Click "Create API Key"</li>
-                    <li>Give it a name and select "Full Access"</li>
-                    <li>Copy the API key and paste below</li>
-                  </ol>
-                </div>
-
-                <div>
-                  <Label>SendGrid API Key</Label>
-                  <Input 
-                    type="password"
-                    value={integrations.sendgrid.api_key}
-                    onChange={(e) => setIntegrations({
-                      ...integrations,
-                      sendgrid: { ...integrations.sendgrid, api_key: e.target.value }
-                    })}
-                    placeholder="SG.xxxxxxxxxxxxxxxxxxxxxxxxx"
-                  />
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <Button 
-                    onClick={() => saveIntegration('sendgrid', integrations.sendgrid)}
-                    disabled={saving || !integrations.sendgrid.api_key}
-                  >
-                    <Key className="w-4 h-4 mr-2" />
-                    Save SendGrid Config
-                  </Button>
-                  <Badge variant={integrations.sendgrid.enabled ? "success" : "secondary"}>
-                    {integrations.sendgrid.enabled ? 'Active' : 'Not Configured'}
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Twilio SMS */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Phone className="w-5 h-5" />
-                  Twilio SMS Service
-                </CardTitle>
-                <CardDescription>
-                  Configure Twilio for sending SMS messages
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-                  <div className="text-sm font-semibold text-purple-900 mb-2">📖 How to get Twilio Credentials:</div>
-                  <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside">
-                    <li>Go to <a href="https://twilio.com" target="_blank" rel="noopener" className="text-purple-600 underline">twilio.com</a> and sign up/login</li>
-                    <li>Go to Console Dashboard</li>
-                    <li>Copy Account SID and Auth Token</li>
-                    <li>Get a phone number from Phone Numbers → Buy a Number</li>
-                    <li>Paste all credentials below</li>
-                  </ol>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Account SID</Label>
-                    <Input 
-                      value={integrations.twilio.account_sid}
-                      onChange={(e) => setIntegrations({
-                        ...integrations,
-                        twilio: { ...integrations.twilio, account_sid: e.target.value }
-                      })}
-                      placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxx"
-                    />
-                  </div>
-                  <div>
-                    <Label>Auth Token</Label>
-                    <Input 
-                      type="password"
-                      value={integrations.twilio.auth_token}
-                      onChange={(e) => setIntegrations({
-                        ...integrations,
-                        twilio: { ...integrations.twilio, auth_token: e.target.value }
-                      })}
-                      placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxx"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <Label>Phone Number</Label>
-                    <Input 
-                      value={integrations.twilio.phone_number}
-                      onChange={(e) => setIntegrations({
-                        ...integrations,
-                        twilio: { ...integrations.twilio, phone_number: e.target.value }
-                      })}
-                      placeholder="+1234567890"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <Button 
-                    onClick={() => saveIntegration('twilio', integrations.twilio)}
-                    disabled={saving || !integrations.twilio.account_sid || !integrations.twilio.auth_token}
-                  >
-                    <Key className="w-4 h-4 mr-2" />
-                    Save Twilio Config
-                  </Button>
-                  <Badge variant={integrations.twilio.enabled ? "success" : "secondary"}>
-                    {integrations.twilio.enabled ? 'Active' : 'Not Configured'}
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* WhatsApp */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="w-5 h-5" />
-                  WhatsApp Business API
-                </CardTitle>
-                <CardDescription>
-                  Configure WhatsApp for sending messages via Twilio
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                  <div className="text-sm font-semibold text-green-900 mb-2">📖 How to setup WhatsApp:</div>
-                  <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside">
-                    <li>WhatsApp Business API requires Twilio credentials (configure above first)</li>
-                    <li>Go to Twilio Console → Messaging → WhatsApp Senders</li>
-                    <li>Follow the setup wizard to connect your WhatsApp Business account</li>
-                    <li>Once approved, use the same Twilio credentials</li>
-                  </ol>
-                </div>
-
-                <div className="bg-amber-50 p-3 rounded-lg border border-amber-200 flex items-start gap-2">
-                  <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <div className="text-sm text-amber-900">
-                    <strong>Note:</strong> WhatsApp Business API requires approval from Meta/Facebook. This process can take several days.
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <Badge variant={integrations.whatsapp.enabled ? "success" : "secondary"}>
-                    {integrations.whatsapp.enabled ? 'Active' : 'Use Twilio Credentials'}
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Info Card */}
-            <Card className="border-blue-200 bg-blue-50">
-              <CardContent className="pt-6">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-6 h-6 text-blue-600 flex-shrink-0" />
-                  <div className="text-sm text-gray-700 space-y-2">
-                    <p className="font-semibold text-blue-900">💡 Integration Tips:</p>
-                    <ul className="list-disc list-inside space-y-1">
-                      <li>All API keys are encrypted and stored securely</li>
-                      <li>Test your integrations in the Messages module after configuration</li>
-                      <li>You can disable integrations anytime by clearing the API keys</li>
-                      <li>For production use, consider setting up separate API keys with restricted permissions</li>
-                    </ul>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="general">
-            <Card>
-              <CardHeader>
-                <CardTitle>General Settings</CardTitle>
-                <CardDescription>Coming soon...</CardDescription>
-              </CardHeader>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="ota" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Cloud className="w-5 h-5" />
-                  Booking.com Credentials
-                </CardTitle>
-                <CardDescription>
-                  Store property credentials to enable ARI push and reservation sync
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label>Property ID</Label>
-                    <Input
-                      value={bookingCreds.property_id}
-                      onChange={(e) => setBookingCreds({ ...bookingCreds, property_id: e.target.value })}
-                      placeholder="1234567"
-                    />
-                  </div>
-                  <div>
-                    <Label>Base URL</Label>
-                    <Input
-                      value={bookingCreds.settings?.base_url || ''}
-                      onChange={(e) =>
-                        setBookingCreds({
-                          ...bookingCreds,
-                          settings: { ...bookingCreds.settings, base_url: e.target.value }
-                        })
-                      }
-                      placeholder="https://distribution.booking.com"
-                    />
-                  </div>
-                  <div>
-                    <Label>Username</Label>
-                    <Input
-                      value={bookingCreds.username}
-                      onChange={(e) => setBookingCreds({ ...bookingCreds, username: e.target.value })}
-                      placeholder="api_user"
-                    />
-                  </div>
-                  <div>
-                    <Label>Password</Label>
-                    <Input
-                      type="password"
-                      value={bookingCreds.password}
-                      onChange={(e) => setBookingCreds({ ...bookingCreds, password: e.target.value })}
-                      placeholder="********"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Button onClick={saveBookingCredentials} disabled={bookingLoading}>
-                    {bookingLoading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Key className="w-4 h-4 mr-2" />}
-                    Save Credentials
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={loadBookingCreds}>
-                    Reload
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Server className="w-4 h-4" />
-                    ARI Push
-                  </CardTitle>
-                  <CardDescription>Send availability/rate updates to Booking.com</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label>Room Code</Label>
-                      <Input
-                        value={ariRoom.room_code}
-                        onChange={(e) => setAriRoom({ ...ariRoom, room_code: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <Label>Rate Plan</Label>
-                      <Input
-                        value={ariRoom.rate_plan}
-                        onChange={(e) => setAriRoom({ ...ariRoom, rate_plan: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <Label>Date</Label>
-                      <Input
-                        type="date"
-                        value={ariRoom.date}
-                        onChange={(e) => setAriRoom({ ...ariRoom, date: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <Label>Price ({ariRoom.currency})</Label>
-                      <Input
-                        type="number"
-                        value={ariRoom.price}
-                        onChange={(e) => setAriRoom({ ...ariRoom, price: Number(e.target.value) })}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Button onClick={triggerAriPush}>
-                      Push to Booking.com
-                    </Button>
-                    <Button variant="outline" onClick={triggerReservationPull}>
-                      Pull Reservations
-                    </Button>
-                  </div>
-                </CardContent>
+          {/* ═══════════ TEAM TAB ═══════════ */}
+          <TabsContent value="team" className="space-y-4">
+            {/* Team stats */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card className="p-4">
+                <div className="text-2xl font-bold">{team.length}</div>
+                <div className="text-xs text-gray-500">Toplam Üye</div>
               </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Latest OTA Logs</CardTitle>
-                  <CardDescription>Status of recent push/pull operations</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Button size="sm" variant="outline" onClick={loadBookingLogs}>
-                    Refresh Logs
-                  </Button>
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {bookingLogs.length === 0 ? (
-                      <p className="text-sm text-gray-500">No logs yet.</p>
-                    ) : (
-                      bookingLogs.map((log) => (
-                        <div key={log.id} className="border rounded p-3 text-sm">
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold capitalize">{log.event_type}</span>
-                            <Badge variant={log.status === 'success' ? 'success' : log.status === 'queued' ? 'secondary' : 'destructive'}>
-                              {log.status}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {log.created_at ? new Date(log.created_at).toLocaleString() : ''}
-                          </p>
-                          {log.message && <p className="text-xs mt-1">{log.message}</p>}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </CardContent>
+              <Card className="p-4">
+                <div className="text-2xl font-bold">{teamMeta.max_users === 999 ? '∞' : teamMeta.max_users}</div>
+                <div className="text-xs text-gray-500">Max Kullanıcı</div>
+              </Card>
+              <Card className="p-4">
+                <div className="text-2xl font-bold">{teamMeta.allowed_roles.length}</div>
+                <div className="text-xs text-gray-500">Kullanılabilir Rol</div>
+              </Card>
+              <Card className="p-4">
+                <div className="text-2xl font-bold capitalize">{teamMeta.tier}</div>
+                <div className="text-xs text-gray-500">Plan</div>
               </Card>
             </div>
 
+            {/* RBAC info banner */}
+            {teamMeta.tier === 'basic' && (
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-amber-800">Basic planda sadece "Yönetici" rolü kullanılabilir</p>
+                  <p className="text-xs text-amber-600 mt-0.5">Resepsiyon, Kat Hizmetleri, Muhasebe gibi departman rolleri için Professional plana yükseltin.</p>
+                  <button onClick={() => { setActiveTab('plan'); }} className="text-xs font-bold text-amber-700 mt-1 hover:underline flex items-center gap-1">
+                    Planı yükselt <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Add member button */}
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Ekip Üyeleri</h2>
+              <Button
+                size="sm"
+                onClick={() => setShowAddModal(true)}
+                disabled={!teamMeta.can_add}
+              >
+                <Plus className="w-4 h-4 mr-1" />
+                Üye Ekle
+                {!teamMeta.can_add && <Lock className="w-3 h-3 ml-1" />}
+              </Button>
+            </div>
+
+            {!teamMeta.can_add && (
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+                Kullanıcı limitine ulaştınız ({teamMeta.max_users}). Daha fazla üye eklemek için planınızı yükseltin.
+              </div>
+            )}
+
+            {/* Team list */}
+            <Card>
+              <CardContent className="p-0">
+                {teamLoading ? (
+                  <div className="p-8 text-center text-gray-400">Yükleniyor...</div>
+                ) : team.length === 0 ? (
+                  <div className="p-8 text-center text-gray-400">Henüz ekip üyesi yok</div>
+                ) : (
+                  <div className="divide-y">
+                    {team.map((member) => {
+                      const roleInfo = ROLE_LABELS[member.role] || { label: member.role, color: 'bg-gray-100 text-gray-800' };
+                      const isCurrentUser = member.id === user?.id;
+                      return (
+                        <div key={member.id} className="flex items-center justify-between px-4 py-3 hover:bg-gray-50/50">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center text-sm font-bold text-gray-600">
+                              {(member.name || '?')[0].toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-gray-900 truncate">{member.name}</span>
+                                {isCurrentUser && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100">Siz</span>}
+                              </div>
+                              <span className="text-xs text-gray-400">{member.email}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {/* Role selector */}
+                            <select
+                              value={member.role}
+                              onChange={(e) => handleUpdateRole(member.id, e.target.value)}
+                              disabled={isCurrentUser || member.role === 'super_admin'}
+                              className={`text-xs px-2 py-1 rounded-lg border ${roleInfo.color} font-medium cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed`}
+                            >
+                              {teamMeta.allowed_roles.map((r) => (
+                                <option key={r} value={r}>{ROLE_LABELS[r]?.label || r}</option>
+                              ))}
+                              {/* Show current role even if not in allowed list */}
+                              {!teamMeta.allowed_roles.includes(member.role) && member.role !== 'super_admin' && (
+                                <option value={member.role}>{ROLE_LABELS[member.role]?.label || member.role}</option>
+                              )}
+                              {member.role === 'super_admin' && (
+                                <option value="super_admin">Super Admin</option>
+                              )}
+                            </select>
+                            {/* Delete */}
+                            {!isCurrentUser && member.role !== 'super_admin' && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1"
+                                onClick={() => handleRemoveMember(member.id, member.name)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Roles info */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Shield className="w-4 h-4" /> Kullanılabilir Roller ({teamMeta.tier})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-2">
+                  {teamMeta.allowed_roles.map((r) => {
+                    const info = ROLE_LABELS[r] || { label: r, color: 'bg-gray-100 text-gray-800' };
+                    return (
+                      <span key={r} className={`text-xs px-2.5 py-1 rounded-full ${info.color} font-medium`}>
+                        {info.label}
+                      </span>
+                    );
+                  })}
+                </div>
+                {teamMeta.tier !== 'enterprise' && (
+                  <p className="text-[11px] text-gray-400 mt-2">
+                    Daha fazla rol için {teamMeta.tier === 'basic' ? 'Professional' : 'Enterprise'} plana yükseltin
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ═══════════ PLAN & SUBSCRIPTION TAB ═══════════ */}
+          <TabsContent value="plan" className="space-y-4">
+            {/* Current plan card */}
+            <Card className={`border-2 ${currentPlan.borderColor}`}>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className={`p-3 rounded-2xl bg-gradient-to-br ${currentPlan.gradient} text-white shadow-lg`}>
+                      <PlanIcon className="w-8 h-8" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-gray-900">{currentPlan.label} Plan</h3>
+                      <p className="text-sm text-gray-500">{currentPlan.description}</p>
+                      <div className="flex items-center gap-4 mt-2 text-sm">
+                        <span className="text-gray-600">
+                          <strong>{subscription?.rooms_count || 0}</strong> / {currentPlan.maxRooms || '∞'} oda
+                        </span>
+                        <span className="text-gray-600">
+                          <strong>{subscription?.users_count || 0}</strong> / {currentPlan.maxUsers || '∞'} kullanıcı
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-3xl font-bold text-gray-900">{currentPlan.price}€</p>
+                    <p className="text-xs text-gray-400">/ ay</p>
+                    {subscription?.status && (
+                      <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full mt-1 ${subscription.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        <CheckCircle2 className="w-3 h-3" />
+                        {subscription.status === 'active' ? 'Aktif' : subscription.status}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Plan comparison / upgrade cards */}
+            {upgradeTiers.length > 0 && (
+              <>
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-amber-500" />
+                  Planınızı Yükseltin
+                </h2>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  {upgradeTiers.map((tierKey) => {
+                    const plan = PLANS[tierKey];
+                    const Icon = plan.icon;
+                    return (
+                      <Card key={tierKey} className={`border-2 hover:shadow-lg transition-all cursor-pointer group ${plan.borderColor}`}
+                        onClick={() => { setSelectedUpgradePlan(tierKey); setShowUpgradeModal(true); }}>
+                        <CardContent className="p-5">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className={`p-2.5 rounded-xl bg-gradient-to-br ${plan.gradient} text-white shadow-md`}>
+                              <Icon className="w-6 h-6" />
+                            </div>
+                            <div className="text-right">
+                              <p className="text-2xl font-bold text-gray-900">{plan.price}€</p>
+                              <p className="text-[10px] text-gray-400">/ay ({plan.priceYearly}€/yıl)</p>
+                            </div>
+                          </div>
+                          <h3 className="text-lg font-bold text-gray-900">{plan.label}</h3>
+                          <p className="text-xs text-gray-500 mb-3">{plan.description}</p>
+                          <ul className="space-y-1">
+                            {plan.features.slice(0, 6).map((f, i) => (
+                              <li key={i} className="flex items-center gap-1.5 text-xs text-gray-600">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+                                {f}
+                              </li>
+                            ))}
+                            {plan.features.length > 6 && (
+                              <li className="text-xs text-gray-400 pl-5">
+                                +{plan.features.length - 6} daha fazla özellik
+                              </li>
+                            )}
+                          </ul>
+                          <div className={`mt-4 w-full py-2 rounded-lg bg-gradient-to-r ${plan.gradient} text-white text-center text-sm font-bold flex items-center justify-center gap-1 group-hover:shadow-md transition`}>
+                            Yükselt <ArrowRight className="w-4 h-4" />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* Feature comparison */}
             <Card>
               <CardHeader>
-                <CardTitle>Room Mappings</CardTitle>
-                <CardDescription>Match Booking.com room codes to PMS room types</CardDescription>
+                <CardTitle className="text-sm">Mevcut Plan Özellikleri</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {currentPlan.features.map((f, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm text-gray-700">
+                      <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                      {f}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {currentTier === 'enterprise' && (
+              <div className="p-4 rounded-xl bg-purple-50 border border-purple-200 text-center">
+                <Crown className="w-8 h-8 text-purple-600 mx-auto mb-2" />
+                <p className="text-sm font-bold text-purple-800">En üst plandasınız!</p>
+                <p className="text-xs text-purple-600">Tüm modüller ve özellikler aktif.</p>
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ═══════════ HOTEL INFO TAB ═══════════ */}
+          <TabsContent value="hotel" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Otel Bilgileri</CardTitle>
+                <CardDescription>Otel adı, adres ve iletişim bilgileri</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <Label>Otel Adı</Label>
+                  <Input value={tenant?.property_name || ''} readOnly className="bg-gray-50" />
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <Label>Booking Room Code</Label>
-                    <Input
-                      value={newMapping.channel_room_type}
-                      onChange={(e) => setNewMapping({ ...newMapping, channel_room_type: e.target.value })}
-                      placeholder="DLX"
-                    />
+                    <Label>Telefon</Label>
+                    <Input value={tenant?.phone || tenant?.contact_phone || ''} readOnly className="bg-gray-50" />
                   </div>
                   <div>
-                    <Label>PMS Room Type</Label>
-                    <Input
-                      value={newMapping.pms_room_type}
-                      onChange={(e) => setNewMapping({ ...newMapping, pms_room_type: e.target.value })}
-                      placeholder="Deluxe"
-                    />
+                    <Label>E-posta</Label>
+                    <Input value={tenant?.email || tenant?.contact_email || ''} readOnly className="bg-gray-50" />
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    onClick={addRoomMapping}
-                    disabled={!newMapping.channel_room_type || !newMapping.pms_room_type}
-                  >
-                    Add Mapping
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={loadRoomMappings}>
-                    Refresh
-                  </Button>
+                <div>
+                  <Label>Adres</Label>
+                  <Input value={tenant?.address || ''} readOnly className="bg-gray-50" />
                 </div>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {roomMappings.length === 0 ? (
-                    <p className="text-sm text-gray-500">No mappings yet.</p>
-                  ) : (
-                    roomMappings.map((mapping) => (
-                      <div key={mapping.id} className="border rounded p-3 text-sm flex items-center justify-between">
-                        <div>
-                          <p className="font-semibold">
-                            {mapping.channel_room_type} → {mapping.pms_room_type}
-                          </p>
-                          <p className="text-xs text-gray-500">{mapping.channel_name || 'Booking.com'}</p>
-                        </div>
-                        <Button size="icon" variant="ghost" onClick={() => removeRoomMapping(mapping.id)}>
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ))
-                  )}
+                <div>
+                  <Label>Lokasyon</Label>
+                  <Input value={tenant?.location || ''} readOnly className="bg-gray-50" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Abonelik Bilgileri</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Plan</span>
+                  <span className="font-semibold">{currentPlan.label}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Durum</span>
+                  <span className="font-semibold text-green-600">{subscription?.status === 'active' ? 'Aktif' : subscription?.status || '—'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Oda Sayısı</span>
+                  <span className="font-semibold">{subscription?.rooms_count || 0} / {currentPlan.maxRooms || '∞'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Kullanıcı Sayısı</span>
+                  <span className="font-semibold">{subscription?.users_count || 0} / {currentPlan.maxUsers || '∞'}</span>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* ─── Add Member Modal ────────────────────────── */}
+      <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="w-5 h-5" /> Ekip Üyesi Ekle
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>İsim *</Label>
+              <Input value={newMember.name} onChange={(e) => setNewMember({ ...newMember, name: e.target.value })} placeholder="Ahmet Yılmaz" />
+            </div>
+            <div>
+              <Label>Email *</Label>
+              <Input type="email" value={newMember.email} onChange={(e) => setNewMember({ ...newMember, email: e.target.value })} placeholder="ahmet@otel.com" />
+            </div>
+            <div>
+              <Label>Telefon</Label>
+              <Input value={newMember.phone} onChange={(e) => setNewMember({ ...newMember, phone: e.target.value })} placeholder="+905551234567" />
+            </div>
+            <div>
+              <Label>Şifre *</Label>
+              <Input type="password" value={newMember.password} onChange={(e) => setNewMember({ ...newMember, password: e.target.value })} placeholder="Minimum 6 karakter" />
+            </div>
+            <div>
+              <Label>Rol</Label>
+              <select
+                value={newMember.role}
+                onChange={(e) => setNewMember({ ...newMember, role: e.target.value })}
+                className="w-full border rounded-md px-3 py-2 text-sm"
+              >
+                {teamMeta.allowed_roles.map((r) => (
+                  <option key={r} value={r}>{ROLE_LABELS[r]?.label || r}</option>
+                ))}
+              </select>
+              {teamMeta.tier === 'basic' && (
+                <p className="text-[11px] text-amber-600 mt-1">Basic planda sadece Yönetici rolü kullanılabilir</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setShowAddModal(false)}>İptal</Button>
+              <Button onClick={handleAddMember} disabled={saving}>
+                {saving ? 'Ekleniyor...' : 'Ekle'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Upgrade Modal ───────────────────────────── */}
+      <Dialog open={showUpgradeModal} onOpenChange={setShowUpgradeModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-amber-500" /> Plan Yükselt
+            </DialogTitle>
+          </DialogHeader>
+          {selectedUpgradePlan && PLANS[selectedUpgradePlan] && (() => {
+            const plan = PLANS[selectedUpgradePlan];
+            const Icon = plan.icon;
+            const price = billingCycle === 'yearly' ? plan.priceYearly : plan.price;
+            const period = billingCycle === 'yearly' ? '/yıl' : '/ay';
+            return (
+              <div className="space-y-4">
+                <div className={`p-4 rounded-xl ${plan.lightBg} border ${plan.borderColor}`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-xl bg-gradient-to-br ${plan.gradient} text-white`}>
+                      <Icon className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-lg">{plan.label}</h3>
+                      <p className="text-xs text-gray-500">{plan.description}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Billing cycle toggle */}
+                <div className="flex items-center justify-center gap-3 p-3 bg-gray-50 rounded-lg">
+                  <button
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${billingCycle === 'monthly' ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
+                    onClick={() => setBillingCycle('monthly')}
+                  >Aylık</button>
+                  <button
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${billingCycle === 'yearly' ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
+                    onClick={() => setBillingCycle('yearly')}
+                  >
+                    Yıllık
+                    <span className="ml-1 text-[10px] text-green-600 font-bold">2 AY ÜCRETSİZ</span>
+                  </button>
+                </div>
+
+                <div className="text-center py-2">
+                  <p className="text-4xl font-bold text-gray-900">{price}€</p>
+                  <p className="text-sm text-gray-400">{period}</p>
+                </div>
+
+                <ul className="space-y-1.5">
+                  {plan.features.map((f, i) => (
+                    <li key={i} className="flex items-center gap-2 text-sm text-gray-700">
+                      <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setShowUpgradeModal(false)}>İptal</Button>
+                  <Button
+                    className={`bg-gradient-to-r ${plan.gradient} text-white hover:opacity-90`}
+                    onClick={handleUpgrade}
+                    disabled={saving}
+                  >
+                    {saving ? 'İşleniyor...' : `${plan.label} Plana Yükselt`}
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 };
