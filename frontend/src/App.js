@@ -132,8 +132,9 @@ console.log('🔍 Backend Configuration:', {
   baseURL: '/api'
 });
 
-// Use relative URL for same-origin requests (better for container routing)
-axios.defaults.baseURL = '/api';
+// Use environment variable for backend URL
+console.log('🔍 Setting axios.defaults.baseURL to:', BACKEND_URL);
+axios.defaults.baseURL = BACKEND_URL;
 axios.defaults.timeout = 30000;
 
 // Setup axios interceptor for token and caching
