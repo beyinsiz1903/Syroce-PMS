@@ -32812,7 +32812,8 @@ class SubscriptionUpdateRequest(BaseModel):
 
 from subscription_models import (
     SubscriptionTier, SubscriptionPlan, SUBSCRIPTION_PLANS,
-    has_feature_access, get_feature_comparison, FeatureFlag
+    has_feature_access, get_feature_comparison, FeatureFlag,
+    PLAN_MODULE_DEFAULTS, get_plan_default_modules, get_all_module_keys
 )
 
 
