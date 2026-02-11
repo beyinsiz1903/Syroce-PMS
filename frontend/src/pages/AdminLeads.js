@@ -44,12 +44,39 @@ const fmtDate = (iso) => {
   });
 };
 
-const copyLeadId = async (id) => {
+const sanitizePhone = (phone) => {
+  if (!phone) return '';
+  return phone.replace(/\s+/g, '').replace(/[^\d+]/g, '');
+};
+
+const openLeadWhatsApp = (lead) => {
+  if (!lead.phone) {
+    toast.error('Telefon numarası yok');
+    return;
+  }
+  
+  const phone = sanitizePhone(lead.phone);
+  const message = `Merhaba ${lead.full_name}, PMS Lite demo talebiniz hakkında bilgi vermek istiyorum...`;
+  const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+  window.open(url, '_blank');
+};
+
+const copyLeadSummary = async (lead) => {
   try {
-    await navigator.clipboard.writeText(id);
-    toast.success("Lead ID kopyalandı");
+    const text = `
+Otel: ${lead.property_name || '-'}
+İsim: ${lead.full_name || '-'}
+Telefon: ${lead.phone || '-'}
+Oda: ${lead.rooms_count || '-'}
+Bölge: ${lead.location || '-'}
+Durum: ${statusLabel[lead.status] || lead.status}
+Not: ${lead.note || '-'}
+    `.trim();
+    
+    await navigator.clipboard.writeText(text);
+    toast.success('Lead bilgileri kopyalandı');
   } catch {
-    toast.error("Kopyalanamadı");
+    toast.error('Kopyalanamadı');
   }
 };
 
