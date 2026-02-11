@@ -129,13 +129,13 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 console.log('🔍 Backend Configuration:', {
   BACKEND_URL,
   usingRelativeURL: true,
-  baseURL: '/api'
 });
 
 // Use environment variable for backend URL
 console.log('🔍 Setting axios.defaults.baseURL to:', BACKEND_URL);
-// BACKEND_URL already includes '/api', so we shouldn't add it again in requests
-// Fix: use this directly without modification
+// Ensure baseURL is correctly set - this should point to the base of the API
+// BACKEND_URL should be the full URL to the API base, e.g. http://localhost:8001/api
+// Fix: Make sure requests to /auth/* don't result in /api/auth/*
 axios.defaults.baseURL = BACKEND_URL;
 axios.defaults.timeout = 30000;
 
