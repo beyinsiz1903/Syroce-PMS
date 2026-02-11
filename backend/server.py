@@ -32990,11 +32990,17 @@ async def get_current_subscription(
         raise HTTPException(status_code=404, detail="Tenant not found")
     
     subscription_tier = tenant.get('subscription_tier', 'basic')
-    plan = SUBSCRIPTION_PLANS.get(SubscriptionTier(subscription_tier))
+    # Handle legacy tier names
+    tier_map = {"pro": "professional", "ultra": "enterprise"}
+    normalized_tier = tier_map.get(subscription_tier, subscription_tier)
+    try:
+        plan = SUBSCRIPTION_PLANS.get(SubscriptionTier(normalized_tier))
+    except ValueError:
+        plan = SUBSCRIPTION_PLANS.get(SubscriptionTier.BASIC)
     
     return {
         'tenant_id': current_user.tenant_id,
-        'tier': subscription_tier,
+        'tier': normalized_tier,
         'plan': plan.model_dump() if plan else None,
         'status': tenant.get('subscription_status', 'active'),
         'valid_until': tenant.get('subscription_valid_until'),
