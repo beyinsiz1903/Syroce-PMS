@@ -101,6 +101,8 @@ agent_communication:
   - message: "Successfully tested the Basic Hotel Navigation. Encountered technical issues with the testing script that prevented testing the remaining test cases. The Basic hotel UI shows correct navigation items (Dashboard, Takvim, PMS, Raporlar, Ayarlar), displays the Basic badge correctly, and shows an upgrade teaser for Professional plan. Screenshot evidence confirms the implementation is working as expected. Further testing is needed for Professional and Enterprise hotel navigation, as well as the Super Admin features."
   - agent: "testing"
   - message: "Found a configuration issue: the frontend's .env file has REACT_APP_BACKEND_URL set to 'https://unitcare-1.preview.emergentagent.com' but our tests are running against 'http://localhost:3000'. This mismatch likely causes authentication issues when trying to login multiple times in the test script. The backend is responding correctly to login requests, but the login redirection in the UI is failing due to this configuration issue."
+  - agent: "testing"
+  - message: "Completed comprehensive backend testing for hotel team management endpoints and subscription upgrade flow. All 13 test cases passed with 100% success rate. Tested: Basic hotel tier restrictions (admin only), Professional hotel expanded roles, RBAC validation, team member CRUD operations, and subscription upgrade from basic to professional tier. Backend APIs are fully functional and properly implement tier-based role restrictions. Used credentials: demo@butikotel.com/demo123 (basic), demo@grandcity.com/demo123 (professional). All endpoints responding correctly at https://unitcare-1.preview.emergentagent.com/api."
 
 backend:
   - task: "Hotel Team Management API Testing"
