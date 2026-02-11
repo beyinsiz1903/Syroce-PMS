@@ -32547,6 +32547,14 @@ async def create_tenant(
         or "core_small_hotel"
     )
 
+    # Determine subscription tier
+    tier = (payload.subscription_tier or "basic").lower()
+    if tier not in ("basic", "professional", "enterprise"):
+        tier = "basic"
+
+    # Get default modules for the selected tier
+    tier_modules = get_plan_default_modules(tier)
+
     # Create new tenant
     new_tenant = Tenant(
         property_name=payload.property_name,
@@ -32555,11 +32563,12 @@ async def create_tenant(
         address=payload.address,
         location=payload.location or "",
         description=payload.description or "",
-        subscription_tier="basic",
+        subscription_tier=tier,
         subscription_start_date=start_date.isoformat(),
         subscription_end_date=end_date.isoformat() if end_date else None,
         subscription_status="active",
         subscription_plan=normalized_plan,
+        modules=tier_modules,
     )
     
     tenant_dict = new_tenant.model_dump()
