@@ -35,7 +35,7 @@ import uuid
 import time
 
 # Configuration
-BACKEND_URL = "https://error-sweep-audit.preview.emergentagent.com/api"
+BACKEND_URL = "https://unitcare-1.preview.emergentagent.com/api"
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 

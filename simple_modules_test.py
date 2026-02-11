@@ -7,7 +7,7 @@ import requests
 import json
 
 def test_modules():
-    base_url = "https://error-sweep-audit.preview.emergentagent.com/api"
+    base_url = "https://unitcare-1.preview.emergentagent.com/api"
     
     # Login first
     print("🔐 Logging in...")

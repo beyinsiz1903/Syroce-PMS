@@ -12,7 +12,7 @@ import os
 from datetime import datetime, timedelta
 
 # Configuration
-BACKEND_URL = "https://error-sweep-audit.preview.emergentagent.com/api"
+BACKEND_URL = "https://unitcare-1.preview.emergentagent.com/api"
 TEST_EMAIL = "test@hotel.com"
 TEST_PASSWORD = "test123"
 

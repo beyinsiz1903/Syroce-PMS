@@ -6,7 +6,7 @@ Otel sahiplerini ve yöneticilerini "Vay be!" dedirtecek end-to-end hotel manage
 ## 📋 Ön Hazırlık
 1. Demo setup script'ini çalıştırın: `python demo_setup.py`
 2. Login credentials hazır olsun: demo@grandhotel.com / Demo123!
-3. Browser'ı https://error-sweep-audit.preview.emergentagent.com adresinde açın
+3. Browser'ı https://unitcare-1.preview.emergentagent.com adresinde açın
 
 ---
 

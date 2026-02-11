@@ -25,7 +25,7 @@ from datetime import datetime
 from typing import Dict, List, Any
 
 # Test Configuration
-BASE_URL = "https://error-sweep-audit.preview.emergentagent.com/api"
+BASE_URL = "https://unitcare-1.preview.emergentagent.com/api"
 TEST_USER = {
     "email": "demo@hotel.com", 
     "password": "demo123"
