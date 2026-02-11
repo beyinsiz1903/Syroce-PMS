@@ -19893,6 +19893,73 @@ async def send_ota_message(
     
     return {'message': 'Sent successfully'}
 
+# OTA Booking.com Integration Endpoints
+@api_router.get("/ota/booking/credentials")
+async def get_booking_credentials(current_user: User = Depends(get_current_user)):
+    """Get stored Booking.com credentials for this tenant"""
+    creds = await db.ota_booking_credentials.find_one(
+        {'tenant_id': current_user.tenant_id}, {'_id': 0, 'password': 0}
+    )
+    if not creds:
+        return {'property_id': '', 'username': '', 'settings': {'base_url': 'https://distribution.booking.com'}}
+    return creds
+
+@api_router.post("/ota/booking/credentials")
+async def save_booking_credentials(data: dict, current_user: User = Depends(get_current_user)):
+    """Save Booking.com credentials"""
+    creds = {
+        'tenant_id': current_user.tenant_id,
+        'property_id': data.get('property_id', ''),
+        'username': data.get('username', ''),
+        'settings': data.get('settings', {'base_url': 'https://distribution.booking.com'}),
+        'updated_at': datetime.now(timezone.utc).isoformat()
+    }
+    if data.get('password'):
+        creds['password'] = data['password']
+    await db.ota_booking_credentials.update_one(
+        {'tenant_id': current_user.tenant_id},
+        {'$set': creds},
+        upsert=True
+    )
+    return {'message': 'Credentials saved successfully'}
+
+@api_router.get("/ota/booking/logs")
+async def get_booking_logs(limit: int = 10, current_user: User = Depends(get_current_user)):
+    """Get OTA sync logs"""
+    logs = await db.ota_booking_logs.find(
+        {'tenant_id': current_user.tenant_id}, {'_id': 0}
+    ).sort('timestamp', -1).to_list(limit)
+    return {'items': logs}
+
+@api_router.post("/ota/booking/ari/push")
+async def push_ari_to_booking(data: dict, current_user: User = Depends(get_current_user)):
+    """Push ARI (Availability, Rates, Inventory) to Booking.com"""
+    rooms = data.get('rooms', [])
+    log_entry = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'action': 'ari_push',
+        'status': 'queued',
+        'details': f'ARI push for {len(rooms)} room(s)',
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    }
+    await db.ota_booking_logs.insert_one(log_entry)
+    return {'message': 'ARI push queued', 'log_id': log_entry['id']}
+
+@api_router.post("/ota/booking/reservations/pull")
+async def pull_reservations_from_booking(current_user: User = Depends(get_current_user)):
+    """Pull reservations from Booking.com"""
+    log_entry = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'action': 'reservation_pull',
+        'status': 'queued',
+        'details': 'Reservation pull from Booking.com',
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    }
+    await db.ota_booking_logs.insert_one(log_entry)
+    return {'message': 'Reservation pull queued', 'log_id': log_entry['id']}
+
 # 2. RMS
 @api_router.get("/rms/comp-set")
 async def get_comp_set(current_user: User = Depends(get_current_user)):
