@@ -66,13 +66,15 @@ const AuthPage = ({ onLogin }) => {
       localStorage.setItem('user', JSON.stringify(response.data.user));
       localStorage.setItem('tenant', response.data.tenant ? JSON.stringify(response.data.tenant) : 'null');
       
-      toast.success('Login successful!');
+      toast.success('Login successful! Redirecting...');
       
       // Then call onLogin
       onLogin(response.data.access_token, response.data.user, response.data.tenant);
       
-      // Navigate using React Router instead of full page reload
-      navigate('/');
+      // Use hard redirect to ensure state is fresh
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 500);
     } catch (error) {
       console.error('❌ Login error:', error);
       console.error('Error response:', error.response);
