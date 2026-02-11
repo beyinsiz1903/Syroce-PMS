@@ -1438,16 +1438,24 @@ def resolve_tenant_features(tenant_doc: Dict[str, Any]) -> Dict[str, bool]:
 
 
 async def load_tenant_doc(tenant_id: str) -> Optional[Dict[str, Any]]:
-    """tenant_id hem id alanı hem de _id(ObjectId) için çalışsın."""
+    """tenant_id hem id alanı hem de _id(ObjectId veya string) için çalışsın."""
     if not tenant_id:
         return None
     
-    # Try by 'id' field first
+    # Try by '_id' as string first (for UUID-style IDs)
+    doc = await db.tenants.find_one({"_id": tenant_id})
+    if doc:
+        # Convert _id to string and remove it
+        if "_id" in doc:
+            doc["_id"] = str(doc["_id"])
+        return doc
+    
+    # Try by 'id' field
     doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
     if doc:
         return doc
     
-    # Try by string _id (if tenant_id looks like ObjectId)
+    # Try by ObjectId (if tenant_id looks like 24-char ObjectId)
     try:
         from bson import ObjectId
         if len(tenant_id) == 24:
