@@ -290,9 +290,10 @@ function App() {
           localStorage.removeItem('tenant');
           localStorage.removeItem('modules');
           setIsAuthenticated(false);
+        })
+        .finally(() => {
           setLoading(false);
         });
-      setLoading(false);
     } else {
       console.log('ℹ️ No auth data found in localStorage');
       setLoading(false);
