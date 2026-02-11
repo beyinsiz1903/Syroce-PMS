@@ -3,7 +3,7 @@
 > Tarih: 2025-12-18
 > 
 > Ortamlar:
-> - Preview: https://app-audit-9.preview.emergentagent.com
+> - Preview: https://error-sweep-audit.preview.emergentagent.com
 > - Canlı: https://syroce.com
 > 
 > Önemli not: Preview ve canlı **farklı veritabanları** kullanabilir. Bu yüzden canlıda giriş yapan kullanıcılar preview’da 401 alabilir.

@@ -7,7 +7,7 @@ import requests
 import json
 
 # Configuration
-BACKEND_URL = "https://app-audit-9.preview.emergentagent.com/api"
+BACKEND_URL = "https://error-sweep-audit.preview.emergentagent.com/api"
 TEST_EMAIL = "test@hotel.com"
 TEST_PASSWORD = "test123"
 

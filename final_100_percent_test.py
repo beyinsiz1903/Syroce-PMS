@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
 
 # Configuration
-BASE_URL = "https://app-audit-9.preview.emergentagent.com/api"
+BASE_URL = "https://error-sweep-audit.preview.emergentagent.com/api"
 EMAIL = "demo@hotel.com"
 PASSWORD = "demo123"
 

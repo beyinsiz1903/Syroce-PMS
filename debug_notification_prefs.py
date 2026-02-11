@@ -8,7 +8,7 @@ import aiohttp
 import json
 import uuid
 
-BACKEND_URL = "https://app-audit-9.preview.emergentagent.com/api"
+BACKEND_URL = "https://error-sweep-audit.preview.emergentagent.com/api"
 
 async def debug_notification_prefs():
     session = aiohttp.ClientSession()

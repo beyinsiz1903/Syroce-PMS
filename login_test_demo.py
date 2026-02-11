@@ -31,7 +31,7 @@ import sys
 from datetime import datetime, timezone
 
 # Configuration
-BASE_URL = "https://app-audit-9.preview.emergentagent.com/api"
+BASE_URL = "https://error-sweep-audit.preview.emergentagent.com/api"
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 

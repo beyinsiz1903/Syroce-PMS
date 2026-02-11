@@ -21,7 +21,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Any, Optional
 
 # Configuration
-BACKEND_URL = "https://app-audit-9.preview.emergentagent.com/api"
+BACKEND_URL = "https://error-sweep-audit.preview.emergentagent.com/api"
 
 # Test user credentials
 TEST_USERS = [
