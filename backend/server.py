@@ -1306,6 +1306,51 @@ def has_permission(user_role: UserRole, permission: Permission) -> bool:
     """Check if a role has a specific permission"""
     return permission.value in ROLE_PERMISSIONS.get(user_role, [])
 
+
+# ─── Tier-based RBAC: which roles are allowed per subscription tier ───
+ROLES_BY_TIER: Dict[str, List[str]] = {
+    "basic": ["admin"],
+    "professional": ["admin", "supervisor", "front_desk", "housekeeping", "finance"],
+    "enterprise": [
+        "admin", "supervisor", "front_desk", "housekeeping",
+        "finance", "sales", "revenue", "maintenance", "fnb",
+        "spa", "concierge", "night_auditor", "staff"
+    ],
+}
+
+
+def is_role_allowed_for_tier(role: str, tier: str) -> bool:
+    """Check if a role is allowed for the given subscription tier"""
+    tier_lower = (tier or "basic").lower()
+    if tier_lower == "pro":
+        tier_lower = "professional"
+    if tier_lower == "ultra":
+        tier_lower = "enterprise"
+    allowed = ROLES_BY_TIER.get(tier_lower, ROLES_BY_TIER["basic"])
+    return role in allowed
+
+
+@api_router.get("/rbac/roles")
+async def get_available_roles(current_user: User = Depends(get_current_user)):
+    """Get available roles for the current tenant's subscription tier"""
+    tenant = await db.tenants.find_one({"id": current_user.tenant_id})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    tier = tenant.get("subscription_tier", "basic")
+    tier_lower = (tier or "basic").lower()
+    if tier_lower == "pro":
+        tier_lower = "professional"
+    if tier_lower == "ultra":
+        tier_lower = "enterprise"
+
+    allowed_roles = ROLES_BY_TIER.get(tier_lower, ROLES_BY_TIER["basic"])
+    return {
+        "tier": tier_lower,
+        "allowed_roles": allowed_roles,
+        "all_roles": [r.value for r in UserRole if r.value not in ("super_admin", "guest", "agency_admin", "agency_agent")],
+    }
+
 async def create_audit_log(
     tenant_id: str,
     user,  # User model instance
