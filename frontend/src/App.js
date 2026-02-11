@@ -134,6 +134,8 @@ console.log('🔍 Backend Configuration:', {
 
 // Use environment variable for backend URL
 console.log('🔍 Setting axios.defaults.baseURL to:', BACKEND_URL);
+// BACKEND_URL already includes '/api', so we shouldn't add it again in requests
+// Fix: use this directly without modification
 axios.defaults.baseURL = BACKEND_URL;
 axios.defaults.timeout = 30000;
 
