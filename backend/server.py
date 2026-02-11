@@ -3641,6 +3641,17 @@ async def login(data: UserLogin):
     user_doc = await db.users.find_one({'email': data.email})
     if user_doc:
         user_doc.pop('_id', None)  # Remove _id field
+        
+        # Ensure user has 'id' field
+        if 'id' not in user_doc:
+            import uuid
+            user_doc['id'] = str(uuid.uuid4())
+            # Update database with id field
+            await db.users.update_one(
+                {'email': data.email},
+                {'$set': {'id': user_doc['id']}}
+            )
+        
         print(f"✅ User found: {user_doc.get('name')} (ID: {user_doc.get('id')})")
         print(f"   Tenant ID: {user_doc.get('tenant_id')}")
     else:
