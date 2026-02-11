@@ -124,18 +124,19 @@ const LoadingFallback = () => (
   </div>
 );
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const RAW_BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '/api';
+// Ensure /api suffix for Kubernetes ingress routing
+const BACKEND_URL = RAW_BACKEND_URL.endsWith('/api')
+  ? RAW_BACKEND_URL
+  : RAW_BACKEND_URL.replace(/\/+$/, '') + '/api';
 
 console.log('🔍 Backend Configuration:', {
+  RAW_BACKEND_URL,
   BACKEND_URL,
-  usingRelativeURL: true,
 });
 
-// Use environment variable for backend URL
+// Use environment variable for backend URL with /api suffix
 console.log('🔍 Setting axios.defaults.baseURL to:', BACKEND_URL);
-// Ensure baseURL is correctly set - this should point to the base of the API
-// BACKEND_URL should be the full URL to the API base, e.g. http://localhost:8001/api
-// Fix: Make sure requests to /auth/* don't result in /api/auth/*
 axios.defaults.baseURL = BACKEND_URL;
 axios.defaults.timeout = 30000;
 
