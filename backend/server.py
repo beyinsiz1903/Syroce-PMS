@@ -4961,7 +4961,7 @@ async def ai_chat(
                         seen_ids.add(f['id'])
                         all_folios.append(f)
                     
-                    for f in folios:
+                for f in all_folios:
                         charges = await db.folio_charges.find({
                             "folio_id": f['id'], "voided": {"$ne": True}
                         }).to_list(50)
