@@ -182,42 +182,141 @@ const BasicReports = ({ user, tenant, onLogout }) => {
 
   const renderInsights = () => (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <div><h2 className="text-xl font-bold text-gray-900">Özet Yönetici Raporu</h2><p className="text-sm text-gray-500">Temel KPI'lar ve performans özeti</p></div>
+        <div><h2 className="text-xl font-bold text-gray-900">Insights</h2>
+        <p className="text-sm text-gray-500">Verilerinizle daha akıllı iş kararları alın. Ham verileri eyleme dönüştürülebilir bilgilere çevirin.</p></div>
         <Badge className="bg-green-100 text-green-700 border-green-200">Canlı</Badge>
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <KPICard title="Toplam Gelir" value={pc.month_revenue} prevValue={pc.prev_month_revenue} prevLabel={'Önceki ay: ' + formatCurrency(pc.prev_month_revenue)} icon={DollarSign} color="green" />
-        <KPICard title="Ort. ADR" value={s.adr} prevValue={pc.prev_month_adr} prevLabel={'Önceki ay: ' + formatCurrency(pc.prev_month_adr)} icon={TrendingUp} color="blue" />
-        <KPICard title="Toplam Geceleme" value={pc.month_bookings + ' Room Nights'} icon={BedDouble} color="purple" />
-        <KPICard title="Toplam Rezervasyon" value={pc.month_bookings} prevValue={pc.prev_month_bookings} prevLabel={'Önceki ay: ' + pc.prev_month_bookings} icon={BookOpen} color="cyan" />
-        <KPICard title="RevPar" value={s.revpar} icon={BarChart3} color="amber" />
-        <KPICard title="Doluluk Oranı" value={formatPercent(s.occupancy_percentage)} icon={Hotel} color="red" />
+
+      {/* Yönetici Raporları */}
+      <div>
+        <h3 className="text-base font-semibold text-gray-800 mb-1">Yönetici</h3>
+        <p className="text-xs text-gray-500 mb-3">Otel yöneticileri için temel KPI'ları takip edin, trend performansı değerlendirin ve stratejik kararlar alın.</p>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <button onClick={() => setActiveSection('insights_ozet')} className="text-left p-4 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-blue-300 transition-all group">
+            <div className="flex items-center gap-2 mb-2"><Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-600 border-blue-200">Geçmiş ve Uzman</Badge><Eye className="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-500" /></div>
+            <h4 className="font-semibold text-gray-900 text-sm">Özet Yönetici Raporu</h4>
+            <p className="text-xs text-gray-500 mt-1">Temel KPI'ları takip etmek için oluşturulmuştur. Toplam Gelir, ADR, RevPar, Doluluk Oranı ve daha fazlası.</p>
+          </button>
+          <button onClick={() => setActiveSection('doluluk')} className="text-left p-4 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-blue-300 transition-all group">
+            <div className="flex items-center gap-2 mb-2"><Badge variant="outline" className="text-[10px] bg-green-50 text-green-600 border-green-200">Geçmiş ve Tahmin</Badge><Eye className="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-500" /></div>
+            <h4 className="font-semibold text-gray-900 text-sm">Doluluk Oranı Raporu</h4>
+            <p className="text-xs text-gray-500 mt-1">Seçilen tarih aralığına göre doluluk oranlarını karşılaştırma yapar. Oda tipine göre detaylı kırılım sunar.</p>
+          </button>
+          <button onClick={() => setActiveSection('gelir')} className="text-left p-4 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-blue-300 transition-all group">
+            <div className="flex items-center gap-2 mb-2"><Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-600 border-purple-200">Hedef</Badge><Eye className="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-500" /></div>
+            <h4 className="font-semibold text-gray-900 text-sm">Hedef Raporu</h4>
+            <p className="text-xs text-gray-500 mt-1">Gelir hedeflerinizi ve gerçekleşen performansı karşılaştırın. Haftalık, aylık ve yıllık hedef takibi.</p>
+          </button>
+        </div>
       </div>
-      <div className="grid md:grid-cols-2 gap-4">
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Toplam Gelir & Rezervasyon Sayısı</CardTitle></CardHeader>
-          <CardContent><ResponsiveContainer width="100%" height={280}>
-            <ComposedChart data={data?.revenue_trend || []}>
+
+      {/* Karşılaştırma Raporları */}
+      <div>
+        <h3 className="text-base font-semibold text-gray-800 mb-1">Karşılaştırma</h3>
+        <p className="text-xs text-gray-500 mb-3">Performans karşılaştırmaları ile iş stratejinizi güçlendirin.</p>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <button onClick={() => setActiveSection('kaynaklar')} className="text-left p-4 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-blue-300 transition-all group">
+            <div className="flex items-center gap-2 mb-2"><Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-600 border-amber-200">Pickup</Badge><Eye className="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-500" /></div>
+            <h4 className="font-semibold text-gray-900 text-sm">Pickup Raporu</h4>
+            <p className="text-xs text-gray-500 mt-1">Rezervasyon akış hızını ve kanal performansını analiz edin. Kaynak bazlı gelir karşılaştırması.</p>
+          </button>
+          <button onClick={() => setActiveSection('oda_gelirleri')} className="text-left p-4 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-blue-300 transition-all group">
+            <div className="flex items-center gap-2 mb-2"><Badge variant="outline" className="text-[10px] bg-cyan-50 text-cyan-600 border-cyan-200">Geçmiş ve Tahmin</Badge><Eye className="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-500" /></div>
+            <h4 className="font-semibold text-gray-900 text-sm">Geçmiş ve Tutundurma Raporu</h4>
+            <p className="text-xs text-gray-500 mt-1">Oda tipi bazlı gelir analizi ve tutundurma raporu. Geçmiş performans karşılaştırması.</p>
+          </button>
+          <button onClick={() => setActiveSection('ulke')} className="text-left p-4 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-blue-300 transition-all group">
+            <div className="flex items-center gap-2 mb-2"><Badge variant="outline" className="text-[10px] bg-red-50 text-red-600 border-red-200">Pace</Badge><Eye className="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-500" /></div>
+            <h4 className="font-semibold text-gray-900 text-sm">Rezervasyon Akış Hızı Raporu</h4>
+            <p className="text-xs text-gray-500 mt-1">Ülke bazlı misafir dağılımı ve akış hızı analizi. Milliyet trendlerini takip edin.</p>
+          </button>
+        </div>
+      </div>
+
+      {/* Özet Yönetici Dashboard */}
+      <Card className="border-blue-100 bg-blue-50/30">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div><CardTitle className="text-base">Özet Yönetici Raporu</CardTitle><CardDescription>Temel KPI'lar ve performans özeti • Son 30 gün</CardDescription></div>
+            <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">Yayınlandı</Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            <KPICard title="Toplam Gelir" value={pc.month_revenue} prevValue={pc.prev_month_revenue} prevLabel={'Önceki ay: ' + formatCurrency(pc.prev_month_revenue)} icon={DollarSign} color="green" />
+            <KPICard title="Ort. ADR" value={s.adr} prevValue={pc.prev_month_adr} prevLabel={'Önceki ay: ' + formatCurrency(pc.prev_month_adr)} icon={TrendingUp} color="blue" />
+            <KPICard title="Toplam Geceleme" value={pc.month_bookings + ' Room Nights'} icon={BedDouble} color="purple" />
+            <KPICard title="Toplam Rezervasyon" value={pc.month_bookings} prevValue={pc.prev_month_bookings} prevLabel={'Önceki ay: ' + (pc.prev_month_bookings || 0)} icon={BookOpen} color="cyan" />
+            <KPICard title="RevPar" value={s.revpar} icon={BarChart3} color="amber" />
+            <KPICard title="Doluluk Oranı" value={formatPercent(s.occupancy_percentage)} icon={Hotel} color="red" />
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <Card className="shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-sm">Toplam Gelir & Rezervasyon Sayısı</CardTitle><div className="flex gap-2 mt-1"><button className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">Günlük</button><button className="text-[10px] px-2 py-0.5 rounded text-gray-400 hover:bg-gray-100">Haftalık</button><button className="text-[10px] px-2 py-0.5 rounded text-gray-400 hover:bg-gray-100">Aylık</button></div></CardHeader>
+              <CardContent><ResponsiveContainer width="100%" height={260}>
+                <ComposedChart data={data?.revenue_trend || []}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={3} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={v => '₺' + (v/1000).toFixed(0) + 'K'} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
+                  <Tooltip content={<CustomTooltip />} /><Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar yAxisId="right" dataKey="revenue" name="Toplam Gelir" fill="#3B82F6" opacity={0.6} radius={[2,2,0,0]} />
+                  <Line yAxisId="left" type="monotone" dataKey="revenue" name="Trend" stroke="#F97316" strokeWidth={2} dot={{ r: 3, fill: '#F97316' }} />
+                </ComposedChart>
+              </ResponsiveContainer></CardContent>
+            </Card>
+            <Card className="shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-sm">Ort. ADR & Toplam Geceleme</CardTitle><div className="flex gap-2 mt-1"><button className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">Günlük</button><button className="text-[10px] px-2 py-0.5 rounded text-gray-400 hover:bg-gray-100">Haftalık</button><button className="text-[10px] px-2 py-0.5 rounded text-gray-400 hover:bg-gray-100">Aylık</button></div></CardHeader>
+              <CardContent><ResponsiveContainer width="100%" height={260}>
+                <BarChart data={data?.revenue_trend?.slice(-14) || []}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={v => '₺' + (v/1000).toFixed(0) + 'K'} />
+                  <Tooltip content={<CustomTooltip formatter={formatCurrency} />} /><Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="revenue" name="Günlük Gelir" fill="#3B82F6" radius={[3,3,0,0]} />
+                </BarChart>
+              </ResponsiveContainer></CardContent>
+            </Card>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Günlük Hareket Özeti */}
+      <Card>
+        <CardHeader className="pb-3"><CardTitle className="text-base">Günlük Hareket Özeti</CardTitle><CardDescription>Bugünkü operasyonel veriler</CardDescription></CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="p-3 bg-blue-50 rounded-lg text-center border border-blue-100"><ArrowUpRight className="w-5 h-5 text-blue-600 mx-auto mb-1" /><p className="text-2xl font-bold text-blue-700">{s.arrivals || 0}</p><p className="text-xs text-blue-600">Giriş</p></div>
+            <div className="p-3 bg-amber-50 rounded-lg text-center border border-amber-100"><ArrowDownRight className="w-5 h-5 text-amber-600 mx-auto mb-1" /><p className="text-2xl font-bold text-amber-700">{s.departures || 0}</p><p className="text-xs text-amber-600">Çıkış</p></div>
+            <div className="p-3 bg-green-50 rounded-lg text-center border border-green-100"><Users className="w-5 h-5 text-green-600 mx-auto mb-1" /><p className="text-2xl font-bold text-green-700">{s.in_house || 0}</p><p className="text-xs text-green-600">Otelde</p></div>
+            <div className="p-3 bg-red-50 rounded-lg text-center border border-red-100"><AlertTriangle className="w-5 h-5 text-red-500 mx-auto mb-1" /><p className="text-2xl font-bold text-red-600">{s.no_shows || 0}</p><p className="text-xs text-red-500">No-Show</p></div>
+            <div className="p-3 bg-gray-50 rounded-lg text-center border border-gray-200"><Calendar className="w-5 h-5 text-gray-500 mx-auto mb-1" /><p className="text-2xl font-bold text-gray-700">{s.cancellations || 0}</p><p className="text-xs text-gray-500">İptal</p></div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Oda Durumu & Dönem Karşılaştırma */}
+      <div className="grid md:grid-cols-3 gap-4">
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Oda Durumu</CardTitle></CardHeader>
+          <CardContent><ResponsiveContainer width="100%" height={200}><PieChart><Pie data={roomStatusData} cx="50%" cy="50%" innerRadius={50} outerRadius={75} dataKey="value" paddingAngle={3}>{roomStatusData.map((entry, i) => (<Cell key={i} fill={entry.color} />))}</Pie><Tooltip /><Legend iconSize={8} wrapperStyle={{ fontSize: '11px' }} /></PieChart></ResponsiveContainer></CardContent>
+        </Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Doluluk Trendi (30 Gün)</CardTitle></CardHeader>
+          <CardContent><ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={data?.occupancy_trend || []}>
+              <defs><linearGradient id="occG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} /><stop offset="95%" stopColor="#3B82F6" stopOpacity={0} /></linearGradient></defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={3} />
-              <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={v => '₺' + (v/1000).toFixed(0) + 'K'} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
-              <Tooltip content={<CustomTooltip />} /><Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar yAxisId="right" dataKey="revenue" name="Gelir" fill="#F97316" opacity={0.7} radius={[2,2,0,0]} />
-              <Line yAxisId="left" type="monotone" dataKey="revenue" name="Trend" stroke="#3B82F6" strokeWidth={2} dot={false} />
-            </ComposedChart>
+              <XAxis dataKey="label" tick={{ fontSize: 9 }} interval={5} />
+              <YAxis tick={{ fontSize: 9 }} domain={[0, 100]} tickFormatter={v => '%' + v} />
+              <Tooltip /><Area type="monotone" dataKey="occupancy" name="Doluluk" stroke="#3B82F6" fill="url(#occG)" strokeWidth={2} />
+            </AreaChart>
           </ResponsiveContainer></CardContent>
         </Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Ort. ADR & Toplam Geceleme</CardTitle></CardHeader>
-          <CardContent><ResponsiveContainer width="100%" height={280}>
-            <BarChart data={data?.revenue_trend?.slice(-14) || []}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-              <YAxis tick={{ fontSize: 10 }} tickFormatter={v => '₺' + (v/1000).toFixed(0) + 'K'} />
-              <Tooltip content={<CustomTooltip formatter={formatCurrency} />} /><Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="revenue" name="Günlük Gelir" fill="#3B82F6" radius={[3,3,0,0]} />
-            </BarChart>
-          </ResponsiveContainer></CardContent>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Dönem Karşılaştırma</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <div className="p-3 bg-blue-50 rounded-lg"><p className="text-xs text-blue-600 font-medium">Son 7 Gün</p><p className="text-lg font-bold text-blue-800">{formatCurrency(pc.week_revenue)}</p><p className="text-[10px] text-blue-500">{pc.week_bookings} rezervasyon</p></div>
+            <div className="p-3 bg-green-50 rounded-lg"><p className="text-xs text-green-600 font-medium">Son 30 Gün</p><p className="text-lg font-bold text-green-800">{formatCurrency(pc.month_revenue)}</p><p className="text-[10px] text-green-500">{pc.month_bookings} rezervasyon</p></div>
+            <div className="p-3 bg-purple-50 rounded-lg"><p className="text-xs text-purple-600 font-medium">Önceki 30 Gün</p><p className="text-lg font-bold text-purple-800">{formatCurrency(pc.prev_month_revenue)}</p><p className="text-[10px] text-purple-500">{pc.prev_month_bookings} rezervasyon</p></div>
+          </CardContent>
         </Card>
       </div>
     </div>
