@@ -27,15 +27,20 @@ BASE_URL = 'https://report-calendar-fix.preview.emergentagent.com/api'
 
 # Test credentials
 TEST_ACCOUNTS = {
-    'basic': {
-        'email': 'demo@butikotel.com',
-        'password': 'demo123',
-        'name': 'Basic Hotel'
+    'admin': {
+        'email': 'admin@hotel.com',
+        'password': 'admin123',
+        'name': 'Admin User'
     },
-    'professional': {
-        'email': 'demo@grandcity.com', 
-        'password': 'demo123',
-        'name': 'Professional Hotel'
+    'supervisor': {
+        'email': 'supervisor@hotel.com', 
+        'password': 'super123',
+        'name': 'Supervisor Manager'
+    },
+    'finance': {
+        'email': 'finance@hotel.com', 
+        'password': 'fin123',
+        'name': 'Finance Manager'
     }
 }
 
