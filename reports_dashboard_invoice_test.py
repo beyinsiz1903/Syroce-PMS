@@ -80,10 +80,10 @@ def login_user(account_type):
             data = response.json()
             token = data.get("access_token")
             user = data.get("user", {})
-            tenant = data.get("tenant", {})
+            tenant = data.get("tenant") or {}
             
             print_result(f"{credentials['name']} Login", True, 
-                        f"User: {user.get('name')}, Role: {user.get('role')}, Tenant: {tenant.get('property_name', 'N/A')}")
+                        f"User: {user.get('name')}, Role: {user.get('role')}, Tenant: {tenant.get('property_name', user.get('tenant_id', 'N/A'))}")
             
             return token, user, tenant
         else:
