@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import axios from 'axios';
@@ -8,12 +8,36 @@ import { Input } from '@/components/ui/input';
 import {
   Bot, MessageCircle, Send, Brain, TrendingUp, Shield,
   Sparkles, BarChart3, Users, Zap, Clock, Star,
-  Hotel, ChefHat, Wrench, DollarSign, Globe, Loader2
+  Hotel, ChefHat, Wrench, DollarSign, Globe, Loader2,
+  ArrowLeft, ChevronRight
 } from 'lucide-react';
+
+// Lazy load AI module components
+const AIEnhancedPMS = lazy(() => import('@/pages/AIEnhancedPMS'));
+const AIChatbot = lazy(() => import('@/pages/AIChatbot'));
+const AIWhatsAppConcierge = lazy(() => import('@/pages/AIWhatsAppConcierge'));
+const DynamicPricing = lazy(() => import('@/pages/DynamicPricing'));
+const PredictiveAnalytics = lazy(() => import('@/pages/PredictiveAnalytics'));
+const ReputationCenter = lazy(() => import('@/pages/ReputationCenter'));
+const RevenueAutopilot = lazy(() => import('@/pages/RevenueAutopilot'));
+const SocialMediaRadar = lazy(() => import('@/pages/SocialMediaRadar'));
+
+// Module component map
+const MODULE_COMPONENTS = {
+  'ai-pms': AIEnhancedPMS,
+  'ai-chatbot': AIChatbot,
+  'ai-whatsapp-concierge': AIWhatsAppConcierge,
+  'dynamic-pricing': DynamicPricing,
+  'predictive-analytics': PredictiveAnalytics,
+  'reputation-center': ReputationCenter,
+  'revenue-autopilot': RevenueAutopilot,
+  'social-media-radar': SocialMediaRadar,
+};
 
 const AIModule = ({ user, tenant, onLogout }) => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
+  const [selectedModule, setSelectedModule] = useState(null);
   const [chatMessages, setChatMessages] = useState([
     { sender: 'bot', message: 'Merhaba! Ben Syroce AI asistanınızım. Size nasıl yardımcı olabilirim? Otel operasyonları, misafir bilgileri, doluluk analizi gibi konularda sorularınızı yanıtlayabilirim.', timestamp: new Date() }
   ]);
@@ -21,7 +45,6 @@ const AIModule = ({ user, tenant, onLogout }) => {
   const [chatLoading, setChatLoading] = useState(false);
   const [briefing, setBriefing] = useState(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
-  const [sentiment, setSentiment] = useState(null);
   const [pricingRec, setPricingRec] = useState(null);
 
   useEffect(() => {
@@ -71,6 +94,14 @@ const AIModule = ({ user, tenant, onLogout }) => {
     }
   };
 
+  const openModule = (moduleId) => {
+    setSelectedModule(moduleId);
+  };
+
+  const closeModule = () => {
+    setSelectedModule(null);
+  };
+
   const tabs = [
     { id: 'overview', label: 'AI Overview', icon: Brain },
     { id: 'chatbot', label: 'AI Chatbot', icon: MessageCircle },
@@ -79,62 +110,110 @@ const AIModule = ({ user, tenant, onLogout }) => {
 
   const aiFeatures = [
     { 
+      id: 'ai-pms',
       title: 'AI-Powered PMS', 
       description: 'Yapay zeka destekli mülk yönetim sistemi',
       icon: Hotel, 
       color: 'from-purple-500 to-blue-500',
-      path: '/ai-pms'
     },
     { 
+      id: 'ai-chatbot',
       title: 'AI Chatbot', 
       description: '24/7 AI destekli misafir asistanı',
       icon: Bot, 
       color: 'from-cyan-500 to-blue-500',
-      path: '/ai-chatbot'
     },
     { 
+      id: 'ai-whatsapp-concierge',
       title: 'WhatsApp Concierge', 
       description: 'AI destekli WhatsApp misafir hizmetleri',
       icon: MessageCircle, 
       color: 'from-green-500 to-emerald-500',
-      path: '/ai-whatsapp-concierge'
     },
     { 
+      id: 'dynamic-pricing',
       title: 'Dynamic Pricing', 
       description: 'AI fiyatlandırma optimizasyonu',
       icon: DollarSign, 
       color: 'from-amber-500 to-orange-500',
-      path: '/dynamic-pricing'
     },
     { 
+      id: 'predictive-analytics',
       title: 'Predictive Analytics', 
       description: 'Tahmine dayalı iş zekası',
       icon: TrendingUp, 
       color: 'from-pink-500 to-rose-500',
-      path: '/predictive-analytics'
     },
     { 
+      id: 'reputation-center',
       title: 'Reputation Center', 
       description: 'AI ile itibar yönetimi ve sentiment analizi',
       icon: Star, 
       color: 'from-yellow-500 to-amber-500',
-      path: '/reputation-center'
     },
     { 
+      id: 'revenue-autopilot',
       title: 'Revenue Autopilot', 
       description: 'Otomatik gelir yönetimi',
       icon: Zap, 
       color: 'from-indigo-500 to-violet-500',
-      path: '/revenue-autopilot'
     },
     { 
+      id: 'social-media-radar',
       title: 'Social Media Radar', 
       description: 'Sosyal medya izleme ve analiz',
       icon: Globe, 
       color: 'from-sky-500 to-blue-500',
-      path: '/social-media-radar'
     },
   ];
+
+  // Get selected module info
+  const selectedFeature = aiFeatures.find(f => f.id === selectedModule);
+
+  const renderInlineModule = () => {
+    const ModuleComponent = MODULE_COMPONENTS[selectedModule];
+    if (!ModuleComponent) return null;
+
+    return (
+      <div>
+        {/* Back header */}
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={closeModule}
+            className="flex items-center gap-2 hover:bg-gray-100"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            AI Modüllere Dön
+          </Button>
+          {selectedFeature && (
+            <div className="flex items-center gap-2">
+              <div className={`p-2 bg-gradient-to-r ${selectedFeature.color} rounded-lg text-white`}>
+                <selectedFeature.icon className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg">{selectedFeature.title}</h3>
+                <p className="text-xs text-gray-500">{selectedFeature.description}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Module content */}
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <Suspense fallback={
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+              <span className="ml-3 text-gray-500">Modül yükleniyor...</span>
+            </div>
+          }>
+            <ModuleComponent user={user} tenant={tenant} onLogout={onLogout} />
+          </Suspense>
+        </div>
+      </div>
+    );
+  };
 
   const renderOverview = () => (
     <div className="space-y-6">
@@ -268,9 +347,9 @@ const AIModule = ({ user, tenant, onLogout }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {aiFeatures.slice(0, 4).map((feature) => (
             <Card
-              key={feature.title}
+              key={feature.id}
               className="border shadow-sm hover:shadow-lg transition-all cursor-pointer group"
-              onClick={() => navigate(feature.path)}
+              onClick={() => { setActiveTab('modules'); openModule(feature.id); }}
             >
               <CardContent className="p-4">
                 <div className={`p-3 bg-gradient-to-r ${feature.color} rounded-xl w-fit mb-3 text-white group-hover:scale-110 transition-transform`}>
@@ -347,31 +426,39 @@ const AIModule = ({ user, tenant, onLogout }) => {
     </Card>
   );
 
-  const renderModules = () => (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        {aiFeatures.map((feature) => (
-          <Card
-            key={feature.title}
-            className="border shadow-sm hover:shadow-xl transition-all cursor-pointer group overflow-hidden"
-            onClick={() => navigate(feature.path)}
-          >
-            <div className={`h-2 bg-gradient-to-r ${feature.color}`} />
-            <CardContent className="p-5">
-              <div className={`p-3 bg-gradient-to-r ${feature.color} rounded-xl w-fit mb-4 text-white group-hover:scale-110 transition-transform`}>
-                <feature.icon className="w-7 h-7" />
-              </div>
-              <h4 className="font-bold text-base mb-1">{feature.title}</h4>
-              <p className="text-sm text-gray-500">{feature.description}</p>
-              <div className="mt-4 flex items-center text-xs text-blue-600 font-medium group-hover:translate-x-1 transition-transform">
-                Modüle Git →
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+  const renderModules = () => {
+    // If a module is selected, render it inline
+    if (selectedModule) {
+      return renderInlineModule();
+    }
+
+    // Otherwise show the module grid
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+          {aiFeatures.map((feature) => (
+            <Card
+              key={feature.id}
+              className="border shadow-sm hover:shadow-xl transition-all cursor-pointer group overflow-hidden"
+              onClick={() => openModule(feature.id)}
+            >
+              <div className={`h-2 bg-gradient-to-r ${feature.color}`} />
+              <CardContent className="p-5">
+                <div className={`p-3 bg-gradient-to-r ${feature.color} rounded-xl w-fit mb-4 text-white group-hover:scale-110 transition-transform`}>
+                  <feature.icon className="w-7 h-7" />
+                </div>
+                <h4 className="font-bold text-base mb-1">{feature.title}</h4>
+                <p className="text-sm text-gray-500">{feature.description}</p>
+                <div className="mt-4 flex items-center text-xs text-blue-600 font-medium group-hover:translate-x-1 transition-transform">
+                  Modülü Aç <ChevronRight className="w-3 h-3 ml-1" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="ai">
@@ -392,7 +479,7 @@ const AIModule = ({ user, tenant, onLogout }) => {
           {tabs.map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => { setActiveTab(tab.id); if (tab.id !== 'modules') setSelectedModule(null); }}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 activeTab === tab.id
                   ? 'bg-blue-600 text-white shadow-md'
