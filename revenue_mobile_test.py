@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import os
 
 # Get backend URL from environment
-BACKEND_URL = os.getenv('REACT_APP_BACKEND_URL', 'https://bug-fix-update.preview.emergentagent.com')
+BACKEND_URL = os.getenv('REACT_APP_BACKEND_URL', 'https://ai-feature-test.preview.emergentagent.com')
 API_BASE = f"{BACKEND_URL}/api"
 
 class RevenueMobileAPITester:

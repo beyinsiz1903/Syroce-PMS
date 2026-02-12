@@ -9,7 +9,7 @@ import json
 from datetime import datetime, timezone, timedelta
 import uuid
 
-BACKEND_URL = "https://bug-fix-update.preview.emergentagent.com/api"
+BACKEND_URL = "https://ai-feature-test.preview.emergentagent.com/api"
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 

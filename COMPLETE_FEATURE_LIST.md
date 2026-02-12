@@ -218,7 +218,7 @@
 ## 📋 QUICK START GUIDE
 
 **Login:**
-- URL: https://bug-fix-update.preview.emergentagent.com
+- URL: https://ai-feature-test.preview.emergentagent.com
 - Demo: demo@hotel.com / demo123
 
 **New User Registration:**

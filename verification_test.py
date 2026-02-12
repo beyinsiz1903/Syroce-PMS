@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import statistics
 
 # Configuration
-BACKEND_URL = "https://bug-fix-update.preview.emergentagent.com/api"
+BACKEND_URL = "https://ai-feature-test.preview.emergentagent.com/api"
 TEST_USER = {
     "email": "admin@hotel.com",
     "password": "admin123"

@@ -18,7 +18,7 @@ import json
 from datetime import datetime
 
 # Base URL from frontend/.env
-BASE_URL = "https://bug-fix-update.preview.emergentagent.com/api"
+BASE_URL = "https://ai-feature-test.preview.emergentagent.com/api"
 
 # Test credentials
 SUPER_ADMIN = {
