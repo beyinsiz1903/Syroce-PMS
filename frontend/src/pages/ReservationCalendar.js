@@ -143,15 +143,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       const endDate = new Date(currentDate);
       endDate.setDate(endDate.getDate() + daysToShow + 7); // Show range + 1 week after
       
-      // Add cache-busting timestamp to ensure fresh data
-      const cacheBuster = Date.now();
-      
       const [roomsRes, bookingsRes, guestsRes, companiesRes, blocksRes] = await Promise.all([
-        axios.get(`/pms/rooms?_t=${cacheBuster}`),
-        axios.get(`/pms/bookings?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&limit=500&_t=${cacheBuster}`),
-        axios.get(`/pms/guests?_t=${cacheBuster}`).catch(() => ({ data: [] })),
-        axios.get(`/companies?_t=${cacheBuster}`).catch(() => ({ data: [] })),
-        axios.get(`/pms/room-blocks?status=active&_t=${cacheBuster}`).catch(() => ({ data: { blocks: [] } }))
+        axios.get(`/pms/rooms`),
+        axios.get(`/pms/bookings?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&limit=500`),
+        axios.get(`/pms/guests`).catch(() => ({ data: [] })),
+        axios.get(`/companies`).catch(() => ({ data: [] })),
+        axios.get(`/pms/room-blocks?status=active`).catch(() => ({ data: { blocks: [] } }))
       ]);
 
       const rangeStart = startDate.toISOString().split('T')[0];
