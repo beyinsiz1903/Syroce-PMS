@@ -21,14 +21,13 @@ async def get_daily_briefing(
     Get AI-generated daily briefing for dashboard
     """
     try:
-        # Get data from database (simplified for now)
+        # Get data from database
         from server import db
         
         # Get PMS stats
         rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}).to_list(None)
-        bookings = await db.bookings.find({
-            "tenant_id": current_user.tenant_id,
-            "status": "confirmed"
+        all_bookings = await db.bookings.find({
+            "tenant_id": current_user.tenant_id
         }).to_list(None)
         
         # Get invoice stats
@@ -37,12 +36,25 @@ async def get_daily_briefing(
         }).to_list(None)
         
         total_rooms = len(rooms)
-        occupied_rooms = len([b for b in bookings if b.get('status') == 'checked_in'])
+        occupied_rooms = len([b for b in all_bookings if b.get('status') == 'checked_in'])
+        confirmed_bookings = len([b for b in all_bookings if b.get('status') == 'confirmed'])
         
         # Count today's check-ins/outs
         today = datetime.now().date()
-        today_checkins = len([b for b in bookings if b.get('check_in', '').startswith(str(today))])
-        today_checkouts = len([b for b in bookings if b.get('check_out', '').startswith(str(today))])
+        today_str = str(today)
+        today_checkins = 0
+        today_checkouts = 0
+        for b in all_bookings:
+            ci = b.get('check_in', '')
+            co = b.get('check_out', '')
+            if isinstance(ci, str) and ci.startswith(today_str):
+                today_checkins += 1
+            elif hasattr(ci, 'strftime') and ci.strftime('%Y-%m-%d') == today_str:
+                today_checkins += 1
+            if isinstance(co, str) and co.startswith(today_str):
+                today_checkouts += 1
+            elif hasattr(co, 'strftime') and co.strftime('%Y-%m-%d') == today_str:
+                today_checkouts += 1
         
         pending_invoices = len([i for i in invoices if i.get('status') == 'pending'])
         monthly_revenue = sum(i.get('total', 0) for i in invoices)
@@ -51,33 +63,75 @@ async def get_daily_briefing(
         tenant = await db.tenants.find_one({"id": current_user.tenant_id})
         hotel_name = tenant.get('property_name', 'Hotel') if tenant else 'Hotel'
         
-        # Generate briefing
-        briefing = await get_ai_service().generate_daily_briefing(
-            hotel_name=hotel_name,
-            total_rooms=total_rooms,
-            occupied_rooms=occupied_rooms,
-            today_checkins=today_checkins,
-            today_checkouts=today_checkouts,
-            pending_invoices=pending_invoices,
-            monthly_revenue=monthly_revenue,
-            weather="clear"  # Could integrate weather API
-        )
+        occupancy_rate = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
+
+        # Try to generate AI briefing, fallback to heuristic
+        briefing_text = None
+        try:
+            ai_svc = get_ai_service()
+            if ai_svc.llm_enabled:
+                briefing_text = await ai_svc.generate_daily_briefing(
+                    hotel_name=hotel_name,
+                    total_rooms=total_rooms,
+                    occupied_rooms=occupied_rooms,
+                    today_checkins=today_checkins,
+                    today_checkouts=today_checkouts,
+                    pending_invoices=pending_invoices,
+                    monthly_revenue=monthly_revenue,
+                    weather="clear"
+                )
+        except Exception as ai_err:
+            print(f"AI briefing generation failed: {ai_err}")
+
+        # Fallback briefing
+        if not briefing_text:
+            briefing_text = (
+                f"Günaydın! {hotel_name} için günlük özet: "
+                f"Toplam {total_rooms} odadan {occupied_rooms} tanesi dolu (%{occupancy_rate:.0f} doluluk). "
+                f"Bugün {today_checkins} giriş ve {today_checkouts} çıkış bekleniyor. "
+                f"{pending_invoices} bekleyen fatura mevcut."
+            )
+
+        # Build insights
+        insights = []
+        if occupancy_rate > 80:
+            insights.append("Doluluk oranı yüksek! Fiyat artışı değerlendirilebilir.")
+        elif occupancy_rate < 40:
+            insights.append("Doluluk düşük. Promosyon kampanyası başlatmayı düşünün.")
+        if today_checkins > 5:
+            insights.append(f"Bugün {today_checkins} giriş var, resepsiyon ekibini bilgilendirin.")
+        if pending_invoices > 3:
+            insights.append(f"{pending_invoices} bekleyen fatura var, muhasebe takibi önerilir.")
+        if confirmed_bookings > 0:
+            insights.append(f"{confirmed_bookings} onaylı rezervasyon aktif.")
         
         return {
-            "briefing": briefing,
+            "summary": briefing_text,
+            "text": briefing_text,
+            "briefing": briefing_text,
             "generated_at": datetime.now().isoformat(),
+            "insights": insights,
             "metrics": {
                 "total_rooms": total_rooms,
                 "occupied_rooms": occupied_rooms,
-                "occupancy_rate": (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0,
+                "occupancy_rate": round(occupancy_rate, 1),
                 "today_checkins": today_checkins,
                 "today_checkouts": today_checkouts,
                 "pending_invoices": pending_invoices,
-                "monthly_revenue": monthly_revenue
+                "monthly_revenue": monthly_revenue,
+                "confirmed_bookings": confirmed_bookings
             }
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate briefing: {str(e)}")
+        # Even on failure, return a basic response so frontend doesn't break
+        return {
+            "summary": "AI brifing şu an yüklenemiyor. Lütfen daha sonra tekrar deneyin.",
+            "text": "AI brifing şu an yüklenemiyor.",
+            "briefing": "AI brifing şu an yüklenemiyor.",
+            "generated_at": datetime.now().isoformat(),
+            "insights": [],
+            "metrics": {}
+        }
 
 
 @api_router.get("/ai/pms/occupancy-prediction")
