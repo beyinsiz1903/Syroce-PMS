@@ -1,3 +1,52 @@
+backend:
+  - task: "Reports Basic Dashboard Optimization"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+      - agent: "main"
+      - comment: "Optimized /reports/basic-dashboard from 60+ sequential MongoDB queries to batch parallel queries using asyncio.gather. Should respond 10-20x faster."
+
+  - task: "Invoice Route Access Fix"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/App.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+      - agent: "main"
+      - comment: "Removed super_admin restriction from /invoices and /app/invoices routes. Now accessible to all authenticated users (access control handled by PlanRouteGuard module check)."
+
+  - task: "WebSocket Graceful Failure"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/lib/websocket.js"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+      - agent: "main"
+      - comment: "Reduced WebSocket max reconnect attempts from 5 to 2. Added graceful disable after max attempts. Removed console spam. Added mock socket fallback."
+
+  - task: "Calendar Performance Optimization"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/pages/ReservationCalendar.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+      - agent: "main"
+      - comment: "Made Enterprise data loading lazy (only loads on toggle). Removed cache-busting from API calls."
+
 frontend:
   - task: "Basic Hotel Navigation Test"
     implemented: true
