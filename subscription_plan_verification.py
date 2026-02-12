@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 
 # Test Configuration
-BASE_URL = "https://ai-feature-test.preview.emergentagent.com/api"
+BASE_URL = "https://report-calendar-fix.preview.emergentagent.com/api"
 TEST_CREDENTIALS = {"email": "demo@hotel.com", "password": "demo123"}
 
 async def get_auth_token(session):

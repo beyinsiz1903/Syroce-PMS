@@ -14,7 +14,7 @@ import json
 from datetime import datetime
 
 # Configuration
-BASE_URL = "https://ai-feature-test.preview.emergentagent.com/api"
+BASE_URL = "https://report-calendar-fix.preview.emergentagent.com/api"
 LOGIN_EMAIL = "demo@hotel.com"
 LOGIN_PASSWORD = "demo123"
 

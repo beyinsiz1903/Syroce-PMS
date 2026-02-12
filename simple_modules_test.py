@@ -7,7 +7,7 @@ import requests
 import json
 
 def test_modules():
-    base_url = "https://ai-feature-test.preview.emergentagent.com/api"
+    base_url = "https://report-calendar-fix.preview.emergentagent.com/api"
     
     # Login first
     print("🔐 Logging in...")

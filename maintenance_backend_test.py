@@ -32,7 +32,7 @@ import uuid
 import base64
 
 # Configuration
-BACKEND_URL = "https://ai-feature-test.preview.emergentagent.com/api"
+BACKEND_URL = "https://report-calendar-fix.preview.emergentagent.com/api"
 TEST_EMAIL = "admin@hotel.com"
 TEST_PASSWORD = "admin123"
 

@@ -21,7 +21,7 @@ import sys
 import os
 
 # Configuration
-BASE_URL = "https://ai-feature-test.preview.emergentagent.com"
+BASE_URL = "https://report-calendar-fix.preview.emergentagent.com"
 API_BASE = f"{BASE_URL}/api"
 
 # Demo credentials

@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 
 # Test Configuration
-BASE_URL = "https://ai-feature-test.preview.emergentagent.com/api"
+BASE_URL = "https://report-calendar-fix.preview.emergentagent.com/api"
 
 # Test credentials to try
 TEST_CREDENTIALS = [
