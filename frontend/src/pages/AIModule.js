@@ -180,27 +180,27 @@ const AIModule = ({ user, tenant, onLogout }) => {
         </CardContent>
       </Card>
 
-      {/* AI Stats */}
+      {/* AI Stats - Real Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="border shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-4 flex items-center gap-3">
             <div className="p-3 bg-purple-100 rounded-xl">
-              <Bot className="w-6 h-6 text-purple-600" />
+              <Hotel className="w-6 h-6 text-purple-600" />
             </div>
             <div>
-              <div className="text-2xl font-bold">8</div>
-              <div className="text-sm text-gray-500">AI Modül</div>
+              <div className="text-2xl font-bold">{briefing?.metrics?.total_rooms || '-'}</div>
+              <div className="text-sm text-gray-500">Toplam Oda</div>
             </div>
           </CardContent>
         </Card>
         <Card className="border shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-4 flex items-center gap-3">
             <div className="p-3 bg-blue-100 rounded-xl">
-              <Zap className="w-6 h-6 text-blue-600" />
+              <BarChart3 className="w-6 h-6 text-blue-600" />
             </div>
             <div>
-              <div className="text-2xl font-bold">24/7</div>
-              <div className="text-sm text-gray-500">Aktif Çalışma</div>
+              <div className="text-2xl font-bold">{briefing?.metrics?.occupancy_rate != null ? `%${briefing.metrics.occupancy_rate}` : '-'}</div>
+              <div className="text-sm text-gray-500">Doluluk Oranı</div>
             </div>
           </CardContent>
         </Card>
@@ -210,19 +210,19 @@ const AIModule = ({ user, tenant, onLogout }) => {
               <TrendingUp className="w-6 h-6 text-green-600" />
             </div>
             <div>
-              <div className="text-2xl font-bold">{pricingRec?.confidence ? `${Math.round(pricingRec.confidence * 100)}%` : '95%'}</div>
-              <div className="text-sm text-gray-500">Doğruluk Oranı</div>
+              <div className="text-2xl font-bold">{briefing?.metrics?.confirmed_bookings ?? '-'}</div>
+              <div className="text-sm text-gray-500">Aktif Rezervasyon</div>
             </div>
           </CardContent>
         </Card>
         <Card className="border shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-4 flex items-center gap-3">
             <div className="p-3 bg-amber-100 rounded-xl">
-              <Clock className="w-6 h-6 text-amber-600" />
+              <Users className="w-6 h-6 text-amber-600" />
             </div>
             <div>
-              <div className="text-2xl font-bold">&lt;10ms</div>
-              <div className="text-sm text-gray-500">Yanıt Süresi</div>
+              <div className="text-2xl font-bold">{briefing?.metrics?.today_checkins ?? '-'}</div>
+              <div className="text-sm text-gray-500">Bugün Giriş</div>
             </div>
           </CardContent>
         </Card>
