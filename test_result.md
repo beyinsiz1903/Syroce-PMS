@@ -16,15 +16,18 @@ backend:
 
   - task: "Invoice Route Access Fix"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/src/App.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
       - agent: "main"
       - comment: "Removed super_admin restriction from /invoices and /app/invoices routes. Now accessible to all authenticated users (access control handled by PlanRouteGuard module check)."
+      - working: true
+      - agent: "testing"
+      - comment: "✅ VERIFIED: Invoice access working for regular hotel users. Tested endpoints: /api/invoices (200 OK), /api/invoices/stats (200 OK), /api/accounting/invoices (200 OK). No 403 Forbidden errors detected - properly accessible to admin, supervisor, and finance roles without super_admin restriction."
 
   - task: "WebSocket Graceful Failure"
     implemented: true
