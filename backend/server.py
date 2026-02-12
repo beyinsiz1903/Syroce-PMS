@@ -4968,20 +4968,39 @@ async def ai_chat(
         return {'response': response_text}
     except Exception as exc:
         print(f"AI chat error: {exc}")
-        # Fallback to basic keyword responses
+        # Fallback to keyword-based responses with accurate app navigation info
         msg_lower = user_message.lower()
         if any(w in msg_lower for w in ['merhaba', 'selam', 'hey']):
-            return {'response': 'Merhaba! Ben AI otel asistanınızım. Otel operasyonları, doluluk, rezervasyon gibi konularda size yardımcı olabilirim. Ne sormak istersiniz?'}
+            return {'response': 'Merhaba! Ben Syroce AI asistanınızım. Uygulama navigasyonu, otel operasyonları, doluluk, rezervasyon gibi konularda size yardımcı olabilirim. Ne sormak istersiniz?'}
+        elif any(w in msg_lower for w in ['nerede', 'nasıl bulurum', 'nasıl giderim', 'hangi menü', 'hangi sayfa']):
+            if any(w in msg_lower for w in ['ai', 'yapay zeka', 'chatbot', 'asistan']):
+                return {'response': 'AI modülleri üst menüdeki "AI Modülleri" butonundan erişebilirsiniz. AI Hub sayfasında 3 sekme var: AI Overview (brifing ve metrikler), AI Chatbot (bu asistan), AI Modüller (8 AI alt modülü: AI-Powered PMS, AI Chatbot, WhatsApp Concierge, Dynamic Pricing, Predictive Analytics, Reputation Center, Revenue Autopilot, Social Media Radar). Tüm modüller aynı sayfa içinde inline açılır.'}
+            elif any(w in msg_lower for w in ['rapor', 'report', 'gelişmiş']):
+                return {'response': 'Raporlar iki yerde bulunur:\n1. **Raporlar** (üst menü) → Temel raporlar: doluluk, gelir, misafir istatistikleri\n2. **Gelişmiş Raporlar** (üst menü, ayrı buton) → Detaylı analitik: departman performansı, RevPAR, ADR, gelir analizi\n\nGelişmiş Raporlar Professional ve Enterprise planlarda kullanılabilir.'}
+            elif any(w in msg_lower for w in ['fatura', 'finans', 'ödeme']):
+                return {'response': 'Fatura ve finans işlemleri üst menüdeki "Fatura & Finans" butonundan erişebilirsiniz. Bu modülde fatura oluşturma, ödeme takibi ve folio yönetimi yapabilirsiniz. E-Fatura için ayrıca /efatura sayfası mevcuttur.'}
+            elif any(w in msg_lower for w in ['kanal', 'channel', 'ota', 'booking.com', 'expedia']):
+                return {'response': 'OTA kanal yönetimi üst menüdeki "Channel Manager" butonundan erişebilirsiniz. Bu modülde Booking.com, Expedia gibi kanallara fiyat ve müsaitlik senkronizasyonu yapabilirsiniz.'}
+            elif any(w in msg_lower for w in ['revenue', 'rms', 'gelir yönetimi']):
+                return {'response': 'Gelir yönetimi (RMS) üst menüdeki "Revenue (RMS)" butonundan erişebilirsiniz. Dinamik fiyatlandırma ve talep tahmini bu modüldedir. AI destekli fiyatlandırma için AI Modülleri → Dynamic Pricing alt modülünü kullanabilirsiniz.'}
+            elif any(w in msg_lower for w in ['pms', 'oda', 'check-in', 'check-out', 'ön büro']):
+                return {'response': 'PMS modülüne üst menüdeki "PMS" butonundan erişebilirsiniz. Oda yönetimi, misafir listesi, check-in/check-out ve ön büro işlemleri bu modüldedir. Takvim görünümü için "Takvim" butonunu kullanın.'}
+            elif any(w in msg_lower for w in ['maliyet', 'cost', 'harcama']):
+                return {'response': 'Maliyet yönetimi üst menüdeki "Maliyet" butonundan erişebilirsiniz. Departman bazlı harcama analizi ve maliyet takibi bu modüldedir.'}
+            elif any(w in msg_lower for w in ['ayar', 'setting', 'profil', 'ekip', 'kullanıcı']):
+                return {'response': 'Ayarlar üst menüdeki "Ayarlar" butonundan erişebilirsiniz. Otel bilgileri, kullanıcı yönetimi, ekip üyeleri, abonelik planı ve genel tercihler bu sayfadadır.'}
+            else:
+                return {'response': 'Uygulamada başlıca menüler: Dashboard, Takvim, PMS, Raporlar, Ayarlar (Temel). Fatura & Finans, Maliyet, Channel Manager, Gelişmiş Raporlar (Profesyonel). Revenue (RMS), AI Modülleri (Enterprise). Hangi sayfayı arıyorsunuz?'}
         elif any(w in msg_lower for w in ['rezervasyon', 'booking', 'oda ayırt']):
-            return {'response': 'Rezervasyon bilgileri için PMS modülüne göz atabilirsiniz. Yeni rezervasyon oluşturmak, mevcut rezervasyonları düzenlemek veya iptal etmek için Takvim sayfasını kullanabilirsiniz.'}
+            return {'response': 'Rezervasyon işlemleri için:\n- **Takvim** → Oda müsaitlik görünümü ve yeni rezervasyon oluşturma\n- **PMS** → Mevcut rezervasyonları yönetme, check-in/check-out\nHer iki modüle de üst menüden erişebilirsiniz.'}
         elif any(w in msg_lower for w in ['doluluk', 'occupancy', 'oda durumu']):
-            return {'response': 'Anlık doluluk bilgisi için Dashboard sayfasını kontrol edebilirsiniz. Detaylı doluluk analizi Raporlar bölümünde mevcuttur.'}
+            return {'response': 'Anlık doluluk bilgisi **Dashboard** sayfasında görünür. Detaylı doluluk raporları **Raporlar** ve **Gelişmiş Raporlar** bölümlerinde mevcuttur. AI destekli doluluk tahmini için AI Modülleri → Predictive Analytics kullanabilirsiniz.'}
         elif any(w in msg_lower for w in ['fiyat', 'pricing', 'ücret', 'tarife']):
-            return {'response': 'Fiyat yönetimi için Gelir Yönetimi (Revenue Management) modülünü kullanabilirsiniz. AI fiyatlandırma önerileri Dynamic Pricing bölümünde mevcuttur.'}
+            return {'response': 'Fiyat yönetimi için:\n- **Revenue (RMS)** → Gelir yönetimi ve fiyatlandırma stratejileri\n- **AI Modülleri → Dynamic Pricing** → AI destekli fiyat önerileri ve rakip analizi\n- **Channel Manager** → Kanallara fiyat senkronizasyonu'}
         elif any(w in msg_lower for w in ['housekeeping', 'temizlik', 'kat hizmet']):
-            return {'response': 'Housekeeping durumu için Kat Hizmetleri modülüne bakabilirsiniz. Oda temizlik planlaması ve görev atamaları bu modülden yapılabilir.'}
+            return {'response': 'Kat hizmetleri için **PMS** modülü altında housekeeping bölümünü kullanabilirsiniz. Mobil erişim için /mobile/housekeeping adresini kullanın. AI destekli housekeeping planlaması AI Modülleri → AI-Powered PMS içindedir.'}
         else:
-            return {'response': 'Anlıyorum. Bu konuda size yardımcı olmaya çalışayım. Otel operasyonları (PMS, rezervasyon, doluluk, fiyatlandırma, housekeeping) ile ilgili daha spesifik bir soru sorabilir misiniz?'}
+            return {'response': 'Bu konuda yardımcı olabilirim. Uygulama içi navigasyon (hangi modül nerede), otel operasyonları (doluluk, fiyat, rezervasyon) veya AI özellikleri hakkında sorabilirsiniz. Daha spesifik bir soru sormayı deneyin.'}
 
 @api_router.get("/ai/sentiment/{guest_id}")
 async def get_sentiment(guest_id: str, current_user: User = Depends(get_current_user)):
