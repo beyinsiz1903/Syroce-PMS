@@ -220,8 +220,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       });
       setGroupBookings(groupSummary);
       
-      // Load Enterprise Mode data
-      loadEnterpriseData({ roomsCount });
+      // Enterprise Mode data is loaded lazily only when panel is toggled
     } catch (error) {
       console.error('Failed to load calendar data:', error);
       toast.error('Failed to load calendar data');
