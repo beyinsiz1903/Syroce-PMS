@@ -158,6 +158,8 @@ test_plan:
   test_all: true
   test_priority: "sequential"
 
+  - agent: "testing"
+  - message: "✅ OPTIMIZATION VERIFICATION COMPLETE: Successfully tested the Reports Basic Dashboard optimization and Invoice access fixes. All 4 backend tasks now working correctly with 100% success rate (12/12 tests passed). Key achievements: 1) Dashboard responds in 0.04-0.05s (well under 5s target), batch parallel queries successful 2) Invoice endpoints accessible to regular hotel users (admin, supervisor, finance) without super_admin restriction 3) Calendar PMS endpoints (/api/pms/rooms, /api/pms/bookings, /api/pms/guests) working correctly. Performance optimization from 60+ sequential MongoDB queries to batch parallel queries verified effective. Used working credentials: admin@hotel.com/admin123, supervisor@hotel.com/super123, finance@hotel.com/fin123 with demo_hotel tenant."
 agent_communication:
   - agent: "testing"
   - message: "Created test plan for the 3-segment PMS subscription system frontend test. Will execute all 5 test cases sequentially."
