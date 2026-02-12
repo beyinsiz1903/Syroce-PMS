@@ -517,12 +517,10 @@ function App() {
           <Route
             path="/invoices"
             element={
-              isAuthenticated && user?.role === 'super_admin' ? (
+              isAuthenticated ? (
                 <Suspense fallback={<LoadingFallback />}>
                   <InvoiceModule user={user} tenant={tenant} onLogout={handleLogout} />
                 </Suspense>
-              ) : isAuthenticated ? (
-                <Navigate to="/app/dashboard" replace />
               ) : (
                 <Navigate to="/auth" replace />
               )
@@ -531,12 +529,10 @@ function App() {
           <Route
             path="/app/invoices"
             element={
-              isAuthenticated && user?.role === 'super_admin' ? (
+              isAuthenticated ? (
                 <Suspense fallback={<LoadingFallback />}>
                   <InvoiceModule user={user} tenant={tenant} onLogout={handleLogout} />
                 </Suspense>
-              ) : isAuthenticated ? (
-                <Navigate to="/app/dashboard" replace />
               ) : (
                 <Navigate to="/auth" replace />
               )
