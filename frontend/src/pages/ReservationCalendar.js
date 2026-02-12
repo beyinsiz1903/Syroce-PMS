@@ -1102,7 +1102,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                   <Button
                     size="sm"
                     variant={showEnterprisePanel ? "default" : "outline"}
-                    onClick={() => setShowEnterprisePanel(!showEnterprisePanel)}
+                    onClick={() => {
+                      const newState = !showEnterprisePanel;
+                      setShowEnterprisePanel(newState);
+                      if (newState) loadEnterpriseData({ roomsCount: rooms.length });
+                    }}
                     className="flex items-center gap-2"
                   >
                     <TrendingUp className="w-4 h-4" />
