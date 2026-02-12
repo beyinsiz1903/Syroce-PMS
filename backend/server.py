@@ -4874,10 +4874,70 @@ async def ai_chat(
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("ai_chatbot")),
 ):
-    response_text = "Merhaba! Size nasıl yardımcı olabilirim?"
-    if 'rezervasyon' in message_data['message'].lower():
-        response_text = "Rezervasyon için lütfen tarih ve oda tipini belirtin."
-    return {'response': response_text}
+    """AI-powered hotel assistant chatbot"""
+    user_message = message_data.get('message', '').strip()
+    if not user_message:
+        return {'response': 'Lütfen bir mesaj yazın.'}
+
+    try:
+        from ai_service import get_ai_service
+        ai_svc = get_ai_service()
+
+        if not ai_svc.llm_enabled:
+            raise RuntimeError("LLM backend not available")
+
+        # Gather hotel context
+        tenant = await db.tenants.find_one({"id": current_user.tenant_id})
+        hotel_name = tenant.get('property_name', 'Otel') if tenant else 'Otel'
+
+        rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}).to_list(None)
+        bookings = await db.bookings.find({
+            "tenant_id": current_user.tenant_id,
+            "status": {"$in": ["confirmed", "checked_in"]}
+        }).to_list(None)
+        total_rooms = len(rooms)
+        occupied = len([b for b in bookings if b.get('status') == 'checked_in'])
+        occupancy = round((occupied / total_rooms * 100), 1) if total_rooms > 0 else 0
+
+        from emergentintegrations.llm.chat import LlmChat, UserMessage as LlmUserMessage
+
+        system_msg = (
+            f"Sen {hotel_name} otelinin AI asistanısın. Otel yöneticilerine Türkçe olarak yardımcı oluyorsun. "
+            f"Otel bilgileri: {total_rooms} oda, şu an doluluk %{occupancy}, "
+            f"{len(bookings)} aktif rezervasyon var. "
+            "Sorulara kısa, net ve profesyonel yanıtlar ver. "
+            "Otel operasyonları, misafir hizmetleri, doluluk, fiyatlandırma, housekeeping gibi konularda yardımcı ol. "
+            "Yanıtlarını 150 kelimeyi geçmeyecek şekilde tut."
+        )
+
+        session_id = f"chat_{current_user.tenant_id}_{current_user.id}"
+        chat = LlmChat(
+            api_key=ai_svc.api_key,
+            session_id=session_id,
+            system_message=system_msg
+        )
+        chat.with_model("openai", "gpt-4o-mini")
+
+        llm_msg = LlmUserMessage(text=user_message)
+        response_text = await chat.send_message(llm_msg)
+
+        return {'response': response_text}
+    except Exception as exc:
+        print(f"AI chat error: {exc}")
+        # Fallback to basic keyword responses
+        msg_lower = user_message.lower()
+        if any(w in msg_lower for w in ['merhaba', 'selam', 'hey']):
+            return {'response': 'Merhaba! Ben AI otel asistanınızım. Otel operasyonları, doluluk, rezervasyon gibi konularda size yardımcı olabilirim. Ne sormak istersiniz?'}
+        elif any(w in msg_lower for w in ['rezervasyon', 'booking', 'oda ayırt']):
+            return {'response': 'Rezervasyon bilgileri için PMS modülüne göz atabilirsiniz. Yeni rezervasyon oluşturmak, mevcut rezervasyonları düzenlemek veya iptal etmek için Takvim sayfasını kullanabilirsiniz.'}
+        elif any(w in msg_lower for w in ['doluluk', 'occupancy', 'oda durumu']):
+            return {'response': 'Anlık doluluk bilgisi için Dashboard sayfasını kontrol edebilirsiniz. Detaylı doluluk analizi Raporlar bölümünde mevcuttur.'}
+        elif any(w in msg_lower for w in ['fiyat', 'pricing', 'ücret', 'tarife']):
+            return {'response': 'Fiyat yönetimi için Gelir Yönetimi (Revenue Management) modülünü kullanabilirsiniz. AI fiyatlandırma önerileri Dynamic Pricing bölümünde mevcuttur.'}
+        elif any(w in msg_lower for w in ['housekeeping', 'temizlik', 'kat hizmet']):
+            return {'response': 'Housekeeping durumu için Kat Hizmetleri modülüne bakabilirsiniz. Oda temizlik planlaması ve görev atamaları bu modülden yapılabilir.'}
+        else:
+            return {'response': 'Anlıyorum. Bu konuda size yardımcı olmaya çalışayım. Otel operasyonları (PMS, rezervasyon, doluluk, fiyatlandırma, housekeeping) ile ilgili daha spesifik bir soru sorabilir misiniz?'}
 
 @api_router.get("/ai/sentiment/{guest_id}")
 async def get_sentiment(guest_id: str, current_user: User = Depends(get_current_user)):
