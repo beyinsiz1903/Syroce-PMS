@@ -5064,7 +5064,8 @@ async def ai_chat(
                             f"{fmt_date(b.get('check_in'))} → {fmt_date(b.get('check_out'))} | "
                             f"Durum: {b.get('status','')} | Tutar: {b.get('total_amount',0):.0f} TL"
                         )
-                    data_context = f"\n\n## '{guest_name_hint}' İÇİN REZERVASYONLAR:\n" + "\n".join(lines) if lines else f"\n'{guest_name_hint}' adına rezervasyon bulunamadı."
+                    count_note = f" ({len(matched)} adet - BİRDEN FAZLA VARSA KULLANICIYA HANGİSİNİ İSTEDİĞİNİ SOR)" if len(matched) > 1 else ""
+                    data_context = f"\n\n## '{guest_name_hint}' İÇİN REZERVASYONLAR{count_note}:\n" + "\n".join(lines) if lines else f"\n'{guest_name_hint}' adına rezervasyon bulunamadı."
                 else:
                     # Show summary of all
                     checked_in = len([b for b in all_bookings if b.get('status') == 'checked_in'])
