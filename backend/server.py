@@ -5167,6 +5167,11 @@ async def ai_chat(
             "- Abonelik planına göre bazı modüller görünmeyebilir.\n"
         )
 
+        # Append data context to the user message so LLM can use real data
+        enriched_message = user_message
+        if data_context:
+            enriched_message = user_message + data_context
+
         session_id = f"chat_{current_user.tenant_id}_{current_user.id}"
         chat = LlmChat(
             api_key=ai_svc.api_key,
@@ -5175,7 +5180,7 @@ async def ai_chat(
         )
         chat.with_model("openai", "gpt-4o-mini")
 
-        llm_msg = LlmUserMessage(text=user_message)
+        llm_msg = LlmUserMessage(text=enriched_message)
         response_text = await chat.send_message(llm_msg)
 
         return {'response': response_text}
