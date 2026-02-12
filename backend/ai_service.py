@@ -63,27 +63,27 @@ class AIService:
         """
         Generate a natural language daily briefing for the dashboard
         """
-        system_message = """You are a hotel management AI assistant. 
-        Provide concise, friendly, and actionable daily briefings for hotel managers.
-        Focus on key metrics, trends, and actionable insights.
-        Keep responses under 100 words."""
+        system_message = """Sen bir otel yönetimi AI asistanısın. 
+        Otel müdürlerine kısa, samimi ve uygulanabilir günlük brifingleri TÜRKÇE olarak sunarsan.
+        Ana metriklere, trendlere ve uygulanabilir içgörülere odaklan.
+        Yanıtlarını 100 kelimeyi geçmeyecek şekilde tut. Her zaman Türkçe yanıt ver."""
         
         chat = self._create_chat(system_message, session_id=f"briefing_{datetime.now().strftime('%Y%m%d')}")
         
         occupancy_rate = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
         
-        prompt = f"""Generate a morning briefing for {hotel_name}:
+        prompt = f"""{hotel_name} için sabah brifingini oluştur:
         
-Current Status:
-- Total Rooms: {total_rooms}
-- Occupied: {occupied_rooms} ({occupancy_rate:.1f}% occupancy)
-- Today's Check-ins: {today_checkins}
-- Today's Check-outs: {today_checkouts}
-- Pending Invoices: {pending_invoices}
-- Monthly Revenue: ${monthly_revenue:,.2f}
-- Weather: {weather}
+Mevcut Durum:
+- Toplam Oda: {total_rooms}
+- Dolu: {occupied_rooms} (%{occupancy_rate:.1f} doluluk)
+- Bugünkü Girişler: {today_checkins}
+- Bugünkü Çıkışlar: {today_checkouts}
+- Bekleyen Faturalar: {pending_invoices}
+- Aylık Gelir: {monthly_revenue:,.2f} TL
+- Hava: {weather}
 
-Provide a friendly greeting, highlight key metrics, and give 1-2 actionable insights or predictions for today."""
+Samimi bir karşılama yap, önemli metrikleri vurgula ve bugün için 1-2 uygulanabilir içgörü ver. Türkçe yanıt ver."""
         
         user_message = UserMessage(text=prompt)
         response = await chat.send_message(user_message)
