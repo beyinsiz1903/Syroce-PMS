@@ -4962,36 +4962,36 @@ async def ai_chat(
                         all_folios.append(f)
                     
                 for f in all_folios:
-                        charges = await db.folio_charges.find({
-                            "folio_id": f['id'], "voided": {"$ne": True}
-                        }).to_list(50)
-                        
-                        charge_lines = []
-                        total = 0
-                        for ch in charges:
-                            amt = ch.get('total', ch.get('amount', 0))
-                            total += amt
-                            charge_lines.append(f"  - {ch.get('description','')}: {amt:.2f} TL")
-                        
-                        # Get booking info
-                        booking = await db.bookings.find_one({"id": f.get('booking_id')})
-                        guest = next((g for g in guests if g['id'] == f.get('guest_id')), None)
-                        guest_full = f"{guest.get('first_name','')} {guest.get('last_name','')}" if guest else f.get('guest_name', 'Bilinmiyor')
-                        
-                        folio_info = (
-                            f"Folio #{f.get('folio_number','')}\n"
-                            f"  Misafir: {guest_full}\n"
-                            f"  Durum: {f.get('status','')}\n"
+                    charges = await db.folio_charges.find({
+                        "folio_id": f['id'], "voided": {"$ne": True}
+                    }).to_list(50)
+                    
+                    charge_lines = []
+                    total = 0
+                    for ch in charges:
+                        amt = ch.get('total', ch.get('amount', 0))
+                        total += amt
+                        charge_lines.append(f"  - {ch.get('description','')}: {amt:.2f} TL")
+                    
+                    # Get booking info
+                    booking = await db.bookings.find_one({"id": f.get('booking_id')})
+                    guest = next((g for g in guests if g['id'] == f.get('guest_id')), None)
+                    guest_full = f"{guest.get('first_name','')} {guest.get('last_name','')}" if guest else f.get('guest_name', 'Bilinmiyor')
+                    
+                    folio_info = (
+                        f"Folio #{f.get('folio_number','')}\n"
+                        f"  Misafir: {guest_full}\n"
+                        f"  Durum: {'Açık (aktif)' if f.get('status') == 'open' else 'Kapalı (geçmiş)'}\n"
+                    )
+                    if booking:
+                        folio_info += (
+                            f"  Oda: {booking.get('room_number','')}\n"
+                            f"  Giriş: {fmt_date(booking.get('check_in'))}\n"
+                            f"  Çıkış: {fmt_date(booking.get('check_out'))}\n"
                         )
-                        if booking:
-                            folio_info += (
-                                f"  Oda: {booking.get('room_number','')}\n"
-                                f"  Giriş: {fmt_date(booking.get('check_in'))}\n"
-                                f"  Çıkış: {fmt_date(booking.get('check_out'))}\n"
-                            )
-                        folio_info += f"  Harcamalar:\n" + "\n".join(charge_lines) if charge_lines else "  Harcama yok"
-                        folio_info += f"\n  TOPLAM: {total:.2f} TL"
-                        folios_found.append(folio_info)
+                    folio_info += f"  Harcamalar:\n" + "\n".join(charge_lines) if charge_lines else "  Harcama yok"
+                    folio_info += f"\n  TOPLAM: {total:.2f} TL"
+                    folios_found.append(folio_info)
             
             if not folios_found:
                 # If no name provided or no match, list all open folios
