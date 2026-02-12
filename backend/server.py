@@ -13101,45 +13101,78 @@ async def get_ai_dashboard_briefing(
         'check_out': today
     })
     
-    # AI-generated briefing
+    confirmed_bookings = await db.bookings.count_documents({
+        'tenant_id': current_user.tenant_id,
+        'status': {'$in': ['confirmed', 'guaranteed']}
+    })
+    
+    pending_invoices = await db.accounting_invoices.count_documents({
+        'tenant_id': current_user.tenant_id,
+        'status': 'pending'
+    })
+    
     occupancy_pct = round((occupied / total_rooms * 100), 1) if total_rooms > 0 else 0
     
-    briefing_items = [
-        {
-            'priority': 'high',
-            'category': 'occupancy',
-            'message': f"Current occupancy: {occupancy_pct}% ({occupied}/{total_rooms} rooms)",
-            'insight': 'On track with forecast' if occupancy_pct > 70 else 'Below target'
-        },
-        {
-            'priority': 'medium',
-            'category': 'arrivals',
-            'message': f"{arrivals} arrivals expected today",
-            'insight': 'Standard volume' if arrivals < 20 else 'High volume - prepare extra staff'
-        },
-        {
-            'priority': 'medium',
-            'category': 'departures',
-            'message': f"{departures} departures scheduled",
-            'insight': 'Housekeeping workload: Normal'
-        },
-        {
-            'priority': 'low',
-            'category': 'recommendation',
-            'message': 'Consider upselling room upgrades to VIP guests',
-            'insight': 'High conversion potential'
-        }
-    ]
+    # Get hotel name
+    tenant = await db.tenants.find_one({"id": current_user.tenant_id})
+    hotel_name = tenant.get('property_name', 'Otel') if tenant else 'Otel'
+    
+    # Try AI-generated briefing
+    ai_summary = None
+    try:
+        from ai_service import get_ai_service
+        ai_svc = get_ai_service()
+        if ai_svc.llm_enabled:
+            ai_summary = await ai_svc.generate_daily_briefing(
+                hotel_name=hotel_name,
+                total_rooms=total_rooms,
+                occupied_rooms=occupied,
+                today_checkins=arrivals,
+                today_checkouts=departures,
+                pending_invoices=pending_invoices,
+                monthly_revenue=0,
+                weather="clear"
+            )
+    except Exception as ai_err:
+        print(f"AI briefing generation failed: {ai_err}")
+    
+    # Fallback summary
+    if not ai_summary:
+        ai_summary = (
+            f"Günaydın! {hotel_name} için günlük özet: "
+            f"Toplam {total_rooms} odadan {occupied} tanesi dolu (%{occupancy_pct} doluluk). "
+            f"Bugün {arrivals} giriş ve {departures} çıkış bekleniyor."
+        )
+    
+    # Build insights
+    insights = []
+    if occupancy_pct > 80:
+        insights.append("Doluluk oranı yüksek! Fiyat artışı değerlendirilebilir.")
+    elif occupancy_pct < 40:
+        insights.append("Doluluk düşük. Promosyon kampanyası başlatmayı düşünün.")
+    if arrivals > 5:
+        insights.append(f"Bugün {arrivals} giriş var, resepsiyon ekibini bilgilendirin.")
+    if pending_invoices > 3:
+        insights.append(f"{pending_invoices} bekleyen fatura var, muhasebe takibi önerilir.")
+    if confirmed_bookings > 0:
+        insights.append(f"{confirmed_bookings} onaylı rezervasyon aktif.")
+    if departures > 0:
+        insights.append(f"{departures} çıkış planlanmış, kat hizmetlerini hazırlayın.")
     
     return {
+        'summary': ai_summary,
+        'text': ai_summary,
+        'briefing': ai_summary,
         'briefing_date': today,
-        'briefing_items': briefing_items,
-        'summary': f"Occupancy {occupancy_pct}%, {arrivals} arrivals, {departures} departures",
+        'insights': insights,
         'metrics': {
+            'total_rooms': total_rooms,
+            'occupied_rooms': occupied,
             'occupancy_rate': occupancy_pct,
             'today_checkins': arrivals,
             'today_checkouts': departures,
-            # For now we keep monthly_revenue simple; detailed revenue comes from other endpoints
+            'confirmed_bookings': confirmed_bookings,
+            'pending_invoices': pending_invoices,
             'monthly_revenue': 0
         },
         'generated_at': datetime.now(timezone.utc).isoformat()
