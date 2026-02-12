@@ -165,6 +165,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
   const renderContent = () => {
     switch(activeSection) {
       case 'insights': return renderInsights();
+      case 'insights_ozet': return renderInsightsOzet();
       case 'gelir': return renderGelir();
       case 'doluluk': return renderDoluluk();
       case 'ulke': return renderUlke();
