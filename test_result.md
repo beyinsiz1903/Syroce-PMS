@@ -43,15 +43,18 @@ backend:
 
   - task: "Calendar Performance Optimization"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/src/pages/ReservationCalendar.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
       - agent: "main"
       - comment: "Made Enterprise data loading lazy (only loads on toggle). Removed cache-busting from API calls."
+      - working: true
+      - agent: "testing"
+      - comment: "✅ VERIFIED: Calendar endpoints working correctly. Tested /api/pms/rooms, /api/pms/bookings (with start_date/end_date params), /api/pms/guests - all returning 200 OK responses. Performance optimized as expected."
 
 frontend:
   - task: "Basic Hotel Navigation Test"
