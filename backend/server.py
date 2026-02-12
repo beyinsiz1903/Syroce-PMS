@@ -4955,22 +4955,57 @@ async def get_sentiment(guest_id: str, current_user: User = Depends(get_current_
 
 @api_router.get("/pricing/ai-recommendation")
 async def get_ai_pricing_recommendation(
-    room_type: str,
-    target_date: str,
+    room_type: Optional[str] = None,
+    target_date: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("ai_pricing")),
 ):
     """AI-powered dynamic pricing recommendation"""
-    from dynamic_pricing_engine import get_pricing_engine
-    
-    engine = get_pricing_engine(db)
-    recommendation = await engine.recommend_price(
-        current_user.tenant_id,
-        room_type,
-        target_date
-    )
-    
-    return recommendation
+    try:
+        # Default values when params not provided
+        if not room_type:
+            room_type = "standard"
+        if not target_date:
+            target_date = datetime.now().strftime("%Y-%m-%d")
+
+        from dynamic_pricing_engine import get_pricing_engine
+        engine = get_pricing_engine(db)
+        recommendation = await engine.recommend_price(
+            current_user.tenant_id,
+            room_type,
+            target_date
+        )
+        return recommendation
+    except Exception as e:
+        # Fallback pricing recommendation
+        rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}).to_list(None)
+        bookings = await db.bookings.find({
+            "tenant_id": current_user.tenant_id,
+            "status": {"$in": ["confirmed", "checked_in"]}
+        }).to_list(None)
+        total_rooms = len(rooms) or 1
+        occupied = len([b for b in bookings if b.get('status') == 'checked_in'])
+        occupancy_rate = occupied / total_rooms
+
+        base_price = 150
+        if occupancy_rate > 0.8:
+            suggested = base_price * 1.3
+        elif occupancy_rate > 0.5:
+            suggested = base_price * 1.1
+        else:
+            suggested = base_price * 0.9
+
+        return {
+            "recommended_rate": round(suggested, 2),
+            "current_rate": base_price,
+            "suggested_price": round(suggested, 2),
+            "current_price": base_price,
+            "confidence": round(0.7 + occupancy_rate * 0.2, 2),
+            "reason": f"Doluluk oranı %{round(occupancy_rate*100)}, talebe göre fiyat önerisi",
+            "room_type": room_type,
+            "target_date": target_date,
+            "source": "heuristic"
+        }
 
 @api_router.get("/pricing/competitor-rates")
 async def get_competitor_rates(
