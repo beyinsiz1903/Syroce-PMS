@@ -4999,7 +4999,8 @@ async def ai_chat(
                     )
             
             if folios_found:
-                data_context = "\n\n## VERİTABANINDAN GELEN FOLİO VERİLERİ:\n" + "\n\n".join(folios_found)
+                count_label = f"({len(folios_found)} adet bulundu - KULLANICIYA HANGİSİNİ İSTEDİĞİNİ SOR)" if len(folios_found) > 1 else "(1 adet)"
+                data_context = f"\n\n## VERİTABANINDAN GELEN FOLİO VERİLERİ {count_label}:\n" + "\n\n".join(folios_found)
             else:
                 data_context = "\n\nVeritabanında eşleşen folio bulunamadı."
 
