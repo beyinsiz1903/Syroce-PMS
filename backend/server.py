@@ -4927,9 +4927,8 @@ async def ai_chat(
 
             folios_found = []
             if guest_name_hint:
-                # Search guests by name
+                # Search guests by name - try multiple fields
                 import re
-                name_regex = re.compile(guest_name_hint, re.IGNORECASE)
                 guests = await db.guests.find({
                     "tenant_id": current_user.tenant_id,
                     "$or": [
@@ -4939,11 +4938,28 @@ async def ai_chat(
                 }).to_list(10)
                 
                 guest_ids = [g['id'] for g in guests]
+                
+                # Also search folios directly by guest_name field
+                folios_by_name = await db.folios.find({
+                    "tenant_id": current_user.tenant_id,
+                    "guest_name": {"$regex": guest_name_hint, "$options": "i"}
+                }).to_list(20)
+                
+                # Search folios by guest_id
+                folios_by_id = []
                 if guest_ids:
-                    folios = await db.folios.find({
+                    folios_by_id = await db.folios.find({
                         "tenant_id": current_user.tenant_id,
                         "guest_id": {"$in": guest_ids}
                     }).to_list(20)
+                
+                # Merge and deduplicate
+                seen_ids = set()
+                all_folios = []
+                for f in folios_by_id + folios_by_name:
+                    if f['id'] not in seen_ids:
+                        seen_ids.add(f['id'])
+                        all_folios.append(f)
                     
                     for f in folios:
                         charges = await db.folio_charges.find({
