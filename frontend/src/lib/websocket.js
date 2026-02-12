@@ -1,60 +1,91 @@
 /**
  * WebSocket Client for Real-time Updates
+ * Gracefully handles connection failures without blocking the app
  */
-import { io } from 'socket.io-client';
+import React from 'react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
-const WEBSOCKET_URL = BACKEND_URL.replace('/api', '/ws');
+// Construct WebSocket URL from backend URL
+const WEBSOCKET_URL = BACKEND_URL.replace('/api', '').replace(/\/+$/, '');
+
+let ioModule = null;
 
 class WebSocketManager {
   constructor() {
     this.socket = null;
     this.listeners = new Map();
     this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 5;
+    this.maxReconnectAttempts = 2; // Reduced from 5 to avoid console spam
+    this.disabled = false;
   }
 
   connect() {
+    // If disabled after max attempts, return a mock socket
+    if (this.disabled) {
+      return this._getMockSocket();
+    }
+
     if (this.socket?.connected) {
-      console.log('WebSocket already connected');
       return this.socket;
     }
 
-    console.log('🔌 Connecting to WebSocket:', WEBSOCKET_URL);
+    try {
+      // Lazy import socket.io-client to avoid blocking initial load
+      const { io } = require('socket.io-client');
+      
+      this.socket = io(WEBSOCKET_URL, {
+        transports: ['websocket'],
+        reconnection: true,
+        reconnectionDelay: 3000,
+        reconnectionDelayMax: 10000,
+        reconnectionAttempts: this.maxReconnectAttempts,
+        timeout: 5000,
+        autoConnect: true,
+      });
 
-    this.socket = io(WEBSOCKET_URL, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      reconnectionAttempts: this.maxReconnectAttempts,
-    });
+      this.setupEventHandlers();
+      return this.socket;
+    } catch (err) {
+      // If socket.io is not available, disable gracefully
+      this.disabled = true;
+      return this._getMockSocket();
+    }
+  }
 
-    this.setupEventHandlers();
-    return this.socket;
+  _getMockSocket() {
+    // Return a mock socket that does nothing (prevents errors)
+    return {
+      connected: false,
+      on: () => {},
+      off: () => {},
+      emit: () => {},
+      disconnect: () => {},
+    };
   }
 
   setupEventHandlers() {
+    if (!this.socket) return;
+
     this.socket.on('connect', () => {
-      console.log('✅ WebSocket connected');
       this.reconnectAttempts = 0;
     });
 
-    this.socket.on('disconnect', (reason) => {
-      console.log('❌ WebSocket disconnected:', reason);
-    });
+    this.socket.on('disconnect', () => {});
 
-    this.socket.on('connect_error', (error) => {
-      console.error('WebSocket connection error:', error);
+    this.socket.on('connect_error', () => {
       this.reconnectAttempts++;
-
       if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-        console.error('Max reconnection attempts reached');
+        // Silently disable WebSocket after max attempts
+        this.disabled = true;
+        if (this.socket) {
+          this.socket.disconnect();
+          this.socket = null;
+        }
       }
     });
 
     this.socket.on('connection_established', (data) => {
-      console.log('Connection established:', data);
+      this.emit('connection_established', data);
     });
 
     // Dashboard updates
@@ -77,26 +108,16 @@ class WebSocketManager {
       this.emit('notification', data);
     });
 
-    // Pong response
-    this.socket.on('pong', (data) => {
-      console.log('Pong received:', data);
-    });
+    this.socket.on('pong', () => {});
   }
 
   joinRoom(room) {
-    if (!this.socket?.connected) {
-      console.warn('Cannot join room: not connected');
-      return;
-    }
-
-    console.log(`📍 Joining room: ${room}`);
+    if (!this.socket?.connected) return;
     this.socket.emit('join_room', { room });
   }
 
   leaveRoom(room) {
     if (!this.socket?.connected) return;
-
-    console.log(`📍 Leaving room: ${room}`);
     this.socket.emit('leave_room', { room });
   }
 
@@ -106,7 +127,6 @@ class WebSocketManager {
     }
     this.listeners.get(event).push(callback);
 
-    // Return unsubscribe function
     return () => {
       const callbacks = this.listeners.get(event);
       if (callbacks) {
@@ -136,7 +156,6 @@ class WebSocketManager {
       this.socket.disconnect();
       this.socket = null;
       this.listeners.clear();
-      console.log('WebSocket disconnected manually');
     }
   }
 
