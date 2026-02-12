@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Home, AlertTriangle, TrendingUp, Calendar, Target } from 'lucide-react';
+import { Home, AlertTriangle, TrendingUp, Calendar, Target, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PredictiveAnalytics = () => {
