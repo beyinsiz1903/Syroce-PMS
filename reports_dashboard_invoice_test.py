@@ -349,7 +349,7 @@ def main():
     all_results = {}
     
     # Test both accounts
-    for account_type in ['basic', 'professional']:
+    for account_type in ['admin', 'supervisor', 'finance']:
         account_name = TEST_ACCOUNTS[account_type]['name']
         print(f"\n🏨 Testing {account_name} ({TEST_ACCOUNTS[account_type]['email']})")
         
