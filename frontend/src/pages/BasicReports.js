@@ -323,6 +323,56 @@ const BasicReports = ({ user, tenant, onLogout }) => {
     </div>
   );
 
+  const renderInsightsOzet = () => (
+    <div className="space-y-6">
+      <div className="flex items-center gap-2 mb-2">
+        <button onClick={() => setActiveSection('insights')} className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1"><ChevronRight className="w-3 h-3 rotate-180" />Insights</button>
+        <ChevronRight className="w-3 h-3 text-gray-400" />
+        <span className="text-sm text-gray-700 font-medium">Özet Yönetici Raporu</span>
+      </div>
+      <div className="flex items-center justify-between">
+        <div><h2 className="text-xl font-bold text-gray-900">Özet Yönetici Raporu</h2><p className="text-sm text-gray-500">Bu dashboard temel KPI'ları takip etmek için oluşturulmuştur. Tarih filtresi müşterilerin konakladığı tarihe göre filtrelenir.</p></div>
+        <Badge className="bg-green-100 text-green-700 border-green-200">Yayınlandı</Badge>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <KPICard title="Toplam Gelir" value={pc.month_revenue} prevValue={pc.prev_month_revenue} prevLabel={'vs. ÖA: ' + formatCurrency(pc.prev_month_revenue)} icon={DollarSign} color="green" />
+        <KPICard title="Ort. ADR" value={s.adr} prevValue={pc.prev_month_adr} prevLabel={'vs. ÖA: ' + formatCurrency(pc.prev_month_adr)} icon={TrendingUp} color="blue" />
+        <KPICard title="Toplam Geceleme" value={pc.month_bookings + ' Room Nights'} prevValue={pc.prev_month_bookings} prevLabel={'vs. ÖA: ' + (pc.prev_month_bookings || 0) + ' RN'} icon={BedDouble} color="purple" />
+        <KPICard title="Toplam Rezervasyon Sayısı" value={pc.month_bookings} prevValue={pc.prev_month_bookings} prevLabel={'vs. ÖA: ' + (pc.prev_month_bookings || 0)} icon={BookOpen} color="cyan" />
+        <KPICard title="RevPar" value={s.revpar} icon={BarChart3} color="amber" />
+        <KPICard title="Doluluk Oranı" value={formatPercent(s.occupancy_percentage)} icon={Hotel} color="red" />
+      </div>
+      <div className="grid md:grid-cols-2 gap-4">
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Toplam Gelir & Toplam Rezervasyon Sayısı</CardTitle><div className="flex gap-2 mt-1"><button className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">Günlük</button><button className="text-[10px] px-2 py-0.5 rounded text-gray-400 hover:bg-gray-100">Haftalık</button><button className="text-[10px] px-2 py-0.5 rounded text-gray-400 hover:bg-gray-100">Aylık</button><button className="text-[10px] px-2 py-0.5 rounded text-gray-400 hover:bg-gray-100">Üç Aylık</button><button className="text-[10px] px-2 py-0.5 rounded text-gray-400 hover:bg-gray-100">Yıllık</button></div></CardHeader>
+          <CardContent><ResponsiveContainer width="100%" height={300}>
+            <ComposedChart data={data?.revenue_trend || []}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={3} />
+              <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={v => '₺' + (v/1000).toFixed(0) + 'K'} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
+              <Tooltip content={<CustomTooltip />} /><Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar yAxisId="right" dataKey="revenue" name="Toplam Rezervasyon Sayısı" fill="#3B82F6" opacity={0.6} radius={[2,2,0,0]} />
+              <Line yAxisId="left" type="monotone" dataKey="revenue" name="Toplam Gelir" stroke="#F97316" strokeWidth={2.5} dot={{ r: 3.5, fill: '#F97316' }} />
+            </ComposedChart>
+          </ResponsiveContainer></CardContent>
+        </Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Ort. ADR & Toplam Geceleme</CardTitle><div className="flex gap-2 mt-1"><button className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">Günlük</button><button className="text-[10px] px-2 py-0.5 rounded text-gray-400 hover:bg-gray-100">Haftalık</button><button className="text-[10px] px-2 py-0.5 rounded text-gray-400 hover:bg-gray-100">Aylık</button><button className="text-[10px] px-2 py-0.5 rounded text-gray-400 hover:bg-gray-100">Üç Aylık</button><button className="text-[10px] px-2 py-0.5 rounded text-gray-400 hover:bg-gray-100">Yıllık</button></div></CardHeader>
+          <CardContent><ResponsiveContainer width="100%" height={300}>
+            <ComposedChart data={data?.revenue_trend?.slice(-14) || []}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+              <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={v => '₺' + (v/1000).toFixed(0) + 'K'} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
+              <Tooltip content={<CustomTooltip formatter={formatCurrency} />} /><Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar yAxisId="right" dataKey="revenue" name="Toplam Geceleme" fill="#3B82F6" radius={[3,3,0,0]} />
+              <Line yAxisId="left" type="monotone" dataKey="revenue" name="Ort. ADR" stroke="#F97316" strokeWidth={2} dot={{ r: 3, fill: '#F97316' }} />
+            </ComposedChart>
+          </ResponsiveContainer></CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+
   const renderGelir = () => (
     <div className="space-y-6">
       <h2 className="text-xl font-bold text-gray-900">Gelir Raporu</h2>
