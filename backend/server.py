@@ -3424,20 +3424,30 @@ MODULE_DEFAULTS: Dict[str, bool] = {
 
 
 def get_tenant_modules(tenant_doc: Dict[str, Any]) -> Dict[str, bool]:
-    """Merge stored tenant modules with defaults.
+    """Merge stored tenant modules with tier-based defaults.
 
-    If no modules are stored, all modules are treated as enabled by default
-    to preserve backward compatibility for existing hotels.
+    Uses the subscription tier to determine default modules.
+    If tenant has explicit modules stored, those override the defaults.
     """
-    modules = tenant_doc.get("modules") or {}
-    merged = MODULE_DEFAULTS.copy()
+    from subscription_models import get_plan_default_modules
 
-    if isinstance(modules, dict):
+    # Get the tier
+    tier = (tenant_doc.get("subscription_tier") or "basic").lower()
+    if tier == "pro":
+        tier = "professional"
+    if tier == "ultra":
+        tier = "enterprise"
+
+    # Start with tier-based defaults (not all-True)
+    merged = get_plan_default_modules(tier)
+
+    # Override with explicitly stored modules (if any)
+    modules = tenant_doc.get("modules")
+    if isinstance(modules, dict) and len(modules) > 0:
         for key, value in modules.items():
             try:
                 merged[key] = bool(value)
             except Exception:
-                # Ignore invalid values and keep default
                 continue
 
     return merged
