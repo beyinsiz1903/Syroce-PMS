@@ -125,20 +125,34 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
     return { visibleNav: visible, lockedNav: locked, upgradeTier: nextUpgradeTier };
   }, [modules, isSuperAdmin]);
 
+  // ─── Normalize module key for comparison (handle hyphen vs underscore) ──
+  const normalizeKey = (key) => key ? key.replace(/-/g, '_') : '';
+  const normalizedCurrentModule = normalizeKey(currentModule);
+
   // ─── Scroll active item into view ────────────────────
   useEffect(() => {
     if (navScrollRef.current && currentModule) {
-      const activeButton = navScrollRef.current.querySelector(`[data-nav-key="${currentModule}"]`);
+      // Find active button by matching normalized keys
+      const allButtons = navScrollRef.current.querySelectorAll('[data-nav-key]');
+      let activeButton = null;
+      allButtons.forEach(btn => {
+        if (normalizeKey(btn.getAttribute('data-nav-key')) === normalizedCurrentModule) {
+          activeButton = btn;
+        }
+      });
       if (activeButton) {
-        activeButton.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        // Use requestAnimationFrame for more reliable scroll timing
+        requestAnimationFrame(() => {
+          activeButton.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        });
       }
     }
-  }, [currentModule]);
+  }, [currentModule, normalizedCurrentModule]);
 
   // ─── Render nav button ───────────────────────────────
   const renderNavButton = (item, isMobile = false) => {
     const Icon = ICON_BY_KEY[item.key] || Home;
-    const isActive = currentModule === item.key;
+    const isActive = normalizedCurrentModule === normalizeKey(item.key);
 
     return (
       <Button
