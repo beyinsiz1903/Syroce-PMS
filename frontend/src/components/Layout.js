@@ -95,19 +95,13 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
       // Hidden items
       if (item.hidden) return;
 
-      // Super admin items
+      // Super admin items (admin panel links)
       if (item.requireSuperAdmin) {
         if (isSuperAdmin) visible.push(item);
         return;
       }
 
-      // Super admin sees everything
-      if (isSuperAdmin) {
-        visible.push(item);
-        return;
-      }
-
-      // Check if module is enabled for this tenant
+      // Check if module is enabled for this tenant (applies to ALL users including super_admin)
       if (item.moduleKey && isModuleEnabled(item.moduleKey)) {
         visible.push(item);
       } else if (item.moduleKey && !isModuleEnabled(item.moduleKey)) {
