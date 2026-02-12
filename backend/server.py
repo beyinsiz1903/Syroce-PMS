@@ -11833,253 +11833,131 @@ async def get_basic_reports_dashboard(
     _: None = Depends(require_module("basic_reporting")),
 ):
     """
-    Temel Raporlar Dashboard - Tüm planlar için kapsamlı otel raporları
-    Doluluk, gelir, departman performansı, günlük özet
+    Temel Raporlar Dashboard - OPTIMIZED: Batch queries
     """
+    import asyncio
     today = datetime.now(timezone.utc)
     today_start = today.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today.replace(hour=23, minute=59, second=59)
     tenant_id = current_user.tenant_id
+    month_start = (today - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = (today - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+    trend_start = (today - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # --- Oda bilgileri ---
-    rooms = await db.rooms.find({'tenant_id': tenant_id}).to_list(1000)
+    # ALL queries in parallel
+    async def get_fnb():
+        try:
+            orders = await db.pos_orders.find({'tenant_id': tenant_id, 'created_at': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()}}, {'_id': 0, 'total_amount': 1}).to_list(1000)
+            return sum(o.get('total_amount', 0) for o in orders)
+        except Exception:
+            return 0.0
+
+    results = await asyncio.gather(
+        db.rooms.find({'tenant_id': tenant_id}).to_list(1000),
+        db.bookings.find({'tenant_id': tenant_id, '$or': [{'check_in': {'$gte': trend_start.isoformat(), '$lte': today_end.isoformat()}}, {'check_out': {'$gte': trend_start.isoformat(), '$lte': today_end.isoformat()}}, {'check_in': {'$lte': trend_start.isoformat()}, 'check_out': {'$gte': today_end.isoformat()}}]}, {'_id': 0, 'check_in': 1, 'check_out': 1, 'total_amount': 1, 'status': 1, 'booking_source': 1, 'room_type': 1, 'created_at': 1, 'guest_name': 1, 'guest_email': 1, 'guest_phone': 1, 'room_number': 1, 'nationality': 1, 'id_number': 1, 'passport_number': 1}).to_list(10000),
+        db.bookings.count_documents({'tenant_id': tenant_id, 'status': 'checked_in'}),
+        db.housekeeping_tasks.find({'tenant_id': tenant_id, 'created_at': {'$gte': (today - timedelta(days=7)).isoformat()}}).to_list(5000),
+        db.maintenance_tasks.count_documents({'tenant_id': tenant_id, 'status': {'$in': ['open', 'in_progress', 'pending']}}),
+        db.maintenance_tasks.count_documents({'tenant_id': tenant_id, 'status': 'completed', 'completed_at': {'$gte': month_start.isoformat()}}),
+        db.invoices.count_documents({'tenant_id': tenant_id, 'payment_status': {'$in': ['pending', 'partial']}}),
+        db.invoices.count_documents({'tenant_id': tenant_id, 'payment_status': 'paid', 'created_at': {'$gte': month_start.isoformat()}}),
+        db.guests.find({'tenant_id': tenant_id}, {'_id': 0, 'nationality': 1, 'country': 1}).to_list(5000),
+        db.payments.find({'tenant_id': tenant_id, 'processed_at': {'$gte': month_start.isoformat()}}, {'_id': 0, 'amount': 1, 'method': 1, 'status': 1}).to_list(5000),
+        db.bookings.find({'tenant_id': tenant_id, 'check_in': {'$gte': (today - timedelta(days=60)).replace(hour=0,minute=0,second=0,microsecond=0).isoformat(), '$lt': month_start.isoformat()}, 'status': {'$in': ['confirmed', 'checked_in', 'checked_out']}}, {'_id': 0, 'total_amount': 1}).to_list(10000),
+        db.bookings.find({'tenant_id': tenant_id, 'check_in': {'$gte': (today - timedelta(days=365)).isoformat(), '$lt': (today - timedelta(days=335)).isoformat()}, 'status': {'$in': ['confirmed', 'checked_in', 'checked_out']}}, {'_id': 0, 'total_amount': 1}).to_list(10000),
+        get_fnb(),
+    )
+    rooms, all_bk, in_house, hk_tasks, maint_open, maint_completed, pending_invoices, paid_invoices, all_guests, all_payments, prev_bookings, ly_bookings, fnb_revenue = results
+
     total_rooms = len(rooms)
     room_types = {}
     for r in rooms:
         rt = r.get('room_type', 'Standard')
         room_types[rt] = room_types.get(rt, 0) + 1
 
-    # --- Bugünkü doluluk ---
-    occupied_today = await db.bookings.count_documents({
-        'tenant_id': tenant_id,
-        'status': 'checked_in',
-        'check_in': {'$lte': today_end.isoformat()},
-        'check_out': {'$gte': today_start.isoformat()}
-    })
-    occupancy_pct = round((occupied_today / total_rooms * 100), 1) if total_rooms > 0 else 0
-
-    # --- Bugünkü hareketler ---
-    arrivals = await db.bookings.count_documents({
-        'tenant_id': tenant_id,
-        'check_in': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()},
-        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
-    })
-    departures = await db.bookings.count_documents({
-        'tenant_id': tenant_id,
-        'check_out': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()}
-    })
-    in_house = await db.bookings.count_documents({
-        'tenant_id': tenant_id,
-        'status': 'checked_in'
-    })
-    no_shows = await db.bookings.count_documents({
-        'tenant_id': tenant_id,
-        'check_in': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()},
-        'status': 'no_show'
-    })
-    cancellations = await db.bookings.count_documents({
-        'tenant_id': tenant_id,
-        'status': 'cancelled',
-        'created_at': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()}
-    })
-
-    # --- Bugünkü gelir ---
-    today_bookings = await db.bookings.find({
-        'tenant_id': tenant_id,
-        'check_in': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()}
-    }, {'_id': 0, 'total_amount': 1}).to_list(1000)
-    today_revenue = sum(b.get('total_amount', 0) for b in today_bookings)
-    adr = round(today_revenue / occupied_today, 2) if occupied_today > 0 else 0
-    revpar = round(today_revenue / total_rooms, 2) if total_rooms > 0 else 0
-
-    # --- Son 30 günlük doluluk trendi ---
-    occupancy_trend = []
-    for i in range(29, -1, -1):
-        d = today - timedelta(days=i)
-        d_start = d.replace(hour=0, minute=0, second=0, microsecond=0)
-        d_end = d.replace(hour=23, minute=59, second=59)
-        occ = await db.bookings.count_documents({
-            'tenant_id': tenant_id,
-            'status': {'$in': ['checked_in', 'checked_out', 'confirmed']},
-            'check_in': {'$lte': d_end.isoformat()},
-            'check_out': {'$gte': d_start.isoformat()}
-        })
-        occ_pct = round((occ / total_rooms * 100), 1) if total_rooms > 0 else 0
-        occupancy_trend.append({
-            'date': d.strftime('%Y-%m-%d'),
-            'label': d.strftime('%d %b'),
-            'occupancy': occ_pct,
-            'rooms_occupied': occ
-        })
-
-    # --- Son 30 günlük gelir trendi ---
-    revenue_trend = []
-    for i in range(29, -1, -1):
-        d = today - timedelta(days=i)
-        d_start = d.replace(hour=0, minute=0, second=0, microsecond=0)
-        d_end = d.replace(hour=23, minute=59, second=59)
-        day_bookings = await db.bookings.find({
-            'tenant_id': tenant_id,
-            'check_in': {'$gte': d_start.isoformat(), '$lte': d_end.isoformat()},
-            'status': {'$in': ['confirmed', 'checked_in', 'checked_out']}
-        }, {'_id': 0, 'total_amount': 1}).to_list(1000)
-        day_rev = sum(b.get('total_amount', 0) for b in day_bookings)
-        revenue_trend.append({
-            'date': d.strftime('%Y-%m-%d'),
-            'label': d.strftime('%d %b'),
-            'revenue': round(day_rev, 2)
-        })
-
-    # --- Oda durumu dağılımı ---
     room_status_counts = {'available': 0, 'occupied': 0, 'dirty': 0, 'maintenance': 0, 'out_of_order': 0}
     for r in rooms:
         st = r.get('current_status', r.get('status', 'available'))
-        if st in room_status_counts:
-            room_status_counts[st] += 1
-        else:
-            room_status_counts['available'] += 1
+        room_status_counts[st] = room_status_counts.get(st, room_status_counts.get('available', 0)) + 1
 
-    # --- Housekeeping özet ---
-    hk_tasks = await db.housekeeping_tasks.find({
-        'tenant_id': tenant_id,
-        'created_at': {'$gte': (today - timedelta(days=7)).isoformat()}
-    }).to_list(5000)
+    ts_s, ts_e = today_start.isoformat(), today_end.isoformat()
+    ms_s, ws_s = month_start.isoformat(), week_start.isoformat()
+    occupied_today = arrivals = departures = no_shows = cancellations = today_revenue = 0
+    recent_bookings = []; week_bookings = []; month_bookings = []; recent_guests_data = []
+
+    for bk in all_bk:
+        ci, co, status = bk.get('check_in',''), bk.get('check_out',''), bk.get('status','')
+        amt = bk.get('total_amount', 0) or 0
+        created = bk.get('created_at', '')
+        if status == 'checked_in' and ci <= ts_e and co >= ts_s: occupied_today += 1
+        if ci >= ts_s and ci <= ts_e and status in ('confirmed','guaranteed','checked_in'): arrivals += 1
+        if co >= ts_s and co <= ts_e: departures += 1
+        if ci >= ts_s and ci <= ts_e and status == 'no_show': no_shows += 1
+        if status == 'cancelled' and created >= ts_s and created <= ts_e: cancellations += 1
+        if ci >= ts_s and ci <= ts_e: today_revenue += amt
+        if created >= ms_s: recent_bookings.append(bk)
+        if ci >= ws_s and status in ('confirmed','checked_in','checked_out'): week_bookings.append(bk)
+        if ci >= ms_s and status in ('confirmed','checked_in','checked_out'):
+            month_bookings.append(bk)
+            recent_guests_data.append({'guest_name': bk.get('guest_name'), 'guest_email': bk.get('guest_email'), 'guest_phone': bk.get('guest_phone'), 'room_number': bk.get('room_number'), 'room_type': bk.get('room_type'), 'check_in': ci, 'check_out': co, 'total_amount': amt, 'status': status, 'nationality': bk.get('nationality'), 'id_number': bk.get('id_number'), 'passport_number': bk.get('passport_number'), 'booking_source': bk.get('booking_source')})
+
+    occupancy_pct = round((occupied_today / total_rooms * 100), 1) if total_rooms > 0 else 0
+    adr = round(today_revenue / occupied_today, 2) if occupied_today > 0 else 0
+    revpar = round(today_revenue / total_rooms, 2) if total_rooms > 0 else 0
+
+    # Compute 30-day trends from batch data (NO extra queries)
+    occupancy_trend = []; revenue_trend = []
+    for i in range(29, -1, -1):
+        d = today - timedelta(days=i)
+        ds = d.replace(hour=0,minute=0,second=0,microsecond=0).isoformat()
+        de = d.replace(hour=23,minute=59,second=59).isoformat()
+        occ_c = 0; day_r = 0
+        for bk in all_bk:
+            ci, co, st2 = bk.get('check_in',''), bk.get('check_out',''), bk.get('status','')
+            if st2 in ('checked_in','checked_out','confirmed') and ci <= de and co >= ds: occ_c += 1
+            if st2 in ('confirmed','checked_in','checked_out') and ci >= ds and ci <= de: day_r += bk.get('total_amount',0) or 0
+        occupancy_trend.append({'date': d.strftime('%Y-%m-%d'), 'label': d.strftime('%d %b'), 'occupancy': round((occ_c/total_rooms*100),1) if total_rooms>0 else 0, 'rooms_occupied': occ_c})
+        revenue_trend.append({'date': d.strftime('%Y-%m-%d'), 'label': d.strftime('%d %b'), 'revenue': round(day_r, 2)})
+
     hk_completed = len([t for t in hk_tasks if t.get('status') == 'completed'])
     hk_pending = len([t for t in hk_tasks if t.get('status') in ['pending', 'assigned']])
     hk_in_progress = len([t for t in hk_tasks if t.get('status') == 'in_progress'])
 
-    # --- Rezervasyon kaynağı dağılımı ---
-    recent_bookings = await db.bookings.find({
-        'tenant_id': tenant_id,
-        'created_at': {'$gte': (today - timedelta(days=30)).isoformat()}
-    }, {'_id': 0, 'booking_source': 1, 'total_amount': 1}).to_list(5000)
-    source_distribution = {}
-    source_revenue = {}
+    source_distribution = {}; source_revenue = {}
     for bk in recent_bookings:
         src = bk.get('booking_source', 'direct')
         source_distribution[src] = source_distribution.get(src, 0) + 1
-        source_revenue[src] = source_revenue.get(src, 0) + bk.get('total_amount', 0)
+        source_revenue[src] = source_revenue.get(src, 0) + (bk.get('total_amount', 0) or 0)
 
-    # --- Son 7 gün ve 30 gün karşılaştırma ---
-    week_start = (today - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
-    month_start = (today - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
-    week_bookings = await db.bookings.find({
-        'tenant_id': tenant_id,
-        'check_in': {'$gte': week_start.isoformat()},
-        'status': {'$in': ['confirmed', 'checked_in', 'checked_out']}
-    }, {'_id': 0, 'total_amount': 1}).to_list(5000)
-    month_bookings = await db.bookings.find({
-        'tenant_id': tenant_id,
-        'check_in': {'$gte': month_start.isoformat()},
-        'status': {'$in': ['confirmed', 'checked_in', 'checked_out']}
-    }, {'_id': 0, 'total_amount': 1}).to_list(10000)
-    week_revenue = sum(b.get('total_amount', 0) for b in week_bookings)
-    month_revenue = sum(b.get('total_amount', 0) for b in month_bookings)
+    week_revenue = sum(b.get('total_amount', 0) or 0 for b in week_bookings)
+    month_revenue = sum(b.get('total_amount', 0) or 0 for b in month_bookings)
 
-    # --- Maintenance özet ---
-    maint_open = await db.maintenance_tasks.count_documents({
-        'tenant_id': tenant_id,
-        'status': {'$in': ['open', 'in_progress', 'pending']}
-    })
-    maint_completed = await db.maintenance_tasks.count_documents({
-        'tenant_id': tenant_id,
-        'status': 'completed',
-        'completed_at': {'$gte': (today - timedelta(days=30)).isoformat()}
-    })
-
-    # --- F&B geliri (POS) ---
-    fnb_revenue = 0.0
-    try:
-        fnb_orders = await db.pos_orders.find({
-            'tenant_id': tenant_id,
-            'created_at': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()}
-        }, {'_id': 0, 'total_amount': 1}).to_list(1000)
-        fnb_revenue = sum(o.get('total_amount', 0) for o in fnb_orders)
-    except Exception:
-        pass
-
-    # --- Fatura/Finans özet ---
-    pending_invoices = await db.invoices.count_documents({
-        'tenant_id': tenant_id,
-        'payment_status': {'$in': ['pending', 'partial']}
-    })
-    paid_invoices = await db.invoices.count_documents({
-        'tenant_id': tenant_id,
-        'payment_status': 'paid',
-        'created_at': {'$gte': month_start.isoformat()}
-    })
-
-    # --- Ülke bazlı misafir dağılımı ---
-    all_guests = await db.guests.find({'tenant_id': tenant_id}, {'_id': 0, 'nationality': 1, 'country': 1}).to_list(5000)
     country_dist = {}
     for g in all_guests:
         c = g.get('nationality') or g.get('country') or 'Belirtilmemiş'
         country_dist[c] = country_dist.get(c, 0) + 1
 
-    # --- Oda tipi bazlı doluluk ---
     room_type_occ = {}
     for rt_name, rt_count in room_types.items():
         rt_rooms = [r for r in rooms if r.get('room_type') == rt_name]
         rt_occ = len([r for r in rt_rooms if r.get('current_status') == 'occupied'])
-        room_type_occ[rt_name] = {
-            'total': rt_count,
-            'occupied': rt_occ,
-            'occupancy': round((rt_occ / rt_count * 100), 1) if rt_count > 0 else 0,
-            'revenue': 0
-        }
-    # Oda tipi gelirleri
+        room_type_occ[rt_name] = {'total': rt_count, 'occupied': rt_occ, 'occupancy': round((rt_occ/rt_count*100),1) if rt_count>0 else 0, 'revenue': 0}
     for bk in recent_bookings:
         rt = bk.get('room_type', 'Standard')
-        if rt in room_type_occ:
-            room_type_occ[rt]['revenue'] += bk.get('total_amount', 0)
-    for rt in room_type_occ:
-        room_type_occ[rt]['revenue'] = round(room_type_occ[rt]['revenue'], 2)
+        if rt in room_type_occ: room_type_occ[rt]['revenue'] += bk.get('total_amount', 0) or 0
+    for rt in room_type_occ: room_type_occ[rt]['revenue'] = round(room_type_occ[rt]['revenue'], 2)
 
-    # --- Ödemeler özet ---
-    all_payments = await db.payments.find({
-        'tenant_id': tenant_id,
-        'processed_at': {'$gte': month_start.isoformat()}
-    }, {'_id': 0, 'amount': 1, 'method': 1, 'status': 1, 'currency': 1}).to_list(5000)
-    payment_methods = {}
-    total_paid = 0
+    payment_methods = {}; total_paid = 0
     for p in all_payments:
-        method = p.get('method', 'other')
-        amt = p.get('amount', 0)
+        method = p.get('method', 'other'); amt = p.get('amount', 0) or 0
         payment_methods[method] = payment_methods.get(method, 0) + amt
-        if p.get('status') == 'paid':
-            total_paid += amt
+        if p.get('status') == 'paid': total_paid += amt
     payment_methods = {k: round(v, 2) for k, v in payment_methods.items()}
 
-    # --- Son misafir listesi (son 30 gün) ---
-    recent_guests_data = await db.bookings.find({
-        'tenant_id': tenant_id,
-        'check_in': {'$gte': month_start.isoformat()},
-        'status': {'$in': ['confirmed', 'checked_in', 'checked_out']}
-    }, {'_id': 0, 'guest_name': 1, 'guest_email': 1, 'guest_phone': 1, 'room_number': 1, 'room_type': 1,
-        'check_in': 1, 'check_out': 1, 'total_amount': 1, 'status': 1, 'nationality': 1,
-        'id_number': 1, 'passport_number': 1, 'booking_source': 1}).to_list(500)
-
-    # --- Önceki ay karşılaştırması ---
-    prev_month_start = (today - timedelta(days=60)).replace(hour=0, minute=0, second=0, microsecond=0)
-    prev_month_end = month_start
-    prev_bookings = await db.bookings.find({
-        'tenant_id': tenant_id,
-        'check_in': {'$gte': prev_month_start.isoformat(), '$lt': prev_month_end.isoformat()},
-        'status': {'$in': ['confirmed', 'checked_in', 'checked_out']}
-    }, {'_id': 0, 'total_amount': 1}).to_list(10000)
-    prev_revenue = sum(b.get('total_amount', 0) for b in prev_bookings)
+    prev_revenue = sum(b.get('total_amount', 0) or 0 for b in prev_bookings)
     prev_room_nights = len(prev_bookings)
     prev_adr = round(prev_revenue / prev_room_nights, 2) if prev_room_nights > 0 else 0
-
-    # Geçen yıl aynı dönem
-    last_year_start = (today - timedelta(days=365)).replace(hour=0, minute=0, second=0, microsecond=0)
-    last_year_end = (today - timedelta(days=335)).replace(hour=23, minute=59, second=59)
-    ly_bookings = await db.bookings.find({
-        'tenant_id': tenant_id,
-        'check_in': {'$gte': last_year_start.isoformat(), '$lt': last_year_end.isoformat()},
-        'status': {'$in': ['confirmed', 'checked_in', 'checked_out']}
-    }, {'_id': 0, 'total_amount': 1}).to_list(10000)
-    ly_revenue = sum(b.get('total_amount', 0) for b in ly_bookings)
+    ly_revenue = sum(b.get('total_amount', 0) or 0 for b in ly_bookings)
     ly_room_nights = len(ly_bookings)
 
     return {
