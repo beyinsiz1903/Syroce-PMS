@@ -4874,7 +4874,7 @@ async def ai_chat(
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("ai_chatbot")),
 ):
-    """AI-powered hotel assistant chatbot"""
+    """AI-powered hotel assistant chatbot with real data access"""
     user_message = message_data.get('message', '').strip()
     if not user_message:
         return {'response': 'Lütfen bir mesaj yazın.'}
@@ -4891,13 +4891,224 @@ async def ai_chat(
         hotel_name = tenant.get('property_name', 'Otel') if tenant else 'Otel'
 
         rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}).to_list(None)
-        bookings = await db.bookings.find({
-            "tenant_id": current_user.tenant_id,
-            "status": {"$in": ["confirmed", "checked_in"]}
+        all_bookings = await db.bookings.find({
+            "tenant_id": current_user.tenant_id
         }).to_list(None)
         total_rooms = len(rooms)
-        occupied = len([b for b in bookings if b.get('status') == 'checked_in'])
+        occupied = len([b for b in all_bookings if b.get('status') == 'checked_in'])
         occupancy = round((occupied / total_rooms * 100), 1) if total_rooms > 0 else 0
+
+        # ── Detect intent and gather relevant data ──
+        msg_lower = user_message.lower()
+        data_context = ""
+
+        # Helper: format date safely
+        def fmt_date(val):
+            if not val:
+                return "-"
+            if isinstance(val, str):
+                return val[:10]
+            if hasattr(val, 'strftime'):
+                return val.strftime('%Y-%m-%d')
+            return str(val)
+
+        # ── FOLIO INTENT ──
+        if any(w in msg_lower for w in ['folio', 'folyo', 'folyosu', 'hesap', 'hesabı', 'harcama', 'harcamaları']):
+            # Try to extract guest name from message
+            guest_name_hint = None
+            words = user_message.split()
+            # Look for capitalized words that could be names
+            for i, w in enumerate(words):
+                if w[0].isupper() and w.lower() not in ['folio', 'folyo', 'hesap', 'getir', 'göster', 'bak', 'listele', 'misafir', 'müşteri']:
+                    if guest_name_hint:
+                        guest_name_hint += " " + w
+                    else:
+                        guest_name_hint = w
+
+            folios_found = []
+            if guest_name_hint:
+                # Search guests by name
+                import re
+                name_regex = re.compile(guest_name_hint, re.IGNORECASE)
+                guests = await db.guests.find({
+                    "tenant_id": current_user.tenant_id,
+                    "$or": [
+                        {"first_name": {"$regex": guest_name_hint, "$options": "i"}},
+                        {"last_name": {"$regex": guest_name_hint, "$options": "i"}}
+                    ]
+                }).to_list(10)
+                
+                guest_ids = [g['id'] for g in guests]
+                if guest_ids:
+                    folios = await db.folios.find({
+                        "tenant_id": current_user.tenant_id,
+                        "guest_id": {"$in": guest_ids}
+                    }).to_list(20)
+                    
+                    for f in folios:
+                        charges = await db.folio_charges.find({
+                            "folio_id": f['id'], "voided": {"$ne": True}
+                        }).to_list(50)
+                        
+                        charge_lines = []
+                        total = 0
+                        for ch in charges:
+                            amt = ch.get('total', ch.get('amount', 0))
+                            total += amt
+                            charge_lines.append(f"  - {ch.get('description','')}: {amt:.2f} TL")
+                        
+                        # Get booking info
+                        booking = await db.bookings.find_one({"id": f.get('booking_id')})
+                        guest = next((g for g in guests if g['id'] == f.get('guest_id')), None)
+                        guest_full = f"{guest.get('first_name','')} {guest.get('last_name','')}" if guest else f.get('guest_name', 'Bilinmiyor')
+                        
+                        folio_info = (
+                            f"Folio #{f.get('folio_number','')}\n"
+                            f"  Misafir: {guest_full}\n"
+                            f"  Durum: {f.get('status','')}\n"
+                        )
+                        if booking:
+                            folio_info += (
+                                f"  Oda: {booking.get('room_number','')}\n"
+                                f"  Giriş: {fmt_date(booking.get('check_in'))}\n"
+                                f"  Çıkış: {fmt_date(booking.get('check_out'))}\n"
+                            )
+                        folio_info += f"  Harcamalar:\n" + "\n".join(charge_lines) if charge_lines else "  Harcama yok"
+                        folio_info += f"\n  TOPLAM: {total:.2f} TL"
+                        folios_found.append(folio_info)
+            
+            if not folios_found:
+                # If no name provided or no match, list all open folios
+                open_folios = await db.folios.find({
+                    "tenant_id": current_user.tenant_id,
+                    "status": "open"
+                }).to_list(10)
+                
+                for f in open_folios:
+                    charges = await db.folio_charges.find({
+                        "folio_id": f['id'], "voided": {"$ne": True}
+                    }).to_list(50)
+                    total = sum(ch.get('total', ch.get('amount', 0)) for ch in charges)
+                    charge_summary = ", ".join(ch.get('description','') for ch in charges[:5])
+                    
+                    booking = await db.bookings.find_one({"id": f.get('booking_id')})
+                    folios_found.append(
+                        f"Folio #{f.get('folio_number','')} | {f.get('guest_name','Bilinmiyor')} | "
+                        f"Oda {booking.get('room_number','') if booking else '-'} | "
+                        f"Toplam: {total:.2f} TL | Kalemler: {charge_summary}"
+                    )
+            
+            if folios_found:
+                data_context = "\n\n## VERİTABANINDAN GELEN FOLİO VERİLERİ:\n" + "\n\n".join(folios_found)
+            else:
+                data_context = "\n\nVeritabanında eşleşen folio bulunamadı."
+
+        # ── RESERVATION INTENT ──
+        elif any(w in msg_lower for w in ['rezervasyon', 'booking', 'geçmiş', 'gelecek', 'bugün', 'yarın', 'misafir listesi', 'kimler var', 'kimler gelecek']):
+            today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+            
+            if any(w in msg_lower for w in ['geçmiş', 'önceki', 'eski', 'tamamlanan']):
+                # Past reservations
+                past = [b for b in all_bookings if b.get('status') == 'checked_out']
+                past.sort(key=lambda x: x.get('check_out', ''), reverse=True)
+                lines = []
+                for b in past[:10]:
+                    lines.append(
+                        f"- {b.get('guest_name','?')} | Oda {b.get('room_number','-')} | "
+                        f"{fmt_date(b.get('check_in'))} → {fmt_date(b.get('check_out'))} | "
+                        f"Tutar: {b.get('total_amount',0):.0f} TL | Durum: Çıkış yapıldı"
+                    )
+                data_context = f"\n\n## GEÇMİŞ REZERVASYONLAR ({len(past)} adet):\n" + "\n".join(lines) if lines else "\nGeçmiş rezervasyon bulunamadı."
+            
+            elif any(w in msg_lower for w in ['gelecek', 'yaklaşan', 'planlanan', 'gelecek hafta', 'kimler gelecek']):
+                # Future reservations
+                future = [b for b in all_bookings if b.get('status') == 'confirmed']
+                future.sort(key=lambda x: x.get('check_in', ''))
+                lines = []
+                for b in future[:10]:
+                    lines.append(
+                        f"- {b.get('guest_name','?')} | Oda {b.get('room_number','-')} ({b.get('room_type','')}) | "
+                        f"{fmt_date(b.get('check_in'))} → {fmt_date(b.get('check_out'))} | "
+                        f"Gecelik: {b.get('rate_per_night',0):.0f} TL | Toplam: {b.get('total_amount',0):.0f} TL"
+                    )
+                data_context = f"\n\n## GELECEK REZERVASYONLAR ({len(future)} adet):\n" + "\n".join(lines) if lines else "\nGelecek rezervasyon bulunamadı."
+            
+            elif any(w in msg_lower for w in ['bugün', 'şu an', 'aktif', 'mevcut', 'kimler var', 'otelde kim']):
+                # Current guests (checked in)
+                current = [b for b in all_bookings if b.get('status') == 'checked_in']
+                lines = []
+                for b in current:
+                    lines.append(
+                        f"- {b.get('guest_name','?')} | Oda {b.get('room_number','-')} ({b.get('room_type','')}) | "
+                        f"{fmt_date(b.get('check_in'))} → {fmt_date(b.get('check_out'))} | "
+                        f"Gecelik: {b.get('rate_per_night',0):.0f} TL"
+                    )
+                data_context = f"\n\n## ŞU AN OTELDE OLAN MİSAFİRLER ({len(current)} kişi):\n" + "\n".join(lines) if lines else "\nŞu an otelde misafir yok."
+            
+            else:
+                # Search by guest name if mentioned
+                guest_name_hint = None
+                words = user_message.split()
+                for w in words:
+                    if w[0].isupper() and w.lower() not in ['rezervasyon', 'booking', 'getir', 'göster', 'bak', 'listele', 'misafir']:
+                        guest_name_hint = w
+                        break
+                
+                if guest_name_hint:
+                    matched = [b for b in all_bookings if guest_name_hint.lower() in (b.get('guest_name','') or '').lower()]
+                    lines = []
+                    for b in matched:
+                        lines.append(
+                            f"- {b.get('guest_name','?')} | Oda {b.get('room_number','-')} | "
+                            f"{fmt_date(b.get('check_in'))} → {fmt_date(b.get('check_out'))} | "
+                            f"Durum: {b.get('status','')} | Tutar: {b.get('total_amount',0):.0f} TL"
+                        )
+                    data_context = f"\n\n## '{guest_name_hint}' İÇİN REZERVASYONLAR:\n" + "\n".join(lines) if lines else f"\n'{guest_name_hint}' adına rezervasyon bulunamadı."
+                else:
+                    # Show summary of all
+                    checked_in = len([b for b in all_bookings if b.get('status') == 'checked_in'])
+                    confirmed = len([b for b in all_bookings if b.get('status') == 'confirmed'])
+                    checked_out = len([b for b in all_bookings if b.get('status') == 'checked_out'])
+                    data_context = (
+                        f"\n\n## REZERVASYON ÖZETİ:\n"
+                        f"- Otelde: {checked_in} misafir\n"
+                        f"- Gelecek: {confirmed} onaylı rezervasyon\n"
+                        f"- Geçmiş: {checked_out} tamamlanan\n"
+                        f"- Toplam: {len(all_bookings)} rezervasyon"
+                    )
+
+        # ── GUEST SEARCH INTENT ──
+        elif any(w in msg_lower for w in ['misafir', 'müşteri', 'konuk', 'guest']):
+            all_guests = await db.guests.find({"tenant_id": current_user.tenant_id}).to_list(50)
+            
+            # Check if specific name is asked
+            guest_name_hint = None
+            words = user_message.split()
+            for w in words:
+                if len(w) > 2 and w[0].isupper() and w.lower() not in ['misafir', 'müşteri', 'konuk', 'guest', 'bilgi', 'göster', 'getir', 'listele', 'kimdir']:
+                    guest_name_hint = w
+                    break
+            
+            if guest_name_hint:
+                matched = [g for g in all_guests if guest_name_hint.lower() in f"{g.get('first_name','')} {g.get('last_name','')}".lower()]
+                if matched:
+                    lines = []
+                    for g in matched:
+                        name = f"{g.get('first_name','')} {g.get('last_name','')}"
+                        lines.append(
+                            f"- {name} | {g.get('email','')} | {g.get('phone','')}\n"
+                            f"  Uyruk: {g.get('nationality','-')} | Sadakat: {g.get('loyalty_tier','-')} | "
+                            f"Toplam konaklama: {g.get('total_stays',0)} | Harcama: {g.get('total_spend',0):.0f} TL"
+                        )
+                    data_context = f"\n\n## MİSAFİR BİLGİLERİ:\n" + "\n".join(lines)
+                else:
+                    data_context = f"\n'{guest_name_hint}' adında misafir bulunamadı."
+            else:
+                lines = []
+                for g in all_guests[:10]:
+                    name = f"{g.get('first_name','')} {g.get('last_name','')}"
+                    lines.append(f"- {name} | {g.get('loyalty_tier','-')} | {g.get('total_stays',0)} konaklama | {g.get('total_spend',0):.0f} TL")
+                data_context = f"\n\n## MİSAFİR LİSTESİ ({len(all_guests)} toplam):\n" + "\n".join(lines)
 
         from emergentintegrations.llm.chat import LlmChat, UserMessage as LlmUserMessage
 
