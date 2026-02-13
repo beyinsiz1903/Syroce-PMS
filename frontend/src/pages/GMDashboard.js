@@ -213,7 +213,7 @@ const GMDashboard = ({ user, tenant, onLogout }) => {
                 </div>
               </div>
               <div className="text-3xl font-bold text-gray-900 mb-1">
-                {(occupancy.occupancy_percentage || 0).toFixed(1)}%
+                {(occupancy.occupancy_percentage || occupancy.occupancy_rate || 0).toFixed(1)}%
               </div>
               <div className="text-sm font-medium text-gray-600">
                 Occupancy Rate
@@ -268,7 +268,7 @@ const GMDashboard = ({ user, tenant, onLogout }) => {
             </CardHeader>
             <CardContent>
               <div className="text-4xl font-bold mb-2">
-                {(occupancy.occupancy_percentage || 0).toFixed(1)}%
+                {(occupancy.occupancy_percentage || occupancy.occupancy_rate || 0).toFixed(1)}%
               </div>
               <div className="text-sm opacity-90">
                 {occupancy.occupied_rooms || 0} / {occupancy.total_rooms || 0} rooms
