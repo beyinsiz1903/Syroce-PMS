@@ -924,7 +924,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                 <CardContent>
                   <div className="grid grid-cols-10 gap-1">
                     {occupancyData.slice(0, 30).map((day, index) => {
-                      const rate = day.occupancy_rate || 0;
+                      const rate = typeof day.occupancy_rate === 'number' ? day.occupancy_rate : 0;
                       const color = 
                         rate >= 90 ? 'bg-red-600' :
                         rate >= 80 ? 'bg-orange-500' :
