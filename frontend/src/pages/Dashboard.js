@@ -125,33 +125,20 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
 
   const loadDashboardStats = useCallback(async () => {
     try {
-      // Check IndexedDB first (persistent cache)
-      const cachedData = await cacheDB.get('dashboard_stats');
-      if (cachedData) {
-        console.log('📦 Loading from IndexedDB cache');
-        setStats(cachedData);
-        dashboardCache.stats = cachedData;
-        setLoading(false);
-        // Load fresh data in background
-      }
-
       // Use Promise.all for parallel requests - faster!
       const [pmsResponse, invoiceResponse] = await Promise.all([
-        axios.get('/pms/dashboard'),
-        axios.get('/invoices/stats')
+        axios.get('/pms/dashboard').catch(() => ({ data: {} })),
+        axios.get('/invoices/stats').catch(() => ({ data: {} }))
       ]);
       
       const statsData = {
-        pms: pmsResponse.data,
-        invoices: invoiceResponse.data
+        pms: pmsResponse.data || {},
+        invoices: invoiceResponse.data || {}
       };
       
       setStats(statsData);
       dashboardCache.stats = statsData;
       dashboardCache.timestamp = Date.now();
-      
-      // Save to IndexedDB for next time
-      await cacheDB.set('dashboard_stats', statsData, 60000); // 1 minute
     } catch (error) {
       console.error('Failed to load stats:', error);
     } finally {
