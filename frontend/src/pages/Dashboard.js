@@ -677,19 +677,19 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs bg-white/10 rounded-lg p-3 mt-3">
                     <div>
                       <div className="opacity-75 text-xs">Doluluk Oranı</div>
-                      <div className="text-lg font-bold">{aiBriefing.metrics?.occupancy_rate?.toFixed(1)}%</div>
+                      <div className="text-lg font-bold">{typeof aiBriefing.metrics?.occupancy_rate === 'number' ? aiBriefing.metrics.occupancy_rate.toFixed(1) : '0'}%</div>
                     </div>
                     <div>
                       <div className="opacity-75 text-xs">Bugünkü Check-in</div>
-                      <div className="text-lg font-bold">{aiBriefing.metrics?.today_checkins}</div>
+                      <div className="text-lg font-bold">{typeof aiBriefing.metrics?.today_checkins === 'number' ? aiBriefing.metrics.today_checkins : 0}</div>
                     </div>
                     <div>
                       <div className="opacity-75 text-xs">Bugünkü Check-out</div>
-                      <div className="text-lg font-bold">{aiBriefing.metrics?.today_checkouts}</div>
+                      <div className="text-lg font-bold">{typeof aiBriefing.metrics?.today_checkouts === 'number' ? aiBriefing.metrics.today_checkouts : 0}</div>
                     </div>
                     <div>
                       <div className="opacity-75 text-xs">Aylık Ciro</div>
-                      <div className="text-lg font-bold">${(aiBriefing.metrics?.monthly_revenue || 0).toFixed(0)}</div>
+                      <div className="text-lg font-bold">${typeof aiBriefing.metrics?.monthly_revenue === 'number' ? aiBriefing.metrics.monthly_revenue.toFixed(0) : '0'}</div>
                     </div>
                   </div>
                   <div className="text-xs opacity-75 mt-2 text-right">
