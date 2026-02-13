@@ -825,7 +825,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                         <YAxis tick={{ fontSize: 10 }} />
                         <Tooltip 
                           labelFormatter={(value) => new Date(value).toLocaleDateString()}
-                          formatter={(value) => `$${value.toFixed(0)}`}
+                          formatter={(value) => `$${(typeof value === 'number' ? value : 0).toFixed(0)}`}
                         />
                         <Legend wrapperStyle={{ fontSize: '12px' }} />
                         <Bar dataKey="room_revenue" fill="#10b981" name="Room" />
