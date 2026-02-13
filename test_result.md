@@ -59,6 +59,18 @@ backend:
       - agent: "testing"
       - comment: "✅ VERIFIED: Calendar endpoints working correctly. Tested /api/pms/rooms, /api/pms/bookings (with start_date/end_date params), /api/pms/guests - all returning 200 OK responses. Performance optimized as expected."
 
+  - task: "Dashboard React Rendering Bug Fix"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/pages/Dashboard.js"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+      - agent: "main"
+      - comment: "Fixed 'Objects are not valid as React child' error. Made all value rendering safe for non-primitive types. Fixed unsafe .toFixed() calls. Removed stale IndexedDB cache loading. Also fixed GMDashboard occupancy_percentage fallback to occupancy_rate."
+
 frontend:
   - task: "Basic Hotel Navigation Test"
     implemented: true
