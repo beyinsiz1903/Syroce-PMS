@@ -731,7 +731,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                       <div className="p-2 bg-green-100 rounded-lg">
                         <Hotel className="w-6 h-6 text-green-500" />
                       </div>
-                      <div className="text-2xl font-bold text-gray-900">{stats.pms.occupancy_rate.toFixed(1)}%</div>
+                      <div className="text-2xl font-bold text-gray-900">{(typeof stats.pms.occupancy_rate === 'number' ? stats.pms.occupancy_rate : 0).toFixed(1)}%</div>
                       <div className="text-xs font-medium text-gray-600">{t('dashboard.occupancyRate')}</div>
                     </div>
                   </CardContent>
