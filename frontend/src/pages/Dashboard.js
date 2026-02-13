@@ -899,7 +899,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                         <YAxis tick={{ fontSize: 10 }} />
                         <Tooltip 
                           labelFormatter={(value) => new Date(value).toLocaleDateString()}
-                          formatter={(value) => `$${value.toFixed(2)}`}
+                          formatter={(value) => `$${(typeof value === 'number' ? value : 0).toFixed(2)}`}
                         />
                         <Area 
                           type="monotone" 
