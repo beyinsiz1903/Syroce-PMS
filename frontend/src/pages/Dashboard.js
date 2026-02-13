@@ -1035,7 +1035,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                                   {Object.entries(module.stats).slice(0, 2).map(([key, value]) => (
                                     <div key={key}>
                                       <p className="text-gray-500 capitalize">{key.replace('_', ' ')}</p>
-                                      <p className="font-semibold">{typeof value === 'number' ? value.toFixed(0) : value}</p>
+                                      <p className="font-semibold">{typeof value === 'number' ? value.toFixed(0) : (typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value ?? ''))}</p>
                                     </div>
                                   ))}
                                 </div>
