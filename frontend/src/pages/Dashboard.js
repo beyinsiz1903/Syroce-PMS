@@ -225,12 +225,12 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
               </div>
               {message && (
                 <div className="text-white/90">
-                  {message}
+                  {typeof message === 'object' ? JSON.stringify(message) : String(message)}
                 </div>
               )}
               {insight && (
                 <div className="text-white/70 text-[11px] mt-1">
-                  {insight}
+                  {typeof insight === 'object' ? JSON.stringify(insight) : String(insight)}
                 </div>
               )}
             </div>
