@@ -16,7 +16,7 @@ import sys
 from datetime import datetime
 
 # Configuration
-BASE_URL = "https://perf-boost-37.preview.emergentagent.com/api"
+BASE_URL = "https://guest-unified.preview.emergentagent.com/api"
 ADMIN_EMAIL = "demo@hotel.com"
 ADMIN_PASSWORD = "demo123"
 

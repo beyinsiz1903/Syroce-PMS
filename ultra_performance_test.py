@@ -12,7 +12,7 @@ import json
 from typing import List, Dict, Any
 
 # Configuration
-BACKEND_URL = "https://perf-boost-37.preview.emergentagent.com/api"
+BACKEND_URL = "https://guest-unified.preview.emergentagent.com/api"
 TEST_USER_EMAIL = "admin@hotel.com"
 TEST_USER_PASSWORD = "admin123"
 

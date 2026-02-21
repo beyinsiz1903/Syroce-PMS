@@ -13,7 +13,7 @@ Test credentials:
 - Basic hotel: demo@butikotel.com / demo123
 - Professional hotel: demo@grandcity.com / demo123
 
-Backend base URL: https://perf-boost-37.preview.emergentagent.com/api
+Backend base URL: https://guest-unified.preview.emergentagent.com/api
 """
 
 import requests
@@ -23,7 +23,7 @@ from datetime import datetime, date, timedelta
 import os
 
 # Configuration 
-BASE_URL = 'https://perf-boost-37.preview.emergentagent.com/api'
+BASE_URL = 'https://guest-unified.preview.emergentagent.com/api'
 
 # Test credentials
 TEST_ACCOUNTS = {

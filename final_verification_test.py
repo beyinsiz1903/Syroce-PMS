@@ -55,7 +55,7 @@ from typing import Dict, List, Any, Optional
 import uuid
 
 # Configuration
-BACKEND_URL = "https://perf-boost-37.preview.emergentagent.com/api"
+BACKEND_URL = "https://guest-unified.preview.emergentagent.com/api"
 TEST_EMAIL = "test@test.com"
 TEST_PASSWORD = "test123"
 

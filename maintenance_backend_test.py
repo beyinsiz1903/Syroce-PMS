@@ -32,7 +32,7 @@ import uuid
 import base64
 
 # Configuration
-BACKEND_URL = "https://perf-boost-37.preview.emergentagent.com/api"
+BACKEND_URL = "https://guest-unified.preview.emergentagent.com/api"
 TEST_EMAIL = "admin@hotel.com"
 TEST_PASSWORD = "admin123"
 

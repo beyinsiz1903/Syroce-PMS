@@ -16,7 +16,7 @@ from datetime import datetime
 import os
 
 # Configuration from environment
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://perf-boost-37.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://guest-unified.preview.emergentagent.com')
 API_BASE_URL = BASE_URL + '/api'
 
 # Test credentials
