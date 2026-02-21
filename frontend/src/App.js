@@ -1471,6 +1471,14 @@ function App() {
           <Route path="/fnb-complete" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><FnBComplete user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
           <Route path="/fnb/beo-generator" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><FnbBeoGenerator user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
           <Route path="/kitchen-display" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><KitchenDisplay user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
+
+          {/* New Modules - Security, Compliance, Multi-Property, ML */}
+          <Route path="/security-center" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><SecurityCenter user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
+          <Route path="/gdpr-compliance" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><GDPRCompliance user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
+          <Route path="/central-office" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><CentralOfficeDashboard user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
+          <Route path="/central-pricing" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><CentralPricingManager user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
+          <Route path="/cross-property-guests" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><CrossPropertyGuests user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
+          <Route path="/ml-dashboard" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><MLDashboard user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
         </Routes>
         </PlanRouteGuard>
         </BrowserRouter>
