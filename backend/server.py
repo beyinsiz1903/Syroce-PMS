@@ -154,7 +154,40 @@ JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_HOURS = 168  # 7 days (24 * 7)
 
 app = FastAPI(
-    title="RoomOps Platform",
+    title="RoomOps Platform - Otel Yönetim Sistemi",
+    description="""
+## RoomOps PMS - Kapsamlı Otel Yönetim Platformu
+
+### Temel Modüller
+- **PMS**: Oda, Rezervasyon, Check-in/Check-out Yönetimi
+- **Housekeeping**: Temizlik ve Oda Bakım Yönetimi
+- **Finance**: Fatura, Folio, Muhasebe
+- **Reports**: Raporlama ve Analitik
+
+### Güvenlik Modülleri
+- **2FA**: İki faktörlü doğrulama (TOTP)
+- **IP Erişim Kontrolü**: Whitelist/Blacklist yönetimi
+- **KVKK/GDPR**: Veri koruma uyumluluğu
+
+### Multi-Property
+- **Merkez Ofis**: Zincir genelinde konsolide raporlama
+- **Merkezi Fiyatlandırma**: Toplu fiyat güncelleme
+- **Cross-Property Misafir**: Birleşik misafir profili
+
+### AI/ML
+- **Fiyatlandırma Modeli**: ML tabanlı dinamik fiyatlandırma
+- **No-Show Tahmini**: Rezervasyon iptal/gelmeme tahmini
+- **Upsell Skorlama**: Misafir bazlı satış potansiyeli
+- **Duygu Analizi**: NLP ile yorum analizi
+
+### API Kimlik Doğrulama
+Tüm API istekleri `Authorization: Bearer <token>` header'ı gerektirir.
+Token almak için `/api/auth/login` endpoint'ini kullanın.
+    """,
+    version="3.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
     default_response_class=ORJSONResponse  # Ultra-fast JSON serialization
 )
 
