@@ -117,6 +117,14 @@ const MaintenanceWorkOrders = lazy(() => import("@/pages/MaintenanceWorkOrders")
 const MaintenanceAssets = lazy(() => import("@/pages/MaintenanceAssets"));
 const MaintenancePlans = lazy(() => import("@/pages/MaintenancePlans"));
 
+// New modules - Security, Compliance, Multi-Property, ML
+const SecurityCenter = lazy(() => import("@/pages/SecurityCenter"));
+const GDPRCompliance = lazy(() => import("@/pages/GDPRCompliance"));
+const CentralOfficeDashboard = lazy(() => import("@/pages/CentralOfficeDashboard"));
+const CentralPricingManager = lazy(() => import("@/pages/CentralPricingManager"));
+const CrossPropertyGuests = lazy(() => import("@/pages/CrossPropertyGuests"));
+const MLDashboard = lazy(() => import("@/pages/MLDashboard"));
+
 import { Toaster } from "@/components/ui/sonner";
 
 // Loading component
