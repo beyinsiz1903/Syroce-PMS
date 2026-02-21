@@ -212,19 +212,19 @@ def test_database_performance(token):
             indexes = data.get('indexes', {})
             if indexes:
                 # Bookings should have 15+ indexes
-                bookings_indexes = indexes.get('bookings', {}).get('indexes', 0)
+                bookings_indexes = indexes.get('bookings', {}).get('count', 0)
                 checks["bookings has 15+ indexes"] = bookings_indexes >= 15
                 
                 # Guests should have 6+ indexes
-                guests_indexes = indexes.get('guests', {}).get('indexes', 0)
+                guests_indexes = indexes.get('guests', {}).get('count', 0)
                 checks["guests has 6+ indexes"] = guests_indexes >= 6
                 
                 # Rooms should have 4+ indexes
-                rooms_indexes = indexes.get('rooms', {}).get('indexes', 0)
+                rooms_indexes = indexes.get('rooms', {}).get('count', 0)
                 checks["rooms has 4+ indexes"] = rooms_indexes >= 4
                 
                 # Folios should have 6+ indexes
-                folios_indexes = indexes.get('folios', {}).get('indexes', 0)
+                folios_indexes = indexes.get('folios', {}).get('count', 0)
                 checks["folios has 6+ indexes"] = folios_indexes >= 6
             
             # Check collections stats
