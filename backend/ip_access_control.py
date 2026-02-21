@@ -119,7 +119,7 @@ def create_ip_access_routes(db, get_current_user):
         }
         
         await db.ip_rules.insert_one(rule_doc)
-        del rule_doc["_id"] if "_id" in rule_doc else None
+        rule_doc.pop("_id", None)
         
         # Audit log
         await db.audit_logs.insert_one({
