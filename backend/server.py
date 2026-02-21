@@ -53934,79 +53934,58 @@ except ImportError:
 # 1. SYSTEM PERFORMANCE MONITORING
 @api_router.get("/system/performance")
 async def get_system_performance(
+    minutes: int = 10,
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get real-time system performance metrics
-    Returns: CPU, RAM, API response times, request rates
+    Get real-time system performance metrics powered by APM middleware.
+    Returns: CPU, RAM, API response times, request rates, rate limiting, errors
     """
     try:
         # Get CPU and Memory info
-        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_percent = psutil.cpu_percent(interval=0)
         memory = psutil.virtual_memory()
         disk = psutil.disk_usage('/')
-        
-        # Calculate API metrics from last 100 requests
-        recent_requests = list(api_metrics)[-100:] if len(api_metrics) > 0 else []
-        
-        avg_response_time = 0
-        requests_per_minute = 0
-        endpoint_stats = {}
-        
-        if recent_requests:
-            avg_response_time = sum(r['duration_ms'] for r in recent_requests) / len(recent_requests)
-            
-            # Count requests in last minute
-            one_minute_ago = datetime.now(timezone.utc) - timedelta(minutes=1)
-            recent_minute = [r for r in recent_requests if datetime.fromisoformat(r['timestamp']) > one_minute_ago]
-            requests_per_minute = len(recent_minute)
-            
-            # Group by endpoint
-            for req in recent_requests:
-                endpoint = req['endpoint']
-                if endpoint not in endpoint_stats:
-                    endpoint_stats[endpoint] = {
-                        'count': 0,
-                        'avg_duration': 0,
-                        'total_duration': 0,
-                        'slowest': 0,
-                        'fastest': 999999
-                    }
-                
-                endpoint_stats[endpoint]['count'] += 1
-                endpoint_stats[endpoint]['total_duration'] += req['duration_ms']
-                endpoint_stats[endpoint]['slowest'] = max(endpoint_stats[endpoint]['slowest'], req['duration_ms'])
-                endpoint_stats[endpoint]['fastest'] = min(endpoint_stats[endpoint]['fastest'], req['duration_ms'])
-            
-            # Calculate averages
-            for endpoint in endpoint_stats:
-                endpoint_stats[endpoint]['avg_duration'] = (
-                    endpoint_stats[endpoint]['total_duration'] / endpoint_stats[endpoint]['count']
-                )
-        
-        # Get historical data (last 10 minutes)
-        ten_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=10)
-        historical = [r for r in api_metrics if datetime.fromisoformat(r['timestamp']) > ten_minutes_ago]
-        
-        # Group by minute for timeline
-        timeline = {}
-        for req in historical:
-            minute = req['timestamp'][:16]  # YYYY-MM-DDTHH:MM
-            if minute not in timeline:
-                timeline[minute] = {
-                    'timestamp': minute,
-                    'requests': 0,
-                    'avg_response_time': 0,
-                    'total_duration': 0
-                }
-            timeline[minute]['requests'] += 1
-            timeline[minute]['total_duration'] += req['duration_ms']
-        
-        for minute in timeline:
-            timeline[minute]['avg_response_time'] = (
-                timeline[minute]['total_duration'] / timeline[minute]['requests']
-            )
-        
+
+        # Get APM summary (real data from middleware)
+        try:
+            apm_summary = _apm_store_ref.get_summary(minutes=minutes)
+        except Exception:
+            apm_summary = apm_store.get_summary(minutes=minutes) if hasattr(apm_store, 'get_summary') else {}
+
+        # Get rate limit stats
+        try:
+            rl_stats = _get_rl_stats()
+        except Exception:
+            rl_stats = get_rate_limit_stats() if callable(get_rate_limit_stats) else {}
+
+        # Get recent errors
+        try:
+            recent_errors = _apm_store_ref.get_recent_errors(limit=20)
+        except Exception:
+            recent_errors = []
+
+        # Database stats (lightweight)
+        db_stats = {}
+        try:
+            server_status = await db.command('serverStatus')
+            db_stats = {
+                'connections': {
+                    'current': server_status.get('connections', {}).get('current', 0),
+                    'available': server_status.get('connections', {}).get('available', 0),
+                    'total_created': server_status.get('connections', {}).get('totalCreated', 0),
+                },
+                'opcounters': {
+                    'insert': server_status.get('opcounters', {}).get('insert', 0),
+                    'query': server_status.get('opcounters', {}).get('query', 0),
+                    'update': server_status.get('opcounters', {}).get('update', 0),
+                    'delete': server_status.get('opcounters', {}).get('delete', 0),
+                },
+                'uptime_seconds': server_status.get('uptime', 0),
+            }
+        except Exception:
+            pass
+
         return {
             'system': {
                 'cpu_percent': round(cpu_percent, 2),
@@ -54015,30 +53994,144 @@ async def get_system_performance(
                 'memory_total_gb': round(memory.total / (1024**3), 2),
                 'disk_percent': round(disk.percent, 2),
                 'disk_used_gb': round(disk.used / (1024**3), 2),
-                'disk_total_gb': round(disk.total / (1024**3), 2)
+                'disk_total_gb': round(disk.total / (1024**3), 2),
             },
             'api_metrics': {
-                'avg_response_time_ms': round(avg_response_time, 2),
-                'requests_per_minute': requests_per_minute,
-                'total_requests_tracked': len(api_metrics),
-                'endpoints': [
-                    {
-                        'endpoint': endpoint,
-                        'count': stats['count'],
-                        'avg_duration_ms': round(stats['avg_duration'], 2),
-                        'slowest_ms': round(stats['slowest'], 2),
-                        'fastest_ms': round(stats['fastest'], 2)
-                    }
-                    for endpoint, stats in sorted(endpoint_stats.items(), key=lambda x: x[1]['avg_duration'], reverse=True)[:10]
-                ]
+                'avg_response_time_ms': apm_summary.get('avg_response_time_ms', 0),
+                'p50_ms': apm_summary.get('p50_ms', 0),
+                'p95_ms': apm_summary.get('p95_ms', 0),
+                'p99_ms': apm_summary.get('p99_ms', 0),
+                'requests_per_minute': apm_summary.get('requests_per_minute', 0),
+                'total_requests_tracked': apm_summary.get('total_requests', 0),
+                'error_rate_percent': apm_summary.get('error_rate_percent', 0),
+                'slow_requests': apm_summary.get('slow_requests', 0),
+                'status_breakdown': apm_summary.get('status_breakdown', {}),
+                'endpoints': apm_summary.get('top_endpoints', []),
+                'slowest_endpoints': apm_summary.get('slowest_endpoints', []),
+                'error_endpoints': apm_summary.get('error_endpoints', []),
             },
-            'timeline': sorted(timeline.values(), key=lambda x: x['timestamp']),
+            'rate_limiting': {
+                'active_clients': rl_stats.get('active_clients', 0),
+                'total_rate_limit_hits': rl_stats.get('total_rate_limit_hits', 0),
+                'hits_by_endpoint': rl_stats.get('hits_by_endpoint', {}),
+                'limits_config': rl_stats.get('limits_config', {}),
+            },
+            'database': db_stats,
+            'recent_errors': recent_errors[:10],
+            'timeline': apm_summary.get('timeline', []),
             'health_status': 'healthy' if cpu_percent < 80 and memory.percent < 80 else 'degraded',
-            'timestamp': datetime.now(timezone.utc).isoformat()
+            'uptime_seconds': apm_summary.get('uptime_seconds', 0),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get performance metrics: {str(e)}")
+
+
+# 1b. APM DETAILED ENDPOINT STATS
+@api_router.get("/system/apm/endpoints")
+async def get_apm_endpoint_details(
+    current_user: User = Depends(get_current_user)
+):
+    """Get detailed APM stats for all tracked endpoints"""
+    try:
+        summary = _apm_store_ref.get_summary(minutes=30)
+        return {
+            'top_endpoints': summary.get('top_endpoints', []),
+            'slowest_endpoints': summary.get('slowest_endpoints', []),
+            'error_endpoints': summary.get('error_endpoints', []),
+            'total_requests': summary.get('total_requests', 0),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# 1c. RATE LIMIT STATUS
+@api_router.get("/system/rate-limits")
+async def get_rate_limit_status(
+    current_user: User = Depends(get_current_user)
+):
+    """Get current rate limiting status and configuration"""
+    try:
+        rl_stats = _get_rl_stats()
+        return {
+            'enabled': True,
+            'mode': 'in-memory',
+            'stats': rl_stats,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        return {
+            'enabled': False,
+            'mode': 'disabled',
+            'error': str(e),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+        }
+
+
+# 1d. DATABASE OPTIMIZATION STATUS
+@api_router.get("/system/db-stats")
+async def get_database_stats(
+    current_user: User = Depends(get_current_user)
+):
+    """Get database optimization and performance statistics"""
+    try:
+        from database_optimizer import DatabaseOptimizer
+        optimizer = DatabaseOptimizer(db)
+
+        # Get index info
+        index_info = await optimizer.verify_indexes()
+
+        # Get collection stats
+        collection_stats = await optimizer.get_collection_stats()
+
+        # Get server status
+        server_status = await db.command('serverStatus')
+        connections = server_status.get('connections', {})
+        opcounters = server_status.get('opcounters', {})
+
+        return {
+            'indexes': index_info,
+            'collections': collection_stats,
+            'connections': {
+                'current': connections.get('current', 0),
+                'available': connections.get('available', 0),
+                'total_created': connections.get('totalCreated', 0),
+            },
+            'operations': {
+                'insert': opcounters.get('insert', 0),
+                'query': opcounters.get('query', 0),
+                'update': opcounters.get('update', 0),
+                'delete': opcounters.get('delete', 0),
+            },
+            'pool_config': {
+                'max_pool_size': 500,
+                'min_pool_size': 50,
+                'max_idle_time_ms': 45000,
+            },
+            'uptime_seconds': server_status.get('uptime', 0),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get DB stats: {str(e)}")
+
+
+# 1e. RECENT ERRORS
+@api_router.get("/system/errors")
+async def get_recent_errors(
+    limit: int = 50,
+    current_user: User = Depends(get_current_user)
+):
+    """Get recent API errors tracked by APM"""
+    try:
+        errors = _apm_store_ref.get_recent_errors(limit=limit)
+        return {
+            'errors': errors,
+            'total': len(errors),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        return {'errors': [], 'total': 0, 'error': str(e)}
 
 
 # 2. LOG VIEWER
