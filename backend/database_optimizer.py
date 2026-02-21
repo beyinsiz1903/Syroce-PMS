@@ -117,7 +117,7 @@ class DatabaseOptimizer:
         rooms = self.db.rooms
         
         indexes = [
-            ([("room_number", ASCENDING)], {"unique": True}),
+            ([("room_number", ASCENDING)], {}),
             ([("status", ASCENDING)], {}),
             ([("room_type", ASCENDING)], {}),
             ([("floor", ASCENDING)], {}),
