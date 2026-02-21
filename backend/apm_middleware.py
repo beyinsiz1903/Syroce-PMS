@@ -340,6 +340,11 @@ class EnhancedRateLimitMiddleware:
             'anonymous': (30, 60),   # 30 requests/min (no token)
         }
 
+        # Register state globally for stats access
+        _global_rate_limiter_state['windows'] = self._windows
+        _global_rate_limiter_state['limits'] = self.limits
+        _global_rate_limiter_state['lock'] = self._lock
+
         self.category_map = {
             '/api/auth/login': 'auth',
             '/api/auth/register': 'auth',
