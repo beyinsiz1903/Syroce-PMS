@@ -55909,6 +55909,72 @@ if agency_router:
     app.include_router(agency_router)
     print("✅ Agency booking request routes included")
 
+# ============================================================================
+# NEW MODULES - Security, Compliance, Multi-Property, ML
+# ============================================================================
+
+# 2FA Security Module
+try:
+    from security_2fa import create_2fa_routes, router as twofa_router_base
+    twofa_router = create_2fa_routes(db, get_current_user)
+    app.include_router(twofa_router, tags=["2FA Security"])
+    print("✅ 2FA Security module included")
+except Exception as e:
+    print(f"⚠️ 2FA module not available: {e}")
+
+# IP Access Control Module
+try:
+    from ip_access_control import create_ip_access_routes, router as ip_router_base
+    ip_router = create_ip_access_routes(db, get_current_user)
+    app.include_router(ip_router, tags=["IP Access Control"])
+    print("✅ IP Access Control module included")
+except Exception as e:
+    print(f"⚠️ IP Access Control not available: {e}")
+
+# GDPR/KVKK Compliance Module
+try:
+    from gdpr_compliance import create_gdpr_routes, router as gdpr_router_base
+    gdpr_router = create_gdpr_routes(db, get_current_user)
+    app.include_router(gdpr_router, tags=["GDPR/KVKK Compliance"])
+    print("✅ GDPR/KVKK Compliance module included")
+except Exception as e:
+    print(f"⚠️ GDPR/KVKK module not available: {e}")
+
+# Central Office Dashboard
+try:
+    from central_office_endpoints import create_central_office_routes, router as co_router_base
+    co_router = create_central_office_routes(db, get_current_user)
+    app.include_router(co_router, tags=["Central Office Dashboard"])
+    print("✅ Central Office Dashboard included")
+except Exception as e:
+    print(f"⚠️ Central Office not available: {e}")
+
+# Central Pricing Management
+try:
+    from central_pricing_endpoints import create_central_pricing_routes, router as cp_router_base
+    cp_router = create_central_pricing_routes(db, get_current_user)
+    app.include_router(cp_router, tags=["Central Pricing"])
+    print("✅ Central Pricing Management included")
+except Exception as e:
+    print(f"⚠️ Central Pricing not available: {e}")
+
+# Cross-Property Guest Profiles
+try:
+    from cross_property_guests import create_cross_property_guest_routes, router as cpg_router_base
+    cpg_router = create_cross_property_guest_routes(db, get_current_user)
+    app.include_router(cpg_router, tags=["Cross-Property Guests"])
+    print("✅ Cross-Property Guest Profiles included")
+except Exception as e:
+    print(f"⚠️ Cross-Property Guests not available: {e}")
+
+# Real ML Models
+try:
+    from ml_real_models import create_ml_routes, router as ml_router_base
+    ml_router = create_ml_routes(db, get_current_user)
+    app.include_router(ml_router, tags=["ML/AI Models"])
+    print("✅ Real ML Models included")
+except Exception as e:
+    print(f"⚠️ ML Models not available: {e}")
 
 
 # ============================================================================
