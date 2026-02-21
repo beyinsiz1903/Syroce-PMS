@@ -24,7 +24,7 @@ from datetime import datetime
 import os
 
 # Configuration
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://report-calendar-fix.preview.emergentagent.com') + '/api'
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://perf-boost-37.preview.emergentagent.com') + '/api'
 
 # Test Credentials from review request
 CREDENTIALS = {

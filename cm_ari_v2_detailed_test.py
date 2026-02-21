@@ -8,7 +8,7 @@ import requests
 import json
 from datetime import datetime
 
-BASE_URL = "https://report-calendar-fix.preview.emergentagent.com/api"
+BASE_URL = "https://perf-boost-37.preview.emergentagent.com/api"
 
 def get_detailed_response():
     """Get detailed CM ARI v2 response for analysis"""

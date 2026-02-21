@@ -8,7 +8,7 @@ import re
 from datetime import datetime
 
 # Backend URL from environment
-BACKEND_URL = "https://report-calendar-fix.preview.emergentagent.com/api"
+BACKEND_URL = "https://perf-boost-37.preview.emergentagent.com/api"
 
 class Colors:
     GREEN = '\033[92m'

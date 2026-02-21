@@ -218,7 +218,7 @@
 ## 📋 QUICK START GUIDE
 
 **Login:**
-- URL: https://report-calendar-fix.preview.emergentagent.com
+- URL: https://perf-boost-37.preview.emergentagent.com
 - Demo: demo@hotel.com / demo123
 
 **New User Registration:**

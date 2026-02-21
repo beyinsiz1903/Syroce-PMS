@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 class OTAImportTester:
-    def __init__(self, base_url="https://report-calendar-fix.preview.emergentagent.com"):
+    def __init__(self, base_url="https://perf-boost-37.preview.emergentagent.com"):
         self.base_url = base_url
         self.api_url = f"{base_url}/api"
         self.token = None

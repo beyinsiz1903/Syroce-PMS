@@ -7,7 +7,7 @@ import asyncio
 import aiohttp
 import json
 
-BACKEND_URL = "https://report-calendar-fix.preview.emergentagent.com/api"
+BACKEND_URL = "https://perf-boost-37.preview.emergentagent.com/api"
 TEST_EMAIL = "muratsutay@hotmail.com"
 TEST_PASSWORD = "murat1903"
 

@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 
 # Test Configuration
-BASE_URL = "https://report-calendar-fix.preview.emergentagent.com/api"
+BASE_URL = "https://perf-boost-37.preview.emergentagent.com/api"
 LOGIN_ENDPOINT = f"{BASE_URL}/auth/login"
 
 # Test Credentials

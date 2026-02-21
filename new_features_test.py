@@ -14,7 +14,7 @@ from datetime import datetime
 import os
 
 # Configuration
-BASE_URL = "https://report-calendar-fix.preview.emergentagent.com/api"
+BASE_URL = "https://perf-boost-37.preview.emergentagent.com/api"
 
 # Test credentials from review request
 BASIC_HOTEL = {"email": "demo@butikotel.com", "password": "demo123"}

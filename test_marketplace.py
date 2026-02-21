@@ -2,7 +2,7 @@
 import requests
 import json
 
-BACKEND_URL = 'https://report-calendar-fix.preview.emergentagent.com/api'
+BACKEND_URL = 'https://perf-boost-37.preview.emergentagent.com/api'
 
 # Login
 response = requests.post(f'{BACKEND_URL}/auth/login', json={
