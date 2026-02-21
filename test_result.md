@@ -284,4 +284,41 @@ backend:
     status_history:
       - working: true
       - agent: "testing"
+
+  - task: "API Rate Limiting Implementation"
+    implemented: true
+    working: true
+    file: "/app/backend/apm_middleware.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+      - agent: "main"
+      - comment: "Implemented EnhancedRateLimitMiddleware as pure ASGI middleware. 6 rate limit categories (auth:15/min, export:10/min, report:30/min, write:60/min, default:120/min, anonymous:30/min). In-memory sliding window algorithm. X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset headers on every response. 429 response when limit exceeded. GET /api/system/rate-limits endpoint for status."
+
+  - task: "Performance Optimization for Large Hotel Chains"
+    implemented: true
+    working: true
+    file: "/app/backend/apm_middleware.py, /app/backend/database_optimizer.py, /app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+      - agent: "main"
+      - comment: "1) DatabaseOptimizer integrated at startup - 50+ indexes created across 8 collections (bookings, guests, rooms, folios, users, tasks, audit_logs, reports). 2) APMMiddleware tracks all request durations in real-time. 3) MongoDB connection pool optimized (maxPool:500, minPool:50). 4) P50/P95/P99 percentile tracking. 5) Slow query detection (>500ms). GET /api/system/db-stats and /api/system/apm/endpoints for monitoring."
+
+  - task: "Monitoring/APM Tooling Implementation"
+    implemented: true
+    working: true
+    file: "/app/backend/apm_middleware.py, /app/frontend/src/pages/SystemPerformanceMonitor.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+      - agent: "main"
+      - comment: "1) APMMetricsStore singleton stores last 5000 requests with full metrics. 2) Real-time dashboard at /system/performance with 4 tabs: Overview (CPU/RAM/Disk/API metrics/timeline chart), APM Metrics (P50/P95/P99, slowest/error endpoints), Rate Limiting (config, active clients, hit tracking), Database (connections, pool config, operations, collection stats, index details). 3) Auto-refresh every 8 seconds. 4) Endpoints: /api/system/performance, /api/system/rate-limits, /api/system/db-stats, /api/system/apm/endpoints, /api/system/errors."
+
       - comment: "GET /api/billing/history working perfectly. Returns comprehensive billing records with all required fields (id, tenant_id, action, from_tier, to_tier, amount, currency, status, created_at). Successfully tracks both upgrade and downgrade transactions with proper user information and descriptions."
