@@ -75,6 +75,21 @@ backend:
       - comment: "✅ VERIFIED: Dashboard React rendering fix successful! All 7 dashboard API endpoints tested with both gm@hotel.com and admin@hotel.com accounts (14 tests total, 100% success rate). Critical findings: 1) All PMS dashboard values are numbers (total_rooms, occupied_rooms, available_rooms, occupancy_rate, today_checkins, total_guests) 2) All invoice stats values are numbers (total_invoices, total_revenue, pending_amount, overdue_amount) 3) AI briefing returns proper structure with React-safe values (summary, text, briefing as strings, metrics object with number values, insights array of strings) 4) Analytics endpoints return proper trend data with correct data types 5) NO NESTED OBJECTS detected in React-renderable fields - this resolves the 'Objects are not valid as React child' error completely. Backend APIs are fully React-compatible."
 
 frontend:
+  - task: "System Monitoring & APM Dashboard UI"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/pages/SystemPerformanceMonitor.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+      - agent: "testing"
+      - comment: "Testing System Monitoring & APM Dashboard UI at /system/performance"
+      - working: true
+      - agent: "testing"
+      - comment: "✅ VERIFIED: System Monitoring & APM Dashboard UI fully functional! All 4 tabs working correctly. Overview tab: 4 resource cards (CPU 19%, RAM 46.3%, Disk 12%, DB 52 connections), 5 metric cards (Ort. Yanıt 18.25ms, P95 240.25ms, İstek/dk 1.5, Hata Oranı 46.67%, Rate Limit 0 hits), timeline chart, HTTP status pie chart (4xx:7, 2xx:8), top endpoints list, health badge 'Sağlıklı'. APM Metrikleri tab: 4 percentile cards (P50 1.79ms, P95/P99 240.25ms, Yavaş İstek 0), slowest endpoints section, error endpoints section. Rate Limiting tab: Status cards (Durum Aktif, 3 clients, 0 blocks, In-Memory mode), 6 rate limit configs (auth:15, export:10, report:30, write:60, default:120, anonymous:30), explanation section. Veritabanı tab: 4 connection stats (52 active, 767 available, 1204 total, 19dk uptime), pool config (max:500, min:50, idle:45s), operations (328 queries, 12 updates), collection stats table with 12+ collections. Auto-refresh (8s interval) and manual refresh working. Real data showing across all metrics. APM system correctly tracking errors from test traffic."
+
   - task: "Basic Hotel Navigation Test"
     implemented: true
     working: true
