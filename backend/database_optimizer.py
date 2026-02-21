@@ -162,7 +162,6 @@ class DatabaseOptimizer:
         users = self.db.users
         
         indexes = [
-            ([("username", ASCENDING)], {"unique": True}),
             ([("email", ASCENDING)], {"unique": True}),
             ([("role", ASCENDING)], {}),
             ([("tenant_id", ASCENDING)], {}),
