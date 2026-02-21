@@ -53914,40 +53914,22 @@ async def process_mobile_payment(
 
 
 # ============================================================================
-# SYSTEM MONITORING & PERFORMANCE - NEW FEATURES
+# SYSTEM MONITORING & PERFORMANCE - APM INTEGRATED
 # ============================================================================
 
 import psutil
 import time
-from collections import deque
 
-# Global storage for API metrics (in-memory for MVP)
-api_metrics = deque(maxlen=1000)  # Store last 1000 requests
+# api_metrics is now provided by apm_store from apm_middleware.py
+# Backward compat: alias api_metrics to apm_store.requests
+try:
+    from apm_middleware import apm_store as _apm_store_ref, get_rate_limit_stats as _get_rl_stats
+    api_metrics = _apm_store_ref.requests
+except ImportError:
+    from collections import deque
+    api_metrics = deque(maxlen=1000)
 
-class APIMetricsMiddleware:
-    """Middleware to track API response times"""
-    def __init__(self, app):
-        self.app = app
-    
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "http":
-            start_time = time.time()
-            
-            async def send_wrapper(message):
-                if message["type"] == "http.response.start":
-                    duration = (time.time() - start_time) * 1000  # Convert to ms
-                    api_metrics.append({
-                        'endpoint': scope.get('path', 'unknown'),
-                        'method': scope.get('method', 'unknown'),
-                        'duration_ms': duration,
-                        'timestamp': datetime.now(timezone.utc).isoformat(),
-                        'status_code': message.get('status', 0)
-                    })
-                await send(message)
-            
-            await self.app(scope, receive, send_wrapper)
-        else:
-            await self.app(scope, receive, send)
+# Legacy APIMetricsMiddleware replaced by APMMiddleware in apm_middleware.py
 
 # 1. SYSTEM PERFORMANCE MONITORING
 @api_router.get("/system/performance")
