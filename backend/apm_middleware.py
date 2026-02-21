@@ -525,11 +525,39 @@ class EnhancedRateLimitMiddleware:
 
 
 # Global rate limiter instance (for stats access)
-rate_limit_middleware_instance: Optional[EnhancedRateLimitMiddleware] = None
+_global_rate_limiter_state: Dict[str, Any] = {
+    'windows': None,
+    'limits': None,
+    'lock': None,
+}
 
 
 def get_rate_limit_stats() -> Dict[str, Any]:
-    """Get rate limit stats from the global instance"""
-    if rate_limit_middleware_instance:
-        return rate_limit_middleware_instance.get_rate_limit_stats()
-    return {'active_clients': 0, 'requests_tracked': 0, 'total_rate_limit_hits': 0}
+    """Get rate limit stats from the global state"""
+    state = _global_rate_limiter_state
+    if state['windows'] is None or state['lock'] is None:
+        return {
+            'active_clients': 0,
+            'requests_tracked': 0,
+            'total_rate_limit_hits': apm_store.rate_limit_hits,
+            'hits_by_endpoint': dict(apm_store.rate_limit_by_endpoint),
+            'limits_config': {},
+        }
+
+    now = time.time()
+    active_windows = 0
+    total_tracked = 0
+
+    with state['lock']:
+        for key, dq in state['windows'].items():
+            if dq and dq[-1] > now - 60:
+                active_windows += 1
+                total_tracked += len(dq)
+
+    return {
+        'active_clients': active_windows,
+        'requests_tracked': total_tracked,
+        'total_rate_limit_hits': apm_store.rate_limit_hits,
+        'hits_by_endpoint': dict(apm_store.rate_limit_by_endpoint),
+        'limits_config': {k: {'max_requests': v[0], 'window_seconds': v[1]} for k, v in (state['limits'] or {}).items()},
+    }
