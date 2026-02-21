@@ -10817,6 +10817,37 @@ app.add_middleware(
 # Add GZip compression for responses >500 bytes (aggressive compression for speed)
 app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
 
+# ── APM & Rate Limiting Middleware ────────────────────────────────
+# These are pure ASGI middlewares (no Redis dependency, fully in-memory)
+try:
+    from apm_middleware import APMMiddleware, EnhancedRateLimitMiddleware, apm_store, get_rate_limit_stats
+    import apm_middleware as _apm_mod
+
+    # Rate limiting middleware (outermost = processed first)
+    _rl = EnhancedRateLimitMiddleware
+    app.add_middleware(_rl)
+    # Store instance reference for stats access
+    _apm_mod.rate_limit_middleware_instance = app.middleware_stack  # will be resolved at runtime
+
+    # APM metrics tracking middleware
+    app.add_middleware(APMMiddleware)
+
+    print("✅ APM & Rate Limiting middleware activated (in-memory mode)")
+except Exception as _mw_err:
+    print(f"⚠️ APM/Rate Limiting middleware init error: {_mw_err}")
+    # Create fallback apm_store so endpoints don't crash
+    from collections import deque
+    class _FallbackStore:
+        requests = deque(maxlen=100)
+        rate_limit_hits = 0
+        started_at = __import__('datetime').datetime.now(__import__('datetime').timezone.utc)
+        def get_summary(self, minutes=10): return {'total_requests': 0, 'error_rate_percent': 0}
+        def get_recent_errors(self, limit=50): return []
+        def record_request(self, **kw): pass
+        def record_rate_limit_hit(self, p): pass
+    apm_store = _FallbackStore()
+    def get_rate_limit_stats(): return {}
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # ============= FRONT DESK OPERATIONS =============
