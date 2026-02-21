@@ -18324,6 +18324,17 @@ async def startup_db_seed():
         print(f"⚠️ Optimization system initialization error: {str(e)}")
         print("   System will continue without optimization features")
     
+    # ── Comprehensive Database Optimization ────────────────────
+    # Run DatabaseOptimizer for all collections (idempotent - safe to repeat)
+    try:
+        print("🚀 Running comprehensive database optimization...")
+        from database_optimizer import DatabaseOptimizer
+        db_optimizer = DatabaseOptimizer(db)
+        opt_result = await db_optimizer.create_all_indexes()
+        print(f"✅ Database optimization complete: {sum(r.get('created', 0) for r in opt_result.values() if isinstance(r, dict) and 'created' in r)} indexes ensured")
+    except Exception as e:
+        print(f"⚠️ Database optimization warning: {str(e)}")
+
     # Create performance indexes for 550+ rooms and 3-year data handling
     try:
         print("🚀 Creating performance indexes for large-scale operations...")
