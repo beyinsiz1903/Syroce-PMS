@@ -176,6 +176,9 @@ test_plan:
     - "Enterprise Hotel Navigation Test"
     - "Super Admin - Admin Panel Module Management Test"
     - "Super Admin Badge Test"
+  frontend_completed:
+    - "System Monitoring & APM Dashboard UI"
+    - "Basic Hotel Navigation Test"
   backend_completed:
     - "Hotel Team Management API Testing"
     - "Subscription Tier RBAC Validation"
