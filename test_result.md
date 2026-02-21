@@ -98,75 +98,93 @@ backend:
 frontend:
   - task: "Security Center Page (2FA + IP Access)"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/src/pages/SecurityCenter.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
       - agent: "main"
       - comment: "Route: /security-center. 2FA setup with QR code, IP whitelist/blacklist management."
+      - working: true
+      - agent: "testing"
+      - comment: "PASS. Page loads successfully with heading 'Guvenlik Merkezi', 2 tabs (2FA Dogrulama, IP Erisim Kontrolu), 2FA disabled badge, enable button, IP rules table. All backend APIs working (2FA status, IP rules)."
 
   - task: "GDPR Compliance Page"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/src/pages/GDPRCompliance.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
       - agent: "main"
       - comment: "Route: /gdpr-compliance. Compliance score, retention policy, DPA list."
+      - working: true
+      - agent: "testing"
+      - comment: "PASS. Page loads with heading 'KVKK/GDPR Uyumluluk', 3 tabs (Uyumluluk Paneli, Veri Saklama, Veri Isleme Sozlesmeleri), compliance score card, guest count cards. All backend APIs working."
 
   - task: "Central Office Dashboard Page"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/src/pages/CentralOfficeDashboard.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
       - agent: "main"
       - comment: "Route: /central-office. KPI cards, occupancy chart, revenue pie chart, property breakdown table."
+      - working: true
+      - agent: "testing"
+      - comment: "PASS. Page loads with heading 'Merkez Ofis Dashboard', 5 KPI cards (Toplam Otel: 1, Toplam Oda: 50, Doluluk Orani: %10, Bugunki Check-in: 0, Toplam Misafir: 32), occupancy chart, revenue chart, property breakdown table. All backend APIs returning data."
 
   - task: "Central Pricing Manager Page"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/src/pages/CentralPricingManager.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
       - agent: "main"
       - comment: "Route: /central-pricing. Current rates, bulk update form, templates, rate history."
+      - working: true
+      - agent: "testing"
+      - comment: "PASS. Page loads with heading 'Merkezi Fiyat Yonetimi', 4 tabs (Guncel Fiyatlar, Toplu Guncelleme, Sablonlar, Fiyat Gecmisi). All backend APIs working."
 
   - task: "Cross-Property Guests Page"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/src/pages/CrossPropertyGuests.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
       - agent: "main"
       - comment: "Route: /cross-property-guests. Guest search, unified profile, loyalty summary."
+      - working: true
+      - agent: "testing"
+      - comment: "PASS. Page loads with heading 'Cross-Property Misafir Profilleri', 3 tabs (Misafir Ara, Birlesik Profil, Sadakat Ozeti), search input present. All backend APIs working."
 
   - task: "ML Dashboard Page"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/src/pages/MLDashboard.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
       - agent: "main"
       - comment: "Route: /ml-dashboard. Model status, training, prediction, sentiment analysis."
+      - working: true
+      - agent: "testing"
+      - comment: "PASS. Page loads with heading 'AI/ML Modelleri', 4 tabs (Model Durumu, Egitim, Tahminleme, Duygu Analizi), showing 4 ML models (rms, persona, predictive_maintenance, hk_scheduler) with training status. All backend APIs working."
 
 metadata:
   created_by: "main_agent"
