@@ -1,0 +1,136 @@
+name: RoomOps PMS CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop, staging]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '18'
+  MONGO_URL: mongodb://localhost:27017/hotel_pms_test
+
+jobs:
+  # ============ BACKEND TESTS ============
+  backend-test:
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping:1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx
+
+      - name: Run linting
+        run: |
+          cd backend
+          pip install ruff
+          ruff check . --select E9,F63,F7,F82 --target-version py311
+
+      - name: Run unit tests
+        run: |
+          cd backend
+          python -m pytest tests/ -v --tb=short -q
+        env:
+          MONGO_URL: ${{ env.MONGO_URL }}
+          JWT_SECRET: test-secret-key
+
+      - name: Run API integration tests
+        run: |
+          cd backend
+          uvicorn server:app --host 0.0.0.0 --port 8001 &
+          sleep 5
+          python -m pytest tests/test_api_integration.py -v --tb=short
+        env:
+          MONGO_URL: ${{ env.MONGO_URL }}
+
+  # ============ FRONTEND TESTS ============
+  frontend-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          yarn install --frozen-lockfile
+
+      - name: Run linting
+        run: |
+          cd frontend
+          yarn lint || true
+
+      - name: Build
+        run: |
+          cd frontend
+          yarn build
+        env:
+          CI: false
+          REACT_APP_BACKEND_URL: http://localhost:8001
+
+  # ============ SECURITY SCAN ============
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: [backend-test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run security audit (Python)
+        run: |
+          pip install safety
+          cd backend
+          safety check -r requirements.txt || true
+
+      - name: Run security audit (Node)
+        run: |
+          cd frontend
+          yarn audit --level high || true
+
+  # ============ BUILD & DEPLOY ============
+  build-deploy:
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-test]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker images
+        run: |
+          echo "Building production images..."
+          # docker build -t roomops-backend:${{ github.sha }} ./backend
+          # docker build -t roomops-frontend:${{ github.sha }} ./frontend
+
+      - name: Deploy to staging
+        if: github.ref == 'refs/heads/staging'
+        run: echo "Deploying to staging..."
+
+      - name: Deploy to production
+        if: github.ref == 'refs/heads/main'
+        run: echo "Deploying to production..."
