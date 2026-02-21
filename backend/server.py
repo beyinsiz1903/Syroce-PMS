@@ -10824,10 +10824,7 @@ try:
     import apm_middleware as _apm_mod
 
     # Rate limiting middleware (outermost = processed first)
-    _rl = EnhancedRateLimitMiddleware
-    app.add_middleware(_rl)
-    # Store instance reference for stats access
-    _apm_mod.rate_limit_middleware_instance = app.middleware_stack  # will be resolved at runtime
+    app.add_middleware(EnhancedRateLimitMiddleware)
 
     # APM metrics tracking middleware
     app.add_middleware(APMMiddleware)
