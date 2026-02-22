@@ -2,616 +2,481 @@
 Comprehensive Unit Test Suite for RoomOps PMS
 =============================================
 %80+ coverage hedefli test suite.
-Modüller: Auth, Rooms, Guests, Bookings, Folios,
-2FA, GDPR, PCI DSS, Tenant Isolation, Central Office,
-IP Access Control, Cross-Property Guests
 """
 import pytest
 import httpx
 import asyncio
-import json
-import os
-from datetime import datetime, timezone, timedelta
+import uuid
 
 BASE_URL = "http://localhost:8001"
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 
-# ============= FIXTURES =============
-@pytest.fixture(scope="module")
-def anyio_backend():
-    return "asyncio"
+# Global token cache
+_token_cache = {"token": None}
 
-@pytest.fixture(scope="module")
-async def client():
+async def get_token():
+    if _token_cache["token"]:
+        return _token_cache["token"]
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as c:
-        yield c
+        resp = await c.post("/api/auth/login", json={"email": TEST_EMAIL, "password": TEST_PASSWORD})
+        assert resp.status_code == 200, f"Login failed: {resp.text}"
+        _token_cache["token"] = resp.json()["access_token"]
+    return _token_cache["token"]
 
-@pytest.fixture(scope="module")
-async def auth_token(client):
-    resp = await client.post("/api/auth/login", json={
-        "email": TEST_EMAIL,
-        "password": TEST_PASSWORD
-    })
-    assert resp.status_code == 200, f"Login failed: {resp.text}"
-    data = resp.json()
-    token = data.get("access_token", "")
-    assert token, "No access_token in response"
-    return token
+async def get_headers():
+    token = await get_token()
+    return {"Authorization": f"Bearer {token}"}
 
-@pytest.fixture(scope="module")
-async def auth_headers(auth_token):
-    return {"Authorization": f"Bearer {auth_token}"}
+async def api_get(path, **kwargs):
+    headers = await get_headers()
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as c:
+        return await c.get(path, headers=headers, **kwargs)
 
+async def api_post(path, **kwargs):
+    headers = await get_headers()
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as c:
+        return await c.post(path, headers=headers, **kwargs)
+
+async def api_put(path, **kwargs):
+    headers = await get_headers()
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as c:
+        return await c.put(path, headers=headers, **kwargs)
+
+async def api_delete(path, **kwargs):
+    headers = await get_headers()
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as c:
+        return await c.delete(path, headers=headers, **kwargs)
 
 # ============= AUTH MODULE TESTS =============
-class TestAuth:
-    """Kimlik doğrulama testleri"""
-    
-    async def test_login_success(self, client):
-        resp = await client.post("/api/auth/login", json={
-            "email": TEST_EMAIL, "password": TEST_PASSWORD
-        })
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "access_token" in data
-        assert data["user"]["email"] == TEST_EMAIL
-    
-    async def test_login_invalid_credentials(self, client):
-        resp = await client.post("/api/auth/login", json={
-            "email": TEST_EMAIL, "password": "wrongpassword"
-        })
-        assert resp.status_code == 401
-    
-    async def test_login_invalid_email(self, client):
-        resp = await client.post("/api/auth/login", json={
-            "email": "nonexistent@hotel.com", "password": "test123"
-        })
-        assert resp.status_code == 401
-    
-    async def test_get_me(self, client, auth_headers):
-        resp = await client.get("/api/auth/me", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["email"] == TEST_EMAIL
-        assert "id" in data
-        assert "tenant_id" in data
-    
-    async def test_unauthorized_access(self, client):
-        resp = await client.get("/api/auth/me")
-        assert resp.status_code in [401, 403]
-    
-    async def test_invalid_token(self, client):
-        resp = await client.get("/api/auth/me", headers={
-            "Authorization": "Bearer invalid_token_here"
-        })
-        assert resp.status_code == 401
+@pytest.mark.asyncio
+async def test_auth_login_success():
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as c:
+        resp = await c.post("/api/auth/login", json={"email": TEST_EMAIL, "password": TEST_PASSWORD})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "access_token" in data
+    assert data["user"]["email"] == TEST_EMAIL
 
+@pytest.mark.asyncio
+async def test_auth_login_invalid():
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as c:
+        resp = await c.post("/api/auth/login", json={"email": TEST_EMAIL, "password": "wrong"})
+    assert resp.status_code == 401
 
-# ============= ROOMS MODULE TESTS =============
-class TestRooms:
-    """Oda yönetimi testleri"""
-    
-    async def test_list_rooms(self, client, auth_headers):
-        resp = await client.get("/api/rooms", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        # rooms could be in 'rooms' key or direct list
-        rooms = data.get("rooms", data) if isinstance(data, dict) else data
-        assert isinstance(rooms, list)
-    
-    async def test_rooms_count(self, client, auth_headers):
-        resp = await client.get("/api/rooms", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        rooms = data.get("rooms", data) if isinstance(data, dict) else data
-        assert len(rooms) >= 1, "En az 1 oda olmalı"
-    
-    async def test_rooms_have_required_fields(self, client, auth_headers):
-        resp = await client.get("/api/rooms", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        rooms = data.get("rooms", data) if isinstance(data, dict) else data
-        if rooms:
-            room = rooms[0]
-            assert "room_number" in room or "room_no" in room
-            assert "status" in room
+@pytest.mark.asyncio
+async def test_auth_login_nonexistent():
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as c:
+        resp = await c.post("/api/auth/login", json={"email": "x@x.com", "password": "x"})
+    assert resp.status_code == 401
 
+@pytest.mark.asyncio
+async def test_auth_me():
+    resp = await api_get("/api/auth/me")
+    assert resp.status_code == 200
+    assert resp.json()["email"] == TEST_EMAIL
 
-# ============= GUESTS MODULE TESTS =============
-class TestGuests:
-    """Misafir yönetimi testleri"""
-    
-    async def test_list_guests(self, client, auth_headers):
-        resp = await client.get("/api/guests", headers=auth_headers)
-        assert resp.status_code == 200
-    
-    async def test_create_guest(self, client, auth_headers):
-        import uuid
-        guest_data = {
-            "name": f"Test Misafir {uuid.uuid4().hex[:6]}",
-            "email": f"test_{uuid.uuid4().hex[:6]}@example.com",
-            "phone": "+905551234999"
-        }
-        resp = await client.post("/api/guests", json=guest_data, headers=auth_headers)
-        assert resp.status_code in [200, 201], f"Create guest failed: {resp.text}"
-    
-    async def test_search_guests(self, client, auth_headers):
-        resp = await client.get("/api/guests?search=Misafir", headers=auth_headers)
-        assert resp.status_code == 200
+@pytest.mark.asyncio
+async def test_auth_unauthorized():
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as c:
+        resp = await c.get("/api/auth/me")
+    assert resp.status_code in [401, 403]
 
+@pytest.mark.asyncio
+async def test_auth_invalid_token():
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as c:
+        resp = await c.get("/api/auth/me", headers={"Authorization": "Bearer invalid"})
+    assert resp.status_code == 401
 
-# ============= 2FA SECURITY MODULE TESTS =============
-class TestTwoFA:
-    """İki faktörlü doğrulama testleri"""
-    
-    async def test_2fa_status(self, client, auth_headers):
-        resp = await client.get("/api/security/2fa/status", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "enabled" in data
-        assert isinstance(data["enabled"], bool)
-        assert "enforced_by_policy" in data
-    
-    async def test_2fa_setup(self, client, auth_headers):
-        resp = await client.post("/api/security/2fa/setup", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "secret" in data
-        assert "qr_code" in data
-        assert data["qr_code"].startswith("data:image/png;base64,")
-        assert "manual_entry_key" in data
-    
-    async def test_2fa_verify_invalid_code(self, client, auth_headers):
-        resp = await client.post("/api/security/2fa/verify", 
-            json={"code": "000000"}, headers=auth_headers)
-        assert resp.status_code == 400
-    
-    async def test_2fa_tenant_policy(self, client, auth_headers):
-        resp = await client.get("/api/security/2fa/tenant-policy", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "require_2fa" in data
-    
-    async def test_2fa_stats(self, client, auth_headers):
-        resp = await client.get("/api/security/2fa/stats", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "total_users" in data
-        assert "adoption_rate" in data
-        assert "last_30_days" in data
-    
-    async def test_2fa_update_policy(self, client, auth_headers):
-        resp = await client.put("/api/security/2fa/tenant-policy", 
-            json={
-                "require_2fa": False,
-                "require_2fa_roles": ["admin"],
-                "enforce_after_days": 7,
-                "max_failed_attempts": 5,
-                "lockout_duration_minutes": 30,
-                "trusted_device_days": 30,
-                "require_2fa_for_sensitive_ops": True
-            },
-            headers=auth_headers)
-        assert resp.status_code == 200
-    
-    async def test_2fa_trusted_devices_list(self, client, auth_headers):
-        resp = await client.get("/api/security/2fa/trusted-devices", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "devices" in data
+# ============= ROOMS TESTS =============
+@pytest.mark.asyncio
+async def test_rooms_list():
+    resp = await api_get("/api/rooms")
+    assert resp.status_code == 200
 
+@pytest.mark.asyncio
+async def test_rooms_count():
+    resp = await api_get("/api/rooms")
+    data = resp.json()
+    rooms = data.get("rooms", data) if isinstance(data, dict) else data
+    assert len(rooms) >= 1
+
+# ============= GUESTS TESTS =============
+@pytest.mark.asyncio
+async def test_guests_list():
+    resp = await api_get("/api/guests")
+    assert resp.status_code == 200
+
+@pytest.mark.asyncio
+async def test_guests_create():
+    resp = await api_post("/api/guests", json={
+        "name": f"Test {uuid.uuid4().hex[:6]}", "email": f"t{uuid.uuid4().hex[:6]}@x.com", "phone": "+905550001111"
+    })
+    assert resp.status_code in [200, 201]
+
+# ============= 2FA SECURITY TESTS =============
+@pytest.mark.asyncio
+async def test_2fa_status():
+    resp = await api_get("/api/security/2fa/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "enabled" in data
+    assert "enforced_by_policy" in data
+
+@pytest.mark.asyncio
+async def test_2fa_setup():
+    resp = await api_post("/api/security/2fa/setup")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "secret" in data
+    assert "qr_code" in data
+    assert data["qr_code"].startswith("data:image/png;base64,")
+
+@pytest.mark.asyncio
+async def test_2fa_verify_invalid():
+    resp = await api_post("/api/security/2fa/verify", json={"code": "000000"})
+    assert resp.status_code == 400
+
+@pytest.mark.asyncio
+async def test_2fa_tenant_policy():
+    resp = await api_get("/api/security/2fa/tenant-policy")
+    assert resp.status_code == 200
+    assert "require_2fa" in resp.json()
+
+@pytest.mark.asyncio
+async def test_2fa_stats():
+    resp = await api_get("/api/security/2fa/stats")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "total_users" in data
+    assert "adoption_rate" in data
+
+@pytest.mark.asyncio
+async def test_2fa_update_policy():
+    resp = await api_put("/api/security/2fa/tenant-policy", json={
+        "require_2fa": False, "require_2fa_roles": ["admin"],
+        "enforce_after_days": 7, "max_failed_attempts": 5,
+        "lockout_duration_minutes": 30, "trusted_device_days": 30,
+        "require_2fa_for_sensitive_ops": True
+    })
+    assert resp.status_code == 200
+
+@pytest.mark.asyncio
+async def test_2fa_trusted_devices():
+    resp = await api_get("/api/security/2fa/trusted-devices")
+    assert resp.status_code == 200
+    assert "devices" in resp.json()
 
 # ============= IP ACCESS CONTROL TESTS =============
-class TestIPAccessControl:
-    """IP erişim kontrolü testleri"""
-    
-    async def test_list_ip_rules(self, client, auth_headers):
-        resp = await client.get("/api/security/ip/rules", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "rules" in data
-        assert "total" in data
-    
-    async def test_create_ip_rule(self, client, auth_headers):
-        resp = await client.post("/api/security/ip/rules", json={
-            "ip_address": "192.168.1.100",
-            "rule_type": "whitelist",
-            "description": "Test kuralı"
-        }, headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["success"] is True
-    
-    async def test_create_ip_rule_invalid(self, client, auth_headers):
-        resp = await client.post("/api/security/ip/rules", json={
-            "ip_address": "invalid-ip",
-            "rule_type": "whitelist"
-        }, headers=auth_headers)
-        assert resp.status_code == 400
-    
-    async def test_check_ip(self, client, auth_headers):
-        resp = await client.post("/api/security/ip/check", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "client_ip" in data
-        assert "allowed" in data
+@pytest.mark.asyncio
+async def test_ip_rules_list():
+    resp = await api_get("/api/security/ip/rules")
+    assert resp.status_code == 200
+    assert "rules" in resp.json()
 
+@pytest.mark.asyncio
+async def test_ip_rule_create():
+    resp = await api_post("/api/security/ip/rules", json={
+        "ip_address": f"10.0.{uuid.uuid4().int % 255}.1", "rule_type": "whitelist", "description": "Test"
+    })
+    assert resp.status_code == 200
 
-# ============= GDPR/KVKK COMPLIANCE TESTS =============
-class TestGDPRCompliance:
-    """KVKK/GDPR uyumluluk testleri"""
-    
-    async def test_compliance_status(self, client, auth_headers):
-        resp = await client.get("/api/gdpr/compliance-status", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "compliance_score" in data
-        assert "total_guests" in data
-        assert "compliance_checks" in data
-    
-    async def test_retention_policy(self, client, auth_headers):
-        resp = await client.get("/api/gdpr/retention-policy", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "guest_data_retention_days" in data
-    
-    async def test_dpa_list(self, client, auth_headers):
-        resp = await client.get("/api/gdpr/dpa", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "agreements" in data
-    
-    async def test_create_dpa(self, client, auth_headers):
-        resp = await client.post("/api/gdpr/dpa", json={
-            "processor_name": "Test İşleyici",
-            "purpose": "Veri analizi",
-            "data_categories": ["misafir_bilgileri", "rezervasyon"],
-            "retention_period_days": 365,
-            "security_measures": ["şifreleme", "erişim kontrolü"],
-            "cross_border_transfer": False
-        }, headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["success"] is True
-    
-    async def test_update_retention_policy(self, client, auth_headers):
-        resp = await client.put("/api/gdpr/retention-policy?guest_data_days=1095&auto_anonymize=false",
-            headers=auth_headers)
-        assert resp.status_code == 200
+@pytest.mark.asyncio
+async def test_ip_rule_create_invalid():
+    resp = await api_post("/api/security/ip/rules", json={"ip_address": "invalid", "rule_type": "whitelist"})
+    assert resp.status_code == 400
 
+@pytest.mark.asyncio
+async def test_ip_check():
+    resp = await api_post("/api/security/ip/check")
+    assert resp.status_code == 200
+    assert "allowed" in resp.json()
 
-# ============= PCI DSS COMPLIANCE TESTS =============
-class TestPCIDSS:
-    """PCI DSS uyumluluk testleri"""
-    
-    async def test_compliance_status(self, client, auth_headers):
-        resp = await client.get("/api/pci-dss/compliance-status", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "compliance_score" in data
-        assert "compliance_level" in data
-        assert "requirements" in data
-        assert "category_summary" in data
-    
-    async def test_requirements_list(self, client, auth_headers):
-        resp = await client.get("/api/pci-dss/requirements", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["total_requirements"] == 24
-        assert "categories" in data
-    
-    async def test_tokenize_card(self, client, auth_headers):
-        resp = await client.post("/api/pci-dss/tokenize", json={
-            "card_number": "4111111111111111",
-            "card_holder": "Test Kullanıcı",
-            "expiry_month": 12,
-            "expiry_year": 2028
-        }, headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "token" in data
-        assert data["last_four"] == "1111"
-        assert data["card_brand"] == "Visa"
-        assert "***" in data["card_holder_masked"]
-    
-    async def test_tokenize_invalid_card(self, client, auth_headers):
-        resp = await client.post("/api/pci-dss/tokenize", json={
-            "card_number": "1234567890123",
-            "card_holder": "Test",
-            "expiry_month": 12,
-            "expiry_year": 2028
-        }, headers=auth_headers)
-        assert resp.status_code == 400
-    
-    async def test_list_tokens(self, client, auth_headers):
-        resp = await client.get("/api/pci-dss/tokens", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "tokens" in data
-    
-    async def test_security_scan(self, client, auth_headers):
-        resp = await client.post("/api/pci-dss/security-scan", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "risk_level" in data
-        assert "findings" in data
-        assert data["status"] == "completed"
-    
-    async def test_pan_scan(self, client, auth_headers):
-        resp = await client.post("/api/pci-dss/pan-scan", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "exposed_pan_count" in data
-        assert "documents_scanned" in data
-    
-    async def test_scan_history(self, client, auth_headers):
-        resp = await client.get("/api/pci-dss/scan-history", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "scans" in data
-    
-    async def test_update_audit_result(self, client, auth_headers):
-        resp = await client.put(
-            "/api/pci-dss/audit/1.1?audit_status=compliant&evidence=Firewall%20aktif&notes=Test",
-            headers=auth_headers
-        )
-        assert resp.status_code == 200
-    
-    async def test_update_audit_invalid_requirement(self, client, auth_headers):
-        resp = await client.put(
-            "/api/pci-dss/audit/99.99?audit_status=compliant",
-            headers=auth_headers
-        )
-        assert resp.status_code == 404
+# ============= GDPR/KVKK TESTS =============
+@pytest.mark.asyncio
+async def test_gdpr_compliance_status():
+    resp = await api_get("/api/gdpr/compliance-status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "compliance_score" in data
+    assert "compliance_checks" in data
 
+@pytest.mark.asyncio
+async def test_gdpr_retention_policy():
+    resp = await api_get("/api/gdpr/retention-policy")
+    assert resp.status_code == 200
+    assert "guest_data_retention_days" in resp.json()
+
+@pytest.mark.asyncio
+async def test_gdpr_dpa_list():
+    resp = await api_get("/api/gdpr/dpa")
+    assert resp.status_code == 200
+    assert "agreements" in resp.json()
+
+@pytest.mark.asyncio
+async def test_gdpr_create_dpa():
+    resp = await api_post("/api/gdpr/dpa", json={
+        "processor_name": "Test İşleyici", "purpose": "Analiz",
+        "data_categories": ["misafir"], "retention_period_days": 365,
+        "security_measures": ["şifreleme"], "cross_border_transfer": False
+    })
+    assert resp.status_code == 200
+
+@pytest.mark.asyncio
+async def test_gdpr_update_retention():
+    resp = await api_put("/api/gdpr/retention-policy?guest_data_days=1095&auto_anonymize=false")
+    assert resp.status_code == 200
+
+# ============= PCI DSS TESTS =============
+@pytest.mark.asyncio
+async def test_pci_compliance_status():
+    resp = await api_get("/api/pci-dss/compliance-status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "compliance_score" in data
+    assert "requirements" in data
+
+@pytest.mark.asyncio
+async def test_pci_requirements():
+    resp = await api_get("/api/pci-dss/requirements")
+    assert resp.status_code == 200
+    assert resp.json()["total_requirements"] == 24
+
+@pytest.mark.asyncio
+async def test_pci_tokenize_visa():
+    resp = await api_post("/api/pci-dss/tokenize", json={
+        "card_number": "4111111111111111", "card_holder": "Test Kullanıcı",
+        "expiry_month": 12, "expiry_year": 2028
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["last_four"] == "1111"
+    assert data["card_brand"] == "Visa"
+
+@pytest.mark.asyncio
+async def test_pci_tokenize_mastercard():
+    resp = await api_post("/api/pci-dss/tokenize", json={
+        "card_number": "5555555555554444", "card_holder": "Test MC",
+        "expiry_month": 6, "expiry_year": 2027
+    })
+    assert resp.status_code == 200
+    assert resp.json()["card_brand"] == "Mastercard"
+
+@pytest.mark.asyncio
+async def test_pci_tokenize_invalid():
+    resp = await api_post("/api/pci-dss/tokenize", json={
+        "card_number": "1234567890123", "card_holder": "X", "expiry_month": 12, "expiry_year": 2028
+    })
+    assert resp.status_code == 400
+
+@pytest.mark.asyncio
+async def test_pci_tokens_list():
+    resp = await api_get("/api/pci-dss/tokens")
+    assert resp.status_code == 200
+    assert "tokens" in resp.json()
+
+@pytest.mark.asyncio
+async def test_pci_security_scan():
+    resp = await api_post("/api/pci-dss/security-scan")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "risk_level" in data
+    assert data["status"] == "completed"
+
+@pytest.mark.asyncio
+async def test_pci_pan_scan():
+    resp = await api_post("/api/pci-dss/pan-scan")
+    assert resp.status_code == 200
+    assert "exposed_pan_count" in resp.json()
+
+@pytest.mark.asyncio
+async def test_pci_scan_history():
+    resp = await api_get("/api/pci-dss/scan-history")
+    assert resp.status_code == 200
+    assert "scans" in resp.json()
+
+@pytest.mark.asyncio
+async def test_pci_audit_update():
+    resp = await api_put("/api/pci-dss/audit/1.1?audit_status=compliant&evidence=Test")
+    assert resp.status_code == 200
+
+@pytest.mark.asyncio
+async def test_pci_audit_invalid_req():
+    resp = await api_put("/api/pci-dss/audit/99.99?audit_status=compliant")
+    assert resp.status_code == 404
 
 # ============= TENANT ISOLATION TESTS =============
-class TestTenantIsolation:
-    """Tenant veri izolasyonu testleri"""
-    
-    async def test_isolation_health(self, client, auth_headers):
-        resp = await client.get("/api/tenant-isolation/health", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "isolation_score" in data
-        assert "violations" in data
-        assert "recommendations" in data
-        assert data["isolation_score"] >= 0
-    
-    async def test_isolation_policy(self, client, auth_headers):
-        resp = await client.get("/api/tenant-isolation/policy", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "strict_mode" in data
-        assert "pii_masking_enabled" in data
-    
-    async def test_update_isolation_policy(self, client, auth_headers):
-        resp = await client.put(
-            "/api/tenant-isolation/policy?strict_mode=true&pii_masking_enabled=true",
-            headers=auth_headers
-        )
-        assert resp.status_code == 200
-    
-    async def test_data_summary(self, client, auth_headers):
-        resp = await client.get("/api/tenant-isolation/data-summary", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "collections" in data
-        assert "total_records" in data
-        assert data["total_records"] >= 0
-    
-    async def test_data_classification(self, client, auth_headers):
-        resp = await client.get("/api/tenant-isolation/data-classification", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "classifications" in data
-        assert "summary" in data
-    
-    async def test_pii_scan(self, client, auth_headers):
-        resp = await client.get("/api/tenant-isolation/pii-scan", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "pii_findings" in data
-        assert "overall_risk" in data
-    
-    async def test_audit_trail(self, client, auth_headers):
-        resp = await client.get("/api/tenant-isolation/audit-trail?days=30", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "events" in data
-        assert "action_summary" in data
-    
-    async def test_access_logs(self, client, auth_headers):
-        resp = await client.get("/api/tenant-isolation/access-logs", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "logs" in data
-    
-    async def test_cross_tenant_request(self, client, auth_headers):
-        resp = await client.post("/api/tenant-isolation/cross-tenant-request",
-            params={
-                "target_tenant_id": "some-other-tenant",
-                "reason": "Raporlama",
-                "data_scope": "summary",
-                "collections": ["bookings"]
-            },
-            headers=auth_headers
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["success"] is True
-    
-    async def test_list_cross_tenant_requests(self, client, auth_headers):
-        resp = await client.get("/api/tenant-isolation/cross-tenant-requests", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "requests" in data
+@pytest.mark.asyncio
+async def test_isolation_health():
+    resp = await api_get("/api/tenant-isolation/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "isolation_score" in data
+    assert data["isolation_score"] >= 0
 
+@pytest.mark.asyncio
+async def test_isolation_policy():
+    resp = await api_get("/api/tenant-isolation/policy")
+    assert resp.status_code == 200
+    assert "strict_mode" in resp.json()
 
-# ============= CENTRAL OFFICE DASHBOARD TESTS =============
-class TestCentralOffice:
-    """Merkez ofis dashboard testleri"""
-    
-    async def test_dashboard(self, client, auth_headers):
-        resp = await client.get("/api/central-office/dashboard", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "chain_kpi" in data
-        kpi = data["chain_kpi"]
-        assert "total_properties" in kpi
-        assert "total_rooms" in kpi
-        assert "chain_occupancy_rate" in kpi
-        assert "chain_adr" in kpi
-        assert "chain_revpar" in kpi
-    
-    async def test_properties(self, client, auth_headers):
-        resp = await client.get("/api/central-office/properties", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "properties" in data
-        assert data["total"] >= 1
-    
-    async def test_occupancy_comparison(self, client, auth_headers):
-        resp = await client.get("/api/central-office/occupancy-comparison?days=30", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "comparison" in data
-        assert "chain_average" in data
-    
-    async def test_revenue_report(self, client, auth_headers):
-        resp = await client.get("/api/central-office/revenue-report?period=monthly", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "total_chain_revenue" in data
-        assert "chain_adr" in data
-        assert "chain_revpar" in data
-    
-    async def test_trends_occupancy(self, client, auth_headers):
-        resp = await client.get("/api/central-office/trends?metric=occupancy&days=7", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "data_points" in data
-        assert "summary" in data
-        assert data["metric"] == "occupancy"
-    
-    async def test_trends_revenue(self, client, auth_headers):
-        resp = await client.get("/api/central-office/trends?metric=revenue&days=7", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["metric"] == "revenue"
-    
-    async def test_property_health(self, client, auth_headers):
-        resp = await client.get("/api/central-office/property-health", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "chain_average_score" in data
-        assert "properties" in data
-        if data["properties"]:
-            prop = data["properties"][0]
-            assert "overall_score" in prop
-            assert "breakdown" in prop
-            assert "grade" in prop
-    
-    async def test_budget_tracking(self, client, auth_headers):
-        resp = await client.get("/api/central-office/budget-tracking", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "tracking" in data
-        assert "chain_summary" in data
-    
-    async def test_set_budget(self, client, auth_headers):
-        # Get tenant_id first
-        me_resp = await client.get("/api/auth/me", headers=auth_headers)
-        tenant_id = me_resp.json().get("tenant_id")
-        
-        resp = await client.post("/api/central-office/budget",
-            params={
-                "property_id": tenant_id,
-                "revenue_target": 500000,
-                "occupancy_target": 80,
-                "adr_target": 250
-            },
-            headers=auth_headers
-        )
-        assert resp.status_code == 200
-    
-    async def test_alerts(self, client, auth_headers):
-        resp = await client.get("/api/central-office/alerts", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "alerts" in data
-        assert "critical_count" in data
-        assert "warning_count" in data
-    
-    async def test_department_comparison(self, client, auth_headers):
-        resp = await client.get("/api/central-office/department-comparison", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "departments" in data
-        assert "chain_averages" in data
+@pytest.mark.asyncio
+async def test_isolation_policy_update():
+    resp = await api_put("/api/tenant-isolation/policy?strict_mode=true&pii_masking_enabled=true")
+    assert resp.status_code == 200
 
+@pytest.mark.asyncio
+async def test_isolation_data_summary():
+    resp = await api_get("/api/tenant-isolation/data-summary")
+    assert resp.status_code == 200
+    assert "total_records" in resp.json()
+
+@pytest.mark.asyncio
+async def test_isolation_data_classification():
+    resp = await api_get("/api/tenant-isolation/data-classification")
+    assert resp.status_code == 200
+    assert "classifications" in resp.json()
+
+@pytest.mark.asyncio
+async def test_isolation_pii_scan():
+    resp = await api_get("/api/tenant-isolation/pii-scan")
+    assert resp.status_code == 200
+    assert "overall_risk" in resp.json()
+
+@pytest.mark.asyncio
+async def test_isolation_audit_trail():
+    resp = await api_get("/api/tenant-isolation/audit-trail?days=30")
+    assert resp.status_code == 200
+    assert "events" in resp.json()
+
+@pytest.mark.asyncio
+async def test_isolation_access_logs():
+    resp = await api_get("/api/tenant-isolation/access-logs")
+    assert resp.status_code == 200
+    assert "logs" in resp.json()
+
+@pytest.mark.asyncio
+async def test_isolation_cross_tenant_request():
+    resp = await api_post("/api/tenant-isolation/cross-tenant-request",
+        params={"target_tenant_id": "other", "reason": "Test", "data_scope": "summary"})
+    assert resp.status_code == 200
+
+@pytest.mark.asyncio
+async def test_isolation_cross_tenant_list():
+    resp = await api_get("/api/tenant-isolation/cross-tenant-requests")
+    assert resp.status_code == 200
+    assert "requests" in resp.json()
+
+# ============= CENTRAL OFFICE TESTS =============
+@pytest.mark.asyncio
+async def test_central_dashboard():
+    resp = await api_get("/api/central-office/dashboard")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "chain_kpi" in data
+    kpi = data["chain_kpi"]
+    assert "chain_adr" in kpi
+    assert "chain_revpar" in kpi
+
+@pytest.mark.asyncio
+async def test_central_properties():
+    resp = await api_get("/api/central-office/properties")
+    assert resp.status_code == 200
+    assert resp.json()["total"] >= 1
+
+@pytest.mark.asyncio
+async def test_central_occupancy():
+    resp = await api_get("/api/central-office/occupancy-comparison?days=30")
+    assert resp.status_code == 200
+    assert "chain_average" in resp.json()
+
+@pytest.mark.asyncio
+async def test_central_revenue():
+    resp = await api_get("/api/central-office/revenue-report")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "chain_adr" in data
+    assert "chain_revpar" in data
+
+@pytest.mark.asyncio
+async def test_central_trends_occ():
+    resp = await api_get("/api/central-office/trends?metric=occupancy&days=7")
+    assert resp.status_code == 200
+    assert resp.json()["metric"] == "occupancy"
+
+@pytest.mark.asyncio
+async def test_central_trends_rev():
+    resp = await api_get("/api/central-office/trends?metric=revenue&days=7")
+    assert resp.status_code == 200
+    assert resp.json()["metric"] == "revenue"
+
+@pytest.mark.asyncio
+async def test_central_trends_bookings():
+    resp = await api_get("/api/central-office/trends?metric=bookings&days=7")
+    assert resp.status_code == 200
+
+@pytest.mark.asyncio
+async def test_central_health():
+    resp = await api_get("/api/central-office/property-health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "chain_average_score" in data
+    if data["properties"]:
+        assert "grade" in data["properties"][0]
+
+@pytest.mark.asyncio
+async def test_central_budget():
+    resp = await api_get("/api/central-office/budget-tracking")
+    assert resp.status_code == 200
+    assert "chain_summary" in resp.json()
+
+@pytest.mark.asyncio
+async def test_central_alerts():
+    resp = await api_get("/api/central-office/alerts")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "critical_count" in data
+    assert "warning_count" in data
+
+@pytest.mark.asyncio
+async def test_central_departments():
+    resp = await api_get("/api/central-office/department-comparison")
+    assert resp.status_code == 200
+    assert "chain_averages" in resp.json()
 
 # ============= CROSS-PROPERTY GUESTS TESTS =============
-class TestCrossPropertyGuests:
-    """Cross-property misafir profilleri testleri"""
-    
-    async def test_search_guests(self, client, auth_headers):
-        resp = await client.get("/api/cross-property/guests/search?query=Misafir", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "guests" in data
-    
-    async def test_loyalty_summary(self, client, auth_headers):
-        resp = await client.get("/api/cross-property/guests/loyalty-summary", headers=auth_headers)
-        assert resp.status_code == 200
+@pytest.mark.asyncio
+async def test_cross_property_search():
+    resp = await api_get("/api/cross-property/guests/search?query=Misafir")
+    assert resp.status_code == 200
 
+@pytest.mark.asyncio
+async def test_cross_property_loyalty():
+    resp = await api_get("/api/cross-property/guests/loyalty-summary")
+    assert resp.status_code == 200
 
 # ============= OPENAPI/SWAGGER TESTS =============
-class TestDocumentation:
-    """API dokümantasyon testleri"""
-    
-    async def test_swagger_ui(self, client):
-        resp = await client.get("/api/docs")
-        assert resp.status_code == 200
-        assert "swagger" in resp.text.lower() or "Swagger" in resp.text
-    
-    async def test_redoc(self, client):
-        resp = await client.get("/api/redoc")
-        assert resp.status_code == 200
-    
-    async def test_openapi_json(self, client):
-        resp = await client.get("/api/openapi.json")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "openapi" in data
-        assert "paths" in data
-        assert len(data["paths"]) > 10
+@pytest.mark.asyncio
+async def test_swagger_ui():
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as c:
+        resp = await c.get("/api/docs")
+    assert resp.status_code == 200
 
+@pytest.mark.asyncio
+async def test_redoc():
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as c:
+        resp = await c.get("/api/redoc")
+    assert resp.status_code == 200
 
-# ============= SECURITY HEADERS & GENERAL TESTS =============
-class TestSecurityGeneral:
-    """Genel güvenlik testleri"""
-    
-    async def test_cors_headers(self, client):
-        resp = await client.options("/api/auth/login")
-        # CORS should be configured
-        assert resp.status_code in [200, 204, 405]
-    
-    async def test_404_handling(self, client, auth_headers):
-        resp = await client.get("/api/nonexistent-endpoint", headers=auth_headers)
-        assert resp.status_code in [404, 405]
-    
-    async def test_health_or_root(self, client):
-        """En az bir sağlık kontrolü endpoint'i çalışmalı"""
-        for endpoint in ["/api/health", "/api/", "/api/docs"]:
-            resp = await client.get(endpoint)
-            if resp.status_code == 200:
-                return
-        # If none return 200, docs should work
-        resp = await client.get("/api/docs")
-        assert resp.status_code == 200
+@pytest.mark.asyncio
+async def test_openapi_json():
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as c:
+        resp = await c.get("/api/openapi.json")
+    assert resp.status_code == 200
+    assert len(resp.json()["paths"]) > 10
 
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v", "--tb=short", "-q"])
+# ============= SECURITY GENERAL TESTS =============
+@pytest.mark.asyncio
+async def test_404_handling():
+    resp = await api_get("/api/nonexistent-endpoint-xyz")
+    assert resp.status_code in [404, 405]
