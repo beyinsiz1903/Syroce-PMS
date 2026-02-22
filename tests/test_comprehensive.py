@@ -91,12 +91,12 @@ async def test_auth_invalid_token():
 # ============= ROOMS TESTS =============
 @pytest.mark.asyncio
 async def test_rooms_list():
-    resp = await api_get("/api/rooms")
+    resp = await api_get("/api/pms/rooms")
     assert resp.status_code == 200
 
 @pytest.mark.asyncio
 async def test_rooms_count():
-    resp = await api_get("/api/rooms")
+    resp = await api_get("/api/pms/rooms")
     data = resp.json()
     rooms = data.get("rooms", data) if isinstance(data, dict) else data
     assert len(rooms) >= 1
