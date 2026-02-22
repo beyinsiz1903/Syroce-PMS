@@ -56010,6 +56010,25 @@ except Exception as e:
     print(f"⚠️ ML Models not available: {e}")
 
 
+# Tenant Isolation Module
+try:
+    from tenant_isolation import create_tenant_isolation_routes, router as ti_router_base
+    ti_router = create_tenant_isolation_routes(db, get_current_user)
+    app.include_router(ti_router, tags=["Tenant Isolation"])
+    print("✅ Tenant Isolation module included")
+except Exception as e:
+    print(f"⚠️ Tenant Isolation not available: {e}")
+
+# PCI DSS Compliance Module
+try:
+    from pci_dss_compliance import create_pci_dss_routes, router as pci_router_base
+    pci_router = create_pci_dss_routes(db, get_current_user)
+    app.include_router(pci_router, tags=["PCI DSS Compliance"])
+    print("✅ PCI DSS Compliance module included")
+except Exception as e:
+    print(f"⚠️ PCI DSS module not available: {e}")
+
+
 # ============================================================================
 # OPERA CLOUD PARITY FEATURES - CRITICAL ENTERPRISE FUNCTIONALITY
 # ============================================================================
