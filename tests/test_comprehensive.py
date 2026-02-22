@@ -110,7 +110,8 @@ async def test_guests_list():
 @pytest.mark.asyncio
 async def test_guests_create():
     resp = await api_post("/api/pms/guests", json={
-        "name": f"Test {uuid.uuid4().hex[:6]}", "email": f"t{uuid.uuid4().hex[:6]}@x.com", "phone": "+905550001111"
+        "name": f"Test {uuid.uuid4().hex[:6]}", "email": f"t{uuid.uuid4().hex[:6]}@x.com",
+        "phone": "+905550001111", "id_number": "12345678901"
     })
     assert resp.status_code in [200, 201]
 
