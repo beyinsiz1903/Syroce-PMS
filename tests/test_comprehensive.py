@@ -7,7 +7,6 @@ Modüller: Auth, Rooms, Guests, Bookings, Folios,
 IP Access Control, Cross-Property Guests
 """
 import pytest
-import pytest_asyncio
 import httpx
 import asyncio
 import json
@@ -19,18 +18,16 @@ TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 
 # ============= FIXTURES =============
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+@pytest.fixture(scope="module")
+def anyio_backend():
+    return "asyncio"
 
-@pytest_asyncio.fixture(scope="session")
+@pytest.fixture(scope="module")
 async def client():
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as c:
         yield c
 
-@pytest_asyncio.fixture(scope="session")
+@pytest.fixture(scope="module")
 async def auth_token(client):
     resp = await client.post("/api/auth/login", json={
         "email": TEST_EMAIL,
@@ -42,7 +39,7 @@ async def auth_token(client):
     assert token, "No access_token in response"
     return token
 
-@pytest_asyncio.fixture(scope="session")
+@pytest.fixture(scope="module")
 async def auth_headers(auth_token):
     return {"Authorization": f"Bearer {auth_token}"}
 
