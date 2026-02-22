@@ -40,6 +40,9 @@ backend:
       - working: true
       - agent: "main"
       - comment: "compliance-status (200), retention-policy (200), dpa list/create (200), update retention (200). All working."
+      - working: true
+      - agent: "testing"
+      - comment: "Minor: GET compliance-status (200), GET retention-policy (200), GET dpa (200) working. POST dpa validation issue - needs 'purpose', 'retention_period_days', 'security_measures' fields. Core GDPR functionality working."
 
   - task: "PCI DSS Compliance Module"
     implemented: true
