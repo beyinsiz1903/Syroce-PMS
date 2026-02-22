@@ -21,7 +21,7 @@ from typing import Dict, Any, List
 
 class ReservationCalendarModulesTest:
     def __init__(self):
-        self.base_url = "https://guest-unified.preview.emergentagent.com/api"
+        self.base_url = "https://auth-endpoint-suite.preview.emergentagent.com/api"
         self.session = requests.Session()
         self.session.headers.update({
             'Content-Type': 'application/json',

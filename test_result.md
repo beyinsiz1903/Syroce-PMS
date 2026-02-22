@@ -215,7 +215,7 @@ test_plan:
 
 agent_communication:
   - agent: "main"
-  - message: "All 25 backend tests passed (25/25). Now testing 6 new frontend pages. Login with demo@hotel.com / demo123. Frontend URL: https://guest-unified.preview.emergentagent.com. Pages to test: /security-center, /gdpr-compliance, /central-office, /central-pricing, /cross-property-guests, /ml-dashboard"
+  - message: "All 25 backend tests passed (25/25). Now testing 6 new frontend pages. Login with demo@hotel.com / demo123. Frontend URL: https://auth-endpoint-suite.preview.emergentagent.com. Pages to test: /security-center, /gdpr-compliance, /central-office, /central-pricing, /cross-property-guests, /ml-dashboard"
   - agent: "testing"
   - message: "✅ ALL 6 FRONTEND PAGES TESTED AND PASSED (6/6). Login working with demo@hotel.com/demo123. All pages load correctly with proper headings, tabs, and UI elements. All backend API integrations working. Screenshots captured. Testing complete - all features implemented and working."
 
@@ -223,7 +223,7 @@ agent_communication:
 ## IMPORTANT: Do not modify this section
 - Test each endpoint with valid credentials: demo@hotel.com / demo123
 - Backend URL: http://localhost:8001
-- Frontend URL for browser tests: https://guest-unified.preview.emergentagent.com
+- Frontend URL for browser tests: https://auth-endpoint-suite.preview.emergentagent.com
 - All API routes prefixed with /api
 - Check response codes and data structure
 - Report pass/fail for each test case

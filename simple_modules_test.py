@@ -7,7 +7,7 @@ import requests
 import json
 
 def test_modules():
-    base_url = "https://guest-unified.preview.emergentagent.com/api"
+    base_url = "https://auth-endpoint-suite.preview.emergentagent.com/api"
     
     # Login first
     print("🔐 Logging in...")

@@ -8,7 +8,7 @@ import requests
 import json
 from datetime import datetime, timezone, timedelta
 
-BACKEND_URL = 'https://guest-unified.preview.emergentagent.com/api'
+BACKEND_URL = 'https://auth-endpoint-suite.preview.emergentagent.com/api'
 TEST_EMAIL = 'test@hotel.com'
 TEST_PASSWORD = 'test123'
 

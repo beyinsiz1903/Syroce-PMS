@@ -2,7 +2,7 @@
 """
 Login Endpoint Test for Preview Environment
 Testing /api/auth/login endpoint with specified user credentials
-Base URL: https://guest-unified.preview.emergentagent.com/api
+Base URL: https://auth-endpoint-suite.preview.emergentagent.com/api
 """
 
 import requests
@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 
 # Base URL for the preview environment
-BASE_URL = "https://guest-unified.preview.emergentagent.com/api"
+BASE_URL = "https://auth-endpoint-suite.preview.emergentagent.com/api"
 LOGIN_ENDPOINT = f"{BASE_URL}/auth/login"
 
 # Test credentials as specified in the request

@@ -10,7 +10,7 @@ import sys
 from datetime import datetime
 
 # Configuration
-BASE_URL = "https://guest-unified.preview.emergentagent.com/api"
+BASE_URL = "https://auth-endpoint-suite.preview.emergentagent.com/api"
 SUPER_ADMIN_EMAIL = "demo@hotel.com"
 SUPER_ADMIN_PASSWORD = "demo123"
 

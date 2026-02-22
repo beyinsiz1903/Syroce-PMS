@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import statistics
 
 # Configuration
-BACKEND_URL = "https://guest-unified.preview.emergentagent.com/api"
+BACKEND_URL = "https://auth-endpoint-suite.preview.emergentagent.com/api"
 TEST_USER = {
     "email": "admin@hotel.com",
     "password": "admin123"

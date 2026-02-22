@@ -15,7 +15,7 @@ import aiohttp
 import json
 import time
 
-BACKEND_URL = "https://guest-unified.preview.emergentagent.com/api"
+BACKEND_URL = "https://auth-endpoint-suite.preview.emergentagent.com/api"
 TEST_EMAIL = "admin@hotel.com"
 TEST_PASSWORD = "admin123"
 

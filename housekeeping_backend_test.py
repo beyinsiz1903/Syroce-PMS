@@ -35,7 +35,7 @@ import uuid
 import time
 
 # Configuration
-BACKEND_URL = "https://guest-unified.preview.emergentagent.com/api"
+BACKEND_URL = "https://auth-endpoint-suite.preview.emergentagent.com/api"
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 

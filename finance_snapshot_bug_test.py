@@ -10,7 +10,7 @@ import sys
 from datetime import datetime, timedelta
 
 # Configuration
-BACKEND_URL = "https://guest-unified.preview.emergentagent.com/api"
+BACKEND_URL = "https://auth-endpoint-suite.preview.emergentagent.com/api"
 TEST_EMAIL = "financetest@hotel.com"
 TEST_PASSWORD = "test123456"
 

@@ -218,7 +218,7 @@
 ## 📋 QUICK START GUIDE
 
 **Login:**
-- URL: https://guest-unified.preview.emergentagent.com
+- URL: https://auth-endpoint-suite.preview.emergentagent.com
 - Demo: demo@hotel.com / demo123
 
 **New User Registration:**

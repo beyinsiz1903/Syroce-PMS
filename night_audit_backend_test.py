@@ -21,7 +21,7 @@ import sys
 import os
 
 # Configuration
-BASE_URL = "https://guest-unified.preview.emergentagent.com"
+BASE_URL = "https://auth-endpoint-suite.preview.emergentagent.com"
 API_BASE = f"{BASE_URL}/api"
 
 # Demo credentials

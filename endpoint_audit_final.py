@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 import sys
 
 # Configuration
-BASE_URL = "https://guest-unified.preview.emergentagent.com/api"
+BASE_URL = "https://auth-endpoint-suite.preview.emergentagent.com/api"
 AUTH_EMAIL = "demo@hotel.com"
 AUTH_PASSWORD = "demo123"
 

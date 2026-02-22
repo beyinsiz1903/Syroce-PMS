@@ -19,7 +19,7 @@ from typing import Dict, List, Any, Optional
 import uuid
 
 # Configuration
-BACKEND_URL = "https://guest-unified.preview.emergentagent.com/api"
+BACKEND_URL = "https://auth-endpoint-suite.preview.emergentagent.com/api"
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 
@@ -343,7 +343,7 @@ class ModuleCombinationTester:
         """Run module combination testing"""
         print("🚀 MODÜL KOMBİNASYON TEST SUITE")
         print("Test specific module combinations and verify 200/403 behavior")
-        print("Base URL: https://guest-unified.preview.emergentagent.com/api")
+        print("Base URL: https://auth-endpoint-suite.preview.emergentagent.com/api")
         print("Login: demo@hotel.com / demo123")
         print("=" * 80)
         

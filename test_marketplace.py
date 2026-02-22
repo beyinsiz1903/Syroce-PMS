@@ -2,7 +2,7 @@
 import requests
 import json
 
-BACKEND_URL = 'https://guest-unified.preview.emergentagent.com/api'
+BACKEND_URL = 'https://auth-endpoint-suite.preview.emergentagent.com/api'
 
 # Login
 response = requests.post(f'{BACKEND_URL}/auth/login', json={
