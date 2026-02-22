@@ -48,7 +48,6 @@ async def auth_headers(auth_token):
 class TestAuth:
     """Kimlik doğrulama testleri"""
     
-    @pytest.mark.asyncio
     async def test_login_success(self, client):
         resp = await client.post("/api/auth/login", json={
             "email": TEST_EMAIL, "password": TEST_PASSWORD
@@ -58,21 +57,18 @@ class TestAuth:
         assert "access_token" in data
         assert data["user"]["email"] == TEST_EMAIL
     
-    @pytest.mark.asyncio
     async def test_login_invalid_credentials(self, client):
         resp = await client.post("/api/auth/login", json={
             "email": TEST_EMAIL, "password": "wrongpassword"
         })
         assert resp.status_code == 401
     
-    @pytest.mark.asyncio
     async def test_login_invalid_email(self, client):
         resp = await client.post("/api/auth/login", json={
             "email": "nonexistent@hotel.com", "password": "test123"
         })
         assert resp.status_code == 401
     
-    @pytest.mark.asyncio
     async def test_get_me(self, client, auth_headers):
         resp = await client.get("/api/auth/me", headers=auth_headers)
         assert resp.status_code == 200
@@ -81,12 +77,10 @@ class TestAuth:
         assert "id" in data
         assert "tenant_id" in data
     
-    @pytest.mark.asyncio
     async def test_unauthorized_access(self, client):
         resp = await client.get("/api/auth/me")
         assert resp.status_code in [401, 403]
     
-    @pytest.mark.asyncio
     async def test_invalid_token(self, client):
         resp = await client.get("/api/auth/me", headers={
             "Authorization": "Bearer invalid_token_here"
