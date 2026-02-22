@@ -85,6 +85,9 @@ backend:
       - working: true
       - agent: "main"
       - comment: "ENHANCED. dashboard (200, chain_adr, chain_revpar), properties (200), occupancy-comparison (200, ranking, median, std_dev), revenue-report (200, ADR/RevPAR), trends/occupancy (200), trends/revenue (200), trends/bookings (200), property-health (200, grade system), budget-tracking (200), alerts (200, critical/warning counts), department-comparison (200). 11 endpoints all working."
+      - working: true
+      - agent: "testing"
+      - comment: "Minor: 8/9 ENDPOINTS WORKING: GET dashboard has chain_adr/chain_revpar fields but values=0 (no revenue data yet), GET properties (200), GET occupancy-comparison (200), GET revenue-report with chain_adr (200), GET trends?metric=occupancy&days=7 (200), GET property-health (200), GET budget-tracking (200), GET alerts (200), GET department-comparison (200). ENHANCED module 88.9% functional."
 
   - task: "Central Pricing Management"
     implemented: true
