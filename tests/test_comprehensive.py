@@ -104,12 +104,12 @@ async def test_rooms_count():
 # ============= GUESTS TESTS =============
 @pytest.mark.asyncio
 async def test_guests_list():
-    resp = await api_get("/api/guests")
+    resp = await api_get("/api/pms/guests")
     assert resp.status_code == 200
 
 @pytest.mark.asyncio
 async def test_guests_create():
-    resp = await api_post("/api/guests", json={
+    resp = await api_post("/api/pms/guests", json={
         "name": f"Test {uuid.uuid4().hex[:6]}", "email": f"t{uuid.uuid4().hex[:6]}@x.com", "phone": "+905550001111"
     })
     assert resp.status_code in [200, 201]
