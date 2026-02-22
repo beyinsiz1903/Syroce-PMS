@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
 """
-3-Segment Subscription & Module Management System Backend Test
+Auth Endpoint Suite Backend Test - 42 Test Cases
+Testing all security and compliance endpoints as specified in review request.
 
-Tests the following endpoints:
-1. POST /api/auth/login - Super admin authentication
-2. GET /api/subscription/plans - Get subscription plans (basic, professional, enterprise)
-3. GET /api/subscription/plan-modules - Get module defaults per tier
-4. GET /api/admin/tenants - List all tenants with subscription info
-5. PATCH /api/admin/tenants/{tenant_id}/modules - Toggle modules per tenant
-6. PATCH /api/admin/tenants/{tenant_id}/tier - Change subscription tier
-7. GET /api/subscription/current - Get current user subscription
+Login: demo@hotel.com / demo123
+Target: 42/42 = 100% pass rate
 """
 
 import requests
@@ -17,545 +12,852 @@ import json
 from datetime import datetime
 import os
 
-# Configuration from environment
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://auth-endpoint-suite.preview.emergentagent.com') + '/api'
-SUPER_ADMIN_EMAIL = "superadmin@syroce.com"
-SUPER_ADMIN_PASSWORD = "Admin123!"
+# Configuration
+BACKEND_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://auth-endpoint-suite.preview.emergentagent.com')
+BASE_URL = f"{BACKEND_URL}/api"
+TEST_EMAIL = "demo@hotel.com"
+TEST_PASSWORD = "demo123"
 
-def print_section(title):
-    """Print a formatted section header"""
-    print(f"\n{'='*80}")
-    print(f"  {title}")
-    print(f"{'='*80}\n")
-
-def print_result(test_name, passed, details=""):
-    """Print test result"""
-    status = "✅ PASSED" if passed else "❌ FAILED"
-    print(f"{status}: {test_name}")
-    if details:
-        print(f"   Details: {details}")
-
-def login_super_admin():
-    """Login as super admin and return token"""
-    print_section("1. SUPER ADMIN LOGIN")
+class TestResults:
+    def __init__(self):
+        self.results = []
+        self.total_tests = 42
+        self.passed = 0
+        self.failed = 0
     
-    try:
-        response = requests.post(
-            f"{BASE_URL}/auth/login",
-            json={
-                "email": SUPER_ADMIN_EMAIL,
-                "password": SUPER_ADMIN_PASSWORD
-            },
-            timeout=30
-        )
-        
-        print(f"Request: POST /api/auth/login")
-        print(f"Response Status: HTTP {response.status_code}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            token = data.get("access_token")
-            user = data.get("user", {})
-            print_result("Super Admin Login", True, f"User: {user.get('name')}, Role: {user.get('role')}")
-            print(f"Token preview: {token[:20]}..." if token else "No token")
-            return token
-        else:
-            print_result("Super Admin Login", False, f"HTTP {response.status_code}: {response.text}")
-            return None
-            
-    except Exception as e:
-        print_result("Super Admin Login", False, f"Exception: {str(e)}")
-        return None
-
-def test_subscription_plans():
-    """Test GET /api/subscription/plans"""
-    print_section("2. GET SUBSCRIPTION PLANS")
-    
-    try:
-        response = requests.get(f"{BASE_URL}/subscription/plans", timeout=30)
-        
-        print(f"Request: GET /api/subscription/plans")
-        print(f"Response Status: HTTP {response.status_code}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            plans = data.get('plans', [])
-            currency = data.get('currency')
-            tiers = data.get('tiers', [])
-            
-            print(f"Response: {json.dumps(data, indent=2)}")
-            
-            checks = {
-                "HTTP 200": response.status_code == 200,
-                "Has 3 plans": len(plans) == 3,
-                "Currency is EUR": currency == "EUR",
-                "Has tiers": len(tiers) == 3,
-                "Basic plan exists": any(p.get('tier') == 'basic' for p in plans),
-                "Professional plan exists": any(p.get('tier') == 'professional' for p in plans),
-                "Enterprise plan exists": any(p.get('tier') == 'enterprise' for p in plans),
-            }
-            
-            # Check pricing
-            basic_plan = next((p for p in plans if p.get('tier') == 'basic'), None)
-            pro_plan = next((p for p in plans if p.get('tier') == 'professional'), None)
-            enterprise_plan = next((p for p in plans if p.get('tier') == 'enterprise'), None)
-            
-            if basic_plan:
-                checks["Basic price 79€"] = basic_plan.get('price_monthly') == 79.0
-            if pro_plan:
-                checks["Professional price 299€"] = pro_plan.get('price_monthly') == 299.0
-            if enterprise_plan:
-                checks["Enterprise price 799€"] = enterprise_plan.get('price_monthly') == 799.0
-            
-            all_passed = all(checks.values())
-            for check, passed in checks.items():
-                print_result(check, passed)
-            
-            return all_passed, plans
-            
-        else:
-            print_result("Get Subscription Plans", False, f"HTTP {response.status_code}: {response.text}")
-            return False, []
-            
-    except Exception as e:
-        print_result("Get Subscription Plans", False, f"Exception: {str(e)}")
-        return False, []
-
-def test_plan_modules():
-    """Test GET /api/subscription/plan-modules"""
-    print_section("3. GET PLAN MODULE DEFAULTS")
-    
-    try:
-        response = requests.get(f"{BASE_URL}/subscription/plan-modules", timeout=30)
-        
-        print(f"Request: GET /api/subscription/plan-modules")
-        print(f"Response Status: HTTP {response.status_code}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            plan_modules = data.get('plan_modules', {})
-            tiers = data.get('tiers', [])
-            all_module_keys = data.get('all_module_keys', [])
-            
-            print(f"Response: {json.dumps(data, indent=2)}")
-            
-            checks = {
-                "HTTP 200": response.status_code == 200,
-                "Has plan_modules": len(plan_modules) > 0,
-                "Has basic plan modules": 'basic' in plan_modules,
-                "Has professional plan modules": 'professional' in plan_modules,
-                "Has enterprise plan modules": 'enterprise' in plan_modules,
-                "Has tiers": len(tiers) == 3,
-                "Has module keys": len(all_module_keys) > 0,
-            }
-            
-            # Check basic plan has core modules enabled
-            basic_modules = plan_modules.get('basic', {})
-            if basic_modules:
-                checks["Basic has PMS enabled"] = basic_modules.get('pms') == True
-                checks["Basic has dashboard enabled"] = basic_modules.get('dashboard') == True
-                checks["Basic has channel_manager disabled"] = basic_modules.get('channel_manager') == False
-            
-            # Check professional plan has more modules
-            pro_modules = plan_modules.get('professional', {})
-            if pro_modules:
-                checks["Professional has PMS enabled"] = pro_modules.get('pms') == True
-                checks["Professional has channel_manager enabled"] = pro_modules.get('channel_manager') == True
-                checks["Professional has reports enabled"] = pro_modules.get('reports') == True
-            
-            # Check enterprise plan has all modules
-            enterprise_modules = plan_modules.get('enterprise', {})
-            if enterprise_modules:
-                checks["Enterprise has AI enabled"] = enterprise_modules.get('ai') == True
-                checks["Enterprise has revenue_management enabled"] = enterprise_modules.get('revenue_management') == True
-            
-            all_passed = all(checks.values())
-            for check, passed in checks.items():
-                print_result(check, passed)
-            
-            return all_passed, plan_modules
-            
-        else:
-            print_result("Get Plan Modules", False, f"HTTP {response.status_code}: {response.text}")
-            return False, {}
-            
-    except Exception as e:
-        print_result("Get Plan Modules", False, f"Exception: {str(e)}")
-        return False, {}
-
-def test_list_tenants(token):
-    """Test GET /api/admin/tenants"""
-    print_section("4. GET ADMIN TENANTS")
-    
-    try:
-        headers = {"Authorization": f"Bearer {token}"}
-        response = requests.get(f"{BASE_URL}/admin/tenants", headers=headers, timeout=30)
-        
-        print(f"Request: GET /api/admin/tenants")
-        print(f"Response Status: HTTP {response.status_code}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            tenants = data.get('tenants', [])
-            
-            print(f"Found {len(tenants)} tenants")
-            if tenants:
-                print("Sample tenant data:")
-                print(json.dumps(tenants[0], indent=2))
-            
-            checks = {
-                "HTTP 200": response.status_code == 200,
-                "Has tenants": len(tenants) > 0,
-                "At least 4 tenants": len(tenants) >= 4,
-            }
-            
-            # Check tenant structure
-            if tenants:
-                sample_tenant = tenants[0]
-                checks["Tenant has subscription_tier"] = 'subscription_tier' in sample_tenant
-                checks["Tenant has modules"] = 'modules' in sample_tenant
-                checks["Tenant has property_name"] = 'property_name' in sample_tenant
-                
-                # Look for a Basic hotel (specifically Butik Otel Antalya)
-                basic_hotel = None
-                for tenant in tenants:
-                    if tenant.get('subscription_tier') == 'basic' or 'Butik' in tenant.get('property_name', ''):
-                        basic_hotel = tenant
-                        break
-                
-                if basic_hotel:
-                    checks["Found Basic hotel"] = True
-                    print(f"Found Basic hotel: {basic_hotel.get('property_name')} (ID: {basic_hotel.get('id')})")
-                else:
-                    checks["Found Basic hotel"] = False
-                    print("Available hotels:")
-                    for tenant in tenants[:5]:  # Show first 5
-                        print(f"  - {tenant.get('property_name')} (tier: {tenant.get('subscription_tier', 'unknown')})")
-            
-            all_passed = all(checks.values())
-            for check, passed in checks.items():
-                print_result(check, passed)
-            
-            return all_passed, tenants
-            
-        else:
-            print_result("Get Admin Tenants", False, f"HTTP {response.status_code}: {response.text}")
-            return False, []
-            
-    except Exception as e:
-        print_result("Get Admin Tenants", False, f"Exception: {str(e)}")
-        return False, []
-
-def test_change_tier(token, tenant_id, new_tier="professional", reset_modules=True):
-    """Test PATCH /api/admin/tenants/{tenant_id}/tier"""
-    print_section(f"5. CHANGE SUBSCRIPTION TIER TO {new_tier.upper()}")
-    
-    try:
-        headers = {"Authorization": f"Bearer {token}"}
-        payload = {
-            "tier": new_tier,
-            "reset_modules": reset_modules
+    def add_result(self, test_num, endpoint, expected_status, actual_status, passed, details=""):
+        result = {
+            'test_num': test_num,
+            'endpoint': endpoint,
+            'expected_status': expected_status,
+            'actual_status': actual_status,
+            'passed': passed,
+            'details': details
         }
-        
-        response = requests.patch(
-            f"{BASE_URL}/admin/tenants/{tenant_id}/tier",
-            json=payload,
-            headers=headers,
-            timeout=30
-        )
-        
-        print(f"Request: PATCH /api/admin/tenants/{tenant_id}/tier")
-        print(f"Payload: {json.dumps(payload, indent=2)}")
-        print(f"Response Status: HTTP {response.status_code}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            tenant = data.get('tenant', {})
-            
-            print(f"Response: {json.dumps(data, indent=2)}")
-            
-            checks = {
-                "HTTP 200": response.status_code == 200,
-                "Success message": data.get('success') == True,
-                "Tenant returned": 'tenant' in data,
-                f"Tier changed to {new_tier}": tenant.get('subscription_tier') == new_tier,
-                "Modules field exists": 'modules' in tenant,
-            }
-            
-            # Check modules were reset to professional defaults
-            if new_tier == "professional" and tenant.get('modules'):
-                modules = tenant.get('modules', {})
-                checks["PMS still enabled"] = modules.get('pms') == True
-                checks["Channel manager now enabled"] = modules.get('channel_manager') == True
-                checks["Reports now enabled"] = modules.get('reports') == True
-                checks["AI still disabled (pro tier)"] = modules.get('ai') == False
-            
-            all_passed = all(checks.values())
-            for check, passed in checks.items():
-                print_result(check, passed)
-            
-            return all_passed, tenant
-            
+        self.results.append(result)
+        if passed:
+            self.passed += 1
         else:
-            print_result("Change Subscription Tier", False, f"HTTP {response.status_code}: {response.text}")
-            return False, {}
-            
-    except Exception as e:
-        print_result("Change Subscription Tier", False, f"Exception: {str(e)}")
-        return False, {}
+            self.failed += 1
+    
+    def print_summary(self):
+        print(f"\n{'='*80}")
+        print(f"  FINAL TEST RESULTS: {self.passed}/{self.total_tests} = {(self.passed/self.total_tests*100):.1f}%")
+        print(f"{'='*80}")
+        
+        # Group results by pass/fail
+        failed_tests = [r for r in self.results if not r['passed']]
+        passed_tests = [r for r in self.results if r['passed']]
+        
+        if failed_tests:
+            print(f"\n❌ FAILED TESTS ({len(failed_tests)}):")
+            for result in failed_tests:
+                print(f"  {result['test_num']:2d}. {result['endpoint']} → Expected {result['expected_status']}, Got {result['actual_status']} - {result['details']}")
+        
+        if passed_tests:
+            print(f"\n✅ PASSED TESTS ({len(passed_tests)}):")
+            for result in passed_tests:
+                print(f"  {result['test_num']:2d}. {result['endpoint']} → {result['actual_status']} ✓")
 
-def test_toggle_module(token, tenant_id, module_name="invoices", enable=True):
-    """Test PATCH /api/admin/tenants/{tenant_id}/modules"""
-    print_section(f"6. TOGGLE MODULE ({module_name} = {enable})")
+def print_test_header(test_num, endpoint, description):
+    """Print formatted test header"""
+    print(f"\n{test_num:2d}. {endpoint}")
+    print(f"    {description}")
+    print(f"    {'-' * 60}")
+
+def make_request(method, endpoint, token=None, json_data=None, params=None, expected_status=200):
+    """Make HTTP request and return response info"""
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    
+    url = f"{BASE_URL}{endpoint}"
     
     try:
-        headers = {"Authorization": f"Bearer {token}"}
+        if method.upper() == "GET":
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+        elif method.upper() == "POST":
+            response = requests.post(url, headers=headers, json=json_data, timeout=30)
+        elif method.upper() == "PUT":
+            response = requests.put(url, headers=headers, json=json_data, params=params, timeout=30)
+        else:
+            raise ValueError(f"Unsupported method: {method}")
         
-        # First get current modules
-        tenants_response = requests.get(f"{BASE_URL}/admin/tenants", headers=headers, timeout=30)
-        if tenants_response.status_code == 200:
-            tenants = tenants_response.json().get('tenants', [])
-            current_tenant = next((t for t in tenants if t.get('id') == tenant_id), None)
-            if current_tenant:
-                current_modules = current_tenant.get('modules', {})
-                # Toggle the specific module
-                new_modules = current_modules.copy()
-                new_modules[module_name] = enable
-                
-                payload = {
-                    "modules": new_modules
-                }
-                
-                response = requests.patch(
-                    f"{BASE_URL}/admin/tenants/{tenant_id}/modules",
-                    json=payload,
-                    headers=headers,
-                    timeout=30
-                )
-                
-                print(f"Request: PATCH /api/admin/tenants/{tenant_id}/modules")
-                print(f"Payload: {json.dumps(payload, indent=2)}")
-                print(f"Response Status: HTTP {response.status_code}")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    modules = data.get('modules', {})
-                    
-                    print(f"Response: {json.dumps(data, indent=2)}")
-                    
-                    checks = {
-                        "HTTP 200": response.status_code == 200,
-                        "Modules field exists": 'modules' in data,
-                        f"{module_name} = {enable}": modules.get(module_name) == enable,
-                    }
-                    
-                    all_passed = all(checks.values())
-                    for check, passed in checks.items():
-                        print_result(check, passed)
-                    
-                    return all_passed, data
-                else:
-                    print_result("Toggle Module", False, f"HTTP {response.status_code}: {response.text}")
-                    return False, {}
+        success = response.status_code == expected_status
+        
+        # Print request details
+        print(f"    Request: {method.upper()} {endpoint}")
+        if json_data:
+            print(f"    Body: {json.dumps(json_data)}")
+        if params:
+            print(f"    Params: {params}")
+        print(f"    Response: HTTP {response.status_code}")
+        
+        # Print response preview
+        try:
+            resp_data = response.json()
+            if isinstance(resp_data, dict) and len(str(resp_data)) < 200:
+                print(f"    Data: {resp_data}")
             else:
-                print_result("Find tenant for module toggle", False, f"Tenant {tenant_id} not found")
-                return False, {}
-        else:
-            print_result("Get current tenant modules", False, f"HTTP {tenants_response.status_code}")
-            return False, {}
-            
-    except Exception as e:
-        print_result("Toggle Module", False, f"Exception: {str(e)}")
-        return False, {}
-
-def test_current_subscription(token):
-    """Test GET /api/subscription/current"""
-    print_section("7. GET CURRENT SUBSCRIPTION")
-    
-    try:
-        headers = {"Authorization": f"Bearer {token}"}
-        response = requests.get(f"{BASE_URL}/subscription/current", headers=headers, timeout=30)
+                print(f"    Data: {str(resp_data)[:150]}...")
+        except:
+            print(f"    Data: {response.text[:150]}...")
         
-        print(f"Request: GET /api/subscription/current")
-        print(f"Response Status: HTTP {response.status_code}")
+        return response, success
         
-        if response.status_code == 200:
-            data = response.json()
-            
-            print(f"Response: {json.dumps(data, indent=2)}")
-            
-            checks = {
-                "HTTP 200": response.status_code == 200,
-                "Has plan field": 'plan' in data or 'tier' in data,
-                "Has modules field": 'modules' in data,
-            }
-            
-            all_passed = all(checks.values())
-            for check, passed in checks.items():
-                print_result(check, passed)
-            
-            return all_passed, data
-            
-        else:
-            print_result("Get Current Subscription", False, f"HTTP {response.status_code}: {response.text}")
-            return False, {}
-            
     except Exception as e:
-        print_result("Get Current Subscription", False, f"Exception: {str(e)}")
-        return False, {}
-
-def verify_final_state(token, tenant_id):
-    """Verify final tenant state after all changes"""
-    print_section("8. VERIFY FINAL TENANT STATE")
-    
-    try:
-        headers = {"Authorization": f"Bearer {token}"}
-        response = requests.get(f"{BASE_URL}/admin/tenants", headers=headers, timeout=30)
-        
-        if response.status_code == 200:
-            tenants = response.json().get('tenants', [])
-            target_tenant = next((t for t in tenants if t.get('id') == tenant_id), None)
-            
-            if target_tenant:
-                print(f"Final tenant state: {json.dumps(target_tenant, indent=2)}")
-                
-                checks = {
-                    "Tenant found": True,
-                    "Is professional tier": target_tenant.get('subscription_tier') == 'professional',
-                    "Has modules": 'modules' in target_tenant,
-                    "PMS enabled": target_tenant.get('modules', {}).get('pms') == True,
-                    "Channel manager enabled": target_tenant.get('modules', {}).get('channel_manager') == True,
-                    "Reports enabled": target_tenant.get('modules', {}).get('reports') == True,
-                }
-                
-                all_passed = all(checks.values())
-                for check, passed in checks.items():
-                    print_result(check, passed)
-                
-                return all_passed
-            else:
-                print_result("Find target tenant", False, f"Tenant {tenant_id} not found")
-                return False
-        else:
-            print_result("Get tenants for verification", False, f"HTTP {response.status_code}")
-            return False
-            
-    except Exception as e:
-        print_result("Verify Final State", False, f"Exception: {str(e)}")
-        return False
+        print(f"    ERROR: {str(e)}")
+        return None, False
 
 def main():
-    """Main test execution following the test flow specified in the review request"""
-    print("\n" + "="*80)
-    print("  3-SEGMENT SUBSCRIPTION & MODULE MANAGEMENT BACKEND TEST")
-    print("  Testing subscription plans, module defaults, and tenant management")
+    """Execute all 42 tests as specified in review request"""
+    print("="*80)
+    print("  AUTH ENDPOINT SUITE - BACKEND API TEST")
+    print("  42 Tests for 2FA, IP Control, GDPR, PCI DSS, Tenant Isolation, Central Office")
     print("="*80)
     
-    results = {
-        "super_admin_login": False,
-        "get_subscription_plans": False,
-        "get_plan_modules": False,
-        "list_tenants": False,
-        "change_tier": False,
-        "toggle_module": False,
-        "current_subscription": False,
-        "verify_final_state": False,
-    }
+    results = TestResults()
+    token = None
     
-    # Step 1: Login as superadmin
-    token = login_super_admin()
+    # Test 1: Login
+    print_test_header(1, "POST /api/auth/login", "Login with demo@hotel.com / demo123")
+    login_data = {"email": TEST_EMAIL, "password": TEST_PASSWORD}
+    response, success = make_request("POST", "/auth/login", json_data=login_data, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            token = data.get("access_token")
+            details = f"Got access_token: {token[:20] if token else 'None'}..."
+        except:
+            success = False
+            details = "No access_token in response"
+    else:
+        details = "Login failed"
+    
+    results.add_result(1, "POST /api/auth/login", 200, response.status_code if response else 0, success, details)
+    
     if not token:
-        print("\n❌ CRITICAL: Super admin login failed. Cannot continue tests.")
-        print_final_summary(results)
-        return
-    results["super_admin_login"] = True
-    
-    # Step 2: GET /api/subscription/plans → verify 3 tiers
-    plans_success, plans = test_subscription_plans()
-    results["get_subscription_plans"] = plans_success
-    
-    # Step 3: GET /api/subscription/plan-modules → verify module defaults
-    modules_success, plan_modules = test_plan_modules()
-    results["get_plan_modules"] = modules_success
-    
-    # Step 4: GET /api/admin/tenants → find the Basic hotel (Butik Otel Antalya)
-    tenants_success, tenants = test_list_tenants(token)
-    results["list_tenants"] = tenants_success
-    
-    if not tenants:
-        print("\n❌ CRITICAL: No tenants found. Cannot continue tenant-specific tests.")
-        print_final_summary(results)
+        print("\n❌ CRITICAL: Login failed. Cannot continue with authenticated tests.")
+        results.print_summary()
         return
     
-    # Find a basic hotel to test with
-    basic_hotel = None
-    for tenant in tenants:
-        # Look for basic tier or specifically named hotel
-        if tenant.get('subscription_tier') == 'basic' or 'Butik' in tenant.get('property_name', ''):
-            basic_hotel = tenant
-            break
+    # Test 2: Get user profile
+    print_test_header(2, "GET /api/auth/me", "Get current user profile")
+    response, success = make_request("GET", "/auth/me", token=token, expected_status=200)
     
-    # If no basic hotel, use first available tenant
-    if not basic_hotel and tenants:
-        basic_hotel = tenants[0]
-        print(f"⚠️  No basic tier hotel found. Using first available: {basic_hotel.get('property_name')}")
+    if success and response:
+        try:
+            data = response.json()
+            has_email = "email" in data
+            has_id = "id" in data
+            has_tenant_id = "tenant_id" in data
+            success = has_email and has_id and has_tenant_id
+            details = f"Email: {has_email}, ID: {has_id}, Tenant: {has_tenant_id}"
+        except:
+            success = False
+            details = "Invalid JSON response"
+    else:
+        details = "Request failed"
     
-    if not basic_hotel:
-        print("\n❌ CRITICAL: No suitable hotel found for testing. Cannot continue.")
-        print_final_summary(results)
-        return
+    results.add_result(2, "GET /api/auth/me", 200, response.status_code if response else 0, success, details)
     
-    tenant_id = basic_hotel.get('id')
-    print(f"Using hotel for testing: {basic_hotel.get('property_name')} (ID: {tenant_id})")
+    # Test 3: 2FA Status
+    print_test_header(3, "GET /api/security/2fa/status", "Get 2FA status")
+    response, success = make_request("GET", "/security/2fa/status", token=token, expected_status=200)
     
-    # Step 5: PATCH /api/admin/tenants/{basic_hotel_id}/tier → change to professional
-    tier_success, updated_tenant = test_change_tier(token, tenant_id, "professional", True)
-    results["change_tier"] = tier_success
+    if success and response:
+        try:
+            data = response.json()
+            has_enabled = "enabled" in data
+            has_enforced = "enforced_by_policy" in data
+            success = has_enabled and has_enforced
+            details = f"Enabled field: {has_enabled}, Enforced field: {has_enforced}"
+        except:
+            success = False
+            details = "Missing required fields"
+    else:
+        details = "Request failed"
     
-    # Step 6: PATCH /api/admin/tenants/{basic_hotel_id}/modules → toggle a module manually
-    module_success, _ = test_toggle_module(token, tenant_id, "invoices", True)
-    results["toggle_module"] = module_success
+    results.add_result(3, "GET /api/security/2fa/status", 200, response.status_code if response else 0, success, details)
     
-    # Step 7: GET /api/subscription/current → return current user's subscription with modules
-    current_success, current_data = test_current_subscription(token)
-    results["current_subscription"] = current_success
+    # Test 4: 2FA Setup
+    print_test_header(4, "POST /api/security/2fa/setup", "Setup 2FA")
+    response, success = make_request("POST", "/security/2fa/setup", token=token, expected_status=200)
     
-    # Step 8: GET /api/admin/tenants → verify the hotel is now professional with correct modules
-    verify_success = verify_final_state(token, tenant_id)
-    results["verify_final_state"] = verify_success
+    if success and response:
+        try:
+            data = response.json()
+            has_secret = "secret" in data
+            has_qr = "qr_code" in data
+            success = has_secret and has_qr
+            details = f"Secret: {has_secret}, QR Code: {has_qr}"
+        except:
+            success = False
+            details = "Missing required fields"
+    else:
+        details = "Request failed"
+    
+    results.add_result(4, "POST /api/security/2fa/setup", 200, response.status_code if response else 0, success, details)
+    
+    # Test 5: 2FA Verify (invalid code)
+    print_test_header(5, "POST /api/security/2fa/verify", "Verify 2FA with invalid code")
+    verify_data = {"code": "000000"}
+    response, success = make_request("POST", "/security/2fa/verify", token=token, json_data=verify_data, expected_status=400)
+    details = "Invalid code correctly rejected" if success else "Should reject invalid code"
+    results.add_result(5, "POST /api/security/2fa/verify", 400, response.status_code if response else 0, success, details)
+    
+    # Test 6: 2FA Tenant Policy
+    print_test_header(6, "GET /api/security/2fa/tenant-policy", "Get tenant 2FA policy")
+    response, success = make_request("GET", "/security/2fa/tenant-policy", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_require = "require_2fa" in data
+            details = f"Require 2FA field: {has_require}"
+        except:
+            success = False
+            details = "Missing required fields"
+    else:
+        details = "Request failed"
+    
+    results.add_result(6, "GET /api/security/2fa/tenant-policy", 200, response.status_code if response else 0, success, details)
+    
+    # Test 7: Update 2FA Tenant Policy
+    print_test_header(7, "PUT /api/security/2fa/tenant-policy", "Update tenant 2FA policy")
+    policy_data = {
+        "require_2fa": False,
+        "require_2fa_roles": ["admin"],
+        "enforce_after_days": 7,
+        "max_failed_attempts": 5,
+        "lockout_duration_minutes": 30,
+        "trusted_device_days": 30,
+        "require_2fa_for_sensitive_ops": True
+    }
+    response, success = make_request("PUT", "/security/2fa/tenant-policy", token=token, json_data=policy_data, expected_status=200)
+    details = "Policy updated successfully" if success else "Policy update failed"
+    results.add_result(7, "PUT /api/security/2fa/tenant-policy", 200, response.status_code if response else 0, success, details)
+    
+    # Test 8: 2FA Stats
+    print_test_header(8, "GET /api/security/2fa/stats", "Get 2FA adoption stats")
+    response, success = make_request("GET", "/security/2fa/stats", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_total = "total_users" in data
+            has_adoption = "adoption_rate" in data
+            success = has_total and has_adoption
+            details = f"Total users: {has_total}, Adoption rate: {has_adoption}"
+        except:
+            success = False
+            details = "Missing required fields"
+    else:
+        details = "Request failed"
+    
+    results.add_result(8, "GET /api/security/2fa/stats", 200, response.status_code if response else 0, success, details)
+    
+    # Test 9: Trusted Devices
+    print_test_header(9, "GET /api/security/2fa/trusted-devices", "Get trusted devices")
+    response, success = make_request("GET", "/security/2fa/trusted-devices", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_devices = "devices" in data
+            success = has_devices
+            details = f"Devices field: {has_devices}"
+        except:
+            success = False
+            details = "Missing devices field"
+    else:
+        details = "Request failed"
+    
+    results.add_result(9, "GET /api/security/2fa/trusted-devices", 200, response.status_code if response else 0, success, details)
+    
+    # Test 10: IP Rules List
+    print_test_header(10, "GET /api/security/ip/rules", "Get IP access rules")
+    response, success = make_request("GET", "/security/ip/rules", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_rules = "rules" in data
+            success = has_rules
+            details = f"Rules field: {has_rules}"
+        except:
+            success = False
+            details = "Missing rules field"
+    else:
+        details = "Request failed"
+    
+    results.add_result(10, "GET /api/security/ip/rules", 200, response.status_code if response else 0, success, details)
+    
+    # Test 11: Create IP Rule (MUST use "whitelist")
+    print_test_header(11, "POST /api/security/ip/rules", "Create IP rule with whitelist")
+    ip_rule_data = {
+        "ip_address": "10.20.30.40",
+        "rule_type": "whitelist",
+        "description": "Test rule"
+    }
+    response, success = make_request("POST", "/security/ip/rules", token=token, json_data=ip_rule_data, expected_status=200)
+    details = "IP rule created successfully" if success else "IP rule creation failed"
+    results.add_result(11, "POST /api/security/ip/rules", 200, response.status_code if response else 0, success, details)
+    
+    # Test 12: Check IP
+    print_test_header(12, "POST /api/security/ip/check", "Check current IP")
+    response, success = make_request("POST", "/security/ip/check", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_client_ip = "client_ip" in data
+            has_allowed = "allowed" in data
+            success = has_client_ip and has_allowed
+            details = f"Client IP: {has_client_ip}, Allowed: {has_allowed}"
+        except:
+            success = False
+            details = "Missing required fields"
+    else:
+        details = "Request failed"
+    
+    results.add_result(12, "POST /api/security/ip/check", 200, response.status_code if response else 0, success, details)
+    
+    # Test 13: GDPR Compliance Status
+    print_test_header(13, "GET /api/gdpr/compliance-status", "Get GDPR compliance status")
+    response, success = make_request("GET", "/gdpr/compliance-status", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_score = "compliance_score" in data
+            has_checks = "compliance_checks" in data
+            success = has_score and has_checks
+            details = f"Compliance score: {has_score}, Checks: {has_checks}"
+        except:
+            success = False
+            details = "Missing required fields"
+    else:
+        details = "Request failed"
+    
+    results.add_result(13, "GET /api/gdpr/compliance-status", 200, response.status_code if response else 0, success, details)
+    
+    # Test 14: GDPR Retention Policy
+    print_test_header(14, "GET /api/gdpr/retention-policy", "Get GDPR retention policy")
+    response, success = make_request("GET", "/gdpr/retention-policy", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_retention = "guest_data_retention_days" in data
+            success = has_retention
+            details = f"Guest data retention days: {has_retention}"
+        except:
+            success = False
+            details = "Missing retention field"
+    else:
+        details = "Request failed"
+    
+    results.add_result(14, "GET /api/gdpr/retention-policy", 200, response.status_code if response else 0, success, details)
+    
+    # Test 15: GDPR DPA List
+    print_test_header(15, "GET /api/gdpr/dpa", "Get data processing agreements")
+    response, success = make_request("GET", "/gdpr/dpa", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_agreements = "agreements" in data
+            success = has_agreements
+            details = f"Agreements field: {has_agreements}"
+        except:
+            success = False
+            details = "Missing agreements field"
+    else:
+        details = "Request failed"
+    
+    results.add_result(15, "GET /api/gdpr/dpa", 200, response.status_code if response else 0, success, details)
+    
+    # Test 16: Create GDPR DPA
+    print_test_header(16, "POST /api/gdpr/dpa", "Create data processing agreement")
+    dpa_data = {
+        "processor_name": "Test Processor",
+        "purpose": "Data analytics",
+        "data_categories": ["guest_info", "booking_data"],
+        "retention_period_days": 365,
+        "security_measures": ["encryption", "access_control"],
+        "cross_border_transfer": False
+    }
+    response, success = make_request("POST", "/gdpr/dpa", token=token, json_data=dpa_data, expected_status=200)
+    details = "DPA created successfully" if success else "DPA creation failed"
+    results.add_result(16, "POST /api/gdpr/dpa", 200, response.status_code if response else 0, success, details)
+    
+    # Test 17: Update GDPR Retention Policy
+    print_test_header(17, "PUT /api/gdpr/retention-policy", "Update retention policy")
+    params = {"guest_data_days": 1095, "auto_anonymize": False}
+    response, success = make_request("PUT", "/gdpr/retention-policy", token=token, params=params, expected_status=200)
+    details = "Retention policy updated" if success else "Retention policy update failed"
+    results.add_result(17, "PUT /api/gdpr/retention-policy", 200, response.status_code if response else 0, success, details)
+    
+    # Test 18: PCI DSS Compliance Status
+    print_test_header(18, "GET /api/pci-dss/compliance-status", "Get PCI DSS compliance status")
+    response, success = make_request("GET", "/pci-dss/compliance-status", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_score = "compliance_score" in data
+            has_requirements = "requirements" in data
+            success = has_score and has_requirements
+            details = f"Compliance score: {has_score}, Requirements: {has_requirements}"
+        except:
+            success = False
+            details = "Missing required fields"
+    else:
+        details = "Request failed"
+    
+    results.add_result(18, "GET /api/pci-dss/compliance-status", 200, response.status_code if response else 0, success, details)
+    
+    # Test 19: PCI DSS Requirements
+    print_test_header(19, "GET /api/pci-dss/requirements", "Get PCI DSS requirements")
+    response, success = make_request("GET", "/pci-dss/requirements", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            total_reqs = data.get("total_requirements")
+            success = total_reqs == 24
+            details = f"Total requirements: {total_reqs} (expected 24)"
+        except:
+            success = False
+            details = "Missing total_requirements field"
+    else:
+        details = "Request failed"
+    
+    results.add_result(19, "GET /api/pci-dss/requirements", 200, response.status_code if response else 0, success, details)
+    
+    # Test 20: PCI DSS Tokenize
+    print_test_header(20, "POST /api/pci-dss/tokenize", "Tokenize credit card")
+    card_data = {
+        "card_number": "4111111111111111",
+        "card_holder": "Test User",
+        "expiry_month": 12,
+        "expiry_year": 2028
+    }
+    response, success = make_request("POST", "/pci-dss/tokenize", token=token, json_data=card_data, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            last_four = data.get("last_four")
+            card_brand = data.get("card_brand")
+            success = last_four == "1111" and card_brand == "Visa"
+            details = f"Last four: {last_four}, Brand: {card_brand}"
+        except:
+            success = False
+            details = "Missing tokenization fields"
+    else:
+        details = "Request failed"
+    
+    results.add_result(20, "POST /api/pci-dss/tokenize", 200, response.status_code if response else 0, success, details)
+    
+    # Test 21: PCI DSS Tokens
+    print_test_header(21, "GET /api/pci-dss/tokens", "Get tokenized cards")
+    response, success = make_request("GET", "/pci-dss/tokens", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_tokens = "tokens" in data
+            success = has_tokens
+            details = f"Tokens field: {has_tokens}"
+        except:
+            success = False
+            details = "Missing tokens field"
+    else:
+        details = "Request failed"
+    
+    results.add_result(21, "GET /api/pci-dss/tokens", 200, response.status_code if response else 0, success, details)
+    
+    # Test 22: PCI DSS Security Scan
+    print_test_header(22, "POST /api/pci-dss/security-scan", "Run security scan")
+    response, success = make_request("POST", "/pci-dss/security-scan", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_risk = "risk_level" in data
+            has_findings = "findings" in data
+            success = has_risk and has_findings
+            details = f"Risk level: {has_risk}, Findings: {has_findings}"
+        except:
+            success = False
+            details = "Missing scan fields"
+    else:
+        details = "Request failed"
+    
+    results.add_result(22, "POST /api/pci-dss/security-scan", 200, response.status_code if response else 0, success, details)
+    
+    # Test 23: PCI DSS PAN Scan
+    print_test_header(23, "POST /api/pci-dss/pan-scan", "Run PAN exposure scan")
+    response, success = make_request("POST", "/pci-dss/pan-scan", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_pan_count = "exposed_pan_count" in data
+            success = has_pan_count
+            details = f"Exposed PAN count: {has_pan_count}"
+        except:
+            success = False
+            details = "Missing PAN count field"
+    else:
+        details = "Request failed"
+    
+    results.add_result(23, "POST /api/pci-dss/pan-scan", 200, response.status_code if response else 0, success, details)
+    
+    # Test 24: PCI DSS Scan History
+    print_test_header(24, "GET /api/pci-dss/scan-history", "Get scan history")
+    response, success = make_request("GET", "/pci-dss/scan-history", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_scans = "scans" in data
+            success = has_scans
+            details = f"Scans field: {has_scans}"
+        except:
+            success = False
+            details = "Missing scans field"
+    else:
+        details = "Request failed"
+    
+    results.add_result(24, "GET /api/pci-dss/scan-history", 200, response.status_code if response else 0, success, details)
+    
+    # Test 25: PCI DSS Audit Update
+    print_test_header(25, "PUT /api/pci-dss/audit/1.1", "Update audit requirement 1.1")
+    params = {"audit_status": "compliant", "evidence": "Firewall active"}
+    response, success = make_request("PUT", "/pci-dss/audit/1.1", token=token, params=params, expected_status=200)
+    details = "Audit requirement updated" if success else "Audit update failed"
+    results.add_result(25, "PUT /api/pci-dss/audit/1.1", 200, response.status_code if response else 0, success, details)
+    
+    # Test 26: Tenant Isolation Health
+    print_test_header(26, "GET /api/tenant-isolation/health", "Get tenant isolation health")
+    response, success = make_request("GET", "/tenant-isolation/health", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_score = "isolation_score" in data
+            success = has_score
+            details = f"Isolation score: {has_score}"
+        except:
+            success = False
+            details = "Missing isolation score"
+    else:
+        details = "Request failed"
+    
+    results.add_result(26, "GET /api/tenant-isolation/health", 200, response.status_code if response else 0, success, details)
+    
+    # Test 27: Tenant Isolation Policy
+    print_test_header(27, "GET /api/tenant-isolation/policy", "Get isolation policy")
+    response, success = make_request("GET", "/tenant-isolation/policy", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_strict = "strict_mode" in data
+            success = has_strict
+            details = f"Strict mode: {has_strict}"
+        except:
+            success = False
+            details = "Missing strict mode"
+    else:
+        details = "Request failed"
+    
+    results.add_result(27, "GET /api/tenant-isolation/policy", 200, response.status_code if response else 0, success, details)
+    
+    # Test 28: Update Tenant Isolation Policy
+    print_test_header(28, "PUT /api/tenant-isolation/policy", "Update isolation policy")
+    params = {"strict_mode": True, "pii_masking_enabled": True}
+    response, success = make_request("PUT", "/tenant-isolation/policy", token=token, params=params, expected_status=200)
+    details = "Isolation policy updated" if success else "Policy update failed"
+    results.add_result(28, "PUT /api/tenant-isolation/policy", 200, response.status_code if response else 0, success, details)
+    
+    # Test 29: Tenant Data Summary
+    print_test_header(29, "GET /api/tenant-isolation/data-summary", "Get data summary")
+    response, success = make_request("GET", "/tenant-isolation/data-summary", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            total_records = data.get("total_records", 0)
+            success = total_records > 0
+            details = f"Total records: {total_records}"
+        except:
+            success = False
+            details = "Missing total records"
+    else:
+        details = "Request failed"
+    
+    results.add_result(29, "GET /api/tenant-isolation/data-summary", 200, response.status_code if response else 0, success, details)
+    
+    # Test 30: Data Classification
+    print_test_header(30, "GET /api/tenant-isolation/data-classification", "Get data classification")
+    response, success = make_request("GET", "/tenant-isolation/data-classification", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_classifications = "classifications" in data
+            success = has_classifications
+            details = f"Classifications field: {has_classifications}"
+        except:
+            success = False
+            details = "Missing classifications"
+    else:
+        details = "Request failed"
+    
+    results.add_result(30, "GET /api/tenant-isolation/data-classification", 200, response.status_code if response else 0, success, details)
+    
+    # Test 31: PII Scan
+    print_test_header(31, "GET /api/tenant-isolation/pii-scan", "Get PII scan results")
+    response, success = make_request("GET", "/tenant-isolation/pii-scan", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_risk = "overall_risk" in data
+            success = has_risk
+            details = f"Overall risk: {has_risk}"
+        except:
+            success = False
+            details = "Missing overall risk"
+    else:
+        details = "Request failed"
+    
+    results.add_result(31, "GET /api/tenant-isolation/pii-scan", 200, response.status_code if response else 0, success, details)
+    
+    # Test 32: Audit Trail
+    print_test_header(32, "GET /api/tenant-isolation/audit-trail", "Get audit trail")
+    params = {"days": 30}
+    response, success = make_request("GET", "/tenant-isolation/audit-trail", token=token, params=params, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_events = "events" in data
+            success = has_events
+            details = f"Events field: {has_events}"
+        except:
+            success = False
+            details = "Missing events"
+    else:
+        details = "Request failed"
+    
+    results.add_result(32, "GET /api/tenant-isolation/audit-trail", 200, response.status_code if response else 0, success, details)
+    
+    # Test 33: Access Logs
+    print_test_header(33, "GET /api/tenant-isolation/access-logs", "Get access logs")
+    response, success = make_request("GET", "/tenant-isolation/access-logs", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_logs = "logs" in data
+            success = has_logs
+            details = f"Logs field: {has_logs}"
+        except:
+            success = False
+            details = "Missing logs"
+    else:
+        details = "Request failed"
+    
+    results.add_result(33, "GET /api/tenant-isolation/access-logs", 200, response.status_code if response else 0, success, details)
+    
+    # Test 34: Central Office Dashboard
+    print_test_header(34, "GET /api/central-office/dashboard", "Get central office dashboard")
+    response, success = make_request("GET", "/central-office/dashboard", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            chain_kpi = data.get("chain_kpi", {})
+            chain_adr = chain_kpi.get("chain_adr", 0)
+            chain_revpar = chain_kpi.get("chain_revpar", 0)
+            total_revenue = chain_kpi.get("total_revenue", 0)
+            success = chain_adr > 0 and chain_revpar > 0 and total_revenue > 0
+            details = f"ADR: {chain_adr}, RevPAR: {chain_revpar}, Revenue: {total_revenue}"
+        except:
+            success = False
+            details = "Missing KPI fields"
+    else:
+        details = "Request failed"
+    
+    results.add_result(34, "GET /api/central-office/dashboard", 200, response.status_code if response else 0, success, details)
+    
+    # Test 35: Central Office Properties
+    print_test_header(35, "GET /api/central-office/properties", "Get properties")
+    response, success = make_request("GET", "/central-office/properties", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            total = data.get("total", 0)
+            success = total >= 1
+            details = f"Total properties: {total}"
+        except:
+            success = False
+            details = "Missing total field"
+    else:
+        details = "Request failed"
+    
+    results.add_result(35, "GET /api/central-office/properties", 200, response.status_code if response else 0, success, details)
+    
+    # Test 36: Occupancy Comparison
+    print_test_header(36, "GET /api/central-office/occupancy-comparison", "Get occupancy comparison")
+    params = {"days": 30}
+    response, success = make_request("GET", "/central-office/occupancy-comparison", token=token, params=params, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_chain_avg = "chain_average" in data
+            success = has_chain_avg
+            details = f"Chain average: {has_chain_avg}"
+        except:
+            success = False
+            details = "Missing chain average"
+    else:
+        details = "Request failed"
+    
+    results.add_result(36, "GET /api/central-office/occupancy-comparison", 200, response.status_code if response else 0, success, details)
+    
+    # Test 37: Revenue Report
+    print_test_header(37, "GET /api/central-office/revenue-report", "Get revenue report")
+    response, success = make_request("GET", "/central-office/revenue-report", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_adr = "chain_adr" in data
+            has_revpar = "chain_revpar" in data
+            success = has_adr and has_revpar
+            details = f"Chain ADR: {has_adr}, Chain RevPAR: {has_revpar}"
+        except:
+            success = False
+            details = "Missing revenue fields"
+    else:
+        details = "Request failed"
+    
+    results.add_result(37, "GET /api/central-office/revenue-report", 200, response.status_code if response else 0, success, details)
+    
+    # Test 38: Trends
+    print_test_header(38, "GET /api/central-office/trends", "Get occupancy trends")
+    params = {"metric": "occupancy", "days": 7}
+    response, success = make_request("GET", "/central-office/trends", token=token, params=params, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_data_points = "data_points" in data
+            success = has_data_points
+            details = f"Data points: {has_data_points}"
+        except:
+            success = False
+            details = "Missing data points"
+    else:
+        details = "Request failed"
+    
+    results.add_result(38, "GET /api/central-office/trends", 200, response.status_code if response else 0, success, details)
+    
+    # Test 39: Property Health
+    print_test_header(39, "GET /api/central-office/property-health", "Get property health")
+    response, success = make_request("GET", "/central-office/property-health", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_avg_score = "chain_average_score" in data
+            success = has_avg_score
+            details = f"Chain average score: {has_avg_score}"
+        except:
+            success = False
+            details = "Missing average score"
+    else:
+        details = "Request failed"
+    
+    results.add_result(39, "GET /api/central-office/property-health", 200, response.status_code if response else 0, success, details)
+    
+    # Test 40: Budget Tracking
+    print_test_header(40, "GET /api/central-office/budget-tracking", "Get budget tracking")
+    response, success = make_request("GET", "/central-office/budget-tracking", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_chain_summary = "chain_summary" in data
+            success = has_chain_summary
+            details = f"Chain summary: {has_chain_summary}"
+        except:
+            success = False
+            details = "Missing chain summary"
+    else:
+        details = "Request failed"
+    
+    results.add_result(40, "GET /api/central-office/budget-tracking", 200, response.status_code if response else 0, success, details)
+    
+    # Test 41: Alerts
+    print_test_header(41, "GET /api/central-office/alerts", "Get alerts")
+    response, success = make_request("GET", "/central-office/alerts", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_alerts = "alerts" in data
+            has_critical = "critical_count" in data
+            success = has_alerts and has_critical
+            details = f"Alerts: {has_alerts}, Critical count: {has_critical}"
+        except:
+            success = False
+            details = "Missing alert fields"
+    else:
+        details = "Request failed"
+    
+    results.add_result(41, "GET /api/central-office/alerts", 200, response.status_code if response else 0, success, details)
+    
+    # Test 42: Department Comparison
+    print_test_header(42, "GET /api/central-office/department-comparison", "Get department comparison")
+    response, success = make_request("GET", "/central-office/department-comparison", token=token, expected_status=200)
+    
+    if success and response:
+        try:
+            data = response.json()
+            has_chain_avg = "chain_averages" in data
+            success = has_chain_avg
+            details = f"Chain averages: {has_chain_avg}"
+        except:
+            success = False
+            details = "Missing chain averages"
+    else:
+        details = "Request failed"
+    
+    results.add_result(42, "GET /api/central-office/department-comparison", 200, response.status_code if response else 0, success, details)
     
     # Print final summary
-    print_final_summary(results)
-
-def print_final_summary(results):
-    """Print final test summary"""
-    print_section("FINAL TEST SUMMARY")
+    results.print_summary()
     
-    total_tests = len(results)
-    passed_tests = sum(1 for v in results.values() if v)
-    success_rate = (passed_tests / total_tests * 100) if total_tests > 0 else 0
-    
-    print(f"Total Tests: {total_tests}")
-    print(f"Passed: {passed_tests}")
-    print(f"Failed: {total_tests - passed_tests}")
-    print(f"Success Rate: {success_rate:.1f}%\n")
-    
-    for test_name, passed in results.items():
-        status = "✅" if passed else "❌"
-        print(f"{status} {test_name.replace('_', ' ').title()}")
-    
-    if all(results.values()):
-        print("\n🎉 ALL TESTS PASSED! 3-segment subscription system is working correctly!")
+    if results.passed == 42:
+        print(f"\n🎉 SUCCESS: All 42 tests passed! Backend is 100% functional.")
     else:
-        failed_tests = [name for name, passed in results.items() if not passed]
-        print(f"\n⚠️  FAILED TESTS: {', '.join(failed_tests)}")
-        print("Please review the details above for specific failures.")
+        print(f"\n⚠️ {results.failed} tests failed. Please review the details above.")
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n⚠️  Test execution interrupted by user.")
+        print("\n⚠️ Test execution interrupted by user.")
     except Exception as e:
         print(f"\n❌ CRITICAL ERROR: {e}")
         import traceback
