@@ -112,6 +112,9 @@ backend:
       - working: true
       - agent: "main"
       - comment: "search (200), loyalty-summary (200). All working."
+      - working: true
+      - agent: "testing"
+      - comment: "PERFECT 2/2 ENDPOINTS: GET search?query=Misafir (200), GET loyalty-summary (200). Cross-property guest functionality 100% working."
 
   - task: "Multi-Property Models"
     implemented: true
