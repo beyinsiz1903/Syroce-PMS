@@ -25,6 +25,9 @@ backend:
       - working: true
       - agent: "main"
       - comment: "rules list (200), create rule (200), ip check (200), invalid ip (400). All working."
+      - working: true
+      - agent: "testing"
+      - comment: "Minor: GET rules (200), POST check (200) working. POST create rule validation issue - requires 'whitelist'/'blacklist' not 'allow'. Core functionality working, just validation message in Turkish."
 
   - task: "GDPR/KVKK Compliance Module"
     implemented: true
