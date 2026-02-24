@@ -1989,7 +1989,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    {reports.revenue ? `$${reports.revenue.adr}` : 'Loading...'}
+                    {reports.revenue ? `$${(reports.revenue.adr ?? 0).toFixed(2)}` : 'Loading...'}
                   </div>
                   <p className="text-xs text-gray-600">Average Daily Rate</p>
                 </CardContent>
