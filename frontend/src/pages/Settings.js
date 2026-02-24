@@ -61,6 +61,7 @@ const ROLE_LABELS = {
 };
 
 const Settings = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('team');
 
   // Team
