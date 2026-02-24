@@ -299,8 +299,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'core'
     },
     {
-      title: 'POS Restaurant',
-      description: 'Tables, menu & orders',
+      title: t('dashboard.posRestaurant'),
+      description: t('dashboard.posDesc'),
       icon: ShoppingCart,
       path: '/pos',
       color: '#f97316',
