@@ -11,8 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Users, Plus, FileText, DollarSign, Calendar, TrendingUp, Mail, Phone, Home } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const StatusBadge = ({ status }) => {
+  const { t } = useTranslation();
   const colors = {
     tentative: 'bg-yellow-100 text-yellow-800',
     definite: 'bg-green-100 text-green-800',

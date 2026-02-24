@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+import { useTranslation } from 'react-i18next';
   Home,
   Calendar,
   Award,
@@ -41,6 +42,7 @@ import {
 } from 'lucide-react';
 
 const GuestPortal = ({ user, onLogout }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const [activeBookings, setActiveBookings] = useState([]);

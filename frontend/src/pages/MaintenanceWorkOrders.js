@@ -10,8 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Checkbox } from "@/components/ui/checkbox";
 import useMediaCapture from "@/hooks/useMediaCapture";
 import { toast } from "sonner";
+import { useTranslation } from 'react-i18next';
 
 const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState("open");
   const [priority, setPriority] = useState("all");

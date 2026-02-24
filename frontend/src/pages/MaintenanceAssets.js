@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Building2, Plus, Database, RefreshCw } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const MaintenanceAssets = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [items, setItems] = useState([]);
   const [assetType, setAssetType] = useState("all");
   const [loading, setLoading] = useState(true);
