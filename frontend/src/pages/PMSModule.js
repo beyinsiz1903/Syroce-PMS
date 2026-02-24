@@ -1975,10 +1975,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    {reports.occupancy ? `${reports.occupancy.current_occupancy_rate}%` : 'Loading...'}
+                    {reports.occupancy ? `${(reports.occupancy.current_occupancy_rate ?? reports.occupancy.occupancy_rate ?? 0).toFixed(1)}%` : 'Loading...'}
                   </div>
                   <p className="text-xs text-gray-600">
-                    {reports.occupancy ? `${reports.occupancy.occupied_rooms}/${reports.occupancy.total_rooms} rooms` : ''}
+                    {reports.occupancy ? `${reports.occupancy.occupied_rooms ?? reports.occupancy.occupied_room_nights ?? 0}/${reports.occupancy.total_rooms} rooms` : ''}
                   </p>
                 </CardContent>
               </Card>
