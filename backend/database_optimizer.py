@@ -99,7 +99,9 @@ class DatabaseOptimizer:
             ([("tags", ASCENDING)], {}),
             ([("created_at", DESCENDING)], {}),
             ([("name", TEXT)], {}),
-            ([("email", TEXT)], {}),
+            # NOTE: MongoDB allows only ONE text index per collection.
+            # "name" text index already covers text search needs.
+            # Removed duplicate "email" TEXT index that caused IndexOptionsConflict.
         ]
         
         created = []
