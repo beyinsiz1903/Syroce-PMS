@@ -226,6 +226,9 @@ metadata:
 test_plan:
   current_focus: []
   backend_completed:
+    - "Faz 1 PMS Authentication"
+    - "Faz 1 PMS Seed Data"
+    - "Faz 1 PMS Security"
     - "2FA Enhanced Security Module"
     - "IP Access Control Module"
     - "GDPR/KVKK Compliance Module"
@@ -238,6 +241,8 @@ test_plan:
     - "OpenAPI/Swagger Documentation"
     - "Unit Test Suite"
     - "CI/CD Pipeline"
+  backend_issues:
+    - "Faz 1 PMS CORS Configuration"
   frontend_completed: []
   stuck_tasks: []
   test_all: false
