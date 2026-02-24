@@ -1315,7 +1315,7 @@ def apply_row_colors(ws, start_row=2):
         adjusted_width = min(max_length + 2, 50)
         ws.column_dimensions[column].width = adjusted_width
     
-    return wb
+    return ws
 
 
 def excel_response(workbook: Workbook, filename: str) -> StreamingResponse:
