@@ -797,8 +797,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                 {/* Revenue Trend */}
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-lg"{t("dashboard.revenueTrend")}/CardTitle>
-                    <CardDescription{t("dashboard.dailyRevenue")}/CardDescription>
+                    <CardTitle className="text-lg">{t("dashboard.revenueTrend")}</CardTitle>
+                    <CardDescription>{t("dashboard.dailyRevenue")}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={250}>
