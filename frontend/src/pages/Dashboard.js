@@ -830,7 +830,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-lg">Booking Trends</CardTitle>
-                    <CardDescription{t("dashboard.dailyBookings")}/CardDescription>
+                    <CardDescription>{t("dashboard.dailyBookings")}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={250}>
@@ -872,7 +872,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-lg">RevPAR Performance</CardTitle>
-                    <CardDescription{t('dashboard.revPARDesc')}/CardDescription>
+                    <CardDescription>{t('dashboard.revPARDesc')}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={250}>
@@ -906,7 +906,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">30-Day Occupancy Heatmap</CardTitle>
-                  <CardDescription{t('dashboard.heatmapDesc')}/CardDescription>
+                  <CardDescription>{t('dashboard.heatmapDesc')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-10 gap-1">
