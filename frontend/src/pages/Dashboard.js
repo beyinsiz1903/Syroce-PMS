@@ -405,7 +405,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'revenue'
     },
     {
-      title: '🤖 AI Chatbot',
+      title: t('dashboard.aiChatbot'),
       description: 'AI destekli misafir asistanı',
       icon: Bot,
       path: '/ai-chatbot',
@@ -450,8 +450,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'financial'
     },
     {
-      title: '🎯 Advanced Loyalty',
-      description: 'Gamification, referral, tier management',
+      title: t('dashboard.advancedLoyalty'),
+      description: t('dashboard.advancedLoyaltyDesc'),
       icon: Gift,
       path: '/advanced-loyalty',
       color: '#f59e0b',
@@ -459,8 +459,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'guest'
     },
     {
-      title: '🌍 GDS Integration',
-      description: 'Amadeus, Sabre, Galileo entegrasyonu',
+      title: t('dashboard.gdsIntegration'),
+      description: t('dashboard.gdsIntegrationDesc'),
       icon: Globe,
       path: '/gds-integration',
       color: '#3b82f6',
@@ -468,8 +468,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'revenue'
     },
     {
-      title: '👥 Staff Management',
-      description: 'Personel, vardiya ve performans yönetimi',
+      title: t('dashboard.staffManagement'),
+      description: t('dashboard.staffManagementDesc'),
       icon: Users,
       path: '/staff-management',
       color: '#10b981',
@@ -477,8 +477,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'management'
     },
     {
-      title: '🛤️ Guest Journey',
-      description: 'Misafir yolculuğu ve NPS tracking',
+      title: t('dashboard.guestJourney'),
+      description: t('dashboard.guestJourneyDesc'),
       icon: TrendingUp,
       path: '/guest-journey',
       color: '#8b5cf6',
@@ -486,8 +486,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'guest'
     },
     {
-      title: '📋 Arrival List',
-      description: 'Bugünün varışları - VIP, grup ve özel istekler',
+      title: t('dashboard.arrivalList'),
+      description: t('dashboard.arrivalListDesc'),
       icon: UserCheck,
       path: '/arrival-list',
       color: '#10b981',
@@ -495,8 +495,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'core'
     },
     {
-      title: '🤖 AI WhatsApp Concierge',
-      description: '24/7 Otomatik misafir hizmeti - Sıfır insan',
+      title: t('dashboard.aiWhatsApp'),
+      description: t('dashboard.aiWhatsAppDesc'),
       icon: MessageCircle,
       path: '/ai-whatsapp-concierge',
       color: '#10b981',
@@ -504,8 +504,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'ai'
     },
     {
-      title: '🔮 Predictive Analytics',
-      description: 'No-show, talep, şikayet tahminleri - AI Oracle',
+      title: t('dashboard.predictiveAnalytics'),
+      description: t('dashboard.predictiveAnalyticsDesc'),
       icon: Target,
       path: '/predictive-analytics',
       color: '#8b5cf6',
@@ -513,8 +513,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'ai'
     },
     {
-      title: '📡 Social Media Radar',
-      description: 'Instagram, Twitter, Facebook monitoring - Real-time',
+      title: t('dashboard.socialMediaRadar'),
+      description: t('dashboard.socialMediaRadarDesc'),
       icon: Instagram,
       path: '/social-media-radar',
       color: '#ec4899',
@@ -522,8 +522,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'ai'
     },
     {
-      title: '⚡ Revenue Autopilot',
-      description: 'Tam otomatik revenue optimization - Sıfır müdahale',
+      title: t('dashboard.revenueAutopilot'),
+      description: t('dashboard.revenueAutopilotDesc'),
       icon: Zap,
       path: '/revenue-autopilot',
       color: '#8b5cf6',
@@ -531,8 +531,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'ai'
     },
     {
-      title: '👥 HR Complete Suite',
-      description: 'Time & Attendance, Payroll, Leave, Recruitment',
+      title: t('dashboard.hrSuite'),
+      description: t('dashboard.hrSuiteDesc'),
       icon: Users,
       path: '/hr-complete',
       color: '#10b981',
@@ -540,8 +540,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'management'
     },
     {
-      title: '🍳 F&B Complete Suite',
-      description: 'Recipe Costing, BEO, Kitchen Display, Inventory',
+      title: t('dashboard.fnbSuite'),
+      description: t('dashboard.fnbSuiteDesc'),
       icon: ShoppingCart,
       path: '/fnb-complete',
       color: '#f97316',
@@ -549,8 +549,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'core'
     },
     {
-      title: '📺 Kitchen Display',
-      description: 'Real-time mutfak ekranı - Sipariş takibi',
+      title: t('dashboard.kitchenDisplay'),
+      description: t('dashboard.kitchenDisplayDesc'),
       icon: Monitor,
       path: '/kitchen-display',
       color: '#ef4444',
