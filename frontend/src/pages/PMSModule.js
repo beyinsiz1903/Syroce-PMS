@@ -2245,7 +2245,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         </Tabs>
 
         {/* Dialogs and Modals */}
-        <Dialog open={openDialog === 'folio'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'folio' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Guest Folio</DialogTitle>
@@ -2373,7 +2373,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         </Dialog>
 
         {/* Room Dialog */}
-        <Dialog open={openDialog === 'room'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'room' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create New Room</DialogTitle>
@@ -2415,7 +2415,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         </Dialog>
 
         {/* Room Images Dialog */}
-        <Dialog open={openDialog === 'room-images'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'room-images' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent className="max-w-4xl">
             <DialogHeader>
               <DialogTitle>Oda Fotoğrafları {selectedRoom ? `- ${selectedRoom.room_number}` : ''}</DialogTitle>
@@ -2488,7 +2488,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
 
         {/* Bulk Delete Rooms Dialog */}
-        <Dialog open={openDialog === 'bulk-delete-rooms'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'bulk-delete-rooms' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Toplu Oda Silme</DialogTitle>
@@ -2554,7 +2554,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
 
         {/* Bulk Rooms Dialog */}
-        <Dialog open={openDialog === 'bulk-rooms'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'bulk-rooms' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent className="max-w-3xl">
             <DialogHeader>
               <DialogTitle>Hızlı / Çoklu Oda Ekle</DialogTitle>
@@ -2752,7 +2752,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
 
         {/* Guest Dialog */}
-        <Dialog open={openDialog === 'guest'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'guest' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Register New Guest</DialogTitle>
@@ -2784,7 +2784,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         </Dialog>
 
         {/* Booking Dialog */}
-        <Dialog open={openDialog === 'booking'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'booking' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create New Booking</DialogTitle>
@@ -3202,7 +3202,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         </Dialog>
 
         {/* Quick Company Create Dialog */}
-        <Dialog open={openDialog === 'company'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'company' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Quick Company Creation</DialogTitle>
@@ -3281,7 +3281,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         </Dialog>
 
         {/* Folio View Dialog */}
-        <Dialog open={openDialog === 'folio-view'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'folio-view' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Folio Management</DialogTitle>
@@ -3502,7 +3502,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         </Dialog>
 
         {/* Post Charge Dialog */}
-        <Dialog open={openDialog === 'post-charge'} onOpenChange={(open) => !open && setOpenDialog('folio-view')}>
+        {openDialog === 'post-charge' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog('folio-view')}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Post Charge</DialogTitle>
@@ -3575,7 +3575,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         </Dialog>
 
         {/* Post Payment Dialog */}
-        <Dialog open={openDialog === 'post-payment'} onOpenChange={(open) => !open && setOpenDialog('folio-view')}>
+        {openDialog === 'post-payment' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog('folio-view')}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Post Payment</DialogTitle>
@@ -3638,7 +3638,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         </Dialog>
 
         {/* HK Task Dialog */}
-        <Dialog open={openDialog === 'hktask'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'hktask' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create Housekeeping Task</DialogTitle>
@@ -3686,7 +3686,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         </Dialog>
 
         {/* Room Block Dialog */}
-        <Dialog open={openDialog === 'roomblock'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'roomblock' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Block Room</DialogTitle>
@@ -3767,7 +3767,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         </Dialog>
 
         {/* View Room Blocks Dialog */}
-        <Dialog open={openDialog === 'viewblocks'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'viewblocks' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Room Blocks - Room {selectedRoom?.room_number}</DialogTitle>
@@ -3843,7 +3843,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         </Dialog>
 
         {/* Guest 360° Profile Dialog */}
-        <Dialog open={openDialog === 'guest360'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'guest360' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-2xl">🌟 Guest 360° Profile</DialogTitle>
@@ -4285,7 +4285,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         </Dialog>
 
         {/* Booking Detail Dialog - Double-Click to Open */}
-        <Dialog open={openDialog === 'bookingDetail'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'bookingDetail' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>📋 Booking Details</DialogTitle>
@@ -4678,7 +4678,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       </div>
 
         {/* Guest Info Dialog - Kimlik Bilgileri */}
-        <Dialog open={openDialog === 'guestinfo'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'guestinfo' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -4887,7 +4887,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         </Dialog>
 
         {/* Payment Dialog */}
-        <Dialog open={openDialog === 'payment'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'payment' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Process Payment</DialogTitle>
@@ -4992,7 +4992,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
 
         {/* Find Available Rooms Dialog */}
-        <Dialog open={openDialog === 'findroom'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        {openDialog === 'findroom' && <Dialog open={true} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
