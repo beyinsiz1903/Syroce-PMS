@@ -2001,7 +2001,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    {reports.revenue ? `$${reports.revenue.revpar}` : 'Loading...'}
+                    {reports.revenue ? `$${(reports.revenue.revpar ?? reports.revenue.rev_par ?? 0).toFixed(2)}` : 'Loading...'}
                   </div>
                   <p className="text-xs text-gray-600">Revenue Per Available Room</p>
                 </CardContent>
