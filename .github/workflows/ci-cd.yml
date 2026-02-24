@@ -1,4 +1,4 @@
-name: RoomOps PMS CI/CD Pipeline
+name: RoomOps PMS CI/CD Pipeline  # v2.0 - Updated 2026-02-24 15:20 UTC
 
 on:
   push:
