@@ -69,8 +69,9 @@ tzdata==2025.2
 urllib3==2.5.0
 uvicorn==0.25.0
 watchfiles==1.1.1
-litellm
-emergentintegrations
+# litellm and emergentintegrations are private packages
+# Install separately: pip install emergentintegrations --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+# litellm is installed as a dependency of emergentintegrations
 scikit-learn==1.5.0
 xgboost==2.1.0
 joblib==1.4.2
