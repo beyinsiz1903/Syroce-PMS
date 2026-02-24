@@ -80,7 +80,7 @@ from models.schemas import (
     CreateDepartmentFeedbackRequest, CreateTaskRequest,
     UpdateTaskStatusRequest, AssignTaskRequest, CreateRoleRequest,
     AssignRoleRequest, UpdateUserRoleRequest, CreateBackupRequest,
-    RejectRequest, _ensure_hotel_context,
+    _ensure_hotel_context,
 )
 # ── End modular imports ───────────────────────────────────────────────
 
