@@ -20,6 +20,7 @@ import {
 
 const BookingDialog = ({ openDialog, setOpenDialog, rooms, guests, loadData, tenant }) => {
   const { t } = useTranslation();
+  const [companies, setCompanies] = useState([]);
   const [newBooking, setNewBooking] = useState({ guest_id: '', room_id: '', check_in: '', check_out: '', adults: 1, children: 0, special_requests: '', rate_plan: 'Standard', channel: 'direct', source_channel: 'direct', company_id: '' });
 
   return (

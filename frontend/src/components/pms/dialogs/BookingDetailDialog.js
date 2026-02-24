@@ -20,6 +20,7 @@ import {
 
 const BookingDetailDialog = ({ openDialog, setOpenDialog, selectedBooking, rooms, guests }) => {
   const { t } = useTranslation();
+  const [companies, setCompanies] = useState([]);
 
   return (
     <>
