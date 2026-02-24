@@ -18271,6 +18271,13 @@ async def startup_db_seed():
     # that depend on optional packages (motor, redis) or long-running scripts.
     # These can cause startup to fail or be very slow, leading to 520/health check issues.
     
+    # ── Auto-seed demo data if database is empty ──────────
+    try:
+        from auto_seed import auto_seed_if_empty
+        await auto_seed_if_empty(db)
+    except Exception as e:
+        print(f"⚠️ Auto-seed error: {e}")
+
     # Create agency booking request indexes
     try:
         col = db.agency_booking_requests
