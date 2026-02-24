@@ -20,6 +20,10 @@ import {
 
 const BulkRoomsDialog = ({ openDialog, setOpenDialog, rooms, loadData, tenant }) => {
   const { t } = useTranslation();
+  const [bulkRoomTab, setBulkRoomTab] = useState('range');
+  const [bulkRoomData, setBulkRoomData] = useState({ prefix: '', start_number: 101, end_number: 110, floor: 1, room_type: 'Standard', capacity: 2, base_price: 100, amenities: [], view: '', bed_type: '' });
+  const [csvFile, setCsvFile] = useState(null);
+  const [csvPreview, setCsvPreview] = useState(null);
 
   return (
     <>

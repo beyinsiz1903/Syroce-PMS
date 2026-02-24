@@ -20,6 +20,8 @@ import {
 
 const FolioViewDialog = ({ openDialog, setOpenDialog, selectedFolio, setSelectedFolio, guests, bookings }) => {
   const { t } = useTranslation();
+  const [folioCharges, setFolioCharges] = useState([]);
+  const [folioPayments, setFolioPayments] = useState([]);
 
   return (
     <>

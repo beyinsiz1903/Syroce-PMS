@@ -20,6 +20,9 @@ import {
 
 const FindRoomDialog = ({ openDialog, setOpenDialog, rooms, guests, bookings }) => {
   const { t } = useTranslation();
+  const [availableRooms, setAvailableRooms] = useState([]);
+  const [newBooking, setNewBooking] = useState({ guest_id: '', room_id: '', check_in: '', check_out: '', adults: 1, children: 0 });
+  const [roomSearch, setRoomSearch] = useState({ check_in: '', check_out: '', room_type: '' });
 
   return (
     <>
