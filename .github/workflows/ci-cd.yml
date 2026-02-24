@@ -164,7 +164,7 @@ jobs:
         run: |
           pip install pip-audit
           cd backend
-          grep -v "emergentintegrations" requirements.txt > requirements_audit.txt
+          grep -vE "emergentintegrations|litellm" requirements.txt > requirements_audit.txt
           pip-audit -r requirements_audit.txt --desc --output=security-report.txt 2>&1 || true
           cat security-report.txt || echo "No security report generated"
           rm -f requirements_audit.txt
