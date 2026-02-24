@@ -87,3 +87,7 @@ android-sdk/ -e
 *.env
 *.env.*
 -e 
+-e 
+# Environment files
+*.env
+*.env.*
