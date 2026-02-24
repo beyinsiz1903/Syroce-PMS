@@ -253,6 +253,7 @@ test_plan:
     - "OpenAPI/Swagger Documentation"
     - "Unit Test Suite"
     - "CI/CD Pipeline"
+    - "Faz 2 Backend Modularization Validation"
   backend_issues:
     - "Faz 1 PMS CORS Configuration"
   frontend_completed: []
