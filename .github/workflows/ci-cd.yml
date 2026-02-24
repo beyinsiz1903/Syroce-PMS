@@ -8,7 +8,7 @@ on:
 
 env:
   PYTHON_VERSION: '3.11'
-  NODE_VERSION: '18'
+  NODE_VERSION: '20'
   MONGO_URL: mongodb://localhost:27017/hotel_pms_test
   JWT_SECRET: ci-test-secret-key-do-not-use-in-production
 
