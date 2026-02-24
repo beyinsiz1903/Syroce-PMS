@@ -43,7 +43,10 @@
     "success": "Başarılı",
     "error": "Hata",
     "warning": "Uyarı",
-    "info": "Bilgi"
+    "info": "Bilgi",
+    "selected": "seçili",
+    "photo": "fotoğraf",
+    "guests": "misafir"
   },
   "nav": {
     "dashboard": "Kontrol Paneli",
@@ -249,7 +252,12 @@
     "roomNumber": "Oda Numarası",
     "roomType": "Oda Tipi",
     "nightsStaying": "Konaklama Süresi",
-    "totalAmount": "Toplam Tutar"
+    "totalAmount": "Toplam Tutar",
+    "bulkMode": "Toplu Mod",
+    "bulkAddRooms": "Hızlı / Çoklu Ekle",
+    "addSingleRoom": "Tek Oda Ekle",
+    "addRoomsTitle": "Başlamak için oda ekleyin",
+    "addRoomsDesc": "En hızlı yöntem: Hızlı / Çoklu Oda Ekle."
   },
   "folio": {
     "title": "Folio Yönetimi",

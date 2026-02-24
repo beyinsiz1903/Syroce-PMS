@@ -43,7 +43,10 @@
     "success": "Success",
     "error": "Error",
     "warning": "Warning",
-    "info": "Info"
+    "info": "Info",
+    "selected": "selected",
+    "photo": "photos",
+    "guests": "guests"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -249,7 +252,12 @@
     "roomNumber": "Room Number",
     "roomType": "Room Type",
     "nightsStaying": "Nights Staying",
-    "totalAmount": "Total Amount"
+    "totalAmount": "Total Amount",
+    "bulkMode": "Bulk Mode",
+    "bulkAddRooms": "Quick / Bulk Add",
+    "addSingleRoom": "Add Single Room",
+    "addRoomsTitle": "Add rooms to get started",
+    "addRoomsDesc": "Fastest method: Quick / Bulk Add to add rooms at once."
   },
   "folio": {
     "title": "Folio Management",
