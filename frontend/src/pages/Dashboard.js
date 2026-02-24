@@ -281,8 +281,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'revenue'
     },
     {
-      title: 'Cost Management',
-      description: 'Track operational costs & expenses',
+      title: t('dashboard.costManagement'),
+      description: t('dashboard.costManagementDesc'),
       icon: TrendingUp,
       path: '/cost-management',
       color: '#f093fb',
