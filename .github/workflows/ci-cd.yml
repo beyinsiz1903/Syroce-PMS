@@ -61,7 +61,7 @@ jobs:
       - name: Install backend dependencies
         run: |
           cd backend
-          grep -v "emergentintegrations" requirements.txt > requirements_ci.txt
+          grep -vE "emergentintegrations|litellm" requirements.txt > requirements_ci.txt
           pip install -r requirements_ci.txt
           pip install pytest pytest-asyncio httpx pytest-cov
           rm requirements_ci.txt
