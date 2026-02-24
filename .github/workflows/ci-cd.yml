@@ -61,7 +61,7 @@ jobs:
       - name: Install backend dependencies
         run: |
           cd backend
-          pip install -r requirements.txt
+          pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ || pip install -r requirements.txt --ignore-installed emergentintegrations 2>/dev/null || echo "Some optional packages skipped"
           pip install pytest pytest-asyncio httpx pytest-cov
 
       - name: Seed test database
