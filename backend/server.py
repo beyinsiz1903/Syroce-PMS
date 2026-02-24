@@ -6941,6 +6941,44 @@ async def create_folio(folio_data: FolioCreate, current_user: User = Depends(get
 
 
 # Static folio routes (before parametric routes)
+
+@api_router.get("/folio/list")
+async def list_folios(
+    status: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    current_user: User = Depends(get_current_user)
+):
+    """List all folios for the current tenant with optional status filter."""
+    query = {'tenant_id': current_user.tenant_id}
+    if status:
+        query['status'] = status
+
+    folios = await db.folios.find(query, {'_id': 0}).sort(
+        'created_at', -1
+    ).skip(offset).limit(limit).to_list(limit)
+
+    total = await db.folios.count_documents(query)
+
+    # Enrich with guest/booking info
+    for folio in folios:
+        booking = await db.bookings.find_one(
+            {'id': folio.get('booking_id'), 'tenant_id': current_user.tenant_id},
+            {'_id': 0, 'guest_name': 1, 'room_number': 1, 'room_id': 1, 'check_in': 1, 'check_out': 1}
+        )
+        if booking:
+            folio['guest_name'] = booking.get('guest_name', '')
+            folio['room_number'] = booking.get('room_number', '')
+            folio['check_in'] = booking.get('check_in', '')
+            folio['check_out'] = booking.get('check_out', '')
+
+    return {
+        'folios': folios,
+        'total': total,
+        'limit': limit,
+        'offset': offset,
+    }
+
 @api_router.get("/folio/dashboard-stats")
 @cached(ttl=300, key_prefix="folio_dashboard_stats")  # Cache for 5 minutes
 async def get_folio_dashboard_stats(
