@@ -10843,10 +10843,13 @@ async def seed_hotel_amenities(current_user: User = Depends(get_current_user)):
         'created': created_count
     }
 
+_cors_raw = os.environ.get('CORS_ORIGINS', '')
+_cors_origins = [o.strip() for o in _cors_raw.split(',') if o.strip()] if _cors_raw else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
