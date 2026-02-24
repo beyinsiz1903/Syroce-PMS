@@ -2013,7 +2013,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    {reports.revenue ? `$${reports.revenue.total_revenue}` : 'Loading...'}
+                    {reports.revenue ? `$${(reports.revenue.total_revenue ?? 0).toLocaleString()}` : 'Loading...'}
                   </div>
                   <p className="text-xs text-gray-600">This Month</p>
                 </CardContent>
