@@ -96,6 +96,7 @@ const MENU_ITEMS = [
 ];
 
 const BasicReports = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
