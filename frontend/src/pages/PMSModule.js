@@ -17,6 +17,7 @@ import PickupPaceReport from '@/components/PickupPaceReport';
 import FrontdeskTab from '@/components/pms/FrontdeskTab';
 import HousekeepingTab from '@/components/pms/HousekeepingTab';
 import BookingsTab from '@/components/pms/BookingsTab';
+import RoomsTab from '@/components/pms/RoomsTab';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
