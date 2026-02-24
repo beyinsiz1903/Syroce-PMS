@@ -80,8 +80,8 @@ redis==5.0.1
 celery==5.3.4
 flower==2.0.1
 strawberry-graphql[fastapi]==0.235.0
-python-socketio==5.11.0
-python-engineio==4.9.0
+python-socketio
+python-engineio
 aiodataloader==0.2.1
 orjson
 aioredis==2.0.1
@@ -90,5 +90,5 @@ bidict
 
 pyotp==2.9.0
 textblob==0.19.0
-locust==2.43.3
+# locust==2.43.3  # dev-only, excluded from CI
 scipy
