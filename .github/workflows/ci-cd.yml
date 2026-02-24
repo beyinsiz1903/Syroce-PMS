@@ -250,3 +250,5 @@ jobs:
           echo "Version: ${{ github.sha }}"
           echo "Branch: ${{ github.ref_name }}"
           echo "Actor: ${{ github.actor }}"
+
+# CI/CD v2.1 - Fixed emergentintegrations and litellm filtering for GitHub Actions
