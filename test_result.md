@@ -1,4 +1,52 @@
 backend:
+  - task: "Faz 1 PMS Authentication"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+      - agent: "testing"
+      - comment: "✅ PERFECT 6/6 TESTS: POST /api/auth/login (200) returns access_token+user+tenant, GET /api/auth/me (200) returns user data with email demo@hotel.com. JWT authentication working flawlessly."
+
+  - task: "Faz 1 PMS Seed Data"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+      - agent: "testing"
+      - comment: "✅ PERFECT 10/10 TESTS: GET /api/pms/rooms (200) - 30 rooms, GET /api/pms/bookings (200) - 30 bookings, GET /api/pms/guests (200) - 50 guests, GET /api/housekeeping/tasks (200) - 19 tasks, GET /api/pms/dashboard (200) with stats. All seed data verified."
+
+  - task: "Faz 1 PMS Security"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+      - agent: "testing"
+      - comment: "Minor: 2/3 TESTS PASSED: Valid JWT token works (200), Invalid JWT returns 401 ✅. No auth header returns 403 instead of 401 (expected minor difference). Core JWT security functional."
+
+  - task: "Faz 1 PMS CORS Configuration"
+    implemented: true
+    working: false
+    file: "/app/backend/server.py"
+    stuck_count: 1
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: false
+      - agent: "testing"
+      - comment: "❌ CORS ISSUE: OPTIONS preflight (204) returns Access-Control-Allow-Origin: * (wildcard) instead of specific origins. .env has CORS_ORIGINS correctly set but not being loaded by backend service. Backend restart attempted but issue persists."
+
   - task: "2FA Enhanced Security Module"
     implemented: true
     working: true
