@@ -290,8 +290,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'financial'
     },
     {
-      title: 'Housekeeping',
-      description: 'Staff, rooms & task management',
+      title: t('dashboard.housekeepingTitle'),
+      description: t('dashboard.housekeepingDesc'),
       icon: Hotel,
       path: '/housekeeping',
       color: '#3b82f6',
