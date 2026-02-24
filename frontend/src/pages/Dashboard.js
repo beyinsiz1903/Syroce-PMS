@@ -756,7 +756,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
             {/* Analytics & Charts Section */}
             <div className="space-y-4">
               <h2 className="text-xl md:text-2xl font-bold" style={{ fontFamily: 'Space Grotesk' }}>
-                Analytics & Insights
+                {t('dashboard.analyticsInsights')}
               </h2>
               
               {/* Occupancy & Revenue Charts */}
