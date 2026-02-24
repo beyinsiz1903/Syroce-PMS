@@ -333,8 +333,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'core'
     },
     {
-      title: '🏨 Otel Ekipman Stoğu',
-      description: 'Otomatik stok takibi ve sipariş yönetimi',
+      title: t('dashboard.hotelInventory'),
+      description: t('dashboard.hotelInventoryDesc'),
       icon: Package,
       path: '/hotel-inventory',
       color: '#10b981',
@@ -342,8 +342,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'core'
     },
     {
-      title: '⚡ Flash Report',
-      description: 'Günlük performans özeti - Yönetici raporu',
+      title: t('dashboard.flashReport'),
+      description: t('dashboard.flashReportDesc'),
       icon: TrendingUp,
       path: '/flash-report',
       color: '#8b5cf6',
@@ -351,8 +351,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'management'
     },
     {
-      title: '👥 Grup Satış',
-      description: 'Grup rezervasyonları ve blok yönetimi',
+      title: t('dashboard.groupSales'),
+      description: t('dashboard.groupSalesDesc'),
       icon: Users,
       path: '/group-sales',
       color: '#ec4899',
@@ -360,8 +360,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'revenue'
     },
     {
-      title: '👑 VIP Yönetimi',
-      description: 'VIP profiller, özel protokoller ve kutlamalar',
+      title: t('dashboard.vipManagement'),
+      description: t('dashboard.vipManagementDesc'),
       icon: Crown,
       path: '/vip-management',
       color: '#a855f7',
@@ -369,8 +369,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'guest'
     },
     {
-      title: '📊 Sales CRM',
-      description: 'Lead yönetimi ve satış hunisi',
+      title: t('dashboard.salesCRM'),
+      description: t('dashboard.salesCRMDesc'),
       icon: TrendingUp,
       path: '/sales-crm',
       color: '#3b82f6',
@@ -378,8 +378,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'revenue'
     },
     {
-      title: '🛡️ Service Recovery',
-      description: 'Şikayet yönetimi ve çözüm takibi',
+      title: t('dashboard.serviceRecovery'),
+      description: t('dashboard.serviceRecoveryDesc'),
       icon: Shield,
       path: '/service-recovery',
       color: '#ef4444',
@@ -387,8 +387,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'guest'
     },
     {
-      title: '🧖 Spa & Wellness',
-      description: 'Spa randevuları ve treatment yönetimi',
+      title: t('dashboard.spaWellness'),
+      description: t('dashboard.spaWellnessDesc'),
       icon: Sparkles,
       path: '/spa-wellness',
       color: '#8b5cf6',
