@@ -1526,7 +1526,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                   size="sm" 
                   variant="outline"
                   onClick={() => {
-                    setOpenDialog('newbooking');
+                    setOpenDialog('booking');
                     toast.info('Opening new booking form...');
                   }}
                 >
@@ -1537,7 +1537,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                   size="sm" 
                   variant="outline"
                   onClick={() => {
-                    setOpenDialog('newguest');
+                    setOpenDialog('guest');
                   }}
                 >
                   <UserPlus className="w-4 h-4 mr-2" />
@@ -1548,9 +1548,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                   variant="outline"
                   onClick={async () => {
                     try {
-                      const response = await axios.get('/reports/flash-report');
-                      toast.success('Flash report generated!');
-                      console.log('Flash report:', response.data);
+                      const response = await axios.get('/reports/daily-flash');
+                      if (response.data) {
+                        toast.success('Flash report generated!');
+                        console.log('Flash report:', response.data);
+                        setActiveTab('reports');
+                      } else {
+                        toast.info('No flash report data available');
+                      }
                     } catch (error) {
                       toast.error('Failed to generate report');
                     }
