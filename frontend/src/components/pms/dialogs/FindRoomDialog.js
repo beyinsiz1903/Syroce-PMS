@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 
 
-const FindRoomDialog = ({ openDialog, setOpenDialog, rooms, guests, bookings }) => {
+const FindRoomDialog = ({ openDialog, setOpenDialog, rooms, guests, bookings, loadingAvailableRooms, setLoadingAvailableRooms }) => {
   const { t } = useTranslation();
   const [availableRooms, setAvailableRooms] = useState([]);
   const [newBooking, setNewBooking] = useState({ guest_id: '', room_id: '', check_in: '', check_out: '', adults: 1, children: 0 });

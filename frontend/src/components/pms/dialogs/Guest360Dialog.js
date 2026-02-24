@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 
 
-const Guest360Dialog = ({ openDialog, setOpenDialog, selectedGuest, bookings, rooms, guests }) => {
+const Guest360Dialog = ({ openDialog, setOpenDialog, selectedGuest, bookings, rooms, guests, loadGuest360, loadingGuest360, setLoadingGuest360 }) => {
   const { t } = useTranslation();
 
   return (

@@ -2568,6 +2568,9 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               rooms={rooms}
               loadData={loadData}
               tenant={tenant}
+              handleBulkCreateRange={handleBulkCreateRange}
+              handleBulkCreateTemplate={handleBulkCreateTemplate}
+              handleBulkImportCsv={handleBulkImportCsv}
         />
 
 
@@ -2612,6 +2615,13 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               guests={guests}
               loadData={loadData}
               tenant={tenant}
+              handleChildAgeChange={handleChildAgeChange}
+              handleChildrenChange={handleChildrenChange}
+              handleCompanySelect={handleCompanySelect}
+              handleContractedRateSelect={handleContractedRateSelect}
+              handleCreateBooking={handleCreateBooking}
+              newBooking={newBooking}
+              setNewBooking={setNewBooking}
         />
 
         {/* Quick Company Create Dialog */}
@@ -3054,6 +3064,9 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               bookings={bookings}
               rooms={rooms}
               guests={guests}
+              loadGuest360={loadGuest360}
+              loadingGuest360={loadingGuest360}
+              setLoadingGuest360={setLoadingGuest360}
         />
 
         {/* Booking Detail Dialog - Double-Click to Open */}
@@ -3064,6 +3077,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               selectedBooking={selectedBooking}
               rooms={rooms}
               guests={guests}
+              loadBookingFolios={loadBookingFolios}
         />
 
         {/* Floating Action Button - Quick Actions */}
@@ -3415,6 +3429,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               rooms={rooms}
               guests={guests}
               bookings={bookings}
+              loadingAvailableRooms={loadingAvailableRooms}
+              setLoadingAvailableRooms={setLoadingAvailableRooms}
         />
 
         </Dialog>

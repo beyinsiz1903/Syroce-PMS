@@ -18,10 +18,9 @@ import {
 } from 'lucide-react';
 
 
-const BookingDialog = ({ openDialog, setOpenDialog, rooms, guests, loadData, tenant }) => {
+const BookingDialog = ({ openDialog, setOpenDialog, rooms, guests, loadData, tenant, handleChildAgeChange, handleChildrenChange, handleCompanySelect, handleContractedRateSelect, handleCreateBooking, newBooking, setNewBooking }) => {
   const { t } = useTranslation();
   const [companies, setCompanies] = useState([]);
-  const [newBooking, setNewBooking] = useState({ guest_id: '', room_id: '', check_in: '', check_out: '', adults: 1, children: 0, special_requests: '', rate_plan: 'Standard', channel: 'direct', source_channel: 'direct', company_id: '' });
 
   return (
     <>
