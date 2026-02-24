@@ -88,13 +88,30 @@ const FrontdeskTab = ({
                         <>
                           {aiPrediction.prediction.tomorrow_prediction != null && (
                             <p className="text-xs text-gray-700">
-                              Tomorrow: <span className="font-semibold">{aiPrediction.prediction.tomorrow_prediction}%</span>
+                              Tomorrow: <span className="font-semibold">
+                                {typeof aiPrediction.prediction.tomorrow_prediction === 'object'
+                                  ? `${aiPrediction.prediction.tomorrow_prediction.predicted_occupancy_percentage ?? aiPrediction.prediction.tomorrow_prediction.occupancy_percentage ?? '?'}%`
+                                  : `${aiPrediction.prediction.tomorrow_prediction}%`}
+                              </span>
+                              {typeof aiPrediction.prediction.tomorrow_prediction === 'object' && aiPrediction.prediction.tomorrow_prediction.confidence_level && (
+                                <span className="text-gray-400 ml-1">({aiPrediction.prediction.tomorrow_prediction.confidence_level})</span>
+                              )}
                             </p>
                           )}
                           {aiPrediction.prediction.next_week_prediction != null && (
                             <p className="text-xs text-gray-700">
-                              Next 7 days: <span className="font-semibold">{aiPrediction.prediction.next_week_prediction}%</span>
+                              Next 7 days: <span className="font-semibold">
+                                {typeof aiPrediction.prediction.next_week_prediction === 'object'
+                                  ? `${aiPrediction.prediction.next_week_prediction.predicted_average_occupancy_percentage ?? aiPrediction.prediction.next_week_prediction.occupancy_percentage ?? '?'}%`
+                                  : `${aiPrediction.prediction.next_week_prediction}%`}
+                              </span>
+                              {typeof aiPrediction.prediction.next_week_prediction === 'object' && aiPrediction.prediction.next_week_prediction.confidence_level && (
+                                <span className="text-gray-400 ml-1">({aiPrediction.prediction.next_week_prediction.confidence_level})</span>
+                              )}
                             </p>
+                          )}
+                          {typeof aiPrediction.prediction.patterns === 'string' && (
+                            <p className="text-xs text-gray-600 mt-1">{aiPrediction.prediction.patterns}</p>
                           )}
                           {Array.isArray(aiPrediction.prediction.patterns) && aiPrediction.prediction.patterns.length > 0 && (
                             <ul className="list-disc list-inside text-xs text-gray-700">
