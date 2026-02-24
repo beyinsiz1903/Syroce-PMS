@@ -149,7 +149,11 @@ client = AsyncIOMotorClient(
 )
 db = client[db_name]
 
-JWT_SECRET = os.environ.get('JWT_SECRET', 'hotel-pms-super-secret-key-change-in-production-2025')
+JWT_SECRET = os.environ.get('JWT_SECRET')
+if not JWT_SECRET:
+    import secrets as _jwt_secrets
+    JWT_SECRET = _jwt_secrets.token_urlsafe(64)
+    print("⚠️ JWT_SECRET not set in .env! Using random secret (tokens will invalidate on restart)")
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_HOURS = 168  # 7 days (24 * 7)
 
