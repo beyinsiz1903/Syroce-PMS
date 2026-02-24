@@ -7,8 +7,8 @@ from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator, co
 from typing import List, Optional, Dict, Any, Literal
 from datetime import datetime, timezone, timedelta, date
 import uuid
+from fastapi import HTTPException
 
-# Import enums from models.enums
 from models.enums import (
     UserRole, RoomStatus, BookingStatus, PaymentStatus, PaymentMethod,
     ChargeType, InvoiceStatus, LoyaltyTier, ChannelType, ChannelStatus,
