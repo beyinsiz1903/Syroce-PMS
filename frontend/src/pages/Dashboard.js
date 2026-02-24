@@ -596,12 +596,12 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
   // Kategorilere göre modülleri grupla
   const categorizedModules = useMemo(() => {
     const categories = {
-      core: { title: '🏨 Core Operations', color: 'blue', modules: [] },
-      revenue: { title: '💰 Revenue & Sales', color: 'green', modules: [] },
-      guest: { title: '👤 Guest Experience', color: 'purple', modules: [] },
-      ai: { title: '🤖 AI & Game-Changers', color: 'pink', modules: [] },
-      financial: { title: '💵 Financial', color: 'emerald', modules: [] },
-      management: { title: '📊 Management & Reports', color: 'indigo', modules: [] }
+      core: { title: t('dashboard.coreOps'), color: 'blue', modules: [] },
+      revenue: { title: t('dashboard.revenueSales'), color: 'green', modules: [] },
+      guest: { title: t('dashboard.guestExperience'), color: 'purple', modules: [] },
+      ai: { title: t('dashboard.aiGameChangers'), color: 'pink', modules: [] },
+      financial: { title: t('dashboard.financial'), color: 'emerald', modules: [] },
+      management: { title: t('dashboard.managementReports'), color: 'indigo', modules: [] }
     };
 
     filteredModules.forEach(module => {
@@ -764,8 +764,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                 {/* Occupancy Trend */}
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-lg">Occupancy Trend (30 Days)</CardTitle>
-                    <CardDescription>Daily occupancy percentage</CardDescription>
+                    <CardTitle className="text-lg"{t("dashboard.occupancyTrend")}/CardTitle>
+                    <CardDescription{t("dashboard.dailyOccupancy")}/CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={250}>
@@ -797,8 +797,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                 {/* Revenue Trend */}
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-lg">Revenue Trend (30 Days)</CardTitle>
-                    <CardDescription>Daily revenue breakdown</CardDescription>
+                    <CardTitle className="text-lg"{t("dashboard.revenueTrend")}/CardTitle>
+                    <CardDescription{t("dashboard.dailyRevenue")}/CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={250}>
@@ -830,7 +830,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-lg">Booking Trends</CardTitle>
-                    <CardDescription>Daily bookings & ADR performance</CardDescription>
+                    <CardDescription{t("dashboard.dailyBookings")}/CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={250}>
@@ -872,7 +872,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-lg">RevPAR Performance</CardTitle>
-                    <CardDescription>Revenue per available room</CardDescription>
+                    <CardDescription{t('dashboard.revPARDesc')}/CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={250}>
@@ -906,7 +906,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">30-Day Occupancy Heatmap</CardTitle>
-                  <CardDescription>Visual representation of daily occupancy levels</CardDescription>
+                  <CardDescription{t('dashboard.heatmapDesc')}/CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-10 gap-1">
