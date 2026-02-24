@@ -320,8 +320,8 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     );
   }
 
-  // Role guard - sadece super_admin erişsin
-  if (user.role !== 'super_admin') {
+  // Role guard - admin ve super_admin erişebilir
+  if (user.role !== 'super_admin' && user.role !== 'admin') {
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
         <div className="p-6 text-sm text-slate-600">Bu modüle erişim yetkiniz yok.</div>
