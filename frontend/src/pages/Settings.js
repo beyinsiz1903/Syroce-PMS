@@ -246,7 +246,7 @@ const Settings = ({ user, tenant, onLogout }) => {
               <SettingsIcon className="w-6 h-6 text-gray-600" />
               Ayarlar
             </h1>
-            <p className="text-sm text-gray-500 mt-1">Ekip yönetimi, plan ve otel bilgileri</p>
+            <p className="text-sm text-gray-500 mt-1">{t('settings.subtitle')}</p>
           </div>
           <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${currentPlan.borderColor} ${currentPlan.lightBg}`}>
             <PlanIcon className="w-4 h-4" />
@@ -291,7 +291,7 @@ const Settings = ({ user, tenant, onLogout }) => {
             )}
 
             <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Ekip Üyeleri</h2>
+              <h2 className="text-lg font-semibold">{t('settings.teamMembers')}</h2>
               <Button size="sm" onClick={() => { setNewMember({ email: '', name: '', phone: '', role: teamMeta.allowed_roles[0] || 'admin', password: '' }); setShowAddModal(true); }} disabled={!teamMeta.can_add}>
                 <Plus className="w-4 h-4 mr-1" /> Üye Ekle {!teamMeta.can_add && <Lock className="w-3 h-3 ml-1" />}
               </Button>
@@ -456,7 +456,7 @@ const Settings = ({ user, tenant, onLogout }) => {
 
             {/* Current features */}
             <Card>
-              <CardHeader><CardTitle className="text-sm">Mevcut Plan Özellikleri</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-sm">{t('settings.planFeatures')}</CardTitle></CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                   {currentPlan.features.map((f, i) => (<div key={i} className="flex items-center gap-2 text-sm text-gray-700"><CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />{f}</div>))}
@@ -550,7 +550,7 @@ const Settings = ({ user, tenant, onLogout }) => {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Otel Bilgileri</CardTitle>
+                    <CardTitle>{t('settings.hotelInfo')}</CardTitle>
                     <CardDescription>İsim, adres ve iletişim bilgileri</CardDescription>
                   </div>
                   {!editMode ? (
@@ -607,7 +607,7 @@ const Settings = ({ user, tenant, onLogout }) => {
             </Card>
 
             <Card>
-              <CardHeader><CardTitle className="text-sm">Abonelik Bilgileri</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-sm">{t('settings.subscription')}</CardTitle></CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-gray-500">Plan</span><span className="font-semibold">{currentPlan.label}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Durum</span><span className="font-semibold text-green-600">{subscription?.status === 'active' ? 'Aktif' : subscription?.status || '—'}</span></div>
