@@ -7,7 +7,7 @@ import asyncio
 import aiohttp
 import json
 
-BACKEND_URL = "https://auth-endpoint-suite.preview.emergentagent.com/api"
+BACKEND_URL = "https://improvement-guide-1.preview.emergentagent.com/api"
 TEST_EMAIL = "admin@hotel.com"
 TEST_PASSWORD = "admin123"
 

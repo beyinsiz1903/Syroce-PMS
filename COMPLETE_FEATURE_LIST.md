@@ -218,7 +218,7 @@
 ## 📋 QUICK START GUIDE
 
 **Login:**
-- URL: https://auth-endpoint-suite.preview.emergentagent.com
+- URL: https://improvement-guide-1.preview.emergentagent.com
 - Demo: demo@hotel.com / demo123
 
 **New User Registration:**

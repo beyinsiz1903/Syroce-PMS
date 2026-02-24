@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 
 # Configuration
-BACKEND_URL = "https://auth-endpoint-suite.preview.emergentagent.com/api"
+BACKEND_URL = "https://improvement-guide-1.preview.emergentagent.com/api"
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 
@@ -248,7 +248,7 @@ class RoomsIsActiveTester:
         """Run comprehensive rooms is_active filtering backend testing"""
         print("🚀 ROOMS IS_ACTIVE FILTERING BACKEND TEST")
         print("Quick sanity test that GET /api/pms/rooms still returns rooms after we added is_active filtering")
-        print("Base URL: https://auth-endpoint-suite.preview.emergentagent.com/api")
+        print("Base URL: https://improvement-guide-1.preview.emergentagent.com/api")
         print("Login: demo@hotel.com / demo123")
         print("=" * 80)
         
