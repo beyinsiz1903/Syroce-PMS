@@ -103,7 +103,7 @@ def test_authentication() -> Optional[str]:
     login_resp = response["data"]
     has_token = reporter.test(
         "Login response has token",
-        "token" in login_resp,
+        "access_token" in login_resp,
         f"Keys: {list(login_resp.keys())}"
     )
     
@@ -123,7 +123,7 @@ def test_authentication() -> Optional[str]:
         reporter.summary()
         return None
         
-    token = login_resp["token"]
+    token = login_resp["access_token"]
     
     # Test /auth/me endpoint
     auth_headers = {"Authorization": f"Bearer {token}"}
