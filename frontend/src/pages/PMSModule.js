@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, Suspense, lazy } from 'react';
+import { useState, useEffect, useMemo, useCallback, Suspense, lazy, memo } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
