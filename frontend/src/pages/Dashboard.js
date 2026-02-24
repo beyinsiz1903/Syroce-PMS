@@ -308,8 +308,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'core'
     },
     {
-      title: '✨ New Features',
-      description: 'All new features showcase',
+      title: t('dashboard.newFeatures'),
+      description: t('dashboard.newFeaturesDesc'),
       icon: Award,
       path: '/features',
       color: '#a855f7',
