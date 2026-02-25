@@ -398,6 +398,7 @@ function App() {
               <Routes>
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                <Route path="/gizlilik" element={<PrivacyPolicy />} />
                 <Route path="/guest-portal/*" element={<GuestPortal user={user} onLogout={handleLogout} />} />
               </Routes>
             </BrowserRouter>
