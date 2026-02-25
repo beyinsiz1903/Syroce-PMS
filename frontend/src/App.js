@@ -428,6 +428,7 @@ function App() {
           {/* Public Landing Page */}
           <Route path="/landing" element={<LandingPage />} />
           <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+          <Route path="/gizlilik" element={<PrivacyPolicy />} />
           <Route path="/login" element={<Navigate to="/auth" replace />} />
           
           {/* Simple Admin Panel - No auth required for easy access */}
