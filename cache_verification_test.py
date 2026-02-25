@@ -9,7 +9,7 @@ import time
 import redis
 from statistics import mean
 
-BACKEND_URL = "https://improvement-guide-1.preview.emergentagent.com/api"
+BACKEND_URL = "https://hotel-pms-demo.preview.emergentagent.com/api"
 REDIS_URL = "redis://localhost:6379/0"
 
 async def test_cache_performance():

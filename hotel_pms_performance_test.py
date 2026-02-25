@@ -40,7 +40,7 @@ from typing import Dict, List, Any, Optional
 import concurrent.futures
 
 # Configuration
-BACKEND_URL = "https://improvement-guide-1.preview.emergentagent.com/api"
+BACKEND_URL = "https://hotel-pms-demo.preview.emergentagent.com/api"
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 

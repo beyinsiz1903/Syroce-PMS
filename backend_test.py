@@ -23,7 +23,7 @@ import json
 from datetime import datetime
 
 # Configuration
-BASE_URL = "https://improvement-guide-1.preview.emergentagent.com"
+BASE_URL = "https://hotel-pms-demo.preview.emergentagent.com"
 LOGIN_EMAIL = "demo@hotel.com"
 LOGIN_PASSWORD = "demo123"
 
