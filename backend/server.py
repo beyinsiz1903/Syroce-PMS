@@ -272,6 +272,18 @@ async def deployment_health_check():
     return {"status": "healthy"}
 
 
+@app.get("/api/download/screenshots", include_in_schema=False)
+async def download_screenshots_zip():
+    zip_path = Path("/app/backend/Syroce_PMS_AppStore_Screenshots.zip")
+    if not zip_path.exists():
+        raise HTTPException(status_code=404, detail="Screenshots ZIP not found")
+    return FileResponse(
+        path=str(zip_path),
+        filename="Syroce_PMS_AppStore_Screenshots.zip",
+        media_type="application/zip"
+    )
+
+
 # Serve uploaded files (room images, etc.)
 UPLOAD_DIR = Path(os.environ.get('UPLOAD_DIR', '/app/backend/uploads'))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
