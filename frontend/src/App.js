@@ -63,6 +63,7 @@ const RevenueManagementMobile = lazy(() => import("@/pages/RevenueManagementMobi
 const GMEnhancedDashboard = lazy(() => import("@/pages/GMEnhancedDashboard"));
 const SalesCRMMobile = lazy(() => import("@/pages/SalesCRMMobile"));
 import LandingPage from "@/pages/LandingPage";
+import PrivacyPolicy from "@/pages/PrivacyPolicy";
 const SimpleAdminPanel = lazy(() => import("@/pages/SimpleAdminPanel"));
 const RateManagementMobile = lazy(() => import("@/pages/RateManagementMobile"));
 const RevenueMobile = lazy(() => import("@/pages/RevenueMobile"));
