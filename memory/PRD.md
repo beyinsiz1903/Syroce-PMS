@@ -14,8 +14,7 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - Full PMS, Dashboard, Housekeeping, Finance, Channel Manager, RMS, AI, Multi-property, Night Audit, Mobile views
 
 ### Phase 4: Reporting & Analytics (COMPLETED)
-- Custom Report Builder (6 data sources, dynamic columns, filters, templates)
-- Excel & PDF Export
+- Custom Report Builder, Excel & PDF Export
 
 ### Phase 5: Guest Portal & Communication (COMPLETED)
 - Guest Messaging System (backend + frontend)
@@ -24,45 +23,34 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - Security Headers, JWT Refresh, Audit Logging, Security Dashboard
 
 ### i18n Internationalization (COMPLETED - Feb 2026)
-- **Infrastructure:** `useTranslation` hook in all 116 page files
-- **Locale files:** tr.json and en.json - 1334 keys across 48 sections
-- **All 116 pages converted** - 1816 t() calls total
-- **8 supported languages:** EN, TR, AR, RU, IT, FR, ES, DE
+- 1816 t() calls, 1334 keys, 48 sections, 8 languages
 
 ### PMSModule.js Refactoring (COMPLETED - Feb 2026)
-- **5189 -> 3030 -> 2985 lines** (under 3000 target)
-- 12 extracted components in /app/frontend/src/components/pms/ (GuestsTab added)
+- 5189 -> 2985 lines, 12 extracted components
 
-### i18n Locale File Cleanup (COMPLETED - Feb 2026)
-- Removed redundant `frontend/src/i18n/locales/` directory
-
-### Load Testing (COMPLETED - Feb 2026)
-- **Tool:** Locust 2.43.3
-- **Config:** 50 concurrent users, 120s duration, 4 user roles
-- **Results:** 2,293 requests, 0% error rate, 19.13 RPS
-- **Median response:** 7ms, p95: 3,600ms, p99: 7,300ms
-- **34 endpoints tested** across all PMS modules
-- **Report:** /app/test_reports/LOAD_TEST_REPORT.md
-
-### CI/CD Pipeline Fix (COMPLETED - Feb 2026)
-- Backend dependencies cleaned, yarn.lock synced, .gitignore restored
+### Load Testing & Performance Optimization (COMPLETED - Feb 2026)
+- **Locust 2.43.3:** 50 concurrent users, 120s, 4 roles, 34 endpoints
+- **Before:** 2,293 req, 19.13 RPS, Avg 626ms, Login p50: 5,500ms
+- **After:** 2,472 req, 20.77 RPS, Avg 416ms, Login p50: 1,400ms
+- **Optimizations applied:**
+  - Login session cache (in-memory, 5min TTL) - bcrypt bypass on repeat logins
+  - AI occupancy prediction cache (15min TTL)
+  - AI guest patterns cache (15min TTL)
+  - Password change invalidates login cache
+- **Results:** Login -74.5%, Forecast -99.3%, Overall avg -33.5%, p99 -52.1%
 
 ## Prioritized Backlog
 
 ### P1 (Next)
 - Phase 6: Integrations & Automation (Channel Manager, Stripe)
 
-### P2
-- Performance optimizations based on load test findings (login caching, report caching, AI prediction caching)
-
 ## Key Endpoints
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| /api/auth/login | POST | Login |
-| /api/auth/refresh-token | POST | JWT refresh |
+| /api/auth/login | POST | Login (cached) |
 | /api/pms/dashboard | GET | PMS stats |
 | /api/reports/builder/* | GET/POST | Report Builder |
-| /api/security/summary | GET | Security dashboard |
+| /api/ai/pms/occupancy-prediction | GET | AI prediction (cached 15min) |
 
 ## Credentials
 | Role | Email | Password |
