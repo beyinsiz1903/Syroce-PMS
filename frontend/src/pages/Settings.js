@@ -61,6 +61,27 @@ const Settings = ({ user, tenant, onLogout }) => {
     label: t(`settings.roles.${role}`) || role,
     color: ROLE_COLORS[role] || 'bg-gray-100 text-gray-800'
   });
+
+  const PLANS = useMemo(() => ({
+    basic: {
+      ...PLAN_CONFIG.basic,
+      label: t('settings.basic'),
+      features: ['PMS Core', t('calendar.title'), 'Dashboard', t('guest.title'), t('housekeeping.title'), t('reports.title'), t('mobile.title'), t('invoice.title')],
+      description: t('settings.basic') + ' - ' + (PLAN_CONFIG.basic.maxRooms ? `1-${PLAN_CONFIG.basic.maxRooms} ${t('common.rooms')}` : ''),
+    },
+    professional: {
+      ...PLAN_CONFIG.professional,
+      label: t('settings.professional'),
+      features: [t('settings.basic') + ' +', 'Channel Manager', t('folio.title'), t('nightAudit.title'), t('finance.title'), t('dashboard.costManagement'), t('reports.title'), 'Rate Management', 'Booking Engine'],
+      description: t('settings.professional') + ' - ' + (PLAN_CONFIG.professional.maxRooms ? `15-${PLAN_CONFIG.professional.maxRooms} ${t('common.rooms')}` : ''),
+    },
+    enterprise: {
+      ...PLAN_CONFIG.enterprise,
+      label: t('settings.enterprise'),
+      features: [t('settings.professional') + ' +', 'Revenue Management (RMS)', t('aiModule.title'), t('dashboard.multiProperty'), t('dashboard.groupSales'), t('dashboard.salesCRM'), t('loyalty.title'), 'GM Dashboard', 'API', 'White Label', 'Audit Trail'],
+      description: t('settings.enterprise') + ' - 80+ ' + t('common.rooms'),
+    },
+  }), [t]);
   const [activeTab, setActiveTab] = useState('team');
 
   // Team
