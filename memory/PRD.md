@@ -27,14 +27,17 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - **Infrastructure:** `useTranslation` hook in all 116 page files
 - **Locale files:** tr.json (1473 lines) and en.json (1472 lines) - 1334 keys across 48 sections
 - **All 116 pages converted** - 1816 t() calls total, 97 pages with 5+ t() calls
-- **New translation sections added:** notAvailable, adminPanel, guestJourney, aiChatbot, staffMgmt, fnb, advancedLoyalty, posDashboard, mobileDashboard, securityDashboard, featuresShowcase, aiEnhancedPms, messagingCenter, costMgmt, hkDashboard, gds
-- **Bug fixed:** HousekeepingDetailedReports.js null check crash
 - **Language switching:** Verified working on Auth, Dashboard, Settings pages (EN/TR)
 - **8 supported languages:** EN, TR, AR, RU, IT, FR, ES, DE
 
 ### PMSModule.js Refactoring (COMPLETED - Feb 2026)
-- **5189 -> 3030 lines** (-41.6% reduction)
-- 11 extracted components in /app/frontend/src/components/pms/
+- **5189 -> 3030 -> 2985 lines** (further -1.5% reduction)
+- 12 extracted components in /app/frontend/src/components/pms/ (added GuestsTab)
+- Now under 3000 line target
+
+### i18n Locale File Cleanup (COMPLETED - Feb 2026)
+- Removed redundant `frontend/src/i18n/locales/` directory
+- `frontend/public/locales/` and `frontend/src/locales/` are the sources of truth
 
 ### CI/CD Pipeline Fix (COMPLETED - Feb 2026)
 - Backend dependencies cleaned, yarn.lock synced, .gitignore restored
@@ -46,9 +49,6 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 
 ### P2
 - Load Testing (k6 / Locust)
-
-### P3
-- PMSModule.js further refactoring (currently at 3030 lines, goal <3000)
 
 ## Key Endpoints
 | Endpoint | Method | Description |
@@ -62,7 +62,7 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 ## Test Reports
 - iteration_4: i18n + Settings bug fix (100% pass)
 - iteration_7: PMSModule.js refactoring (100% pass)
-- iteration_8: i18n full conversion testing (85% pass - remaining are false positives, core translations verified working)
+- iteration_8: i18n full conversion testing (85% pass - remaining are false positives)
 
 ## Credentials
 | Role | Email | Password |
