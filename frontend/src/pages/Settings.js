@@ -317,7 +317,7 @@ const Settings = ({ user, tenant, onLogout }) => {
                 ) : (
                   <div className="divide-y">
                     {team.map((member) => {
-                      const roleInfo = ROLE_LABELS[member.role] || { label: member.role, color: 'bg-gray-100 text-gray-800' };
+                      const roleInfo = getRoleLabel(member.role);
                       const isMe = member.id === user?.id;
                       return (
                         <div key={member.id} className="flex items-center justify-between px-4 py-3 hover:bg-gray-50/50">
@@ -336,8 +336,8 @@ const Settings = ({ user, tenant, onLogout }) => {
                           <div className="flex items-center gap-2">
                             <select value={member.role} onChange={(e) => handleUpdateRole(member.id, e.target.value)} disabled={isMe || member.role === 'super_admin'}
                               className={`text-xs px-2 py-1 rounded-lg border ${roleInfo.color} font-medium cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed`}>
-                              {teamMeta.allowed_roles.map((r) => (<option key={r} value={r}>{ROLE_LABELS[r]?.label || r}</option>))}
-                              {!teamMeta.allowed_roles.includes(member.role) && member.role !== 'super_admin' && (<option value={member.role}>{ROLE_LABELS[member.role]?.label || member.role}</option>)}
+                              {teamMeta.allowed_roles.map((r) => (<option key={r} value={r}>{getRoleLabel(r).label}</option>))}
+                              {!teamMeta.allowed_roles.includes(member.role) && member.role !== 'super_admin' && (<option value={member.role}>{getRoleLabel(member.role).label}</option>)}
                               {member.role === 'super_admin' && (<option value="super_admin">Super Admin</option>)}
                             </select>
                             {!isMe && member.role !== 'super_admin' && (
@@ -359,7 +359,7 @@ const Settings = ({ user, tenant, onLogout }) => {
               <CardContent>
                 <div className="flex flex-wrap gap-2">
                   {teamMeta.allowed_roles.map((r) => {
-                    const info = ROLE_LABELS[r] || { label: r, color: 'bg-gray-100 text-gray-800' };
+                    const info = getRoleLabel(r);
                     return <span key={r} className={`text-xs px-2.5 py-1 rounded-full ${info.color} font-medium`}>{info.label}</span>;
                   })}
                 </div>
@@ -636,7 +636,7 @@ const Settings = ({ user, tenant, onLogout }) => {
             <div>
               <Label>Rol</Label>
               <select value={newMember.role} onChange={(e) => setNewMember({ ...newMember, role: e.target.value })} className="w-full border rounded-md px-3 py-2 text-sm">
-                {teamMeta.allowed_roles.map((r) => (<option key={r} value={r}>{ROLE_LABELS[r]?.label || r}</option>))}
+                {teamMeta.allowed_roles.map((r) => (<option key={r} value={r}>{getRoleLabel(r).label}</option>))}
               </select>
               {teamMeta.tier === 'basic' && <p className="text-[11px] text-amber-600 mt-1">Basic planda sadece Yönetici rolü kullanılabilir</p>}
             </div>
