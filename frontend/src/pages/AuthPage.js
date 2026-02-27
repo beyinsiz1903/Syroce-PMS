@@ -132,10 +132,10 @@ const AuthPage = ({ onLogin }) => {
       };
       
       const response = await axios.post('/auth/request-verification', requestData);
-      toast.success('Doğrulama kodu e-postanıza gönderildi!');
+      toast.success(t('auth.codeSentToEmail'));
       setRegistrationStep('verification');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Hata oluştu');
+      toast.error(error.response?.data?.detail || t('auth.errorOccurred'));
     } finally {
       setLoading(false);
     }
@@ -150,14 +150,14 @@ const AuthPage = ({ onLogin }) => {
         code: verificationCode
       });
       
-      toast.success('Hesabınız başarıyla oluşturuldu!');
+      toast.success(t('auth.accountCreated'));
       onLogin(response.data.access_token, response.data.user, response.data.tenant);
       
       setTimeout(() => {
         window.location.href = '/';
       }, 500);
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Doğrulama başarısız');
+      toast.error(error.response?.data?.detail || t('auth.verificationFailed'));
     } finally {
       setLoading(false);
     }
@@ -171,10 +171,10 @@ const AuthPage = ({ onLogin }) => {
       await axios.post('/auth/forgot-password', {
         email: hotelLoginData.email
       });
-      toast.success('Şifre sıfırlama kodu e-postanıza gönderildi');
+      toast.success(t('auth.resetCodeSent'));
       setForgotPasswordStep('code');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Hata oluştu');
+      toast.error(error.response?.data?.detail || t('auth.errorOccurred'));
     } finally {
       setLoading(false);
     }
@@ -189,12 +189,12 @@ const AuthPage = ({ onLogin }) => {
         code: resetCode,
         new_password: hotelLoginData.password
       });
-      toast.success('Şifreniz başarıyla güncellendi!');
+      toast.success(t('auth.passwordUpdated'));
       setShowForgotPassword(false);
       setForgotPasswordStep('email');
       setResetCode('');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Sıfırlama başarısız');
+      toast.error(error.response?.data?.detail || t('auth.resetFailed'));
     } finally {
       setLoading(false);
     }
