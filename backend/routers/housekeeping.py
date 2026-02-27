@@ -15,6 +15,11 @@ from core.security import get_current_user
 from models.schemas import User, HousekeepingTask
 
 try:
+    from room_block_models import RoomBlock, RoomBlockCreate, RoomBlockUpdate, BlockStatus
+except ImportError:
+    RoomBlock = RoomBlockCreate = RoomBlockUpdate = BlockStatus = None
+
+try:
     from cache_manager import cached
 except ImportError:
     def cached(ttl=300, key_prefix=""):
