@@ -54,17 +54,7 @@ const AuthPage = ({ onLogin }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      console.log('🔐 Attempting login with:', {
-        email: hotelLoginData.email,
-        passwordLength: hotelLoginData.password?.length
-      });
-      console.log('📡 Axios baseURL:', axios.defaults.baseURL);
-      console.log('📡 Full URL will be:', axios.defaults.baseURL + '/auth/login');
-      
       const response = await axios.post('/auth/login', hotelLoginData);
-      console.log('✅ Login successful - FULL RESPONSE:', response.data);
-      console.log('👤 User object from backend:', response.data.user);
-      console.log('🎭 User role from backend:', response.data.user?.role);
       
       toast.success('Login successful! Redirecting...');
       
