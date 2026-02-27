@@ -365,7 +365,7 @@ const MobileMaintenance = ({ user }) => {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <RefreshCw className="w-8 h-8 animate-spin text-purple-600 mx-auto mb-2" />
-          <p className="text-gray-600">Yükleniyor...</p>
+          <p className="text-gray-600">{t("common.loading")}</p>
         </div>
       </div>
     );
@@ -1534,7 +1534,7 @@ const MobileMaintenance = ({ user }) => {
                   <SelectValue placeholder={t("common.all")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Tümü</SelectItem>
+                  <SelectItem value="">{t("common.all")}</SelectItem>
                   <SelectItem value="open">Açık</SelectItem>
                   <SelectItem value="in_progress">Devam Ediyor</SelectItem>
                   <SelectItem value="on_hold">Beklemede</SelectItem>
@@ -1551,7 +1551,7 @@ const MobileMaintenance = ({ user }) => {
                   <SelectValue placeholder={t("common.all")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Tümü</SelectItem>
+                  <SelectItem value="">{t("common.all")}</SelectItem>
                   <SelectItem value="emergency">Acil</SelectItem>
                   <SelectItem value="urgent">Çok Acil</SelectItem>
                   <SelectItem value="high">Yüksek</SelectItem>

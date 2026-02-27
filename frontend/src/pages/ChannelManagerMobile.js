@@ -131,7 +131,7 @@ const ChannelManagerMobile = ({ user }) => {
                   <div className="font-bold text-blue-600">{perf.bookings}</div>
                 </div>
                 <div className="bg-green-50 p-2 rounded">
-                  <div className="text-gray-500 text-xs">Gelir</div>
+                  <div className="text-gray-500 text-xs">{t("finance.revenue")}</div>
                   <div className="font-bold text-green-600">₺{(perf.revenue / 1000).toFixed(0)}K</div>
                 </div>
                 <div className="bg-purple-50 p-2 rounded">

@@ -283,7 +283,7 @@ const MobileFinance = ({ user }) => {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <RefreshCw className="w-8 h-8 animate-spin text-indigo-600 mx-auto mb-2" />
-          <p className="text-gray-600">Yükleniyor...</p>
+          <p className="text-gray-600">{t("common.loading")}</p>
         </div>
       </div>
     );
@@ -706,7 +706,7 @@ const MobileFinance = ({ user }) => {
             onClick={() => setReportsModalOpen(true)}
           >
             <TrendingUp className="w-6 h-6 mb-1" />
-            <span className="text-xs">Raporlar</span>
+            <span className="text-xs">{t("nav.reports")}</span>
           </Button>
           
           <Button
@@ -1774,7 +1774,7 @@ const MobileFinance = ({ user }) => {
               {/* Summary */}
               <Card className="bg-gradient-to-r from-blue-50 to-indigo-50">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Özet</CardTitle>
+                  <CardTitle className="text-base">{t("common.summary")}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">

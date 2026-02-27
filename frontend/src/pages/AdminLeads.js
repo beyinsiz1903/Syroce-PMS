@@ -191,7 +191,7 @@ const AdminLeads = ({ user, tenant, onLogout }) => {
                     <SelectValue placeholder={t("common.all")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tümü</SelectItem>
+                    <SelectItem value="all">{t("common.all")}</SelectItem>
                     {STATUS_OPTIONS.map((s) => (
                       <SelectItem key={s} value={s}>
                         {statusLabel[s]}
@@ -319,7 +319,7 @@ const AdminLeads = ({ user, tenant, onLogout }) => {
                           </Button>
                           <div className="flex gap-1 mt-1">
                             <Button variant="outline" size="xs" asChild>
-                              <a href={`tel:${sanitizePhone(lead.phone)}`}>Ara</a>
+                              <a href={`tel:${sanitizePhone(lead.phone)}`}>{t("common.search")}</a>
                             </Button>
                             <Button
                               variant="outline"

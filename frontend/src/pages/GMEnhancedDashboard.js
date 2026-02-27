@@ -171,7 +171,7 @@ const GMEnhancedDashboard = ({ user }) => {
                 <div className="grid grid-cols-3 gap-2 mt-3 pb-3 border-b">
                   <div className="text-center">
                     <div className="text-2xl font-bold text-green-600">₺{(enhancedSnapshot.today.revenue / 1000).toFixed(0)}K</div>
-                    <div className="text-xs text-gray-500">Gelir</div>
+                    <div className="text-xs text-gray-500">{t("finance.revenue")}</div>
                   </div>
                   <div className="text-center">
                     <div className="text-xl font-semibold text-gray-600">₺{(enhancedSnapshot.yesterday.revenue / 1000).toFixed(0)}K</div>
@@ -231,7 +231,7 @@ const GMEnhancedDashboard = ({ user }) => {
               }`}>
                 <CardContent className="p-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs">Gelir</span>
+                    <span className="text-xs">{t("finance.revenue")}</span>
                     {getTrendIcon(enhancedSnapshot.trends.revenue_trend)}
                   </div>
                 </CardContent>

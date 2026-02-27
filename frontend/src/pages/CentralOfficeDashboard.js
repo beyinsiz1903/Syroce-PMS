@@ -140,11 +140,11 @@ export default function CentralOfficeDashboard({ user, tenant, onLogout }) {
                     <tr>
                       <th className="text-left p-3 text-sm">Otel</th>
                       <th className="text-right p-3 text-sm">Toplam Oda</th>
-                      <th className="text-right p-3 text-sm">Dolu</th>
+                      <th className="text-right p-3 text-sm">{t("housekeeping.occupied")}</th>
                       <th className="text-right p-3 text-sm">Bos</th>
                       <th className="text-right p-3 text-sm">Doluluk</th>
                       <th className="text-right p-3 text-sm">Check-in</th>
-                      <th className="text-right p-3 text-sm">Gelir</th>
+                      <th className="text-right p-3 text-sm">{t("finance.revenue")}</th>
                     </tr>
                   </thead>
                   <tbody>

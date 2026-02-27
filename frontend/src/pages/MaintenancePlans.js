@@ -113,7 +113,7 @@ const MaintenancePlans = ({ user, tenant, onLogout }) => {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="py-10 text-center text-gray-500 text-sm">Yükleniyor...</div>
+              <div className="py-10 text-center text-gray-500 text-sm">{t("common.loading")}</div>
             ) : items.length === 0 ? (
               <div className="py-10 text-center text-gray-500 text-sm">Tanımlı bakım planı bulunmuyor.</div>
             ) : (

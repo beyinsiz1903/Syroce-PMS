@@ -306,7 +306,7 @@ const Settings = ({ user, tenant, onLogout }) => {
             <Card>
               <CardContent className="p-0">
                 {teamLoading ? (
-                  <div className="p-8 text-center text-gray-400">Yükleniyor...</div>
+                  <div className="p-8 text-center text-gray-400">{t("common.loading")}</div>
                 ) : team.length === 0 ? (
                   <div className="p-8 text-center text-gray-400">Henüz ekip üyesi yok</div>
                 ) : (
@@ -483,7 +483,7 @@ const Settings = ({ user, tenant, onLogout }) => {
             </div>
 
             {billingLoading ? (
-              <div className="text-center py-12 text-gray-400">Yükleniyor...</div>
+              <div className="text-center py-12 text-gray-400">{t("common.loading")}</div>
             ) : billingHistory.length === 0 ? (
               <Card>
                 <CardContent className="p-12 text-center">
@@ -636,7 +636,7 @@ const Settings = ({ user, tenant, onLogout }) => {
               {teamMeta.tier === 'basic' && <p className="text-[11px] text-amber-600 mt-1">Basic planda sadece Yönetici rolü kullanılabilir</p>}
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setShowAddModal(false)}>İptal</Button>
+              <Button variant="outline" onClick={() => setShowAddModal(false)}>{t("common.cancel")}</Button>
               <Button onClick={handleAddMember} disabled={saving}>{saving ? 'Ekleniyor...' : 'Ekle'}</Button>
             </div>
           </div>
@@ -692,7 +692,7 @@ const Settings = ({ user, tenant, onLogout }) => {
                 </ul>
 
                 <div className="flex justify-end gap-2 pt-2">
-                  <Button variant="outline" onClick={() => setShowPlanModal(false)}>İptal</Button>
+                  <Button variant="outline" onClick={() => setShowPlanModal(false)}>{t("common.cancel")}</Button>
                   <Button
                     className={isDowngrade ? 'bg-orange-500 hover:bg-orange-600 text-white' : `bg-gradient-to-r ${plan.gradient} text-white hover:opacity-90`}
                     onClick={handleChangePlan} disabled={saving}>

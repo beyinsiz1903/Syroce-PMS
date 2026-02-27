@@ -330,11 +330,11 @@ const GroupSales = () => {
               <SelectValue placeholder="Tüm durumlar" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tümü</SelectItem>
+              <SelectItem value="all">{t("common.all")}</SelectItem>
               <SelectItem value="tentative">Opsiyonel</SelectItem>
               <SelectItem value="definite">Kesin</SelectItem>
               <SelectItem value="completed">Tamamlandı</SelectItem>
-              <SelectItem value="cancelled">İptal</SelectItem>
+              <SelectItem value="cancelled">{t("common.cancel")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -439,7 +439,7 @@ const GroupSales = () => {
 
             <Tabs defaultValue="overview" className="mt-4">
               <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="overview">Genel Bakış</TabsTrigger>
+                <TabsTrigger value="overview">{t("loyalty.overview")}</TabsTrigger>
                 <TabsTrigger value="bookings">Rezervasyonlar ({groupDetails.bookings_count})</TabsTrigger>
                 <TabsTrigger value="folio">Master Folio</TabsTrigger>
               </TabsList>

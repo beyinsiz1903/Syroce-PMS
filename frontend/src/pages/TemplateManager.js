@@ -203,7 +203,7 @@ const TemplateManager = ({ user, tenant, onLogout }) => {
 
               <div className="flex gap-2">
                 <Button onClick={handleSave} className="flex-1">Save Template</Button>
-                <Button variant="outline" onClick={() => { setShowDialog(false); resetForm(); }}>Cancel</Button>
+                <Button variant="outline" onClick={() => { setShowDialog(false); resetForm(); }}>{t("common.cancel")}</Button>
               </div>
             </div>
           </DialogContent>

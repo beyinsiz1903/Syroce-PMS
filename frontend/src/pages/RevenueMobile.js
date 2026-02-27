@@ -277,7 +277,7 @@ const RevenueMobile = ({ user }) => {
                         <Badge className="bg-blue-600">{segment.percentage}%</Badge>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Gelir</span>
+                        <span className="text-sm text-gray-600">{t("finance.revenue")}</span>
                         <span className="font-bold text-green-600">{formatCurrency(segment.revenue)}</span>
                       </div>
                       <div className="flex justify-between items-center mt-1">
@@ -525,7 +525,7 @@ const RevenueMobile = ({ user }) => {
                       </div>
                       <div className="grid grid-cols-3 gap-2 text-sm">
                         <div>
-                          <div className="text-gray-600 text-xs">İptal</div>
+                          <div className="text-gray-600 text-xs">{t("common.cancel")}</div>
                           <div className="font-bold">{channel.cancellations}</div>
                         </div>
                         <div>

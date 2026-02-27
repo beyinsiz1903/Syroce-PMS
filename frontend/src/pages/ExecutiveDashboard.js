@@ -378,7 +378,7 @@ const ExecutiveDashboard = ({ user }) => {
                           </div>
                         </div>
                         <div>
-                          <div className="text-gray-300 mb-1">İptal</div>
+                          <div className="text-gray-300 mb-1">{t("common.cancel")}</div>
                           <div className="text-2xl font-bold text-red-400">
                             {dailySummary.summary.cancellations}
                           </div>
@@ -390,7 +390,7 @@ const ExecutiveDashboard = ({ user }) => {
                           </div>
                         </div>
                         <div>
-                          <div className="text-gray-300 mb-1">Gelir</div>
+                          <div className="text-gray-300 mb-1">{t("finance.revenue")}</div>
                           <div className="text-2xl font-bold text-emerald-400">
                             ₺{(dailySummary.summary.revenue / 1000).toFixed(0)}K
                           </div>
@@ -554,7 +554,7 @@ const ExecutiveDashboard = ({ user }) => {
                           <div className="text-3xl font-bold text-green-400">
                             {kpiSnapshot.summary.occupied_rooms}
                           </div>
-                          <div className="text-xs text-gray-300 mt-1">Dolu</div>
+                          <div className="text-xs text-gray-300 mt-1">{t("housekeeping.occupied")}</div>
                         </div>
                         <div>
                           <div className="text-3xl font-bold text-orange-400">

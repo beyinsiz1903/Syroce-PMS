@@ -176,7 +176,7 @@ const GuestPortal = ({ user, onLogout }) => {
   const currentPath = location.pathname === '/' ? 'home' : location.pathname.slice(1);
 
   if (loading) {
-    return <div className="loading-screen">Loading...</div>;
+    return <div className="loading-screen">{t("common.loading")}</div>;
   }
 
   return (

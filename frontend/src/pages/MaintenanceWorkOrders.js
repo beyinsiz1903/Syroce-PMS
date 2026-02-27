@@ -225,7 +225,7 @@ const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
                   <SelectValue placeholder={t("common.status")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tümü</SelectItem>
+                  <SelectItem value="all">{t("common.all")}</SelectItem>
                   <SelectItem value="open">Open</SelectItem>
                   <SelectItem value="in_progress">In Progress</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
@@ -240,7 +240,7 @@ const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
                   <SelectValue placeholder={t("common.priority")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tümü</SelectItem>
+                  <SelectItem value="all">{t("common.all")}</SelectItem>
                   <SelectItem value="urgent">Urgent</SelectItem>
                   <SelectItem value="high">High</SelectItem>
                   <SelectItem value="normal">Normal</SelectItem>

@@ -2482,7 +2482,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                 </div>
 
                 <div className="flex justify-end">
-                  <Button variant="outline" onClick={() => setOpenDialog(null)}>Kapat</Button>
+                  <Button variant="outline" onClick={() => setOpenDialog(null)}>{t("common.close")}</Button>
                 </div>
               </div>
             ) : (
@@ -2643,7 +2643,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
                   <div className="flex justify-end gap-2 pt-2">
                     <Button type="button" variant="outline" onClick={() => setOpenDialog(null)}>Vazgeç</Button>
-                    <Button type="submit">Oluştur</Button>
+                    <Button type="submit">{t("common.create")}</Button>
                   </div>
                 </form>
               </TabsContent>
@@ -2716,7 +2716,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
                   <div className="flex justify-end gap-2 pt-2">
                     <Button type="button" variant="outline" onClick={() => setOpenDialog(null)}>Vazgeç</Button>
-                    <Button type="submit">Oluştur</Button>
+                    <Button type="submit">{t("common.create")}</Button>
                   </div>
                 </form>
               </TabsContent>
@@ -2746,7 +2746,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                   </div>
 
                   <div className="flex justify-end gap-2 pt-2">
-                    <Button type="button" variant="outline" onClick={() => setOpenDialog(null)}>Kapat</Button>
+                    <Button type="button" variant="outline" onClick={() => setOpenDialog(null)}>{t("common.close")}</Button>
                     <Button type="submit" disabled={!bulkCsvFile}>Import</Button>
                   </div>
                 </form>
@@ -4115,7 +4115,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                             onChange={(e) => setGuestTag(e.target.value)}
                             className="h-8 w-32"
                           />
-                          <Button size="sm" onClick={addGuestTag}>Add</Button>
+                          <Button size="sm" onClick={addGuestTag}>{t("common.add")}</Button>
                         </div>
                       </div>
                     </div>

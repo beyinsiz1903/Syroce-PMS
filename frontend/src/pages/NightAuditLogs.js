@@ -180,7 +180,7 @@ const NightAuditLogs = ({ user, tenant, onLogout }) => {
                     value={status}
                     onChange={(e) => setStatus(e.target.value)}
                   >
-                    <option value="all">Tümü</option>
+                    <option value="all">{t("common.all")}</option>
                     <option value="completed">Completed</option>
                     <option value="failed">Failed</option>
                     <option value="in_progress">In Progress</option>

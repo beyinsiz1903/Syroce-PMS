@@ -66,7 +66,7 @@ const MaintenancePriorityVisual = () => {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-600">Yükleniyor...</p>
+        <p className="text-gray-600">{t("common.loading")}</p>
       </div>
     );
   }

@@ -342,7 +342,7 @@ const MobileFrontDesk = ({ user }) => {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <RefreshCw className="w-8 h-8 animate-spin text-green-600 mx-auto mb-2" />
-          <p className="text-gray-600">Yükleniyor...</p>
+          <p className="text-gray-600">{t("common.loading")}</p>
         </div>
       </div>
     );
@@ -363,7 +363,7 @@ const MobileFrontDesk = ({ user }) => {
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div>
-              <h1 className="text-xl font-bold">Ön Büro</h1>
+              <h1 className="text-xl font-bold">{t("nav.frontDesk")}</h1>
               <p className="text-xs text-green-100">Front Desk Dashboard</p>
             </div>
           </div>
@@ -663,7 +663,7 @@ const MobileFrontDesk = ({ user }) => {
                 onClick={() => setReservationsModalOpen(true)}
               >
                 <Calendar className="w-6 h-6 mb-1" />
-                <span className="text-xs">Rezervasyonlar</span>
+                <span className="text-xs">{t("pms.bookings")}</span>
               </Button>
               <Button
                 className="h-20 flex flex-col items-center justify-center"
@@ -902,7 +902,7 @@ const MobileFrontDesk = ({ user }) => {
                     loadFilteredRooms(newFilters);
                   }}
                 >
-                  <option value="">Tümü</option>
+                  <option value="">{t("common.all")}</option>
                   <option value="single">Tek</option>
                   <option value="double">Çift</option>
                   <option value="twin">İkiz</option>
@@ -933,11 +933,11 @@ const MobileFrontDesk = ({ user }) => {
                     loadFilteredRooms(newFilters);
                   }}
                 >
-                  <option value="">Tümü</option>
-                  <option value="available">Müsait</option>
-                  <option value="occupied">Dolu</option>
-                  <option value="dirty">Kirli</option>
-                  <option value="cleaning">Temizleniyor</option>
+                  <option value="">{t("common.all")}</option>
+                  <option value="available">{t("housekeeping.available")}</option>
+                  <option value="occupied">{t("housekeeping.occupied")}</option>
+                  <option value="dirty">{t("housekeeping.dirty")}</option>
+                  <option value="cleaning">{t("housekeeping.cleaning")}</option>
                 </select>
               </div>
             </div>
@@ -1070,7 +1070,7 @@ const MobileFrontDesk = ({ user }) => {
                           </div>
                           <div className="text-right">
                             <p className="text-xl font-bold text-green-600">₺{room.base_rate}</p>
-                            <Badge className="bg-green-500">Müsait</Badge>
+                            <Badge className="bg-green-500">{t("housekeeping.available")}</Badge>
                           </div>
                         </div>
                       </CardContent>

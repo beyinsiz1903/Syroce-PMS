@@ -839,8 +839,8 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
                       <div>
                         <Label>Closed to Arrival</Label>
                         <select className="w-full border rounded-md p-2 mt-1">
-                          <option value="no">No</option>
-                          <option value="yes">Yes</option>
+                          <option value="no">{t("common.no")}</option>
+                          <option value="yes">{t("common.yes")}</option>
                         </select>
                       </div>
                     </div>
@@ -875,8 +875,8 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
                       <div>
                         <Label>Closed to Departure</Label>
                         <select className="w-full border rounded-md p-2 mt-1">
-                          <option value="no">No</option>
-                          <option value="yes">Yes</option>
+                          <option value="no">{t("common.no")}</option>
+                          <option value="yes">{t("common.yes")}</option>
                         </select>
                       </div>
                     </div>

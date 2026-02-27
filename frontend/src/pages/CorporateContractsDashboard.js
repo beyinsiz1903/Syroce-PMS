@@ -118,7 +118,7 @@ const CorporateContractsDashboard = ({ user, tenant, onLogout }) => {
                       <th className="py-2 pr-3 text-right">Taahhüt Gece</th>
                       <th className="py-2 pr-3 text-right">Gerçek Gece</th>
                       <th className="py-2 pr-3 text-right">Kullanım %</th>
-                      <th className="py-2 pr-3 text-right">Gelir</th>
+                      <th className="py-2 pr-3 text-right">{t("finance.revenue")}</th>
                       <th className="py-2 pr-3 text-right">Durum</th>
                     </tr>
                   </thead>

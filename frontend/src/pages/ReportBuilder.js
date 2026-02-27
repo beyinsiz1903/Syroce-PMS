@@ -417,7 +417,7 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
                 </CardTitle>
                 <div className="flex gap-1">
                   <Button size="sm" variant="ghost" className="text-xs h-7" onClick={selectAllColumns}>Tümünü Seç</Button>
-                  <Button size="sm" variant="ghost" className="text-xs h-7" onClick={clearAllColumns}>Temizle</Button>
+                  <Button size="sm" variant="ghost" className="text-xs h-7" onClick={clearAllColumns}>{t("common.clear")}</Button>
                 </div>
               </div>
             </CardHeader>

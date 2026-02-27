@@ -88,7 +88,7 @@ const MultiProperty = () => {
                 
                 <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t">
                   <div>
-                    <p className="text-xs text-gray-500">Odalar</p>
+                    <p className="text-xs text-gray-500">{t("pms.rooms")}</p>
                     <p className="text-lg font-bold">{property.total_rooms}</p>
                   </div>
                   <div>
@@ -96,7 +96,7 @@ const MultiProperty = () => {
                     <p className="text-lg font-bold">€{property.adr}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500">Gelir</p>
+                    <p className="text-xs text-gray-500">{t("finance.revenue")}</p>
                     <p className="text-lg font-bold">€{property.today_revenue}</p>
                   </div>
                 </div>

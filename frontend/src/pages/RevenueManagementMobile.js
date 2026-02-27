@@ -330,7 +330,7 @@ const RevenueManagementMobile = ({ user }) => {
                   </div>
                   <div>
                     <div className="text-2xl font-bold">₺{(historicalComparison.this_year.revenue / 1000).toFixed(0)}K</div>
-                    <div className="text-xs opacity-90">Gelir</div>
+                    <div className="text-xs opacity-90">{t("finance.revenue")}</div>
                   </div>
                   <div>
                     <div className="text-2xl font-bold">₺{historicalComparison.this_year.adr}</div>
@@ -377,7 +377,7 @@ const RevenueManagementMobile = ({ user }) => {
                     </div>
                   </div>
                   <div className="flex justify-between items-center pb-2 border-b">
-                    <span className="text-sm text-gray-600">Gelir</span>
+                    <span className="text-sm text-gray-600">{t("finance.revenue")}</span>
                     <div className="text-right">
                       <div className="font-semibold">₺{historicalComparison.this_year.revenue.toLocaleString()}</div>
                       <div className="text-xs text-gray-500">Geçen yıl: ₺{historicalComparison.last_year.revenue.toLocaleString()}</div>

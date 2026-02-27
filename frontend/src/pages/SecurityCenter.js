@@ -211,7 +211,7 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
                     <label className="text-sm font-medium">Aciklama</label>
                     <Input value={newIPDesc} onChange={(e) => setNewIPDesc(e.target.value)} placeholder="Ofis IP" />
                   </div>
-                  <Button onClick={addIPRule}>Ekle</Button>
+                  <Button onClick={addIPRule}>{t("common.add")}</Button>
                 </div>
 
                 <div className="flex gap-2">
@@ -250,7 +250,7 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
                             </Badge>
                           </td>
                           <td className="p-3">
-                            <Button variant="ghost" size="sm" className="text-red-500" onClick={() => deleteIPRule(rule.id)}>Sil</Button>
+                            <Button variant="ghost" size="sm" className="text-red-500" onClick={() => deleteIPRule(rule.id)}>{t("common.delete")}</Button>
                           </td>
                         </tr>
                       ))}

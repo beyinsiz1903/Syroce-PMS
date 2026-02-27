@@ -404,7 +404,7 @@ const MobileHousekeeping = ({ user }) => {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <RefreshCw className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-2" />
-          <p className="text-gray-600">Yükleniyor...</p>
+          <p className="text-gray-600">{t("common.loading")}</p>
         </div>
       </div>
     );
@@ -772,7 +772,7 @@ const MobileHousekeeping = ({ user }) => {
                       <div className="flex items-center">
                         <span className="text-2xl mr-2">🟡</span>
                         <div className="text-left">
-                          <p className="font-bold text-gray-900">Temizleniyor</p>
+                          <p className="font-bold text-gray-900">{t("housekeeping.cleaning")}</p>
                           <p className="text-xs text-gray-500">{getRoomsByStatus('cleaning').length} oda</p>
                         </div>
                       </div>
@@ -1095,7 +1095,7 @@ const MobileHousekeeping = ({ user }) => {
                         <Label>Notlar</Label>
                         <Textarea name="notes" rows={3} />
                       </div>
-                      <Button type="submit" className="w-full">Kaydet</Button>
+                      <Button type="submit" className="w-full">{t("common.save")}</Button>
                     </div>
                   </form>
                 </DialogContent>

@@ -122,7 +122,7 @@ const FrontdeskAuditChecklist = ({ user, tenant, onLogout }) => {
             </CardHeader>
             <CardContent>
               {loading ? (
-                <div className="py-8 text-center text-gray-500 text-sm">Yükleniyor...</div>
+                <div className="py-8 text-center text-gray-500 text-sm">{t("common.loading")}</div>
               ) : !data?.unchecked_in_arrivals?.length ? (
                 <div className="py-8 text-center text-green-600 text-sm flex items-center justify-center gap-2">
                   <CheckCircle className="w-4 h-4" />
@@ -185,7 +185,7 @@ const FrontdeskAuditChecklist = ({ user, tenant, onLogout }) => {
             </CardHeader>
             <CardContent>
               {loading ? (
-                <div className="py-8 text-center text-gray-500 text-sm">Yükleniyor...</div>
+                <div className="py-8 text-center text-gray-500 text-sm">{t("common.loading")}</div>
               ) : !data?.open_folios?.length ? (
                 <div className="py-8 text-center text-green-600 text-sm flex items-center justify-center gap-2">
                   <CheckCircle className="w-4 h-4" />
@@ -234,7 +234,7 @@ const FrontdeskAuditChecklist = ({ user, tenant, onLogout }) => {
             </CardHeader>
             <CardContent>
               {loading ? (
-                <div className="py-8 text-center text-gray-500 text-sm">Yükleniyor...</div>
+                <div className="py-8 text-center text-gray-500 text-sm">{t("common.loading")}</div>
               ) : !data?.unbalanced_folios?.length ? (
                 <div className="py-8 text-center text-green-600 text-sm flex items-center justify-center gap-2">
                   <CheckCircle className="w-4 h-4" />
@@ -279,7 +279,7 @@ const FrontdeskAuditChecklist = ({ user, tenant, onLogout }) => {
             </CardHeader>
             <CardContent>
               {loading ? (
-                <div className="py-8 text-center text-gray-500 text-sm">Yükleniyor...</div>
+                <div className="py-8 text-center text-gray-500 text-sm">{t("common.loading")}</div>
               ) : !data?.overdue_departures?.length ? (
                 <div className="py-8 text-center text-green-600 text-sm flex items-center justify-center gap-2">
                   <CheckCircle className="w-4 h-4" />

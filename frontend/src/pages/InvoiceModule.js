@@ -315,7 +315,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
   if (!user || !tenant) {
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
-        <div className="p-6 text-sm text-slate-600">Yükleniyor...</div>
+        <div className="p-6 text-sm text-slate-600">{t("common.loading")}</div>
       </Layout>
     );
   }
@@ -332,7 +332,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
   if (loading) {
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
-        <div className="p-6 text-center">Loading...</div>
+        <div className="p-6 text-center">{t("common.loading")}</div>
       </Layout>
     );
   }

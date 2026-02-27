@@ -291,9 +291,9 @@ const BasicReports = ({ user, tenant, onLogout }) => {
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <div className="p-3 bg-blue-50 rounded-lg text-center border border-blue-100"><ArrowUpRight className="w-5 h-5 text-blue-600 mx-auto mb-1" /><p className="text-2xl font-bold text-blue-700">{s.arrivals || 0}</p><p className="text-xs text-blue-600">Giriş</p></div>
             <div className="p-3 bg-amber-50 rounded-lg text-center border border-amber-100"><ArrowDownRight className="w-5 h-5 text-amber-600 mx-auto mb-1" /><p className="text-2xl font-bold text-amber-700">{s.departures || 0}</p><p className="text-xs text-amber-600">Çıkış</p></div>
-            <div className="p-3 bg-green-50 rounded-lg text-center border border-green-100"><Users className="w-5 h-5 text-green-600 mx-auto mb-1" /><p className="text-2xl font-bold text-green-700">{s.in_house || 0}</p><p className="text-xs text-green-600">Otelde</p></div>
+            <div className="p-3 bg-green-50 rounded-lg text-center border border-green-100"><Users className="w-5 h-5 text-green-600 mx-auto mb-1" /><p className="text-2xl font-bold text-green-700">{s.in_house || 0}</p><p className="text-xs text-green-600">{t("pms.inHouse")}</p></div>
             <div className="p-3 bg-red-50 rounded-lg text-center border border-red-100"><AlertTriangle className="w-5 h-5 text-red-500 mx-auto mb-1" /><p className="text-2xl font-bold text-red-600">{s.no_shows || 0}</p><p className="text-xs text-red-500">No-Show</p></div>
-            <div className="p-3 bg-gray-50 rounded-lg text-center border border-gray-200"><Calendar className="w-5 h-5 text-gray-500 mx-auto mb-1" /><p className="text-2xl font-bold text-gray-700">{s.cancellations || 0}</p><p className="text-xs text-gray-500">İptal</p></div>
+            <div className="p-3 bg-gray-50 rounded-lg text-center border border-gray-200"><Calendar className="w-5 h-5 text-gray-500 mx-auto mb-1" /><p className="text-2xl font-bold text-gray-700">{s.cancellations || 0}</p><p className="text-xs text-gray-500">{t("common.cancel")}</p></div>
           </div>
         </CardContent>
       </Card>
@@ -437,7 +437,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
       {roomTypeData.length > 0 && (
         <Card><CardHeader><CardTitle className="text-sm">Oda Tipine Göre Doluluk Oranı</CardTitle></CardHeader>
           <CardContent><div className="overflow-x-auto"><table className="w-full text-sm">
-            <thead><tr className="border-b bg-gray-50"><th className="text-left py-2 px-3 font-semibold text-gray-600">Oda Tipi</th><th className="text-center py-2 px-3 font-semibold text-gray-600">Doluluk(%)</th><th className="text-center py-2 px-3 font-semibold text-gray-600">Dolu</th><th className="text-center py-2 px-3 font-semibold text-gray-600">Toplam</th><th className="text-right py-2 px-3 font-semibold text-gray-600">Gelir</th></tr></thead>
+            <thead><tr className="border-b bg-gray-50"><th className="text-left py-2 px-3 font-semibold text-gray-600">Oda Tipi</th><th className="text-center py-2 px-3 font-semibold text-gray-600">Doluluk(%)</th><th className="text-center py-2 px-3 font-semibold text-gray-600">{t("housekeeping.occupied")}</th><th className="text-center py-2 px-3 font-semibold text-gray-600">Toplam</th><th className="text-right py-2 px-3 font-semibold text-gray-600">{t("finance.revenue")}</th></tr></thead>
             <tbody>{roomTypeData.map((rt, i) => (
               <tr key={i} className="border-b hover:bg-gray-50"><td className="py-2.5 px-3 font-medium">{rt.name}</td><td className="py-2.5 px-3 text-center"><span className={'px-2 py-0.5 rounded-full text-xs font-semibold ' + (rt.occupancy > 70 ? 'bg-green-100 text-green-700' : rt.occupancy > 30 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700')}>{rt.occupancy}%</span></td><td className="py-2.5 px-3 text-center">{rt.occupied}</td><td className="py-2.5 px-3 text-center">{rt.total}</td><td className="py-2.5 px-3 text-right font-medium">{formatCurrency(rt.revenue)}</td></tr>
             ))}</tbody>
@@ -518,7 +518,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
           </ResponsiveContainer></CardContent>
         </Card>
         <Card><CardHeader><CardTitle className="text-sm">Oda Gelir Tablosu</CardTitle></CardHeader>
-          <CardContent><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="text-left py-2 px-3 font-semibold text-gray-600">Oda Tipi</th><th className="text-center py-2 px-3 font-semibold text-gray-600">Oda Sayısı</th><th className="text-center py-2 px-3 font-semibold text-gray-600">Dolu</th><th className="text-center py-2 px-3 font-semibold text-gray-600">Doluluk</th><th className="text-right py-2 px-3 font-semibold text-gray-600">Gelir</th><th className="text-right py-2 px-3 font-semibold text-gray-600">Oda Başı Gelir</th></tr></thead>
+          <CardContent><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="text-left py-2 px-3 font-semibold text-gray-600">Oda Tipi</th><th className="text-center py-2 px-3 font-semibold text-gray-600">Oda Sayısı</th><th className="text-center py-2 px-3 font-semibold text-gray-600">{t("housekeeping.occupied")}</th><th className="text-center py-2 px-3 font-semibold text-gray-600">Doluluk</th><th className="text-right py-2 px-3 font-semibold text-gray-600">{t("finance.revenue")}</th><th className="text-right py-2 px-3 font-semibold text-gray-600">Oda Başı Gelir</th></tr></thead>
             <tbody>{roomTypeData.map((rt, i) => (<tr key={i} className="border-b hover:bg-gray-50"><td className="py-2.5 px-3 font-medium">{rt.name}</td><td className="py-2.5 px-3 text-center">{rt.total}</td><td className="py-2.5 px-3 text-center">{rt.occupied}</td><td className="py-2.5 px-3 text-center">{rt.occupancy}%</td><td className="py-2.5 px-3 text-right font-semibold">{formatCurrency(rt.revenue)}</td><td className="py-2.5 px-3 text-right text-gray-500">{rt.total > 0 ? formatCurrency(rt.revenue / rt.total) : '₺0'}</td></tr>))}</tbody>
           </table></div></CardContent>
         </Card>
@@ -547,11 +547,11 @@ const BasicReports = ({ user, tenant, onLogout }) => {
     <div className="space-y-6">
       <h2 className="text-xl font-bold text-gray-900">Departman Raporları</h2>
       <div className="grid md:grid-cols-2 gap-4">
-        <Card><CardHeader><CardTitle className="text-sm flex items-center gap-2"><Users className="w-4 h-4 text-blue-500" />Ön Büro</CardTitle></CardHeader>
+        <Card><CardHeader><CardTitle className="text-sm flex items-center gap-2"><Users className="w-4 h-4 text-blue-500" />{t("nav.frontDesk")}</CardTitle></CardHeader>
           <CardContent><div className="grid grid-cols-3 gap-3">
             <div className="p-3 bg-blue-50 rounded-lg text-center"><p className="text-2xl font-bold text-blue-700">{s.arrivals||0}</p><p className="text-xs text-blue-600">Giriş</p></div>
             <div className="p-3 bg-amber-50 rounded-lg text-center"><p className="text-2xl font-bold text-amber-700">{s.departures||0}</p><p className="text-xs text-amber-600">Çıkış</p></div>
-            <div className="p-3 bg-green-50 rounded-lg text-center"><p className="text-2xl font-bold text-green-700">{s.in_house||0}</p><p className="text-xs text-green-600">Otelde</p></div>
+            <div className="p-3 bg-green-50 rounded-lg text-center"><p className="text-2xl font-bold text-green-700">{s.in_house||0}</p><p className="text-xs text-green-600">{t("pms.inHouse")}</p></div>
           </div></CardContent>
         </Card>
         <Card><CardHeader><CardTitle className="text-sm flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-green-500" />Housekeeping</CardTitle></CardHeader>
@@ -601,7 +601,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
         {/* Sidebar */}
         <aside className="w-64 bg-white border-r border-gray-200 flex-shrink-0 hidden lg:block">
           <div className="p-4 border-b border-gray-100">
-            <div className="flex items-center gap-2"><BarChart3 className="w-5 h-5 text-blue-600" /><h1 className="text-lg font-bold text-gray-900">Raporlar</h1></div>
+            <div className="flex items-center gap-2"><BarChart3 className="w-5 h-5 text-blue-600" /><h1 className="text-lg font-bold text-gray-900">{t("nav.reports")}</h1></div>
             <p className="text-xs text-gray-400 mt-1">{new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
           </div>
           <nav className="p-2 space-y-0.5 overflow-y-auto max-h-[calc(100vh-160px)]">
@@ -644,10 +644,10 @@ const BasicReports = ({ user, tenant, onLogout }) => {
           <div className="p-6 max-w-6xl">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2 text-xs text-gray-400">
-                <span>Raporlar</span><ChevronRight className="w-3 h-3" />
+                <span>{t("nav.reports")}</span><ChevronRight className="w-3 h-3" />
                 <span className="text-gray-700 font-medium">{MENU_ITEMS.find(m => m.id === activeSection)?.label}</span>
               </div>
-              <Button onClick={fetchData} variant="outline" size="sm"><RefreshCw className="w-3.5 h-3.5 mr-1.5" />Yenile</Button>
+              <Button onClick={fetchData} variant="outline" size="sm"><RefreshCw className="w-3.5 h-3.5 mr-1.5" />{t("common.refresh")}</Button>
             </div>
             {renderContent()}
           </div>

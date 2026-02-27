@@ -124,7 +124,7 @@ const UserRoleManager = ({ user, tenant, onLogout, roleOptions }) => {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="text-center py-8">Yükleniyor...</div>
+              <div className="text-center py-8">{t("common.loading")}</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">

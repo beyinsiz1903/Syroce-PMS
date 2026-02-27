@@ -120,7 +120,7 @@ const MobileSecurity = ({ user }) => {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <RefreshCw className="w-8 h-8 animate-spin text-gray-600 mx-auto mb-2" />
-          <p className="text-gray-600">Yükleniyor...</p>
+          <p className="text-gray-600">{t("common.loading")}</p>
         </div>
       </div>
     );
@@ -203,7 +203,7 @@ const MobileSecurity = ({ user }) => {
             onClick={() => window.location.reload()}
           >
             <RefreshCw className="w-6 h-6 mb-1" />
-            <span className="text-xs font-semibold">Yenile</span>
+            <span className="text-xs font-semibold">{t("common.refresh")}</span>
           </Button>
         </div>
 

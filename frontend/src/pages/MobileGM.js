@@ -136,7 +136,7 @@ const MobileGM = ({ user }) => {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <RefreshCw className="w-8 h-8 animate-spin text-red-600 mx-auto mb-2" />
-          <p className="text-gray-600">Yükleniyor...</p>
+          <p className="text-gray-600">{t("common.loading")}</p>
         </div>
       </div>
     );
@@ -365,11 +365,11 @@ const MobileGM = ({ user }) => {
                 </div>
                 <div className="text-center p-2 bg-red-50 rounded border border-red-200">
                   <p className="text-2xl font-bold text-red-700">{roomStatus.status_counts.dirty || 0}</p>
-                  <p className="text-xs text-red-600">Kirli</p>
+                  <p className="text-xs text-red-600">{t("housekeeping.dirty")}</p>
                 </div>
                 <div className="text-center p-2 bg-purple-50 rounded border border-purple-200">
                   <p className="text-2xl font-bold text-purple-700">{roomStatus.status_counts.occupied || 0}</p>
-                  <p className="text-xs text-purple-600">Dolu</p>
+                  <p className="text-xs text-purple-600">{t("housekeeping.occupied")}</p>
                 </div>
                 <div className="text-center p-2 bg-blue-50 rounded border border-blue-200">
                   <p className="text-2xl font-bold text-blue-700">{roomStatus.status_counts.inspected || 0}</p>
@@ -466,7 +466,7 @@ const MobileGM = ({ user }) => {
                 onClick={() => setReportsModalOpen(true)}
               >
                 <TrendingUp className="w-6 h-6 mb-1" />
-                <span className="text-xs">Raporlar</span>
+                <span className="text-xs">{t("nav.reports")}</span>
               </Button>
               <Button
                 className="h-20 flex flex-col items-center justify-center bg-blue-600 hover:bg-blue-700"
@@ -614,7 +614,7 @@ const MobileGM = ({ user }) => {
             <div className="space-y-4">
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Özet</CardTitle>
+                  <CardTitle className="text-base">{t("common.summary")}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <div className="flex justify-between">
@@ -828,7 +828,7 @@ const MobileGM = ({ user }) => {
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="flex items-center justify-between p-2 bg-green-50 rounded">
-                  <span className="text-sm">Ön Büro</span>
+                  <span className="text-sm">{t("nav.frontDesk")}</span>
                   <Badge className="bg-green-500">Operasyonel</Badge>
                 </div>
                 <div className="flex items-center justify-between p-2 bg-green-50 rounded">

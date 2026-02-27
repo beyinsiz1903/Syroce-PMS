@@ -451,7 +451,7 @@ const MobileOrderTracking = ({ user }) => {
       <Dialog open={filterModalOpen} onOpenChange={setFilterModalOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Filtrele</DialogTitle>
+            <DialogTitle>{t("common.filter")}</DialogTitle>
           </DialogHeader>
           
           <div className="space-y-4">
@@ -462,7 +462,7 @@ const MobileOrderTracking = ({ user }) => {
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="w-full p-2 border rounded"
               >
-                <option value="all">Tümü</option>
+                <option value="all">{t("common.all")}</option>
                 <option value="pending">Bekliyor</option>
                 <option value="preparing">Hazırlanıyor</option>
                 <option value="ready">Hazır</option>

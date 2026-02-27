@@ -135,7 +135,7 @@ const MarketplaceModule = ({ user, tenant, onLogout }) => {
   if (loading) {
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="marketplace">
-        <div className="p-6 text-center">Loading...</div>
+        <div className="p-6 text-center">{t("common.loading")}</div>
       </Layout>
     );
   }
