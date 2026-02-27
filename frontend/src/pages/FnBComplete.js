@@ -44,7 +44,7 @@ const FnBComplete = ({ user, tenant, onLogout }) => {
         <Tabs defaultValue="outlet-sales" className="w-full mt-4">
           <TabsList className="grid w-full max-w-3xl grid-cols-4 md:grid-cols-5">
             <TabsTrigger value="outlet-sales">
-47|              <ChefHat className="w-4 h-4 mr-2" />{t('fnb.outletSales')}
+              <ChefHat className="w-4 h-4 mr-2" />{t('fnb.outletSales')}
             </TabsTrigger>
             <TabsTrigger value="recipes">
               <ChefHat className="w-4 h-4 mr-2" />{t('fnb.recipes')}
