@@ -35,9 +35,6 @@ const BookingDialog = ({
   updateMultiRoomField,
   updateMultiRoomChildrenAges,
   updateMultiRoomChildAge,
-  contractedRates,
-  showCompanySelect,
-  selectedCompany,
   isLite,
   setOpenDialog,
 }) => {
