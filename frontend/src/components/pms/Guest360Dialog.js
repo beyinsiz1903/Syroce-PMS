@@ -14,6 +14,7 @@ import {
   Hotel, Award, ShieldCheck, AlertTriangle, MessageSquare,
   Heart, Globe, Tag, Clock, User, DollarSign, TrendingUp, Loader2, Crown
 } from 'lucide-react';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
 const Guest360Dialog = ({
   open,
