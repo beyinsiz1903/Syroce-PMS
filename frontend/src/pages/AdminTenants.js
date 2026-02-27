@@ -9,7 +9,6 @@ import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import { Link } from 'react-router-dom';
 import {
-import { useTranslation } from 'react-i18next';
   Calendar, Clock, Building2, ChevronDown, ChevronUp, Shield,
   Zap, Crown, Search, RefreshCw, AlertTriangle, CheckCircle2,
   Settings2, Users, BarChart3, Bot

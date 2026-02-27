@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import PropertySwitcher from '@/components/PropertySwitcher';
 import {
-import { useTranslation } from 'react-i18next';
   ArrowLeft,
   TrendingUp,
   TrendingDown,

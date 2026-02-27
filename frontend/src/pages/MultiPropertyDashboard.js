@@ -6,7 +6,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Building2, TrendingUp, DollarSign, Users, Calendar } from 'lucide-react';
 import { Bar } from 'react-chartjs-2';
 import {
-import { useTranslation } from 'react-i18next';
   Chart as ChartJS,
   CategoryScale,
   LinearScale,

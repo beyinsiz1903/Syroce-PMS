@@ -25,7 +25,6 @@ import {
 } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
 import {
-import { useTranslation } from 'react-i18next';
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
