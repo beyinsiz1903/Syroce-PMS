@@ -89,15 +89,15 @@ class SecurityHeadersMiddleware:
         
         async def send_wrapper(message):
             if message['type'] == 'http.response.start':
-                headers = dict(message.get('headers', []))
+                existing_headers = list(message.get('headers', []))
+                existing_names = {h[0].lower() if isinstance(h[0], bytes) else h[0].lower().encode() for h in existing_headers}
                 
-                # Add security headers
                 for header, value in self.headers.items():
-                    # Don't override existing headers
-                    if header.lower().encode() not in [h[0].lower() for h in headers.items()]:
-                        headers[header.encode()] = value.encode()
+                    h_bytes = header.lower().encode()
+                    if h_bytes not in existing_names:
+                        existing_headers.append((header.encode(), value.encode()))
                 
-                message['headers'] = list(headers.items())
+                message['headers'] = existing_headers
             
             await send(message)
         
