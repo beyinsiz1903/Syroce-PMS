@@ -255,11 +255,16 @@ class TestLoginAuditLogging:
         print(f"   Found {len(login_events)} login_success events in recent_events")
     
     def test_failed_login_creates_audit_log(self):
-        """Failed login should create audit_logs entry with action 'login_failed'"""
-        # Perform failed login
+        """Failed login (valid email, wrong password) should create audit_logs entry with action 'login_failed'
+        
+        Note: Failed login for unknown emails won't show up in tenant-specific security summary
+        because they don't have a tenant_id. This tests failed login for a KNOWN user.
+        """
+        # Perform failed login with VALID email but WRONG password
+        # This ensures the audit log has a tenant_id
         response = requests.post(f"{BASE_URL}/api/auth/login", json={
-            "email": INVALID_EMAIL,
-            "password": INVALID_PASSWORD
+            "email": VALID_EMAIL,
+            "password": "definitely_wrong_password_12345"
         })
         assert response.status_code == 401, f"Expected 401, got {response.status_code}"
         
@@ -283,7 +288,7 @@ class TestLoginAuditLogging:
         data = summary.json()
         overview = data.get('overview', {})
         
-        # failed_logins_24h should be >= 1
+        # failed_logins_24h should be >= 1 (from valid email with wrong password)
         assert overview.get('failed_logins_24h', 0) >= 1, "No failed login count after failed login attempt"
         print(f"✅ Failed login recorded (failed_logins_24h: {overview['failed_logins_24h']})")
         
