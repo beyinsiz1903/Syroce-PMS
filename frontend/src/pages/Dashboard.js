@@ -787,7 +787,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                           stroke="#3b82f6" 
                           fill="#3b82f6" 
                           fillOpacity={0.3}
-                          name="Occupancy"
+                          name={t('dashboard.chartOccupancy')}
                         />
                       </AreaChart>
                     </ResponsiveContainer>
@@ -1049,6 +1049,7 @@ import PmsLiteOnboarding from "@/components/PmsLiteOnboarding";
 
 const DashboardLite = ({ user, tenant, stats }) => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   return (
     <Layout user={user} tenant={tenant} onLogout={() => {}} currentModule="dashboard">
@@ -1056,9 +1057,9 @@ const DashboardLite = ({ user, tenant, stats }) => {
         <PmsLiteOnboarding tenant={tenant} />
         <div>
           <h1 className="text-2xl md:text-3xl font-bold mb-1" style={{ fontFamily: 'Space Grotesk' }}>
-            Dashboard
+            {t('nav.dashboard')}
           </h1>
-          <p className="text-sm md:text-base text-gray-600">Günlük özet ve hızlı işlemler.</p>
+          <p className="text-sm md:text-base text-gray-600">{t('dashboard.dailySummaryDesc')}</p>
         </div>
 
         {/* Core stat cards */}
@@ -1071,7 +1072,7 @@ const DashboardLite = ({ user, tenant, stats }) => {
                     <BedDouble className="w-6 h-6 text-blue-500" />
                   </div>
                   <div className="text-2xl font-bold text-gray-900">{stats.pms.total_rooms}</div>
-                  <div className="text-xs font-medium text-gray-600">Toplam Oda</div>
+                  <div className="text-xs font-medium text-gray-600">{t('dashboard.totalRooms')}</div>
                 </div>
               </CardContent>
             </Card>
@@ -1083,7 +1084,7 @@ const DashboardLite = ({ user, tenant, stats }) => {
                     <Hotel className="w-6 h-6 text-green-500" />
                   </div>
                   <div className="text-2xl font-bold text-gray-900">{(typeof stats.pms.occupancy_rate === 'number' ? stats.pms.occupancy_rate : 0).toFixed(1)}%</div>
-                  <div className="text-xs font-medium text-gray-600">Doluluk Oranı</div>
+                  <div className="text-xs font-medium text-gray-600">{t('dashboard.occupancyRate')}</div>
                 </div>
               </CardContent>
             </Card>
@@ -1095,7 +1096,7 @@ const DashboardLite = ({ user, tenant, stats }) => {
                     <Calendar className="w-6 h-6 text-purple-500" />
                   </div>
                   <div className="text-2xl font-bold text-gray-900">{stats.pms.today_checkins}</div>
-                  <div className="text-xs font-medium text-gray-600">Bugün Giriş</div>
+                  <div className="text-xs font-medium text-gray-600">{t('dashboard.todayCheckins')}</div>
                 </div>
               </CardContent>
             </Card>
@@ -1107,7 +1108,7 @@ const DashboardLite = ({ user, tenant, stats }) => {
                     <Users className="w-6 h-6 text-orange-500" />
                   </div>
                   <div className="text-2xl font-bold text-gray-900">{stats.pms.total_guests}</div>
-                  <div className="text-xs font-medium text-gray-600">Toplam Misafir</div>
+                  <div className="text-xs font-medium text-gray-600">{t('dashboard.totalGuests')}</div>
                 </div>
               </CardContent>
             </Card>
@@ -1116,24 +1117,24 @@ const DashboardLite = ({ user, tenant, stats }) => {
 
         {/* Quick actions */}
         <div className="rounded-2xl border bg-white p-4">
-          <div className="text-sm font-medium text-gray-900">Hızlı İşlemler</div>
+          <div className="text-sm font-medium text-gray-900">{t('dashboard.quickActions')}</div>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button size="sm" onClick={() => window.location.assign("/app/pms#frontdesk")}>
-              Yeni Rezervasyon
+              {t('dashboard.newReservation')}
             </Button>
             <Button
               size="sm"
               variant="outline"
               onClick={() => window.location.assign("/app/reservation-calendar")}
             >
-              Takvimi Aç
+              {t('dashboard.openCalendar')}
             </Button>
             <Button
               size="sm"
               variant="outline"
               onClick={() => window.location.assign("/app/pms#frontdesk")}
             >
-              Rezervasyonlar
+              {t('dashboard.reservations')}
             </Button>
           </div>
         </div>
