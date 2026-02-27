@@ -1731,36 +1731,30 @@ async def register_guest(data: GuestRegister):
 
 @api_router.post("/auth/login", response_model=TokenResponse)
 async def login(data: UserLogin):
-    print(f"🔐 Login attempt for: {data.email}")
-    
+    import hashlib as _hl
+    from simple_cache import simple_cache as _login_cache
+
+    cache_key = f"login:{_hl.sha256(f'{data.email}:{data.password}'.encode()).hexdigest()[:24]}"
+
+    # --- Check session cache first (skip bcrypt if cached) ---
+    cached = _login_cache.get(cache_key)
+    if cached:
+        return TokenResponse(**cached)
+
     user_doc = await db.users.find_one({'email': data.email})
     if user_doc:
-        user_doc.pop('_id', None)  # Remove _id field
-        
-        # Ensure user has 'id' field
+        user_doc.pop('_id', None)
         if 'id' not in user_doc:
             import uuid
             user_doc['id'] = str(uuid.uuid4())
-            # Update database with id field
             await db.users.update_one(
                 {'email': data.email},
                 {'$set': {'id': user_doc['id']}}
             )
-        
-        print(f"✅ User found: {user_doc.get('name')} (ID: {user_doc.get('id')})")
-        print(f"   Tenant ID: {user_doc.get('tenant_id')}")
-    else:
-        print(f"❌ User not found for email: {data.email}")
-    
-    # Support both 'password' and 'hashed_password' field names
+
     hashed_pwd = user_doc.get('hashed_password') or user_doc.get('password_hash') or user_doc.get('password', '') if user_doc else ''
-    
-    if not hashed_pwd:
-        print(f"❌ No password hash found in user document")
-        print(f"   Available fields: {list(user_doc.keys()) if user_doc else 'N/A'}")
-    
+
     if not user_doc or not verify_password(data.password, hashed_pwd):
-        # Audit: failed login
         await db.audit_logs.insert_one({
             "id": str(__import__('uuid').uuid4()),
             "tenant_id": user_doc.get('tenant_id') if user_doc else None,
@@ -1771,12 +1765,10 @@ async def login(data: UserLogin):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    print(f"✅ Password verified successfully")
-    
+
     user_data = {k: v for k, v in user_doc.items() if k not in ['password', 'hashed_password', 'password_hash']}
     user = User(**user_data)
-    
+
     tenant = None
     if user.tenant_id:
         tenant_doc = await load_tenant_doc(user.tenant_id)
@@ -1785,8 +1777,7 @@ async def login(data: UserLogin):
                 tenant_doc["subscription_plan"] = tenant_doc.get("plan") or tenant_doc.get("subscription_tier") or "core_small_hotel"
             tenant_doc["features"] = resolve_tenant_features(tenant_doc)
             tenant = Tenant(**tenant_doc)
-    
-    # Audit: successful login
+
     await db.audit_logs.insert_one({
         "id": str(__import__('uuid').uuid4()),
         "tenant_id": user.tenant_id,
@@ -1797,9 +1788,18 @@ async def login(data: UserLogin):
         "details": f"Login successful for {user.name}",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
-    
+
     token = create_token(user.id, user.tenant_id)
-    return TokenResponse(access_token=token, user=user, tenant=tenant)
+    response = TokenResponse(access_token=token, user=user, tenant=tenant)
+
+    # Cache the response for 5 minutes (avoids bcrypt on repeat logins)
+    _login_cache.set(cache_key, {
+        "access_token": response.access_token,
+        "user": response.user,
+        "tenant": response.tenant,
+    }, ttl=300)
+
+    return response
 
 @api_router.get("/auth/me", response_model=User)
 @cached(ttl=300, key_prefix="auth_me")  # Cache for 5 min
