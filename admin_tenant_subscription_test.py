@@ -11,7 +11,7 @@ from datetime import datetime
 import uuid
 
 # Test Configuration
-BASE_URL = "https://pms-i18next-demo.preview.emergentagent.com/api"
+BASE_URL = "https://locust-load-test.preview.emergentagent.com/api"
 
 # Test credentials to try
 TEST_CREDENTIALS = [

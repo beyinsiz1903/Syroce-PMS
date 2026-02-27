@@ -7,7 +7,7 @@ import requests
 import json
 
 def test_modules():
-    base_url = "https://pms-i18next-demo.preview.emergentagent.com/api"
+    base_url = "https://locust-load-test.preview.emergentagent.com/api"
     
     # Login first
     print("🔐 Logging in...")

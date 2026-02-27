@@ -10,7 +10,7 @@ import json
 from datetime import datetime, timedelta
 
 # Configuration
-BASE_URL = "https://pms-i18next-demo.preview.emergentagent.com/api"
+BASE_URL = "https://locust-load-test.preview.emergentagent.com/api"
 EMAIL = "demo@hotel.com"
 PASSWORD = "demo123"
 

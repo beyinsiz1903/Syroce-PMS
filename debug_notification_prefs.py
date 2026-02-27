@@ -8,7 +8,7 @@ import aiohttp
 import json
 import uuid
 
-BACKEND_URL = "https://pms-i18next-demo.preview.emergentagent.com/api"
+BACKEND_URL = "https://locust-load-test.preview.emergentagent.com/api"
 
 async def debug_notification_prefs():
     session = aiohttp.ClientSession()

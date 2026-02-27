@@ -5,7 +5,7 @@ Capture App Store screenshots using Playwright directly.
 import asyncio
 from playwright.async_api import async_playwright
 
-BASE_URL = "https://pms-i18next-demo.preview.emergentagent.com"
+BASE_URL = "https://locust-load-test.preview.emergentagent.com"
 RAW_DIR = "/app/screenshots/raw"
 
 async def login(page):
