@@ -1,74 +1,99 @@
 # Syroce PMS - Product Requirements Document
 
 ## Original Problem Statement
-Otel yönetim sistemi (Syroce PMS) - Full-stack React + FastAPI + MongoDB uygulaması. Kullanıcı detaylı analiz ve rapor istedi, ardından çok fazlı iyileştirme planı uygulandı.
+Otel Yönetim Sistemi (Syroce PMS) - 5 yıldızlı otel operasyonları için kapsamlı bir PMS çözümü.
+
+## Core Requirements
+- Multi-tenant hotel management system
+- Reservation management, front desk, housekeeping
+- Financial reporting, invoicing, folio management
+- Multi-language support (TR/EN primary)
+- Role-based access control
+- Mobile-responsive design
 
 ## Architecture
-- **Frontend:** React, react-router-dom, i18next, Tailwind CSS, Shadcn UI
-- **Backend:** FastAPI, MongoDB (motor), Pydantic, JWT auth
-- **DevOps:** Docker, Supervisor, GitHub Actions CI/CD
+- **Frontend:** React, Tailwind CSS, Shadcn UI, Recharts, i18next
+- **Backend:** FastAPI, MongoDB (motor), JWT auth, openpyxl, WeasyPrint
+- **Database:** MongoDB with tenant isolation
 
 ## What's Been Implemented
 
-### Phase 1: Foundation & Data Seeding (Complete)
-- Data seeding mechanism (backend/seed.py)
-- Security: JWT secret & CORS from .env
-- Fixed IndexOptionsConflict
+### Phase 1-3 (Previously Completed)
+- Full PMS module (reservations, rooms, check-in/out)
+- Dashboard with KPIs
+- Housekeeping management
+- Finance & invoicing
+- Channel Manager
+- Revenue Management (RMS)
+- AI modules
+- Multi-property support
+- Night Audit
+- Mobile views
+- i18n (partial)
 
-### Phase 2: Backend Modularization & i18n (Complete)
-- Refactored server.py into core/, models/, enums/, routers/
-- Created /api/folio/list endpoint
-- Expanded i18n translation files (TR/EN)
+### Phase 4: Reporting & Analytics (Feb 2026 - COMPLETED)
+- **Custom Report Builder** (`/reports/builder`, `/app/rapor-olusturucu`)
+  - 6 data sources: Reservations, Revenue, Guests, Rooms, Housekeeping, Folios
+  - Dynamic column selection with type indicators
+  - Date range presets (Today, This Week, This Month, Last 30/90 Days, Quarter, YTD)
+  - Advanced filters with operators (eq, ne, gt, gte, lt, lte, contains, in)
+  - Sort and limit configuration
+  - Inline results table with summary statistics
+  - Template save/load/delete functionality
+- **Excel Export** - Formatted workbook with headers, data styling, summary row
+- **PDF Export** - Professional HTML-to-PDF via WeasyPrint
+- **Navigation** - Added to main nav, Reports tabs, BasicReports sidebar
 
-### Phase 3: Frontend Optimization (Complete)
-- Lazy loading for routes in App.js
-- Conditional dialog rendering in PMSModule.js
-
-### Bug Fixes (Complete)
-- CI/CD pipeline fixed
-- PMS/RMS rendering errors fixed
-- Quick Actions buttons repaired
-- Admin invoice access control fixed
-
-### App Store Submission (Complete - Feb 25, 2026)
-- Screenshots: iPhone (24), iPad (24), Apple Watch (36) = 84 files in ZIP
-- Download endpoint: /api/download/screenshots
-- Privacy Policy page: /gizlilik and /privacy-policy routes
-- App Store Connect content prepared (Description, Keywords, etc.)
+### App Store Submission (Previously Completed)
+- Privacy Policy page at `/gizlilik`
+- App Store screenshots
+- App Store Connect content
 
 ## Prioritized Backlog
 
-### P0: Phase 4 - Reporting & Analytics
-- Custom report builder
-- Advanced filtering
-- PDF/Excel export
-
-### P1: i18n Completion
-- Convert remaining hardcoded English strings to t() function
+### P1: i18n Hardcoded String Conversion
+- Convert remaining English strings to `t()` function
+- Reports, AI modules, Guest Portal
 
 ### P2: Phase 5 - Guest Portal & Communication
 - Online check-in/out
 - Guest messaging
-- Service requests
 
 ### P2: Phase 6 - Integrations & Automation
-- Channel Manager enhancement
+- Channel Manager enhancements
 - Payment gateway (Stripe)
-- Automated guest emails
 
 ### P3: Phase 7 - Security & Performance
-- API rate limiting
-- Security headers
+- API rate limiting, security headers
 - Load testing
 
-### P3: Refactoring
-- PMSModule.js (~3400 lines) decomposition
+### Refactoring
+- PMSModule.js (3400+ lines) decomposition
+- App Store temp endpoint cleanup
 
-## Credentials
-| User | Email | Password | Role |
-|------|-------|----------|------|
-| Demo Admin | demo@hotel.com | demo123 | Admin |
-| Front Desk | frontdesk@hotel.com | staff123 | Resepsiyon |
-| Housekeeping | housekeeping@hotel.com | staff123 | Kat Hizmetleri |
-| Finance | finance@hotel.com | staff123 | Muhasebe |
-| Sales | sales@hotel.com | staff123 | Satış |
+## Test Credentials
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | demo@hotel.com | demo123 |
+| Front Desk | frontdesk@hotel.com | staff123 |
+| Housekeeping | housekeeping@hotel.com | staff123 |
+| Finance | finance@hotel.com | staff123 |
+| Sales | sales@hotel.com | staff123 |
+
+## Key API Endpoints
+- `POST /api/auth/login` - Login (returns access_token)
+- `GET /api/reports/builder/config` - Report builder config
+- `POST /api/reports/builder/generate` - Generate custom report
+- `POST /api/reports/builder/export/excel` - Excel export
+- `POST /api/reports/builder/export/pdf` - PDF export
+- `GET/POST/DELETE /api/reports/builder/templates` - Template CRUD
+- `GET /api/reports/basic-dashboard` - Basic reports data
+- `GET /api/reports/flash-report` - Flash report
+
+## Key Files
+- `/app/backend/routers/report_builder.py` - Report Builder API
+- `/app/frontend/src/pages/ReportBuilder.js` - Report Builder UI
+- `/app/frontend/src/pages/Reports.js` - Advanced Reports page
+- `/app/frontend/src/pages/BasicReports.js` - Basic Reports page
+- `/app/frontend/src/config/navItems.js` - Navigation config
+- `/app/backend/server.py` - Main backend (55K lines)
