@@ -3624,294 +3624,31 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         />
 
         {/* Payment Dialog */}
-        <Dialog open={openDialog === 'payment'} onOpenChange={(open) => !open && setOpenDialog(null)}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Process Payment</DialogTitle>
-              <DialogDescription>
-                Record payment for this booking
-              </DialogDescription>
-            </DialogHeader>
-            
-            {selectedBooking && (
-              <div className="space-y-4">
-                <div>
-                  <Label>Amount</Label>
-                  <Input 
-                    type="number"
-                    value={paymentForm.amount}
-                    onChange={(e) => setPaymentForm({...paymentForm, amount: parseFloat(e.target.value)})}
-                    placeholder="0.00"
-                  />
-                </div>
-                <div>
-                  <Label>Payment Method</Label>
-                  <Select 
-                    value={paymentForm.method} 
-                    onValueChange={(v) => setPaymentForm({...paymentForm, method: v})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cash">Cash</SelectItem>
-                      <SelectItem value="card">Card</SelectItem>
-                      <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                      <SelectItem value="cheque">Cheque</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Payment Type</Label>
-                  <Select 
-                    value={paymentForm.payment_type} 
-                    onValueChange={(v) => setPaymentForm({...paymentForm, payment_type: v})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="prepayment">Prepayment</SelectItem>
-                      <SelectItem value="deposit">Deposit</SelectItem>
-                      <SelectItem value="interim">Interim Payment</SelectItem>
-                      <SelectItem value="final">Final Payment</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Reference</Label>
-                  <Input 
-                    value={paymentForm.reference}
-                    onChange={(e) => setPaymentForm({...paymentForm, reference: e.target.value})}
-                    placeholder="Transaction reference"
-                  />
-                </div>
-                <div>
-                  <Label>Notes</Label>
-                  <Textarea 
-                    value={paymentForm.notes}
-                    onChange={(e) => setPaymentForm({...paymentForm, notes: e.target.value})}
-                    placeholder="Payment notes..."
-                    rows={2}
-                  />
-                </div>
-                
-                <div className="flex justify-end gap-2 pt-4 border-t">
-                  <Button variant="outline" onClick={() => setOpenDialog(null)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={async () => {
-                    try {
-                      // Get folio for this booking
-                      const folioRes = await axios.get(`/folio/booking/${selectedBooking.id}`);
-                      if (folioRes.data && folioRes.data.length > 0) {
-                        const folio = folioRes.data[0];
-                        await axios.post(`/folio/${folio.id}/payment`, paymentForm);
-                        toast.success('Payment recorded successfully');
-                        setOpenDialog(null);
-                        setPaymentForm({ amount: 0, method: 'card', payment_type: 'interim', reference: '', notes: '' });
-                        loadData();
-                      } else {
-                        toast.error('No folio found for this booking');
-                      }
-                    } catch (error) {
-                      toast.error('Failed to record payment');
-                      console.error(error);
-                    }
-                  }}>
-                    <DollarSign className="w-4 h-4 mr-2" />
-                    Record Payment
-                  </Button>
-                </div>
-              </div>
-            )}
-          </DialogContent>
+        <PaymentDialog
+          open={openDialog === 'payment'}
+          onClose={() => setOpenDialog(null)}
+          selectedBooking={selectedBooking}
+          paymentForm={paymentForm}
+          setPaymentForm={setPaymentForm}
+          onPaymentDone={loadData}
+        />
 
-
-        {/* Find Available Rooms Dialog */}
-        <Dialog open={openDialog === 'findroom'} onOpenChange={(open) => !open && setOpenDialog(null)}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Home className="w-5 h-5" />
-                Find Available Rooms
-              </DialogTitle>
-              <DialogDescription>
-                Search for available rooms based on dates and preferences
-              </DialogDescription>
-            </DialogHeader>
-            
-            <div className="space-y-6">
-              {/* Search Criteria */}
-              <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
-                <div>
-                  <Label>Check-in Date *</Label>
-                  <Input 
-                    type="date"
-                    value={findRoomCriteria.check_in}
-                    onChange={(e) => setFindRoomCriteria({...findRoomCriteria, check_in: e.target.value})}
-                    min={new Date().toISOString().split('T')[0]}
-                  />
-                </div>
-                <div>
-                  <Label>Check-out Date *</Label>
-                  <Input 
-                    type="date"
-                    value={findRoomCriteria.check_out}
-                    onChange={(e) => setFindRoomCriteria({...findRoomCriteria, check_out: e.target.value})}
-                    min={findRoomCriteria.check_in || new Date().toISOString().split('T')[0]}
-                  />
-                </div>
-                <div>
-                  <Label>Room Type</Label>
-                  <Select 
-                    value={findRoomCriteria.room_type} 
-                    onValueChange={(v) => setFindRoomCriteria({...findRoomCriteria, room_type: v})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Any type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="any">Any type</SelectItem>
-                      <SelectItem value="standard">Standard</SelectItem>
-                      <SelectItem value="deluxe">Deluxe</SelectItem>
-                      <SelectItem value="suite">Suite</SelectItem>
-                      <SelectItem value="presidential">Presidential</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Number of Guests</Label>
-                  <Input 
-                    type="number"
-                    min="1"
-                    max="6"
-                    value={findRoomCriteria.guests}
-                    onChange={(e) => setFindRoomCriteria({...findRoomCriteria, guests: parseInt(e.target.value)})}
-                  />
-                </div>
-              </div>
-
-              <Button 
-                onClick={async () => {
-                  if (!findRoomCriteria.check_in || !findRoomCriteria.check_out) {
-                    toast.error('Please select check-in and check-out dates');
-                    return;
-                  }
-                  
-                  setLoadingAvailableRooms(true);
-                  try {
-                    const params = new URLSearchParams({
-                      check_in: findRoomCriteria.check_in,
-                      check_out: findRoomCriteria.check_out
-                    });
-                    
-                    if (findRoomCriteria.room_type) {
-                      params.append('room_type', findRoomCriteria.room_type);
-                    }
-                    
-                    const response = await axios.get(`/frontdesk/available-rooms?${params.toString()}`);
-                    setAvailableRooms(response.data.available_rooms || []);
-                    
-                    if (response.data.available_rooms.length === 0) {
-                      toast.info('No available rooms found for selected dates');
-                    } else {
-                      toast.success(`Found ${response.data.available_rooms.length} available rooms`);
-                    }
-                  } catch (error) {
-                    toast.error('Failed to search for rooms');
-                    console.error(error);
-                  } finally {
-                    setLoadingAvailableRooms(false);
-                  }
-                }}
-                disabled={loadingAvailableRooms}
-                className="w-full"
-              >
-                {loadingAvailableRooms ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    Searching...
-                  </>
-                ) : (
-                  <>
-                    <Home className="w-4 h-4 mr-2" />
-                    Search Available Rooms
-                  </>
-                )}
-              </Button>
-
-              {/* Results */}
-              {availableRooms.length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between border-b pb-2">
-                    <h3 className="font-semibold text-lg">
-                      Available Rooms ({availableRooms.length})
-                    </h3>
-                    <Badge variant="secondary">
-                      {findRoomCriteria.check_in} to {findRoomCriteria.check_out}
-                    </Badge>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
-                    {availableRooms.map((room) => (
-                      <Card key={room.id} className="border-l-4 border-l-green-500">
-                        <CardContent className="p-4">
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-lg font-semibold">Room {room.room_number}</span>
-                              <Badge>{room.room_type}</Badge>
-                            </div>
-                            <div className="text-sm text-gray-600 space-y-1">
-                              <div className="flex justify-between">
-                                <span>Floor:</span>
-                                <span className="font-medium">{room.floor}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span>Base Price:</span>
-                                <span className="font-medium text-blue-600">${room.base_price}/night</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span>Capacity:</span>
-                                <span className="font-medium">{room.capacity || room.max_occupancy || 2} guests</span>
-                              </div>
-                              {room.amenities && room.amenities.length > 0 && (
-                                <div className="pt-2 border-t">
-                                  <span className="text-xs text-gray-500">
-                                    Amenities: {room.amenities.slice(0, 3).join(', ')}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                            <Button 
-                              size="sm" 
-                              className="w-full mt-2"
-                              onClick={() => {
-                                setNewBooking({
-                                  ...newBooking,
-                                  room_id: room.id,
-                                  check_in: findRoomCriteria.check_in,
-                                  check_out: findRoomCriteria.check_out,
-                                  adults: findRoomCriteria.guests
-                                });
-                                setOpenDialog('booking');
-                                toast.success(`Room ${room.room_number} selected`);
-                              }}
-                            >
-                              Select This Room
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        </Dialog>
+        <FindRoomDialog
+          open={openDialog === 'findroom'}
+          onClose={() => setOpenDialog(null)}
+          findRoomCriteria={findRoomCriteria}
+          setFindRoomCriteria={setFindRoomCriteria}
+          onRoomSelected={(room) => {
+            setNewBooking({
+              ...newBooking,
+              room_id: room.id,
+              check_in: findRoomCriteria.check_in,
+              check_out: findRoomCriteria.check_out,
+              adults: findRoomCriteria.guests
+            });
+            setOpenDialog('booking');
+          }}
+        />
 
     </Layout>
   );
