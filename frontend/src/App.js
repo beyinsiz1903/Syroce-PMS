@@ -121,6 +121,7 @@ const MaintenancePlans = lazy(() => import("@/pages/MaintenancePlans"));
 
 // New modules - Security, Compliance, Multi-Property, ML
 const SecurityCenter = lazy(() => import("@/pages/SecurityCenter"));
+const SecurityDashboard = lazy(() => import("@/pages/SecurityDashboard"));
 const GDPRCompliance = lazy(() => import("@/pages/GDPRCompliance"));
 const CentralOfficeDashboard = lazy(() => import("@/pages/CentralOfficeDashboard"));
 const CentralPricingManager = lazy(() => import("@/pages/CentralPricingManager"));
