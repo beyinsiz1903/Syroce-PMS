@@ -23,6 +23,7 @@ import BookingDetailDialog from '@/components/pms/BookingDetailDialog';
 import BulkRoomsDialog from '@/components/pms/BulkRoomsDialog';
 import CompanyDialog from '@/components/pms/CompanyDialog';
 import FindRoomDialog from '@/components/pms/FindRoomDialog';
+import HKTaskDialog from '@/components/pms/HKTaskDialog';
 import MaintenanceDialog from '@/components/pms/MaintenanceDialog';
 import { RoomBlockCreateDialog, RoomBlockViewDialog } from '@/components/pms/RoomBlockDialogs';
 import GuestInfoDialog from '@/components/pms/GuestInfoDialog';
