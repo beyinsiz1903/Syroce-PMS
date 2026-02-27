@@ -938,6 +938,30 @@ function App() {
             }
           />
           <Route
+            path="/reports/builder"
+            element={
+              isAuthenticated ? (
+                <Suspense fallback={<LoadingFallback />}>
+                  <ReportBuilder user={user} tenant={tenant} onLogout={handleLogout} />
+                </Suspense>
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/app/rapor-olusturucu"
+            element={
+              isAuthenticated ? (
+                <Suspense fallback={<LoadingFallback />}>
+                  <ReportBuilder user={user} tenant={tenant} onLogout={handleLogout} />
+                </Suspense>
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
             path="/reports/official-guest-list"
             element={
               isAuthenticated ? (
