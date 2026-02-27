@@ -44,6 +44,30 @@ const Guest360Dialog = ({
     }
   };
 
+  const addGuestTag = async () => {
+    if (!guestTag.trim() || !selectedGuest360) return;
+    try {
+      await axios.post(`/crm/guest/add-tag?guest_id=${selectedGuest360}&tag=${guestTag}`);
+      toast.success('Tag added');
+      setGuestTag('');
+      loadGuest360(selectedGuest360);
+    } catch {
+      toast.error('Failed to add tag');
+    }
+  };
+
+  const addGuestNote = async () => {
+    if (!guestNote.trim() || !selectedGuest360) return;
+    try {
+      await axios.post(`/crm/guest/note?guest_id=${selectedGuest360}&note=${guestNote}`);
+      toast.success('Note added');
+      setGuestNote('');
+      loadGuest360(selectedGuest360);
+    } catch {
+      toast.error('Failed to add note');
+    }
+  };
+
   return (
 <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
   <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
