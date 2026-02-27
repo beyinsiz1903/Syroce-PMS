@@ -2525,83 +2525,13 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         />
 
         {/* Quick Company Create Dialog */}
-        <Dialog open={openDialog === 'company'} onOpenChange={(open) => !open && setOpenDialog(null)}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Quick Company Creation</DialogTitle>
-              <DialogDescription>Create a new company profile (status: pending)</DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleCreateCompany} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Company Name *</Label>
-                  <Input 
-                    value={newCompany.name} 
-                    onChange={(e) => setNewCompany({...newCompany, name: e.target.value})}
-                    required
-                  />
-                </div>
-                <div>
-                  <Label>Corporate Code</Label>
-                  <Input 
-                    value={newCompany.corporate_code} 
-                    onChange={(e) => setNewCompany({...newCompany, corporate_code: e.target.value})}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Tax Number</Label>
-                  <Input 
-                    value={newCompany.tax_number} 
-                    onChange={(e) => setNewCompany({...newCompany, tax_number: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <Label>Contact Person</Label>
-                  <Input 
-                    value={newCompany.contact_person} 
-                    onChange={(e) => setNewCompany({...newCompany, contact_person: e.target.value})}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <Label>Billing Address</Label>
-                <Textarea 
-                  value={newCompany.billing_address} 
-                  onChange={(e) => setNewCompany({...newCompany, billing_address: e.target.value})}
-                  rows={2}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Contact Email</Label>
-                  <Input 
-                    type="email"
-                    value={newCompany.contact_email} 
-                    onChange={(e) => setNewCompany({...newCompany, contact_email: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <Label>Contact Phone</Label>
-                  <Input 
-                    value={newCompany.contact_phone} 
-                    onChange={(e) => setNewCompany({...newCompany, contact_phone: e.target.value})}
-                  />
-                </div>
-              </div>
-
-              <div className="text-sm text-gray-500 bg-blue-50 p-3 rounded">
-                ℹ️ This company will be created with &quot;Pending&quot; status. Sales team can complete the profile later with contracted rates and payment terms.
-              </div>
-
-              <Button type="submit" className="w-full">Create Company</Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <CompanyDialog
+          open={openDialog === 'company'}
+          onClose={() => setOpenDialog(null)}
+          newCompany={newCompany}
+          setNewCompany={setNewCompany}
+          onSubmit={handleCreateCompany}
+        />
 
         {/* Folio View Dialog */}
         <Dialog open={openDialog === 'folio-view'} onOpenChange={(open) => !open && setOpenDialog(null)}>
