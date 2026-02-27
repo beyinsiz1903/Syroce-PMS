@@ -3007,162 +3007,24 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           </DialogContent>
         </Dialog>
 
-        {/* Room Block Dialog */}
-        <Dialog open={openDialog === 'roomblock'} onOpenChange={(open) => !open && setOpenDialog(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Block Room</DialogTitle>
-              <DialogDescription>
-                Create an Out of Order, Out of Service, or Maintenance block for a room
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={(e) => { e.preventDefault(); createRoomBlock(); }} className="space-y-4">
-              <div>
-                <Label>Room *</Label>
-                <Select value={selectedRoom?.id || ''} onValueChange={(v) => setSelectedRoom(rooms.find(r => r.id === v))}>
-                  <SelectTrigger><SelectValue placeholder="Select room" /></SelectTrigger>
-                  <SelectContent>
-                    {rooms.map(r => <SelectItem key={r.id} value={r.id}>Room {r.room_number} ({r.room_type})</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Block Type *</Label>
-                <Select value={newRoomBlock.type} onValueChange={(v) => setNewRoomBlock({...newRoomBlock, type: v})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="out_of_order">Out of Order (Cannot be sold)</SelectItem>
-                    <SelectItem value="out_of_service">Out of Service</SelectItem>
-                    <SelectItem value="maintenance">Maintenance</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Reason *</Label>
-                <Input 
-                  value={newRoomBlock.reason} 
-                  onChange={(e) => setNewRoomBlock({...newRoomBlock, reason: e.target.value})}
-                  placeholder="e.g., Plumbing issue, Renovation"
-                  maxLength={200}
-                />
-              </div>
-              <div>
-                <Label>Details (optional)</Label>
-                <Textarea 
-                  value={newRoomBlock.details} 
-                  onChange={(e) => setNewRoomBlock({...newRoomBlock, details: e.target.value})}
-                  placeholder="Additional details about the block"
-                  rows={3}
-                />
-              </div>
-              <div>
-                <Label>Start Date *</Label>
-                <Input 
-                  type="date"
-                  value={newRoomBlock.start_date} 
-                  onChange={(e) => setNewRoomBlock({...newRoomBlock, start_date: e.target.value})}
-                />
-              </div>
-              <div>
-                <Label>End Date (optional - leave empty for open-ended)</Label>
-                <Input 
-                  type="date"
-                  value={newRoomBlock.end_date} 
-                  onChange={(e) => setNewRoomBlock({...newRoomBlock, end_date: e.target.value})}
-                />
-              </div>
-              <div className="flex items-center space-x-2">
-                <input 
-                  type="checkbox"
-                  id="allow_sell"
-                  checked={newRoomBlock.allow_sell}
-                  onChange={(e) => setNewRoomBlock({...newRoomBlock, allow_sell: e.target.checked})}
-                  className="h-4 w-4"
-                />
-                <Label htmlFor="allow_sell" className="cursor-pointer">
-                  Allow room to be sold during block period
-                </Label>
-              </div>
-              <Button type="submit" className="w-full">Create Room Block</Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <RoomBlockCreateDialog
+          open={openDialog === 'roomblock'}
+          onClose={() => setOpenDialog(null)}
+          rooms={rooms}
+          selectedRoom={selectedRoom}
+          setSelectedRoom={setSelectedRoom}
+          newRoomBlock={newRoomBlock}
+          setNewRoomBlock={setNewRoomBlock}
+          onSubmit={createRoomBlock}
+        />
 
-        {/* View Room Blocks Dialog */}
-        <Dialog open={openDialog === 'viewblocks'} onOpenChange={(open) => !open && setOpenDialog(null)}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Room Blocks - Room {selectedRoom?.room_number}</DialogTitle>
-              <DialogDescription>All blocks for this room</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {selectedRoom && roomBlocks.filter(b => b.room_id === selectedRoom.id).length === 0 && (
-                <div className="text-center text-gray-400 py-8">No blocks for this room</div>
-              )}
-              {selectedRoom && roomBlocks.filter(b => b.room_id === selectedRoom.id).map((block) => (
-                <Card key={block.id} className={`${
-                  block.status === 'cancelled' ? 'bg-gray-50' : 
-                  block.type === 'out_of_order' ? 'border-red-400' :
-                  block.type === 'out_of_service' ? 'border-orange-400' :
-                  'border-yellow-400'
-                }`}>
-                  <CardContent className="pt-4">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className={`px-2 py-1 text-xs font-bold rounded ${
-                            block.type === 'out_of_order' ? 'bg-red-600 text-white' :
-                            block.type === 'out_of_service' ? 'bg-orange-500 text-white' :
-                            'bg-yellow-600 text-white'
-                          }`}>
-                            {block.type === 'out_of_order' ? 'OUT OF ORDER' :
-                             block.type === 'out_of_service' ? 'OUT OF SERVICE' :
-                             'MAINTENANCE'}
-                          </span>
-                          <span className={`px-2 py-1 text-xs font-semibold rounded ${
-                            block.status === 'active' ? 'bg-green-100 text-green-700' :
-                            block.status === 'cancelled' ? 'bg-gray-200 text-gray-600' :
-                            'bg-yellow-100 text-yellow-700'
-                          }`}>
-                            {block.status}
-                          </span>
-                        </div>
-                        <div className="text-sm font-medium text-gray-900 mb-1">
-                          {block.reason}
-                        </div>
-                        {block.details && (
-                          <div className="text-xs text-gray-600 mb-2">
-                            {block.details}
-                          </div>
-                        )}
-                        <div className="text-xs text-gray-500">
-                          {new Date(block.start_date).toLocaleDateString()} - {
-                            block.end_date ? new Date(block.end_date).toLocaleDateString() : 'Open-ended'
-                          }
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          {block.allow_sell ? '✓ Can be sold' : '✗ Cannot be sold'}
-                        </div>
-                      </div>
-                      {block.status === 'active' && (
-                        <Button 
-                          size="sm" 
-                          variant="destructive" 
-                          onClick={() => {
-                            cancelRoomBlock(block.id);
-                            setOpenDialog(null);
-                          }}
-                        >
-                          Cancel
-                        </Button>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </DialogContent>
-        </Dialog>
+        <RoomBlockViewDialog
+          open={openDialog === 'viewblocks'}
+          onClose={() => setOpenDialog(null)}
+          selectedRoom={selectedRoom}
+          roomBlocks={roomBlocks}
+          onCancelBlock={(id) => { cancelRoomBlock(id); setOpenDialog(null); }}
+        />
 
         {/* Guest 360° Profile Dialog - Extracted Component */}
         <Guest360Dialog
