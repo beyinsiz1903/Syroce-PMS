@@ -43,25 +43,30 @@ const PLANS = {
   },
 };
 
-const ROLE_LABELS = {
-  admin: { label: 'Yönetici', color: 'bg-blue-100 text-blue-800' },
-  supervisor: { label: 'Süpervizör', color: 'bg-green-100 text-green-800' },
-  front_desk: { label: 'Resepsiyon', color: 'bg-yellow-100 text-yellow-800' },
-  housekeeping: { label: t('nav.housekeeping'), color: 'bg-orange-100 text-orange-800' },
-  finance: { label: 'Muhasebe', color: 'bg-pink-100 text-pink-800' },
-  sales: { label: 'Satış', color: 'bg-indigo-100 text-indigo-800' },
-  revenue: { label: 'Revenue', color: 'bg-teal-100 text-teal-800' },
-  maintenance: { label: 'Teknik', color: 'bg-gray-100 text-gray-800' },
-  fnb: { label: 'F&B', color: 'bg-red-100 text-red-800' },
-  spa: { label: 'Spa', color: 'bg-violet-100 text-violet-800' },
-  concierge: { label: 'Concierge', color: 'bg-cyan-100 text-cyan-800' },
-  night_auditor: { label: 'Gece Denetçisi', color: 'bg-slate-100 text-slate-800' },
-  staff: { label: 'Personel', color: 'bg-neutral-100 text-neutral-800' },
-  super_admin: { label: 'Super Admin', color: 'bg-purple-100 text-purple-800' },
+const ROLE_COLORS = {
+  admin: 'bg-blue-100 text-blue-800',
+  supervisor: 'bg-green-100 text-green-800',
+  front_desk: 'bg-yellow-100 text-yellow-800',
+  housekeeping: 'bg-orange-100 text-orange-800',
+  finance: 'bg-pink-100 text-pink-800',
+  sales: 'bg-indigo-100 text-indigo-800',
+  revenue: 'bg-teal-100 text-teal-800',
+  maintenance: 'bg-gray-100 text-gray-800',
+  fnb: 'bg-red-100 text-red-800',
+  spa: 'bg-violet-100 text-violet-800',
+  concierge: 'bg-cyan-100 text-cyan-800',
+  night_auditor: 'bg-slate-100 text-slate-800',
+  staff: 'bg-neutral-100 text-neutral-800',
+  super_admin: 'bg-purple-100 text-purple-800',
 };
 
 const Settings = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
+
+  const getRoleLabel = (role) => ({
+    label: t(`settings.roles.${role}`) || role,
+    color: ROLE_COLORS[role] || 'bg-gray-100 text-gray-800'
+  });
   const [activeTab, setActiveTab] = useState('team');
 
   // Team
