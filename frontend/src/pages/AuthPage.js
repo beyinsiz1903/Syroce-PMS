@@ -381,7 +381,7 @@ const AuthPage = ({ onLogin }) => {
                               </p>
                             </div>
                             <Button type="submit" className="w-full" disabled={loading}>
-                              Devam Et
+                              {t('auth.continue')}
                             </Button>
                           </form>
                         )}
@@ -389,7 +389,7 @@ const AuthPage = ({ onLogin }) => {
                         {forgotPasswordStep === 'newpassword' && (
                           <form onSubmit={handleResetPassword} className="space-y-4">
                             <div>
-                              <Label>Yeni Şifreniz</Label>
+                              <Label>{t('auth.newPassword')}</Label>
                               <Input
                                 type="password"
                                 value={hotelLoginData.password}
@@ -399,11 +399,11 @@ const AuthPage = ({ onLogin }) => {
                                 minLength={6}
                               />
                               <p className="text-xs text-gray-500 mt-1">
-                                En az 6 karakter olmalı
+                                {t('auth.minSixChars')}
                               </p>
                             </div>
                             <Button type="submit" className="w-full" disabled={loading}>
-                              {loading ? 'Güncelleniyor...' : 'Şifremi Güncelle'}
+                              {loading ? t('auth.updating') : t('auth.updatePassword')}
                             </Button>
                           </form>
                         )}
@@ -415,7 +415,7 @@ const AuthPage = ({ onLogin }) => {
                     {registrationStep === 'form' ? (
                       <form onSubmit={handleRequestVerification} className="space-y-4">
                         <div>
-                          <Label>Otel Adı</Label>
+                          <Label>{t('auth.hotelName')}</Label>
                           <Input
                             value={hotelRegisterData.property_name}
                             onChange={(e) => setHotelRegisterData({...hotelRegisterData, property_name: e.target.value})}
@@ -424,7 +424,7 @@ const AuthPage = ({ onLogin }) => {
                           />
                         </div>
                         <div>
-                          <Label>Yetkili Adı Soyadı</Label>
+                          <Label>{t('auth.authorizedPerson')}</Label>
                           <Input
                             value={hotelRegisterData.name}
                             onChange={(e) => setHotelRegisterData({...hotelRegisterData, name: e.target.value})}
@@ -433,7 +433,7 @@ const AuthPage = ({ onLogin }) => {
                           />
                         </div>
                         <div>
-                          <Label>E-posta</Label>
+                          <Label>{t('common.email')}</Label>
                           <Input
                             type="email"
                             value={hotelRegisterData.email}
@@ -443,7 +443,7 @@ const AuthPage = ({ onLogin }) => {
                           />
                         </div>
                         <div>
-                          <Label>Telefon</Label>
+                          <Label>{t('common.phone')}</Label>
                           <Input
                             value={hotelRegisterData.phone}
                             onChange={(e) => setHotelRegisterData({...hotelRegisterData, phone: e.target.value})}
@@ -452,18 +452,18 @@ const AuthPage = ({ onLogin }) => {
                           />
                         </div>
                         <div>
-                          <Label>Şifre</Label>
+                          <Label>{t('common.password')}</Label>
                           <Input
                             type="password"
                             value={hotelRegisterData.password}
                             onChange={(e) => setHotelRegisterData({...hotelRegisterData, password: e.target.value})}
                             required
                             minLength={6}
-                            placeholder="En az 6 karakter"
+                            placeholder={t('auth.minSixCharsPlaceholder')}
                           />
                         </div>
                         <Button type="submit" className="w-full" disabled={loading}>
-                          {loading ? 'Gönderiliyor...' : 'Doğrulama Kodu Gönder'}
+                          {loading ? t('auth.sending') : t('auth.sendVerCode')}
                         </Button>
                       </form>
                     ) : (
