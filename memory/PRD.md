@@ -19,62 +19,60 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 
 ### Phase 5: Guest Portal & Communication (COMPLETED)
 - Guest Messaging System (backend + frontend)
-- GuestPortal messaging navigation
 
 ### Phase 7: Security & Performance (COMPLETED - Feb 2026)
-- Security Headers Middleware, JWT Token Refresh, Audit Logging, Security Dashboard
-- Input Sanitization Module, Rate Limiting
+- Security Headers, JWT Refresh, Audit Logging, Security Dashboard
 
 ### i18n Internationalization (IN PROGRESS - Feb 2026)
-- **Infrastructure:** `useTranslation` hook injected into all 116 page files
-- **Locale files:** tr.json (Turkish) and en.json (English) - ~1100+ keys each
-- **en.json fully translated:** All sections now have proper English translations (was Turkish before)
-- **Key pages fully converted:** Dashboard.js, AuthPage.js, Settings.js
-- **New keys added:** dashboard (28 new), auth (40+ new), settings (30+ new)
-- **Bug fixed:** Settings.js ROLE_LABELS t() outside component - moved to getRoleLabel() inside component
-- **Remaining:** ~80 pages still have hardcoded strings that should use t() calls
+- **Infrastructure:** `useTranslation` hook in all 116 page files
+- **Locale files:** tr.json (1100+ keys) and en.json (1100+ keys) - fully translated
+- **Key pages converted:** Dashboard.js, AuthPage.js, Settings.js (all hardcoded strings replaced with t() calls)
+- **en.json fully translated:** All 20+ sections now have proper English translations
+- **Bug fixed:** Settings.js ROLE_LABELS crash - t() at module level
+- **Remaining:** ~80 pages still have some hardcoded strings
 
-### PMSModule.js Refactoring (IN PROGRESS - Feb 2026)
-- **Starting size:** 5189 lines
-- **Current size:** 3918 lines (-1271 lines, -24.5% reduction)
-- **Extracted components:**
-  - BookingDialog.js (466 lines)
-  - Guest360Dialog.js (490 lines)
-  - GuestInfoDialog.js (~200 lines) - NEW
-  - BookingDetailDialog.js (~120 lines) - NEW
-- **Duplicate removed:** Maintenance Work Order Dialog (was duplicated, -93 lines)
-- **Remaining:** More dialogs can be extracted (FolioView, FindRoom, BulkRooms, etc.)
+### PMSModule.js Refactoring (COMPLETED - Feb 2026)
+- **5189 -> 3030 lines** (-41.6% reduction)
+- **10 extracted components in /app/frontend/src/components/pms/:**
+  1. BookingDialog.js (466 lines) - pre-existing
+  2. Guest360Dialog.js (490 lines) - pre-existing
+  3. BookingDetailDialog.js (~120 lines)
+  4. GuestInfoDialog.js (~200 lines)
+  5. FindRoomDialog.js (~130 lines)
+  6. PaymentDialog.js (~100 lines)
+  7. BulkRoomsDialog.js (~150 lines)
+  8. MaintenanceDialog.js (~85 lines)
+  9. RoomBlockDialogs.js (~100 lines, 2 exports)
+  10. CompanyDialog.js (~40 lines)
+  11. HKTaskDialog.js (~50 lines)
+- Duplicate Maintenance Dialog removed
 
 ### Bug Fix: Login Redirect (FIXED)
-- React Router handles redirect, removed window.location.href
+- React Router handles redirect
 
 ## Prioritized Backlog
 
 ### P0 (Next)
-- Continue i18n hardcoded string conversion for remaining pages
-- Continue PMSModule.js refactoring (target: <3000 lines)
+- Continue i18n hardcoded string conversion for remaining ~80 pages
 
 ### P1
-- Phase 6: Integrations & Automation
-  - Channel Manager enhancements
-  - Payment gateway (Stripe)
+- Phase 6: Integrations & Automation (Channel Manager, Stripe)
 
 ### P2
-- Load Testing (k6 or Locust)
+- Load Testing (k6 / Locust)
 
 ## Key Endpoints
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| /api/auth/login | POST | Login (audit logged) |
-| /api/auth/refresh-token | POST | JWT token refresh |
-| /api/security/summary | GET | Security dashboard data |
-| /api/reports/builder/* | GET/POST | Report Builder CRUD |
-| /api/guest/messages | GET/POST | Guest Messaging |
-| /api/pms/dashboard | GET | PMS Dashboard stats |
+| /api/auth/login | POST | Login |
+| /api/auth/refresh-token | POST | JWT refresh |
+| /api/pms/dashboard | GET | PMS stats |
+| /api/reports/builder/* | GET/POST | Report Builder |
+| /api/security/summary | GET | Security dashboard |
 
 ## Test Reports
-- iteration_1-3: Previous phases
-- iteration_4: i18n conversion + Settings.js bug fix (100% pass)
+- iteration_4: i18n + Settings bug fix (100% pass)
+- iteration_7: PMSModule.js refactoring (100% pass)
 
 ## Credentials
 | Role | Email | Password |
