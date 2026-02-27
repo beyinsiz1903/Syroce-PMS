@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
 
 # Configuration
-BASE_URL = "https://pms-feature-test.preview.emergentagent.com/api"
+BASE_URL = "https://pms-i18next-demo.preview.emergentagent.com/api"
 EMAIL = "demo@hotel.com"
 PASSWORD = "demo123"
 

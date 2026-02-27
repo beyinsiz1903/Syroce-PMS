@@ -8,7 +8,7 @@ import re
 from datetime import datetime
 
 # Backend URL from environment
-BACKEND_URL = "https://pms-feature-test.preview.emergentagent.com/api"
+BACKEND_URL = "https://pms-i18next-demo.preview.emergentagent.com/api"
 
 class Colors:
     GREEN = '\033[92m'

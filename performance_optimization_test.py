@@ -41,7 +41,7 @@ import uuid
 import statistics
 
 # Configuration
-BACKEND_URL = "https://pms-feature-test.preview.emergentagent.com/api"
+BACKEND_URL = "https://pms-i18next-demo.preview.emergentagent.com/api"
 TEST_EMAIL = "admin@hotel.com"
 TEST_PASSWORD = "admin123"
 

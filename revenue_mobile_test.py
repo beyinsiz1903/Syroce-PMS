@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import os
 
 # Get backend URL from environment
-BACKEND_URL = os.getenv('REACT_APP_BACKEND_URL', 'https://pms-feature-test.preview.emergentagent.com')
+BACKEND_URL = os.getenv('REACT_APP_BACKEND_URL', 'https://pms-i18next-demo.preview.emergentagent.com')
 API_BASE = f"{BACKEND_URL}/api"
 
 class RevenueMobileAPITester:

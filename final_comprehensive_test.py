@@ -15,7 +15,7 @@ import aiohttp
 import json
 import time
 
-BACKEND_URL = "https://pms-feature-test.preview.emergentagent.com/api"
+BACKEND_URL = "https://pms-i18next-demo.preview.emergentagent.com/api"
 TEST_EMAIL = "admin@hotel.com"
 TEST_PASSWORD = "admin123"
 

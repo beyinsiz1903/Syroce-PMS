@@ -22,7 +22,7 @@ from datetime import datetime
 import os
 
 # Configuration
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://pms-feature-test.preview.emergentagent.com') + '/api'
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://pms-i18next-demo.preview.emergentagent.com') + '/api'
 DEMO_EMAIL = "demo@hotel.com"
 DEMO_PASSWORD = "demo123"
 

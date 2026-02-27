@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 
 # Configuration
-BACKEND_URL = "https://pms-feature-test.preview.emergentagent.com/api"
+BACKEND_URL = "https://pms-i18next-demo.preview.emergentagent.com/api"
 
 class AuditLogsTester:
     def __init__(self):

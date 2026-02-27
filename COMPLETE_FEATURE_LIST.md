@@ -218,7 +218,7 @@
 ## 📋 QUICK START GUIDE
 
 **Login:**
-- URL: https://pms-feature-test.preview.emergentagent.com
+- URL: https://pms-i18next-demo.preview.emergentagent.com
 - Demo: demo@hotel.com / demo123
 
 **New User Registration:**

@@ -8,7 +8,7 @@ import requests
 import json
 from datetime import datetime, timezone, timedelta
 
-BACKEND_URL = 'https://pms-feature-test.preview.emergentagent.com/api'
+BACKEND_URL = 'https://pms-i18next-demo.preview.emergentagent.com/api'
 TEST_EMAIL = 'test@hotel.com'
 TEST_PASSWORD = 'test123'
 

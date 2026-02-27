@@ -21,7 +21,7 @@ import sys
 import os
 
 # Configuration
-BASE_URL = "https://pms-feature-test.preview.emergentagent.com"
+BASE_URL = "https://pms-i18next-demo.preview.emergentagent.com"
 API_BASE = f"{BASE_URL}/api"
 
 # Demo credentials
