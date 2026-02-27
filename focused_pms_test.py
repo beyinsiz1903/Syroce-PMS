@@ -9,7 +9,7 @@ import json
 import sys
 
 # Configuration
-BACKEND_URL = "https://appstore-preview-1.preview.emergentagent.com/api"
+BACKEND_URL = "https://guest-messaging-1.preview.emergentagent.com/api"
 AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiZGMwNjlmMzgtNmIwZi00NDc4LWI4N2UtNGUzN2YzM2UwODViIiwidGVuYW50X2lkIjoiZjExYTE5MTktYmZlOC00ODI1LTkyYzktYzNmZWUzNWE5MmZhIiwiZXhwIjoxNzYzNjcwNzIwfQ.xaDjzpkmG7UFVwfUzVa92Ngs9n9piy3W1yQBSj6we-E"
 
 def test_endpoint(method, endpoint, data=None, expected_fields=None):

@@ -218,7 +218,7 @@
 ## 📋 QUICK START GUIDE
 
 **Login:**
-- URL: https://appstore-preview-1.preview.emergentagent.com
+- URL: https://guest-messaging-1.preview.emergentagent.com
 - Demo: demo@hotel.com / demo123
 
 **New User Registration:**

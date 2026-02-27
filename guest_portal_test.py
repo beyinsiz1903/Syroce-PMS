@@ -14,7 +14,7 @@ from typing import Dict, List, Any, Optional
 import uuid
 
 # Configuration
-BACKEND_URL = "https://appstore-preview-1.preview.emergentagent.com/api"
+BACKEND_URL = "https://guest-messaging-1.preview.emergentagent.com/api"
 
 class GuestPortalTester:
     def __init__(self):

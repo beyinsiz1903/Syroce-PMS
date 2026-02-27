@@ -8,7 +8,7 @@ import re
 from datetime import datetime
 
 # Backend URL from environment
-BACKEND_URL = "https://appstore-preview-1.preview.emergentagent.com/api"
+BACKEND_URL = "https://guest-messaging-1.preview.emergentagent.com/api"
 
 class Colors:
     GREEN = '\033[92m'

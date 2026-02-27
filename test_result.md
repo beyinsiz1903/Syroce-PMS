@@ -271,7 +271,7 @@ agent_communication:
 ## IMPORTANT: Do not modify this section
 - Test each endpoint with valid credentials: demo@hotel.com / demo123
 - Backend URL: http://localhost:8001
-- Frontend URL for browser tests: https://appstore-preview-1.preview.emergentagent.com
+- Frontend URL for browser tests: https://guest-messaging-1.preview.emergentagent.com
 - All API routes prefixed with /api
 - Check response codes and data structure
 - Report pass/fail for each test case

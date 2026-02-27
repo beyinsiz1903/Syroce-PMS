@@ -9,7 +9,7 @@ import aiohttp
 import json
 
 # Configuration
-BACKEND_URL = "https://appstore-preview-1.preview.emergentagent.com/api"
+BACKEND_URL = "https://guest-messaging-1.preview.emergentagent.com/api"
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 

@@ -23,7 +23,7 @@ import json
 from datetime import datetime
 
 # Configuration
-BASE_URL = "https://appstore-preview-1.preview.emergentagent.com"
+BASE_URL = "https://guest-messaging-1.preview.emergentagent.com"
 LOGIN_EMAIL = "demo@hotel.com"
 LOGIN_PASSWORD = "demo123"
 

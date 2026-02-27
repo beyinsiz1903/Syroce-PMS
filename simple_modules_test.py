@@ -7,7 +7,7 @@ import requests
 import json
 
 def test_modules():
-    base_url = "https://appstore-preview-1.preview.emergentagent.com/api"
+    base_url = "https://guest-messaging-1.preview.emergentagent.com/api"
     
     # Login first
     print("🔐 Logging in...")

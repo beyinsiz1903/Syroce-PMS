@@ -24,7 +24,7 @@ from datetime import datetime
 import os
 
 # Configuration
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://appstore-preview-1.preview.emergentagent.com') + '/api'
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://guest-messaging-1.preview.emergentagent.com') + '/api'
 
 # Test Credentials from review request
 CREDENTIALS = {

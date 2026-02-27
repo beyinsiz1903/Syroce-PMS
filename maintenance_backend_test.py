@@ -32,7 +32,7 @@ import uuid
 import base64
 
 # Configuration
-BACKEND_URL = "https://appstore-preview-1.preview.emergentagent.com/api"
+BACKEND_URL = "https://guest-messaging-1.preview.emergentagent.com/api"
 TEST_EMAIL = "admin@hotel.com"
 TEST_PASSWORD = "admin123"
 
