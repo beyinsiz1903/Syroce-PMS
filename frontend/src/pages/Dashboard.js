@@ -168,9 +168,9 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
     if (!Array.isArray(items) || items.length === 0) return null;
 
     const priorityLabel = {
-      high: 'Yüksek Öncelik',
-      medium: 'Orta Öncelik',
-      low: 'Düşük Öncelik'
+      high: t('dashboard.highPriority'),
+      medium: t('dashboard.mediumPriority'),
+      low: t('dashboard.lowPriority')
     };
 
     const priorityBadgeClass = (priority) => {
@@ -396,8 +396,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'guest'
     },
     {
-      title: '🏛️ Meeting & Events',
-      description: 'Toplantı odaları ve etkinlik yönetimi',
+      title: t('dashboard.meetingEvents'),
+      description: t('dashboard.meetingEventsDesc'),
       icon: Calendar,
       path: '/meeting-events',
       color: '#f59e0b',
@@ -406,7 +406,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
     },
     {
       title: t('dashboard.aiChatbot'),
-      description: 'AI destekli misafir asistanı',
+      description: t('dashboard.aiChatbotDesc'),
       icon: Bot,
       path: '/ai-chatbot',
       color: '#06b6d4',
@@ -414,8 +414,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'ai'
     },
     {
-      title: '🤖 AI Dynamic Pricing',
-      description: 'Rakip analizi ve otomatik fiyatlandırma',
+      title: t('dashboard.dynamicPricingModule'),
+      description: t('dashboard.dynamicPricingModuleDesc'),
       icon: TrendingUp,
       path: '/dynamic-pricing',
       color: '#8b5cf6',
