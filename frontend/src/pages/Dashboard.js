@@ -815,9 +815,9 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                           formatter={(value) => `$${(typeof value === 'number' ? value : 0).toFixed(0)}`}
                         />
                         <Legend wrapperStyle={{ fontSize: '12px' }} />
-                        <Bar dataKey="room_revenue" fill="#10b981" name="Room" />
-                        <Bar dataKey="fnb_revenue" fill="#f59e0b" name="F&B" />
-                        <Bar dataKey="other_revenue" fill="#6366f1" name="Other" />
+                        <Bar dataKey="room_revenue" fill="#10b981" name={t('dashboard.chartRoom')} />
+                        <Bar dataKey="fnb_revenue" fill="#f59e0b" name={t('dashboard.chartFnB')} />
+                        <Bar dataKey="other_revenue" fill="#6366f1" name={t('dashboard.chartOther')} />
                       </BarChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -829,7 +829,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                 {/* Booking Trends */}
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-lg">Booking Trends</CardTitle>
+                    <CardTitle className="text-lg">{t('dashboard.bookingTrends')}</CardTitle>
                     <CardDescription>{t("dashboard.dailyBookings")}</CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -853,7 +853,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                           dataKey="bookings" 
                           stroke="#8b5cf6" 
                           strokeWidth={2}
-                          name="Bookings"
+                          name={t('dashboard.chartBookings')}
                         />
                         <Line 
                           yAxisId="right"
@@ -871,7 +871,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                 {/* RevPAR & Performance */}
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-lg">RevPAR Performance</CardTitle>
+                    <CardTitle className="text-lg">{t('dashboard.revPARPerformance')}</CardTitle>
                     <CardDescription>{t('dashboard.revPARDesc')}</CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -905,7 +905,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
               {/* Occupancy Heatmap */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">30-Day Occupancy Heatmap</CardTitle>
+                  <CardTitle className="text-lg">{t('dashboard.heatmap30Day')}</CardTitle>
                   <CardDescription>{t('dashboard.heatmapDesc')}</CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -973,7 +973,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                         <div className="flex items-center gap-3 flex-1">
                           <h3 className="text-lg font-bold text-gray-800">{category.title}</h3>
                           <Badge variant="outline" className="text-xs">
-                            {category.modules.length} modül
+                            {category.modules.length} {t('dashboard.modules')}
                           </Badge>
                         </div>
                       </AccordionTrigger>
