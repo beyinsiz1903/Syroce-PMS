@@ -64,7 +64,7 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
         <Tabs defaultValue="tables" className="w-full">
           <TabsList className="grid w-full grid-cols-3 max-w-2xl">
             <TabsTrigger value="tables">
-68|              <UtensilsCrossed className="w-4 h-4 mr-2" />
+              <UtensilsCrossed className="w-4 h-4 mr-2" />
               {t('posDashboard.tables')}
             </TabsTrigger>
             <TabsTrigger value="menu">
