@@ -26,6 +26,7 @@ import FindRoomDialog from '@/components/pms/FindRoomDialog';
 import HKTaskDialog from '@/components/pms/HKTaskDialog';
 import MaintenanceDialog from '@/components/pms/MaintenanceDialog';
 import { RoomBlockCreateDialog, RoomBlockViewDialog } from '@/components/pms/RoomBlockDialogs';
+import GuestsTab from '@/components/pms/GuestsTab';
 import GuestInfoDialog from '@/components/pms/GuestInfoDialog';
 import PaymentDialog from '@/components/pms/PaymentDialog';
 import Guest360Dialog from '@/components/pms/Guest360Dialog';
