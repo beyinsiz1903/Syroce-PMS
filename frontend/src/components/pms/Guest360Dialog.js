@@ -23,7 +23,10 @@ const Guest360Dialog = ({
   selectedGuest360,
   loadGuest360,
 }) => {
+  const { t } = useTranslation();
   const [newNote, setNewNote] = useState('');
+  const [guestTag, setGuestTag] = useState('');
+  const [guestNote, setGuestNote] = useState('');
 
   const addNote = async () => {
     if (!newNote.trim() || !selectedGuest360) return;
