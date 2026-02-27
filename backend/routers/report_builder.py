@@ -257,10 +257,9 @@ async def fetch_report_data(config: ReportConfig, tenant_id: str) -> list:
 # ─── Endpoints ────────────────────────────────────────────────────────────
 
 @router.get("/config")
-async def get_builder_config(current_user=None):
+async def get_builder_config(credentials=Depends(HTTPBearer())):
     """Rapor oluşturucu için mevcut veri kaynaklarını ve sütun tanımlarını döndürür."""
-    if current_user is None and _get_current_user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    current_user = await _get_current_user(credentials)
 
     sources = {}
     for key, src in DATA_SOURCES.items():
@@ -273,10 +272,9 @@ async def get_builder_config(current_user=None):
 
 
 @router.post("/generate")
-async def generate_report(config: ReportConfig, current_user=None):
+async def generate_report(config: ReportConfig, credentials=Depends(HTTPBearer())):
     """Özel rapor verisini üretir."""
-    if current_user is None and _get_current_user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    current_user = await _get_current_user(credentials)
 
     tenant_id = getattr(current_user, 'tenant_id', None)
     if not tenant_id:
@@ -316,10 +314,9 @@ async def generate_report(config: ReportConfig, current_user=None):
 
 
 @router.post("/export/excel")
-async def export_report_excel(config: ReportConfig, current_user=None):
+async def export_report_excel(config: ReportConfig, credentials=Depends(HTTPBearer())):
     """Özel raporu Excel formatında dışa aktarır."""
-    if current_user is None and _get_current_user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    current_user = await _get_current_user(credentials)
 
     tenant_id = getattr(current_user, 'tenant_id', None)
     if not tenant_id:
