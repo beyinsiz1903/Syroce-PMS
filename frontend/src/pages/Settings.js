@@ -16,30 +16,24 @@ import {
 } from 'lucide-react';
 
 // ─── Plan Config ──────────────────────────────────
-const PLANS = {
+const PLAN_CONFIG = {
   basic: {
-    key: 'basic', label: 'Basic', price: 79, priceYearly: 790,
+    key: 'basic', price: 79, priceYearly: 790,
     maxRooms: 15, maxUsers: 3,
     icon: Building2, gradient: 'from-emerald-500 to-green-600',
     lightBg: 'bg-emerald-50', borderColor: 'border-emerald-200',
-    features: ['PMS Core', 'Takvim', 'Dashboard', 'Misafir Yönetimi', 'Kat Hizmetleri', 'Temel Raporlar', 'Mobil PMS', 'Basit Fatura'],
-    description: 'Küçük oteller için (1-15 oda)',
   },
   professional: {
-    key: 'professional', label: 'Professional', price: 299, priceYearly: 2990,
+    key: 'professional', price: 299, priceYearly: 2990,
     maxRooms: 80, maxUsers: 15,
     icon: Zap, gradient: 'from-blue-500 to-indigo-600',
     lightBg: 'bg-blue-50', borderColor: 'border-blue-200',
-    features: ['Tüm Basic özellikler', 'Channel Manager', 'Folio Yönetimi', 'Gece Denetimi', 'Gelişmiş Fatura & Finans', 'Maliyet Yönetimi', 'Gelişmiş Raporlar', 'Mobil Housekeeping', 'Rate Management', 'Booking Engine'],
-    description: 'Orta ölçekli oteller (15-80 oda)',
   },
   enterprise: {
-    key: 'enterprise', label: 'Enterprise', price: 799, priceYearly: 7990,
+    key: 'enterprise', price: 799, priceYearly: 7990,
     maxRooms: null, maxUsers: null,
     icon: Crown, gradient: 'from-purple-500 to-pink-600',
     lightBg: 'bg-purple-50', borderColor: 'border-purple-200',
-    features: ['Tüm Professional özellikler', 'Revenue Management (RMS)', 'AI Modülleri (7 adet)', 'Multi-Property', 'Grup Satış & MICE', 'Satış CRM', 'Loyalty Programı', 'GM Dashboard', 'API Erişimi', 'White Label', 'Audit Trail'],
-    description: 'Büyük oteller ve zincirler (80+ oda)',
   },
 };
 
