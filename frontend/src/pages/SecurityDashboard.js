@@ -199,8 +199,8 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
                 { name: 'CSP (Content Security Policy)', status: true, icon: Shield },
                 { name: 'X-Frame-Options', status: true, icon: Globe },
                 { name: 'Rate Limiting', status: true, icon: Zap },
-                { name: '{t('securityDashboard.gzipCompression')}', status: true, icon: Server },
-                { name: '{t('securityDashboard.jwtValidation')}', status: true, icon: Key },
+                { name: 'GZip Compression', status: true, icon: Server },
+                { name: 'JWT Validation', status: true, icon: Key },
                 { name: 'Input Sanitization', status: true, icon: ShieldCheck },
                 { name: 'Audit Logging', status: true, icon: Eye },
               ].map((item, i) => (

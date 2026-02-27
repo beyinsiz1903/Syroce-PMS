@@ -53,7 +53,7 @@ const DynamicPricing = () => {
       <div className="grid grid-cols-2 gap-4 mb-6">
         <div>
           <label className="text-sm mb-2 block">{t('pms.roomType')}</label>
-          <Select value={roomType} onValue{t('common.status')}={setRoomType}>
+          <Select value={roomType} onValueChange={setRoomType}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
