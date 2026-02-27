@@ -230,7 +230,7 @@ const HousekeepingDetailedReports = () => {
                         {staff.staff_name}
                       </h3>
                       <Badge className="bg-green-500">
-                        {staff.monthly_stats.efficiency_rating}
+                        {staff.monthly_stats?.efficiency_rating || 'N/A'}
                       </Badge>
                     </div>
 
