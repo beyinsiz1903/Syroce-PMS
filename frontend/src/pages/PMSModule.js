@@ -20,6 +20,7 @@ import BookingsTab from '@/components/pms/BookingsTab';
 import RoomsTab from '@/components/pms/RoomsTab';
 import BookingDialog from '@/components/pms/BookingDialog';
 import GuestInfoDialog from '@/components/pms/GuestInfoDialog';
+import Guest360Dialog from '@/components/pms/Guest360Dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
