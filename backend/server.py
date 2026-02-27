@@ -49937,6 +49937,37 @@ try:
 except Exception as e:
     print(f"⚠️ Guest Messaging not available: {e}")
 
+# Auth Router (extracted from server.py)
+try:
+    from routers.auth import router as auth_router_extracted, init_auth_router
+    try:
+        init_auth_router(apm_store=apm_store, get_rate_limit_stats=get_rate_limit_stats)
+    except Exception:
+        init_auth_router()
+    app.include_router(auth_router_extracted, tags=["auth"])
+    print("✅ Auth router included (extracted)")
+except Exception as e:
+    print(f"⚠️ Auth router not available: {e}")
+    import traceback; traceback.print_exc()
+
+# Housekeeping Router (extracted from server.py)
+try:
+    from routers.housekeeping import router as housekeeping_router_extracted
+    app.include_router(housekeeping_router_extracted, tags=["housekeeping"])
+    print("✅ Housekeeping router included (extracted)")
+except Exception as e:
+    print(f"⚠️ Housekeeping router not available: {e}")
+    import traceback; traceback.print_exc()
+
+# Department-Specific Router (extracted from server.py)
+try:
+    from routers.departments import router as departments_router_extracted
+    app.include_router(departments_router_extracted, tags=["departments"])
+    print("✅ Departments router included (extracted)")
+except Exception as e:
+    print(f"⚠️ Departments router not available: {e}")
+    import traceback; traceback.print_exc()
+
 
 # ============================================================================
 # OPERA CLOUD PARITY FEATURES - CRITICAL ENTERPRISE FUNCTIONALITY
