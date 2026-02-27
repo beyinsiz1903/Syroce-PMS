@@ -54077,6 +54077,15 @@ try:
 except Exception as e:
     print(f"⚠️ PCI DSS module not available: {e}")
 
+# Report Builder Module
+try:
+    from routers.report_builder import router as report_builder_router, init_report_builder
+    init_report_builder(db, get_current_user)
+    app.include_router(report_builder_router, tags=["Report Builder"])
+    print("✅ Report Builder module included")
+except Exception as e:
+    print(f"⚠️ Report Builder not available: {e}")
+
 
 # ============================================================================
 # OPERA CLOUD PARITY FEATURES - CRITICAL ENTERPRISE FUNCTIONALITY
