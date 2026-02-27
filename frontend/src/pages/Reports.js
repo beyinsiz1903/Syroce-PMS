@@ -53,79 +53,79 @@ const Reports = ({ user, tenant, onLogout }) => {
     // FINANS RAPORLARI
     {
       id: 'daily-flash',
-      name: 'Daily Flash Report',
+      name: t('reports.dailyFlashReport'),
       category: 'financial',
       icon: DollarSign,
       endpoint: '/reports/daily-flash/excel',
       needsDateRange: false,
-      description: 'Daily occupancy, revenue, and key metrics'
+      description: t('reports.dailyFlashReport')
     },
     {
       id: 'company-aging',
-      name: 'Company Aging Report',
+      name: t('reports.companyAgingReport'),
       category: 'financial',
       icon: DollarSign,
       endpoint: '/reports/company-aging/excel',
       needsDateRange: false,
-      description: 'Accounts receivable aging by company'
+      description: t('reports.companyAgingReport')
     },
     {
       id: 'revenue-detail',
-      name: 'Revenue Detail Report',
+      name: t('reports.revenueDetailReport'),
       category: 'financial',
       icon: DollarSign,
       endpoint: '/reports/revenue-detail/excel',
       needsDateRange: true,
-      description: 'Detailed room revenue by date, room type and rate code'
+      description: t('reports.revenueDetailReport')
     },
     {
       id: 'forecast-detail',
-      name: 'Forecast Detail Report',
+      name: t('reports.forecastDetailReport'),
       category: 'financial',
       icon: Calendar,
       endpoint: '/reports/forecast-detail/excel',
       needsDateRange: true,
-      description: 'Forecasted occupancy and revenue by date for upcoming periods'
+      description: t('reports.forecastDetailReport')
     },
 
     // OPERASYON RAPORLARI
     {
       id: 'housekeeping-efficiency',
-      name: 'Housekeeping Efficiency',
+      name: t('reports.housekeepingEfficiency'),
       category: 'operational',
       icon: Building,
       endpoint: '/reports/housekeeping-efficiency/excel',
       needsDateRange: true,
-      description: 'Staff performance and task completion'
+      description: t('reports.housekeepingEfficiency')
     },
     {
       id: 'operations-daily-summary',
-      name: 'Operations Daily Summary',
+      name: t('reports.operationsDailySummary'),
       category: 'operational',
       icon: Calendar,
       endpoint: '/reports/operations-daily-summary/excel',
       needsDateRange: false,
-      description: 'Daily summary of arrivals, departures and in-house guests'
+      description: t('reports.operationsDailySummary')
     },
 
     // PAZAR / MARKET RAPORLARI
     {
       id: 'market-segment',
-      name: 'Market Segment Analysis',
+      name: t('reports.marketSegmentAnalysis'),
       category: 'market',
       icon: TrendingUp,
       endpoint: '/reports/market-segment/excel',
       needsDateRange: true,
-      description: 'Revenue by market segment and rate type'
+      description: t('reports.marketSegmentAnalysis')
     },
     {
       id: 'channel-distribution',
-      name: 'Channel Distribution Report',
+      name: t('reports.channelDistribution'),
       category: 'market',
       icon: TrendingUp,
       endpoint: '/reports/channel-distribution/excel',
       needsDateRange: true,
-      description: 'Production and revenue by sales channel (OTA, direct, corporate)'
+      description: t('reports.channelDistribution')
     }
   ];
 
@@ -251,10 +251,10 @@ const Reports = ({ user, tenant, onLogout }) => {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
       
-      toast.success(`${report.name} downloaded successfully!`);
+      toast.success(`${report.name} {t('reports.downloadSuccess')}!`);
     } catch (error) {
       console.error('Failed to download report:', error);
-      toast.error('Failed to download report. Please try again.');
+      toast.error(t('reports.downloadFailed'));
     } finally {
       setLoading(false);
     }
@@ -277,7 +277,7 @@ const Reports = ({ user, tenant, onLogout }) => {
             <FileSpreadsheet className="w-8 h-8 text-green-600" />
             Excel Reports
           </h1>
-          <p className="text-gray-600">Select and download comprehensive reports in Excel format</p>
+          <p className="text-gray-600">{t('reports.addReportDesc')}</p>
         </div>
 
         {/* Section Tabs */}
@@ -368,12 +368,12 @@ const Reports = ({ user, tenant, onLogout }) => {
               )}
             </div>
 
-            {/* Selected Reports */}
+            {/* {t('reports.selectedReports')} */}
             {selectedReports.length > 0 && (
               <div>
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-gray-900">
-                    Selected Reports ({selectedReports.length})
+                    {t('reports.selectedReports')} ({selectedReports.length})
                   </h2>
                   <Button 
                     onClick={handleDownloadAll}
@@ -381,7 +381,7 @@ const Reports = ({ user, tenant, onLogout }) => {
                     className="bg-green-600 hover:bg-green-700"
                   >
                     <Download className="w-4 h-4 mr-2" />
-                    Download All
+                    {t('reports.downloadAll')}
                   </Button>
                 </div>
 
