@@ -282,6 +282,7 @@ const HousekeepingDetailedReports = () => {
                         </div>
                       </div>
                     </div>
+                    )}
 
                     {/* Certifications */}
                     <div>
