@@ -1791,6 +1791,106 @@ async def login(data: UserLogin):
 async def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
+
+@api_router.post("/auth/refresh-token")
+async def refresh_token(current_user: User = Depends(get_current_user)):
+    """JWT token yenileme - mevcut geçerli token ile yeni token al."""
+    new_token = create_token(current_user.id, current_user.tenant_id)
+    
+    # Audit log
+    await db.audit_logs.insert_one({
+        "id": str(__import__('uuid').uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "user_id": current_user.id,
+        "user_email": current_user.email,
+        "action": "token_refresh",
+        "resource_type": "auth",
+        "details": "Token refreshed",
+        "ip_address": "",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    
+    return {
+        "access_token": new_token,
+        "token_type": "bearer",
+        "expires_in": JWT_EXPIRATION_HOURS * 3600,
+    }
+
+
+@api_router.get("/security/summary")
+async def get_security_summary(current_user: User = Depends(get_current_user)):
+    """Güvenlik özet dashboard verisi."""
+    now = datetime.now(timezone.utc)
+    last_24h = (now - timedelta(hours=24)).isoformat()
+    last_7d = (now - timedelta(days=7)).isoformat()
+    
+    # Failed login attempts (last 24h)
+    failed_logins_24h = await db.audit_logs.count_documents({
+        "tenant_id": current_user.tenant_id,
+        "action": "login_failed",
+        "timestamp": {"$gte": last_24h},
+    })
+    
+    # Successful logins (last 24h)
+    successful_logins_24h = await db.audit_logs.count_documents({
+        "tenant_id": current_user.tenant_id,
+        "action": {"$in": ["login", "login_success"]},
+        "timestamp": {"$gte": last_24h},
+    })
+    
+    # Rate limit hits (from APM)
+    rate_limit_stats = {}
+    try:
+        rate_limit_stats = get_rate_limit_stats()
+    except Exception:
+        pass
+    
+    # Active sessions estimate (tokens refreshed in last 2h)
+    active_sessions = await db.audit_logs.count_documents({
+        "tenant_id": current_user.tenant_id,
+        "action": {"$in": ["login", "login_success", "token_refresh"]},
+        "timestamp": {"$gte": (now - timedelta(hours=2)).isoformat()},
+    })
+    
+    # Recent security events (last 7 days)
+    security_events = await db.audit_logs.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "action": {"$in": ["login_failed", "password_change", "user_created", "user_deleted", "role_change", "token_refresh"]},
+            "timestamp": {"$gte": last_7d},
+        },
+        {"_id": 0}
+    ).sort("timestamp", -1).limit(50).to_list(50)
+    
+    # User count
+    total_users = await db.users.count_documents({"tenant_id": current_user.tenant_id})
+    
+    # APM summary
+    apm_summary = {}
+    try:
+        apm_summary = apm_store.get_summary(minutes=60)
+    except Exception:
+        pass
+    
+    return {
+        "overview": {
+            "failed_logins_24h": failed_logins_24h,
+            "successful_logins_24h": successful_logins_24h,
+            "active_sessions": active_sessions,
+            "total_users": total_users,
+            "rate_limit_hits": rate_limit_stats.get("total_hits", 0),
+        },
+        "apm": {
+            "requests_per_minute": apm_summary.get("requests_per_minute", 0),
+            "error_rate": apm_summary.get("error_rate_percent", 0),
+            "avg_response_ms": apm_summary.get("avg_duration_ms", 0),
+            "slow_requests": apm_summary.get("slow_request_count", 0),
+        },
+        "rate_limits": rate_limit_stats,
+        "recent_events": security_events[:20],
+        "timestamp": now.isoformat(),
+    }
+
 # ============= NEW USER REGISTRATION WITH EMAIL VERIFICATION =============
 
 class EmailVerificationRequest(BaseModel):
