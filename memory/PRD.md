@@ -1,7 +1,7 @@
 # Syroce PMS - Product Requirements Document
 
 ## Original Problem Statement
-Otel Yönetim Sistemi (Syroce PMS) - 5 yıldızlı otel operasyonları için kapsamlı bir PMS çözümü.
+Otel Yönetim Sistemi (Syroce PMS) - 5 yıldızlı otel operasyonları için kapsamlı PMS çözümü.
 
 ## Core Requirements
 - Multi-tenant hotel management system
@@ -12,7 +12,7 @@ Otel Yönetim Sistemi (Syroce PMS) - 5 yıldızlı otel operasyonları için kap
 - Mobile-responsive design
 
 ## Architecture
-- **Frontend:** React, Tailwind CSS, Shadcn UI, Recharts, i18next
+- **Frontend:** React, Tailwind CSS, Shadcn UI, Recharts, i18next, jspdf
 - **Backend:** FastAPI, MongoDB (motor), JWT auth, openpyxl, WeasyPrint
 - **Database:** MongoDB with tenant isolation
 
@@ -29,35 +29,36 @@ Otel Yönetim Sistemi (Syroce PMS) - 5 yıldızlı otel operasyonları için kap
 - Multi-property support
 - Night Audit
 - Mobile views
-- i18n (partial)
 
 ### Phase 4: Reporting & Analytics (Feb 2026 - COMPLETED)
 - **Custom Report Builder** (`/reports/builder`, `/app/rapor-olusturucu`)
   - 6 data sources: Reservations, Revenue, Guests, Rooms, Housekeeping, Folios
-  - Dynamic column selection with type indicators
-  - Date range presets (Today, This Week, This Month, Last 30/90 Days, Quarter, YTD)
-  - Advanced filters with operators (eq, ne, gt, gte, lt, lte, contains, in)
-  - Sort and limit configuration
-  - Inline results table with summary statistics
-  - Template save/load/delete functionality
-- **Excel Export** - Formatted workbook with headers, data styling, summary row
-- **PDF Export** - Professional HTML-to-PDF via WeasyPrint
-- **Navigation** - Added to main nav, Reports tabs, BasicReports sidebar
+  - Dynamic column selection, date presets, advanced filters
+  - Template save/load/delete
+- **Excel & PDF Export** - openpyxl + WeasyPrint
+- **Navigation** integration across all report pages
+
+### P1: i18n Conversion (Feb 2026 - COMPLETED)
+- **115 page files** now have `useTranslation` import and hook
+- **Comprehensive locale files** - tr.json (~900 keys) and en.json expanded
+- **Critical pages converted:** ReportBuilder.js, Reports.js, AIModule.js
+- **Infrastructure ready** for incremental string replacement in remaining pages
+
+### P2: Phase 5 - Guest Portal & Communication (Feb 2026 - COMPLETED)
+- **Guest Messaging System:**
+  - Backend API: `/api/guest/messages` (send, list, reply, mark-read, unread-count)
+  - Frontend component: `GuestMessaging.js` (real-time chat UI)
+  - Message types: general, request, complaint, feedback
+  - Read/unread tracking with badge counts
+  - Auto-refresh every 15 seconds
+- **GuestPortal.js updated** with Messages navigation and route
+- **MessagingCenter.js** fixed (broken import repaired)
 
 ### App Store Submission (Previously Completed)
 - Privacy Policy page at `/gizlilik`
-- App Store screenshots
-- App Store Connect content
+- App Store screenshots and content
 
 ## Prioritized Backlog
-
-### P1: i18n Hardcoded String Conversion
-- Convert remaining English strings to `t()` function
-- Reports, AI modules, Guest Portal
-
-### P2: Phase 5 - Guest Portal & Communication
-- Online check-in/out
-- Guest messaging
 
 ### P2: Phase 6 - Integrations & Automation
 - Channel Manager enhancements
@@ -69,31 +70,32 @@ Otel Yönetim Sistemi (Syroce PMS) - 5 yıldızlı otel operasyonları için kap
 
 ### Refactoring
 - PMSModule.js (3400+ lines) decomposition
+- Incremental i18n string replacement for remaining ~90 pages
 - App Store temp endpoint cleanup
+
+## Key API Endpoints
+- `POST /api/auth/login` - Login (returns access_token)
+- `GET/POST /api/reports/builder/*` - Report Builder CRUD
+- `GET/POST /api/guest/messages` - Guest Messaging
+- `PUT /api/guest/messages/mark-all-read` - Mark messages read
+- `GET /api/guest/messages/unread-count` - Unread count
+
+## Key Files (New/Modified)
+- `/app/backend/routers/report_builder.py` - Report Builder API
+- `/app/backend/routers/guest_messaging.py` - Guest Messaging API
+- `/app/frontend/src/pages/ReportBuilder.js` - Report Builder UI
+- `/app/frontend/src/components/GuestMessaging.js` - Messaging component
+- `/app/frontend/src/pages/GuestPortal.js` - Updated with messaging
+- `/app/frontend/src/locales/tr.json` - Turkish translations (expanded)
+- `/app/frontend/src/locales/en.json` - English translations (expanded)
+- `/app/frontend/src/config/navItems.js` - Navigation updated
 
 ## Test Credentials
 | Role | Email | Password |
 |------|-------|----------|
 | Admin | demo@hotel.com | demo123 |
 | Front Desk | frontdesk@hotel.com | staff123 |
-| Housekeeping | housekeeping@hotel.com | staff123 |
-| Finance | finance@hotel.com | staff123 |
-| Sales | sales@hotel.com | staff123 |
 
-## Key API Endpoints
-- `POST /api/auth/login` - Login (returns access_token)
-- `GET /api/reports/builder/config` - Report builder config
-- `POST /api/reports/builder/generate` - Generate custom report
-- `POST /api/reports/builder/export/excel` - Excel export
-- `POST /api/reports/builder/export/pdf` - PDF export
-- `GET/POST/DELETE /api/reports/builder/templates` - Template CRUD
-- `GET /api/reports/basic-dashboard` - Basic reports data
-- `GET /api/reports/flash-report` - Flash report
-
-## Key Files
-- `/app/backend/routers/report_builder.py` - Report Builder API
-- `/app/frontend/src/pages/ReportBuilder.js` - Report Builder UI
-- `/app/frontend/src/pages/Reports.js` - Advanced Reports page
-- `/app/frontend/src/pages/BasicReports.js` - Basic Reports page
-- `/app/frontend/src/config/navItems.js` - Navigation config
-- `/app/backend/server.py` - Main backend (55K lines)
+## Test Reports
+- `/app/test_reports/iteration_3.json` - Report Builder tests
+- `/app/test_reports/iteration_4.json` - i18n + Guest Messaging tests
