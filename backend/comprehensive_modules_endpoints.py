@@ -796,87 +796,8 @@ async def room_move_with_billing(
     }
 
 # ============= 13. HOUSEKEEPING DETAILED REPORTS =============
-
-@router.get("/housekeeping/room-status-report")
-async def get_room_status_report(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    """Get detailed room status report (DND, SO, OOO)"""
-    report = {
-        "summary": {
-            "total_rooms": 50,
-            "occupied": 35,
-            "vacant_clean": 10,
-            "vacant_dirty": 3,
-            "out_of_order": 1,
-            "out_of_service": 1
-        },
-        "dnd_rooms": [
-            {"room": "101", "guest": "John Smith", "dnd_since": "08:00", "duration_hours": 4},
-            {"room": "205", "guest": "Jane Doe", "dnd_since": "07:30", "duration_hours": 5}
-        ],
-        "sleep_out": [
-            {"room": "310", "guest": "Bob Wilson", "last_activity": "Yesterday 10 PM", "status": "suspected"}
-        ],
-        "out_of_order": [
-            {"room": "402", "reason": "AC malfunction", "since": "2024-01-20", "expected_fix": "2024-01-23"}
-        ],
-        "out_of_service": [
-            {"room": "505", "reason": "Renovation", "since": "2024-01-15", "expected_completion": "2024-02-01"}
-        ]
-    }
-    return report
-
-@router.get("/housekeeping/staff-performance-detailed")
-async def get_detailed_staff_performance(
-    staff_name: Optional[str] = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    """Get detailed housekeeping staff performance"""
-    staff_performance = [
-        {
-            "staff_name": "Sarah Johnson",
-            "daily_stats": {
-                "rooms_cleaned": 12,
-                "avg_time_per_room": 28,
-                "inspections_passed": 11,
-                "inspections_failed": 1,
-                "quality_score": 91.7
-            },
-            "monthly_stats": {
-                "total_rooms": 340,
-                "avg_daily_rooms": 11.3,
-                "efficiency_rating": "excellent",
-                "attendance_rate": 96.7
-            },
-            "certifications": ["Standard Cleaning", "Deep Cleaning", "Linen Management"],
-            "recent_feedback": [
-                {"date": "2024-01-20", "rating": 5, "comment": "Excellent attention to detail"},
-                {"date": "2024-01-18", "rating": 4, "comment": "Good work, minor improvement needed"}
-            ]
-        },
-        {
-            "staff_name": "Maria Garcia",
-            "daily_stats": {
-                "rooms_cleaned": 14,
-                "avg_time_per_room": 25,
-                "inspections_passed": 14,
-                "inspections_failed": 0,
-                "quality_score": 100.0
-            },
-            "monthly_stats": {
-                "total_rooms": 380,
-                "avg_daily_rooms": 12.7,
-                "efficiency_rating": "outstanding",
-                "attendance_rate": 100.0
-            },
-            "certifications": ["Standard Cleaning", "Deep Cleaning", "Supervisor Training"],
-            "recent_feedback": [
-                {"date": "2024-01-21", "rating": 5, "comment": "Perfect work as always"}
-            ]
-        }
-    ]
-    return {"staff_performance": staff_performance}
+# NOTE: These endpoints have been moved to routers/housekeeping.py
+# with real database implementations instead of mock data
 
 # ============= 14. MENU ENGINEERING & POS REPORTS =============
 
