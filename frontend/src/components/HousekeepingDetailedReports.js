@@ -235,47 +235,50 @@ const HousekeepingDetailedReports = () => {
                     </div>
 
                     {/* Daily Stats */}
+                    {staff.daily_stats && (
                     <div>
                       <h4 className="font-semibold mb-2">Today's Performance</h4>
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                         <div className="bg-blue-50 p-3 rounded">
                           <div className="text-xs text-gray-600">Rooms Cleaned</div>
-                          <div className="text-2xl font-bold text-blue-600">{staff.daily_stats.rooms_cleaned}</div>
+                          <div className="text-2xl font-bold text-blue-600">{staff.daily_stats?.rooms_cleaned || 0}</div>
                         </div>
                         <div className="bg-purple-50 p-3 rounded">
                           <div className="text-xs text-gray-600">Avg Time</div>
-                          <div className="text-2xl font-bold text-purple-600">{staff.daily_stats.avg_time_per_room}m</div>
+                          <div className="text-2xl font-bold text-purple-600">{staff.daily_stats?.avg_time_per_room || 0}m</div>
                         </div>
                         <div className="bg-green-50 p-3 rounded">
                           <div className="text-xs text-gray-600">Passed</div>
-                          <div className="text-2xl font-bold text-green-600">{staff.daily_stats.inspections_passed}</div>
+                          <div className="text-2xl font-bold text-green-600">{staff.daily_stats?.inspections_passed || 0}</div>
                         </div>
                         <div className="bg-red-50 p-3 rounded">
                           <div className="text-xs text-gray-600">Failed</div>
-                          <div className="text-2xl font-bold text-red-600">{staff.daily_stats.inspections_failed}</div>
+                          <div className="text-2xl font-bold text-red-600">{staff.daily_stats?.inspections_failed || 0}</div>
                         </div>
                         <div className="bg-yellow-50 p-3 rounded">
                           <div className="text-xs text-gray-600">Quality Score</div>
-                          <div className="text-2xl font-bold text-yellow-600">{staff.daily_stats.quality_score}%</div>
+                          <div className="text-2xl font-bold text-yellow-600">{staff.daily_stats?.quality_score || 0}%</div>
                         </div>
                       </div>
                     </div>
+                    )}
 
                     {/* Monthly Stats */}
+                    {staff.monthly_stats && (
                     <div>
                       <h4 className="font-semibold mb-2">Monthly Performance</h4>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                         <div>
                           <div className="text-sm text-gray-600">Total Rooms</div>
-                          <div className="font-semibold">{staff.monthly_stats.total_rooms}</div>
+                          <div className="font-semibold">{staff.monthly_stats?.total_rooms || 0}</div>
                         </div>
                         <div>
                           <div className="text-sm text-gray-600">Avg Daily Rooms</div>
-                          <div className="font-semibold">{staff.monthly_stats.avg_daily_rooms}</div>
+                          <div className="font-semibold">{staff.monthly_stats?.avg_daily_rooms || 0}</div>
                         </div>
                         <div>
                           <div className="text-sm text-gray-600">Attendance</div>
-                          <div className="font-semibold">{staff.monthly_stats.attendance_rate}%</div>
+                          <div className="font-semibold">{staff.monthly_stats?.attendance_rate || 0}%</div>
                         </div>
                       </div>
                     </div>
