@@ -24,18 +24,18 @@ const FnBComplete = ({ user, tenant, onLogout }) => {
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
               <ChefHat className="w-8 h-8 text-orange-600" />
-              F&B Management Suite
+              {t('fnb.suiteTitle')}
             </h1>
-            <p className="text-gray-600 mt-1">Recipe Costing, BEO, Kitchen Display, Inventory</p>
+            <p className="text-gray-600 mt-1">{t('fnb.suiteSubtitle')}</p>
           </div>
           <div className="flex items-center gap-3">
             <Button variant="outline" onClick={() => navigate('/pos')}>
               <Monitor className="w-4 h-4 mr-2" />
-              POS Restaurant
+              {t('fnb.posRestaurant')}
             </Button>
             <Button onClick={() => navigate('/')}>
               <Home className="w-4 h-4 mr-2" />
-              Dashboard
+              {t('nav.dashboard')}
             </Button>
           </div>
         </div>
@@ -44,19 +44,19 @@ const FnBComplete = ({ user, tenant, onLogout }) => {
         <Tabs defaultValue="outlet-sales" className="w-full mt-4">
           <TabsList className="grid w-full max-w-3xl grid-cols-4 md:grid-cols-5">
             <TabsTrigger value="outlet-sales">
-              <ChefHat className="w-4 h-4 mr-2" />Outlet Sales
+47|              <ChefHat className="w-4 h-4 mr-2" />{t('fnb.outletSales')}
             </TabsTrigger>
             <TabsTrigger value="recipes">
-              <ChefHat className="w-4 h-4 mr-2" />Recipes
+              <ChefHat className="w-4 h-4 mr-2" />{t('fnb.recipes')}
             </TabsTrigger>
             <TabsTrigger value="beo">
-              <FileText className="w-4 h-4 mr-2" />BEO
+              <FileText className="w-4 h-4 mr-2" />{t('fnb.beo')}
             </TabsTrigger>
             <TabsTrigger value="kitchen">
-              <Monitor className="w-4 h-4 mr-2" />Kitchen Display
+              <Monitor className="w-4 h-4 mr-2" />{t('fnb.kitchenDisplay')}
             </TabsTrigger>
             <TabsTrigger value="inventory">
-              <Package className="w-4 h-4 mr-2" />Inventory
+              <Package className="w-4 h-4 mr-2" />{t('fnb.inventory')}
             </TabsTrigger>
           </TabsList>
 
@@ -71,17 +71,17 @@ const FnBComplete = ({ user, tenant, onLogout }) => {
           <TabsContent value="beo" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle>BEO Generator</CardTitle>
+                <CardTitle>{t('fnb.beoGenerator')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-center py-8">
                   <FileText className="w-16 h-16 text-orange-600 mx-auto mb-4" />
-                  <p className="text-gray-700 mb-4">Banquet Event Order otomatik oluşturma</p>
+                  <p className="text-gray-700 mb-4">{t('fnb.beoAutoCreate')}</p>
                   <Button
                     className="bg-orange-600"
                     onClick={() => navigate('/fnb/beo-generator')}
                   >
-                    BEO Oluştur
+                    {t('fnb.createBeo')}
                   </Button>
                 </div>
               </CardContent>
@@ -91,18 +91,18 @@ const FnBComplete = ({ user, tenant, onLogout }) => {
           <TabsContent value="kitchen" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle>Kitchen Display System</CardTitle>
+                <CardTitle>{t('fnb.kitchenDisplaySystem')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-col items-center justify-center gap-4 py-8">
                   <p className="text-center text-gray-600 max-w-md">
-                    Servis sırasında mutfak için tam ekran, karanlık temalı Kitchen Display ekranını kullanın.
+                    {t('fnb.kitchenDisplayDesc')}
                   </p>
                   <Button
                     className="bg-orange-600 hover:bg-orange-700"
                     onClick={() => navigate('/kitchen-display')}
                   >
-                    Tam Ekran Kitchen Display Aç
+                    {t('fnb.openFullScreen')}
                   </Button>
                 </div>
               </CardContent>
