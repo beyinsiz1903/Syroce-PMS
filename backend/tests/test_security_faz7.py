@@ -13,7 +13,7 @@ import os
 import time
 from datetime import datetime
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://locust-load-test.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://backend-modular-pms.preview.emergentagent.com')
 
 # Test credentials
 VALID_EMAIL = "demo@hotel.com"
