@@ -44,6 +44,7 @@ const HousekeepingMobileApp = lazy(() => import("@/pages/HousekeepingMobileApp")
 const AIEnhancedPMS = lazy(() => import("@/pages/AIEnhancedPMS"));
 const Reports = lazy(() => import("@/pages/Reports"));
 const BasicReports = lazy(() => import("@/pages/BasicReports"));
+const ReportBuilder = lazy(() => import("@/pages/ReportBuilder"));
 const PmsLiteLanding = lazy(() => import("@/pages/PmsLiteLanding"));
 const AdminLeads = lazy(() => import("@/pages/AdminLeads"));
 const OfficialGuestList = lazy(() => import("@/pages/OfficialGuestList"));
