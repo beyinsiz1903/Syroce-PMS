@@ -38,7 +38,8 @@ import {
   Star,
   Sparkles,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  MessageCircle
 } from 'lucide-react';
 
 const GuestPortal = ({ user, onLogout }) => {
