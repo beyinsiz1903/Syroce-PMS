@@ -44,16 +44,16 @@ const DynamicPricing = () => {
             <Home className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">🤖 AI Dynamic Pricing</h1>
-            <p className="text-gray-600">Rakip analizi ve ML-powered fiyatlandırma</p>
+            <h1 className="text-3xl font-bold">{t('aiModule.dynamicPricing')}</h1>
+            <p className="text-gray-600">{t('aiModule.dynamicPricingDesc')}</p>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-6">
         <div>
-          <label className="text-sm mb-2 block">Oda Tipi</label>
-          <Select value={roomType} onValueChange={setRoomType}>
+          <label className="text-sm mb-2 block">{t('pms.roomType')}</label>
+          <Select value={roomType} onValue{t('common.status')}={setRoomType}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -65,11 +65,11 @@ const DynamicPricing = () => {
           </Select>
         </div>
         <div>
-          <label className="text-sm mb-2 block">Tarih</label>
+          <label className="text-sm mb-2 block">{t('common.date')}</label>
           <input
             type="date"
             value={targetDate}
-            onChange={(e) => setTargetDate(e.target.value)}
+            on{t('common.status')}={(e) => setTargetDate(e.target.value)}
             className="w-full px-4 py-2 border rounded-lg"
           />
         </div>
@@ -81,12 +81,12 @@ const DynamicPricing = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Target className="w-6 h-6 text-purple-600" />
-                AI Fiyat Önerisi
+                {t('rms.priceRecommendation')}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-center mb-6">
-                <p className="text-sm text-gray-600 mb-2">Recommended Price</p>
+                <p className="text-sm text-gray-600 mb-2">{t('rms.recommendedPrice')}</p>
                 <p className="text-5xl font-bold text-purple-600">
                   €{recommendation.recommended_price}
                 </p>
@@ -104,11 +104,11 @@ const DynamicPricing = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-white p-4 rounded-lg">
-                  <p className="text-sm text-gray-600">Current Price</p>
+                  <p className="text-sm text-gray-600">{t('rms.minPrice')}</p>
                   <p className="text-2xl font-bold">€{recommendation.current_price}</p>
                 </div>
                 <div className="bg-white p-4 rounded-lg">
-                  <p className="text-sm text-gray-600">Change</p>
+                  <p className="text-sm text-gray-600">{t('common.status')}</p>
                   <p className={`text-2xl font-bold flex items-center gap-1 ${
                     recommendation.price_change_pct > 0 ? 'text-green-600' : 'text-red-600'
                   }`}>

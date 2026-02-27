@@ -86,16 +86,16 @@ const MultiPropertyDashboard = () => {
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold">Multi-Property Dashboard</h1>
-          <p className="text-gray-600">Enterprise-wide performance overview</p>
+          <h1 className="text-3xl font-bold">{t('dashboard.multiProperty')}</h1>
+          <p className="text-gray-600">{t('dashboard.multiPropertyDesc')}</p>
         </div>
         <div className="w-64">
           <Select value={selectedProperty} onValueChange={setSelectedProperty}>
             <SelectTrigger>
-              <SelectValue placeholder="Select Property" />
+              <SelectValue placeholder="{t('common.property')}" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Properties</SelectItem>
+              <SelectItem value="all">{t('common.all')}</SelectItem>
               {properties.map(prop => (
                 <SelectItem key={prop.id} value={prop.id}>{prop.name}</SelectItem>
               ))}
@@ -110,7 +110,7 @@ const MultiPropertyDashboard = () => {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Properties</p>
+                <p className="text-sm text-gray-600">{t('common.property')}</p>
                 <p className="text-3xl font-bold">{properties.length}</p>
               </div>
               <Building2 className="w-8 h-8 text-purple-500" />
@@ -122,7 +122,7 @@ const MultiPropertyDashboard = () => {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Revenue</p>
+                <p className="text-sm text-gray-600">{t('reports.totalRevenue')}</p>
                 <p className="text-3xl font-bold">${(dashboardData?.total_revenue || 0).toLocaleString()}</p>
               </div>
               <DollarSign className="w-8 h-8 text-green-500" />
@@ -134,7 +134,7 @@ const MultiPropertyDashboard = () => {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Avg Occupancy</p>
+                <p className="text-sm text-gray-600">{t('reports.occupancyRate')}</p>
                 <p className="text-3xl font-bold">{(dashboardData?.avg_occupancy || 0).toFixed(1)}%</p>
               </div>
               <TrendingUp className="w-8 h-8 text-blue-500" />
@@ -146,7 +146,7 @@ const MultiPropertyDashboard = () => {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Guests</p>
+                <p className="text-sm text-gray-600">{t('dashboard.totalGuests')}</p>
                 <p className="text-3xl font-bold">{dashboardData?.total_guests || 0}</p>
               </div>
               <Users className="w-8 h-8 text-orange-500" />
@@ -158,7 +158,7 @@ const MultiPropertyDashboard = () => {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Rooms</p>
+                <p className="text-sm text-gray-600">{t('dashboard.totalRooms')}</p>
                 <p className="text-3xl font-bold">{dashboardData?.total_rooms || 0}</p>
               </div>
               <Calendar className="w-8 h-8 text-cyan-500" />
@@ -170,7 +170,7 @@ const MultiPropertyDashboard = () => {
       {/* Performance Chart */}
       <Card>
         <CardHeader>
-          <CardTitle>Property Performance Comparison</CardTitle>
+          <CardTitle>{t('dashboard.multiProperty')} Comparison</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="h-96">

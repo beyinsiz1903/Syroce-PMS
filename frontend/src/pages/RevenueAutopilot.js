@@ -33,9 +33,9 @@ const RevenueAutopilot = () => {
     try {
       const response = await axios.post('/autopilot/run-cycle');
       setLastCycle(response.data);
-      toast.success('Optimization cycle tamamlandı!');
+      toast.success(t('messages.success.updated'));
     } catch (error) {
-      toast.error('Cycle çalıştırılamadı');
+      toast.error(t('messages.error.generic'));
     } finally {
       setLoading(false);
     }
@@ -47,7 +47,7 @@ const RevenueAutopilot = () => {
       toast.success(`Autopilot mode: ${mode}`);
       loadStatus();
     } catch (error) {
-      toast.error('Mode değiştirilemedi');
+      toast.error(t('messages.error.generic'));
     }
   };
 

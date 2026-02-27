@@ -50,8 +50,8 @@ const SocialMediaRadar = () => {
             <Home className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">📡 Social Media Command Center</h1>
-            <p className="text-gray-600">Real-time mention tracking ve sentiment analizi</p>
+            <h1 className="text-3xl font-bold">{t('aiModule.socialRadar')}</h1>
+            <p className="text-gray-600">{t('aiModule.socialRadarDesc')}</p>
           </div>
         </div>
       </div>
