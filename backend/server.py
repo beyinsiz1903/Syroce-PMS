@@ -55339,6 +55339,7 @@ async def get_occupancy_trend(
 
 
 @api_router.get("/ai/pms/guest-patterns")
+@cached(ttl=900, key_prefix="ai_guest_patterns")
 async def get_guest_patterns(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
