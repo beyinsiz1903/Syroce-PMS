@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Send, FileText, Star, Phone, Mail, MapPin, Calendar,
   Hotel, Award, ShieldCheck, AlertTriangle, MessageSquare,
-  Heart, Globe, Tag, Clock, User, DollarSign, TrendingUp, Loader2
+  Heart, Globe, Tag, Clock, User, DollarSign, TrendingUp, Loader2, Crown
 } from 'lucide-react';
 
 const Guest360Dialog = ({
