@@ -10,8 +10,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Mail, MessageSquare, FileText, Edit, Trash2, Plus } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const TemplateManager = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [templates, setTemplates] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(null);

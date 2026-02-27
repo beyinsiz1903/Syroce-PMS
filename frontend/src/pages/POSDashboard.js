@@ -7,8 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { UtensilsCrossed, Menu, ArrowLeft, BarChart3, Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const POSDashboard = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   return (

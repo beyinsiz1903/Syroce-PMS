@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
+import { useTranslation } from 'react-i18next';
   ArrowLeft, 
   Shield, 
   Activity, 
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react';
 
 const MobileSecurity = ({ user }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [systemStatus, setSystemStatus] = useState(null);

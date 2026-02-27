@@ -6,8 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Building2, TrendingUp, Percent, AlertTriangle, RefreshCw } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const CorporateContractsDashboard = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 

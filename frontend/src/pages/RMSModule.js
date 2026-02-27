@@ -20,6 +20,7 @@ import {
   Legend,
 } from 'chart.js';
 import { TrendingUp, DollarSign, Target, Users, Settings as SettingsIcon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 ChartJS.register(
   CategoryScale,
@@ -33,6 +34,7 @@ ChartJS.register(
 );
 
 const RMSModule = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [compSet, setCompSet] = useState([]);
   const [pricingStrategy, setPricingStrategy] = useState(null);
   const [demandForecast, setDemandForecast] = useState([]);

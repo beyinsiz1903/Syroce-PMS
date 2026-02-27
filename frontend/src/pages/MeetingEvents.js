@@ -9,8 +9,10 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Calendar, Users, Home, Clock, MapPin, Plus, Utensils, DollarSign } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const MeetingEvents = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [events, setEvents] = useState([]);
   const [showCreateDialog, setShowCreateDialog] = useState(false);

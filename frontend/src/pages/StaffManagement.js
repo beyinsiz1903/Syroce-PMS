@@ -5,8 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Users, Calendar, TrendingUp, Award, Home, UserPlus, Clock } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const StaffManagement = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [staff, setStaff] = useState([]);
 

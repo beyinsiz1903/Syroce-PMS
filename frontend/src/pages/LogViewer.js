@@ -7,8 +7,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, FileText, Search, RefreshCw, Download, Filter, AlertCircle, AlertTriangle, Info, Bug } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const LogViewer = ({ user }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [logs, setLogs] = useState([]);

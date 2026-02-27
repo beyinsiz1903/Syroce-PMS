@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { 
+import { useTranslation } from 'react-i18next';
   ArrowLeft, 
   UtensilsCrossed, 
   DollarSign, 
@@ -32,6 +33,7 @@ import {
 } from 'lucide-react';
 
 const MobileFnB = ({ user }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [dailySummary, setDailySummary] = useState(null);

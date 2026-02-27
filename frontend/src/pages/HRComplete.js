@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const demoStaff = [
   { id: 'staff-frontdesk-1', name: 'Mehmet Demir', department: 'front_desk' },
@@ -26,6 +27,7 @@ const demoStaff = [
 ];
 
 const HRComplete = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('attendance');
   const [attendanceSummary, setAttendanceSummary] = useState(null);

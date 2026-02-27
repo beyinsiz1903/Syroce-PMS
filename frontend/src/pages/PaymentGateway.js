@@ -4,8 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CreditCard } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const PaymentGateway = () => {
+  const { t } = useTranslation();
   const [amount, setAmount] = useState(100);
   const [months, setMonths] = useState(1);
   const [calc, setCalc] = useState(null);

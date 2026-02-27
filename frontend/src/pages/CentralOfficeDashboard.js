@@ -5,11 +5,13 @@ import { Badge } from '@/components/ui/badge';
 import Layout from '@/components/Layout';
 import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { useTranslation } from 'react-i18next';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 
 export default function CentralOfficeDashboard({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [dashboard, setDashboard] = useState(null);
   const [comparison, setComparison] = useState(null);
   const [revenue, setRevenue] = useState(null);

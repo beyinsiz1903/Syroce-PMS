@@ -21,6 +21,7 @@ const PredictiveAnalytics = lazy(() => import('@/pages/PredictiveAnalytics'));
 const ReputationCenter = lazy(() => import('@/pages/ReputationCenter'));
 const RevenueAutopilot = lazy(() => import('@/pages/RevenueAutopilot'));
 const SocialMediaRadar = lazy(() => import('@/pages/SocialMediaRadar'));
+import { useTranslation } from 'react-i18next';
 
 // Module component map
 const MODULE_COMPONENTS = {
@@ -35,6 +36,7 @@ const MODULE_COMPONENTS = {
 };
 
 const AIModule = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedModule, setSelectedModule] = useState(null);

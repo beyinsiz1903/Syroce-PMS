@@ -5,10 +5,12 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Calendar } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const BOOL = (v) => (v ? '✅' : '❌');
 
 const OfficialGuestList = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);

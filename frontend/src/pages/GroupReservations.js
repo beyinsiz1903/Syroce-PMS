@@ -8,8 +8,10 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Users, Plus, Calendar, Home, Building2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const GroupReservations = () => {
+  const { t } = useTranslation();
   const [groups, setGroups] = useState([]);
   const [blocks, setBlocks] = useState([]);
   const [showDialog, setShowDialog] = useState(false);

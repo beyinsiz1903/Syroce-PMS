@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import PropertySwitcher from '@/components/PropertySwitcher';
 import { 
+import { useTranslation } from 'react-i18next';
   ArrowLeft, 
   Clock, 
   AlertTriangle,
@@ -24,6 +25,7 @@ import {
 } from 'lucide-react';
 
 const MobileOrderTracking = ({ user }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

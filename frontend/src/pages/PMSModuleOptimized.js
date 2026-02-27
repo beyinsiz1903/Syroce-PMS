@@ -20,8 +20,10 @@ import {
   BarChart3, Plus, Search, Filter, RefreshCw 
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const PMSModuleOptimized = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('frontdesk');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);

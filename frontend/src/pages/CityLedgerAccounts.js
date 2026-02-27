@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
+import { useTranslation } from 'react-i18next';
   Building2,
   Plus,
   DollarSign,
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react';
 
 const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');

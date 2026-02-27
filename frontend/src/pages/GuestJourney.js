@@ -4,8 +4,10 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Smile, Meh, Frown, TrendingUp, Home } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const GuestJourney = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [npsData, setNpsData] = useState(null);
 

@@ -7,8 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Calendar, Users, FileText, Clock, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const FnbBeoGenerator = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [form, setForm] = useState({
     event_name: '',
     client_name: '',

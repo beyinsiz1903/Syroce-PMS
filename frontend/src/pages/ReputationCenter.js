@@ -4,8 +4,10 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Star, TrendingUp, TrendingDown, AlertTriangle, Home, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useTranslation } from 'react-i18next';
 
 const ReputationCenter = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [overview, setOverview] = useState(null);
   const [trends, setTrends] = useState(null);

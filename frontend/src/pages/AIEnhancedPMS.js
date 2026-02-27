@@ -6,8 +6,10 @@ import PredictiveMaintenanceDashboard from '../components/PredictiveMaintenanceD
 import AIRMSDashboard from '../components/AIRMSDashboard';
 import LoyaltyAutoTierManager from '../components/LoyaltyAutoTierManager';
 import FolioManagementPage from '../components/FolioManagementPage';
+import { useTranslation } from 'react-i18next';
 
 const AIEnhancedPMS = () => {
+  const { t } = useTranslation();
   const [activeModule, setActiveModule] = useState('reservation');
 
   const modules = [

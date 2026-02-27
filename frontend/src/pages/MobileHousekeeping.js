@@ -46,8 +46,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import PhotoUploadComponent from '@/components/PhotoUploadComponent';
+import { useTranslation } from 'react-i18next';
 
 const MobileHousekeeping = ({ user }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [roomStatus, setRoomStatus] = useState(null);

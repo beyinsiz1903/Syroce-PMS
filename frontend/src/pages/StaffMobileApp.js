@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { CheckCircle, Clock, AlertCircle, Camera, MessageSquare } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const StaffMobileApp = ({ user }) => {
+  const { t } = useTranslation();
   const [tasks, setTasks] = useState([]);
   const [selectedTask, setSelectedTask] = useState(null);
   const [notes, setNotes] = useState('');

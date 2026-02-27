@@ -28,8 +28,10 @@ import {
   Trash2
 } from 'lucide-react';
 import { normalizeFeatures } from '@/utils/featureFlags';
+import { useTranslation } from 'react-i18next';
 
 const Reports = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const [selectedReports, setSelectedReports] = useState([]);

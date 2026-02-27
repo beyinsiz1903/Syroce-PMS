@@ -7,8 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { FileText, Send, Download, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const EFaturaModule = () => {
+  const { t } = useTranslation();
   const [invoices, setInvoices] = useState([]);
   const [posClosures, setPosClosures] = useState([]);
   const [settings, setSettings] = useState(null);

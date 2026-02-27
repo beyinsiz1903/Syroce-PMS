@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
 import {
+import { useTranslation } from 'react-i18next';
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
@@ -48,6 +49,7 @@ ChartJS.register(
 );
 
 const EnhancedGMDashboard = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [selectedMetric, setSelectedMetric] = useState(null);
   const [forecastData, setForecastData] = useState(null);

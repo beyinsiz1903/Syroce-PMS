@@ -6,8 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, AlertCircle, Clock, Wrench, CheckCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const MaintenancePriorityVisual = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);

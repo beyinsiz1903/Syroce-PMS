@@ -5,8 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Home, Instagram, Twitter, Facebook, TrendingUp, AlertTriangle, Heart, MessageCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const SocialMediaRadar = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [mentions, setMentions] = useState([]);
   const [sentiment, setSentiment] = useState(null);

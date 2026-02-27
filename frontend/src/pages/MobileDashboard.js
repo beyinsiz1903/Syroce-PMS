@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
+import { useTranslation } from 'react-i18next';
   Home, 
   Bed, 
   Users, 
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 
 const MobileDashboard = ({ user, onLogout }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [showMenu, setShowMenu] = useState(false);
 

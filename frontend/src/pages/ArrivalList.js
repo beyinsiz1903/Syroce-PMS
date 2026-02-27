@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Home, UserCheck, Crown, Users, Clock, BedDouble, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const ArrivalList = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [arrivals, setArrivals] = useState([]);
   const [loading, setLoading] = useState(false);

@@ -32,8 +32,10 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import useMediaCapture from '@/hooks/useMediaCapture';
+import { useTranslation } from 'react-i18next';
 
 const MobileFrontDesk = ({ user }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [todayArrivals, setTodayArrivals] = useState([]);

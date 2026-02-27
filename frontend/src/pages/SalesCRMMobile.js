@@ -7,8 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import PropertySwitcher from '@/components/PropertySwitcher';
 import { ArrowLeft, Users, TrendingUp, Phone, Mail, Building2, RefreshCw, Award, AlertCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const SalesCRMMobile = ({ user }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState([]);

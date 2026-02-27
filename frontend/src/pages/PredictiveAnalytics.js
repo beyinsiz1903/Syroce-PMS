@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Home, AlertTriangle, TrendingUp, Calendar, Target, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const PredictiveAnalytics = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [noShowPredictions, setNoShowPredictions] = useState([]);
   const [demandForecast, setDemandForecast] = useState([]);

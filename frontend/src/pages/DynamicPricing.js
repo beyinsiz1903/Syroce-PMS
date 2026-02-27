@@ -5,8 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TrendingUp, TrendingDown, DollarSign, Target, Home, Zap } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const DynamicPricing = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [recommendation, setRecommendation] = useState(null);
   const [loading, setLoading] = useState(false);

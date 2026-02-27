@@ -6,10 +6,12 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Layout from '@/components/Layout';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
 export default function CentralPricingManager({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('rates');
   const [rates, setRates] = useState(null);
   const [templates, setTemplates] = useState([]);

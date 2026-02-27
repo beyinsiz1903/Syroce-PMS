@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { 
+import { useTranslation } from 'react-i18next';
   Briefcase, 
   Users, 
   Building2,
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react';
 
 const SalesModule = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('pipeline');
 

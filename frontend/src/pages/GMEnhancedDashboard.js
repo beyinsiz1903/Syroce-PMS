@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import PropertySwitcher from '@/components/PropertySwitcher';
 import { 
+import { useTranslation } from 'react-i18next';
   ArrowLeft, 
   TrendingUp,
   TrendingDown,
@@ -21,6 +22,7 @@ import {
 } from 'lucide-react';
 
 const GMEnhancedDashboard = ({ user }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

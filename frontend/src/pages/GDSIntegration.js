@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { Globe, Send, Home, TrendingUp, DollarSign, Calendar, CheckCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const GDSIntegration = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [reservations, setReservations] = useState([]);
   const [stats, setStats] = useState({ total: 0, today: 0, revenue: 0 });

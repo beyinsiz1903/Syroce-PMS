@@ -5,8 +5,10 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, AlertTriangle, CheckCircle, RefreshCw, Users, FileText, LogOut, DoorOpen } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const FrontdeskAuditChecklist = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 

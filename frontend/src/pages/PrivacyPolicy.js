@@ -1,6 +1,8 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 export default function PrivacyPolicy() {
+  const { t } = useTranslation();
   return (
     <div className="min-h-screen bg-white" data-testid="privacy-policy-page">
       <div className="max-w-4xl mx-auto px-6 py-12">

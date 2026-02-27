@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, RefreshCw, Filter, ArrowLeft, List } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from 'react-i18next';
 
 const getDateOffset = (offsetDays) => {
+  const { t } = useTranslation();
   const d = new Date();
   d.setDate(d.getDate() + offsetDays);
   return d.toISOString().split("T")[0];

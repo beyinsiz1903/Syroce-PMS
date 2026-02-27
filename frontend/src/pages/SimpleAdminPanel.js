@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { AlertCircle, CheckCircle, Clock, Activity } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const SimpleAdminPanel = () => {
+  const { t } = useTranslation();
   const [systemStatus, setSystemStatus] = useState(null);
   const [recentErrors, setRecentErrors] = useState([]);
   const [loading, setLoading] = useState(true);

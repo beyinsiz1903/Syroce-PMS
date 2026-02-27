@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Home, Zap, Settings, PlayCircle, CheckCircle, Clock } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const RevenueAutopilot = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [status, setStatus] = useState(null);
   const [lastCycle, setLastCycle] = useState(null);

@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Textarea } from '@/components/ui/textarea';
 import PropertySwitcher from '@/components/PropertySwitcher';
 import { 
+import { useTranslation } from 'react-i18next';
   ArrowLeft, 
   CheckCircle,
   XCircle,
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react';
 
 const MobileApprovals = ({ user }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

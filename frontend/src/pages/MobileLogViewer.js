@@ -6,8 +6,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, FileText, RefreshCw, AlertCircle, AlertTriangle, Info } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const MobileLogViewer = ({ user }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [logs, setLogs] = useState([]);

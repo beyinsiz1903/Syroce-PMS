@@ -5,8 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { TrendingUp, Star, Clock, Utensils, Dumbbell, Wifi } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const UpsellStore = ({ bookingId }) => {
+  const { t } = useTranslation();
   const [offers, setOffers] = useState([]);
   const [purchasedItems, setPurchasedItems] = useState([]);
   const [loading, setLoading] = useState(true);

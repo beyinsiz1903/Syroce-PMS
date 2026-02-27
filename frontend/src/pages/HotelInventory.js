@@ -7,11 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
+import { useTranslation } from 'react-i18next';
   Package, AlertTriangle, TrendingDown, ShoppingCart, 
   RefreshCw, FileText, BarChart3, CheckCircle 
 } from 'lucide-react';
 
 const HotelInventory = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [inventory, setInventory] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);

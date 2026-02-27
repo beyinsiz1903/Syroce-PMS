@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { CheckCircle, Clock, Camera, MessageSquare, Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const HousekeepingMobileApp = ({ user }) => {
+  const { t } = useTranslation();
   const [rooms, setRooms] = useState([]);
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [checklistItems, setChecklistItems] = useState([]);

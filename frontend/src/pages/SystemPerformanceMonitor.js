@@ -10,6 +10,7 @@ import {
   Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area
 } from 'recharts';
 import {
+import { useTranslation } from 'react-i18next';
   ArrowLeft, Cpu, HardDrive, Activity, Zap, Clock, RefreshCw,
   TrendingUp, Server, Shield, Database, AlertTriangle, CheckCircle2,
   XCircle, Timer, BarChart3, Globe, Lock, Gauge
@@ -19,6 +20,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
 const SystemPerformanceMonitor = ({ user }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [performance, setPerformance] = useState(null);

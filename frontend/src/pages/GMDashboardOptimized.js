@@ -17,6 +17,7 @@ import ExpenseSummaryCard from '@/components/ExpenseSummaryCard';
 import TrendChart from '@/components/TrendChart';
 import SLAConfigCard from '@/components/SLAConfigCard';
 import { queryKeys } from '@/lib/queryClient';
+import { useTranslation } from 'react-i18next';
 
 // Skeleton component for loading state
 const MetricSkeleton = () => (
@@ -32,6 +33,7 @@ const MetricSkeleton = () => (
 );
 
 const GMDashboardOptimized = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   // Critical data - Load first (stale time: 1 minute)

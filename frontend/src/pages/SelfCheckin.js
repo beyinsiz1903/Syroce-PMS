@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { CheckCircle, User, CreditCard, Key, Calendar } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const SelfCheckin = ({ bookingId, onComplete }) => {
+  const { t } = useTranslation();
   const [step, setStep] = useState(1);
   const [booking, setBooking] = useState(null);
   const [guestInfo, setGuestInfo] = useState({

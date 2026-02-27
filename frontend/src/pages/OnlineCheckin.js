@@ -10,11 +10,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { 
+import { useTranslation } from 'react-i18next';
   Plane, Clock, Hotel, BedDouble, Wind, Coffee, Wifi, 
   MapPin, User, Phone, Mail, CheckCircle2, Sparkles 
 } from 'lucide-react';
 
 const OnlineCheckin = () => {
+  const { t } = useTranslation();
   const { bookingId } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);

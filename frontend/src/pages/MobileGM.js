@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { 
+import { useTranslation } from 'react-i18next';
   ArrowLeft, 
   BarChart3, 
   TrendingUp, 
@@ -25,6 +26,7 @@ import {
 } from 'lucide-react';
 
 const MobileGM = ({ user }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [dailyFlash, setDailyFlash] = useState(null);

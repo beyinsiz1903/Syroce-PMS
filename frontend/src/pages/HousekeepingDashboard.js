@@ -9,8 +9,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Bed, Users, ArrowLeft, Sparkles } from 'lucide-react';
 import { Skeleton } from '../components/ui/skeleton';
+import { useTranslation } from 'react-i18next';
 
 const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [hkDashboard, setHkDashboard] = useState(null);
   const [roomStatus, setRoomStatus] = useState(null);
   const [loading, setLoading] = useState(true);

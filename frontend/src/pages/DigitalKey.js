@@ -5,8 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { QrCode, Key, Clock, RefreshCw, Download } from 'lucide-react';
 import QRCode from 'qrcode';
+import { useTranslation } from 'react-i18next';
 
 const DigitalKey = ({ bookingId }) => {
+  const { t } = useTranslation();
   const [keyData, setKeyData] = useState(null);
   const [qrCodeUrl, setQrCodeUrl] = useState('');
   const [loading, setLoading] = useState(true);

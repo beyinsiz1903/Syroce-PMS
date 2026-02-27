@@ -6,12 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { 
+import { useTranslation } from 'react-i18next';
   TrendingUp, Users, DollarSign, Calendar, 
   ArrowUpRight, ArrowDownRight, Minus,
   Hotel, LogOut, UserCheck, XCircle, Coffee, Sparkles, Home
 } from 'lucide-react';
 
 const FlashReport = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);

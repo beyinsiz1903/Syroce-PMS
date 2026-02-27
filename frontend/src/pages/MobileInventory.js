@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import PropertySwitcher from '@/components/PropertySwitcher';
 import { 
+import { useTranslation } from 'react-i18next';
   ArrowLeft, 
   Package,
   AlertTriangle,
@@ -29,6 +30,7 @@ import {
 } from 'lucide-react';
 
 const MobileInventory = ({ user }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

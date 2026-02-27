@@ -8,8 +8,10 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Package, ShoppingCart, Truck, AlertCircle, Plus } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const MarketplaceInventory = () => {
+  const { t } = useTranslation();
   const [inventory, setInventory] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [deliveries, setDeliveries] = useState([]);

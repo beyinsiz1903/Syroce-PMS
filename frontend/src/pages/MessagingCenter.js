@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { 
+import { useTranslation } from 'react-i18next';
   Mail, 
   MessageSquare, 
   Phone, 
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react';
 
 const MessagingCenter = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [selectedChannel, setSelectedChannel] = useState('email');
   const [selectedTemplate, setSelectedTemplate] = useState('');

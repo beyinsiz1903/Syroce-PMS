@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 
 function TestLogin() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('test@test.com');
   const [password, setPassword] = useState('test123');
   const [result, setResult] = useState(null);

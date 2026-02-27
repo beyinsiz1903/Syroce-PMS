@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
+import { useTranslation } from 'react-i18next';
   ArrowLeft, 
   DollarSign, 
   TrendingUp, 
@@ -41,6 +42,7 @@ import {
 } from 'lucide-react';
 
 const MobileFinance = ({ user }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [dailyCollections, setDailyCollections] = useState(null);

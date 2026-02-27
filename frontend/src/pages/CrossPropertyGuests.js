@@ -6,10 +6,12 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Layout from '@/components/Layout';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
 export default function CrossPropertyGuests({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('search');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState(null);

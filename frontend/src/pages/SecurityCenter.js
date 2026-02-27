@@ -7,10 +7,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import Layout from '@/components/Layout';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
 export default function SecurityCenter({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('2fa');
   const [twoFAStatus, setTwoFAStatus] = useState(null);
   const [setupData, setSetupData] = useState(null);

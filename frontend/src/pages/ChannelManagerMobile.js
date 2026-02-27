@@ -6,8 +6,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import PropertySwitcher from '@/components/PropertySwitcher';
 import { ArrowLeft, Globe, CheckCircle, AlertTriangle, BarChart3, RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const ChannelManagerMobile = ({ user }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [channels, setChannels] = useState([]);

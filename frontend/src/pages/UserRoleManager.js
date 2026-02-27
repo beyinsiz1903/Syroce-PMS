@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { useTranslation } from 'react-i18next';
 
 const DEFAULT_ROLE_OPTIONS = [
   { value: 'super_admin', label: 'Super Admin' },
@@ -15,6 +16,7 @@ const DEFAULT_ROLE_OPTIONS = [
   { value: 'housekeeping', label: 'Kat Hizmetleri' },
 ];
 const UserRoleManager = ({ user, tenant, onLogout, roleOptions }) => {
+  const { t } = useTranslation();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);

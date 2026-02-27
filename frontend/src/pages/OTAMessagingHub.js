@@ -7,8 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { MessageSquare, Send, Inbox, Archive, User, FileText } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const OTAMessagingHub = () => {
+  const { t } = useTranslation();
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [messages, setMessages] = useState([]);

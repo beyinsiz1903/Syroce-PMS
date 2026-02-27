@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { 
+import { useTranslation } from 'react-i18next';
   ArrowLeft, 
   RefreshCw, 
   TrendingUp, 
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react';
 
 const RevenueMobile = ({ user }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [activeView, setActiveView] = useState('overview');

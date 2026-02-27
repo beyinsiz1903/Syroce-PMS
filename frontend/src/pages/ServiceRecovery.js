@@ -10,8 +10,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { AlertTriangle, CheckCircle2, Clock, XCircle, Home } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const ServiceRecovery = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [complaints, setComplaints] = useState([]);
   const [showCreateDialog, setShowCreateDialog] = useState(false);

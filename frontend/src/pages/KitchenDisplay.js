@@ -15,8 +15,10 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useWebSocket, websocket } from '@/lib/websocket';
+import { useTranslation } from 'react-i18next';
 
 const KitchenDisplay = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
   const [autoRefresh, setAutoRefresh] = useState(true);

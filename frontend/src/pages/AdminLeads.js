@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { useTranslation } from 'react-i18next';
 
 const STATUS_OPTIONS = [
   "new",
@@ -34,6 +35,7 @@ const STATUS_COLOR = {
 };
 
 const fmtDate = (iso) => {
+  const { t } = useTranslation();
   if (!iso) return "-";
   const d = new Date(iso);
   return d.toLocaleString("tr-TR", {

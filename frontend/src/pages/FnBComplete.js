@@ -11,8 +11,10 @@ import { toast } from 'sonner';
 import FnBOutletDashboard from '@/components/FnBOutletDashboard';
 import RecipeCostingManager from '@/components/RecipeCostingManager';
 import IngredientInventoryPanel from '@/components/IngredientInventoryPanel';
+import { useTranslation } from 'react-i18next';
 
 const FnBComplete = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="fnb">

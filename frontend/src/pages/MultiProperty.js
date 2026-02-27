@@ -4,8 +4,10 @@ import axios from 'axios';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Building, Home, MapPin, TrendingUp, Hotel, DollarSign } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const MultiProperty = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
 

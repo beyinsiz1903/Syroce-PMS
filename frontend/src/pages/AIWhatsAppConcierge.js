@@ -7,8 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Home, MessageCircle, Send, Bot, CheckCircle, Clock } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const AIWhatsAppConcierge = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [conversations, setConversations] = useState([]);
   const [testMessage, setTestMessage] = useState('');

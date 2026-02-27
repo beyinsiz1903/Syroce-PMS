@@ -6,10 +6,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import Layout from '@/components/Layout';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
 export default function GDPRCompliance({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [complianceStatus, setComplianceStatus] = useState(null);
   const [retentionPolicy, setRetentionPolicy] = useState(null);

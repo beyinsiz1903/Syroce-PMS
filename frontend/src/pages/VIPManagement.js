@@ -11,11 +11,13 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { 
+import { useTranslation } from 'react-i18next';
   Crown, Star, Shield, AlertTriangle, Gift, Cake, 
   Heart, User, Mail, Phone, Calendar, TrendingUp, Home, UserPlus 
 } from 'lucide-react';
 
 const VIPManagement = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [vipGuests, setVipGuests] = useState([]);
   const [upcomingCelebrations, setUpcomingCelebrations] = useState([]);
