@@ -98,7 +98,7 @@ const NightAuditLogs = ({ user, tenant, onLogout }) => {
                   <td className="py-1 pr-2 font-mono text-[11px]">{d.booking_id}</td>
                   <td className="py-1 pr-2">{d.room_number || d.room_id || "-"}</td>
                   <td className="py-1 pr-2 font-mono text-[11px]">{d.folio_id || "-"}</td>
-                  <td className="py-1 pr-2 text-right">{d.fee_posted ? {t("common.yes")} : {t("common.no")}}</td>
+                  <td className="py-1 pr-2 text-right">{d.fee_posted ? t("common.yes") : t("common.no")}</td>
                   <td className="py-1 pr-2 text-right">
                     {d.fee_amount ? `€${d.fee_amount.toFixed(2)}` : "-"}
                   </td>
