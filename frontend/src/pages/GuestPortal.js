@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useTranslation } from 'react-i18next';
+import GuestMessaging from '@/components/GuestMessaging';
 import {
   Home,
   Calendar,
