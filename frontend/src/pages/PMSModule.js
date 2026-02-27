@@ -20,6 +20,7 @@ import BookingsTab from '@/components/pms/BookingsTab';
 import RoomsTab from '@/components/pms/RoomsTab';
 import BookingDialog from '@/components/pms/BookingDialog';
 import BookingDetailDialog from '@/components/pms/BookingDetailDialog';
+import BulkRoomsDialog from '@/components/pms/BulkRoomsDialog';
 import FindRoomDialog from '@/components/pms/FindRoomDialog';
 import GuestInfoDialog from '@/components/pms/GuestInfoDialog';
 import PaymentDialog from '@/components/pms/PaymentDialog';
