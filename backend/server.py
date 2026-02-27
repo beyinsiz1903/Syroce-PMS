@@ -54086,6 +54086,15 @@ try:
 except Exception as e:
     print(f"⚠️ Report Builder not available: {e}")
 
+# Guest Messaging Module
+try:
+    from routers.guest_messaging import router as guest_messaging_router, init_guest_messaging
+    init_guest_messaging(db, get_current_user)
+    app.include_router(guest_messaging_router, tags=["Guest Messaging"])
+    print("✅ Guest Messaging module included")
+except Exception as e:
+    print(f"⚠️ Guest Messaging not available: {e}")
+
 
 # ============================================================================
 # OPERA CLOUD PARITY FEATURES - CRITICAL ENTERPRISE FUNCTIONALITY
