@@ -2891,53 +2891,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           </DialogContent>
         </Dialog>
 
-        {/* HK Task Dialog */}
-        <Dialog open={openDialog === 'hktask'} onOpenChange={(open) => !open && setOpenDialog(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create Housekeeping Task</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleCreateHKTask} className="space-y-4">
-              <div>
-                <Label>Room</Label>
-                <Select value={newHKTask.room_id} onValueChange={(v) => setNewHKTask({...newHKTask, room_id: v})}>
-                  <SelectTrigger><SelectValue placeholder="Select room" /></SelectTrigger>
-                  <SelectContent>
-                    {rooms.map(r => <SelectItem key={r.id} value={r.id}>Room {r.room_number}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Task Type</Label>
-                <Select value={newHKTask.task_type} onValueChange={(v) => setNewHKTask({...newHKTask, task_type: v})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cleaning">Cleaning</SelectItem>
-                    <SelectItem value="inspection">Inspection</SelectItem>
-                    <SelectItem value="maintenance">Maintenance</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Priority</Label>
-                <Select value={newHKTask.priority} onValueChange={(v) => setNewHKTask({...newHKTask, priority: v})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="normal">Normal</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="urgent">Urgent</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Notes</Label>
-                <Textarea value={newHKTask.notes} onChange={(e) => setNewHKTask({...newHKTask, notes: e.target.value})} />
-              </div>
-              <Button type="submit" className="w-full">Create Task</Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <HKTaskDialog
+          open={openDialog === 'hktask'}
+          onClose={() => setOpenDialog(null)}
+          rooms={rooms}
+          newHKTask={newHKTask}
+          setNewHKTask={setNewHKTask}
+          onSubmit={handleCreateHKTask}
+        />
 
         <RoomBlockCreateDialog
           open={openDialog === 'roomblock'}
