@@ -25,19 +25,24 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 
 ### i18n Internationalization (COMPLETED - Feb 2026)
 - **Infrastructure:** `useTranslation` hook in all 116 page files
-- **Locale files:** tr.json (1473 lines) and en.json (1472 lines) - 1334 keys across 48 sections
-- **All 116 pages converted** - 1816 t() calls total, 97 pages with 5+ t() calls
-- **Language switching:** Verified working on Auth, Dashboard, Settings pages (EN/TR)
+- **Locale files:** tr.json and en.json - 1334 keys across 48 sections
+- **All 116 pages converted** - 1816 t() calls total
 - **8 supported languages:** EN, TR, AR, RU, IT, FR, ES, DE
 
 ### PMSModule.js Refactoring (COMPLETED - Feb 2026)
-- **5189 -> 3030 -> 2985 lines** (further -1.5% reduction)
-- 12 extracted components in /app/frontend/src/components/pms/ (added GuestsTab)
-- Now under 3000 line target
+- **5189 -> 3030 -> 2985 lines** (under 3000 target)
+- 12 extracted components in /app/frontend/src/components/pms/ (GuestsTab added)
 
 ### i18n Locale File Cleanup (COMPLETED - Feb 2026)
 - Removed redundant `frontend/src/i18n/locales/` directory
-- `frontend/public/locales/` and `frontend/src/locales/` are the sources of truth
+
+### Load Testing (COMPLETED - Feb 2026)
+- **Tool:** Locust 2.43.3
+- **Config:** 50 concurrent users, 120s duration, 4 user roles
+- **Results:** 2,293 requests, 0% error rate, 19.13 RPS
+- **Median response:** 7ms, p95: 3,600ms, p99: 7,300ms
+- **34 endpoints tested** across all PMS modules
+- **Report:** /app/test_reports/LOAD_TEST_REPORT.md
 
 ### CI/CD Pipeline Fix (COMPLETED - Feb 2026)
 - Backend dependencies cleaned, yarn.lock synced, .gitignore restored
@@ -48,7 +53,7 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - Phase 6: Integrations & Automation (Channel Manager, Stripe)
 
 ### P2
-- Load Testing (k6 / Locust)
+- Performance optimizations based on load test findings (login caching, report caching, AI prediction caching)
 
 ## Key Endpoints
 | Endpoint | Method | Description |
@@ -59,13 +64,11 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 | /api/reports/builder/* | GET/POST | Report Builder |
 | /api/security/summary | GET | Security dashboard |
 
-## Test Reports
-- iteration_4: i18n + Settings bug fix (100% pass)
-- iteration_7: PMSModule.js refactoring (100% pass)
-- iteration_8: i18n full conversion testing (85% pass - remaining are false positives)
-
 ## Credentials
 | Role | Email | Password |
 |------|-------|----------|
 | Admin | demo@hotel.com | demo123 |
 | Front Desk | frontdesk@hotel.com | staff123 |
+| Housekeeping | housekeeping@hotel.com | staff123 |
+| Finance | finance@hotel.com | staff123 |
+| Sales | sales@hotel.com | staff123 |
