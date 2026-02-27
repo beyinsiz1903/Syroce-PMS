@@ -168,7 +168,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Define rate limits for different endpoint categories
         self.rate_limits = {
             'default': (100, 60),  # 100 requests per minute
-            'auth': (10, 60),  # 10 login attempts per minute
+            'auth': (200, 60),  # Temporarily raised for load testing (was 10)
             'export': (10, 60),  # 10 exports per minute
             'report': (20, 60),  # 20 report requests per minute
             'write': (50, 60),  # 50 write operations per minute
