@@ -69,7 +69,7 @@ const DynamicPricing = () => {
           <input
             type="date"
             value={targetDate}
-            on{t('common.status')}={(e) => setTargetDate(e.target.value)}
+            onChange={(e) => setTargetDate(e.target.value)}
             className="w-full px-4 py-2 border rounded-lg"
           />
         </div>
