@@ -220,7 +220,7 @@ const MaintenancePlans = ({ user, tenant, onLogout }) => {
                     onValueChange={(v) => setForm((p) => ({ ...p, default_priority: v }))}
                   >
                     <SelectTrigger className="h-9 text-sm">
-                      <SelectValue placeholder="Priority" />
+                      <SelectValue placeholder={t("common.priority")} />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="low">Low</SelectItem>

@@ -1531,7 +1531,7 @@ const MobileMaintenance = ({ user }) => {
               <Label>Durum</Label>
               <Select value={filters.status} onValueChange={(val) => setFilters({...filters, status: val})}>
                 <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Tümü" />
+                  <SelectValue placeholder={t("common.all")} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Tümü</SelectItem>
@@ -1548,7 +1548,7 @@ const MobileMaintenance = ({ user }) => {
               <Label>Öncelik</Label>
               <Select value={filters.priority} onValueChange={(val) => setFilters({...filters, priority: val})}>
                 <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Tümü" />
+                  <SelectValue placeholder={t("common.all")} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Tümü</SelectItem>

@@ -523,7 +523,7 @@ const SystemPerformanceMonitor = ({ user }) => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <MetricCard
                 icon={<Shield className="w-4 h-4" />}
-                label="Durum"
+                label={t("common.status")}
                 value={<Badge className="bg-green-500 text-white">Aktif</Badge>}
                 color="text-green-600"
               />

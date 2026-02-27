@@ -2292,7 +2292,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                         </SelectContent>
                       </Select>
                       <Input
-                        placeholder="Description"
+                        placeholder={t("common.description")}
                         value={newCharge.description}
                         onChange={(e) => setNewCharge({...newCharge, description: e.target.value})}
                         required
@@ -4494,7 +4494,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                   onValueChange={(v) => setMaintenanceForm((prev) => ({ ...prev, priority: v }))}
                 >
                   <SelectTrigger className="h-9 mt-1 text-sm">
-                    <SelectValue placeholder="Priority" />
+                    <SelectValue placeholder={t("common.priority")} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="low">Low</SelectItem>
@@ -4624,7 +4624,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                 onValueChange={(v) => setMaintenanceForm((prev) => ({ ...prev, priority: v }))}
               >
                 <SelectTrigger className="h-9 mt-1 text-sm">
-                  <SelectValue placeholder="Priority" />
+                  <SelectValue placeholder={t("common.priority")} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="low">Low</SelectItem>

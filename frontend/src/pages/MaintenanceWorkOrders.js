@@ -222,7 +222,7 @@ const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
               <div className="text-xs text-gray-600 mb-1">Durum</div>
               <Select value={status} onValueChange={setStatus}>
                 <SelectTrigger className="h-9 text-sm">
-                  <SelectValue placeholder="Status" />
+                  <SelectValue placeholder={t("common.status")} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Tümü</SelectItem>
@@ -237,7 +237,7 @@ const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
               <div className="text-xs text-gray-600 mb-1">Öncelik</div>
               <Select value={priority} onValueChange={setPriority}>
                 <SelectTrigger className="h-9 text-sm">
-                  <SelectValue placeholder="Priority" />
+                  <SelectValue placeholder={t("common.priority")} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Tümü</SelectItem>

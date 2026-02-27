@@ -19,7 +19,7 @@ const STATUS_OPTIONS = [
 ];
 
 const statusLabel = {
-  new: "Yeni",
+  new: {t("common.new")},
   contacted: "Arandı",
   qualified: "Nitelikli",
   lost: "Kaybedildi",
@@ -188,7 +188,7 @@ const AdminLeads = ({ user, tenant, onLogout }) => {
                   onValueChange={(val) => setStatusFilter(val === "all" ? "" : val)}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Tümü" />
+                    <SelectValue placeholder={t("common.all")} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Tümü</SelectItem>
@@ -224,7 +224,7 @@ const AdminLeads = ({ user, tenant, onLogout }) => {
                     </label>
                   </div>
                   <Button onClick={loadLeads} disabled={loading} className="ml-auto">
-                    {loading ? "Yükleniyor..." : "Listeyi Yenile"}
+                    {loading ? {t("common.loading")} : "Listeyi Yenile"}
                   </Button>
                 </div>
               </div>

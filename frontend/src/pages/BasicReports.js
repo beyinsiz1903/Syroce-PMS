@@ -392,7 +392,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
             <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={2} />
             <YAxis tick={{ fontSize: 11 }} tickFormatter={v => '₺' + (v/1000).toFixed(0) + 'K'} />
             <Tooltip content={<CustomTooltip formatter={formatCurrency} />} />
-            <Area type="monotone" dataKey="revenue" name="Gelir" stroke="#10B981" fill="url(#rg)" strokeWidth={2.5} />
+            <Area type="monotone" dataKey="revenue" name={t("finance.revenue")} stroke="#10B981" fill="url(#rg)" strokeWidth={2.5} />
           </AreaChart>
         </ResponsiveContainer></CardContent>
       </Card>
@@ -514,7 +514,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
       {roomTypeData.length > 0 ? (<>
         <Card><CardHeader><CardTitle className="text-sm">Oda Tipi Bazlı Gelir</CardTitle></CardHeader>
           <CardContent><ResponsiveContainer width="100%" height={300}>
-            <BarChart data={roomTypeData}><CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" /><XAxis dataKey="name" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} tickFormatter={v => '₺' + (v/1000).toFixed(0) + 'K'} /><Tooltip content={<CustomTooltip formatter={formatCurrency} />} /><Bar dataKey="revenue" name="Gelir" radius={[4,4,0,0]}>{roomTypeData.map((_,i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}</Bar></BarChart>
+            <BarChart data={roomTypeData}><CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" /><XAxis dataKey="name" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} tickFormatter={v => '₺' + (v/1000).toFixed(0) + 'K'} /><Tooltip content={<CustomTooltip formatter={formatCurrency} />} /><Bar dataKey="revenue" name={t("finance.revenue")} radius={[4,4,0,0]}>{roomTypeData.map((_,i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}</Bar></BarChart>
           </ResponsiveContainer></CardContent>
         </Card>
         <Card><CardHeader><CardTitle className="text-sm">Oda Gelir Tablosu</CardTitle></CardHeader>
@@ -588,7 +588,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
         </Card>
         <Card><CardHeader><CardTitle className="text-sm">Kaynak Bazlı Gelir</CardTitle></CardHeader>
           <CardContent>{sourceData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}><BarChart data={sourceData}><CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" /><XAxis dataKey="name" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} tickFormatter={v => '₺' + (v/1000).toFixed(0) + 'K'} /><Tooltip content={<CustomTooltip formatter={formatCurrency} />} /><Bar dataKey="revenue" name="Gelir" radius={[4,4,0,0]}>{sourceData.map((_,i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}</Bar></BarChart></ResponsiveContainer>
+            <ResponsiveContainer width="100%" height={300}><BarChart data={sourceData}><CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" /><XAxis dataKey="name" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} tickFormatter={v => '₺' + (v/1000).toFixed(0) + 'K'} /><Tooltip content={<CustomTooltip formatter={formatCurrency} />} /><Bar dataKey="revenue" name={t("finance.revenue")} radius={[4,4,0,0]}>{sourceData.map((_,i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}</Bar></BarChart></ResponsiveContainer>
           ) : <div className="text-center py-12 text-gray-400"><BarChart3 className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>Veri yok</p></div>}</CardContent>
         </Card>
       </div>
