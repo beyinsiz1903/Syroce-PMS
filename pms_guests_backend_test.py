@@ -9,7 +9,7 @@ Test Objectives:
 3. Test guest 360° profile endpoints if available
 4. Verify response structure matches frontend expectations
 
-Base URL: https://guest-messaging-1.preview.emergentagent.com/api
+Base URL: https://code-cleanup-135.preview.emergentagent.com/api
 """
 
 import requests
@@ -18,7 +18,7 @@ import sys
 from datetime import datetime
 
 # Configuration
-BASE_URL = "https://guest-messaging-1.preview.emergentagent.com/api"
+BASE_URL = "https://code-cleanup-135.preview.emergentagent.com/api"
 LOGIN_EMAIL = "demo@hotel.com"
 LOGIN_PASSWORD = "demo123"
 

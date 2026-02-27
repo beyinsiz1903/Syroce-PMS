@@ -8,7 +8,7 @@ import aiohttp
 import json
 import uuid
 
-BACKEND_URL = "https://guest-messaging-1.preview.emergentagent.com/api"
+BACKEND_URL = "https://code-cleanup-135.preview.emergentagent.com/api"
 
 async def debug_notification_prefs():
     session = aiohttp.ClientSession()

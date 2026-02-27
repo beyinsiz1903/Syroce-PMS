@@ -13,7 +13,7 @@ Test credentials:
 - Basic hotel: demo@butikotel.com / demo123
 - Professional hotel: demo@grandcity.com / demo123
 
-Backend base URL: https://guest-messaging-1.preview.emergentagent.com/api
+Backend base URL: https://code-cleanup-135.preview.emergentagent.com/api
 """
 
 import requests
@@ -23,7 +23,7 @@ from datetime import datetime, date, timedelta
 import os
 
 # Configuration 
-BASE_URL = 'https://guest-messaging-1.preview.emergentagent.com/api'
+BASE_URL = 'https://code-cleanup-135.preview.emergentagent.com/api'
 
 # Test credentials
 TEST_ACCOUNTS = {

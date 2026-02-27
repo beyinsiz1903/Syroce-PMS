@@ -3,7 +3,7 @@ import requests
 import json
 from datetime import datetime, timezone
 
-BACKEND_URL = 'https://guest-messaging-1.preview.emergentagent.com/api'
+BACKEND_URL = 'https://code-cleanup-135.preview.emergentagent.com/api'
 
 # Login
 response = requests.post(f'{BACKEND_URL}/auth/login', json={

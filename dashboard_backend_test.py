@@ -21,7 +21,7 @@ from datetime import datetime
 import os
 
 # Configuration
-BASE_URL = "https://guest-messaging-1.preview.emergentagent.com/api"
+BASE_URL = "https://code-cleanup-135.preview.emergentagent.com/api"
 
 def print_section(title):
     """Print a formatted section header"""

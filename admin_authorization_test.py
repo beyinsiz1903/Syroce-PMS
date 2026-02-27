@@ -18,7 +18,7 @@ import json
 from datetime import datetime
 
 # Base URL from frontend/.env
-BASE_URL = "https://guest-messaging-1.preview.emergentagent.com/api"
+BASE_URL = "https://code-cleanup-135.preview.emergentagent.com/api"
 
 # Test credentials
 SUPER_ADMIN = {

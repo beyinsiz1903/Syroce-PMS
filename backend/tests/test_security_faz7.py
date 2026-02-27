@@ -13,7 +13,7 @@ import os
 import time
 from datetime import datetime
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://guest-messaging-1.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://code-cleanup-135.preview.emergentagent.com')
 
 # Test credentials
 VALID_EMAIL = "demo@hotel.com"

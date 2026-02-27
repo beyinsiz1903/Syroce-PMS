@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
 
 # Configuration
-BACKEND_URL = "https://guest-messaging-1.preview.emergentagent.com/api"
+BACKEND_URL = "https://code-cleanup-135.preview.emergentagent.com/api"
 AUTH_EMAIL = "demo@hotel.com"
 AUTH_PASSWORD = "demo123"
 
