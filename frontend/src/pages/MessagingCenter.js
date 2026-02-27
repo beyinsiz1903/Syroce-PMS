@@ -7,7 +7,6 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { 
-import { useTranslation } from 'react-i18next';
   Mail, 
   MessageSquare, 
   Phone, 
@@ -19,6 +18,7 @@ import { useTranslation } from 'react-i18next';
   CheckCircle,
   Smartphone
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const MessagingCenter = () => {
   const { t } = useTranslation();
