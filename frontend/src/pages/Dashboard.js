@@ -423,8 +423,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'ai'
     },
     {
-      title: '⭐ Reputation Center',
-      description: 'Online itibar yönetimi ve review tracking',
+      title: t('dashboard.reputationCenterModule'),
+      description: t('dashboard.reputationCenterModuleDesc'),
       icon: Star,
       path: '/reputation-center',
       color: '#f59e0b',
@@ -432,8 +432,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'guest'
     },
     {
-      title: '🏢 Multi-Property',
-      description: 'Çoklu otel yönetimi dashboard',
+      title: t('dashboard.multiProperty'),
+      description: t('dashboard.multiPropertyDesc'),
       icon: Building,
       path: '/multi-property',
       color: '#06b6d4',
@@ -441,8 +441,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'management'
     },
     {
-      title: '💳 Payment Gateway',
-      description: 'Stripe, PayPal, Crypto ödeme entegrasyonu',
+      title: t('dashboard.paymentGatewayModule'),
+      description: t('dashboard.paymentGatewayModuleDesc'),
       icon: CreditCard,
       path: '/payment-gateway',
       color: '#10b981',
@@ -663,19 +663,19 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                   {renderBriefingItems(aiBriefing.briefing_items)}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs bg-white/10 rounded-lg p-3 mt-3">
                     <div>
-                      <div className="opacity-75 text-xs">Doluluk Oranı</div>
+                      <div className="opacity-75 text-xs">{t('dashboard.occupancyRate')}</div>
                       <div className="text-lg font-bold">{typeof aiBriefing.metrics?.occupancy_rate === 'number' ? aiBriefing.metrics.occupancy_rate.toFixed(1) : '0'}%</div>
                     </div>
                     <div>
-                      <div className="opacity-75 text-xs">Bugünkü Check-in</div>
+                      <div className="opacity-75 text-xs">{t('dashboard.todayCheckins')}</div>
                       <div className="text-lg font-bold">{typeof aiBriefing.metrics?.today_checkins === 'number' ? aiBriefing.metrics.today_checkins : 0}</div>
                     </div>
                     <div>
-                      <div className="opacity-75 text-xs">Bugünkü Check-out</div>
+                      <div className="opacity-75 text-xs">{t('dashboard.todayCheckOut')}</div>
                       <div className="text-lg font-bold">{typeof aiBriefing.metrics?.today_checkouts === 'number' ? aiBriefing.metrics.today_checkouts : 0}</div>
                     </div>
                     <div>
-                      <div className="opacity-75 text-xs">Aylık Ciro</div>
+                      <div className="opacity-75 text-xs">{t('dashboard.monthlyTurnover')}</div>
                       <div className="text-lg font-bold">${typeof aiBriefing.metrics?.monthly_revenue === 'number' ? aiBriefing.metrics.monthly_revenue.toFixed(0) : '0'}</div>
                     </div>
                   </div>
