@@ -68,23 +68,8 @@ const AuthPage = ({ onLogin }) => {
       
       toast.success('Login successful! Redirecting...');
       
-      // Call onLogin FIRST to update app state
-      await onLogin(response.data.access_token, response.data.user, response.data.tenant);
-      
-      // Store auth data in localStorage
-      localStorage.setItem('token', response.data.access_token);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
-      localStorage.setItem('tenant', response.data.tenant ? JSON.stringify(response.data.tenant) : 'null');
-      
-      // Set axios header immediately
-      axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.access_token}`;
-      
-      console.log('✅ Auth data stored, redirecting to dashboard...');
-      
-      // Use hard redirect to ensure clean state
-      setTimeout(() => {
-        window.location.href = '/app/dashboard';
-      }, 300);
+      // Call onLogin to update app state - React Router handles redirect
+      onLogin(response.data.access_token, response.data.user, response.data.tenant);
     } catch (error) {
       console.error('❌ Login error:', error);
       console.error('❌ Error response:', error.response);
