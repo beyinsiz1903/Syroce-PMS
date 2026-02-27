@@ -56,12 +56,12 @@ const AuthPage = ({ onLogin }) => {
     try {
       const response = await axios.post('/auth/login', hotelLoginData);
       
-      toast.success('Login successful! Redirecting...');
+      toast.success(t('auth.loginSuccess'));
       
       // Call onLogin to update app state - React Router handles redirect
       onLogin(response.data.access_token, response.data.user, response.data.tenant);
     } catch (error) {
-      const errorMessage = error.response?.data?.detail || error.message || 'Login failed';
+      const errorMessage = error.response?.data?.detail || error.message || t('auth.loginFailed');
       toast.error(errorMessage);
     } finally {
       setLoading(false);
@@ -73,12 +73,11 @@ const AuthPage = ({ onLogin }) => {
     setLoading(true);
     try {
       const response = await axios.post('/auth/login', guestLoginData);
-      toast.success('Welcome back!');
+      toast.success(t('auth.welcomeBack'));
       onLogin(response.data.access_token, response.data.user, response.data.tenant);
-      // Navigate using React Router
       navigate('/guest-portal');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Login failed');
+      toast.error(error.response?.data?.detail || t('auth.loginFailed'));
     } finally {
       setLoading(false);
     }
@@ -91,14 +90,13 @@ const AuthPage = ({ onLogin }) => {
       console.log('📝 Register data being sent:', hotelRegisterData);
       const response = await axios.post('/auth/register', hotelRegisterData);
       console.log('✅ Register response:', response.data);
-      toast.success('Registration successful!');
+      toast.success(t('auth.registerSuccess'));
       onLogin(response.data.access_token, response.data.user, response.data.tenant);
-      // Navigate using React Router
       navigate('/');
     } catch (error) {
-      console.error('❌ Registration error:', error);
-      console.error('❌ Error response:', error.response?.data);
-      toast.error(error.response?.data?.detail || 'Registration failed');
+      console.error('Registration error:', error);
+      console.error('Error response:', error.response?.data);
+      toast.error(error.response?.data?.detail || t('auth.registerFailed'));
     } finally {
       setLoading(false);
     }
@@ -109,12 +107,11 @@ const AuthPage = ({ onLogin }) => {
     setLoading(true);
     try {
       const response = await axios.post('/auth/register-guest', guestRegisterData);
-      toast.success('Account created! Welcome!');
+      toast.success(t('auth.accountCreatedWelcome'));
       onLogin(response.data.access_token, response.data.user, response.data.tenant);
-      // Navigate using React Router
       navigate('/guest-portal');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Registration failed');
+      toast.error(error.response?.data?.detail || t('auth.registerFailed'));
     } finally {
       setLoading(false);
     }
