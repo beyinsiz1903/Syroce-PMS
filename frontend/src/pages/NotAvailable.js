@@ -11,11 +11,10 @@ export default function NotAvailable() {
       <div className="w-full max-w-lg rounded-2xl border bg-white p-6 shadow-sm">
         <div className="text-sm font-medium text-gray-500">PMS Lite</div>
         <h1 className="mt-1 text-xl font-semibold text-gray-900">
-          Bu özellik paketinizde mevcut değil
+          {t('notAvailable.title')}
         </h1>
         <p className="mt-2 text-sm text-gray-600">
-          Bu ekran yalnızca daha kapsamlı paketlerde kullanılabilir. Geri dönüp
-          PMS Lite ekranlarını kullanmaya devam edebilirsiniz.
+          {t('notAvailable.description')}
         </p>
 
         <div className="mt-5 flex gap-2">
