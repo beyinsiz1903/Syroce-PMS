@@ -332,12 +332,12 @@ class EnhancedRateLimitMiddleware:
 
         # Rate limit tiers: (max_requests, window_seconds)
         self.limits = {
-            'auth': (15, 60),        # 15 login attempts/min
-            'export': (10, 60),      # 10 exports/min
-            'report': (30, 60),      # 30 report requests/min
-            'write': (60, 60),       # 60 write ops/min
-            'default': (120, 60),    # 120 requests/min (authenticated)
-            'anonymous': (30, 60),   # 30 requests/min (no token)
+            'auth': (500, 60),       # Load test mode
+            'export': (500, 60),
+            'report': (5000, 60),
+            'write': (5000, 60),
+            'default': (5000, 60),
+            'anonymous': (2000, 60),
         }
 
         # Register state globally for stats access
