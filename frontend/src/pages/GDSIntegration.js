@@ -42,9 +42,9 @@ const GDSIntegration = () => {
         rate: 120,
         availability: 10
       });
-      toast.success(`${provider} GDS'e rate gönderildi!`);
+      toast.success(t('gds.rateSent', { provider }));
     } catch (error) {
-      toast.error('Rate gönderilemedi');
+      toast.error(t('gds.rateFailed'));
     }
   };
 
@@ -62,8 +62,8 @@ const GDSIntegration = () => {
               <Home className="w-5 h-5" />
             </Button>
             <div>
-              <h1 className="text-3xl font-bold">🌍 GDS Integration</h1>
-              <p className="text-gray-600">Amadeus, Sabre, Galileo global dağıtım</p>
+              <h1 className="text-3xl font-bold">{t('gds.title')}</h1>
+              <p className="text-gray-600">{t('gds.subtitle')}</p>
             </div>
           </div>
         </div>
@@ -81,7 +81,7 @@ const GDSIntegration = () => {
               onClick={() => pushRateToGDS('Amadeus')}
             >
               <Send className="w-4 h-4 mr-2" />
-              Rate Gönder
+              {t('gds.sendRate')}
             </Button>
           </CardContent>
         </Card>
@@ -95,7 +95,7 @@ const GDSIntegration = () => {
               onClick={() => pushRateToGDS('Sabre')}
             >
               <Send className="w-4 h-4 mr-2" />
-              Rate Gönder
+              {t('gds.sendRate')}
             </Button>
           </CardContent>
         </Card>
@@ -109,7 +109,7 @@ const GDSIntegration = () => {
               onClick={() => pushRateToGDS('Galileo')}
             >
               <Send className="w-4 h-4 mr-2" />
-              Rate Gönder
+              {t('gds.sendRate')}
             </Button>
           </CardContent>
         </Card>
@@ -121,28 +121,28 @@ const GDSIntegration = () => {
           <CardContent className="pt-6 text-center">
             <Calendar className="w-8 h-8 text-blue-600 mx-auto mb-2" />
             <p className="text-2xl font-bold">{stats.total}</p>
-            <p className="text-sm text-gray-500">Toplam GDS Rezervasyon</p>
+            <p className="text-sm text-gray-500">{t('gds.totalGdsReservations')}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6 text-center">
             <CheckCircle className="w-8 h-8 text-green-600 mx-auto mb-2" />
             <p className="text-2xl font-bold">{stats.today}</p>
-            <p className="text-sm text-gray-500">Bugün Gelen</p>
+            <p className="text-sm text-gray-500">{t('gds.todayArrived')}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6 text-center">
             <DollarSign className="w-8 h-8 text-purple-600 mx-auto mb-2" />
             <p className="text-2xl font-bold">€{stats.revenue}</p>
-            <p className="text-sm text-gray-500">GDS Geliri</p>
+            <p className="text-sm text-gray-500">{t('gds.gdsRevenue')}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6 text-center">
             <TrendingUp className="w-8 h-8 text-orange-600 mx-auto mb-2" />
             <p className="text-2xl font-bold">+12%</p>
-            <p className="text-sm text-gray-500">Büyüme</p>
+            <p className="text-sm text-gray-500">{t('gds.growth')}</p>
           </CardContent>
         </Card>
       </div>
@@ -150,14 +150,14 @@ const GDSIntegration = () => {
       {/* Reservations */}
       <Card>
         <CardHeader>
-          <CardTitle>Son GDS Rezervasyonları</CardTitle>
+          <CardTitle>{t('gds.recentReservations')}</CardTitle>
         </CardHeader>
         <CardContent>
           {reservations.length === 0 ? (
             <div className="text-center py-8">
               <Globe className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600">Henüz GDS rezervasyonu yok</p>
-              <p className="text-sm text-gray-500 mt-2">Otomatik senkronizasyon aktif</p>
+              <p className="text-gray-600">{t('gds.noReservations')}</p>
+              <p className="text-sm text-gray-500 mt-2">{t('gds.autoSyncActive')}</p>
             </div>
           ) : (
             <div className="space-y-3">

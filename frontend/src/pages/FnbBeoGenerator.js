@@ -41,10 +41,10 @@ const FnbBeoGenerator = ({ user, tenant, onLogout }) => {
       };
       const res = await axios.post('/fnb/beo', payload);
       setCreatedBeo({ ...payload, id: res.data.beo_id });
-      toast.success('BEO oluşturuldu');
+      toast.success(t('messages.success.created'));
     } catch (error) {
       console.error('Failed to create BEO', error);
-      toast.error('BEO oluşturulamadı');
+      toast.error(t('messages.error.saveFailed'));
     } finally {
       setSaving(false);
     }

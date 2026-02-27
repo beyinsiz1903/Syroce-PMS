@@ -57,7 +57,7 @@ const CostManagement = ({ user, tenant, onLogout }) => {
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout}>
         <div className="p-6">
-          <div className="text-center text-gray-600">No cost data available</div>
+          <div className="text-center text-gray-600">{t('costMgmt.noData')}</div>
         </div>
       </Layout>
     );
@@ -84,9 +84,9 @@ const CostManagement = ({ user, tenant, onLogout }) => {
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
               <DollarSign className="w-8 h-8 text-red-600" />
-              Cost Management
+              {t('costMgmt.title')}
             </h1>
-            <p className="text-gray-600 mt-1">Track and analyze operational costs</p>
+            <p className="text-gray-600 mt-1">{t('costMgmt.subtitle')}</p>
           </div>
           <div className="flex items-center gap-3">
             <Button variant="outline" onClick={loadCostData}>
@@ -98,7 +98,7 @@ const CostManagement = ({ user, tenant, onLogout }) => {
               Export
             </Button>
             <Button onClick={() => navigate('/')}>
-              Back to Dashboard
+              {t('nav.dashboard')}
             </Button>
           </div>
         </div>
@@ -109,11 +109,11 @@ const CostManagement = ({ user, tenant, onLogout }) => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-red-600 font-medium">Total Costs</p>
+                  <p className="text-sm text-red-600 font-medium">{t('costMgmt.totalCosts')}</p>
                   <p className="text-3xl font-bold text-red-700 mt-2">
                     ${costData.total_costs.toLocaleString()}
                   </p>
-                  <p className="text-xs text-red-600 mt-1">Last 30 days</p>
+                  <p className="text-xs text-red-600 mt-1">{t('costMgmt.last30Days')}</p>
                 </div>
                 <TrendingDown className="w-12 h-12 text-red-300" />
               </div>
@@ -124,7 +124,7 @@ const CostManagement = ({ user, tenant, onLogout }) => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-blue-600 font-medium">Categories</p>
+                  <p className="text-sm text-blue-600 font-medium">{t('costMgmt.categories')}</p>
                   <p className="text-3xl font-bold text-blue-700 mt-2">
                     {Object.keys(costData.by_category).length}
                   </p>

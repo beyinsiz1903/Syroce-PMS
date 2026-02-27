@@ -45,16 +45,16 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
               <Bed className="w-8 h-8 text-blue-600" />
-              Housekeeping Dashboard
+              {t('hkDashboard.title')}
             </h1>
             <p className="text-gray-600 mt-1">
-              Manage rooms, staff, and housekeeping operations
+              {t('hkDashboard.subtitle')}
             </p>
           </div>
           <div className="flex items-center gap-3">
             <Button variant="outline" onClick={() => navigate('/features')}>
               <Sparkles className="w-4 h-4 mr-2" />
-              More Features
+              {t('hkDashboard.moreFeatures')}
             </Button>
             <Button onClick={() => navigate('/')}>
               <ArrowLeft className="w-4 h-4 mr-2" />
@@ -68,7 +68,7 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
         {/* Detailed Reports Inline */}
         <Card>
           <CardHeader>
-            <CardTitle>Detailed Room & Staff Reports</CardTitle>
+            <CardTitle>{t('hkDashboard.detailedReports')}</CardTitle>
           </CardHeader>
           <CardContent>
             <HousekeepingDetailedReports />
@@ -82,10 +82,9 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
                 <Users className="w-5 h-5 text-blue-600" />
               </div>
               <div>
-                <h4 className="font-semibold text-gray-900 mb-1">🧹 Housekeeping Management</h4>
+                <h4 className="font-semibold text-gray-900 mb-1">🧹 {t('hkDashboard.hkManagement')}</h4>
                 <p className="text-sm text-gray-600">
-                  Complete housekeeping operations: staff management, room assignments, task tracking, 
-                  and performance monitoring all in one place.
+                  {t('hkDashboard.hkManagementDesc')}
                 </p>
               </div>
             </div>
@@ -95,7 +94,7 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
         {/* HK Summary Widgets */}
         <Card>
           <CardHeader>
-            <CardTitle>Today&apos;s Housekeeping Snapshot</CardTitle>
+            <CardTitle>{t('hkDashboard.todaySnapshot')}</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -108,19 +107,19 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div className="bg-blue-50 p-3 rounded">
-                  <div className="text-xs text-gray-600">Rooms (Total)</div>
+                  <div className="text-xs text-gray-600">{t('hkDashboard.roomsTotal')}</div>
                   <div className="text-2xl font-bold text-blue-700">{roomStatus?.summary?.total_rooms ?? '-'}</div>
                 </div>
                 <div className="bg-green-50 p-3 rounded">
-                  <div className="text-xs text-gray-600">Vacant Clean</div>
+                  <div className="text-xs text-gray-600">{t('hkDashboard.vacantClean')}</div>
                   <div className="text-2xl font-bold text-green-700">{roomStatus?.summary?.vacant_clean ?? '-'}</div>
                 </div>
                 <div className="bg-yellow-50 p-3 rounded">
-                  <div className="text-xs text-gray-600">Vacant Dirty</div>
+                  <div className="text-xs text-gray-600">{t('hkDashboard.vacantDirty')}</div>
                   <div className="text-2xl font-bold text-yellow-700">{roomStatus?.summary?.vacant_dirty ?? '-'}</div>
                 </div>
                 <div className="bg-red-50 p-3 rounded">
-                  <div className="text-xs text-gray-600">Out of Order / Service</div>
+                  <div className="text-xs text-gray-600">{t('hkDashboard.outOfOrderService')}</div>
                   <div className="text-2xl font-bold text-red-700">{(roomStatus?.summary?.out_of_order || 0) + (roomStatus?.summary?.out_of_service || 0)}</div>
                 </div>
               </div>
@@ -139,7 +138,7 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
         {/* Quick Actions */}
         <Card>
           <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
+            <CardTitle>{t('hkDashboard.quickActions')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -149,7 +148,7 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
                 onClick={() => navigate('/')}
               >
                 <span className="text-2xl mb-2">🛏️</span>
-                <span className="text-sm">Room Status</span>
+                <span className="text-sm">{t('hkDashboard.roomStatus')}</span>
               </Button>
               <Button
                 variant="outline"
@@ -157,7 +156,7 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
                 onClick={() => navigate('/')}
               >
                 <span className="text-2xl mb-2">📋</span>
-                <span className="text-sm">Task List</span>
+                <span className="text-sm">{t('hkDashboard.taskList')}</span>
               </Button>
               <Button
                 variant="outline"
@@ -165,7 +164,7 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
                 onClick={() => navigate('/')}
               >
                 <span className="text-2xl mb-2">📊</span>
-                <span className="text-sm">Reports</span>
+                <span className="text-sm">{t('hkDashboard.reports')}</span>
               </Button>
               <Button
                 variant="outline"
@@ -173,7 +172,7 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
                 onClick={() => navigate('/mobile')}
               >
                 <span className="text-2xl mb-2">📱</span>
-                <span className="text-sm">Mobile App</span>
+                <span className="text-sm">{t('hkDashboard.mobileApp')}</span>
               </Button>
             </div>
           </CardContent>

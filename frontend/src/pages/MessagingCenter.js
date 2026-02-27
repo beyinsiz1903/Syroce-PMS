@@ -76,22 +76,22 @@ const MessagingCenter = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold" style={{ fontFamily: 'Space Grotesk' }}>
-              Messaging Center
+              {t('messagingCenter.title')}
             </h1>
-            <p className="text-gray-600 mt-1">Multi-channel guest communication</p>
+            <p className="text-gray-600 mt-1">{t('messagingCenter.subtitle')}</p>
           </div>
           <Button onClick={() => navigate('/pms')}>
-            Back to PMS
+            {t('messagingCenter.backToPms')}
           </Button>
         </div>
 
         {/* Tabs */}
         <Tabs defaultValue="compose" className="w-full">
           <TabsList className="grid w-full grid-cols-2 max-w-md">
-            <TabsTrigger value="compose">Compose Message</TabsTrigger>
+            <TabsTrigger value="compose">{t('messagingCenter.composeMessage')}</TabsTrigger>
             <TabsTrigger value="templates">
               <MessageSquare className="w-4 h-4 mr-2" />
-              WhatsApp/SMS Templates
+              {t('messagingCenter.whatsappSmsTemplates')}
             </TabsTrigger>
           </TabsList>
 
@@ -102,8 +102,8 @@ const MessagingCenter = () => {
             {/* Channel Selection */}
             <Card>
               <CardHeader>
-                <CardTitle>Select Channel</CardTitle>
-                <CardDescription>Choose how to reach your guests</CardDescription>
+                <CardTitle>{t('messagingCenter.selectChannel')}</CardTitle>
+                <CardDescription>{t('messagingCenter.selectChannelDesc')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -175,7 +175,7 @@ const MessagingCenter = () => {
             {/* Compose */}
             <Card>
               <CardHeader>
-                <CardTitle>Compose Message</CardTitle>
+                <CardTitle>{t('messagingCenter.composeMessage')}</CardTitle>
                 <CardDescription>
                   Sending via {channels.find(c => c.id === selectedChannel)?.name}
                 </CardDescription>

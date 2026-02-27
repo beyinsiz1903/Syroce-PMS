@@ -44,7 +44,7 @@ const AIWhatsAppConcierge = () => {
       setTestMessage('');
       loadConversations();
     } catch (error) {
-      toast.error('Mesaj gönderilemedi');
+      toast.error(t('messages.error.generic'));
     } finally {
       setLoading(false);
     }
