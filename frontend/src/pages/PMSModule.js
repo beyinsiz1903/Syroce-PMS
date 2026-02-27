@@ -3186,97 +3186,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
         {/* Floating Action Button - Quick Actions */}
         {/* Maintenance Work Order Dialog */}
-        <Dialog open={maintenanceDialogOpen} onOpenChange={setMaintenanceDialogOpen}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Yeni Maintenance Work Order</DialogTitle>
-              <DialogDescription>
-                Oda {maintenanceForm.room_number} için mühendislik / bakım talebi oluşturun.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 mt-2">
-              <div>
-                <Label className="text-xs text-gray-600">Issue Type</Label>
-                <Select
-                  value={maintenanceForm.issue_type}
-                  onValueChange={(v) => setMaintenanceForm((prev) => ({ ...prev, issue_type: v }))}
-                >
-                  <SelectTrigger className="h-9 mt-1 text-sm">
-                    <SelectValue placeholder="Select issue type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="housekeeping_damage">Housekeeping Damage</SelectItem>
-                    <SelectItem value="plumbing">Plumbing</SelectItem>
-                    <SelectItem value="hvac">HVAC</SelectItem>
-                    <SelectItem value="electrical">Electrical</SelectItem>
-                    <SelectItem value="furniture">Furniture</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs text-gray-600">Priority</Label>
-                <Select
-                  value={maintenanceForm.priority}
-                  onValueChange={(v) => setMaintenanceForm((prev) => ({ ...prev, priority: v }))}
-                >
-                  <SelectTrigger className="h-9 mt-1 text-sm">
-                    <SelectValue placeholder={t("common.priority")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="normal">Normal</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="urgent">Urgent</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs text-gray-600">Description</Label>
-                <Textarea
-                  className="mt-1 text-sm min-h-[80px]"
-                  value={maintenanceForm.description}
-                  onChange={(e) => setMaintenanceForm((prev) => ({ ...prev, description: e.target.value }))}
-                  placeholder="Short description of the issue (e.g., shower leaking, AC not cooling)…"
-                />
-              </div>
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setMaintenanceDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={async () => {
-                  try {
-                    const payload = {
-                      room_id: maintenanceForm.room_id,
-                      room_number: maintenanceForm.room_number,
-                      issue_type: maintenanceForm.issue_type,
-                      priority: maintenanceForm.priority,
-                      source: 'housekeeping',
-                      description: maintenanceForm.description || undefined
-                    };
-                    const res = await axios.post('/maintenance/work-orders', payload, {
-                      headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` }
-                    });
-                    toast.success(`Maintenance work order created for room ${res.data.room_number || maintenanceForm.room_number}`);
-                    setMaintenanceDialogOpen(false);
-                  } catch (error) {
-                    console.error('Failed to create maintenance work order', error);
-                    toast.error('Maintenance work order could not be created');
-                  }
-                }}
-              >
-                Create Work Order
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <MaintenanceDialog
+          open={maintenanceDialogOpen}
+          onClose={() => setMaintenanceDialogOpen(false)}
+          maintenanceForm={maintenanceForm}
+          setMaintenanceForm={setMaintenanceForm}
+        />
 
         {/* FloatingActionButton - Quick Actions (mirrors top toolbar) */}
         <FloatingActionButton
