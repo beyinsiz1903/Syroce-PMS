@@ -112,20 +112,20 @@ const HousekeepingDetailedReports = () => {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Moon className="w-5 h-5" />
-                    Do Not Disturb (DND) Rooms
+                    Do Not Disturb (DND) {t('hkReports.rooms')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   {roomStatus?.dnd_rooms?.length === 0 ? (
-                    <div className="text-center text-gray-500 py-4">No DND rooms</div>
+                    <div className="text-center text-gray-500 py-4">{t('hkReports.noDndRooms')}</div>
                   ) : (
                     <table className="w-full">
                       <thead>
                         <tr className="border-b">
-                          <th className="text-left p-3">Room</th>
-                          <th className="text-left p-3">Guest</th>
-                          <th className="text-left p-3">DND Since</th>
-                          <th className="text-left p-3">Duration</th>
+                          <th className="text-left p-3">{t('hkReports.room')}</th>
+                          <th className="text-left p-3">{t('hkReports.guest')}</th>
+                          <th className="text-left p-3">{t('hkReports.dndSince')}</th>
+                          <th className="text-left p-3">{t('hkReports.duration')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -135,7 +135,7 @@ const HousekeepingDetailedReports = () => {
                             <td className="p-3">{room.guest}</td>
                             <td className="p-3">{room.dnd_since}</td>
                             <td className="p-3">
-                              <Badge variant="outline">{room.duration_hours} hours</Badge>
+                              <Badge variant="outline">{room.duration_hours} {t('hkReports.hours')}</Badge>
                             </td>
                           </tr>
                         ))}
@@ -152,15 +152,15 @@ const HousekeepingDetailedReports = () => {
                 </CardHeader>
                 <CardContent>
                   {roomStatus?.sleep_out?.length === 0 ? (
-                    <div className="text-center text-gray-500 py-4">No sleep out rooms</div>
+                    <div className="text-center text-gray-500 py-4">{t('hkReports.noSleepOutRooms')}</div>
                   ) : (
                     <table className="w-full">
                       <thead>
                         <tr className="border-b">
-                          <th className="text-left p-3">Room</th>
-                          <th className="text-left p-3">Guest</th>
-                          <th className="text-left p-3">Last Activity</th>
-                          <th className="text-left p-3">Status</th>
+                          <th className="text-left p-3">{t('hkReports.room')}</th>
+                          <th className="text-left p-3">{t('hkReports.guest')}</th>
+                          <th className="text-left p-3">{t('hkReports.lastActivity')}</th>
+                          <th className="text-left p-3">{t('hkReports.status')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -190,15 +190,15 @@ const HousekeepingDetailedReports = () => {
                 </CardHeader>
                 <CardContent>
                   {roomStatus?.out_of_order?.length === 0 ? (
-                    <div className="text-center text-gray-500 py-4">No OOO rooms</div>
+                    <div className="text-center text-gray-500 py-4">{t('hkReports.noOooRooms')}</div>
                   ) : (
                     <table className="w-full">
                       <thead>
                         <tr className="border-b">
-                          <th className="text-left p-3">Room</th>
-                          <th className="text-left p-3">Reason</th>
-                          <th className="text-left p-3">Since</th>
-                          <th className="text-left p-3">Expected Fix</th>
+                          <th className="text-left p-3">{t('hkReports.room')}</th>
+                          <th className="text-left p-3">{t('hkReports.reason')}</th>
+                          <th className="text-left p-3">{t('hkReports.since')}</th>
+                          <th className="text-left p-3">{t('hkReports.expectedFix')}</th>
                         </tr>
                       </thead>
                       <tbody>
