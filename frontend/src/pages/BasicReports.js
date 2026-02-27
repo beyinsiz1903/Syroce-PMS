@@ -615,6 +615,12 @@ const BasicReports = ({ user, tenant, onLogout }) => {
                 </button>
               );
             })}
+            <div className="border-t border-gray-100 pt-2 mt-2">
+              <a href="/reports/builder" className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all text-sm text-blue-600 hover:bg-blue-50 font-medium" data-testid="report-builder-link">
+                <ListChecks className="w-4 h-4 text-blue-500" />
+                <span>Rapor Oluşturucu</span>
+              </a>
+            </div>
           </nav>
         </aside>
 
