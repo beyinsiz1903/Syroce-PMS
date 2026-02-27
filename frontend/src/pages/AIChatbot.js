@@ -47,8 +47,8 @@ const AIChatbot = () => {
             <Home className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">🤖 AI Chatbot</h1>
-            <p className="text-gray-600">24/7 AI destekli misafir asistanı</p>
+            <h1 className="text-3xl font-bold">{t('aiChatbot.title')}</h1>
+            <p className="text-gray-600">{t('aiChatbot.subtitle')}</p>
           </div>
         </div>
       </div>
@@ -57,7 +57,7 @@ const AIChatbot = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bot className="w-5 h-5" />
-            Misafir Asistanı
+            {t('aiChatbot.guestAssistant')}
           </CardTitle>
         </CardHeader>
         <CardContent className="flex-1 flex flex-col">
@@ -65,8 +65,8 @@ const AIChatbot = () => {
             {messages.length === 0 ? (
               <div className="text-center py-12">
                 <MessageCircle className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600">Bir mesaj göndererek başlayın</p>
-                <p className="text-sm text-gray-500 mt-2">AI asistan size yardımcı olmaya hazır</p>
+                <p className="text-gray-600">{t('aiChatbot.startMessage')}</p>
+                <p className="text-sm text-gray-500 mt-2">{t('aiChatbot.readyToHelp')}</p>
               </div>
             ) : (
               messages.map((msg, idx) => (
@@ -83,7 +83,7 @@ const AIChatbot = () => {
             <Input
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
-              placeholder="Mesajınızı yazın..."
+              placeholder={t('aiChatbot.placeholder')}
               disabled={loading}
             />
             <Button type="submit" disabled={loading}>

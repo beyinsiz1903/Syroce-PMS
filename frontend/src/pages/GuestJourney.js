@@ -37,8 +37,8 @@ const GuestJourney = () => {
             <Home className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">🛤️ Guest Journey & NPS</h1>
-            <p className="text-gray-600">Misafir yolculuğu haritalama ve NPS tracking</p>
+            <h1 className="text-3xl font-bold">{t('guestJourney.title')}</h1>
+            <p className="text-gray-600">{t('guestJourney.subtitle')}</p>
           </div>
         </div>
       </div>
@@ -47,10 +47,10 @@ const GuestJourney = () => {
         <>
           <Card className="mb-6 bg-gradient-to-r from-green-50 to-blue-50">
             <CardContent className="pt-8 text-center">
-              <p className="text-sm text-gray-600 mb-2">Net Promoter Score</p>
+              <p className="text-sm text-gray-600 mb-2">{t('guestJourney.npsScore')}</p>
               <p className="text-6xl font-bold text-green-600">{npsData.nps_score}</p>
               <p className="text-sm text-gray-600 mt-2">
-                {npsData.total_responses} yanıt (Son 30 gün)
+                {t('guestJourney.responses', { count: npsData.total_responses })}
               </p>
             </CardContent>
           </Card>
@@ -60,21 +60,21 @@ const GuestJourney = () => {
               <CardContent className="pt-6 text-center">
                 <Smile className="w-12 h-12 text-green-600 mx-auto mb-2" />
                 <p className="text-3xl font-bold">{npsData.promoters}</p>
-                <p className="text-sm text-gray-500">Promoters (9-10)</p>
+                <p className="text-sm text-gray-500">{t('guestJourney.promoters')}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-6 text-center">
                 <Meh className="w-12 h-12 text-yellow-600 mx-auto mb-2" />
                 <p className="text-3xl font-bold">{npsData.passives}</p>
-                <p className="text-sm text-gray-500">Passives (7-8)</p>
+                <p className="text-sm text-gray-500">{t('guestJourney.passives')}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-6 text-center">
                 <Frown className="w-12 h-12 text-red-600 mx-auto mb-2" />
                 <p className="text-3xl font-bold">{npsData.detractors}</p>
-                <p className="text-sm text-gray-500">Detractors (0-6)</p>
+                <p className="text-sm text-gray-500">{t('guestJourney.detractors')}</p>
               </CardContent>
             </Card>
           </div>
