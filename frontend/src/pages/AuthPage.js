@@ -513,8 +513,8 @@ const AuthPage = ({ onLogin }) => {
               <TabsContent value="guest-login" className="space-y-4">
                 <Tabs defaultValue="login">
                   <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="login">Login</TabsTrigger>
-                    <TabsTrigger value="register">Register</TabsTrigger>
+                    <TabsTrigger value="login">{t('common.login')}</TabsTrigger>
+                    <TabsTrigger value="register">{t('common.register')}</TabsTrigger>
                   </TabsList>
                   
                   <TabsContent value="login">
@@ -522,15 +522,15 @@ const AuthPage = ({ onLogin }) => {
                       {isMobile && (
                         <div className="bg-purple-50 p-3 rounded-lg mb-4">
                           <p className="text-sm text-purple-800 font-medium">
-                            👤 Guest Mobile Access
+                            👤 {t('auth.guestMobileAccess')}
                           </p>
                           <p className="text-xs text-purple-600 mt-1">
-                            View bookings and manage your stay
+                            {t('auth.viewBookingsManageStay')}
                           </p>
                         </div>
                       )}
                       <div>
-                        <Label>Email</Label>
+                        <Label>{t('common.email')}</Label>
                         <Input
                           type="email"
                           value={guestLoginData.email}
@@ -542,7 +542,7 @@ const AuthPage = ({ onLogin }) => {
                         />
                       </div>
                       <div>
-                        <Label>Password</Label>
+                        <Label>{t('common.password')}</Label>
                         <Input
                           type="password"
                           value={guestLoginData.password}
@@ -569,7 +569,7 @@ const AuthPage = ({ onLogin }) => {
                         }}
                         style={isMobile ? { height: '48px', fontSize: '16px' } : {}}
                       >
-                        {loading ? 'Logging in...' : 'Login as Guest'}
+                        {loading ? t('auth.loggingIn') : t('auth.loginAsGuest')}
                       </Button>
                     </form>
                   </TabsContent>
@@ -577,7 +577,7 @@ const AuthPage = ({ onLogin }) => {
                   <TabsContent value="register">
                     <form onSubmit={handleGuestRegister} className="space-y-4">
                       <div>
-                        <Label>Name</Label>
+                        <Label>{t('common.name')}</Label>
                         <Input
                           value={guestRegisterData.name}
                           onChange={(e) => setGuestRegisterData({...guestRegisterData, name: e.target.value})}
@@ -586,7 +586,7 @@ const AuthPage = ({ onLogin }) => {
                         />
                       </div>
                       <div>
-                        <Label>Email</Label>
+                        <Label>{t('common.email')}</Label>
                         <Input
                           type="email"
                           value={guestRegisterData.email}
@@ -596,7 +596,7 @@ const AuthPage = ({ onLogin }) => {
                         />
                       </div>
                       <div>
-                        <Label>Phone</Label>
+                        <Label>{t('common.phone')}</Label>
                         <Input
                           value={guestRegisterData.phone}
                           onChange={(e) => setGuestRegisterData({...guestRegisterData, phone: e.target.value})}
@@ -605,7 +605,7 @@ const AuthPage = ({ onLogin }) => {
                         />
                       </div>
                       <div>
-                        <Label>Password</Label>
+                        <Label>{t('common.password')}</Label>
                         <Input
                           type="password"
                           value={guestRegisterData.password}
@@ -615,7 +615,7 @@ const AuthPage = ({ onLogin }) => {
                         />
                       </div>
                       <Button type="submit" className="w-full" disabled={loading} data-testid="guest-register-btn">
-                        {loading ? 'Creating Account...' : 'Create Guest Account'}
+                        {loading ? t('auth.creatingAccount') : t('auth.createGuestAccount')}
                       </Button>
                     </form>
                   </TabsContent>
