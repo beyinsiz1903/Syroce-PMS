@@ -41,7 +41,7 @@ const AIModule = ({ user, tenant, onLogout }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedModule, setSelectedModule] = useState(null);
   const [chatMessages, setChatMessages] = useState([
-    { sender: 'bot', message: 'Merhaba! Ben Syroce AI asistanınızım. Size nasıl yardımcı olabilirim? Otel operasyonları, misafir bilgileri, doluluk analizi gibi konularda sorularınızı yanıtlayabilirim.', timestamp: new Date() }
+    { sender: 'bot', message: t('aiModule.chatbotDesc'), timestamp: new Date() }
   ]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
@@ -105,65 +105,65 @@ const AIModule = ({ user, tenant, onLogout }) => {
   };
 
   const tabs = [
-    { id: 'overview', label: 'AI Overview', icon: Brain },
-    { id: 'chatbot', label: 'AI Chatbot', icon: MessageCircle },
-    { id: 'modules', label: 'AI Modüller', icon: Sparkles },
+    { id: 'overview', label: t('aiModule.title'), icon: Brain },
+    { id: 'chatbot', label: t('aiModule.chatbot'), icon: MessageCircle },
+    { id: 'modules', label: t('aiModule.title'), icon: Sparkles },
   ];
 
   const aiFeatures = [
     { 
       id: 'ai-pms',
       title: 'AI-Powered PMS', 
-      description: 'Yapay zeka destekli mülk yönetim sistemi',
+      description: t('aiModule.enhancedPMSDesc'),
       icon: Hotel, 
       color: 'from-purple-500 to-blue-500',
     },
     { 
       id: 'ai-chatbot',
       title: 'AI Chatbot', 
-      description: '24/7 AI destekli misafir asistanı',
+      description: t('aiModule.chatbotDesc'),
       icon: Bot, 
       color: 'from-cyan-500 to-blue-500',
     },
     { 
       id: 'ai-whatsapp-concierge',
       title: 'WhatsApp Concierge', 
-      description: 'AI destekli WhatsApp misafir hizmetleri',
+      description: t('aiModule.whatsappDesc'),
       icon: MessageCircle, 
       color: 'from-green-500 to-emerald-500',
     },
     { 
       id: 'dynamic-pricing',
       title: 'Dynamic Pricing', 
-      description: 'AI fiyatlandırma optimizasyonu',
+      description: t('aiModule.dynamicPricingDesc'),
       icon: DollarSign, 
       color: 'from-amber-500 to-orange-500',
     },
     { 
       id: 'predictive-analytics',
       title: 'Predictive Analytics', 
-      description: 'Tahmine dayalı iş zekası',
+      description: t('aiModule.predictiveDesc'),
       icon: TrendingUp, 
       color: 'from-pink-500 to-rose-500',
     },
     { 
       id: 'reputation-center',
       title: 'Reputation Center', 
-      description: 'AI ile itibar yönetimi ve sentiment analizi',
+      description: t('aiModule.socialRadarDesc'),
       icon: Star, 
       color: 'from-yellow-500 to-amber-500',
     },
     { 
       id: 'revenue-autopilot',
       title: 'Revenue Autopilot', 
-      description: 'Otomatik gelir yönetimi',
+      description: t('aiModule.revenueAutopilotDesc'),
       icon: Zap, 
       color: 'from-indigo-500 to-violet-500',
     },
     { 
       id: 'social-media-radar',
       title: 'Social Media Radar', 
-      description: 'Sosyal medya izleme ve analiz',
+      description: t('aiModule.socialRadarDesc'),
       icon: Globe, 
       color: 'from-sky-500 to-blue-500',
     },
@@ -187,7 +187,7 @@ const AIModule = ({ user, tenant, onLogout }) => {
             className="flex items-center gap-2 hover:bg-gray-100"
           >
             <ArrowLeft className="w-4 h-4" />
-            AI Modüllere Dön
+            {t('common.back')}
           </Button>
           {selectedFeature && (
             <div className="flex items-center gap-2">
