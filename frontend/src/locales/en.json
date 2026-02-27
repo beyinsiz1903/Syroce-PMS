@@ -813,22 +813,22 @@
     "dynamicPricing": "Dinamik Fiyatlandırma"
   },
   "ai": {
-    "dailyBriefing": "Günlük Brifing",
-    "aiInsights": "Yapay Zeka Öngörüleri",
-    "predictions": "Tahminler",
-    "recommendations": "Öneriler",
-    "occupancyPrediction": "Doluluk Tahmini",
-    "guestPatterns": "Misafir Kalıpları",
-    "expenseCategory": "Gider Kategorisi",
-    "anomalyDetection": "Anormallik Tespiti",
-    "guestSegmentation": "Misafir Segmentasyonu",
-    "churnRisk": "Kayıp Riski",
-    "productRecommendations": "Ürün Önerileri",
-    "revenueAnalysis": "Gelir Analizi",
-    "viewInsights": "Öngörüleri Görüntüle",
-    "loading": "Yapay zeka öngörüleri oluşturuluyor...",
-    "refreshInsights": "Öngörüleri Yenile",
-    "poweredBy": "Yapay Zeka Destekli"
+    "dailyBriefing": "Daily Briefing",
+    "aiInsights": "AI Insights",
+    "predictions": "Predictions",
+    "recommendations": "Recommendations",
+    "occupancyPrediction": "Occupancy Prediction",
+    "guestPatterns": "Guest Patterns",
+    "expenseCategory": "Expense Category",
+    "anomalyDetection": "Anomaly Detection",
+    "guestSegmentation": "Guest Segmentation",
+    "churnRisk": "Churn Risk",
+    "productRecommendations": "Product Recommendations",
+    "revenueAnalysis": "Revenue Analysis",
+    "viewInsights": "View Insights",
+    "loading": "Generating AI insights...",
+    "refreshInsights": "Refresh Insights",
+    "poweredBy": "AI Powered"
   },
   "messages": {
     "success": {
