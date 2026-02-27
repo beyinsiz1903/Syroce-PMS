@@ -3,14 +3,6 @@
 ## Original Problem Statement
 Otel Yönetim Sistemi (Syroce PMS) - 5 yıldızlı otel operasyonları için kapsamlı PMS çözümü.
 
-## Core Requirements
-- Multi-tenant hotel management system
-- Reservation management, front desk, housekeeping
-- Financial reporting, invoicing, folio management
-- Multi-language support (TR/EN primary)
-- Role-based access control
-- Mobile-responsive design
-
 ## Architecture
 - **Frontend:** React, Tailwind CSS, Shadcn UI, Recharts, i18next, jspdf
 - **Backend:** FastAPI, MongoDB (motor), JWT auth, openpyxl, WeasyPrint
@@ -19,44 +11,31 @@ Otel Yönetim Sistemi (Syroce PMS) - 5 yıldızlı otel operasyonları için kap
 ## What's Been Implemented
 
 ### Phase 1-3 (Previously Completed)
-- Full PMS module (reservations, rooms, check-in/out)
-- Dashboard with KPIs
-- Housekeeping management
-- Finance & invoicing
-- Channel Manager
-- Revenue Management (RMS)
-- AI modules
-- Multi-property support
-- Night Audit
-- Mobile views
+- Full PMS, Dashboard, Housekeeping, Finance, Channel Manager, RMS, AI, Multi-property, Night Audit, Mobile views
 
 ### Phase 4: Reporting & Analytics (Feb 2026 - COMPLETED)
-- **Custom Report Builder** (`/reports/builder`, `/app/rapor-olusturucu`)
-  - 6 data sources: Reservations, Revenue, Guests, Rooms, Housekeeping, Folios
-  - Dynamic column selection, date presets, advanced filters
-  - Template save/load/delete
-- **Excel & PDF Export** - openpyxl + WeasyPrint
-- **Navigation** integration across all report pages
+- Custom Report Builder (6 data sources, dynamic columns, filters, templates)
+- Excel & PDF Export (openpyxl + WeasyPrint)
 
 ### P1: i18n Conversion (Feb 2026 - COMPLETED)
-- **115 page files** now have `useTranslation` import and hook
-- **Comprehensive locale files** - tr.json (~900 keys) and en.json expanded
-- **Critical pages converted:** ReportBuilder.js, Reports.js, AIModule.js
-- **Infrastructure ready** for incremental string replacement in remaining pages
+- 115 page files: `useTranslation` import + hook added
+- Locale files: tr.json (~900 keys), en.json expanded
+- ~120 hardcoded strings converted to `t()` calls across 50+ files
+- Critical pages fully converted: ReportBuilder, Reports, AIModule, BasicReports
 
 ### P2: Phase 5 - Guest Portal & Communication (Feb 2026 - COMPLETED)
-- **Guest Messaging System:**
-  - Backend API: `/api/guest/messages` (send, list, reply, mark-read, unread-count)
-  - Frontend component: `GuestMessaging.js` (real-time chat UI)
-  - Message types: general, request, complaint, feedback
-  - Read/unread tracking with badge counts
-  - Auto-refresh every 15 seconds
-- **GuestPortal.js updated** with Messages navigation and route
-- **MessagingCenter.js** fixed (broken import repaired)
+- Guest Messaging System: Backend API + Frontend component
+- GuestPortal updated with Messages navigation
 
-### App Store Submission (Previously Completed)
-- Privacy Policy page at `/gizlilik`
-- App Store screenshots and content
+### Bug Fix: Login Redirect (Feb 2026 - FIXED)
+- Removed redundant `window.location.href` hard redirect
+- React Router now handles redirect via `isAuthenticated` state
+- Clean redirect: /auth → /app/dashboard
+
+### PMSModule.js Refactoring (Feb 2026 - COMPLETED)
+- 5189 → 4369 lines (820 lines extracted)
+- BookingDialog.js (466 lines) → `/components/pms/BookingDialog.js`
+- Guest360Dialog.js (490 lines) → `/components/pms/Guest360Dialog.js`
 
 ## Prioritized Backlog
 
@@ -68,34 +47,27 @@ Otel Yönetim Sistemi (Syroce PMS) - 5 yıldızlı otel operasyonları için kap
 - API rate limiting, security headers
 - Load testing
 
-### Refactoring
-- PMSModule.js (3400+ lines) decomposition
-- Incremental i18n string replacement for remaining ~90 pages
-- App Store temp endpoint cleanup
+### Remaining Refactoring
+- Incremental i18n for ~60 pages (infrastructure ready, strings need manual t() wrapping)
+- Further PMSModule decomposition (FolioViewDialog, BookingDetailDialog etc.)
 
-## Key API Endpoints
-- `POST /api/auth/login` - Login (returns access_token)
-- `GET/POST /api/reports/builder/*` - Report Builder CRUD
-- `GET/POST /api/guest/messages` - Guest Messaging
-- `PUT /api/guest/messages/mark-all-read` - Mark messages read
-- `GET /api/guest/messages/unread-count` - Unread count
-
-## Key Files (New/Modified)
+## Key Files
 - `/app/backend/routers/report_builder.py` - Report Builder API
 - `/app/backend/routers/guest_messaging.py` - Guest Messaging API
 - `/app/frontend/src/pages/ReportBuilder.js` - Report Builder UI
 - `/app/frontend/src/components/GuestMessaging.js` - Messaging component
-- `/app/frontend/src/pages/GuestPortal.js` - Updated with messaging
-- `/app/frontend/src/locales/tr.json` - Turkish translations (expanded)
-- `/app/frontend/src/locales/en.json` - English translations (expanded)
-- `/app/frontend/src/config/navItems.js` - Navigation updated
+- `/app/frontend/src/components/pms/BookingDialog.js` - Extracted dialog
+- `/app/frontend/src/components/pms/Guest360Dialog.js` - Extracted dialog
+- `/app/frontend/src/pages/PMSModule.js` - Refactored (4369 lines)
+- `/app/frontend/src/pages/AuthPage.js` - Login redirect fixed
 
-## Test Credentials
+## Test Reports
+- `/app/test_reports/iteration_3.json` - Report Builder
+- `/app/test_reports/iteration_4.json` - i18n + Guest Messaging
+- `/app/test_reports/iteration_5.json` - Login fix + PMSModule refactor
+
+## Credentials
 | Role | Email | Password |
 |------|-------|----------|
 | Admin | demo@hotel.com | demo123 |
 | Front Desk | frontdesk@hotel.com | staff123 |
-
-## Test Reports
-- `/app/test_reports/iteration_3.json` - Report Builder tests
-- `/app/test_reports/iteration_4.json` - i18n + Guest Messaging tests
