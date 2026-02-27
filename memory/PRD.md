@@ -24,33 +24,81 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 
 ### i18n Internationalization (COMPLETED - Feb 2026)
 - 1816 t() calls, 1334 keys, 48 sections, 8 languages
+- HousekeepingDetailedReports.js fully converted with 35+ new keys
 
 ### PMSModule.js Refactoring (COMPLETED - Feb 2026)
 - 5189 -> 2985 lines, 12 extracted components
 
 ### Load Testing & Performance Optimization (COMPLETED - Feb 2026)
-- **Locust 2.43.3:** 50 concurrent users, 120s, 4 roles, 34 endpoints
-- **Before:** 2,293 req, 19.13 RPS, Avg 626ms, Login p50: 5,500ms
-- **After:** 2,472 req, 20.77 RPS, Avg 416ms, Login p50: 1,400ms
-- **Optimizations applied:**
-  - Login session cache (in-memory, 5min TTL) - bcrypt bypass on repeat logins
-  - AI occupancy prediction cache (15min TTL)
-  - AI guest patterns cache (15min TTL)
-  - Password change invalidates login cache
-- **Results:** Login -74.5%, Forecast -99.3%, Overall avg -33.5%, p99 -52.1%
+- Locust 2.43.3: 50 concurrent users, 120s, 4 roles, 34 endpoints
+- Login -74.5%, Forecast -99.3%, Overall avg -33.5%, p99 -52.1%
+
+### server.py Modularization (COMPLETED - Feb 2026)
+- **Extracted 3 routers:** auth.py (620 lines), housekeeping.py (717 lines), departments.py (2956 lines)
+- **Reduced server.py:** 55,671 -> 51,409 lines (-4,262 lines, -7.7%)
+- **Created core/helpers.py:** Shared utilities (load_tenant_doc, resolve_tenant_features, require_module, create_audit_log)
+- Fixed duplicate mock routes in comprehensive_modules_endpoints.py
+
+### Root Directory Cleanup (COMPLETED - Feb 2026)
+- Removed 152 test .py files from root directory
+- Removed 30+ obsolete .md documentation files
+- Clean project structure: only README.md, backend/, frontend/, docs/, memory/
+
+## Code Architecture
+```
+/app
+├── backend/
+│   ├── server.py              # Main server (51,409 lines, modularized)
+│   ├── core/
+│   │   ├── database.py        # MongoDB connection
+│   │   ├── security.py        # JWT auth, password hashing
+│   │   ├── helpers.py         # Shared helpers (NEW)
+│   │   └── sanitize.py        # Input sanitization
+│   ├── routers/
+│   │   ├── auth.py            # Auth endpoints (NEW - 666 lines)
+│   │   ├── housekeeping.py    # Housekeeping endpoints (NEW - 745 lines)
+│   │   ├── departments.py     # Department dashboards (NEW - 2986 lines)
+│   │   ├── report_builder.py  # Report builder
+│   │   └── guest_messaging.py # Guest messaging
+│   └── models/
+│       ├── enums.py           # Enumerations
+│       └── schemas.py         # Pydantic models
+├── frontend/
+│   ├── src/
+│   │   ├── locales/           # i18n files (en.json, tr.json + 6 more)
+│   │   ├── components/
+│   │   │   ├── pms/           # PMS sub-components
+│   │   │   └── ui/            # Shadcn UI
+│   │   └── pages/             # Route pages
+│   └── ...
+└── memory/
+    └── PRD.md
+```
 
 ## Prioritized Backlog
 
-### P1 (Next)
-- Phase 6: Integrations & Automation (Channel Manager, Stripe)
+### P0 (Next)
+- Phase 6: Integrations & Automation (Channel Manager enhancements, Stripe)
+
+### P1
+- Redis-based Caching (replace in-memory SimpleCache)
+- Continue server.py modularization (PMS rooms, bookings, reports, finance sections)
+
+### P2
+- Remaining i18n gaps (Quick Actions buttons, minor headers)
+- server.py further reduction (target: <40K lines)
 
 ## Key Endpoints
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| /api/auth/login | POST | Login (cached) |
-| /api/pms/dashboard | GET | PMS stats |
-| /api/reports/builder/* | GET/POST | Report Builder |
-| /api/ai/pms/occupancy-prediction | GET | AI prediction (cached 15min) |
+| Endpoint | Method | Router | Description |
+|----------|--------|--------|-------------|
+| /api/auth/login | POST | auth.py | Login (cached) |
+| /api/auth/me | GET | auth.py | Current user |
+| /api/security/summary | GET | auth.py | Security dashboard |
+| /api/housekeeping/tasks | GET/POST | housekeeping.py | HK tasks |
+| /api/housekeeping/room-status | GET | housekeeping.py | Room status board |
+| /api/department/*/dashboard | GET | departments.py | Dept dashboards |
+| /api/pms/dashboard | GET | server.py | PMS stats |
+| /api/reports/builder/* | GET/POST | report_builder.py | Report Builder |
 
 ## Credentials
 | Role | Email | Password |
