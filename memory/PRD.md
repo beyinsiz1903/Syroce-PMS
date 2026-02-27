@@ -70,6 +70,11 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 | /api/reports/builder/* | GET/POST | Report Builder |
 | /api/security/summary | GET | Security dashboard |
 
+### Deployment Fix (Feb 2026)
+- Removed `emergentintegrations==0.1.0` and `litellm==1.80.0` from requirements.txt (CI/CD can't install from custom PyPI index)
+- Wrapped bare `emergentintegrations` import in server.py with try/except
+- yarn.lock verified in sync with package.json
+
 ## Test Reports
 - iteration_4: i18n + Settings bug fix (100% pass)
 - iteration_7: PMSModule.js refactoring (100% pass)
