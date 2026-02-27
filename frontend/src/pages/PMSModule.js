@@ -2812,9 +2812,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           updateMultiRoomField={updateMultiRoomField}
           updateMultiRoomChildrenAges={updateMultiRoomChildrenAges}
           updateMultiRoomChildAge={updateMultiRoomChildAge}
-          contractedRates={contractedRates}
-          showCompanySelect={showCompanySelect}
-          selectedCompany={selectedCompany}
           isLite={isLite}
           setOpenDialog={setOpenDialog}
         />
