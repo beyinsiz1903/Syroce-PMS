@@ -19,7 +19,7 @@ const STATUS_OPTIONS = [
 ];
 
 const statusLabel = {
-  new: t("common.new"),
+  new: "Yeni",
   contacted: "Arandı",
   qualified: "Nitelikli",
   lost: "Kaybedildi",
