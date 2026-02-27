@@ -3279,7 +3279,10 @@ async def ai_chat(
                     lines.append(f"- {name} | {g.get('loyalty_tier','-')} | {g.get('total_stays',0)} konaklama | {g.get('total_spend',0):.0f} TL")
                 data_context = f"\n\n## MİSAFİR LİSTESİ ({len(all_guests)} toplam):\n" + "\n".join(lines)
 
-        from emergentintegrations.llm.chat import LlmChat, UserMessage as LlmUserMessage
+        try:
+            from emergentintegrations.llm.chat import LlmChat, UserMessage as LlmUserMessage
+        except ImportError:
+            raise HTTPException(status_code=503, detail="AI servisi şu anda kullanılamıyor")
 
         system_msg = (
             f"Sen {hotel_name} otelinin Syroce PMS AI asistanısın. Otel yöneticilerine Türkçe olarak yardımcı oluyorsun. "
