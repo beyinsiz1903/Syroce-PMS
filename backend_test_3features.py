@@ -16,7 +16,7 @@ from datetime import datetime
 import os
 
 # Configuration from environment
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://code-cleanup-135.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://pms-feature-test.preview.emergentagent.com')
 API_BASE_URL = BASE_URL + '/api'
 
 # Test credentials

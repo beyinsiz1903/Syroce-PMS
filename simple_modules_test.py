@@ -7,7 +7,7 @@ import requests
 import json
 
 def test_modules():
-    base_url = "https://code-cleanup-135.preview.emergentagent.com/api"
+    base_url = "https://pms-feature-test.preview.emergentagent.com/api"
     
     # Login first
     print("🔐 Logging in...")

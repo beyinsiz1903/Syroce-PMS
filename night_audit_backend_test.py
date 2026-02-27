@@ -21,7 +21,7 @@ import sys
 import os
 
 # Configuration
-BASE_URL = "https://code-cleanup-135.preview.emergentagent.com"
+BASE_URL = "https://pms-feature-test.preview.emergentagent.com"
 API_BASE = f"{BASE_URL}/api"
 
 # Demo credentials

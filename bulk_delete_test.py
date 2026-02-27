@@ -46,7 +46,7 @@ from typing import Dict, List, Any, Optional
 import uuid
 
 # Configuration
-BACKEND_URL = "https://code-cleanup-135.preview.emergentagent.com/api"
+BACKEND_URL = "https://pms-feature-test.preview.emergentagent.com/api"
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 

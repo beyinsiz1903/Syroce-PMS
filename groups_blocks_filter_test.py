@@ -11,7 +11,7 @@ TEST SCENARIOS:
 5. Custom tarih aralığı (date_range=custom&start_date=2025-11-01&end_date=2025-11-30)
 6. Status + tarih filtresi birlikte (status=definite&date_range=this_month)
 
-Base URL: https://code-cleanup-135.preview.emergentagent.com/api
+Base URL: https://pms-feature-test.preview.emergentagent.com/api
 Auth: demo@hotel.com / demo123
 """
 
@@ -25,7 +25,7 @@ from typing import Dict, List, Any, Optional
 import uuid
 
 # Configuration
-BACKEND_URL = "https://code-cleanup-135.preview.emergentagent.com/api"
+BACKEND_URL = "https://pms-feature-test.preview.emergentagent.com/api"
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 

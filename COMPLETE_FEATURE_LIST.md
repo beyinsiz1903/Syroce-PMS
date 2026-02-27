@@ -218,7 +218,7 @@
 ## 📋 QUICK START GUIDE
 
 **Login:**
-- URL: https://code-cleanup-135.preview.emergentagent.com
+- URL: https://pms-feature-test.preview.emergentagent.com
 - Demo: demo@hotel.com / demo123
 
 **New User Registration:**

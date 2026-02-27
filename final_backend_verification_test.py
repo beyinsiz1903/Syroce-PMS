@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timedelta
 
 # Configuration
-BASE_URL = "https://code-cleanup-135.preview.emergentagent.com/api"
+BASE_URL = "https://pms-feature-test.preview.emergentagent.com/api"
 EMAIL = "demo@hotel.com"
 PASSWORD = "demo123"
 
