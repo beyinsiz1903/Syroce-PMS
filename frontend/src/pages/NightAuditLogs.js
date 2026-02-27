@@ -307,7 +307,7 @@ const NightAuditLogs = ({ user, tenant, onLogout }) => {
                                 className="text-xs"
                                 onClick={() => setExpandedId(isExpanded ? null : log.id)}
                               >
-                                {isExpanded ? {t("common.close")} : "Detay"}
+                                {isExpanded ? t("common.close") : "Detay"}
                               </Button>
                             </td>
                           </tr>

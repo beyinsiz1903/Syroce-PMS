@@ -224,7 +224,7 @@ const AdminLeads = ({ user, tenant, onLogout }) => {
                     </label>
                   </div>
                   <Button onClick={loadLeads} disabled={loading} className="ml-auto">
-                    {loading ? {t("common.loading")} : "Listeyi Yenile"}
+                    {loading ? t("common.loading") : "Listeyi Yenile"}
                   </Button>
                 </div>
               </div>
