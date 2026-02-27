@@ -1505,6 +1505,7 @@ function App() {
 
           {/* New Modules - Security, Compliance, Multi-Property, ML */}
           <Route path="/security-center" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><SecurityCenter user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
+          <Route path="/app/guvenlik" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><SecurityDashboard user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
           <Route path="/gdpr-compliance" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><GDPRCompliance user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
           <Route path="/central-office" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><CentralOfficeDashboard user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
           <Route path="/central-pricing" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><CentralPricingManager user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
