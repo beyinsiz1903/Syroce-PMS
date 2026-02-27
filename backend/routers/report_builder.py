@@ -445,10 +445,9 @@ async def export_report_excel(config: ReportConfig, credentials=Depends(HTTPBear
 
 
 @router.post("/export/pdf")
-async def export_report_pdf(config: ReportConfig, current_user=None):
+async def export_report_pdf(config: ReportConfig, credentials=Depends(HTTPBearer())):
     """Özel raporu PDF formatında dışa aktarır."""
-    if current_user is None and _get_current_user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    current_user = await _get_current_user(credentials)
 
     tenant_id = getattr(current_user, 'tenant_id', None)
     if not tenant_id:
