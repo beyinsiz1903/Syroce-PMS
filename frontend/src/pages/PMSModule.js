@@ -144,8 +144,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     room_type: '',
     guests: 1
   });
-  const [availableRooms, setAvailableRooms] = useState([]);
-  const [loadingAvailableRooms, setLoadingAvailableRooms] = useState(false);
 
   const [maintenanceDialogOpen, setMaintenanceDialogOpen] = useState(false);
   const [maintenanceForm, setMaintenanceForm] = useState({
