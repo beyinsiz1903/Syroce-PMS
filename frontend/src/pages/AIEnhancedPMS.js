@@ -13,13 +13,13 @@ const AIEnhancedPMS = () => {
   const [activeModule, setActiveModule] = useState('reservation');
 
   const modules = [
-    { id: 'reservation', name: '📅 Reservation Calendar', component: EnhancedReservationCalendar },
-    { id: 'frontdesk', name: '🛎️ Front Desk', component: EnhancedFrontDesk },
-    { id: 'folio', name: '💳 Folio & Registration Card', component: FolioManagementPage },
-    { id: 'housekeeping', name: '🧹 AI Housekeeping', component: AIHousekeepingBoard },
-    { id: 'maintenance', name: '🔮 Predictive Maintenance', component: PredictiveMaintenanceDashboard },
-    { id: 'rms', name: '🤖 AI Revenue Management', component: AIRMSDashboard },
-    { id: 'loyalty', name: '🏆 AI Loyalty & Personas', component: LoyaltyAutoTierManager }
+    { id: 'reservation', name: t('aiEnhancedPms.reservationCalendar'), component: EnhancedReservationCalendar },
+    { id: 'frontdesk', name: t('aiEnhancedPms.frontDesk'), component: EnhancedFrontDesk },
+    { id: 'folio', name: t('aiEnhancedPms.folioRegistration'), component: FolioManagementPage },
+    { id: 'housekeeping', name: t('aiEnhancedPms.aiHousekeeping'), component: AIHousekeepingBoard },
+    { id: 'maintenance', name: t('aiEnhancedPms.predictiveMaintenance'), component: PredictiveMaintenanceDashboard },
+    { id: 'rms', name: t('aiEnhancedPms.aiRevenueManagement'), component: AIRMSDashboard },
+    { id: 'loyalty', name: t('aiEnhancedPms.aiLoyalty'), component: LoyaltyAutoTierManager }
   ];
 
   const ActiveComponent = modules.find(m => m.id === activeModule)?.component || EnhancedReservationCalendar;
@@ -28,8 +28,8 @@ const AIEnhancedPMS = () => {
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white p-6 shadow-lg">
-        <h1 className="text-4xl font-bold mb-2">🤖 AI-Powered Hotel PMS</h1>
-        <p className="text-lg opacity-90">Next-Generation Property Management System</p>
+        <h1 className="text-4xl font-bold mb-2">{t('aiEnhancedPms.title')}</h1>
+        <p className="text-lg opacity-90">{t('aiEnhancedPms.subtitle')}</p>
       </div>
 
       {/* Navigation */}
@@ -63,19 +63,19 @@ const AIEnhancedPMS = () => {
         <div className="container mx-auto">
           <div className="flex justify-between items-center">
             <div>
-              <h3 className="font-bold text-lg mb-2">AI Features Active:</h3>
+              <h3 className="font-bold text-lg mb-2">{t('aiEnhancedPms.aiFeaturesActive')}</h3>
               <ul className="text-sm space-y-1 opacity-80">
-                <li>✅ AI Pricing Engine - ML-powered demand forecasting</li>
-                <li>✅ Guest Persona Analysis - 6 persona types</li>
-                <li>✅ Predictive Maintenance - IoT failure prediction</li>
-                <li>✅ AI Housekeeping Scheduler - Intelligent task distribution</li>
-                <li>✅ Auto-Tier Loyalty - Behavioral analysis</li>
+                <li>✅ {t('aiEnhancedPms.aiPricingEngine')}</li>
+                <li>✅ {t('aiEnhancedPms.guestPersona')}</li>
+                <li>✅ {t('aiEnhancedPms.predMaintenance')}</li>
+                <li>✅ {t('aiEnhancedPms.aiHousekeepingScheduler')}</li>
+                <li>✅ {t('aiEnhancedPms.autoTierLoyalty')}</li>
               </ul>
             </div>
             <div className="text-right">
-              <p className="text-2xl font-bold">120+ API Endpoints</p>
-              <p className="text-sm opacity-80">30 Feature Categories</p>
-              <p className="text-sm opacity-80">9 AI/ML Modules</p>
+              <p className="text-2xl font-bold">{t('aiEnhancedPms.apiEndpoints')}</p>
+              <p className="text-sm opacity-80">{t('aiEnhancedPms.featureCategories')}</p>
+              <p className="text-sm opacity-80">{t('aiEnhancedPms.aiModules')}</p>
             </div>
           </div>
         </div>

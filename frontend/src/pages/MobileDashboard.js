@@ -25,7 +25,7 @@ const MobileDashboard = ({ user, onLogout }) => {
   const departments = [
     {
       id: 'housekeeping',
-      name: 'Temizlik Yönetimi',
+      name: t('mobileDashboard.housekeeping'),
       nameEn: 'Housekeeping',
       icon: Bed,
       color: 'bg-blue-500',
@@ -34,7 +34,7 @@ const MobileDashboard = ({ user, onLogout }) => {
     },
     {
       id: 'frontdesk',
-      name: 'Ön Büro',
+      name: t('mobileDashboard.frontDesk'),
       nameEn: 'Front Desk',
       icon: Users,
       color: 'bg-green-500',
@@ -43,7 +43,7 @@ const MobileDashboard = ({ user, onLogout }) => {
     },
     {
       id: 'fnb',
-      name: 'Yiyecek & İçecek',
+      name: t('mobileDashboard.fnb'),
       nameEn: 'F&B',
       icon: UtensilsCrossed,
       color: 'bg-orange-500',
@@ -52,7 +52,7 @@ const MobileDashboard = ({ user, onLogout }) => {
     },
     {
       id: 'maintenance',
-      name: 'Teknik Servis',
+      name: t('mobileDashboard.maintenance'),
       nameEn: 'Maintenance',
       icon: Wrench,
       color: 'bg-purple-500',
@@ -61,7 +61,7 @@ const MobileDashboard = ({ user, onLogout }) => {
     },
     {
       id: 'finance',
-      name: 'Finans',
+      name: t('mobileDashboard.finance'),
       nameEn: 'Finance',
       icon: DollarSign,
       color: 'bg-teal-500',
@@ -70,7 +70,7 @@ const MobileDashboard = ({ user, onLogout }) => {
     },
     {
       id: 'revenue',
-      name: 'Gelir Yönetimi',
+      name: t('mobileDashboard.revenueManagement'),
       nameEn: 'Revenue Management',
       icon: BarChart3,
       color: 'bg-indigo-600',
@@ -79,7 +79,7 @@ const MobileDashboard = ({ user, onLogout }) => {
     },
     {
       id: 'gm',
-      name: 'Genel Müdür',
+      name: t('mobileDashboard.generalManager'),
       nameEn: 'General Manager',
       icon: BarChart3,
       color: 'bg-red-500',
@@ -88,7 +88,7 @@ const MobileDashboard = ({ user, onLogout }) => {
     },
     {
       id: 'security',
-      name: 'Güvenlik & IT',
+      name: t('mobileDashboard.securityIT'),
       nameEn: 'Security & IT',
       icon: Shield,
       color: 'bg-gray-700',
@@ -114,8 +114,8 @@ const MobileDashboard = ({ user, onLogout }) => {
           <div className="flex items-center space-x-3">
             <Smartphone className="w-8 h-8" />
             <div>
-              <h1 className="text-xl font-bold">Mobil Yönetim</h1>
-              <p className="text-xs text-blue-100">Departman Seçin</p>
+              <h1 className="text-xl font-bold">{t('mobileDashboard.title')}</h1>
+              <p className="text-xs text-blue-100">{t('mobileDashboard.selectDepartment')}</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
@@ -126,7 +126,7 @@ const MobileDashboard = ({ user, onLogout }) => {
               className="text-white hover:bg-white/20"
             >
               <Home className="w-4 h-4 mr-1" />
-              Ana Sayfa
+              {t('mobileDashboard.homePage')}
             </Button>
           </div>
         </div>
@@ -138,12 +138,12 @@ const MobileDashboard = ({ user, onLogout }) => {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Hoş geldiniz,</p>
-                <p className="text-lg font-bold text-gray-900">{user?.name || 'Kullanıcı'}</p>
+                <p className="text-sm text-gray-600">{t('mobileDashboard.welcome')}</p>
+                <p className="text-lg font-bold text-gray-900">{user?.name || t('mobileDashboard.user')}</p>
                 <p className="text-sm text-blue-600">{user?.role || 'Role'}</p>
               </div>
               <div className="text-right">
-                <p className="text-xs text-gray-500">Bugün</p>
+                <p className="text-xs text-gray-500">{t('mobileDashboard.today')}</p>
                 <p className="text-sm font-semibold">{new Date().toLocaleDateString('tr-TR')}</p>
               </div>
             </div>
@@ -159,7 +159,7 @@ const MobileDashboard = ({ user, onLogout }) => {
             onClick={() => navigate('/reservation-calendar')}
           >
             <Home className="w-6 h-6 mb-1" />
-            <span className="text-xs">Calendar</span>
+            <span className="text-xs">{t('mobileDashboard.calendar')}</span>
           </Button>
           <Button 
             variant="outline" 
@@ -175,7 +175,7 @@ const MobileDashboard = ({ user, onLogout }) => {
             onClick={() => navigate('/invoices')}
           >
             <DollarSign className="w-6 h-6 mb-1" />
-            <span className="text-xs">Invoices</span>
+            <span className="text-xs">{t('mobileDashboard.invoices')}</span>
           </Button>
           <Button 
             variant="outline" 
@@ -183,7 +183,7 @@ const MobileDashboard = ({ user, onLogout }) => {
             onClick={() => navigate('/mobile/gm')}
           >
             <BarChart3 className="w-6 h-6 mb-1" />
-            <span className="text-xs">Reports</span>
+            <span className="text-xs">{t('mobileDashboard.reports')}</span>
           </Button>
         </div>
 
@@ -191,35 +191,35 @@ const MobileDashboard = ({ user, onLogout }) => {
         <Card className="mb-4 border-orange-200 bg-orange-50">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              🔔 Today's Alerts
+              🔔 {t('mobileDashboard.todaysAlerts')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between p-2 bg-white rounded">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                <span className="text-sm">12 rooms need cleaning</span>
+                <span className="text-sm">{t('mobileDashboard.roomsNeedCleaning', { count: 12 })}</span>
               </div>
               <Button size="sm" variant="ghost" onClick={() => navigate('/mobile/housekeeping')}>
-                View
+                {t('mobileDashboard.view')}
               </Button>
             </div>
             <div className="flex items-center justify-between p-2 bg-white rounded">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                <span className="text-sm">8 arrivals expected</span>
+                <span className="text-sm">{t('mobileDashboard.arrivalsExpected', { count: 8 })}</span>
               </div>
               <Button size="sm" variant="ghost" onClick={() => navigate('/mobile/frontdesk')}>
-                View
+                {t('mobileDashboard.view')}
               </Button>
             </div>
             <div className="flex items-center justify-between p-2 bg-white rounded">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span className="text-sm">5 pending requests</span>
+                <span className="text-sm">{t('mobileDashboard.pendingRequests', { count: 5 })}</span>
               </div>
               <Button size="sm" variant="ghost" onClick={() => navigate('/mobile/maintenance')}>
-                View
+                {t('mobileDashboard.view')}
               </Button>
             </div>
           </CardContent>
@@ -253,7 +253,7 @@ const MobileDashboard = ({ user, onLogout }) => {
         {availableDepartments.length === 0 && (
           <Card className="mt-8">
             <CardContent className="p-8 text-center">
-              <p className="text-gray-600">Bu kullanıcı için erişilebilir departman bulunmamaktadır.</p>
+              <p className="text-gray-600">{t('mobileDashboard.noDepartments')}</p>
             </CardContent>
           </Card>
         )}
@@ -266,10 +266,9 @@ const MobileDashboard = ({ user, onLogout }) => {
                 <Smartphone className="w-5 h-5 text-blue-600" />
               </div>
               <div className="flex-1">
-                <h4 className="font-semibold text-gray-900 mb-1">📱 Mobil Optimize</h4>
+                <h4 className="font-semibold text-gray-900 mb-1">📱 {t('mobileDashboard.mobileOptimized')}</h4>
                 <p className="text-sm text-gray-600">
-                  Her departman mobil cihazlar için optimize edilmiştir. 
-                  Hızlı erişim ve kolay kullanım için tasarlandı.
+                  {t('mobileDashboard.mobileOptimizedDesc')}
                 </p>
               </div>
             </div>

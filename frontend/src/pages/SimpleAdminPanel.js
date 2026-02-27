@@ -41,7 +41,7 @@ const SimpleAdminPanel = () => {
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="text-center">
           <Clock className="w-12 h-12 animate-spin mx-auto mb-4 text-blue-600" />
-          <p className="text-gray-600">Sistem durumu kontrol ediliyor...</p>
+          <p className="text-gray-600">{t('adminPanel.checkingStatus')}</p>
         </div>
       </div>
     );
@@ -51,26 +51,26 @@ const SimpleAdminPanel = () => {
     <div className="min-h-screen bg-gray-100 p-8">
       <div className="max-w-6xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Sistem Durumu</h1>
-          <p className="text-gray-600">Otomatik güncellenir - teknik bilgi gerekmez</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">{t('adminPanel.title')}</h1>
+          <p className="text-gray-600">{t('adminPanel.subtitle')}</p>
         </div>
 
         {/* Ana Durum Kartı */}
         <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-semibold text-gray-900">Genel Durum</h2>
+            <h2 className="text-2xl font-semibold text-gray-900">{t('adminPanel.overallStatus')}</h2>
             <div className={`flex items-center space-x-2 px-4 py-2 rounded-full ${
               systemStatus?.status === 'healthy' ? 'bg-green-100' : 'bg-yellow-100'
             }`}>
               {systemStatus?.status === 'healthy' ? (
                 <>
                   <CheckCircle className="w-5 h-5 text-green-600" />
-                  <span className="text-green-600 font-semibold">Sistem Çalışıyor</span>
+                  <span className="text-green-600 font-semibold">{t('adminPanel.systemRunning')}</span>
                 </>
               ) : (
                 <>
                   <AlertCircle className="w-5 h-5 text-yellow-600" />
-                  <span className="text-yellow-600 font-semibold">Dikkat Gerekiyor</span>
+                  <span className="text-yellow-600 font-semibold">{t('adminPanel.attentionNeeded')}</span>
                 </>
               )}
             </div>
@@ -80,20 +80,20 @@ const SimpleAdminPanel = () => {
             {/* Database Durumu */}
             <div className="bg-gray-50 rounded-lg p-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-600">Database</span>
+                <span className="text-gray-600">{t('adminPanel.database')}</span>
                 <div className={`w-3 h-3 rounded-full ${
                   getStatusColor(systemStatus?.components?.database?.status)
                 }`}></div>
               </div>
               <p className="text-2xl font-bold text-gray-900">
-                {systemStatus?.components?.database?.status === 'healthy' ? 'Çalışıyor' : 'Sorun Var'}
+                {systemStatus?.components?.database?.status === 'healthy' ? t('adminPanel.running') : t('adminPanel.issue')}
               </p>
             </div>
 
             {/* CPU Durumu */}
             <div className="bg-gray-50 rounded-lg p-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-600">CPU Kullanımı</span>
+                <span className="text-gray-600">{t('adminPanel.cpuUsage')}</span>
                 <Activity className="w-4 h-4 text-blue-600" />
               </div>
               <p className="text-2xl font-bold text-gray-900">
@@ -104,7 +104,7 @@ const SimpleAdminPanel = () => {
             {/* Memory Durumu */}
             <div className="bg-gray-50 rounded-lg p-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-600">Bellek Kullanımı</span>
+                <span className="text-gray-600">{t('adminPanel.memoryUsage')}</span>
                 <Activity className="w-4 h-4 text-purple-600" />
               </div>
               <p className="text-2xl font-bold text-gray-900">
@@ -120,10 +120,10 @@ const SimpleAdminPanel = () => {
             <AlertCircle className="w-6 h-6 text-blue-600 flex-shrink-0 mt-1" />
             <div>
               <h3 className="text-lg font-semibold text-blue-900 mb-2">
-                Sorun mu var? Ben hallederim!
+                {t('adminPanel.troubleTitle')}
               </h3>
               <p className="text-blue-800 mb-4">
-                Eğer sistemde bir sorun görüyorsanız veya bir şey çalışmıyorsa:
+                {t('adminPanel.troubleDesc')}
               </p>
               <ol className="list-decimal list-inside space-y-2 text-blue-800">
                 <li>Bana şu mesajı gönderin: <strong>"Sistem sorunu var, kontrol et"</strong></li>
@@ -152,13 +152,13 @@ const SimpleAdminPanel = () => {
 
         {/* İletişim Bilgisi */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Otomatik İzleme Aktif</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('adminPanel.monitoringActive')}</h3>
           <p className="text-gray-600 mb-4">
-            Sistem 7/24 otomatik olarak izleniyor. Kritik bir hata oluşursa size bildirim gelecek.
+            {t('adminPanel.monitoringDesc')}
           </p>
           <div className="flex items-center space-x-2 text-green-600">
             <CheckCircle className="w-5 h-5" />
-            <span>Monitoring aktif ve çalışıyor</span>
+            <span>{t('adminPanel.monitoringStatus')}</span>
           </div>
         </div>
       </div>
