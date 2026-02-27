@@ -13,7 +13,7 @@ import random
 from typing import Dict, List, Optional
 
 # Configuration
-BACKEND_URL = "https://hotel-pms-demo.preview.emergentagent.com/api"
+BACKEND_URL = "https://appstore-preview-1.preview.emergentagent.com/api"
 
 class Color:
     """Terminal colors"""

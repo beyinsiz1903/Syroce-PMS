@@ -12,7 +12,7 @@ import traceback
 from datetime import datetime
 
 # Backend URL from frontend .env
-BACKEND_URL = "https://hotel-pms-demo.preview.emergentagent.com/api"
+BACKEND_URL = "https://appstore-preview-1.preview.emergentagent.com/api"
 
 # Test credentials from review request
 CREDENTIALS = {

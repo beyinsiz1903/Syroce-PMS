@@ -16,7 +16,7 @@ from datetime import datetime
 import os
 
 # Configuration from environment
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://hotel-pms-demo.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://appstore-preview-1.preview.emergentagent.com')
 API_BASE_URL = BASE_URL + '/api'
 
 # Test credentials

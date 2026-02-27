@@ -21,7 +21,7 @@ import sys
 import os
 
 # Configuration
-BASE_URL = "https://hotel-pms-demo.preview.emergentagent.com"
+BASE_URL = "https://appstore-preview-1.preview.emergentagent.com"
 API_BASE = f"{BASE_URL}/api"
 
 # Demo credentials

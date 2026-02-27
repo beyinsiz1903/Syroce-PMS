@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 # Configuration
-BASE_URL = "https://hotel-pms-demo.preview.emergentagent.com/api"
+BASE_URL = "https://appstore-preview-1.preview.emergentagent.com/api"
 LOGIN_EMAIL = "demo@hotel.com"
 LOGIN_PASSWORD = "demo123"
 

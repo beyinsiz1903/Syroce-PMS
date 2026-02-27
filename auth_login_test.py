@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 
 # Test Configuration
-BASE_URL = "https://hotel-pms-demo.preview.emergentagent.com/api"
+BASE_URL = "https://appstore-preview-1.preview.emergentagent.com/api"
 LOGIN_ENDPOINT = f"{BASE_URL}/auth/login"
 
 # Test Credentials

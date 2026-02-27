@@ -218,7 +218,7 @@
 ## 📋 QUICK START GUIDE
 
 **Login:**
-- URL: https://hotel-pms-demo.preview.emergentagent.com
+- URL: https://appstore-preview-1.preview.emergentagent.com
 - Demo: demo@hotel.com / demo123
 
 **New User Registration:**

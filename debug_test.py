@@ -7,7 +7,7 @@ import requests
 import json
 
 # Configuration
-BACKEND_URL = "https://hotel-pms-demo.preview.emergentagent.com/api"
+BACKEND_URL = "https://appstore-preview-1.preview.emergentagent.com/api"
 TEST_EMAIL = "test@hotel.com"
 TEST_PASSWORD = "test123"
 

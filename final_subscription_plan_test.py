@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 import uuid
 
-BASE_URL = "https://hotel-pms-demo.preview.emergentagent.com/api"
+BASE_URL = "https://appstore-preview-1.preview.emergentagent.com/api"
 TEST_CREDENTIALS = {"email": "demo@hotel.com", "password": "demo123"}
 
 async def get_auth_token(session):

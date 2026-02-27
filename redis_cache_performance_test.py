@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Dict, List, Tuple
 
 # Configuration
-BACKEND_URL = "https://hotel-pms-demo.preview.emergentagent.com/api"
+BACKEND_URL = "https://appstore-preview-1.preview.emergentagent.com/api"
 REDIS_URL = "redis://localhost:6379/0"
 
 # Test endpoints with their cache TTL

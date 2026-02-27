@@ -16,7 +16,7 @@ import sys
 from datetime import datetime
 
 # Configuration
-BASE_URL = "https://hotel-pms-demo.preview.emergentagent.com/api"
+BASE_URL = "https://appstore-preview-1.preview.emergentagent.com/api"
 ADMIN_EMAIL = "demo@hotel.com"
 ADMIN_PASSWORD = "demo123"
 

@@ -46,7 +46,7 @@ from typing import Dict, List, Any, Optional
 import uuid
 
 # Configuration
-BACKEND_URL = "https://hotel-pms-demo.preview.emergentagent.com/api"
+BACKEND_URL = "https://appstore-preview-1.preview.emergentagent.com/api"
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 

@@ -11,7 +11,7 @@ Test Scenarios:
 5. Room Association (with and without room_id)
 6. Task Assignment (assign and reassign tasks)
 
-Base URL: https://hotel-pms-demo.preview.emergentagent.com/api
+Base URL: https://appstore-preview-1.preview.emergentagent.com/api
 Login: test@hotel.com / test123
 
 Endpoints Available:
@@ -27,7 +27,7 @@ from datetime import datetime
 import sys
 
 # Configuration
-BASE_URL = "https://hotel-pms-demo.preview.emergentagent.com/api"
+BASE_URL = "https://appstore-preview-1.preview.emergentagent.com/api"
 LOGIN_EMAIL = "test@hotel.com"
 LOGIN_PASSWORD = "test123"
 

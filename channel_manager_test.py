@@ -35,7 +35,7 @@ from typing import Dict, List, Any, Optional
 import uuid
 
 # Configuration
-BACKEND_URL = "https://hotel-pms-demo.preview.emergentagent.com/api"
+BACKEND_URL = "https://appstore-preview-1.preview.emergentagent.com/api"
 SUPER_ADMIN_EMAIL = "muratsutay@hotmail.com"
 SUPER_ADMIN_PASSWORD = "murat1903"
 DEMO_EMAIL = "demo@hotel.com"
@@ -509,7 +509,7 @@ class ChannelManagerTester:
         """Run comprehensive Channel Manager backend testing"""
         print("🚀 CHANNEL MANAGER PROD MVP BACKEND TESTING")
         print("Testing new Channel Manager PROD MVP endpoints")
-        print("Base URL: https://hotel-pms-demo.preview.emergentagent.com/api")
+        print("Base URL: https://appstore-preview-1.preview.emergentagent.com/api")
         print("Super Admin: muratsutay@hotmail.com / murat1903")
         print("Demo User: demo@hotel.com / demo123")
         print("=" * 80)
