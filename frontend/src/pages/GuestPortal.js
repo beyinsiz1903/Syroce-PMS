@@ -371,6 +371,25 @@ const GuestPortal = ({ user, onLogout }) => {
             }
           />
 
+
+          {/* Messages Page */}
+          <Route
+            path="/messages"
+            element={
+              <div className="space-y-6">
+                <h1 className="text-3xl font-bold" style={{ fontFamily: 'Space Grotesk' }}>
+                  {t('guestPortal.messages') || 'Mesajlar'}
+                </h1>
+                <p className="text-gray-600">{t('guestPortal.guestMessaging') || 'Otel ile mesajlaşın'}</p>
+                <GuestMessaging
+                  user={user}
+                  bookingId={activeBookings[0]?.id}
+                  isStaff={false}
+                />
+              </div>
+            }
+          />
+
           {/* Bookings Page */}
           <Route
             path="/bookings"
