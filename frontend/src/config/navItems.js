@@ -85,6 +85,14 @@ export const NAV_ITEMS = [
     tier: "professional",
     group: "professional",
   },
+  {
+    key: "report_builder",
+    label: "Rapor Oluşturucu",
+    path: "/app/rapor-olusturucu",
+    moduleKey: "reports",
+    tier: "professional",
+    group: "professional",
+  },
 
   // ──── ENTERPRISE ───────────────────────────────────
   {
