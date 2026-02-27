@@ -21,6 +21,7 @@ import RoomsTab from '@/components/pms/RoomsTab';
 import BookingDialog from '@/components/pms/BookingDialog';
 import BookingDetailDialog from '@/components/pms/BookingDetailDialog';
 import BulkRoomsDialog from '@/components/pms/BulkRoomsDialog';
+import CompanyDialog from '@/components/pms/CompanyDialog';
 import FindRoomDialog from '@/components/pms/FindRoomDialog';
 import MaintenanceDialog from '@/components/pms/MaintenanceDialog';
 import { RoomBlockCreateDialog, RoomBlockViewDialog } from '@/components/pms/RoomBlockDialogs';
