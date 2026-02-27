@@ -58,7 +58,7 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
             </Button>
             <Button onClick={() => navigate('/')}>
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Dashboard
+              {t('nav.dashboard')}
             </Button>
           </div>
         </div>

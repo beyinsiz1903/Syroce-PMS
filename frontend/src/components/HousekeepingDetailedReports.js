@@ -4,8 +4,10 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Moon, DoorClosed, AlertTriangle, Award, Clock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const HousekeepingDetailedReports = () => {
+  const { t } = useTranslation();
   const [roomStatus, setRoomStatus] = useState(null);
   const [staffPerformance, setStaffPerformance] = useState([]);
   const [loading, setLoading] = useState(true);
