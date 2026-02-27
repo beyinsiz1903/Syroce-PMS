@@ -8,6 +8,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/reports/builder", tags=["report-builder"])
