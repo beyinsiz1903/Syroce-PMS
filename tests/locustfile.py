@@ -268,7 +268,7 @@ class HousekeepingUser(HttpUser):
 
     @tag("housekeeping")
     @task(10)
-    def tasks(self):
+    def hk_task_list(self):
         self.client.get("/api/housekeeping/tasks", headers=self._h(), name="/api/housekeeping/tasks")
 
     @tag("housekeeping")
