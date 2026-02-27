@@ -109,7 +109,7 @@ const SystemPerformanceMonitor = ({ user }) => {
 
   // Tabs
   const tabs = [
-    { id: 'overview', label: 'Genel Bakış', icon: Gauge },
+    { id: 'overview', label: t('loyalty.overview'), icon: Gauge },
     { id: 'apm', label: 'APM Metrikleri', icon: Activity },
     { id: 'ratelimit', label: 'Rate Limiting', icon: Shield },
     { id: 'database', label: 'Veritabanı', icon: Database },

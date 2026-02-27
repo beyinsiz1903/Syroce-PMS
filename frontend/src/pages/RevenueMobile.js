@@ -154,7 +154,7 @@ const RevenueMobile = ({ user }) => {
             { key: 'channel', label: 'Kanal' },
             { key: 'pickup', label: 'Pickup' },
             { key: 'forecast', label: 'Tahmin' },
-            { key: 'cancellation', label: 'İptal' }
+            { key: 'cancellation', label: t('common.cancel') }
           ].map(view => (
             <button
               key={view.key}

@@ -47,7 +47,7 @@ const ROLE_LABELS = {
   admin: { label: 'Yönetici', color: 'bg-blue-100 text-blue-800' },
   supervisor: { label: 'Süpervizör', color: 'bg-green-100 text-green-800' },
   front_desk: { label: 'Resepsiyon', color: 'bg-yellow-100 text-yellow-800' },
-  housekeeping: { label: 'Kat Hizmetleri', color: 'bg-orange-100 text-orange-800' },
+  housekeeping: { label: t('nav.housekeeping'), color: 'bg-orange-100 text-orange-800' },
   finance: { label: 'Muhasebe', color: 'bg-pink-100 text-pink-800' },
   sales: { label: 'Satış', color: 'bg-indigo-100 text-indigo-800' },
   revenue: { label: 'Revenue', color: 'bg-teal-100 text-teal-800' },

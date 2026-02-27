@@ -194,7 +194,7 @@ const MobileHousekeeping = ({ user }) => {
       toast.success(`Talep ${newStatus === 'in_progress' ? 'başlatıldı' : 'tamamlandı'}`);
       loadData(); // Reload data
     } catch (error) {
-      toast.error('İşlem başarısız');
+      toast.error(t('messages.error.generic'));
     }
   };
 

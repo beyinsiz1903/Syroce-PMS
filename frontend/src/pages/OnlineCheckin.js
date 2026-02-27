@@ -115,7 +115,7 @@ const OnlineCheckin = () => {
         setStep(4);
       }
     } catch (error) {
-      toast.error('İşlem başarısız');
+      toast.error(t('messages.error.generic'));
     }
   };
 
