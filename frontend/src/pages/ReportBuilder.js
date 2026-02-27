@@ -86,11 +86,11 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
         const res = await fetch(`${API}/api/reports/builder/config`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        if (!res.ok) throw new Error('Config yüklenemedi');
+        if (!res.ok) throw new Error(t('reportBuilder.configError'));
         const data = await res.json();
         setDataSources(data.data_sources || {});
       } catch (err) {
-        toast.error('Rapor yapılandırması yüklenemedi');
+        toast.error(t('reportBuilder.configError'));
       } finally {
         setConfigLoading(false);
       }
@@ -168,8 +168,8 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
   });
 
   const generateReport = async () => {
-    if (!selectedSource) return toast.error('Veri kaynağı seçin');
-    if (selectedColumns.length === 0) return toast.error('En az bir sütun seçin');
+    if (!selectedSource) return toast.error(t('reportBuilder.selectSource'));
+    if (selectedColumns.length === 0) return toast.error(t('reportBuilder.selectColumns'));
 
     setLoading(true);
     setReportData(null);
@@ -179,12 +179,12 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(buildConfig()),
       });
-      if (!res.ok) throw new Error('Rapor oluşturulamadı');
+      if (!res.ok) throw new Error(t('reportBuilder.generateError'));
       const result = await res.json();
       setReportData(result.data || []);
       setColumnLabels(result.column_labels || {});
       setSummary(result.summary || {});
-      toast.success(`${result.total_count} kayıt bulundu`);
+      toast.success(`${result.total_count} ${t('reportBuilder.recordsFound')}`);
     } catch (err) {
       toast.error(err.message || 'Rapor oluşturulurken hata oluştu');
     } finally {
@@ -202,7 +202,7 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(buildConfig()),
       });
-      if (!res.ok) throw new Error('Dışa aktarma başarısız');
+      if (!res.ok) throw new Error(t('reportBuilder.exportFailed'));
 
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -214,7 +214,7 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-      toast.success(`${format.toUpperCase()} dosyası indirildi`);
+      toast.success(t(format === 'excel' ? 'reportBuilder.excelDownloaded' : 'reportBuilder.pdfDownloaded'));
     } catch (err) {
       toast.error(err.message || 'Dışa aktarma hatası');
     } finally {
@@ -223,8 +223,8 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
   };
 
   const saveTemplate = async () => {
-    if (!templateName.trim()) return toast.error('Şablon adı girin');
-    if (!selectedSource || selectedColumns.length === 0) return toast.error('Önce rapor yapılandırın');
+    if (!templateName.trim()) return toast.error(t('reportBuilder.enterTemplateName'));
+    if (!selectedSource || selectedColumns.length === 0) return toast.error(t('reportBuilder.selectColumns'));
 
     try {
       const res = await fetch(`${API}/api/reports/builder/templates`, {
@@ -233,7 +233,7 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
         body: JSON.stringify({ name: templateName, config: buildConfig() }),
       });
       if (!res.ok) throw new Error('Şablon kaydedilemedi');
-      toast.success('Şablon kaydedildi');
+      toast.success(t('reportBuilder.templateSaved'));
       setShowSaveDialog(false);
       setTemplateName('');
       fetchTemplates();
@@ -255,7 +255,7 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
     setLimit(c.limit || 500);
     setShowTemplates(false);
     setReportData(null);
-    toast.success(`"${tpl.name}" şablonu yüklendi`);
+    toast.success(`"${tpl.name}" ${t('reportBuilder.templateLoaded')}`);
   };
 
   const deleteTemplate = async (id) => {
@@ -265,8 +265,8 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       fetchTemplates();
-      toast.success('Şablon silindi');
-    } catch { toast.error('Şablon silinemedi'); }
+      toast.success(t('reportBuilder.templateDeleted'));
+    } catch { toast.error(t('messages.error.deleteFailed')); }
   };
 
   const sourceColumns = dataSources[selectedSource]?.columns || {};
@@ -289,9 +289,9 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Settings2 className="w-7 h-7 text-blue-600" />
-              Rapor Oluşturucu
+              {t('reportBuilder.title')}
             </h1>
-            <p className="text-sm text-gray-500 mt-1">Özel raporlar oluşturun, filtreleyin ve dışa aktarın</p>
+            <p className="text-sm text-gray-500 mt-1">{t('reportBuilder.subtitle')}</p>
           </div>
           <div className="flex gap-2">
             <Button
