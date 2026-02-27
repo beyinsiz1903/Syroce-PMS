@@ -8,34 +8,38 @@ Otel Yönetim Sistemi (Syroce PMS) - 5 yıldızlı otel operasyonları için kap
 - **Backend:** FastAPI, MongoDB (motor), JWT auth, openpyxl, WeasyPrint
 - **Database:** MongoDB with tenant isolation
 
-## What's Been Implemented
+## Implemented Features
 
 ### Phase 1-3 (Previously Completed)
 - Full PMS, Dashboard, Housekeeping, Finance, Channel Manager, RMS, AI, Multi-property, Night Audit, Mobile views
 
-### Phase 4: Reporting & Analytics (Feb 2026 - COMPLETED)
+### Phase 4: Reporting & Analytics (COMPLETED)
 - Custom Report Builder (6 data sources, dynamic columns, filters, templates)
-- Excel & PDF Export (openpyxl + WeasyPrint)
+- Excel & PDF Export
 
-### P1: i18n Conversion (Feb 2026 - COMPLETED)
-- 115 page files: `useTranslation` import + hook added
-- Locale files: tr.json (~900 keys), en.json expanded
-- ~120 hardcoded strings converted to `t()` calls across 50+ files
-- Critical pages fully converted: ReportBuilder, Reports, AIModule, BasicReports
+### P1: i18n Conversion (COMPLETED)
+- 115 page files: `useTranslation` infrastructure
+- ~900 key locale files (tr.json, en.json)
+- ~120 hardcoded strings converted to `t()` calls
 
-### P2: Phase 5 - Guest Portal & Communication (Feb 2026 - COMPLETED)
-- Guest Messaging System: Backend API + Frontend component
-- GuestPortal updated with Messages navigation
+### P2: Phase 5 - Guest Portal & Communication (COMPLETED)
+- Guest Messaging System (backend + frontend)
+- GuestPortal messaging navigation
 
-### Bug Fix: Login Redirect (Feb 2026 - FIXED)
-- Removed redundant `window.location.href` hard redirect
-- React Router now handles redirect via `isAuthenticated` state
-- Clean redirect: /auth → /app/dashboard
+### Bug Fix: Login Redirect (FIXED)
+- React Router handles redirect, removed window.location.href
 
-### PMSModule.js Refactoring (Feb 2026 - COMPLETED)
-- 5189 → 4369 lines (820 lines extracted)
-- BookingDialog.js (466 lines) → `/components/pms/BookingDialog.js`
-- Guest360Dialog.js (490 lines) → `/components/pms/Guest360Dialog.js`
+### PMSModule.js Refactoring (COMPLETED)
+- 5189 → 4369 lines
+- BookingDialog (466 lines) + Guest360Dialog (490 lines) extracted
+
+### Phase 7: Security & Performance (COMPLETED - Feb 2026)
+- **Security Headers Middleware**: HSTS, CSP, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy, Permissions-Policy
+- **JWT Token Refresh**: `/api/auth/refresh-token` endpoint
+- **Audit Logging**: Login success/failure events tracked in MongoDB
+- **Security Dashboard**: `/app/guvenlik` - KPI cards, API performance, security controls, event log
+- **Input Sanitization Module**: XSS, NoSQL injection, path traversal protection
+- **Rate Limiting**: Already active (in-memory sliding window, per-endpoint tiers)
 
 ## Prioritized Backlog
 
@@ -43,28 +47,24 @@ Otel Yönetim Sistemi (Syroce PMS) - 5 yıldızlı otel operasyonları için kap
 - Channel Manager enhancements
 - Payment gateway (Stripe)
 
-### P3: Phase 7 - Security & Performance
-- API rate limiting, security headers
-- Load testing
-
 ### Remaining Refactoring
-- Incremental i18n for ~60 pages (infrastructure ready, strings need manual t() wrapping)
-- Further PMSModule decomposition (FolioViewDialog, BookingDetailDialog etc.)
+- Incremental i18n for ~60 pages
+- Further PMSModule decomposition
 
-## Key Files
-- `/app/backend/routers/report_builder.py` - Report Builder API
-- `/app/backend/routers/guest_messaging.py` - Guest Messaging API
-- `/app/frontend/src/pages/ReportBuilder.js` - Report Builder UI
-- `/app/frontend/src/components/GuestMessaging.js` - Messaging component
-- `/app/frontend/src/components/pms/BookingDialog.js` - Extracted dialog
-- `/app/frontend/src/components/pms/Guest360Dialog.js` - Extracted dialog
-- `/app/frontend/src/pages/PMSModule.js` - Refactored (4369 lines)
-- `/app/frontend/src/pages/AuthPage.js` - Login redirect fixed
+## Key Endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| /api/auth/login | POST | Login (audit logged) |
+| /api/auth/refresh-token | POST | JWT token refresh |
+| /api/security/summary | GET | Security dashboard data |
+| /api/reports/builder/* | GET/POST | Report Builder CRUD |
+| /api/guest/messages | GET/POST | Guest Messaging |
 
 ## Test Reports
-- `/app/test_reports/iteration_3.json` - Report Builder
-- `/app/test_reports/iteration_4.json` - i18n + Guest Messaging
-- `/app/test_reports/iteration_5.json` - Login fix + PMSModule refactor
+- iteration_3: Report Builder
+- iteration_4: i18n + Guest Messaging
+- iteration_5: Login fix + PMS refactor
+- iteration_6: Phase 7 Security & Performance
 
 ## Credentials
 | Role | Email | Password |
