@@ -8892,6 +8892,14 @@ app.add_middleware(
 # Add GZip compression for responses >500 bytes (aggressive compression for speed)
 app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
 
+# ── Security Headers Middleware ───────────────────────────────────
+try:
+    from security_headers import SecurityHeadersMiddleware
+    app.add_middleware(SecurityHeadersMiddleware)
+    print("✅ Security Headers middleware activated (HSTS, CSP, X-Frame-Options)")
+except Exception as _sh_err:
+    print(f"⚠️ Security Headers middleware init error: {_sh_err}")
+
 # ── APM & Rate Limiting Middleware ────────────────────────────────
 # These are pure ASGI middlewares (no Redis dependency, fully in-memory)
 try:
