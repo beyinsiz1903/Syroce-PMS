@@ -22,6 +22,7 @@ import BookingDialog from '@/components/pms/BookingDialog';
 import BookingDetailDialog from '@/components/pms/BookingDetailDialog';
 import BulkRoomsDialog from '@/components/pms/BulkRoomsDialog';
 import FindRoomDialog from '@/components/pms/FindRoomDialog';
+import MaintenanceDialog from '@/components/pms/MaintenanceDialog';
 import GuestInfoDialog from '@/components/pms/GuestInfoDialog';
 import PaymentDialog from '@/components/pms/PaymentDialog';
 import Guest360Dialog from '@/components/pms/Guest360Dialog';
