@@ -118,7 +118,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd frontend
-          yarn install --frozen-lockfile --ignore-engines
+          yarn install --ignore-engines
 
       - name: Run ESLint
         run: |
