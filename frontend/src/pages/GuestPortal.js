@@ -166,6 +166,7 @@ const GuestPortal = ({ user, onLogout }) => {
   const navigation = [
     { name: 'Home', path: '/', icon: Home, id: 'home' },
     { name: 'Bookings', path: '/bookings', icon: Calendar, id: 'bookings' },
+    { name: t('guestPortal.messages') || 'Messages', path: '/messages', icon: MessageCircle, id: 'messages' },
     { name: 'Loyalty', path: '/loyalty', icon: Award, id: 'loyalty' },
     { name: 'Settings', path: '/settings', icon: Settings, id: 'settings' },
   ];
