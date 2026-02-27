@@ -61,13 +61,7 @@ const AuthPage = ({ onLogin }) => {
       // Call onLogin to update app state - React Router handles redirect
       onLogin(response.data.access_token, response.data.user, response.data.tenant);
     } catch (error) {
-      console.error('❌ Login error:', error);
-      console.error('❌ Error response:', error.response);
-      console.error('❌ Error message:', error.message);
-      console.error('❌ Error config:', error.config);
-      
       const errorMessage = error.response?.data?.detail || error.message || 'Login failed';
-      console.error('❌ Showing error to user:', errorMessage);
       toast.error(errorMessage);
     } finally {
       setLoading(false);
