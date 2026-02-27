@@ -22,7 +22,7 @@ const PaymentGateway = () => {
 
   return (
     <div className="p-6">
-      <h1 className="text-3xl font-bold mb-8">💳 Payment Gateway</h1>
+      <h1 className="text-3xl font-bold mb-8">💳 {t('dashboard.paymentGatewayModule')}</h1>
       <Card>
         <CardHeader><CardTitle>Taksit Hesaplama</CardTitle></CardHeader>
         <CardContent className="space-y-4">

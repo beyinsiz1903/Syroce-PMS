@@ -131,7 +131,7 @@ const ExecutiveDashboard = ({ user }) => {
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div>
-              <h1 className="text-xl font-bold">Executive Dashboard</h1>
+              <h1 className="text-xl font-bold">{t('reports.executiveReport')}</h1>
               <p className="text-gray-300 text-sm">
                 {new Date().toLocaleDateString('tr-TR', {
                   weekday: 'long',

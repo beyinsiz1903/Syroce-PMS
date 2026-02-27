@@ -84,7 +84,7 @@ const RevenueManagementMobile = ({ user }) => {
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div>
-              <h1 className="text-xl font-bold">Revenue Management</h1>
+              <h1 className="text-xl font-bold">{t('rms.title')}</h1>
               <p className="text-green-100 text-sm">Gelir Yönetimi</p>
             </div>
           </div>

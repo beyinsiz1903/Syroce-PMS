@@ -87,7 +87,7 @@ const MobileLogViewer = ({ user }) => {
             </Button>
             <div>
               <h1 className="text-xl font-bold">Sistem Logları</h1>
-              <p className="text-xs text-gray-300">Mobile Log Viewer</p>
+              <p className="text-xs text-gray-300">Mobile {t('common.details')}</p>
             </div>
           </div>
           <Button

@@ -83,7 +83,7 @@ const ArrivalList = () => {
             </Button>
             <div>
               <h1 className="text-3xl font-bold text-gray-900">
-                📋 Bugünün Varışları (Arrival List)
+                📋 Bugünün Varışları ({t('dashboard.arrivalList')})
               </h1>
               <p className="text-gray-600">
                 Bugün check-in yapacak misafirler - VIP, grup ve özel istekler

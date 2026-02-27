@@ -48,7 +48,7 @@ const CorporateContractsMobile = ({ user }) => {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg"><ArrowLeft className="h-5 w-5" /></button>
-            <div><h1 className="text-xl font-bold">Kurumsal Anlaşmalar</h1><p className="text-violet-100 text-sm">Corporate Contracts</p></div>
+            <div><h1 className="text-xl font-bold">Kurumsal Anlaşmalar</h1><p className="text-violet-100 text-sm">{t('nav.corporate')}</p></div>
           </div>
           <button onClick={loadData} className="p-2 hover:bg-white/20 rounded-lg"><RefreshCw className="h-5 w-5" /></button>
         </div>

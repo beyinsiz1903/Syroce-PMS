@@ -67,7 +67,7 @@ const PmsLiteLanding = () => {
       const res = await axios.post("/leads", payload);
       if (res.data?.ok) {
         const lead_id = res.data.lead_id;
-        const leadMessage = `Merhaba, Syroce PMS Lite için demo talebi oluşturdum.\n\nAd Soyad: ${payload.contact.full_name}\nTelefon: ${payload.contact.phone}\nOtel: ${payload.hotel.property_name}\nBölge: ${payload.hotel.location || "-"}\nOda Sayısı: ${payload.hotel.rooms_count}\n\nUygun olduğunuzda bilgi alabilir miyim?\n(Lead ID: ${lead_id})`;
+        const leadMessage = `Merhaba, Syroce {t('common.hotel')} için demo talebi oluşturdum.\n\nAd Soyad: ${payload.contact.full_name}\nTelefon: ${payload.contact.phone}\nOtel: ${payload.hotel.property_name}\nBölge: ${payload.hotel.location || "-"}\nOda Sayısı: ${payload.hotel.rooms_count}\n\nUygun olduğunuzda bilgi alabilir miyim?\n(Lead ID: ${lead_id})`;
 
         setLastLead({
           full_name: payload.contact.full_name,

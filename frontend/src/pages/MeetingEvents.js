@@ -76,7 +76,7 @@ const MeetingEvents = () => {
             </Button>
             <div>
               <h1 className="text-3xl font-bold text-gray-900">
-                🏛️ Meeting & Events
+                🏛️ {t('dashboard.meetingEvents')}
               </h1>
               <p className="text-gray-600">
                 Toplantı odaları ve etkinlik yönetimi

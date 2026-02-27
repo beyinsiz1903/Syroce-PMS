@@ -73,7 +73,7 @@ const GMEnhancedDashboard = ({ user }) => {
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center">
         <div className="text-center">
           <RefreshCw className="h-12 w-12 animate-spin text-indigo-600 mx-auto mb-4" />
-          <p className="text-gray-600">GM Dashboard yükleniyor...</p>
+          <p className="text-gray-600">{t('nav.dashboard')} yükleniyor...</p>
         </div>
       </div>
     );

@@ -192,7 +192,7 @@ const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
           <div>
             <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
               <Wrench className="w-5 h-5 text-amber-600" />
-              Maintenance Work Orders
+              Maintenance {t('maintenance.workOrders')}
             </h1>
             <p className="text-xs md:text-sm text-gray-600">
               Kat Hizmetleri, Ön Büro veya sensörler tarafından oluşturulan tüm bakım iş emirlerini takip edin.

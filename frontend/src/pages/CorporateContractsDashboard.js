@@ -40,7 +40,7 @@ const CorporateContractsDashboard = ({ user, tenant, onLogout }) => {
           <div>
             <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
               <Building2 className="w-5 h-5 text-blue-600" />
-              Corporate Contracts Utilization
+              {t('nav.corporate')} Utilization
             </h1>
             <p className="text-xs md:text-sm text-gray-600">
               Kurumsal anlaşmalarınız için taahhüt edilen oda geceleri ve gerçekleşen performansın özeti.

@@ -170,7 +170,7 @@ const KitchenDisplay = () => {
               <Home className="w-6 h-6" />
             </Button>
             <div>
-              <h1 className="text-3xl font-bold">🍳 Kitchen Display</h1>
+              <h1 className="text-3xl font-bold">🍳 {t('dashboard.kitchenDisplay')}</h1>
               <p className="text-sm text-orange-100">Real-time Order Management</p>
             </div>
           </div>

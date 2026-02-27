@@ -130,7 +130,7 @@ const DigitalKey = ({ bookingId }) => {
           <div className="flex justify-center">
             <div className="bg-white p-4 rounded-lg shadow-lg">
               {qrCodeUrl && (
-                <img src={qrCodeUrl} alt="Digital Key QR Code" className="w-64 h-64" />
+                <img src={qrCodeUrl} alt="{t('guestPortal.digitalKey')} QR Code" className="w-64 h-64" />
               )}
             </div>
           </div>

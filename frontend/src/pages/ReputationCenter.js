@@ -46,7 +46,7 @@ const ReputationCenter = () => {
             <Home className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">⭐ Online Reputation Center</h1>
+            <h1 className="text-3xl font-bold">⭐ Online {t('dashboard.reputationCenterModule')}</h1>
             <p className="text-gray-600">Multi-platform review yönetimi ve sentiment analizi</p>
           </div>
         </div>

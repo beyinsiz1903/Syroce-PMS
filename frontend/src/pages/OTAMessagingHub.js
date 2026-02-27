@@ -130,7 +130,7 @@ const OTAMessagingHub = () => {
   return (
     <div className="h-screen flex flex-col">
       <div className="bg-white border-b p-4">
-        <h1 className="text-2xl font-bold mb-2">OTA Messaging Hub</h1>
+        <h1 className="text-2xl font-bold mb-2">{t('nav.messaging')}</h1>
         <div className="flex gap-2">
           <Button
             variant={filter === 'all' ? 'default' : 'outline'}

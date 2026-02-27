@@ -358,7 +358,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
             {/* AR List */}
             <Card>
               <CardHeader>
-                <CardTitle>Pending Receivables</CardTitle>
+                <CardTitle>{t('finance.pendingAR')}</CardTitle>
                 <CardDescription>Outstanding balances by company</CardDescription>
               </CardHeader>
               <CardContent>

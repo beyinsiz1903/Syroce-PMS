@@ -166,7 +166,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
               <Building2 className="w-8 h-8 text-blue-600" />
-              City Ledger Accounts
+              {t('finance.cityLedger')} Accounts
             </h1>
             <p className="text-gray-600 mt-1">Direct billing accounts for corporate and travel agency partners</p>
           </div>

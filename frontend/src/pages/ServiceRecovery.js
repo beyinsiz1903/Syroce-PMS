@@ -90,7 +90,7 @@ const ServiceRecovery = () => {
           </Button>
           <div>
             <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              🛡️ Service Recovery
+              🛡️ {t('dashboard.serviceRecovery')}
             </h1>
             <p className="text-gray-600">
               Şikayet yönetimi ve misafir memnuniyeti

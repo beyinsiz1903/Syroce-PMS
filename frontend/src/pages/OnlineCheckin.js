@@ -128,7 +128,7 @@ const OnlineCheckin = () => {
             <img src="/syroce-logo.svg" alt="Syroce" className="h-16" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Online Check-in
+            {t('guestPortal.onlineCheckin')}
           </h1>
           <p className="text-gray-600">
             Konaklama deneyiminizi başlatmak için birkaç dakikanızı ayırın

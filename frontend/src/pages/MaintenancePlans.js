@@ -81,7 +81,7 @@ const MaintenancePlans = ({ user, tenant, onLogout }) => {
           <div>
             <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
               <ListChecks className="w-5 h-5 text-emerald-600" />
-              Preventive Maintenance Plans
+              Preventive {t('maintenance.plans')}
             </h1>
             <p className="text-xs md:text-sm text-gray-600">
               Asset bazlı periyodik bakım planlarınızı tanımlayın ve otomatik iş emirleri oluşturun.
