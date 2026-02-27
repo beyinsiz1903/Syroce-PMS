@@ -302,6 +302,15 @@ const Reports = ({ user, tenant, onLogout }) => {
           >
             Night Audit
           </button>
+          <button
+            type="button"
+            onClick={() => navigate('/reports/builder')}
+            className="px-3 py-1 rounded-t-md border-b-2 text-xs md:text-sm border-transparent text-gray-500 hover:text-gray-700 flex items-center gap-1"
+            data-testid="report-builder-tab"
+          >
+            <Plus className="w-3 h-3" />
+            Rapor Oluşturucu
+          </button>
         </div>
 
         {/* Excel Reports Section */}
