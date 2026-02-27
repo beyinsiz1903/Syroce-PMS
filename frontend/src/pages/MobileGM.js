@@ -6,8 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { 
-import { useTranslation } from 'react-i18next';
+import {
   ArrowLeft, 
   BarChart3, 
   TrendingUp, 
@@ -24,6 +23,7 @@ import { useTranslation } from 'react-i18next';
   ChevronDown,
   Home
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const MobileGM = ({ user }) => {
   const { t } = useTranslation();

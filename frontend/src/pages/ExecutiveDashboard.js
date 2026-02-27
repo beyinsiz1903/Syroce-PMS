@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next';
   ChevronRight,
   Activity,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const ExecutiveDashboard = ({ user }) => {
   const { t } = useTranslation();

@@ -5,8 +5,7 @@ import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import PropertySwitcher from '@/components/PropertySwitcher';
-import { 
-import { useTranslation } from 'react-i18next';
+import {
   ArrowLeft, 
   TrendingUp,
   TrendingDown,
@@ -20,6 +19,7 @@ import { useTranslation } from 'react-i18next';
   BarChart3,
   Award
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const GMEnhancedDashboard = ({ user }) => {
   const { t } = useTranslation();

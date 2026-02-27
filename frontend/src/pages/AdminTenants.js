@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
   Zap, Crown, Search, RefreshCw, AlertTriangle, CheckCircle2,
   Settings2, Users, BarChart3, Bot
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 // ─── Plan definitions ────────────────────────────────────────
 const PLANS = {

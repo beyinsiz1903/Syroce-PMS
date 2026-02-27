@@ -8,8 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-import { useTranslation } from 'react-i18next';
+import {
   Building2,
   Plus,
   DollarSign,
@@ -17,6 +16,7 @@ import { useTranslation } from 'react-i18next';
   Search,
   AlertTriangle
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();

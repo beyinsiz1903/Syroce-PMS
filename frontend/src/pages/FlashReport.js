@@ -5,12 +5,12 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { 
-import { useTranslation } from 'react-i18next';
+import {
   TrendingUp, Users, DollarSign, Calendar, 
   ArrowUpRight, ArrowDownRight, Minus,
   Hotel, LogOut, UserCheck, XCircle, Coffee, Sparkles, Home
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const FlashReport = () => {
   const { t } = useTranslation();

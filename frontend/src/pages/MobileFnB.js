@@ -8,8 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { 
-import { useTranslation } from 'react-i18next';
+import {
   ArrowLeft, 
   UtensilsCrossed, 
   DollarSign, 
@@ -31,6 +30,7 @@ import { useTranslation } from 'react-i18next';
   CheckCircle,
   Home
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const MobileFnB = ({ user }) => {
   const { t } = useTranslation();

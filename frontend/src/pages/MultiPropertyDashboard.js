@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
   Tooltip,
   Legend
 } from 'chart.js';
+import { useTranslation } from 'react-i18next';
 
 ChartJS.register(
   CategoryScale,

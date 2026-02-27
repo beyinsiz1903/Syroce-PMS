@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
   Activity, Database, Zap, Server, Clock, 
   TrendingUp, TrendingDown, RefreshCw, CheckCircle, XCircle
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const PerformanceMonitorDashboard = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();

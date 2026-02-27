@@ -36,6 +36,7 @@ import { useTranslation } from 'react-i18next';
   Legend,
   Filler
 } from 'chart.js';
+import { useTranslation } from 'react-i18next';
 
 ChartJS.register(
   CategoryScale,

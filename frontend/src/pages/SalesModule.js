@@ -4,8 +4,7 @@ import Layout from '../components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { 
-import { useTranslation } from 'react-i18next';
+import {
   Briefcase, 
   Users, 
   Building2,
@@ -21,6 +20,7 @@ import { useTranslation } from 'react-i18next';
   AlertCircle,
   Plus
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const SalesModule = () => {
   const { t } = useTranslation();

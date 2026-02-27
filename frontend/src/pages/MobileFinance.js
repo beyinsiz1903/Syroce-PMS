@@ -10,8 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-import { useTranslation } from 'react-i18next';
+import {
   ArrowLeft, 
   DollarSign, 
   TrendingUp, 
@@ -40,6 +39,7 @@ import { useTranslation } from 'react-i18next';
   Wallet,
   Home
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const MobileFinance = ({ user }) => {
   const { t } = useTranslation();

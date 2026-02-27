@@ -4,8 +4,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { 
-import { useTranslation } from 'react-i18next';
+import {
   ArrowLeft, 
   RefreshCw, 
   TrendingUp, 
@@ -19,6 +18,7 @@ import { useTranslation } from 'react-i18next';
   XCircle,
   AlertCircle
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const RevenueMobile = ({ user }) => {
   const { t } = useTranslation();

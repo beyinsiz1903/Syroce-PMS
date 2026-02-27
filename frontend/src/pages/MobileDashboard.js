@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { 
-import { useTranslation } from 'react-i18next';
+import {
   Home, 
   Bed, 
   Users, 
@@ -16,6 +15,7 @@ import { useTranslation } from 'react-i18next';
   Smartphone,
   Shield
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const MobileDashboard = ({ user, onLogout }) => {
   const { t } = useTranslation();

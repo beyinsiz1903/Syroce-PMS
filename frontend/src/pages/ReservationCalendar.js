@@ -9,8 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { 
-import { useTranslation } from 'react-i18next';
+import {
   ChevronLeft, 
   ChevronRight, 
   Calendar as CalendarIcon,
@@ -24,6 +23,7 @@ import { useTranslation } from 'react-i18next';
   AlertCircle,
   CheckCircle
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();

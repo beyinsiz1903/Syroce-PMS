@@ -8,8 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import PropertySwitcher from '@/components/PropertySwitcher';
-import { 
-import { useTranslation } from 'react-i18next';
+import {
   ArrowLeft, 
   CheckCircle,
   XCircle,
@@ -21,6 +20,7 @@ import { useTranslation } from 'react-i18next';
   FileText,
   History
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const MobileApprovals = ({ user }) => {
   const { t } = useTranslation();
