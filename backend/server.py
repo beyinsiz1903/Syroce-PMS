@@ -2146,6 +2146,13 @@ async def reset_password(data: ResetPasswordRequest):
             }
         }
     )
+
+    # Invalidate login cache for this user
+    from simple_cache import simple_cache as _login_cache
+    _login_cache.cleanup_expired()
+    for k in list(_login_cache._cache.keys()):
+        if k.startswith("login:"):
+            _login_cache.delete(k)
     
     # Kodu kullanıldı olarak işaretle
     await db.password_reset_codes.update_one(
