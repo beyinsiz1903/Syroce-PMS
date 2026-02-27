@@ -470,11 +470,10 @@ const AuthPage = ({ onLogin }) => {
                       <div className="space-y-4">
                         <div className="bg-blue-50 p-4 rounded-lg">
                           <p className="text-sm text-blue-800 font-medium mb-2">
-                            📧 E-posta Doğrulama
+                            📧 {t('auth.emailVerification')}
                           </p>
                           <p className="text-xs text-blue-600">
-                            <strong>{hotelRegisterData.email}</strong> adresine 6 haneli bir doğrulama kodu gönderdik. 
-                            Lütfen e-postanızı kontrol edin.
+                            <strong>{hotelRegisterData.email}</strong> {t('auth.verificationSentTo')}
                           </p>
                         </div>
                         <form onSubmit={handleVerifyCode} className="space-y-4">
@@ -490,18 +489,18 @@ const AuthPage = ({ onLogin }) => {
                               style={{ fontSize: '18px', letterSpacing: '4px', textAlign: 'center' }}
                             />
                             <p className="text-xs text-gray-500 mt-1">
-                              Kod 15 dakika geçerlidir
+                              {t('auth.codeValidFor')}
                             </p>
                           </div>
                           <Button type="submit" className="w-full" disabled={loading}>
-                            {loading ? 'Doğrulanıyor...' : 'Hesabımı Oluştur'}
+                            {loading ? t('auth.verifying') : t('auth.createMyAccount')}
                           </Button>
                           <button
                             type="button"
                             onClick={() => setRegistrationStep('form')}
                             className="text-sm text-blue-600 hover:text-blue-800 w-full text-center"
                           >
-                            ← Geri Dön
+                            ← {t('auth.goBack')}
                           </button>
                         </form>
                       </div>
