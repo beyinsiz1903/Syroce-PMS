@@ -33366,6 +33366,7 @@ async def get_logs_dashboard(
 # ============= AI/ML ENDPOINTS FOR PREDICTIONS =============
 
 @api_router.get("/ai/pms/occupancy-prediction")
+@cached(ttl=900, key_prefix="ai_occupancy_pred")
 async def get_occupancy_prediction(
     days: int = 30,
     credentials: HTTPAuthorizationCredentials = Depends(security)
