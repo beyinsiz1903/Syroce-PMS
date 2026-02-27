@@ -21,24 +21,24 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
               <UtensilsCrossed className="w-8 h-8 text-orange-600" />
-              POS Dashboard
+              {t('posDashboard.title')}
             </h1>
             <p className="text-gray-600 mt-1">
-              Point of Sale - Tables, Menu, and Orders Management
+              {t('posDashboard.subtitle')}
             </p>
           </div>
           <div className="flex items-center gap-3">
             <Button variant="outline" onClick={() => navigate('/fnb-complete')}>
               <UtensilsCrossed className="w-4 h-4 mr-2" />
-              F&amp;B Suite
+              {t('posDashboard.fnbSuite')}
             </Button>
             <Button variant="outline" onClick={() => navigate('/features')}>
               <Sparkles className="w-4 h-4 mr-2" />
-              All Features
+              {t('posDashboard.allFeatures')}
             </Button>
             <Button onClick={() => navigate('/')}>
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Dashboard
+              {t('nav.dashboard')}
             </Button>
           </div>
         </div>
@@ -51,10 +51,9 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
                 <UtensilsCrossed className="w-5 h-5 text-orange-600" />
               </div>
               <div>
-                <h4 className="font-semibold text-gray-900 mb-1">🍽️ Restaurant Management</h4>
+                <h4 className="font-semibold text-gray-900 mb-1">{t('posDashboard.restaurantMgmt')}</h4>
                 <p className="text-sm text-gray-600">
-                  Complete F&B operations: table management, menu items with pricing, 
-                  order tracking, and sales reporting.
+                  {t('posDashboard.restaurantMgmtDesc')}
                 </p>
               </div>
             </div>
@@ -65,16 +64,16 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
         <Tabs defaultValue="tables" className="w-full">
           <TabsList className="grid w-full grid-cols-3 max-w-2xl">
             <TabsTrigger value="tables">
-              <UtensilsCrossed className="w-4 h-4 mr-2" />
-              Tables
+68|              <UtensilsCrossed className="w-4 h-4 mr-2" />
+              {t('posDashboard.tables')}
             </TabsTrigger>
             <TabsTrigger value="menu">
               <Menu className="w-4 h-4 mr-2" />
-              Menu Items
+              {t('posDashboard.menuItems')}
             </TabsTrigger>
             <TabsTrigger value="reports">
               <BarChart3 className="w-4 h-4 mr-2" />
-              Reports
+              {t('posDashboard.reports')}
             </TabsTrigger>
           </TabsList>
 
@@ -95,14 +94,14 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
           <TabsContent value="reports" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle>Sales Reports</CardTitle>
+                <CardTitle>{t('posDashboard.salesReports')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-center py-12 text-gray-500">
                   <BarChart3 className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                  <p>POS Reports coming soon...</p>
+                  <p>{t('posDashboard.comingSoon')}</p>
                   <p className="text-sm mt-2">
-                    This section will include daily sales, top items, revenue breakdown, and more.
+                    {t('posDashboard.comingSoonDesc')}
                   </p>
                 </div>
               </CardContent>
@@ -115,7 +114,7 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
           <Card>
             <CardContent className="p-4">
               <div className="text-center">
-                <p className="text-sm text-gray-600 mb-1">Tables</p>
+                <p className="text-sm text-gray-600 mb-1">{t('posDashboard.tables')}</p>
                 <p className="text-3xl font-bold text-blue-600">20</p>
               </div>
             </CardContent>
@@ -123,7 +122,7 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
           <Card>
             <CardContent className="p-4">
               <div className="text-center">
-                <p className="text-sm text-gray-600 mb-1">Menu Items</p>
+                <p className="text-sm text-gray-600 mb-1">{t('posDashboard.menuItems')}</p>
                 <p className="text-3xl font-bold text-green-600">13</p>
               </div>
             </CardContent>
@@ -131,7 +130,7 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
           <Card>
             <CardContent className="p-4">
               <div className="text-center">
-                <p className="text-sm text-gray-600 mb-1">Today's Orders</p>
+                <p className="text-sm text-gray-600 mb-1">{t('posDashboard.todaysOrders')}</p>
                 <p className="text-3xl font-bold text-purple-600">--</p>
               </div>
             </CardContent>
@@ -139,7 +138,7 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
           <Card>
             <CardContent className="p-4">
               <div className="text-center">
-                <p className="text-sm text-gray-600 mb-1">Revenue</p>
+                <p className="text-sm text-gray-600 mb-1">{t('posDashboard.revenue')}</p>
                 <p className="text-3xl font-bold text-orange-600">--</p>
               </div>
             </CardContent>
