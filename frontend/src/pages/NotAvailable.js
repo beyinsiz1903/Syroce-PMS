@@ -22,13 +22,13 @@ export default function NotAvailable() {
             className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-medium text-white"
             onClick={() => navigate("/app/dashboard")}
           >
-            Dashboard’a dön
+            {t('notAvailable.backToDashboard')}
           </button>
           <button
             className="rounded-xl border px-4 py-2 text-sm font-medium text-gray-900"
             onClick={() => navigate(-1)}
           >
-            Geri
+            {t('common.back')}
           </button>
         </div>
       </div>
