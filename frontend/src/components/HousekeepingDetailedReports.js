@@ -50,57 +50,57 @@ const HousekeepingDetailedReports = () => {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Housekeeping Detailed Reports</h1>
-        <p className="text-gray-600">Comprehensive room status and staff performance</p>
+        <h1 className="text-3xl font-bold">{t('hkReports.title')}</h1>
+        <p className="text-gray-600">{t('hkReports.subtitle')}</p>
       </div>
 
       <Tabs defaultValue="status" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="status">
             <DoorClosed className="w-4 h-4 mr-2" />
-            Room Status
+            {t('hkReports.roomStatus')}
           </TabsTrigger>
           <TabsTrigger value="performance">
             <Award className="w-4 h-4 mr-2" />
-            Staff Performance
+            {t('hkReports.staffPerformance')}
           </TabsTrigger>
         </TabsList>
 
         {/* Room Status Tab */}
         <TabsContent value="status">
           {loading ? (
-            <div className="text-center py-8">Loading...</div>
+            <div className="text-center py-8">{t('common.loading')}</div>
           ) : (
             <div className="space-y-6">
               {/* Summary */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Room Status Summary</CardTitle>
+                  <CardTitle>{t('hkReports.roomStatusSummary')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
                     <div className="bg-blue-50 p-4 rounded-lg">
-                      <div className="text-sm text-gray-600">Total Rooms</div>
+                      <div className="text-sm text-gray-600">{t('hkReports.totalRooms')}</div>
                       <div className="text-2xl font-bold text-blue-600">{roomStatus?.summary?.total_rooms}</div>
                     </div>
                     <div className="bg-green-50 p-4 rounded-lg">
-                      <div className="text-sm text-gray-600">Occupied</div>
+                      <div className="text-sm text-gray-600">{t('hkReports.occupied')}</div>
                       <div className="text-2xl font-bold text-green-600">{roomStatus?.summary?.occupied}</div>
                     </div>
                     <div className="bg-purple-50 p-4 rounded-lg">
-                      <div className="text-sm text-gray-600">Vacant Clean</div>
+                      <div className="text-sm text-gray-600">{t('hkReports.vacantClean')}</div>
                       <div className="text-2xl font-bold text-purple-600">{roomStatus?.summary?.vacant_clean}</div>
                     </div>
                     <div className="bg-yellow-50 p-4 rounded-lg">
-                      <div className="text-sm text-gray-600">Vacant Dirty</div>
+                      <div className="text-sm text-gray-600">{t('hkReports.vacantDirty')}</div>
                       <div className="text-2xl font-bold text-yellow-600">{roomStatus?.summary?.vacant_dirty}</div>
                     </div>
                     <div className="bg-red-50 p-4 rounded-lg">
-                      <div className="text-sm text-gray-600">Out of Order</div>
+                      <div className="text-sm text-gray-600">{t('hkReports.outOfOrder')}</div>
                       <div className="text-2xl font-bold text-red-600">{roomStatus?.summary?.out_of_order}</div>
                     </div>
                     <div className="bg-gray-50 p-4 rounded-lg">
-                      <div className="text-sm text-gray-600">Out of Service</div>
+                      <div className="text-sm text-gray-600">{t('hkReports.outOfService')}</div>
                       <div className="text-2xl font-bold text-gray-600">{roomStatus?.summary?.out_of_service}</div>
                     </div>
                   </div>
