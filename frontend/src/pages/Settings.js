@@ -498,7 +498,7 @@ const Settings = ({ user, tenant, onLogout }) => {
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold flex items-center gap-2"><Receipt className="w-5 h-5" /> Fatura & Plan Geçmişi</h2>
               <Button variant="outline" size="sm" onClick={loadBillingHistory} disabled={billingLoading}>
-                {billingLoading ? 'Yükleniyor...' : 'Yenile'}
+                {billingLoading ? t('common.loading') : 'Yenile'}
               </Button>
             </div>
 
