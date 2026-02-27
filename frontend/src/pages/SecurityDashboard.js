@@ -27,7 +27,7 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
       if (!res.ok) throw new Error();
       setData(await res.json());
     } catch {
-      toast.error('Güvenlik verileri yüklenemedi');
+      toast.error(t('securityDashboard.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -44,9 +44,9 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
       if (!res.ok) throw new Error();
       const result = await res.json();
       localStorage.setItem('token', result.access_token);
-      toast.success('Token yenilendi');
+      toast.success(t('securityDashboard.tokenRefreshed'));
     } catch {
-      toast.error('Token yenilenemedi');
+      toast.error(t('securityDashboard.tokenRefreshFailed'));
     }
   };
 
@@ -72,13 +72,13 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Shield className="w-7 h-7 text-emerald-600" />
-              Güvenlik Merkezi
+              {t('securityDashboard.title')}
             </h1>
-            <p className="text-sm text-gray-500 mt-1">Sistem güvenliği, performans ve erişim denetimi</p>
+            <p className="text-sm text-gray-500 mt-1">{t('securityDashboard.subtitle')}</p>
           </div>
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={refreshToken} data-testid="refresh-token-btn">
-              <Key className="w-4 h-4 mr-1" />Token Yenile
+              <Key className="w-4 h-4 mr-1" />{t('securityDashboard.refreshToken')}
             </Button>
             <Button size="sm" variant="outline" onClick={fetchData} data-testid="refresh-data-btn">
               <RefreshCw className="w-4 h-4 mr-1" />{t('common.refresh')}
@@ -97,8 +97,8 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
             <div>
               <p className="font-semibold text-gray-900">
                 {o.failed_logins_24h > 10
-                  ? 'Güvenlik Uyarısı: Yüksek sayıda başarısız giriş denemesi tespit edildi'
-                  : 'Sistem Güvenli: Tüm güvenlik kontrolleri aktif'}
+                  ? t('securityDashboard.securityWarning')
+                  : t('securityDashboard.systemSecure')}
               </p>
               <p className="text-xs text-gray-500">
                 Son güncelleme: {new Date(data?.timestamp).toLocaleString('tr-TR')}
@@ -113,42 +113,42 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
             <CardContent className="p-4 text-center">
               <Ban className="w-5 h-5 text-red-500 mx-auto mb-1" />
               <p className="text-2xl font-bold text-red-600">{o.failed_logins_24h || 0}</p>
-              <p className="text-[10px] text-gray-500">Başarısız Giriş (24s)</p>
+              <p className="text-[10px] text-gray-500">{t('securityDashboard.failedLogins24h')}</p>
             </CardContent>
           </Card>
           <Card data-testid="kpi-successful-logins">
             <CardContent className="p-4 text-center">
               <UserCheck className="w-5 h-5 text-emerald-500 mx-auto mb-1" />
               <p className="text-2xl font-bold text-emerald-600">{o.successful_logins_24h || 0}</p>
-              <p className="text-[10px] text-gray-500">Başarılı Giriş (24s)</p>
+              <p className="text-[10px] text-gray-500">{t('securityDashboard.successfulLogins24h')}</p>
             </CardContent>
           </Card>
           <Card data-testid="kpi-active-sessions">
             <CardContent className="p-4 text-center">
               <Users className="w-5 h-5 text-blue-500 mx-auto mb-1" />
               <p className="text-2xl font-bold text-blue-600">{o.active_sessions || 0}</p>
-              <p className="text-[10px] text-gray-500">Aktif Oturum</p>
+              <p className="text-[10px] text-gray-500">{t('securityDashboard.activeSessions')}</p>
             </CardContent>
           </Card>
           <Card data-testid="kpi-total-users">
             <CardContent className="p-4 text-center">
               <Lock className="w-5 h-5 text-purple-500 mx-auto mb-1" />
               <p className="text-2xl font-bold text-purple-600">{o.total_users || 0}</p>
-              <p className="text-[10px] text-gray-500">Toplam Kullanıcı</p>
+              <p className="text-[10px] text-gray-500">{t('securityDashboard.totalUsers')}</p>
             </CardContent>
           </Card>
           <Card data-testid="kpi-rate-limits">
             <CardContent className="p-4 text-center">
               <Zap className="w-5 h-5 text-amber-500 mx-auto mb-1" />
               <p className="text-2xl font-bold text-amber-600">{o.rate_limit_hits || 0}</p>
-              <p className="text-[10px] text-gray-500">Rate Limit Hit</p>
+              <p className="text-[10px] text-gray-500">{t('securityDashboard.rateLimitHit')}</p>
             </CardContent>
           </Card>
           <Card data-testid="kpi-error-rate">
             <CardContent className="p-4 text-center">
               <AlertTriangle className="w-5 h-5 text-orange-500 mx-auto mb-1" />
               <p className="text-2xl font-bold text-orange-600">{apm.error_rate?.toFixed(1) || 0}%</p>
-              <p className="text-[10px] text-gray-500">Hata Oranı</p>
+              <p className="text-[10px] text-gray-500">{t('securityDashboard.errorRate')}</p>
             </CardContent>
           </Card>
         </div>
@@ -160,37 +160,37 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Activity className="w-4 h-4 text-blue-600" />
-                API Performans (Son 1 Saat)
+                {t('securityDashboard.apiPerformance')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 bg-blue-50 rounded-lg">
-                  <p className="text-xs text-blue-600 font-medium">İstek/dk</p>
+                  <p className="text-xs text-blue-600 font-medium">{t('securityDashboard.requestsPerMin')}</p>
                   <p className="text-xl font-bold text-blue-800">{apm.requests_per_minute?.toFixed(1) || 0}</p>
                 </div>
                 <div className="p-3 bg-green-50 rounded-lg">
-                  <p className="text-xs text-green-600 font-medium">Ort. Yanıt</p>
+                  <p className="text-xs text-green-600 font-medium">{t('securityDashboard.avgResponse')}</p>
                   <p className="text-xl font-bold text-green-800">{apm.avg_response_ms?.toFixed(0) || 0}ms</p>
                 </div>
                 <div className="p-3 bg-amber-50 rounded-lg">
-                  <p className="text-xs text-amber-600 font-medium">Yavaş İstek</p>
+                  <p className="text-xs text-amber-600 font-medium">{t('securityDashboard.slowRequests')}</p>
                   <p className="text-xl font-bold text-amber-800">{apm.slow_requests || 0}</p>
                 </div>
                 <div className="p-3 bg-red-50 rounded-lg">
-                  <p className="text-xs text-red-600 font-medium">Hata Oranı</p>
+                  <p className="text-xs text-red-600 font-medium">{t('securityDashboard.errorRate')}</p>
                   <p className="text-xl font-bold text-red-800">{apm.error_rate?.toFixed(1) || 0}%</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Güvenlik Kontrolleri */}
+          {/* {t('securityDashboard.securityControls')} */}
           <Card data-testid="security-controls">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                Güvenlik Kontrolleri
+                {t('securityDashboard.securityControls')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -199,8 +199,8 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
                 { name: 'CSP (Content Security Policy)', status: true, icon: Shield },
                 { name: 'X-Frame-Options', status: true, icon: Globe },
                 { name: 'Rate Limiting', status: true, icon: Zap },
-                { name: 'GZip Sıkıştırma', status: true, icon: Server },
-                { name: 'JWT Token Doğrulama', status: true, icon: Key },
+                { name: '{t('securityDashboard.gzipCompression')}', status: true, icon: Server },
+                { name: '{t('securityDashboard.jwtValidation')}', status: true, icon: Key },
                 { name: 'Input Sanitization', status: true, icon: ShieldCheck },
                 { name: 'Audit Logging', status: true, icon: Eye },
               ].map((item, i) => (
@@ -210,7 +210,7 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
                     <span className="text-sm text-gray-700">{item.name}</span>
                   </div>
                   <Badge className={item.status ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-red-100 text-red-700'}>
-                    {item.status ? 'Aktif' : 'Pasif'}
+                    {item.status ? t('common.active') : t('common.inactive')}
                   </Badge>
                 </div>
               ))}
@@ -223,10 +223,10 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
           <CardHeader className="pb-3">
             <CardTitle className="text-sm flex items-center gap-2">
               <Clock className="w-4 h-4 text-gray-600" />
-              Son Güvenlik Olayları
+              {t('securityDashboard.recentEvents')}
               <Badge variant="secondary" className="text-xs">{events.length}</Badge>
             </CardTitle>
-            <CardDescription>Son 7 gün</CardDescription>
+            <CardDescription>{t('securityDashboard.last7Days')}</CardDescription>
           </CardHeader>
           <CardContent>
             {events.length > 0 ? (
@@ -234,10 +234,10 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
                 <table className="w-full text-sm" data-testid="events-table">
                   <thead>
                     <tr className="border-b bg-gray-50">
-                      <th className="py-2 px-3 text-left text-xs font-semibold text-gray-500">Zaman</th>
-                      <th className="py-2 px-3 text-left text-xs font-semibold text-gray-500">Olay</th>
-                      <th className="py-2 px-3 text-left text-xs font-semibold text-gray-500">Kullanıcı</th>
-                      <th className="py-2 px-3 text-left text-xs font-semibold text-gray-500">Detay</th>
+                      <th className="py-2 px-3 text-left text-xs font-semibold text-gray-500">{t('securityDashboard.time')}</th>
+                      <th className="py-2 px-3 text-left text-xs font-semibold text-gray-500">{t('securityDashboard.event')}</th>
+                      <th className="py-2 px-3 text-left text-xs font-semibold text-gray-500">{t('securityDashboard.userCol')}</th>
+                      <th className="py-2 px-3 text-left text-xs font-semibold text-gray-500">{t('securityDashboard.detail')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -255,10 +255,10 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
                               evt.action === 'token_refresh' ? 'bg-blue-100 text-blue-700' :
                               'bg-gray-100 text-gray-700'
                             } variant="outline">
-                              {evt.action === 'login_failed' ? 'Başarısız Giriş' :
-                               evt.action === 'login_success' ? 'Başarılı Giriş' :
-                               evt.action === 'token_refresh' ? 'Token Yenileme' :
-                               evt.action === 'password_change' ? 'Şifre Değişikliği' :
+                              {evt.action === 'login_failed' ? t('securityDashboard.loginFailed') :
+                               evt.action === 'login_success' ? t('securityDashboard.loginSuccess') :
+                               evt.action === 'token_refresh' ? t('securityDashboard.tokenRefresh') :
+                               evt.action === 'password_change' ? t('securityDashboard.passwordChange') :
                                evt.action}
                             </Badge>
                           </td>
@@ -273,7 +273,7 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
             ) : (
               <div className="text-center py-8 text-gray-400">
                 <Shield className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                <p className="text-sm">Güvenlik olayı bulunamadı</p>
+                <p className="text-sm">{t('securityDashboard.noEvents')}</p>
               </div>
             )}
           </CardContent>

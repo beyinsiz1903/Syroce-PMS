@@ -30,15 +30,15 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
               <Sparkles className="w-8 h-8 text-purple-600" />
-              Features Showcase
+              {t('featuresShowcase.title')}
             </h1>
             <p className="text-gray-600 mt-1">
-              New desktop features - POS Tables, Staff Assignment, Messaging
+              {t('featuresShowcase.subtitle')}
             </p>
           </div>
           <Button onClick={() => navigate('/')}>
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Dashboard
+            {t('featuresShowcase.backToDashboard')}
           </Button>
         </div>
 
@@ -73,10 +73,9 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                       <UtensilsCrossed className="w-5 h-5 text-blue-600" />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">🍽️ Restaurant Table Management</h4>
+                      <h4 className="font-semibold text-gray-900 mb-1">🍽️ {t('featuresShowcase.tableMgmt')}</h4>
                       <p className="text-sm text-gray-600">
-                        Manage restaurant tables, track availability, and update status in real-time.
-                        20 tables with capacity tracking and quick status updates.
+                        {t('featuresShowcase.tableMgmtDesc')}
                       </p>
                     </div>
                   </div>
@@ -96,10 +95,9 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                       <Menu className="w-5 h-5 text-orange-600" />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">📋 Menu Items Management</h4>
+                      <h4 className="font-semibold text-gray-900 mb-1">📋 {t('featuresShowcase.menuMgmt')}</h4>
                       <p className="text-sm text-gray-600">
-                        Browse menu items by category, check prices, costs, and profit margins.
-                        13 items across 4 categories with availability tracking.
+                        {t('featuresShowcase.menuMgmtDesc')}
                       </p>
                     </div>
                   </div>
@@ -119,10 +117,9 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                       <Users className="w-5 h-5 text-green-600" />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">👥 Housekeeping Staff Management</h4>
+                      <h4 className="font-semibold text-gray-900 mb-1">👥 {t('featuresShowcase.staffMgmt')}</h4>
                       <p className="text-sm text-gray-600">
-                        View staff members, track efficiency, manage shifts, and assign rooms.
-                        6 staff members with real-time performance metrics.
+                        {t('featuresShowcase.staffMgmtDesc')}
                       </p>
                     </div>
                   </div>
@@ -142,10 +139,9 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                       <MessageSquare className="w-5 h-5 text-purple-600" />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">💬 Multi-Channel Messaging</h4>
+                      <h4 className="font-semibold text-gray-900 mb-1">💬 {t('featuresShowcase.messagingTitle')}</h4>
                       <p className="text-sm text-gray-600">
-                        Send WhatsApp, SMS, and Email messages using templates with variable support.
-                        Mock integration ready for production API setup.
+                        {t('featuresShowcase.messagingDesc')}
                       </p>
                     </div>
                   </div>
@@ -159,7 +155,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
         {/* Quick Links */}
         <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
           <CardHeader>
-            <CardTitle>Other New Features</CardTitle>
+            <CardTitle>{t('featuresShowcase.otherFeatures')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -169,7 +165,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                 onClick={() => navigate('/cost-management')}
               >
                 <span className="text-2xl mb-2">💰</span>
-                <span className="text-sm">Cost Management</span>
+                <span className="text-sm">{t('featuresShowcase.costManagement')}</span>
               </Button>
               <Button
                 variant="outline"
@@ -177,7 +173,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                 onClick={() => navigate('/rms')}
               >
                 <span className="text-2xl mb-2">📊</span>
-                <span className="text-sm">Revenue Breakdown</span>
+                <span className="text-sm">{t('featuresShowcase.revenueBreakdown')}</span>
               </Button>
               <Button
                 variant="outline"
@@ -187,7 +183,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                 }}
               >
                 <span className="text-2xl mb-2">🛍️</span>
-                <span className="text-sm">AI Upsell Center</span>
+                <span className="text-sm">{t('featuresShowcase.aiUpsellCenter')}</span>
               </Button>
               <Button
                 variant="outline"
@@ -197,7 +193,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                 }}
               >
                 <span className="text-2xl mb-2">📑</span>
-                <span className="text-sm">Split Folio</span>
+                <span className="text-sm">{t('featuresShowcase.splitFolio')}</span>
               </Button>
             </div>
           </CardContent>
