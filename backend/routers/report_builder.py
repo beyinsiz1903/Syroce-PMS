@@ -535,10 +535,9 @@ async def export_report_pdf(config: ReportConfig, credentials=Depends(HTTPBearer
 # ─── Template CRUD ────────────────────────────────────────────────────────
 
 @router.get("/templates")
-async def list_templates(current_user=None):
+async def list_templates(credentials=Depends(HTTPBearer())):
     """Kayıtlı rapor şablonlarını listeler."""
-    if current_user is None and _get_current_user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    current_user = await _get_current_user(credentials)
 
     db = get_db()
     tenant_id = getattr(current_user, 'tenant_id', None)
@@ -550,10 +549,9 @@ async def list_templates(current_user=None):
 
 
 @router.post("/templates")
-async def save_template(template: SavedTemplate, current_user=None):
+async def save_template(template: SavedTemplate, credentials=Depends(HTTPBearer())):
     """Rapor şablonunu kaydeder."""
-    if current_user is None and _get_current_user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    current_user = await _get_current_user(credentials)
 
     db = get_db()
     tenant_id = getattr(current_user, 'tenant_id', None)
@@ -575,10 +573,9 @@ async def save_template(template: SavedTemplate, current_user=None):
 
 
 @router.delete("/templates/{template_id}")
-async def delete_template(template_id: str, current_user=None):
+async def delete_template(template_id: str, credentials=Depends(HTTPBearer())):
     """Rapor şablonunu siler."""
-    if current_user is None and _get_current_user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    current_user = await _get_current_user(credentials)
 
     db = get_db()
     tenant_id = getattr(current_user, 'tenant_id', None)
