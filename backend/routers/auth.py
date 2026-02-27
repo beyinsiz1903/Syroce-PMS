@@ -355,7 +355,8 @@ async def get_security_summary(current_user: User = Depends(get_current_user)):
     # Rate limit hits (from APM)
     rate_limit_stats = {}
     try:
-        rate_limit_stats = get_rate_limit_stats()
+        if _get_rate_limit_stats:
+            rate_limit_stats = _get_rate_limit_stats()
     except Exception:
         pass
     
@@ -382,7 +383,8 @@ async def get_security_summary(current_user: User = Depends(get_current_user)):
     # APM summary
     apm_summary = {}
     try:
-        apm_summary = apm_store.get_summary(minutes=60)
+        if _apm_store:
+            apm_summary = _apm_store.get_summary(minutes=60)
     except Exception:
         pass
     
