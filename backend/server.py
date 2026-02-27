@@ -1760,7 +1760,16 @@ async def login(data: UserLogin):
         print(f"   Available fields: {list(user_doc.keys()) if user_doc else 'N/A'}")
     
     if not user_doc or not verify_password(data.password, hashed_pwd):
-        print(f"❌ Login failed: Invalid credentials")
+        # Audit: failed login
+        await db.audit_logs.insert_one({
+            "id": str(__import__('uuid').uuid4()),
+            "tenant_id": user_doc.get('tenant_id') if user_doc else None,
+            "user_email": data.email,
+            "action": "login_failed",
+            "resource_type": "auth",
+            "details": "Invalid credentials",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     print(f"✅ Password verified successfully")
@@ -1770,19 +1779,25 @@ async def login(data: UserLogin):
     
     tenant = None
     if user.tenant_id:
-        print(f"🔍 Looking for tenant with ID: {user.tenant_id}")
         tenant_doc = await load_tenant_doc(user.tenant_id)
         if tenant_doc:
-            print(f"✅ Tenant loaded successfully")
-            # Plan alanını normalize et ve efektif feature set üret
             if not tenant_doc.get("subscription_plan"):
                 tenant_doc["subscription_plan"] = tenant_doc.get("plan") or tenant_doc.get("subscription_tier") or "core_small_hotel"
             tenant_doc["features"] = resolve_tenant_features(tenant_doc)
             tenant = Tenant(**tenant_doc)
-        else:
-            print("❌ Tenant not found by any method")
     
-    print(f"✅ Login successful for {user.email}")
+    # Audit: successful login
+    await db.audit_logs.insert_one({
+        "id": str(__import__('uuid').uuid4()),
+        "tenant_id": user.tenant_id,
+        "user_id": user.id,
+        "user_email": user.email,
+        "action": "login_success",
+        "resource_type": "auth",
+        "details": f"Login successful for {user.name}",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    
     token = create_token(user.id, user.tenant_id)
     return TokenResponse(access_token=token, user=user, tenant=tenant)
 
