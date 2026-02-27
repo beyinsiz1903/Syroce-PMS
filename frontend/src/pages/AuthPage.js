@@ -225,7 +225,7 @@ const AuthPage = ({ onLogin }) => {
             />
           </div>
           <p style={{ color: 'rgba(255,255,255,0.95)', fontSize: isMobile ? '0.875rem' : '1rem', marginBottom: '0.75rem', fontWeight: '500' }}>
-            {isMobile ? 'Mobile Hotel Management' : 'Complete Hotel Management Platform'}
+            {isMobile ? t('auth.mobileHotelMgmt') : t('auth.completeHotelPlatform')}
           </p>
           
           {/* Language Selector */}
@@ -247,10 +247,10 @@ const AuthPage = ({ onLogin }) => {
         }}>
           <CardHeader>
             <CardTitle style={{ fontSize: isMobile ? '1.25rem' : '1.5rem' }}>
-              {isMobile ? 'Mobile Login' : t('common.welcome')}
+              {isMobile ? t('auth.mobileLogin') : t('common.welcome')}
             </CardTitle>
             <CardDescription>
-              {isMobile ? 'Access your hotel on the go' : t('auth.signIn')}
+              {isMobile ? t('auth.mobileAccess') : t('auth.signIn')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -280,10 +280,10 @@ const AuthPage = ({ onLogin }) => {
                         {isMobile && (
                           <div className="bg-blue-50 p-3 rounded-lg mb-4">
                             <p className="text-sm text-blue-800 font-medium">
-                              📱 Mobile Quick Access
+                              📱 {t('auth.mobileLogin')}
                             </p>
                             <p className="text-xs text-blue-600 mt-1">
-                              Manage your hotel from anywhere
+                              {t('auth.mobileAccess')}
                             </p>
                           </div>
                         )}
@@ -317,7 +317,7 @@ const AuthPage = ({ onLogin }) => {
                             onClick={() => setShowForgotPassword(true)}
                             className="text-sm text-blue-600 hover:text-blue-800"
                           >
-                            Şifremi Unuttum
+                            {t('auth.forgotPassword')}
                           </button>
                         </div>
                         <Button 
@@ -340,13 +340,13 @@ const AuthPage = ({ onLogin }) => {
                           }}
                           className="text-sm text-blue-600 hover:text-blue-800 mb-4"
                         >
-                          ← Giriş Sayfasına Dön
+                          ← {t('auth.backToLogin')}
                         </button>
                         
                         {forgotPasswordStep === 'email' && (
                           <form onSubmit={handleForgotPasswordRequest} className="space-y-4">
                             <div>
-                              <Label>E-posta Adresiniz</Label>
+                              <Label>{t('auth.yourEmail')}</Label>
                               <Input
                                 type="email"
                                 value={hotelLoginData.email}
@@ -355,11 +355,11 @@ const AuthPage = ({ onLogin }) => {
                                 placeholder="ornek@hotel.com"
                               />
                               <p className="text-xs text-gray-500 mt-1">
-                                Size bir doğrulama kodu göndereceğiz
+                                {t('auth.sendVerificationCode')}
                               </p>
                             </div>
                             <Button type="submit" className="w-full" disabled={loading}>
-                              {loading ? 'Gönderiliyor...' : 'Kod Gönder'}
+                              {loading ? t('auth.sending') : t('auth.sendCode')}
                             </Button>
                           </form>
                         )}
@@ -367,7 +367,7 @@ const AuthPage = ({ onLogin }) => {
                         {forgotPasswordStep === 'code' && (
                           <form onSubmit={(e) => { e.preventDefault(); setForgotPasswordStep('newpassword'); }} className="space-y-4">
                             <div>
-                              <Label>Doğrulama Kodu</Label>
+                              <Label>{t('auth.verificationCode')}</Label>
                               <Input
                                 type="text"
                                 value={resetCode}
@@ -377,7 +377,7 @@ const AuthPage = ({ onLogin }) => {
                                 maxLength={6}
                               />
                               <p className="text-xs text-gray-500 mt-1">
-                                E-postanıza gönderilen 6 haneli kodu girin
+                                {t('auth.enterSixDigitCode')}
                               </p>
                             </div>
                             <Button type="submit" className="w-full" disabled={loading}>
