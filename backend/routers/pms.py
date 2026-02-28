@@ -772,7 +772,9 @@ async def create_booking(
     await db.bookings.insert_one(booking_dict)
 
     # Push CM event (best-effort)
-    await cm_push_event({
+    try:
+        from server import cm_push_event as _cm_push
+        await _cm_push({
         "type": "booking.created",
         "tenant_id": current_user.tenant_id,
         "booking_id": booking.id,
