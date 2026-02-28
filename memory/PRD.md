@@ -33,44 +33,57 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - Locust 2.43.3: 50 concurrent users, 120s, 4 roles, 34 endpoints
 - Login -74.5%, Forecast -99.3%, Overall avg -33.5%, p99 -52.1%
 
-### server.py Modularization (COMPLETED - Feb 2026)
-- **Extracted 3 routers:** auth.py (620 lines), housekeeping.py (717 lines), departments.py (2956 lines)
+### server.py Modularization - Phase 1 (COMPLETED - Feb 2026)
+- **Extracted 3 routers:** auth.py (668 lines), housekeeping.py (750 lines), departments.py (2986 lines)
 - **Reduced server.py:** 55,671 -> 51,409 lines (-4,262 lines, -7.7%)
-- **Created core/helpers.py:** Shared utilities (load_tenant_doc, resolve_tenant_features, require_module, create_audit_log)
-- Fixed duplicate mock routes in comprehensive_modules_endpoints.py
+- **Created core/helpers.py:** Shared utilities
+
+### server.py Modularization - Phase 2 (COMPLETED - Feb 2026)
+- **Extracted 3 more routers:** pms.py (2,771 lines, 52 routes), finance.py (4,627 lines, 90 routes), reports.py (1,822 lines, 28 routes)
+- **Created core/utils.py:** Shared utility functions (folio helpers, Excel helpers, QR code, night audit helpers)
+- **Removed 26 duplicate route definitions** (OPERA CLOUD PARITY duplicates)
+- **Fixed route conflicts:** Removed mock night-audit endpoints from comprehensive_modules_endpoints.py
+- **Reduced server.py:** 51,409 -> 41,622 lines (-9,787 lines, -19%)
+- **Total reduction from original:** 55,671 -> 41,622 (-14,049 lines, -25.2%)
+- **All 59 endpoint tests pass (100%)**
 
 ### Root Directory Cleanup (COMPLETED - Feb 2026)
 - Removed 152 test .py files from root directory
-- Removed 30+ obsolete .md documentation files
-- Clean project structure: only README.md, backend/, frontend/, docs/, memory/
+- Clean project structure
 
 ## Code Architecture
 ```
 /app
 ├── backend/
-│   ├── server.py              # Main server (51,409 lines, modularized)
+│   ├── server.py              # Main server (41,622 lines)
 │   ├── core/
 │   │   ├── database.py        # MongoDB connection
 │   │   ├── security.py        # JWT auth, password hashing
-│   │   ├── helpers.py         # Shared helpers (NEW)
+│   │   ├── helpers.py         # Shared helpers (tenant, modules, audit)
+│   │   ├── utils.py           # Shared utilities (NEW - folio, excel, QR, night audit)
 │   │   └── sanitize.py        # Input sanitization
 │   ├── routers/
-│   │   ├── auth.py            # Auth endpoints (NEW - 666 lines)
-│   │   ├── housekeeping.py    # Housekeeping endpoints (NEW - 745 lines)
-│   │   ├── departments.py     # Department dashboards (NEW - 2986 lines)
+│   │   ├── auth.py            # Auth endpoints (668 lines)
+│   │   ├── housekeeping.py    # Housekeeping endpoints (750 lines)
+│   │   ├── departments.py     # Department dashboards (2,986 lines)
+│   │   ├── pms.py             # PMS/Rooms/Bookings (NEW - 2,771 lines, 52 routes)
+│   │   ├── finance.py         # Finance/Accounting/Folio (NEW - 4,627 lines, 90 routes)
+│   │   ├── reports.py         # Reports/Night Audit (NEW - 1,822 lines, 28 routes)
 │   │   ├── report_builder.py  # Report builder
 │   │   └── guest_messaging.py # Guest messaging
-│   └── models/
-│       ├── enums.py           # Enumerations
-│       └── schemas.py         # Pydantic models
+│   ├── models/
+│   │   ├── enums.py           # Enumerations
+│   │   └── schemas.py         # Pydantic models
+│   └── tests/
+│       ├── test_pms_finance_reports_routers.py  # (NEW)
+│       └── test_router_modularization.py        # (NEW)
 ├── frontend/
-│   ├── src/
-│   │   ├── locales/           # i18n files (en.json, tr.json + 6 more)
-│   │   ├── components/
-│   │   │   ├── pms/           # PMS sub-components
-│   │   │   └── ui/            # Shadcn UI
-│   │   └── pages/             # Route pages
-│   └── ...
+│   └── src/
+│       ├── locales/           # i18n files
+│       ├── components/
+│       │   ├── pms/           # PMS sub-components
+│       │   └── ui/            # Shadcn UI
+│       └── pages/             # Route pages
 └── memory/
     └── PRD.md
 ```
@@ -82,23 +95,28 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 
 ### P1
 - Redis-based Caching (replace in-memory SimpleCache)
-- Continue server.py modularization (PMS rooms, bookings, reports, finance sections)
+- Continue server.py modularization (target: <35K lines - POS, maintenance, sales/CRM, dashboard routes)
 
 ### P2
-- Remaining i18n gaps (Quick Actions buttons, minor headers)
-- server.py further reduction (target: <40K lines)
+- Remaining i18n gaps (Quick Actions, minor headers)
+- server.py further reduction (target: <30K lines)
+- Complete i18n for POS, Staff, Mobile Dashboard pages
 
 ## Key Endpoints
 | Endpoint | Method | Router | Description |
 |----------|--------|--------|-------------|
-| /api/auth/login | POST | auth.py | Login (cached) |
+| /api/auth/login | POST | auth.py | Login |
 | /api/auth/me | GET | auth.py | Current user |
-| /api/security/summary | GET | auth.py | Security dashboard |
-| /api/housekeeping/tasks | GET/POST | housekeeping.py | HK tasks |
-| /api/housekeeping/room-status | GET | housekeeping.py | Room status board |
+| /api/pms/rooms | GET/POST | pms.py | Room management |
+| /api/pms/bookings | GET/POST | pms.py | Booking management |
+| /api/pms/dashboard | GET | pms.py | PMS stats |
+| /api/folio/* | GET/POST | finance.py | Folio management |
+| /api/accounting/* | GET/POST | finance.py | Accounting |
+| /api/cashiering/* | GET/POST | finance.py | Cashiering |
+| /api/reports/* | GET/POST | reports.py | Reports |
+| /api/night-audit/* | GET/POST | reports.py | Night Audit |
+| /api/housekeeping/* | GET/POST | housekeeping.py | Housekeeping |
 | /api/department/*/dashboard | GET | departments.py | Dept dashboards |
-| /api/pms/dashboard | GET | server.py | PMS stats |
-| /api/reports/builder/* | GET/POST | report_builder.py | Report Builder |
 
 ## Credentials
 | Role | Email | Password |
