@@ -38,6 +38,12 @@ from models.schemas import (
     _ensure_hotel_context,
 )
 
+from core.utils import (
+    generate_folio_number, calculate_folio_balance,
+    generate_qr_code, generate_time_based_qr_token,
+    get_cancellation_policy_details,
+)
+
 try:
     from cache_manager import cached
 except ImportError:

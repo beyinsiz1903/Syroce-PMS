@@ -38,6 +38,11 @@ from models.schemas import (
     _ensure_hotel_context,
 )
 
+from core.utils import (
+    generate_folio_number, calculate_folio_balance,
+    create_excel_workbook, excel_response,
+)
+
 try:
     from cache_manager import cached
 except ImportError:

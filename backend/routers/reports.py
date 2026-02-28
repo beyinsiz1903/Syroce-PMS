@@ -38,6 +38,14 @@ from models.schemas import (
     _ensure_hotel_context,
 )
 
+from core.utils import (
+    calculate_folio_balance,
+    create_excel_workbook, excel_response,
+    night_audit_post_room_charges, night_audit_calculate_revenue,
+    night_audit_recalculate_ar, night_audit_housekeeping_rollup,
+    night_audit_ota_reconciliation,
+)
+
 try:
     from cache_manager import cached
 except ImportError:
