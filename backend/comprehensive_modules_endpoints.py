@@ -37,54 +37,16 @@ class NightAuditLog(BaseModel):
     error_message: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-@router.post("/night-audit/run")
-async def run_night_audit(
-    audit_date: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    """Run night audit process"""
-    # Will be implemented with get_current_user
-    return {
-        "success": True,
-        "message": "Night audit started",
-        "audit_id": str(uuid.uuid4()),
-        "steps": [
-            "Processing no-shows",
-            "Posting room revenues",
-            "Rolling business date",
-            "Generating reports"
-        ]
-    }
-
-@router.get("/night-audit/status")
-async def get_night_audit_status(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    """Get current night audit status"""
-    return {
-        "last_audit_date": datetime.now(timezone.utc).date().isoformat(),
-        "status": "completed",
-        "next_audit_due": (datetime.now(timezone.utc) + timedelta(days=1)).date().isoformat(),
-        "pending_tasks": []
-    }
-
-@router.get("/night-audit/history")
-async def get_night_audit_history(
-    days: int = 30,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    """Get night audit history"""
-    history = []
-    for i in range(days):
-        date = datetime.now(timezone.utc) - timedelta(days=i)
-        history.append({
-            "audit_date": date.date().isoformat(),
-            "status": "completed",
-            "no_shows": 2 if i < 5 else 0,
-            "revenues_posted": 45,
-            "completed_at": date.isoformat()
-        })
-    return {"history": history}
+# ============= NIGHT AUDIT MOCK ENDPOINTS (REMOVED) =============
+# These mock endpoints have been removed because real implementations
+# now exist in routers/reports.py. The mock endpoints were causing
+# route conflicts due to require_super_admin dependency.
+# 
+# Real endpoints available:
+#   - POST /api/night-audit/run-night-audit (routers/reports.py)
+#   - GET /api/night-audit/status (routers/reports.py)  
+#   - GET /api/night-audit/audit-history (routers/reports.py)
+# ================================================================
 
 # ============= 2. NO-SHOW, CANCELLATION, WALK-IN =============
 
