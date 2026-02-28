@@ -41147,6 +41147,33 @@ except Exception as e:
     print(f"⚠️ Departments router not available: {e}")
     import traceback; traceback.print_exc()
 
+# PMS Router (extracted from server.py)
+try:
+    from routers.pms import router as pms_router_extracted
+    app.include_router(pms_router_extracted, tags=["pms"])
+    print("✅ PMS router included (extracted)")
+except Exception as e:
+    print(f"⚠️ PMS router not available: {e}")
+    import traceback; traceback.print_exc()
+
+# Finance Router (extracted from server.py)
+try:
+    from routers.finance import router as finance_router_extracted
+    app.include_router(finance_router_extracted, tags=["finance"])
+    print("✅ Finance router included (extracted)")
+except Exception as e:
+    print(f"⚠️ Finance router not available: {e}")
+    import traceback; traceback.print_exc()
+
+# Reports Router (extracted from server.py)
+try:
+    from routers.reports import router as reports_router_extracted
+    app.include_router(reports_router_extracted, tags=["reports"])
+    print("✅ Reports router included (extracted)")
+except Exception as e:
+    print(f"⚠️ Reports router not available: {e}")
+    import traceback; traceback.print_exc()
+
 
 # ============================================================================
 # OPERA CLOUD PARITY FEATURES - CRITICAL ENTERPRISE FUNCTIONALITY
