@@ -4,6 +4,7 @@ PMS Router - Extracted from server.py
 import uuid
 import io
 import csv
+from pathlib import Path
 from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional, Dict, Any
 from enum import Enum
@@ -37,6 +38,11 @@ from models.schemas import (
     Company, CompanyCreate,
     _ensure_hotel_context,
 )
+
+try:
+    from night_audit_module import QueueRoom
+except ImportError:
+    QueueRoom = None
 
 from core.utils import (
     generate_folio_number, calculate_folio_balance,
