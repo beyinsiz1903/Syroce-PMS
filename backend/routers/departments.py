@@ -5,6 +5,7 @@ Sales, HR, IT/Security department dashboards.
 Extracted from server.py for modularity.
 """
 import uuid
+import random
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List
 
@@ -14,7 +15,14 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from core.database import db
 from core.security import get_current_user
 from core.helpers import require_module
+from core.utils import calculate_folio_balance, create_excel_workbook, excel_response
 from models.schemas import User
+
+try:
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+except ImportError:
+    Workbook = None
 
 try:
     from cache_manager import cached
