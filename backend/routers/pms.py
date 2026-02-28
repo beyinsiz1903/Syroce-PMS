@@ -775,19 +775,21 @@ async def create_booking(
     try:
         from server import cm_push_event as _cm_push
         await _cm_push({
-        "type": "booking.created",
-        "tenant_id": current_user.tenant_id,
-        "booking_id": booking.id,
-        "room_id": booking.room_id,
-        "check_in": booking_data.check_in,
-        "check_out": booking_data.check_out,
-        "status": booking.status,
-        "source_channel": booking_data.source_channel or "direct",
-        "origin": booking_data.origin or "ui",
-        "hold_status": booking_data.hold_status or "none",
-        "allocation_source": booking_data.allocation_source or "manual",
-        "created_at": booking_dict['created_at'],
-    })
+            "type": "booking.created",
+            "tenant_id": current_user.tenant_id,
+            "booking_id": booking.id,
+            "room_id": booking.room_id,
+            "check_in": booking_data.check_in,
+            "check_out": booking_data.check_out,
+            "status": booking.status,
+            "source_channel": booking_data.source_channel or "direct",
+            "origin": booking_data.origin or "ui",
+            "hold_status": booking_data.hold_status or "none",
+            "allocation_source": booking_data.allocation_source or "manual",
+            "created_at": booking_dict['created_at'],
+        })
+    except Exception:
+        pass  # CM push is best-effort
 
     
     # Auto-create folio for the booking
