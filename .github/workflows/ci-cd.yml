@@ -89,8 +89,8 @@ jobs:
 
       - name: Run comprehensive tests
         run: |
-          cd tests
-          python -m pytest test_comprehensive.py -v --tb=short -q --junitxml=test-results.xml 2>&1 || true
+          cd backend
+          python -m pytest tests/ -v --tb=short -q --junitxml=test-results.xml 2>&1 || true
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
           JWT_SECRET: ${{ env.JWT_SECRET }}
@@ -100,7 +100,7 @@ jobs:
         if: always()
         with:
           name: backend-test-results
-          path: tests/test-results.xml
+          path: backend/test-results.xml
 
   # ============ FRONTEND LINT & BUILD ============
   frontend-build:
