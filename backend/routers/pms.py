@@ -24,7 +24,7 @@ from models.enums import (
     UserRole, RoomStatus, BookingStatus, PaymentStatus,
     PaymentMethod, ChargeType, InvoiceStatus, FolioType,
     FolioStatus, ChargeCategory, FolioOperationType, PaymentType,
-    CompanyStatus,
+    CompanyStatus, ChannelType,
 )
 from models.schemas import (
     User, Room, RoomCreate, Guest, GuestCreate,

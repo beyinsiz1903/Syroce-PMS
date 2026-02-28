@@ -43,6 +43,7 @@ from models.schemas import (
     CreditLimit, CityLedgerTransaction,
     Company, CompanyCreate,
     GenerateInvoiceFromFolioRequest, ConvertCurrencyRequest,
+    CreateCurrencyRateRequest,
     _ensure_hotel_context,
 )
 
