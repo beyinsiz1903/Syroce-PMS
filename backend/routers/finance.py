@@ -949,6 +949,18 @@ class InvoiceType(str, Enum):
     E_ARCHIVE = "e_archive"  # E-Arşiv
 
 
+class ExpenseCategory(str, Enum):
+    SALARIES = "salaries"
+    UTILITIES = "utilities"
+    SUPPLIES = "supplies"
+    MAINTENANCE = "maintenance"
+    MARKETING = "marketing"
+    RENT = "rent"
+    INSURANCE = "insurance"
+    TAXES = "taxes"
+    OTHER = "other"
+
+
 class Supplier(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
