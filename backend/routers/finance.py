@@ -35,6 +35,7 @@ from models.schemas import (
     CityTaxRule, Expense, CashFlow, BankAccount,
     CreditLimit, CityLedgerTransaction,
     Company, CompanyCreate,
+    GenerateInvoiceFromFolioRequest, ConvertCurrencyRequest,
     _ensure_hotel_context,
 )
 
