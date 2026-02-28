@@ -871,6 +871,14 @@ async def get_invoice_stats(current_user: User = Depends(get_current_user)):
     return {'total_invoices': len(invoices), 'total_revenue': total_revenue, 'pending_amount': pending_amount, 'overdue_amount': overdue_amount}
 
 
+class InvoiceType(str, Enum):
+    SALES = "sales"  # Satış faturası
+    PURCHASE = "purchase"  # Alış faturası
+    PROFORMA = "proforma"  # Proforma
+    E_INVOICE = "e_invoice"  # E-Fatura
+    E_ARCHIVE = "e_archive"  # E-Arşiv
+
+
 class Supplier(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -1897,6 +1905,42 @@ async def generate_invoice_from_folio(
     # Generate E-Fatura if requested
     if request.include_efatura:
         efatura_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+    <ID>{invoice_number}</ID>
+    <IssueDate>{invoice['issue_date']}</IssueDate>
+    <InvoiceTypeCode>SATIS</InvoiceTypeCode>
+    <DocumentCurrencyCode>{request.invoice_currency}</DocumentCurrencyCode>
+    <LineCountNumeric>{len(invoice_items)}</LineCountNumeric>
+    <LegalMonetaryTotal>
+        <TaxExclusiveAmount currencyID="{request.invoice_currency}">{invoice['subtotal']}</TaxExclusiveAmount>
+        <TaxInclusiveAmount currencyID="{request.invoice_currency}">{invoice['total']}</TaxInclusiveAmount>
+    </LegalMonetaryTotal>
+</Invoice>"""
+        
+        efatura_record = {
+            'id': str(uuid.uuid4()),
+            'tenant_id': current_user.tenant_id,
+            'invoice_id': invoice['id'],
+            'invoice_number': invoice_number,
+            'efatura_uuid': str(uuid.uuid4()),
+            'xml_content': efatura_xml,
+            'status': 'generated',
+            'generated_at': datetime.now(timezone.utc).isoformat()
+        }
+        
+        efatura_copy = efatura_record.copy()
+        await db.efatura_records.insert_one(efatura_copy)
+        
+        invoice['efatura_uuid'] = efatura_record['efatura_uuid']
+        invoice['efatura_status'] = 'generated'
+    
+    return {
+        'invoice': invoice,
+        'message': 'Invoice generated from folio successfully',
+        'efatura_generated': request.include_efatura
+    }
+
+
 
 @router.get("/accounting/invoices/{invoice_id}/efatura-status")
 async def get_invoice_efatura_status(
@@ -1967,6 +2011,64 @@ async def generate_efatura_for_invoice(
     # Generate E-Fatura XML
     currency = invoice.get('currency', 'TRY')
     efatura_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+    <ID>{invoice.get('invoice_number')}</ID>
+    <IssueDate>{invoice.get('issue_date')}</IssueDate>
+    <InvoiceTypeCode>SATIS</InvoiceTypeCode>
+    <DocumentCurrencyCode>{currency}</DocumentCurrencyCode>
+    <LineCountNumeric>{len(invoice.get('items', []))}</LineCountNumeric>
+    <AccountingSupplierParty>
+        <Party>
+            <PartyName>
+                <Name>Hotel Name</Name>
+            </PartyName>
+        </Party>
+    </AccountingSupplierParty>
+    <AccountingCustomerParty>
+        <Party>
+            <PartyName>
+                <Name>{invoice.get('customer_name', 'N/A')}</Name>
+            </PartyName>
+        </Party>
+    </AccountingCustomerParty>
+    <LegalMonetaryTotal>
+        <TaxExclusiveAmount currencyID="{currency}">{invoice.get('subtotal', 0)}</TaxExclusiveAmount>
+        <TaxInclusiveAmount currencyID="{currency}">{invoice.get('total', 0)}</TaxInclusiveAmount>
+    </LegalMonetaryTotal>
+</Invoice>"""
+    
+    efatura_record = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'invoice_id': invoice_id,
+        'invoice_number': invoice.get('invoice_number'),
+        'efatura_uuid': str(uuid.uuid4()),
+        'xml_content': efatura_xml,
+        'status': 'generated',
+        'generated_at': datetime.now(timezone.utc).isoformat()
+    }
+    
+    efatura_copy = efatura_record.copy()
+    await db.efatura_records.insert_one(efatura_copy)
+    
+    # Update invoice with E-Fatura reference
+    await db.accounting_invoices.update_one(
+        {'id': invoice_id},
+        {
+            '$set': {
+                'efatura_uuid': efatura_record['efatura_uuid'],
+                'efatura_status': 'generated'
+            }
+        }
+    )
+    
+    return {
+        'message': 'E-Fatura generated successfully',
+        'efatura_uuid': efatura_record['efatura_uuid'],
+        'invoice_number': invoice.get('invoice_number')
+    }
+
+
 
 @router.get("/efatura/invoices")
 async def get_efatura_invoices(current_user: User = Depends(get_current_user)):
@@ -2019,6 +2121,44 @@ async def generate_efatura(
     
     # Generate E-Fatura XML (simplified)
     efatura_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+    <ID>{invoice['invoice_number']}</ID>
+    <IssueDate>{invoice['invoice_date']}</IssueDate>
+    <InvoiceTypeCode>SATIS</InvoiceTypeCode>
+    <LineCountNumeric>{len(invoice.get('items', []))}</LineCountNumeric>
+    <LegalMonetaryTotal>
+        <TaxExclusiveAmount>{invoice.get('subtotal', 0)}</TaxExclusiveAmount>
+        <TaxInclusiveAmount>{invoice.get('grand_total', 0)}</TaxInclusiveAmount>
+    </LegalMonetaryTotal>
+</Invoice>"""
+    
+    # Save E-Fatura record
+    efatura_record = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'invoice_id': invoice_id,
+        'invoice_number': invoice['invoice_number'],
+        'efatura_uuid': str(uuid.uuid4()),
+        'xml_content': efatura_xml,
+        'status': 'generated',
+        'generated_at': datetime.now(timezone.utc).isoformat()
+    }
+    
+    efatura_copy = efatura_record.copy()
+    await db.efatura_records.insert_one(efatura_copy)
+    
+    # Update invoice status
+    await db.accounting_invoices.update_one(
+        {'id': invoice_id},
+        {'$set': {'efatura_status': 'generated', 'efatura_uuid': efatura_record['efatura_uuid']}}
+    )
+    
+    return {
+        'message': 'E-Fatura generated successfully',
+        'efatura_uuid': efatura_record['efatura_uuid'],
+        'xml_content': efatura_xml
+    }
+
 
 @router.post("/efatura/send-to-gib/{invoice_id}")
 async def send_efatura_to_gib(
