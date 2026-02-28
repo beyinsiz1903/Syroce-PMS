@@ -47,6 +47,11 @@ from core.utils import (
 )
 
 try:
+    from logging_service import get_logging_service
+except ImportError:
+    get_logging_service = None
+
+try:
     from cache_manager import cached
 except ImportError:
     def cached(ttl=300, key_prefix=""):
