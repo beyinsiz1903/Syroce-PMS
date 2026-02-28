@@ -31,7 +31,7 @@ jobs:
       - name: Run Python linting
         run: |
           cd backend
-          ruff check models/ core/ auto_seed.py health_check.py ai_service.py email_service.py --select E9,F63,F7,F82 --target-version py311 --output-format=github
+          ruff check models/ core/ routers/ auto_seed.py health_check.py ai_service.py email_service.py --select E9,F63,F7,F82 --target-version py311 --output-format=github
           echo "Note: server.py excluded from strict linting due to legacy code - will be addressed in modularization"
 
   # ============ BACKEND TESTS ============
