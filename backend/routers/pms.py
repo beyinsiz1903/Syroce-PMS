@@ -62,6 +62,18 @@ except ImportError:
 router = APIRouter(prefix="/api", tags=["pms"])
 security = HTTPBearer()
 
+# ── Local models ──
+
+RejectReasonCode = Literal[
+    "NO_AVAILABILITY", "PRICE_MISMATCH", "OVERBOOK", "POLICY", "OTHER",
+]
+
+
+class RejectRequest(BaseModel):
+    reason_code: RejectReasonCode
+    reason_note: Optional[str] = Field(default=None, max_length=500)
+
+
 @router.post("/pms/rooms", response_model=Room)
 async def create_room(
     room_data: RoomCreate,
