@@ -1,14 +1,8 @@
 """
 Extract PMS, Finance, and Reports routes from server.py into separate router files.
-This script:
-1. Parses server.py to find route handler functions
-2. Groups them into PMS, Finance, Reports categories
-3. Extracts them with associated model classes
-4. Writes new router files
-5. Produces a cleaned server.py
+Fixed version: properly handles triple-quoted strings in function bodies.
 """
 import re
-import sys
 
 INFILE = '/app/backend/server.py'
 
@@ -20,33 +14,73 @@ total = len(lines)
 # ── Parse route blocks ──
 route_pattern = re.compile(r'^@api_router\.(get|post|put|delete|patch)\("(/[^"]+)"')
 
-def find_function_end(start_line):
-    """Find end of a Python function starting from its def line."""
-    i = start_line
+
+def find_function_end(func_def_line):
+    """Find end of a Python function. Handles triple-quoted strings."""
+    # First, find end of function signature (matching parens + colon)
+    i = func_def_line
     paren_depth = 0
-    found_colon = False
-    while i < total:
-        for ch in lines[i]:
+    sig_end = i
+    for idx in range(i, min(i + 30, total)):
+        line = lines[idx]
+        for ch in line:
             if ch == '(':
                 paren_depth += 1
             elif ch == ')':
                 paren_depth -= 1
-        if paren_depth <= 0 and ':' in lines[i]:
-            found_colon = True
+        if paren_depth <= 0 and ':' in line and idx >= i:
+            sig_end = idx
             break
-        i += 1
-    if not found_colon:
-        return i + 1
-    
-    j = i + 1
+
+    # Now scan function body until we find a non-indented, non-blank line
+    # that is NOT inside a triple-quoted string
+    j = sig_end + 1
+    in_triple_single = False
+    in_triple_double = False
+
     while j < total:
         line = lines[j]
-        if line.strip() == '':
+        raw = line.rstrip('\n')
+
+        # Track triple-quoted strings
+        # Count occurrences of ''' and """ in this line
+        triple_double_count = raw.count('"""')
+        triple_single_count = raw.count("'''")
+
+        if in_triple_double:
+            if triple_double_count % 2 == 1:
+                in_triple_double = False
             j += 1
             continue
+
+        if in_triple_single:
+            if triple_single_count % 2 == 1:
+                in_triple_single = False
+            j += 1
+            continue
+
+        # Not in triple quote - check for opening
+        if triple_double_count % 2 == 1:
+            in_triple_double = True
+            j += 1
+            continue
+
+        if triple_single_count % 2 == 1:
+            in_triple_single = True
+            j += 1
+            continue
+
+        stripped = line.strip()
+        if stripped == '':
+            j += 1
+            continue
+
+        # Check if this line is at indent level 0
         if not line[0].isspace():
             break
+
         j += 1
+
     return j
 
 
@@ -59,14 +93,17 @@ while i < total:
         block_start = i
         method = m.group(1)
         path = m.group(2)
-        
-        # Find function def line
+
+        # Find function def line (handle decorator chains)
         j = i + 1
-        while j < total and not (lines[j].lstrip().startswith('async def ') or lines[j].lstrip().startswith('def ')):
+        while j < total:
+            ln = lines[j].lstrip()
+            if ln.startswith('async def ') or ln.startswith('def '):
+                break
             j += 1
-        
+
         func_end = find_function_end(j)
-        
+
         route_blocks.append({
             'start': block_start,
             'end': func_end,
@@ -79,16 +116,16 @@ while i < total:
 
 
 # ── Parse class blocks ──
-class_pattern = re.compile(r'^class (\w+)\(')
+class_pattern_re = re.compile(r'^class (\w+)\(')
 class_blocks = []
-for i, line in enumerate(lines):
-    m = class_pattern.match(line)
-    if m:
-        end = i + 1
+for ci, line in enumerate(lines):
+    m = class_pattern_re.match(line)
+    if m and ci > 4500:  # Skip early imported classes
+        end = ci + 1
         while end < total and (lines[end].startswith(' ') or lines[end].startswith('\t') or lines[end].strip() == ''):
             end += 1
         class_blocks.append({
-            'start': i,
+            'start': ci,
             'end': end,
             'name': m.group(1),
         })
@@ -96,12 +133,15 @@ for i, line in enumerate(lines):
 
 # ── Group routes ──
 def is_pms(p):
-    return p.startswith('/pms/') or p.startswith('/rooms/') or p.startswith('/reservations/') or p.startswith('/bookings/')
+    return (p.startswith('/pms/') or p.startswith('/rooms/') or
+            p.startswith('/reservations/') or p.startswith('/bookings/'))
+
 
 def is_finance(p):
-    return (p.startswith('/finance/') or p.startswith('/accounting/') or 
-            p.startswith('/cashiering/') or p.startswith('/efatura/') or 
+    return (p.startswith('/finance/') or p.startswith('/accounting/') or
+            p.startswith('/cashiering/') or p.startswith('/efatura/') or
             p.startswith('/folio/') or p.startswith('/invoices'))
+
 
 def is_reports(p):
     return p.startswith('/reports/') or p.startswith('/night-audit/')
@@ -121,8 +161,7 @@ for block in route_blocks:
 # ── Deduplicate: keep first occurrence ──
 def deduplicate_routes(blocks):
     seen = set()
-    unique = []
-    dupes = []
+    unique, dupes = [], []
     for b in blocks:
         key = f"{b['method']}:{b['path']}"
         if key in seen:
@@ -134,67 +173,39 @@ def deduplicate_routes(blocks):
 
 
 # ── Find model classes used by a group ──
-def find_used_classes(route_blocks_list, all_classes):
-    """Find model classes used by the route functions."""
-    route_code = ''
-    for b in route_blocks_list:
-        route_code += ''.join(lines[b['start']:b['end']])
-    
-    used = []
-    for cls in all_classes:
-        if cls['start'] < 4500:  # Skip early imported/base classes
-            continue
-        if cls['name'] in route_code:
-            used.append(cls)
-    return used
+def find_used_classes(route_list):
+    code = ''
+    for b in route_list:
+        code += ''.join(lines[b['start']:b['end']])
+    return [c for c in class_blocks if c['name'] in code]
 
 
-# ── Build extraction plan ──
+# ── Build line removal set ──
 all_lines_to_remove = set()
 
 for group_name in ['pms', 'finance', 'reports']:
     unique, dupes = deduplicate_routes(groups[group_name])
-    used_classes = find_used_classes(unique, class_blocks)
-    
-    # Mark all route lines (unique + dupes) for removal
+    used_classes = find_used_classes(unique)
+
     for b in unique + dupes:
         for ln in range(b['start'], b['end']):
             all_lines_to_remove.add(ln)
-    
-    # Mark class lines for removal  
     for c in used_classes:
         for ln in range(c['start'], c['end']):
             all_lines_to_remove.add(ln)
-    
-    # Write router file
-    print(f"\n{'='*60}")
-    print(f"Group: {group_name}")
-    print(f"  Unique routes: {len(unique)}")
-    print(f"  Duplicate routes (to remove): {len(dupes)}")
-    print(f"  Model classes: {len(used_classes)}")
-    
-    # Collect code for the router file
+
+    # ── Write router file ──
     router_code_parts = []
-    
-    # Add model classes first
-    for c in sorted(used_classes, key=lambda x: x['start']):
-        router_code_parts.append(('class', c['start'], ''.join(lines[c['start']:c['end']])))
-    
-    # Add unique route functions
-    for b in sorted(unique, key=lambda x: x['start']):
-        router_code_parts.append(('route', b['start'], ''.join(lines[b['start']:b['end']])))
-    
-    # Sort by original position
-    router_code_parts.sort(key=lambda x: x[1])
-    
-    # Write to file
+    for c in used_classes:
+        router_code_parts.append((c['start'], ''.join(lines[c['start']:c['end']])))
+    for b in unique:
+        router_code_parts.append((b['start'], ''.join(lines[b['start']:b['end']])))
+    router_code_parts.sort(key=lambda x: x[0])
+
     outfile = f'/app/backend/routers/{group_name}.py'
     with open(outfile, 'w') as f:
-        # Write header
         f.write(f'"""\n{group_name.upper()} Router - Extracted from server.py\n"""\n')
-        f.write('import uuid\n')
-        f.write('import io\n')
-        f.write('import csv\n')
+        f.write('import uuid\nimport io\nimport csv\n')
         f.write('from datetime import datetime, timezone, timedelta, date\n')
         f.write('from typing import List, Optional, Dict, Any\n')
         f.write('from enum import Enum\n\n')
@@ -235,53 +246,40 @@ for group_name in ['pms', 'finance', 'reports']:
         f.write('        return decorator\n\n')
         f.write(f'router = APIRouter(prefix="/api", tags=["{group_name}"])\n')
         f.write('security = HTTPBearer()\n\n')
-        
-        # Write the code parts, replacing api_router with router
-        for kind, pos, code in router_code_parts:
+
+        for _pos, code in router_code_parts:
             replaced = code.replace('@api_router.', '@router.')
             f.write(replaced)
             if not replaced.endswith('\n'):
                 f.write('\n')
             f.write('\n')
-    
-    print(f"  Written to: {outfile}")
+
+    u_count = len(unique)
+    d_count = len(dupes)
+    total_lines = sum(b['end'] - b['start'] for b in unique + dupes)
+    cls_lines = sum(c['end'] - c['start'] for c in used_classes)
+    print(f"{group_name}: {u_count} unique + {d_count} dupes = {u_count+d_count} routes, "
+          f"~{total_lines+cls_lines} code lines → {outfile}")
 
 
 # ── Write cleaned server.py ──
-print(f"\n{'='*60}")
-print(f"Total lines to remove: {len(all_lines_to_remove)}")
-print(f"Original server.py: {total} lines")
-print(f"New server.py: ~{total - len(all_lines_to_remove)} lines")
+new_lines = [lines[i] for i in range(total) if i not in all_lines_to_remove]
 
-# Write new server.py
-new_lines = []
-i = 0
-while i < total:
-    if i in all_lines_to_remove:
-        # Skip this line, but track contiguous blocks
-        # Add a single blank line marker to preserve structure
-        start_skip = i
-        while i < total and i in all_lines_to_remove:
-            i += 1
-        # Don't add anything - just skip the removed code
-    else:
-        new_lines.append(lines[i])
-        i += 1
-
-# Clean up multiple consecutive blank lines (more than 2)
-cleaned_lines = []
-blank_count = 0
+# Collapse runs of >2 blank lines
+cleaned = []
+blanks = 0
 for line in new_lines:
     if line.strip() == '':
-        blank_count += 1
-        if blank_count <= 2:
-            cleaned_lines.append(line)
+        blanks += 1
+        if blanks <= 2:
+            cleaned.append(line)
     else:
-        blank_count = 0
-        cleaned_lines.append(line)
+        blanks = 0
+        cleaned.append(line)
 
 with open('/app/backend/server_new.py', 'w') as f:
-    f.writelines(cleaned_lines)
+    f.writelines(cleaned)
 
-print(f"Written cleaned server.py to: /app/backend/server_new.py ({len(cleaned_lines)} lines)")
-print("\nDone! Review the files before replacing server.py.")
+print(f"\nRemoved {len(all_lines_to_remove)} lines from server.py")
+print(f"server.py: {total} → {len(cleaned)} lines")
+print(f"Written to: /app/backend/server_new.py")
