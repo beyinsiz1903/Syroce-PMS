@@ -55,6 +55,63 @@ except ImportError:
 router = APIRouter(prefix="/api", tags=["finance"])
 security = HTTPBearer()
 
+
+# ── ERP Connectors (mock) ──
+
+class LogoConnector:
+    """Mock Logo/Netsis connector for ERP sync"""
+    def __init__(self):
+        import os
+        self.base_url = os.environ.get('LOGO_API_URL', 'https://logo.example/api')
+
+    async def send_invoice(self, invoice):
+        import asyncio
+        await asyncio.sleep(0.1)
+        return {'external_id': f"LOGO-{invoice['id'][:8]}", 'status': 'synced', 'message': 'Invoice pushed to Logo'}
+
+    async def send_payment(self, payment):
+        import asyncio
+        await asyncio.sleep(0.1)
+        return {'external_id': f"LOGO-PAY-{payment['id'][:8]}", 'status': 'synced', 'message': 'Payment pushed to Logo'}
+
+
+class NetsisConnector:
+    """Mock Netsis connector"""
+    def __init__(self):
+        import os
+        self.base_url = os.environ.get('NETSIS_API_URL', 'https://netsis.example/api')
+
+    async def send_invoice(self, invoice):
+        import asyncio
+        await asyncio.sleep(0.1)
+        return {'external_id': f"NETSIS-{invoice['id'][:8]}", 'status': 'synced', 'message': 'Invoice pushed to Netsis'}
+
+
+async def _gather_invoices(tenant_id: str, since=None):
+    query = {'tenant_id': tenant_id}
+    if since:
+        query['created_at'] = {'$gte': since}
+    return await db.finance_invoices.find(query, {'_id': 0}).sort('created_at', -1).to_list(500)
+
+
+async def _gather_payments(tenant_id: str, since=None):
+    query = {'tenant_id': tenant_id}
+    if since:
+        query['created_at'] = {'$gte': since}
+    return await db.finance_payments.find(query, {'_id': 0}).sort('created_at', -1).to_list(500)
+
+
+async def _log_accounting_sync(tenant_id: str, payload: dict):
+    record = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': tenant_id,
+        **payload,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+    }
+    await db.accounting_sync_logs.insert_one(record)
+    return record
+
+
 @router.post("/finance/logo-integration/sync")
 async def sync_with_logo(sync_data: dict = None, current_user: User = Depends(get_current_user)):
     """Sync finance data with Logo ERP"""
