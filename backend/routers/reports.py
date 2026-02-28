@@ -39,6 +39,13 @@ from models.schemas import (
     _ensure_hotel_context,
 )
 
+try:
+    from night_audit_module import NightAuditRecord, AuditStatus, AutomaticPosting
+except ImportError:
+    NightAuditRecord = None
+    AuditStatus = None
+    AutomaticPosting = None
+
 from core.utils import (
     calculate_folio_balance,
     create_excel_workbook, excel_response,
