@@ -12,7 +12,7 @@ from enum import Enum
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from core.database import db
 from core.security import get_current_user
