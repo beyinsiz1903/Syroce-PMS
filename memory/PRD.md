@@ -47,6 +47,12 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - **Total reduction from original:** 55,671 -> 41,622 (-14,049 lines, -25.2%)
 - **All 59 endpoint tests pass (100%)**
 
+### Calendar Drag-Drop Room Move Bug Fix (COMPLETED - Mar 2026)
+- **Bug:** Other reservations disappearing after drag-drop room change
+- **Root causes:** (1) Stale setTimeout closure in handleConfirmMove overwriting correct useEffect reload with wrong date-range data, (2) room_number not updated in DB after room_id change, (3) cached GET path not enriching room_number
+- **Fixes:** Removed setTimeout race condition, backend PUT syncs room_number on room move, GET always re-enriches room_number (both cached and non-cached paths)
+- **Tests:** 8/8 backend tests pass (test_booking_room_move_fix.py)
+
 ### Root Directory Cleanup (COMPLETED - Feb 2026)
 - Removed 152 test .py files from root directory
 - Clean project structure
