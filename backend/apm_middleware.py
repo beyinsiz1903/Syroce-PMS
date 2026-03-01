@@ -334,10 +334,10 @@ class EnhancedRateLimitMiddleware:
         self.limits = {
             'auth': (15, 60),        # 15 login attempts/min
             'export': (10, 60),      # 10 exports/min
-            'report': (30, 60),      # 30 report requests/min
-            'write': (60, 60),       # 60 write ops/min
-            'default': (120, 60),    # 120 requests/min (authenticated)
-            'anonymous': (30, 60),   # 30 requests/min (no token)
+            'report': (60, 60),      # 60 report requests/min
+            'write': (120, 60),      # 120 write ops/min
+            'default': (300, 60),    # 300 requests/min (authenticated)
+            'anonymous': (60, 60),   # 60 requests/min (no token)
         }
 
         # Register state globally for stats access
