@@ -1987,21 +1987,20 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                                 }}
                                 title=""
                               >
-                                {/* Main booking info - Compact Typography */}
-                                <div className="p-1.5 h-[54px] relative">
-                                  <div className="font-bold text-xs truncate pr-6 text-white drop-shadow-sm" style={{ fontFamily: 'Inter, system-ui, -apple-system, sans-serif', letterSpacing: '-0.01em' }}>
+                                {/* Main booking info */}
+                                <div className="p-1.5 h-[54px] relative overflow-hidden">
+                                  <div className="font-bold text-xs truncate pr-6 text-white drop-shadow-sm">
                                     {booking.guest_name || 'Misafir'}
                                   </div>
-                                  <div className="text-[10px] text-white/95 flex items-center mt-1 font-medium">
-                                    <Clock className="w-2.5 h-2.5 mr-0.5" />
-                                    {calculateBookingSpan(booking, currentDate)}n
+                                  <div className="text-[10px] text-white/90 truncate mt-0.5">
+                                    {booking.ota_channel
+                                      ? getOTAInfo(booking.ota_channel).name
+                                      : booking.source_channel && booking.source_channel !== 'direct'
+                                        ? booking.source_channel
+                                        : booking.channel && booking.channel !== 'direct'
+                                          ? booking.channel
+                                          : 'Direct'}
                                   </div>
-                                  {booking.company_name && (
-                                    <div className="text-[11px] text-white/95 flex items-center truncate mt-0.5 font-medium">
-                                      <Building2 className="w-3 h-3 mr-1" />
-                                      {booking.company_name}
-                                    </div>
-                                  )}
                                   
                                   {/* Status indicators - top right */}
                                   <div className="absolute top-1 right-1 flex flex-col space-y-1 items-end">
