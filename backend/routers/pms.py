@@ -897,7 +897,7 @@ async def get_bookings(
         query['status'] = status
     
     # Execute query with pagination
-    cursor = db.bookings.find(query).sort('check_in', -1).skip(offset).limit(limit)
+    cursor = db.bookings.find(query, {'_id': 0}).sort('check_in', -1).skip(offset).limit(limit)
     bookings_raw = await cursor.to_list(length=limit)
 
 
