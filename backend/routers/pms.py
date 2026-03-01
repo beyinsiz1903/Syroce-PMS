@@ -724,7 +724,7 @@ async def get_guests(
     return guests
 
 
-@router.post("/pms/bookings", response_model=Booking)
+@router.post("/pms/bookings")
 async def create_booking(
     booking_data: BookingCreate,
     current_user: User = Depends(get_current_user),
@@ -733,41 +733,52 @@ async def create_booking(
     check_in_dt = datetime.fromisoformat(booking_data.check_in.replace('Z', '+00:00'))
     check_out_dt = datetime.fromisoformat(booking_data.check_out.replace('Z', '+00:00'))
     
-    booking = BookingExtended(
-        tenant_id=current_user.tenant_id,
-        guest_id=booking_data.guest_id,
-        room_id=booking_data.room_id,
-        check_in=check_in_dt,
-        check_out=check_out_dt,
-        adults=booking_data.adults,
-        children=booking_data.children,
-        children_ages=booking_data.children_ages,
-        guests_count=booking_data.guests_count,
-        total_amount=booking_data.total_amount,
-        base_rate=booking_data.base_rate,
-        channel=booking_data.channel,
-        rate_plan=booking_data.rate_plan,
-        special_requests=booking_data.special_requests,
-        source_channel=booking_data.source_channel or "direct",
-        origin=booking_data.origin or "ui",
-        hold_status=booking_data.hold_status or "none",
-        allocation_source=booking_data.allocation_source or "manual",
-        company_id=booking_data.company_id,
-        contracted_rate=booking_data.contracted_rate,
-        rate_type=booking_data.rate_type,
-        market_segment=booking_data.market_segment,
-        cancellation_policy=booking_data.cancellation_policy,
-        billing_address=booking_data.billing_address,
-        billing_tax_number=booking_data.billing_tax_number,
-        billing_contact_person=booking_data.billing_contact_person
-    )
+    booking_id = str(uuid.uuid4())
+    now_ts = datetime.now(timezone.utc)
+    
+    booking_dict = {
+        'id': booking_id,
+        'tenant_id': current_user.tenant_id,
+        'guest_id': booking_data.guest_id,
+        'room_id': booking_data.room_id,
+        'check_in': check_in_dt.isoformat(),
+        'check_out': check_out_dt.isoformat(),
+        'adults': booking_data.adults,
+        'children': booking_data.children,
+        'children_ages': booking_data.children_ages,
+        'guests_count': booking_data.guests_count,
+        'total_amount': booking_data.total_amount,
+        'base_rate': booking_data.base_rate,
+        'paid_amount': 0.0,
+        'status': booking_data.status if hasattr(booking_data, 'status') else 'confirmed',
+        'channel': booking_data.channel.value if booking_data.channel else 'direct',
+        'rate_plan': booking_data.rate_plan or 'Standard',
+        'special_requests': booking_data.special_requests,
+        'source_channel': booking_data.source_channel or 'direct',
+        'origin': booking_data.origin or 'ui',
+        'hold_status': booking_data.hold_status or 'none',
+        'allocation_source': booking_data.allocation_source or 'manual',
+        'company_id': booking_data.company_id,
+        'contracted_rate': booking_data.contracted_rate,
+        'rate_type': booking_data.rate_type,
+        'market_segment': booking_data.market_segment,
+        'cancellation_policy': booking_data.cancellation_policy,
+        'billing_address': booking_data.billing_address,
+        'billing_tax_number': booking_data.billing_tax_number,
+        'billing_contact_person': booking_data.billing_contact_person,
+        'ota_channel': booking_data.ota_channel,
+        'ota_confirmation': booking_data.ota_confirmation,
+        'ota_reference_id': booking_data.ota_reference_id,
+        'commission_pct': booking_data.commission_pct,
+        'created_at': now_ts.isoformat(),
+    }
     
     # Check for rate override and log it
     if booking_data.base_rate and booking_data.base_rate != booking_data.total_amount:
         if booking_data.override_reason:
             override_log = RateOverrideLog(
                 tenant_id=current_user.tenant_id,
-                booking_id=booking.id,
+                booking_id=booking_id,
                 user_id=current_user.id,
                 user_name=current_user.name,
                 base_rate=booking_data.base_rate,
@@ -778,17 +789,16 @@ async def create_booking(
             override_dict['timestamp'] = override_dict['timestamp'].isoformat()
             await db.rate_override_logs.insert_one(override_dict)
     
-    qr_token = generate_time_based_qr_token(booking.id, expiry_hours=72)
-    qr_data = f"booking:{booking.id}:token:{qr_token}"
+    # Generate QR code
+    qr_token = generate_time_based_qr_token(booking_id, expiry_hours=72)
+    qr_data = f"booking:{booking_id}:token:{qr_token}"
     qr_code = generate_qr_code(qr_data)
-    
-    booking_dict = booking.model_dump()
     booking_dict['qr_code'] = qr_code
     booking_dict['qr_code_data'] = qr_token
-    booking_dict['check_in'] = booking_dict['check_in'].isoformat()
-    booking_dict['check_out'] = booking_dict['check_out'].isoformat()
-    booking_dict['created_at'] = booking_dict['created_at'].isoformat()
+    
     await db.bookings.insert_one(booking_dict)
+    # Remove _id before returning
+    booking_dict.pop('_id', None)
 
     # Push CM event (best-effort)
     try:
