@@ -840,7 +840,7 @@ async def create_booking(
     return booking_dict
 
 
-@router.get("/pms/bookings", response_model=List[Booking])
+@router.get("/pms/bookings")
 async def get_bookings(
     limit: int = 30,  # Further reduced for instant response
     offset: int = 0,
