@@ -703,8 +703,14 @@ async def get_occupancy_report(
     total_room_nights = total_rooms * days
     occupied_room_nights = 0
     for booking in bookings:
-        check_in = datetime.fromisoformat(booking['check_in'])
-        check_out = datetime.fromisoformat(booking['check_out'])
+        ci_raw = booking['check_in']
+        co_raw = booking['check_out']
+        check_in = datetime.fromisoformat(ci_raw) if isinstance(ci_raw, str) else ci_raw
+        check_out = datetime.fromisoformat(co_raw) if isinstance(co_raw, str) else co_raw
+        if check_in.tzinfo is None:
+            check_in = check_in.replace(tzinfo=timezone.utc)
+        if check_out.tzinfo is None:
+            check_out = check_out.replace(tzinfo=timezone.utc)
         overlap_start = max(start, check_in)
         overlap_end = min(end, check_out)
         if overlap_start < overlap_end:
