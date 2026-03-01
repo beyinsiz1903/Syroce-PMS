@@ -2053,7 +2053,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                                 </div>
                                 
                                 {/* Enhanced tooltip overlay - shown on hover */}
-                                <div className="absolute -top-[72px] left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[11px] px-3 py-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity z-50 pointer-events-none whitespace-nowrap min-w-[180px]">
+                                <div className="absolute -top-[76px] left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[11px] px-3 py-2.5 rounded-lg shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] pointer-events-none whitespace-nowrap min-w-[200px]" style={{filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.4))'}}>
                                   <div className="font-bold text-sm text-white mb-1">
                                     {booking.guest_name || 'Misafir'}
                                   </div>
