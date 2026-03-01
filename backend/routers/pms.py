@@ -733,7 +733,7 @@ async def create_booking(
     check_in_dt = datetime.fromisoformat(booking_data.check_in.replace('Z', '+00:00'))
     check_out_dt = datetime.fromisoformat(booking_data.check_out.replace('Z', '+00:00'))
     
-    booking = Booking(
+    booking = BookingExtended(
         tenant_id=current_user.tenant_id,
         guest_id=booking_data.guest_id,
         room_id=booking_data.room_id,
