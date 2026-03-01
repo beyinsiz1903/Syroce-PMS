@@ -329,6 +329,27 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     setShowNewBookingDialog(true);
   };
 
+  // Sidebar action handlers
+  const handleViewFolio = (bookingId) => {
+    setShowSidebar(false);
+    navigate('/efatura');
+  };
+
+  const handleEditReservation = (booking) => {
+    setShowSidebar(false);
+    navigate('/pms#bookings');
+  };
+
+  const handleSendConfirmation = async (booking) => {
+    try {
+      await axios.post(`/whatsapp/send-confirmation?booking_id=${booking.id}`);
+      toast.success('Onay mesajı gönderildi!');
+    } catch (error) {
+      const msg = error.response?.data?.detail || 'Onay mesajı gönderilemedi';
+      toast.error(msg);
+    }
+  };
+
   // Handle booking double-click - Show sidebar
   const handleBookingDoubleClick = async (booking) => {
     // Attach group summary if this booking is part of a group
