@@ -102,6 +102,13 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
     └── PRD.md
 ```
 
+### Full E2E Testing & Fixes (COMPLETED - Mar 2026)
+- **Scope:** 16 pages tested end-to-end - ALL pass without white screens or errors
+- **Pages verified:** Dashboard, Calendar, PMS (6 tabs), Reports, Settings, Fatura & Finans (6 tabs), Maliyet, Channel Manager, Gelişmiş Raporlar, Rapor Oluşturucu, RMS, Group Reservations, E-Fatura, Sales, Maintenance, OTA Messaging
+- **Fixes applied:**
+  - Rate limiting: Increased default from 120→300 req/min, reports 30→60, whitelisted common GET endpoints
+  - Occupancy report: Fixed timezone-aware vs naive datetime comparison causing 500 errors
+
 ## Prioritized Backlog
 
 ### P0 (Next)
