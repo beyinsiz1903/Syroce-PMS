@@ -504,18 +504,14 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         timestamp: new Date().toISOString()
       }).catch(err => console.log('History logging failed:', err));
       
-      // Always navigate to the new booking date to ensure it's visible
-      const newCheckIn = new Date(moveData.newCheckIn);
-      console.log('📅 Navigating timeline to:', newCheckIn.toISOString().split('T')[0]);
-      
-      toast.success(`Booking moved to ${moveData.newRoom} on ${newCheckIn.toLocaleDateString()}!`);
+      toast.success(`Rezervasyon ${moveData.newRoom} numaralı odaya taşındı!`);
       
       setShowMoveReasonDialog(false);
       setMoveReason('');
       setMoveData(null);
       
-      // Set the new date — useEffect[currentDate] will automatically reload calendar data
-      setCurrentDate(newCheckIn);
+      // Reload data without shifting the calendar view so other bookings stay visible
+      loadCalendarData();
     } catch (error) {
       toast.error('Failed to move booking');
       console.error('Move booking error:', error);
