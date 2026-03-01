@@ -913,11 +913,13 @@ async def get_bookings(
                 last_name = guest.get('last_name', '')
                 booking['guest_name'] = f"{first_name} {last_name}".strip() or 'Unknown Guest'
         
-        # Add room_number if not present
-        if not booking.get('room_number') and booking.get('room_id'):
+        # Always enrich room_number from the room document (handles room moves)
+        if booking.get('room_id'):
             room = await db.rooms.find_one({'id': booking['room_id']}, {'room_number': 1, '_id': 0})
             if room:
                 booking['room_number'] = room.get('room_number', 'Unknown Room')
+            elif not booking.get('room_number'):
+                booking['room_number'] = 'Unknown Room'
         
         # Map rate_type values
         if 'rate_type' in booking:
