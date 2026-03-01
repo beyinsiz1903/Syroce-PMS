@@ -806,11 +806,11 @@ async def create_booking(
         await _cm_push({
             "type": "booking.created",
             "tenant_id": current_user.tenant_id,
-            "booking_id": booking.id,
-            "room_id": booking.room_id,
+            "booking_id": booking_id,
+            "room_id": booking_data.room_id,
             "check_in": booking_data.check_in,
             "check_out": booking_data.check_out,
-            "status": booking.status,
+            "status": booking_dict.get('status', 'confirmed'),
             "source_channel": booking_data.source_channel or "direct",
             "origin": booking_data.origin or "ui",
             "hold_status": booking_data.hold_status or "none",
@@ -825,7 +825,7 @@ async def create_booking(
     folio_number = await generate_folio_number(current_user.tenant_id)
     folio = Folio(
         tenant_id=current_user.tenant_id,
-        booking_id=booking.id,
+        booking_id=booking_id,
         folio_number=folio_number,
         folio_type=FolioType.GUEST,
         guest_id=booking_data.guest_id
@@ -837,7 +837,7 @@ async def create_booking(
     # Note: Room status should be updated during check-in, not booking creation
     # Room remains in its current status (available/dirty/etc.) until guest checks in
     
-    return booking
+    return booking_dict
 
 
 @router.get("/pms/bookings", response_model=List[Booking])
