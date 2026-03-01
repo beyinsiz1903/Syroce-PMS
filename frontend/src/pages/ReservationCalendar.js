@@ -396,10 +396,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       toast.success('Rezervasyon başarıyla oluşturuldu!');
       setShowNewBookingDialog(false);
       
-      // Reload calendar to show new booking (with cache bust)
-      setTimeout(() => {
-        loadCalendarData();
-      }, 500);
+      // Reload calendar to show new booking
+      loadCalendarData();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Rezervasyon oluşturulamadı');
     }
