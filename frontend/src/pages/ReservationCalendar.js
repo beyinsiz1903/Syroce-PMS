@@ -1973,16 +1973,17 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                                 onDragEnd={handleDragEnd}
                                 onDoubleClick={() => handleBookingDoubleClick(booking)}
                                 className={`absolute top-1 left-0.5 rounded-lg text-white text-xs shadow-md hover:shadow-xl transition-all cursor-move z-20 group border border-white/30 ${
+                                  getSegmentColor(booking.market_segment)} ${
                                   draggingBooking?.id === booking.id ? 'opacity-50 scale-95' : ''
                                 } ${hasConflict(room.id, date) ? 'ring-2 ring-red-500 animate-pulse' : ''}
                                 ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
                                 style={{
                                   width: `${calculateBookingSpan(booking, currentDate) * 96 - 4}px`,
                                   height: '54px',
-                                  backgroundColor: booking.group_booking_id ? getGroupColor(booking) : undefined,
-                                  backgroundImage: !booking.group_booking_id
-                                    ? 'none'
-                                    : 'repeating-linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.08) 8px, transparent 8px, transparent 16px)'
+                                  ...(booking.group_booking_id ? {
+                                    backgroundColor: getGroupColor(booking),
+                                    backgroundImage: 'repeating-linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.08) 8px, transparent 8px, transparent 16px)'
+                                  } : {})
                                 }}
                                 title=""
                               >
