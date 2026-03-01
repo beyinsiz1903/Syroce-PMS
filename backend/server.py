@@ -6005,7 +6005,21 @@ async def seed_hotel_amenities(current_user: User = Depends(get_current_user)):
     }
 
 _cors_raw = os.environ.get('CORS_ORIGINS', '')
-_cors_origins = [o.strip() for o in _cors_raw.split(',') if o.strip()] if _cors_raw else ["*"]
+_cors_origins = [o.strip() for o in _cors_raw.split(',') if o.strip()] if _cors_raw else []
+
+# Always allow these known origins
+_always_allowed = [
+    "https://pms.syroce.com",
+    "https://www.pms.syroce.com",
+    "https://syroce.com",
+    "http://localhost:3000",
+]
+for origin in _always_allowed:
+    if origin not in _cors_origins:
+        _cors_origins.append(origin)
+
+if not _cors_origins:
+    _cors_origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
