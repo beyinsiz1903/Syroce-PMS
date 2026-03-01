@@ -510,19 +510,14 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       const newCheckIn = new Date(moveData.newCheckIn);
       console.log('📅 Navigating timeline to:', newCheckIn.toISOString().split('T')[0]);
       
+      toast.success(`Booking moved to ${moveData.newRoom} on ${newCheckIn.toLocaleDateString()}!`);
+      
       setShowMoveReasonDialog(false);
       setMoveReason('');
       setMoveData(null);
       
-      // Set the new date FIRST, then reload data
+      // Set the new date — useEffect[currentDate] will automatically reload calendar data
       setCurrentDate(newCheckIn);
-      
-      toast.success(`Booking moved to ${moveData.newRoom} on ${newCheckIn.toLocaleDateString()}!`);
-      
-      // Small delay to ensure state update completes before reload
-      setTimeout(() => {
-        loadCalendarData();
-      }, 100);
     } catch (error) {
       toast.error('Failed to move booking');
       console.error('Move booking error:', error);

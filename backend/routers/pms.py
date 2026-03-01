@@ -1159,6 +1159,10 @@ async def update_booking(
                 {'id': booking_data['room_id']},
                 {'$set': {'status': 'occupied', 'current_booking_id': booking_id}}
             )
+        # Keep room_number in sync with the new room
+        new_room = await db.rooms.find_one({'id': booking_data['room_id']}, {'room_number': 1, '_id': 0})
+        if new_room:
+            update_data['room_number'] = new_room['room_number']
     
     # Perform update
     await db.bookings.update_one(
