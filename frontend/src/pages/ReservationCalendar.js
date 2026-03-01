@@ -1972,7 +1972,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                                 onDragStart={(e) => handleDragStart(e, booking)}
                                 onDragEnd={handleDragEnd}
                                 onDoubleClick={() => handleBookingDoubleClick(booking)}
-                                className={`absolute top-1 left-0.5 rounded-lg text-white text-xs overflow-hidden shadow-md hover:shadow-xl transition-all cursor-move z-20 group border border-white/30 ${
+                                className={`absolute top-1 left-0.5 rounded-lg text-white text-xs shadow-md hover:shadow-xl transition-all cursor-move z-20 group border border-white/30 ${
                                   draggingBooking?.id === booking.id ? 'opacity-50 scale-95' : ''
                                 } ${hasConflict(room.id, date) ? 'ring-2 ring-red-500 animate-pulse' : ''}
                                 ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
