@@ -782,10 +782,9 @@ async def create_booking(
     qr_data = f"booking:{booking.id}:token:{qr_token}"
     qr_code = generate_qr_code(qr_data)
     
-    booking.qr_code = qr_code
-    booking.qr_code_data = qr_token
-    
     booking_dict = booking.model_dump()
+    booking_dict['qr_code'] = qr_code
+    booking_dict['qr_code_data'] = qr_token
     booking_dict['check_in'] = booking_dict['check_in'].isoformat()
     booking_dict['check_out'] = booking_dict['check_out'].isoformat()
     booking_dict['created_at'] = booking_dict['created_at'].isoformat()
