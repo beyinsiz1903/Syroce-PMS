@@ -2052,59 +2052,35 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                                   </div>
                                 </div>
                                 
-                                {/* Enhanced Rate overlay - shown on hover */}
-                                <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-90 text-white text-[10px] px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <div className="flex justify-between items-center">
-                                    <div className="flex items-baseline space-x-2">
-                                      <div>
-                                        <span className="font-bold text-lg text-yellow-300">
-                                          ${booking.total_amount ? (booking.total_amount / calculateBookingSpan(booking, currentDate)).toFixed(0) : '0'}
-                                        </span>
-                                        <span className="opacity-75 ml-1 text-[9px]">ADR</span>
-                                      </div>
-                                      {booking.base_rate && booking.base_rate !== booking.total_amount && (
-                                        <div className="text-red-300 line-through text-[9px]">
-                                          ${(booking.base_rate / calculateBookingSpan(booking, currentDate)).toFixed(0)}
-                                        </div>
-                                      )}
-                                    </div>
-                                    <div className="flex flex-col items-end space-y-0.5">
-                                      {booking.rate_type && (
-                                        <div className={`${getRateTypeInfo(booking).color} font-bold text-[9px]`}>
-                                          {getRateTypeInfo(booking).label}
-                                        </div>
-                                      )}
-                                      {booking.market_segment && (
-                                        <div className="text-blue-200 text-[8px] uppercase">
-                                          {booking.market_segment}
-                                        </div>
-                                      )}
-                                    </div>
+                                {/* Enhanced tooltip overlay - shown on hover */}
+                                <div className="absolute -top-[72px] left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[11px] px-3 py-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity z-50 pointer-events-none whitespace-nowrap min-w-[180px]">
+                                  <div className="font-bold text-sm text-white mb-1">
+                                    {booking.guest_name || 'Misafir'}
                                   </div>
-                                  {/* OTA Info */}
-                                  {booking.ota_channel && (
-                                    <div className="text-[8px] text-indigo-300 mt-0.5 flex items-center justify-between">
-                                      <span>{getOTAInfo(booking.ota_channel).name}</span>
-                                      {booking.commission_pct && (
-                                        <span>({booking.commission_pct}% comm.)</span>
-                                      )}
+                                  <div className="flex justify-between items-center gap-4">
+                                    <span className="text-yellow-300 font-bold">
+                                      ${booking.total_amount ? Number(booking.total_amount).toLocaleString() : '0'}
+                                    </span>
+                                    <span className="text-gray-400 text-[10px]">
+                                      ({calculateBookingSpan(booking, currentDate)} gece &middot; ${booking.total_amount ? (booking.total_amount / calculateBookingSpan(booking, currentDate)).toFixed(0) : '0'}/gece)
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] mt-1 text-cyan-300">
+                                    {booking.ota_channel
+                                      ? getOTAInfo(booking.ota_channel).name
+                                      : booking.source_channel && booking.source_channel !== 'direct'
+                                        ? booking.source_channel.charAt(0).toUpperCase() + booking.source_channel.slice(1)
+                                        : booking.channel && booking.channel !== 'direct'
+                                          ? booking.channel.charAt(0).toUpperCase() + booking.channel.slice(1)
+                                          : 'Direct / Doğrudan'}
+                                    {booking.company_name && ` - ${booking.company_name}`}
+                                  </div>
+                                  {booking.special_requests && (
+                                    <div className="text-[9px] text-gray-400 mt-0.5 truncate max-w-[220px]">
+                                      Not: {booking.special_requests}
                                     </div>
                                   )}
-                                  {booking.ota_confirmation && (
-                                    <div className="text-[8px] text-gray-400 mt-0.5">
-                                      Conf: {booking.ota_confirmation}
-                                    </div>
-                                  )}
-                                  {booking.virtual_card_provided && (
-                                    <div className="text-[8px] text-green-300 mt-0.5">
-                                      ✓ Virtual Card
-                                    </div>
-                                  )}
-                                  {booking.contracted_rate && (
-                                    <div className="text-[8px] text-green-300 mt-0.5">
-                                      ✓ Contracted Rate
-                                    </div>
-                                  )}
+                                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-gray-900"></div>
                                 </div>
                                 
                                 {/* Left border - segment indicator */}
