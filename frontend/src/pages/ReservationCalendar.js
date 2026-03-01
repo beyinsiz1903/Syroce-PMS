@@ -28,6 +28,7 @@ import { useTranslation } from 'react-i18next';
 
 const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   // Debug toggle - set to true only when debugging booking display issues
   const DEBUG_ROOMS = false;
   
