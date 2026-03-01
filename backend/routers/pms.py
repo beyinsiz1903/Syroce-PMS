@@ -862,6 +862,13 @@ async def get_bookings(
                 # Process and return immediately
                 bookings = []
                 for booking in cached_data[:limit]:
+                    # Always enrich room_number from room document (handles room moves)
+                    if booking.get('room_id'):
+                        room = await db.rooms.find_one({'id': booking['room_id']}, {'room_number': 1, '_id': 0})
+                        if room:
+                            booking['room_number'] = room.get('room_number', 'Unknown Room')
+                        elif not booking.get('room_number'):
+                            booking['room_number'] = 'Unknown Room'
                     if 'rate_type' in booking:
                         rate_map = {'advance_purchase': 'promotional', 'member': 'promotional'}
                         if booking['rate_type'] in rate_map:
