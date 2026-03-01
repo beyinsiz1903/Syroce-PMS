@@ -332,7 +332,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // Sidebar action handlers
   const handleViewFolio = (bookingId) => {
     setShowSidebar(false);
-    navigate('/efatura');
+    navigate('/invoices');
   };
 
   const handleEditReservation = (booking) => {
@@ -345,8 +345,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       await axios.post(`/whatsapp/send-confirmation?booking_id=${booking.id}`);
       toast.success('Onay mesajı gönderildi!');
     } catch (error) {
-      const msg = error.response?.data?.detail || 'Onay mesajı gönderilemedi';
-      toast.error(msg);
+      const detail = error.response?.data?.detail;
+      if (detail && detail.includes('telefon')) {
+        toast.error('Misafir telefon numarası bulunamadı');
+      } else {
+        toast.info('Onay mesajı göndermek için WhatsApp entegrasyonu gereklidir');
+      }
     }
   };
 
