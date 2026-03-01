@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+* { margin: 0; padding: 0; }
+body {
+  width: 1024px;
+  height: 1536px;
+  background: radial-gradient(ellipse at center, #0f2140 0%, #0a1628 50%, #060e1a 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Subtle ambient glow behind logo */
+.glow-layer {
+  position: absolute;
+  width: 320px;
+  height: 320px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -60%);
+  background: radial-gradient(circle, rgba(37,99,235,0.15) 0%, rgba(6,182,212,0.08) 40%, transparent 70%);
+  border-radius: 50%;
+  filter: blur(40px);
+}
+
+.glow-layer-2 {
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -60%);
+  background: radial-gradient(circle, rgba(6,182,212,0.12) 0%, rgba(37,99,235,0.06) 50%, transparent 80%);
+  border-radius: 50%;
+  filter: blur(25px);
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  position: relative;
+  z-index: 2;
+  margin-top: -60px;
+}
+
+.logo-icon svg {
+  filter: drop-shadow(0 0 20px rgba(37,99,235,0.3)) drop-shadow(0 0 40px rgba(6,182,212,0.15));
+}
+
+.logo-text {
+  font-family: 'Arial', 'Helvetica Neue', sans-serif;
+  font-size: 36px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 4px;
+  text-shadow: 0 0 30px rgba(37,99,235,0.3), 0 0 60px rgba(6,182,212,0.1);
+}
+
+.subtitle {
+  font-family: 'Arial', 'Helvetica Neue', sans-serif;
+  font-size: 11px;
+  font-weight: 400;
+  color: rgba(148,163,184,0.7);
+  letter-spacing: 6px;
+  margin-top: -20px;
+}
+</style>
+</head>
+<body>
+  <div class="glow-layer"></div>
+  <div class="glow-layer-2"></div>
+  <div class="content">
+    <div class="logo-icon">
+      <svg width="120" height="120" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="iconGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#2563eb;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#06b6d4;stop-opacity:1" />
+          </linearGradient>
+        </defs>
+        <g transform="translate(4, 4)">
+          <path d="M 10 10 L 20 0 L 30 10" stroke="url(#iconGradient)" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M 15 15 Q 10 15 10 20 Q 10 23 15 23 L 25 23 Q 30 23 30 28 Q 30 33 25 33" stroke="url(#iconGradient)" stroke-width="3" fill="none" stroke-linecap="round"/>
+          <line x1="8" y1="37" x2="32" y2="37" stroke="url(#iconGradient)" stroke-width="2" stroke-linecap="round"/>
+        </g>
+      </svg>
+    </div>
+    <div class="logo-text">Syroce</div>
+    <div class="subtitle">HOTEL MANAGEMENT</div>
+  </div>
+</body>
+</html>
