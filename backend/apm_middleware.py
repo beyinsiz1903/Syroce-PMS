@@ -357,6 +357,8 @@ class EnhancedRateLimitMiddleware:
         self.whitelist = frozenset([
             '/health', '/api/health', '/api/ping', '/api/status',
             '/docs', '/openapi.json', '/redoc',
+            '/api/pms/rooms', '/api/pms/guests', '/api/pms/dashboard',
+            '/api/auth/me',
         ])
 
     def _get_category(self, path: str, method: str, has_token: bool) -> str:
