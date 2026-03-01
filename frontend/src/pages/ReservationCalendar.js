@@ -2613,6 +2613,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             getSegmentColor={getSegmentColor}
             getStatusLabel={getStatusLabel}
             getRateTypeInfo={getRateTypeInfo}
+            onViewFolio={handleViewFolio}
+            onEditReservation={handleEditReservation}
+            onSendConfirmation={handleSendConfirmation}
           />
         </>
       )}
