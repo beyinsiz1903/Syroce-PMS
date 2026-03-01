@@ -1984,7 +1984,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                                     ? 'none'
                                     : 'repeating-linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.08) 8px, transparent 8px, transparent 16px)'
                                 }}
-                                title={`Double-click for details | Drag to move\n${booking.guest_name || 'Guest'} - ${booking.market_segment || 'Standard'}${booking.group_booking_id ? `\nGroup: ${booking.group_booking_id}` : ''}`}
+                                title=""
                               >
                                 {/* Main booking info - Compact Typography */}
                                 <div className="p-1.5 h-[54px] relative">
