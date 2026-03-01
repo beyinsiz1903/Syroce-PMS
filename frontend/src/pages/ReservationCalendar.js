@@ -1929,7 +1929,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                               isToday(date) ? 'bg-blue-50/80 shadow-inner' : 'bg-white hover:bg-gray-50'
                             } ${isDragOver ? 'bg-emerald-50 ring-2 ring-emerald-400 shadow-lg' : ''}
                             ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''}`}
-                            style={{ height: '60px', minHeight: '60px' }}
+                            style={{ height: '60px', minHeight: '60px', overflow: 'visible' }}
                             onClick={() => !booking && !roomBlock && handleCellClick(room.id, date)}
                             onDragOver={(e) => handleDragOver(e, room.id, date)}
                             onDragLeave={handleDragLeave}
