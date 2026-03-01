@@ -49,8 +49,8 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 
 ### Calendar Drag-Drop Room Move Bug Fix (COMPLETED - Mar 2026)
 - **Bug:** Other reservations disappearing after drag-drop room change
-- **Root causes:** (1) Stale setTimeout closure in handleConfirmMove overwriting correct useEffect reload with wrong date-range data, (2) room_number not updated in DB after room_id change, (3) cached GET path not enriching room_number
-- **Fixes:** Removed setTimeout race condition, backend PUT syncs room_number on room move, GET always re-enriches room_number (both cached and non-cached paths)
+- **Root causes:** (1) `setCurrentDate(newCheckIn)` shifted calendar view causing bookings to go out of visible range, (2) Stale setTimeout closure, (3) room_number not updated in DB after room_id change, (4) cached GET path not enriching room_number
+- **Fixes:** Replaced `setCurrentDate` with direct `loadCalendarData()` call (view stays put), cleaned PUT payload to send only changed fields, backend syncs room_number on room move, GET always re-enriches room_number
 - **Tests:** 8/8 backend tests pass (test_booking_room_move_fix.py)
 
 ### Root Directory Cleanup (COMPLETED - Feb 2026)
