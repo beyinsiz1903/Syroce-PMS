@@ -53,6 +53,14 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - **Fixes:** Replaced `setCurrentDate` with direct `loadCalendarData()` call (view stays put), cleaned PUT payload to send only changed fields, backend syncs room_number on room move, GET always re-enriches room_number
 - **Tests:** 8/8 backend tests pass (test_booking_room_move_fix.py)
 
+### Calendar Sidebar Action Buttons Fix (COMPLETED - Mar 2026)
+- **Bug:** View Folio, Edit Reservation, Send Confirmation buttons in booking sidebar did nothing
+- **Root cause:** Parent component didn't pass callback functions (`onViewFolio`, `onEditReservation`, `onSendConfirmation`) to `ReservationSidebar`
+- **Fix:** Implemented 3 handler functions in ReservationCalendar.js and wired them to the sidebar component
+  - View Full Folio → navigates to /invoices (Fatura & Finans)
+  - Edit Reservation → navigates to /pms#bookings
+  - Send Confirmation → calls WhatsApp API with toast feedback
+
 ### Root Directory Cleanup (COMPLETED - Feb 2026)
 - Removed 152 test .py files from root directory
 - Clean project structure
