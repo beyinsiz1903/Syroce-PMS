@@ -2052,37 +2052,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                                   </div>
                                 </div>
                                 
-                                {/* Enhanced tooltip overlay - shown on hover */}
-                                <div className="absolute top-full left-0 mt-1 bg-gray-900 text-white text-[11px] px-3 py-2.5 rounded-lg shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-[100] pointer-events-none whitespace-nowrap min-w-[200px]" style={{filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.4))'}}>
-                                  <div className="font-bold text-sm text-white mb-1">
-                                    {booking.guest_name || 'Misafir'}
-                                  </div>
-                                  <div className="flex items-center gap-3">
-                                    <span className="text-yellow-300 font-bold text-base">
-                                      ${booking.total_amount ? Number(booking.total_amount).toLocaleString() : '0'}
-                                    </span>
-                                    <span className="text-gray-400 text-[10px]">
-                                      {calculateBookingSpan(booking, currentDate)} gece &middot; ${booking.total_amount ? (booking.total_amount / calculateBookingSpan(booking, currentDate)).toFixed(0) : '0'}/gece
-                                    </span>
-                                  </div>
-                                  <div className="text-[10px] mt-1 text-cyan-300 font-medium">
-                                    {booking.ota_channel
-                                      ? getOTAInfo(booking.ota_channel).name
-                                      : booking.source_channel && booking.source_channel !== 'direct'
-                                        ? booking.source_channel.charAt(0).toUpperCase() + booking.source_channel.slice(1)
-                                        : booking.channel && booking.channel !== 'direct'
-                                          ? booking.channel.charAt(0).toUpperCase() + booking.channel.slice(1)
-                                          : 'Direct / Dogrudan'}
-                                    {booking.company_name && ` - ${booking.company_name}`}
-                                  </div>
-                                  {booking.special_requests && (
-                                    <div className="text-[9px] text-gray-400 mt-0.5 truncate max-w-[220px]">
-                                      Not: {booking.special_requests}
-                                    </div>
-                                  )}
-                                  <div className="absolute top-0 left-4 -translate-y-full w-0 h-0 border-l-[6px] border-r-[6px] border-b-[6px] border-l-transparent border-r-transparent border-b-gray-900"></div>
-                                </div>
-                                
                                 {/* Left border - segment indicator */}
                                 <div className="absolute left-0 top-0 bottom-0 w-1 bg-white opacity-30"></div>
                                 
