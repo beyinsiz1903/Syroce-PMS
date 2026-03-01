@@ -483,8 +483,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     
     try {
       // Update booking with new room and dates
+      // Update booking with new room and dates — send only changed fields
       const updateResponse = await axios.put(`/pms/bookings/${moveData.booking.id}`, {
-        ...moveData.booking,
         room_id: moveData.newRoomId,
         check_in: moveData.newCheckIn,
         check_out: moveData.newCheckOut
