@@ -118,6 +118,17 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - **Added regression tests:** `backend/tests/test_migration_observability.py`
 - **Validation:** observability suite **2/2 PASS**, combined backend validation **9/9 PASS**, backend API agent **PASS**, frontend testing agent **PASS**
 
+### RoomBlockRelease Bridge + Outbox Package (COMPLETED - Mar 2026)
+- **Added semantic inventory release service:** `backend/modules/inventory/services/release_room_block_service.py`
+- **Bridged legacy release path:** active `POST /api/pms/room-blocks/{block_id}/cancel` path now calls the semantic release service from both duplicated legacy routers (`pms.py`, `housekeeping.py`) while preserving the legacy endpoint path
+- **Added idempotency enforcement:** `Idempotency-Key` is now required for room block release; same-key retries return the same response and re-release with a new key returns deterministic final state without duplicating events
+- **Added outbox + audit:** successful release now writes `inventory.released.v1` to `outbox_events` and creates `room_block_released` audit log entries with correlation metadata
+- **Validated availability recovery:** blocked inventory becomes sellable again for the same property/date range after release; wrong tenant/property attempts do not mutate availability
+- **Aligned frontend callers:** `frontend/src/pages/PMSModule.js` now sends `Idempotency-Key` for both room block create and room block release/cancel actions
+- **Fixed auth UX regression:** hotel login button click is working correctly and protected `/pms` / `/app/pms` deep links now return to the intended PMS route after login
+- **Added regression tests:** `backend/tests/test_release_room_block_bridge.py`
+- **Validation:** create + release bridge suites **13/13 PASS** (+1 skipped availability fallback), backend deep testing **PASS**, frontend retest for auth/PMS redirect **PASS**
+
 ### Root Directory Cleanup (COMPLETED - Feb 2026)
 - Removed 152 test .py files from root directory
 - Clean project structure
@@ -130,7 +141,7 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 │   ├── modules/               # Semantic migration foundations (NEW)
 │   │   ├── reservations/      # Reservation read abstraction + future write migration
 │   │   ├── stays/             # Stay aggregate read abstraction + future write migration
-│   │   ├── inventory/         # Availability read abstraction + future inventory migration
+│   │   ├── inventory/         # Availability read abstraction + room block create/release write migrations
 │   │   └── folio/             # Folio balance/detail reads + folio-open write migration
 │   ├── shared_kernel/         # Tenant/event/audit/idempotency primitives (NEW)
 │   │   └── migration_observability.py # Outbox/audit/shadow telemetry aggregation for migration control panel
@@ -178,10 +189,10 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 ## Prioritized Backlog
 
 ### P0 (Next)
-- Kısa stabilizasyon/gözlem periyodu ardından Sprint 2 devamı: `room block release` tek write-path olarak açılacak
+- Kısa stabilizasyon/gözlem periyodu ardından mini `migration health score` eklenecek
 
 ### P1
-- Semantic Migration Sprint 2: `room block release`, sonra stabilizasyon sonrası reservation modify/cancel ve `charge post`
+- Semantic Migration Sprint 2: `migration health score`, ardından `ModifyReservation`, sonra `CancelReservation` ve kontrollü `charge post`
 - Migration observability paneline `processed_at`, retry metadata ve dead-letter lifecycle geldiğinde gerçek lag/retry grafikleri bağlanacak
 - Semantic Migration Sprint 3: stay aggregate writes (room assign/move, check-in/out, extend) with state machine + rollback playbook
 - Semantic Migration Sprint 4: finance risk paths (payment, refund, invoice) with idempotency + reconciliation
