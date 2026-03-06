@@ -107,6 +107,9 @@ frontend:
       - working: true
         agent: "testing"
         comment: "✅ SMOKE TEST PASS: (1) Uygulama white screen olmadan açılıyor ✅ (2) Login (demo@hotel.com/demo123) çalışıyor ✅ (3) Dashboard yükleniyor (AI Daily Briefing, occupancy metrics gösteriliyor) ✅ (4) Ana navigasyon çalışıyor ✅ (5) Console error yok, sadece 1 CDN request failed (kritik değil) ✅ REGRESSION CHECK: Backend foundation değişiklikleri frontend'i regresyona sokmamış. Temel application shell ve navigasyon stabil."
+      - working: true
+        agent: "testing"
+        comment: "✅ RE-TEST SHADOW METRICS SPRINT: Backend'e availability ve folio read için shadow metric instrumentation eklendikten sonra frontend regression testi yapıldı. (1) Uygulama normal açılıyor, white screen yok ✅ (2) Login flow çalışıyor (demo@hotel.com/demo123) - token alınıyor, auth state güncelleniyor ✅ (3) Dashboard başarıyla yükleniyor - 'Welcome, Demo Admin' ve tenant bilgisi görülüyor ✅ (4) PMS navigasyonu çalışıyor - Front Desk, Rooms, Bookings, Guests menüleri erişilebilir, 10 in-house guest metric'i görülüyor ✅ (5) Console'da hata yok, sadece push notification permission warning (kritik değil) ✅ VERDICT: Shadow metric instrumentation frontend'e regresyon üretmemiş. Tüm temel akışlar stabil."
 
 metadata:
   created_by: "testing_agent"
@@ -145,3 +148,5 @@ agent_communication:
     message: "✅ FRONTEND SMOKE TEST COMPLETED - Turkish Sprint: Full application smoke test performed successfully. (1) App loads without white screen ✅ (2) Login flow works with demo credentials ✅ (3) Dashboard renders with AI briefing and metrics ✅ (4) Navigation functional ✅ (5) No console errors, minimal CDN failures ✅ VERDICT: Backend foundation değişiklikleri frontend'i regresyona sokmamış. Core UI shell stabil ve çalışıyor."
   - agent: "testing"
     message: "✅ CONTRACT TEST HARDENING VALIDATION COMPLETED: Yeni test paketi Sprint 1 hedefiyle mükemmel uyum gösteriyor. Tüm 16 contract test geçti - tenant isolation, auth rejection, response shape validation çalışıyor. Read-side güven katmanı /api/pms/bookings, /api/pms/rooms/availability, /api/folio/{folio_id} için yeterli biçimde sertleştirilmiş. Belirgin açık/gap yok - comprehensive coverage achieved for semantic read contracts."
+  - agent: "testing"
+    message: "✅ SHADOW METRICS SMOKE TEST COMPLETED: Backend'e availability ve folio read için shadow metric instrumentation eklendikten sonra frontend regression smoke test yapıldı. Sonuç: (1) Uygulama normal yükleniyor ✅ (2) Login akışı çalışıyor ✅ (3) Dashboard ve PMS section erişilebilir ✅ (4) Console'da critical error yok ✅ VERDICT: Shadow metric instrumentation frontend'e herhangi bir regresyon üretmemiş. Tüm core flows stabil."

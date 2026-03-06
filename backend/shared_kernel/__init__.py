@@ -6,6 +6,12 @@ from .idempotency import (
     get_idempotency_key,
     normalize_idempotency_key,
 )
+from .shadow_metrics import (
+    compare_availability_payloads,
+    compare_folio_payloads,
+    run_shadow_compare,
+    shadow_metrics_store,
+)
 from .tenancy_context import (
     PropertyContext,
     TenantContext,
@@ -25,9 +31,13 @@ __all__ = [
     "build_event_envelope",
     "build_property_context",
     "build_tenant_context",
+    "compare_availability_payloads",
+    "compare_folio_payloads",
     "ensure_idempotent_request",
     "get_current_property",
     "get_current_tenant",
     "get_idempotency_key",
     "normalize_idempotency_key",
+    "run_shadow_compare",
+    "shadow_metrics_store",
 ]

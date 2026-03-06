@@ -1,6 +1,7 @@
 """
 FINANCE Router - Extracted from server.py
 """
+import asyncio
 import uuid
 import io
 import csv
@@ -52,6 +53,7 @@ from core.utils import (
     create_excel_workbook, excel_response,
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
+from shared_kernel.shadow_metrics import compare_folio_payloads, run_shadow_compare
 
 try:
     from cache_manager import cached
@@ -420,12 +422,62 @@ async def get_booking_folios(booking_id: str, current_user: User = Depends(get_c
 
 @router.get("/folio/{folio_id}", response_model=Dict[str, Any])
 @cached(ttl=180, key_prefix="folio_details")  # Cache for 3 min
-async def get_folio_details(folio_id: str, current_user: User = Depends(get_current_user)):
+async def get_folio_details(
+    folio_id: str,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
     """Get folio with charges and payments"""
-    return await folio_balance_read_service.get_folio_details(
+    semantic_response = await folio_balance_read_service.get_folio_details(
         tenant_id=current_user.tenant_id,
         folio_id=folio_id,
     )
+    asyncio.create_task(
+        run_shadow_compare(
+            endpoint="folio",
+            tenant_id=current_user.tenant_id,
+            property_id=request.headers.get("x-property-id"),
+            correlation_id=request.headers.get("x-correlation-id"),
+            semantic_payload=semantic_response,
+            legacy_loader=lambda: _legacy_get_folio_details(
+                tenant_id=current_user.tenant_id,
+                folio_id=folio_id,
+            ),
+            comparator=compare_folio_payloads,
+            entity_id=folio_id,
+        )
+    )
+    return semantic_response
+
+
+async def _legacy_get_folio_details(tenant_id: str, folio_id: str):
+    folio = await db.folios.find_one({
+        'id': folio_id,
+        'tenant_id': tenant_id
+    }, {'_id': 0})
+
+    if not folio:
+        raise HTTPException(status_code=404, detail="Folio not found")
+
+    charges = await db.folio_charges.find({
+        'folio_id': folio_id,
+        'tenant_id': tenant_id
+    }, {'_id': 0}).to_list(1000)
+
+    payments = await db.payments.find({
+        'folio_id': folio_id,
+        'tenant_id': tenant_id
+    }, {'_id': 0}).to_list(1000)
+
+    balance = await calculate_folio_balance(folio_id, tenant_id)
+    folio['balance'] = balance
+
+    return {
+        'folio': folio,
+        'charges': charges,
+        'payments': payments,
+        'balance': balance
+    }
 
 
 
