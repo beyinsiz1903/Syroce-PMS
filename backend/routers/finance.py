@@ -53,6 +53,7 @@ from core.utils import (
     create_excel_workbook, excel_response,
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
+from modules.folio.services.open_folio_service import OpenFolioService
 from shared_kernel.shadow_metrics import compare_folio_payloads, run_shadow_compare
 
 try:
@@ -66,6 +67,7 @@ except ImportError:
 router = APIRouter(prefix="/api", tags=["finance"])
 security = HTTPBearer()
 folio_balance_read_service = FolioBalanceReadService()
+open_folio_service = OpenFolioService()
 
 
 # ── ERP Connectors (mock) ──
@@ -209,30 +211,13 @@ async def budget_vs_actual(month: str, current_user: User = Depends(get_current_
 
 
 @router.post("/folio/create", response_model=Folio)
-async def create_folio(folio_data: FolioCreate, current_user: User = Depends(get_current_user)):
+async def create_folio(
+    folio_data: FolioCreate,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
     """Create a new folio for a booking"""
-    # Verify booking exists
-    booking = await db.bookings.find_one({
-        'id': folio_data.booking_id,
-        'tenant_id': current_user.tenant_id
-    })
-    
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
-    
-    folio_number = await generate_folio_number(current_user.tenant_id)
-    
-    folio = Folio(
-        tenant_id=current_user.tenant_id,
-        folio_number=folio_number,
-        **folio_data.model_dump()
-    )
-    
-    folio_dict = folio.model_dump()
-    folio_dict['created_at'] = folio_dict['created_at'].isoformat()
-    await db.folios.insert_one(folio_dict)
-    
-    return folio
+    return await open_folio_service.create(folio_data, current_user, request)
 
 
 

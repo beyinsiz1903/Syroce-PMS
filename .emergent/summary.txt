@@ -1,83 +1,82 @@
 <analysis>**original_problem_statement:**
-The user's initial plan was to refactor the frontend and improve backend performance. This evolved into a major backend refactoring effort to modularize a massive  file. This work was interrupted by several urgent user requests.
+The user, acting as a CTO, has directed a complete architectural refactoring of the hospitality SaaS platform. The goal is to evolve the application from a complex monolith into a scalable, enterprise-grade Hospitality Operating System.
 
-In the previous session, the agent fixed production deployment failures, a critical reservation bug, and updated the calendar UI.
+The agreed-upon strategy involves a gradual migration using the Strangler Fig pattern to a new architecture based on a semantic core. Key architectural principles include:
+1.  **Stay Lifecycle-Centric Model**: Shifting from an entity-based model to one centered around the guest's stay lifecycle.
+2.  **Ledger-Based Systems**: Implementing  and  management as immutable ledgers for accuracy and auditability.
+3.  **Dedicated Platform Layer**: Treating services like identity, tenancy, and entitlements as a core platform domain, not just utilities.
+4.  **Core Event System**: Using an outbox pattern to emit domain events for decoupling and enabling integrations, analytics, and AI.
+5.  **Formal Task Engine**: Creating a generic task engine for all operational workflows (housekeeping, maintenance, etc.).
+6.  **Integration Hub**: Designing a robust integration layer with adapters, state machines, and reconciliation logic.
 
-In this session, the user reported three new critical issues:
-1.  When dragging and dropping a reservation on the calendar, other reservations would disappear from the view until the page was refreshed.
-2.  On double-clicking a reservation, the buttons in the sidebar (View Folio, Edit Reservation, Send Confirmation) were non-functional.
-3.  The user requested a complete, end-to-end test of the entire application to find and fix any broken functionality, buttons, or pages that result in a white screen.
-
-The agent addressed all three issues, including running a comprehensive test that found and fixed two additional backend bugs (rate limiting and an occupancy report error). The session concluded with the user reiterating their desire for an exhaustive click everything test.
+The user has approved a detailed, sprint-based migration plan to implement this new architecture. The current session began the execution of this plan.
 
 **User's preferred language**: Turkish
 
 **what currently exists?**
-A full-stack Hotel Management System (Syroce PMS). The application is in a stable state.
--   **Frontend:** The calendar's drag-and-drop functionality has been fixed, preventing bookings from disappearing. The reservation detail sidebar buttons are now correctly wired to navigate to the appropriate pages (Folio, PMS bookings list) or trigger API calls (Send WhatsApp confirmation).
--   **Backend:** The backend refactoring of  is still in progress. Two bugs discovered during end-to-end testing have been resolved:
-    1.  A 500 error in the  endpoint caused by a timezone issue has been fixed.
-    2.  Overly aggressive rate-limiting causing 429 errors and forcing user logouts during normal navigation has been relaxed by increasing the request limit and whitelisting common GET endpoints.
+The project has transitioned from architectural planning to implementation. The foundational work for the new semantic backend architecture is complete, and the first migration steps have been executed.
+
+-   **Architectural Foundation (DONE):**
+    -   Semantic module skeletons have been created in  for , , , and .
+    -   A  directory has been established, containing primitives for tenancy, event envelopes, audit logging, idempotency, and shadow comparison.
+    -   A governance rule to prevent new business logic in  is in place.
+
+-   **Migration Progress:**
+    -   **Read-Side Bridging (DONE):** Key read endpoints (, , ) are now bridged, delegating calls to new (but currently thin) semantic read services. This implements the first step of the Strangler Fig pattern without breaking existing functionality.
+    -   **Test Hardening (DONE):** The bridged read endpoints are covered by contract snapshot tests, tenant/property isolation tests, and response-shape validation tests in .
+    -   **Shadow Metrics (DONE):** A shadow comparison mechanism is active for the availability and folio read endpoints. It silently compares the results from the legacy and new paths and logs any drift, providing data for a safe cutover.
+    -   **First Write-Path Migrations (DONE):**
+        -   The  write path has been migrated to the new . The legacy endpoint now calls this service, which includes idempotency enforcement, audit logging, and emits a  event to the outbox.
+        -   The  write path has been migrated to the new , also including idempotency, audit logging, and an  outbox event.
 
 **Last working item**:
--   **Last item agent was working:** The user requested an exhaustive end-to-end test of the application, asking the agent to click every button on every page. The agent performed a comprehensive test with the testing subagent, which found and fixed two backend bugs. The user's final message reiterated the request for a granular, click-everything style test, implying the first pass was good but they want absolute certainty.
--   **Status:** USER VERIFICATION PENDING
--   **Agent Testing Done:** Y
--   **Which testing method agent to use?** testing_agent_v3_fork
--   **User Testing Done:** N
+    - Last item agent was working: The agent completed the migration of the  endpoint. This involved creating the , bridging the legacy endpoint, and implementing idempotency, audit logging, and outbox event emission. A final frontend smoke test was performed to ensure no UI regressions occurred.
+    - Status: COMPLETED
+    - Agent Testing Done: Y
+    - Which testing method agent to use? backend testing agent
+    - User Testing Done: N
 
 **All Pending/In progress Issue list**:
--   **Issue 1: Granular End-to-End Application Test (P0)**
-    -   **Description:** The user has requested a second, more thorough end-to-end test. The goal is to manually or automatically navigate to every page and click every single interactive element (buttons, links, tabs, modals) to ensure nothing is broken, leads to a white screen, or produces an error.
-    -   **Next debug checklist:**
-        -   Formulate a plan to systematically test all pages and components listed in  and sub-components.
-        -   Invoke  with a very specific prompt: Test all major pages: Dashboard, Calendar, PMS, Housekeeping, etc. On each page, click every visible button, link, and tab. Verify that no action results in a blank page or console error. Pay special attention to buttons inside modals and sidebars.
-        -   Report the findings back to the user.
-    -   **Why fix this issue and what will be achieved with the fix?** This will give the user full confidence in the application's stability and ensure no hidden bugs remain before they proceed with production deployment.
-    -   **Status:** NOT STARTED
-    -   **Is recurring issue?** N
-    -   **Should Test frontend/backend/both after fix?** Both
--   **Issue 2: Production Deployment Verification (P1)**
-    -   **Description:** The agent has fixed several critical issues blocking production functionality. The user must now deploy these changes by pushing to GitHub and verify that everything works as expected in their production environment ().
-    -   **Next debug checklist:**
-        -   After the granular E2E test is complete and verified, ask the user to use the Save to Github feature to trigger the deployment.
-        -   If any issues arise, analyze the new deployment logs or user feedback.
-    -   **Why fix this issue and what will be achieved with the fix?** This will validate all recent critical fixes and ensure the production application is fully operational.
-    -   **Status:** BLOCKED
-    -   **Is recurring issue?** N
-    -   **Should Test frontend/backend/both after fix?** N/A
-    -   **Blocked on other issue:** Granular End-to-End Application Test
+There are no outstanding bugs. The primary pending work is the continuation of the planned architectural migration.
 
 **In progress Task List**:
--   **Task 1: Complete  Modularization (P1)**
-    -   **Where to resume:** The agent has successfully extracted ~14,000 lines into various routers. However,  is still ~41,000 lines long. The next step is to analyze the remaining code to identify and extract the next set of logical modules (e.g., Channel Manager, POS, User Management).
-    -   **What will be achieved with this?** Further improves the backend's maintainability, readability, and scalability. It is a crucial step towards a production-ready architecture.
-    -   **Status:** IN PROGRESS
+-   **Task 1: Complete Semantic Backend Refactoring (P0)**
+    -   **Where to resume:** The first two write-paths (, ) are migrated. According to the agreed-upon sprint plan, the next step is to migrate the **** write-path. This will involve creating or extending the , bridging the legacy endpoint, and implementing the standard set of safety features (idempotency, audit, outbox).
+    -   **What will be achieved with this?** This will open up the  domain for write operations under the new semantic architecture, continuing the incremental migration.
+    -   **Status:** NOT STARTED
     -   **Should Test frontend/backend/both after fix?** Backend
-    -   **Blocked on something:** Blocked until high-priority user-facing bugs are resolved.
+    -   **Blocked on something:** None.
 
 **Upcoming and Future Tasks**
-*   **Upcoming Tasks:**
-    *   **P1: Faz 6: Entegrasyonlar ve Otomasyon (Integrations and Automation):**
-        *   Enhance the Channel Manager integration.
-        *   Integrate a payment gateway like Stripe.
-    *   **P2: Redis-based Caching:** Upgrade the current in-memory  to a more robust and scalable Redis-based solution for the production environment.
-*   **Future Tasks:**
-    *   Complete i18n for remaining pages (e.g., POS, Staff, Mobile Dashboard).
-    *   Audit and refactor Pydantic models (, , etc.) to be more robust and prevent data-loss bugs.
+The remaining work follows the detailed migration plan established with the user.
+
+*   **Upcoming Tasks (Next in Sprint 2):**
+    *   **P1:  write-path migration.**
+    *   **P1:** After a brief stabilization period, begin migration of the next batch of write-paths:
+        *    and .
+        *   .
+        *   .
+
+*   **Future Tasks (Sprint 3 and beyond):**
+    *   ** Aggregate Migration:** Migrate the core operational write-paths (, , , ). This is a high-risk, high-value phase.
+    *   ** Implementation:** Extract housekeeping and other operational tasks into the new generic task engine module.
+    *   ** Module Implementation:** Migrate authentication, authorization, and tenant configuration logic into the dedicated platform module.
+    - ** Hub Implementation:** Refactor channel manager and other integrations to use the new integration hub architecture.
+    *   ** Build-out:** Separate reporting and analytics queries into the dedicated read-model module.
+    *   **Frontend Refactoring:** Align the frontend with the new backend semantic modules, splitting  and creating feature-based components.
 
 **Completed work in this session**
--   **Critical Bug Fix (Calendar Drag-and-Drop):**
-    -   Fixed a bug where dragging a reservation would make other reservations disappear from the view. The fix involved calling  directly instead of shifting the calendar's date focus.
-    -   **File:** 
--   **Critical Bug Fix (Reservation Sidebar Buttons):**
-    -   Implemented click handlers for View Full Folio, Edit Reservation, and Send Confirmation buttons.
-    -   Wired the buttons to navigate to the correct pages (, ) or call the confirmation API.
-    -   **File:** 
--   **Comprehensive E2E Testing & Fixes:**
-    -   Ran an end-to-end test with the testing agent, identifying and fixing two backend bugs.
-    -   **Fixed Occupancy Report Bug:** Resolved a 500 error in  by fixing a timezone comparison issue. **File:** .
-    -   **Fixed Rate Limiting:** Increased the API rate limit and whitelisted common GET endpoints to prevent 429 errors during fast navigation. **File:** .
+-   **Architectural Planning:** A comprehensive, multi-sprint semantic refactoring plan was co-created with the user, covering domain models, migration waves, and safety protocols.
+-   **Sprint 1 Foundation:**
+    -   Created backend skeletons for .
+    -   Established  with primitives for tenancy, events, audit, idempotency, and shadow comparison.
+-   **Read-Side Migration & Hardening:**
+    -   Bridged key read endpoints for reservations, availability, and folios to new semantic services.
+    -   Implemented contract snapshot, tenant isolation, and response-shape tests.
+    -   Activated shadow metric comparison for availability and folio reads.
+-   **First Write-Path Migrations:**
+    -   **:** Migrated to  with idempotency, audit, and  outbox event.
+    -   **:** Migrated to  with idempotency, audit, and  outbox event.
 
 **Earlier issues found/mentioned but not fixed**
 None.
@@ -89,74 +88,77 @@ None.
 
 
 **Key Technical Concepts**
--   **React State Management:** Debugging complex state interactions, specifically fixing a bug where changing the view () incorrectly filtered the data, rather than just reloading it.
--   **React Component Communication:** Passing callback functions (, etc.) as props from a parent page () to a child component () to enable actions.
--   **React Routing:** Using the  hook for programmatic navigation in response to button clicks.
--   **FastAPI Middleware:** Modifying custom middleware () to adjust application-wide behavior like rate limiting.
--   **Python Datetime Handling:** Fixing a runtime error by making  objects timezone-aware before comparison.
--   **End-to-End Testing:** Leveraging the  to perform broad application testing and uncover hidden backend bugs.
+-   **Strangler Fig Pattern:** Incrementally replacing legacy functionality by wrapping it with new services and redirecting calls (bridging).
+-   **Semantic Core / Domain-Driven Design:** Organizing code around business domains (, , , ) and their interactions, rather than technical layers.
+-   **Outbox Pattern:** Ensuring reliable event emission by writing events to a dedicated  table within the same transaction as the business operation.
+-   **Idempotency:** Preventing duplicate operations for write requests by tracking an  provided by the client.
+-   **Shadow Comparison:** Running new and old code paths in parallel for read operations and logging any differences to ensure the new implementation is correct before a full cutover.
+-   **Test Hardening:** Using contract snapshot tests and explicit tenant/property isolation tests to prevent regressions during migration.
 
 **key DB schema**
-No changes were made to the database schema.
+-   **outbox**:  - For reliable event emission.
+-   **audit_log**:  - For recording all significant system actions.
 
 **changes in tech stack**
 None.
 
 **All files of reference**
--   
--   
--   
--   
--    (report from the last E2E test)
--   
+*    - The home for all new semantic domain logic.
+*    - Contains all cross-cutting concerns for the new architecture.
+*    - Contains all tests related to the semantic migration.
+*    - The main application entry point, which is being progressively hollowed out.
+*   The previous detailed conversation history contains the full migration plan and architectural principles.
 
 **Areas that need refactoring**:
--   **:** The file remains extremely large (~41k lines) and requires further modularization.
--   **Pydantic Data Models:** The core Pydantic models (, ) are known to be brittle and have caused bugs in the past. They should be audited and refactored.
+The entire backend is undergoing a planned and controlled refactoring. The primary area of focus is  and the existing router files (), which need to be progressively migrated into the new  structure.
 
 **key api endpoints**
--   : Modified to handle partial updates correctly and ensure  is synced when  changes.
--   : Fixed to prevent a 500 server error.
--   Various GET endpoints were added to a whitelist in  to bypass strict rate limiting.
+-    (bridged for )
+-    (bridged for  with shadow comparison)
+-    (bridged for  with shadow comparison)
+-   An endpoint for creating room blocks (bridged for ).
 
 **Critical Info for New Agent**
--   **The user's top priority is a thorough, granular end-to-end test.** They have asked for this twice. Your first action should be to plan and execute this test using the , instructing it to click everything. Do not proceed with other tasks until the user is satisfied with the application's stability.
--   The user communicates in Turkish. You must continue the conversation in Turkish.
--   After the E2E test is validated, the next step is to guide the user to deploy the changes to their production environment via the Save to Github feature.
--   The large-scale  refactoring is the main background task to be resumed once all user-reported issues are resolved.
+Your primary directive is to continue executing the established, sprint-based migration plan. The pattern is non-negotiable:
+1.  **Select the next narrow write-path from the plan** (Next up is ).
+2.  Implement the logic in its new semantic **service** inside the corresponding  directory.
+3.  **Bridge** the legacy endpoint to call the new service, ensuring the external contract does not change.
+4.  Implement **idempotency, audit logging, and outbox event emission** for the new write-path.
+5.  Write thorough **backend tests** to verify correctness, contract preservation, and safety features.
+6.  **Do not batch multiple write-path migrations together.** Follow the one at a time, observe, then proceed cadence.
+7.  The user is acting as the CTO and has a very specific architectural vision. Do not deviate from the agreed-upon principles (Stay-centric, Ledgers, Events, etc.).
 
 **documents and test reports created in this job**
--   
--   
--   
+None.
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User (96):** when I drag on the calendar, the other reservations disappear instantly, it gets fixed when I refresh the page
-2.  **User (111):** when I double-click the guest, in the screen that appears, view folio, edit reservation, send confirmation, none of them work
-3.  **User (192):** check the application end-to-end, check all existing buttons, fix all errors that give a white screen
-4.  **User (231):** I want you to click on the clickable places within the pages and all the buttons inside them
+1.  **User:** Approved starting the  package.
+2.  **Agent:** Implemented the  migration.
+3.  **Agent:** Ran tests, which passed.
+4.  **User:** Requested a quick frontend smoke test.
+5.  **Agent:** Ran the screenshot tool.
+6.  **Agent:** Reported that the smoke test passed and the UI was not broken.
 
 **Project Health Check:**
--   **Broken:** None. All reported and discovered issues in this session have been fixed.
--   **Mocked:** The backend test suite in  uses mock endpoints.
+-   **Broken:** None.
+-   **Mocked:** The migration is happening on the live codebase, not with mocks.
 
 **3rd Party Integrations**
--   None added in this session.
+None added or modified in this session.
 
 **Testing status**
--   **Testing agent used after significant changes:** YES
+-   **Testing agent used after significant changes:** NO (Agent performed targeted testing).
 -   **Troubleshoot agent used after agent stuck in loop:** NO
--   **Test files created:** None. Test reports were generated at .
+-   **Test files created:**
+    -   
+    -   
+    -   
 -   **Known regressions:** None.
 
 **Credentials to test flow:**
 | User | E-posta | Şifre | Rol |
 |---|---|---|---|
 | **Demo Admin** |  |  | Admin |
-| Front Desk |  |  | Ön Büro |
-| Housekeeping |  |  | Kat Hizmetleri |
-| Finance |  |  | Finans |
-| Sales |  |  | Satış |
 
 **What agent forgot to execute**
-The agent addressed all user requests and did not forget any tasks. The user's final message was a request for a more granular version of a test that was already completed, which is now the top priority for the next session.</analysis>
+The agent has meticulously followed the user's detailed plan. Nothing has been forgotten.</analysis>

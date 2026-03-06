@@ -1,0 +1,70 @@
+{
+  "summary": "Validated folio-open write-path migration for Strangler Fig pattern. All 7 backend tests pass (happy path, idempotency, validation, tenant isolation). Frontend smoke test confirmed app loads, login works with demo admin credentials, and dashboard displays correctly with no blank/white screen.",
+  
+  "features_tested": [
+    "POST /api/folio/create happy path - opens new folio through semantic service ✅",
+    "Idempotency - same key returns same folio ✅",
+    "Idempotency - different key after folio exists returns 409 ✅",
+    "Missing Idempotency-Key rejected (400) ✅",
+    "Invalid booking reference rejected (404) ✅",
+    "Wrong property scope rejected (403) ✅",
+    "Wrong tenant cannot access other tenant's bookings (404) ✅",
+    "Outbox event folio.opened.v1 created with expected payload ✅",
+    "Audit log entry folio_opened created ✅",
+    "Frontend loads without blank/white screen ✅",
+    "Login works with demo@hotel.com / demo123 ✅",
+    "Dashboard displays AI Daily Briefing, stats cards, analytics charts ✅"
+  ],
+
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+
+  "test_report_links": [
+    "/app/backend/tests/test_open_folio_bridge.py",
+    "/app/test_reports/pytest/pytest_open_folio_bridge.xml"
+  ],
+
+  "action_items": [],
+
+  "critical_code_review_comments": [
+    "OpenFolioService properly implements idempotency with request hash comparison",
+    "Tenant isolation enforced via build_tenant_context and booking lookup filtering",
+    "Property scope validation correctly rejects mismatched x-property-id headers",
+    "Outbox events and audit logs created atomically within the transaction flow",
+    "Response contract preserved with expected fields (id, tenant_id, booking_id, folio_number, folio_type, status, guest_id, company_id, balance, notes, created_at, closed_at)"
+  ],
+
+  "updated_files": [],
+
+  "success_rate": {
+    "backend": "100% (7/7 tests passed)",
+    "frontend": "100% (smoke test passed)"
+  },
+
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123",
+    "role": "Admin"
+  },
+
+  "seed_data_creation": "Tests create their own test data (companies, bookings) and use existing demo tenant guests/rooms",
+
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+
+  "context_for_next_testing_agent": "Folio-open semantic service migration tested and validated. All write-path tests pass including happy path with outbox event (folio.opened.v1) and audit log (folio_opened) creation. Idempotency correctly implemented with request hash comparison. Tenant/property isolation enforced. Frontend smoke confirmed working. Next iteration could test charge post/payment/refund/invoice flows when ready for migration.",
+
+  "test_environment": {
+    "backend_url": "https://hospitality-os-6.preview.emergentagent.com",
+    "mongodb": "Connected via MONGO_URL from backend/.env",
+    "redis": "Not available (caching disabled)"
+  }
+}
