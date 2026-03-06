@@ -69,6 +69,13 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - **Bridged low-risk read paths:** `GET /api/pms/bookings`, `GET /api/pms/rooms/availability`, `GET /api/folio/{folio_id}` now delegate to semantic read services without changing external contracts
 - **Testing:** backend regression smoke passed; frontend smoke passed; new foundation tests added under `backend/tests/`
 
+### Semantic Migration Test Hardening Pack (COMPLETED - Mar 2026)
+- **Expanded contract snapshot tests:** added integration-level contract coverage for `/api/pms/bookings` (filtered, unfiltered, empty-list scenarios)
+- **Expanded tenant/property isolation matrix:** added isolation harness coverage for `/api/pms/bookings`, `/api/pms/rooms/availability`, `/api/folio/{folio_id}`
+- **Stabilized read contracts in tests:** availability and folio read response shape + nullability expectations are now explicitly tested
+- **Files added/updated:** `backend/tests/test_semantic_read_contracts.py`, `backend/tests/harnesses/contract.py`, `backend/tests/harnesses/tenant_isolation.py`
+- **Test result:** contract hardening suite **16/16 PASS**
+
 ### Root Directory Cleanup (COMPLETED - Feb 2026)
 - Removed 152 test .py files from root directory
 - Clean project structure
@@ -128,9 +135,10 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 ## Prioritized Backlog
 
 ### P0 (Next)
-- Semantic Migration Sprint 2: reservation writes, room block create/release, folio open/charge, outbox + shadow mode
+- Shadow metric altyapısı başlangıcı (availability + folio read için) ve ardından Semantic Migration Sprint 2 write-path başlangıcı
 
 ### P1
+- Semantic Migration Sprint 2: reservation writes, room block create/release, folio open/charge, outbox + shadow mode
 - Semantic Migration Sprint 3: stay aggregate writes (room assign/move, check-in/out, extend) with state machine + rollback playbook
 - Semantic Migration Sprint 4: finance risk paths (payment, refund, invoice) with idempotency + reconciliation
 - Redis-based Caching (replace in-memory SimpleCache)
