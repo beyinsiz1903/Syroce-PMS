@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { useNavigate } from 'react-router-dom';
-import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,8 +12,6 @@ import LanguageSelector from '@/components/LanguageSelector';
 
 const AuthPage = ({ onLogin }) => {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  const location = useLocation();
   const [activeTab, setActiveTab] = useState('hotel-login');
   const [loading, setLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -52,8 +48,6 @@ const AuthPage = ({ onLogin }) => {
     email: '', password: '', name: '', phone: ''
   });
 
-  const loginRedirectPath = location.state?.redirectTo || sessionStorage.getItem('postLoginRedirect') || '/app/dashboard';
-
   const handleHotelLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -62,10 +56,8 @@ const AuthPage = ({ onLogin }) => {
       
       toast.success(t('auth.loginSuccess'));
       
-      // Call onLogin to update app state - React Router handles redirect
+      // PostAuthRedirect in App.js handles final navigation after auth state updates
       onLogin(response.data.access_token, response.data.user, response.data.tenant);
-      sessionStorage.removeItem('postLoginRedirect');
-      navigate(loginRedirectPath, { replace: true });
     } catch (error) {
       const errorMessage = error.response?.data?.detail || error.message || t('auth.loginFailed');
       toast.error(errorMessage);
@@ -80,8 +72,8 @@ const AuthPage = ({ onLogin }) => {
     try {
       const response = await axios.post('/auth/login', guestLoginData);
       toast.success(t('auth.welcomeBack'));
+      sessionStorage.setItem('postLoginRedirect', '/guest-portal');
       onLogin(response.data.access_token, response.data.user, response.data.tenant);
-      navigate('/guest-portal');
     } catch (error) {
       toast.error(error.response?.data?.detail || t('auth.loginFailed'));
     } finally {
@@ -98,7 +90,6 @@ const AuthPage = ({ onLogin }) => {
       console.log('✅ Register response:', response.data);
       toast.success(t('auth.registerSuccess'));
       onLogin(response.data.access_token, response.data.user, response.data.tenant);
-      navigate('/');
     } catch (error) {
       console.error('Registration error:', error);
       console.error('Error response:', error.response?.data);
@@ -114,8 +105,8 @@ const AuthPage = ({ onLogin }) => {
     try {
       const response = await axios.post('/auth/register-guest', guestRegisterData);
       toast.success(t('auth.accountCreatedWelcome'));
+      sessionStorage.setItem('postLoginRedirect', '/guest-portal');
       onLogin(response.data.access_token, response.data.user, response.data.tenant);
-      navigate('/guest-portal');
     } catch (error) {
       toast.error(error.response?.data?.detail || t('auth.registerFailed'));
     } finally {
