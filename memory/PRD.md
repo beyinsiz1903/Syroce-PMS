@@ -154,6 +154,16 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - **Live outcome:** previous **120 stale pending** backlog drained; current observed state is **Health = GREEN**, `pending=0`, `processed=122`, `failed=0`, `parked=0`, `stale_pending=0`
 - **Validation:** backend tests **7 PASS**, migration observability tests **4 PASS / 2 skipped**, testing agent backend/frontend validation **PASS**, live reservation-create E2E outbox processing **PASS**
 
+### ModifyReservation Bridge + Outbox Package (COMPLETED - Mar 2026)
+- **Added semantic reservation update service:** `backend/modules/reservations/services/update_reservation_service.py`
+- **Bridged legacy endpoint:** active `PUT /api/pms/bookings/{booking_id}` path now delegates to the semantic modify service while preserving the legacy response contract (returns updated booking document)
+- **Added idempotency enforcement:** `Idempotency-Key` is now required for reservation modify; same-key retries return the same response and re-applying the same target state with a new key is deterministic without duplicate outbox events
+- **Added outbox + audit:** successful modify now writes `reservation.modified.v1` to `outbox_events` and creates `reservation_modified` audit log entries with changed-field metadata
+- **Preserved room-move regression fix:** room changes keep `room_number` synchronized and booking-count stability remains protected
+- **Aligned frontend callers:** `frontend/src/pages/ReservationCalendar.js` and `frontend/src/hooks/usePMSData.js` now send `Idempotency-Key` for booking updates
+- **Added regression tests:** `backend/tests/test_modify_reservation_bridge.py` plus updated `backend/tests/test_booking_room_move_fix.py`
+- **Validation:** modify bridge suite **6/6 PASS**, room-move regression suite **8/8 PASS**, testing agent backend validation **14/14 PASS**, frontend Reservation Calendar smoke **PASS**
+
 ### Root Directory Cleanup (COMPLETED - Feb 2026)
 - Removed 152 test .py files from root directory
 - Clean project structure
@@ -165,6 +175,7 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 │   ├── server.py              # Main server (41,622 lines)
 │   ├── modules/               # Semantic migration foundations (NEW)
 │   │   ├── reservations/      # Reservation read abstraction + future write migration
+│   │   │   └── services/update_reservation_service.py  # ModifyReservation semantic bridge
 │   │   ├── stays/             # Stay aggregate read abstraction + future write migration
 │   │   ├── inventory/         # Availability read abstraction + room block create/release write migrations
 │   │   └── folio/             # Folio balance/detail reads + folio-open write migration
@@ -192,6 +203,7 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 │       ├── test_pms_finance_reports_routers.py  # (NEW)
 │       └── test_router_modularization.py        # (NEW)
 │       ├── test_semantic_migration_foundations.py # Sprint 1 foundation tests (NEW)
+│       ├── test_modify_reservation_bridge.py    # ModifyReservation bridge tests
 │       └── harnesses/         # Contract + tenant isolation test harnesses (NEW)
 ├── frontend/
 │   └── src/
@@ -214,11 +226,11 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 ## Prioritized Backlog
 
 ### P0 (Next)
-- Temporary operational worker artık backlog’u temizliyor; bir sonraki karar noktası bunun ne kadar gözlemlenip stabil kabul edileceği
-- `ModifyReservation` öncesi kısa stabilizasyon periyodunda health score ve processed/failure sinyalleri izlenecek
+- `reservation.modified.v1` akışıyla health score / outbox drain kısa süre daha izlenecek; Green korunuyorsa sıradaki dar write-path `CancelReservation`
+- Temporary operational worker için ayrı process/pod worker’a çıkarma teknik borcu açık tutulacak
 
 ### P1
-- Semantic Migration Sprint 2: kısa stabilizasyon/gözlem sonrası `ModifyReservation`, sonra `CancelReservation` ve kontrollü `charge post`
+- Semantic Migration Sprint 2: `CancelReservation`, sonra kontrollü `charge post`
 - Migration observability paneline `processed_at`, retry metadata ve dead-letter lifecycle geldiğinde gerçek lag/retry grafikleri bağlanacak
 - Temporary operational worker ileride ayrı process/pod worker’a çıkarılacak
 - Health score kartına ileride trend/history ve cutover recommendation history eklenebilir
