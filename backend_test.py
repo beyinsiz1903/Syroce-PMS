@@ -1,504 +1,731 @@
 #!/usr/bin/env python3
 """
-Backend test for Turkish Room Block Create package validation
-Test Focus:
-1. POST /api/pms/room-blocks yeni semantic service üzerinden çalışıyor mu?
-2. Idempotency enforcement aktif mi?
-3. Başarılı create sonrası inventory.blocked.v1 outbox kaydı oluşuyor mu?
-4. Audit kaydı oluşuyor mu?
-5. Invalid date range / missing key / wrong property scope güvenli mi?
-6. Availability etkisi beklenen şekilde görünüyor mu?
-7. Response contract bozulmuş mu?
+Comprehensive Backend Testing for RoomBlockRelease Semantic Migration
+Test Cases from Review Request:
+1. Authenticate and obtain bearer token
+2. Create a room block using POST /api/pms/room-blocks with Idempotency-Key
+3. Release that block using POST /api/pms/room-blocks/{block_id}/cancel with Idempotency-Key
+4. Validate response structure
+5. Verify outbox event inventory.released.v1 exists
+6. Verify audit log room_block_released exists
+7. Verify availability effects
+8. Verify idempotency behavior
+9. Verify validations (missing key, wrong property scope, wrong tenant)
+10. Report any malformed payloads, duplicate events, or tenant isolation problems
 """
 
 import os
-import uuid
+import sys
 import json
-import asyncio
+import uuid
+import requests
+import pymongo
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, Optional
-
-import aiohttp
-import asyncio
+from typing import Optional, Dict, Any, List
 
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-print(f"Testing backend at: {BASE_URL}")
-
-class RoomBlockTestValidator:
+class RoomBlockReleaseSemanticMigrationTest:
     def __init__(self):
-        self.session: Optional[aiohttp.ClientSession] = None
-        self.token: Optional[str] = None
-        self.tenant_id: Optional[str] = None
-        self.test_results = []
-        self.available_room = None
-        self.test_start_date = None
-        self.test_end_date = None
-
-    async def setup(self):
-        """Setup authentication and get available room"""
-        if not BASE_URL:
-            raise Exception("REACT_APP_BACKEND_URL missing from environment")
+        # Get backend URL from environment
+        self.backend_url = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+        if not self.backend_url:
+            raise Exception("REACT_APP_BACKEND_URL not found in environment")
         
-        self.session = aiohttp.ClientSession()
+        print(f"🔗 Backend URL: {self.backend_url}")
         
-        # Login
-        login_payload = {
-            'email': 'demo@hotel.com', 
-            'password': 'demo123'
+        # Setup MongoDB connection for direct validation
+        self.mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
+        try:
+            self.mongo_client = pymongo.MongoClient(self.mongo_url)
+            self.db = self.mongo_client.hotel_pms  # Backend uses hotel_pms database
+            print(f"✅ MongoDB connection established: {self.mongo_url}")
+        except Exception as e:
+            print(f"❌ MongoDB connection failed: {e}")
+            raise
+        
+        # Test session
+        self.session = requests.Session()
+        self.session.headers.update({'Content-Type': 'application/json'})
+        
+        # Test credentials
+        self.email = "demo@hotel.com"
+        self.password = "demo123"
+        
+        # Test state
+        self.token = None
+        self.tenant_id = None
+        self.property_id = None
+        self.test_room = None
+        self.test_dates = None
+        
+        # Results tracking
+        self.results = []
+        self.critical_issues = []
+        self.minor_issues = []
+    
+    def log_result(self, test_name: str, passed: bool, details: str = "", critical: bool = False):
+        """Log test result and categorize issues"""
+        result = {
+            'test': test_name,
+            'passed': passed,
+            'details': details,
+            'critical': critical
         }
+        self.results.append(result)
         
-        async with self.session.post(f'{BASE_URL}/api/auth/login', json=login_payload) as resp:
-            if resp.status != 200:
-                text = await resp.text()
-                raise Exception(f"Login failed: {resp.status} - {text}")
+        if not passed:
+            if critical:
+                self.critical_issues.append(f"❌ CRITICAL: {test_name} - {details}")
+            else:
+                self.minor_issues.append(f"⚠️  Minor: {test_name} - {details}")
+        
+        print(f"{'✅' if passed else ('❌' if critical else '⚠️ ')} {test_name}: {'PASS' if passed else 'FAIL'}")
+        if details and not passed:
+            print(f"   Details: {details}")
+    
+    def authenticate(self) -> bool:
+        """Test Case 1: Authenticate and obtain bearer token"""
+        try:
+            print("\n🔐 Testing Authentication...")
             
-            login_data = await resp.json()
-            self.token = login_data['access_token']
-            self.tenant_id = login_data['user']['tenant_id']
-        
-        # Get available room for testing
-        await self._find_available_room()
-        print(f"✅ Setup complete. Token obtained, tenant_id: {self.tenant_id}")
-        print(f"✅ Test room: {self.available_room['room_number']} ({self.available_room['id']})")
-        print(f"✅ Test dates: {self.test_start_date} to {self.test_end_date}")
-
-    async def _find_available_room(self):
-        """Find an available room for testing"""
-        self.test_start_date = (datetime.utcnow().date() + timedelta(days=30)).isoformat()
-        self.test_end_date = (datetime.utcnow().date() + timedelta(days=32)).isoformat()
-        
-        headers = {'Authorization': f'Bearer {self.token}'}
-        url = f'{BASE_URL}/api/pms/rooms/availability?check_in={self.test_start_date}&check_out={self.test_end_date}'
-        
-        async with self.session.get(url, headers=headers) as resp:
-            if resp.status != 200:
-                text = await resp.text()
-                raise Exception(f"Failed to get availability: {resp.status} - {text}")
+            response = self.session.post(f'{self.backend_url}/api/auth/login', json={
+                'email': self.email,
+                'password': self.password
+            })
             
-            availability = await resp.json()
+            if response.status_code != 200:
+                self.log_result("Authentication", False, 
+                              f"Login failed with status {response.status_code}: {response.text}", 
+                              critical=True)
+                return False
+            
+            data = response.json()
+            if 'access_token' not in data or 'user' not in data:
+                self.log_result("Authentication", False, 
+                              f"Invalid login response structure: {data}", 
+                              critical=True)
+                return False
+            
+            self.token = data['access_token']
+            self.tenant_id = data['user']['tenant_id']
+            self.property_id = self.tenant_id  # In single-tenant mode
+            
+            # Update session with bearer token
+            self.session.headers.update({'Authorization': f'Bearer {self.token}'})
+            
+            self.log_result("Authentication", True, 
+                          f"Token obtained, tenant_id: {self.tenant_id}")
+            return True
+            
+        except Exception as e:
+            self.log_result("Authentication", False, f"Exception: {str(e)}", critical=True)
+            return False
+    
+    def find_available_room(self) -> bool:
+        """Find an available room for testing future dates"""
+        try:
+            print("\n🏨 Finding available room for testing...")
+            
+            # Use future dates (60-63 days out) to avoid conflicts
+            start_date = (datetime.now().date() + timedelta(days=60)).isoformat()
+            end_date = (datetime.now().date() + timedelta(days=63)).isoformat()
+            
+            response = self.session.get(
+                f'{self.backend_url}/api/pms/rooms/availability'
+                f'?check_in={start_date}&check_out={end_date}'
+            )
+            
+            if response.status_code != 200:
+                self.log_result("Find Available Room", False, 
+                              f"Availability check failed: {response.status_code}", 
+                              critical=True)
+                return False
+            
+            availability = response.json()
             available_rooms = [room for room in availability if room.get('available') is True]
             
             if not available_rooms:
-                raise Exception("No available rooms found for testing date range")
+                self.log_result("Find Available Room", False, 
+                              "No available rooms found for test date range", 
+                              critical=True)
+                return False
             
-            self.available_room = available_rooms[0]
-
-    def _get_headers(self, idempotency_key: str = None, property_id: str = None):
-        """Build request headers"""
-        headers = {
-            'Authorization': f'Bearer {self.token}',
-            'Content-Type': 'application/json'
-        }
-        if idempotency_key:
-            headers['Idempotency-Key'] = idempotency_key
-        if property_id:
-            headers['x-property-id'] = property_id
-        return headers
-
-    def _build_room_block_payload(self, room_id: str = None, start_date: str = None, end_date: str = None):
-        """Build room block create payload"""
-        return {
-            'room_id': room_id or self.available_room['id'],
-            'type': 'out_of_order',
-            'reason': f'TEST-semantic-room-block-{uuid.uuid4().hex[:8]}',
-            'details': 'Semantic room block bridge validation test',
-            'start_date': start_date or self.test_start_date,
-            'end_date': end_date or self.test_end_date,
-            'allow_sell': False
-        }
-
-    async def _check_database_records(self, block_id: str):
-        """Check if outbox and audit records were created"""
-        from core.database import db
-        
-        # Check outbox event
-        outbox = await db.outbox_events.find_one({
-            'room_block_id': block_id,
-            'event_type': 'inventory.blocked.v1',
-            'tenant_id': self.tenant_id
-        }, {'_id': 0})
-        
-        # Check audit log
-        audit = await db.audit_logs.find_one({
-            'entity_type': 'room_block',
-            'entity_id': block_id,
-            'action': 'room_block_created',
-            'tenant_id': self.tenant_id
-        }, {'_id': 0})
-        
-        return outbox, audit
-
-    async def test_1_semantic_service_create_working(self):
-        """Test 1: POST /api/pms/room-blocks yeni semantic service üzerinden çalışıyor mu?"""
-        test_name = "Semantic Service Create Working"
-        try:
-            payload = self._build_room_block_payload()
-            idem_key = f'test-1-{uuid.uuid4()}'
-            headers = self._get_headers(idempotency_key=idem_key)
+            self.test_room = available_rooms[0]
+            self.test_dates = {'start_date': start_date, 'end_date': end_date}
             
-            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    self.test_results.append(f"❌ {test_name}: HTTP {resp.status} - {text}")
-                    return
-                
-                data = await resp.json()
-                
-                # Validate response structure
-                if 'block' not in data or 'message' not in data:
-                    self.test_results.append(f"❌ {test_name}: Response structure invalid - missing block or message")
-                    return
-                
-                block = data['block']
-                if block.get('room_id') != payload['room_id'] or block.get('type') != payload['type']:
-                    self.test_results.append(f"❌ {test_name}: Block data mismatch")
-                    return
-                
-                self.test_results.append(f"✅ {test_name}: Semantic service creates room blocks successfully")
-                return block['id']
-                
-        except Exception as e:
-            self.test_results.append(f"❌ {test_name}: Exception - {str(e)}")
-            return None
-
-    async def test_2_idempotency_enforcement(self):
-        """Test 2: Idempotency enforcement aktif mi?"""
-        test_name = "Idempotency Enforcement"
-        try:
-            payload = self._build_room_block_payload()
-            idem_key = f'test-2-{uuid.uuid4()}'
-            headers = self._get_headers(idempotency_key=idem_key)
-            
-            # First request
-            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    self.test_results.append(f"❌ {test_name}: First request failed: HTTP {resp.status} - {text}")
-                    return
-                
-                first_response = await resp.json()
-                first_block_id = first_response['block']['id']
-            
-            # Second request with same idempotency key
-            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    self.test_results.append(f"❌ {test_name}: Second request failed: HTTP {resp.status} - {text}")
-                    return
-                
-                second_response = await resp.json()
-                second_block_id = second_response['block']['id']
-            
-            # Validate idempotency
-            if first_block_id != second_block_id:
-                self.test_results.append(f"❌ {test_name}: Different block IDs returned ({first_block_id} vs {second_block_id})")
-                return
-            
-            self.test_results.append(f"✅ {test_name}: Idempotency enforcement working - same block returned")
-            return first_block_id
+            self.log_result("Find Available Room", True, 
+                          f"Room {self.test_room['room_number']} available for {start_date} to {end_date}")
+            return True
             
         except Exception as e:
-            self.test_results.append(f"❌ {test_name}: Exception - {str(e)}")
-            return None
-
-    async def test_3_outbox_event_creation(self):
-        """Test 3: Başarılı create sonrası inventory.blocked.v1 outbox kaydı oluşuyor mu?"""
-        test_name = "Outbox Event Creation"
+            self.log_result("Find Available Room", False, f"Exception: {str(e)}", critical=True)
+            return False
+    
+    def create_room_block(self) -> Optional[Dict[str, Any]]:
+        """Test Case 2: Create a room block using POST /api/pms/room-blocks with Idempotency-Key"""
         try:
-            payload = self._build_room_block_payload()
-            idem_key = f'test-3-{uuid.uuid4()}'
-            headers = self._get_headers(idempotency_key=idem_key)
+            print("\n🔒 Testing Room Block Creation...")
             
-            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    self.test_results.append(f"❌ {test_name}: Room block create failed: HTTP {resp.status} - {text}")
-                    return
-                
-                data = await resp.json()
-                block_id = data['block']['id']
+            idempotency_key = f"test-create-{uuid.uuid4()}"
             
-            # Check outbox record
-            outbox, _ = await self._check_database_records(block_id)
+            payload = {
+                'room_id': self.test_room['id'],
+                'type': 'out_of_order',
+                'reason': f'RoomBlockRelease semantic migration test - {uuid.uuid4().hex[:8]}',
+                'details': 'Testing semantic ReleaseRoomBlockService migration',
+                'start_date': self.test_dates['start_date'],
+                'end_date': self.test_dates['end_date'],
+                'allow_sell': False,
+            }
             
-            if not outbox:
-                self.test_results.append(f"❌ {test_name}: No outbox event found for block {block_id}")
-                return
+            response = self.session.post(
+                f'{self.backend_url}/api/pms/room-blocks',
+                json=payload,
+                headers={'Idempotency-Key': idempotency_key}
+            )
             
-            # Validate outbox event structure
-            expected_fields = ['event_type', 'tenant_id', 'room_block_id', 'payload']
-            missing_fields = [field for field in expected_fields if field not in outbox]
+            if response.status_code != 200:
+                self.log_result("Create Room Block", False, 
+                              f"Block creation failed: {response.status_code} - {response.text}", 
+                              critical=True)
+                return None
+            
+            data = response.json()
+            
+            # Validate response structure
+            required_fields = ['message', 'block']
+            missing_fields = [field for field in required_fields if field not in data]
             if missing_fields:
-                self.test_results.append(f"❌ {test_name}: Outbox event missing fields: {missing_fields}")
-                return
+                self.log_result("Create Room Block Response Structure", False, 
+                              f"Missing fields: {missing_fields}", critical=True)
+                return None
             
-            if outbox['event_type'] != 'inventory.blocked.v1':
-                self.test_results.append(f"❌ {test_name}: Wrong event type: {outbox['event_type']}")
-                return
+            block = data['block']
+            block_required_fields = ['id', 'room_id', 'type', 'status', 'start_date', 'end_date']
+            missing_block_fields = [field for field in block_required_fields if field not in block]
+            if missing_block_fields:
+                self.log_result("Create Room Block Structure", False, 
+                              f"Missing block fields: {missing_block_fields}", critical=True)
+                return None
             
-            self.test_results.append(f"✅ {test_name}: inventory.blocked.v1 outbox event created successfully")
+            self.log_result("Create Room Block", True, 
+                          f"Block created with ID: {block['id']}")
+            return block
             
         except Exception as e:
-            self.test_results.append(f"❌ {test_name}: Exception - {str(e)}")
-
-    async def test_4_audit_log_creation(self):
-        """Test 4: Audit kaydı oluşuyor mu?"""
-        test_name = "Audit Log Creation"
+            self.log_result("Create Room Block", False, f"Exception: {str(e)}", critical=True)
+            return None
+    
+    def release_room_block(self, block: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Test Case 3: Release room block using legacy endpoint with semantic service"""
         try:
-            payload = self._build_room_block_payload()
-            idem_key = f'test-4-{uuid.uuid4()}'
-            headers = self._get_headers(idempotency_key=idem_key)
+            print("\n🔓 Testing Room Block Release...")
             
-            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    self.test_results.append(f"❌ {test_name}: Room block create failed: HTTP {resp.status} - {text}")
-                    return
-                
-                data = await resp.json()
-                block_id = data['block']['id']
+            idempotency_key = f"test-release-{uuid.uuid4()}"
             
-            # Check audit record
-            _, audit = await self._check_database_records(block_id)
+            response = self.session.post(
+                f'{self.backend_url}/api/pms/room-blocks/{block["id"]}/cancel',
+                headers={'Idempotency-Key': idempotency_key}
+            )
             
-            if not audit:
-                self.test_results.append(f"❌ {test_name}: No audit log found for block {block_id}")
-                return
+            if response.status_code != 200:
+                self.log_result("Release Room Block", False, 
+                              f"Block release failed: {response.status_code} - {response.text}", 
+                              critical=True)
+                return None
+            
+            data = response.json()
+            self.log_result("Release Room Block", True, 
+                          f"Block released: {block['id']}")
+            return data
+            
+        except Exception as e:
+            self.log_result("Release Room Block", False, f"Exception: {str(e)}", critical=True)
+            return None
+    
+    def validate_release_response_structure(self, release_response: Dict[str, Any], 
+                                          block: Dict[str, Any]) -> bool:
+        """Test Case 4: Validate response structure"""
+        try:
+            print("\n📋 Validating Release Response Structure...")
+            
+            required_fields = [
+                'message', 'block_id', 'room_block_id', 'status', 
+                'released_at', 'property_id', 'room_id', 'correlation_id'
+            ]
+            
+            missing_fields = []
+            for field in required_fields:
+                if field not in release_response:
+                    missing_fields.append(field)
+            
+            if missing_fields:
+                self.log_result("Release Response Structure", False, 
+                              f"Missing required fields: {missing_fields}", critical=True)
+                return False
+            
+            # Validate field values
+            validations = [
+                (release_response['block_id'] == block['id'], "block_id matches"),
+                (release_response['room_block_id'] == block['id'], "room_block_id matches"),
+                (release_response['status'] == 'released', "status is 'released'"),
+                (release_response['property_id'] == self.property_id, "property_id matches"),
+                (release_response['room_id'] == self.test_room['id'], "room_id matches"),
+                (release_response['released_at'] is not None, "released_at is present"),
+                (release_response['correlation_id'] is not None, "correlation_id is present"),
+            ]
+            
+            failed_validations = [desc for valid, desc in validations if not valid]
+            
+            if failed_validations:
+                self.log_result("Release Response Validation", False, 
+                              f"Failed validations: {failed_validations}", critical=True)
+                return False
+            
+            self.log_result("Release Response Structure", True, 
+                          "All required fields present and valid")
+            return True
+            
+        except Exception as e:
+            self.log_result("Release Response Structure", False, f"Exception: {str(e)}", critical=True)
+            return False
+    
+    def verify_outbox_event(self, block: Dict[str, Any]) -> bool:
+        """Test Case 5: Verify outbox event inventory.released.v1 exists and is not duplicated"""
+        try:
+            print("\n📤 Verifying Outbox Event...")
+            
+            # Query outbox events directly from MongoDB
+            outbox_query = {
+                'room_block_id': block['id'],
+                'event_type': 'inventory.released.v1',
+                'tenant_id': self.tenant_id
+            }
+            
+            events = list(self.db.outbox_events.find(outbox_query, {'_id': 0}))
+            
+            if len(events) == 0:
+                self.log_result("Outbox Event Exists", False, 
+                              f"No inventory.released.v1 event found for block {block['id']}", 
+                              critical=True)
+                return False
+            
+            if len(events) > 1:
+                self.log_result("Outbox Event Duplication", False, 
+                              f"Multiple events found ({len(events)}) - duplicate events detected", 
+                              critical=True)
+                return False
+            
+            event = events[0]
+            
+            # Validate event structure
+            required_event_fields = [
+                'event_type', 'tenant_id', 'room_block_id', 'payload', 
+                'property_id', 'released_at', 'status', 'created_at'
+            ]
+            
+            missing_fields = [field for field in required_event_fields if field not in event]
+            if missing_fields:
+                self.log_result("Outbox Event Structure", False, 
+                              f"Missing event fields: {missing_fields}", critical=True)
+                return False
+            
+            # Validate payload structure
+            payload = event.get('payload', {})
+            required_payload_fields = [
+                'release_scope', 'effective_date_range', 'actor_reference', 
+                'reason', 'source', 'block_type', 'allow_sell'
+            ]
+            
+            missing_payload_fields = [field for field in required_payload_fields if field not in payload]
+            if missing_payload_fields:
+                self.log_result("Outbox Event Payload", False, 
+                              f"Missing payload fields: {missing_payload_fields}", critical=True)
+                return False
+            
+            # Validate payload values
+            payload_validations = [
+                (payload['source'] == 'semantic_inventory_service', "source is semantic_inventory_service"),
+                (payload['release_scope']['room_id'] == self.test_room['id'], "room_id matches in release_scope"),
+                (payload['effective_date_range']['start_date'] == block['start_date'], "start_date matches"),
+                (payload['effective_date_range']['end_date'] == block['end_date'], "end_date matches"),
+                (payload['actor_reference']['actor_id'] is not None, "actor_id is present"),
+            ]
+            
+            failed_payload_validations = [desc for valid, desc in payload_validations if not valid]
+            if failed_payload_validations:
+                self.log_result("Outbox Event Payload Validation", False, 
+                              f"Failed payload validations: {failed_payload_validations}", critical=True)
+                return False
+            
+            self.log_result("Outbox Event", True, 
+                          f"inventory.released.v1 event exists and validated for block {block['id']}")
+            return True
+            
+        except Exception as e:
+            self.log_result("Outbox Event Verification", False, f"Exception: {str(e)}", critical=True)
+            return False
+    
+    def verify_audit_log(self, block: Dict[str, Any]) -> bool:
+        """Test Case 6: Verify audit log room_block_released exists"""
+        try:
+            print("\n📝 Verifying Audit Log...")
+            
+            # Query audit logs directly from MongoDB
+            audit_query = {
+                'entity_type': 'room_block',
+                'entity_id': block['id'],
+                'action': 'room_block_released',
+                'tenant_id': self.tenant_id
+            }
+            
+            audit_logs = list(self.db.audit_logs.find(audit_query, {'_id': 0}))
+            
+            if len(audit_logs) == 0:
+                self.log_result("Audit Log Exists", False, 
+                              f"No room_block_released audit log found for block {block['id']}", 
+                              critical=True)
+                return False
+            
+            audit_log = audit_logs[0]  # Take the first one
             
             # Validate audit log structure
-            expected_fields = ['entity_type', 'entity_id', 'action', 'tenant_id']
-            missing_fields = [field for field in expected_fields if field not in audit]
-            if missing_fields:
-                self.test_results.append(f"❌ {test_name}: Audit log missing fields: {missing_fields}")
-                return
+            required_audit_fields = [
+                'entity_type', 'entity_id', 'action', 'tenant_id', 
+                'property_id', 'actor_id', 'correlation_id'
+            ]
             
-            if audit['action'] != 'room_block_created':
-                self.test_results.append(f"❌ {test_name}: Wrong audit action: {audit['action']}")
-                return
+            missing_audit_fields = [field for field in required_audit_fields if field not in audit_log]
+            if missing_audit_fields:
+                self.log_result("Audit Log Structure", False, 
+                              f"Missing audit fields: {missing_audit_fields}", critical=True)
+                return False
             
-            self.test_results.append(f"✅ {test_name}: Audit log created successfully")
+            self.log_result("Audit Log", True, 
+                          f"room_block_released audit log exists for block {block['id']}")
+            return True
             
         except Exception as e:
-            self.test_results.append(f"❌ {test_name}: Exception - {str(e)}")
-
-    async def test_5_security_validations(self):
-        """Test 5: Invalid date range / missing key / wrong property scope güvenli mi?"""
-        test_name = "Security Validations"
-        
-        # Test missing idempotency key
+            self.log_result("Audit Log Verification", False, f"Exception: {str(e)}", critical=True)
+            return False
+    
+    def verify_availability_effects(self, block: Dict[str, Any]) -> bool:
+        """Test Case 7: Verify availability effects before and after release"""
         try:
-            payload = self._build_room_block_payload()
-            headers = self._get_headers()  # No idempotency key
+            print("\n🏨 Verifying Availability Effects...")
             
-            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
-                if resp.status == 400:
-                    text = await resp.text()
-                    if 'Idempotency-Key' in text or 'idempotency' in text.lower():
-                        self.test_results.append(f"✅ {test_name}: Missing idempotency key properly rejected (HTTP 400)")
-                    else:
-                        self.test_results.append(f"❌ {test_name}: Missing idempotency key rejected but wrong error message: {text}")
-                else:
-                    text = await resp.text()
-                    self.test_results.append(f"❌ {test_name}: Missing idempotency key not rejected (HTTP {resp.status}): {text}")
-        except Exception as e:
-            self.test_results.append(f"❌ {test_name}: Exception testing missing idempotency key - {str(e)}")
-        
-        # Test invalid date range (end < start)
-        try:
-            payload = self._build_room_block_payload(
-                start_date=self.test_end_date,  # Swap dates to make invalid
-                end_date=self.test_start_date
+            start_date = self.test_dates['start_date']
+            end_date = self.test_dates['end_date']
+            
+            # Check availability after release
+            response = self.session.get(
+                f'{self.backend_url}/api/pms/rooms/availability'
+                f'?check_in={start_date}&check_out={end_date}'
             )
-            idem_key = f'test-5b-{uuid.uuid4()}'
-            headers = self._get_headers(idempotency_key=idem_key)
             
-            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
-                if resp.status == 400:
-                    self.test_results.append(f"✅ {test_name}: Invalid date range properly rejected (HTTP 400)")
+            if response.status_code != 200:
+                self.log_result("Availability Check After Release", False, 
+                              f"Availability check failed: {response.status_code}", critical=True)
+                return False
+            
+            availability = response.json()
+            released_room = next((room for room in availability if room['id'] == self.test_room['id']), None)
+            
+            if not released_room:
+                self.log_result("Room Found in Availability", False, 
+                              f"Room {self.test_room['id']} not found in availability response", 
+                              critical=True)
+                return False
+            
+            if not released_room.get('available'):
+                self.log_result("Room Available After Release", False, 
+                              f"Room {self.test_room['room_number']} is not available after release", 
+                              critical=True)
+                return False
+            
+            self.log_result("Availability Effects", True, 
+                          f"Room {self.test_room['room_number']} is available after block release")
+            return True
+            
+        except Exception as e:
+            self.log_result("Availability Effects", False, f"Exception: {str(e)}", critical=True)
+            return False
+    
+    def test_idempotency_behavior(self) -> bool:
+        """Test Case 8: Verify idempotency behavior"""
+        try:
+            print("\n🔄 Testing Idempotency Behavior...")
+            
+            # First, create a new block for idempotency testing
+            test_block = self.create_room_block()
+            if not test_block:
+                self.log_result("Idempotency Setup", False, "Failed to create block for idempotency test", critical=True)
+                return False
+            
+            # Test 1: Same Idempotency-Key returns same response
+            idempotency_key = f"test-idempotency-{uuid.uuid4()}"
+            
+            first_response = self.session.post(
+                f'{self.backend_url}/api/pms/room-blocks/{test_block["id"]}/cancel',
+                headers={'Idempotency-Key': idempotency_key}
+            )
+            
+            second_response = self.session.post(
+                f'{self.backend_url}/api/pms/room-blocks/{test_block["id"]}/cancel',
+                headers={'Idempotency-Key': idempotency_key}
+            )
+            
+            if first_response.status_code != 200 or second_response.status_code != 200:
+                self.log_result("Idempotency Same Key", False, 
+                              f"Failed responses: {first_response.status_code}, {second_response.status_code}", 
+                              critical=True)
+                return False
+            
+            if first_response.json() != second_response.json():
+                self.log_result("Idempotency Same Key", False, 
+                              "Different responses for same Idempotency-Key", critical=True)
+                return False
+            
+            # Test 2: Different Idempotency-Key after release returns deterministic final state
+            different_key = f"test-idempotency-different-{uuid.uuid4()}"
+            
+            third_response = self.session.post(
+                f'{self.backend_url}/api/pms/room-blocks/{test_block["id"]}/cancel',
+                headers={'Idempotency-Key': different_key}
+            )
+            
+            if third_response.status_code != 200:
+                self.log_result("Idempotency Different Key", False, 
+                              f"Failed response: {third_response.status_code}", critical=True)
+                return False
+            
+            # Verify no duplicate events were created
+            outbox_count = self.db.outbox_events.count_documents({
+                'room_block_id': test_block['id'],
+                'event_type': 'inventory.released.v1'
+            })
+            
+            if outbox_count != 1:
+                self.log_result("Idempotency Event Duplication", False, 
+                              f"Expected 1 event, found {outbox_count}", critical=True)
+                return False
+            
+            self.log_result("Idempotency Behavior", True, 
+                          "Same key returns same response, different key is deterministic, no duplicate events")
+            return True
+            
+        except Exception as e:
+            self.log_result("Idempotency Behavior", False, f"Exception: {str(e)}", critical=True)
+            return False
+    
+    def test_validations(self) -> bool:
+        """Test Case 9: Verify validations"""
+        try:
+            print("\n✅ Testing Validations...")
+            
+            # Create a block for validation tests
+            test_block = self.create_room_block()
+            if not test_block:
+                return False
+            
+            # Test 1: Missing Idempotency-Key should return 400
+            missing_key_response = self.session.post(
+                f'{self.backend_url}/api/pms/room-blocks/{test_block["id"]}/cancel'
+            )
+            
+            if missing_key_response.status_code != 400:
+                self.log_result("Missing Idempotency-Key Validation", False, 
+                              f"Expected 400, got {missing_key_response.status_code}", critical=True)
+                return False
+            
+            if 'Idempotency-Key' not in missing_key_response.text:
+                self.log_result("Missing Idempotency-Key Error Message", False, 
+                              "Error message doesn't mention Idempotency-Key")
+            
+            # Test 2: Wrong property scope should return 403
+            wrong_property_response = self.session.post(
+                f'{self.backend_url}/api/pms/room-blocks/{test_block["id"]}/cancel',
+                headers={
+                    'Idempotency-Key': f'test-wrong-property-{uuid.uuid4()}',
+                    'x-property-id': 'wrong-property-id'
+                }
+            )
+            
+            if wrong_property_response.status_code != 403:
+                self.log_result("Wrong Property Scope Validation", False, 
+                              f"Expected 403, got {wrong_property_response.status_code}", critical=True)
+            
+            # Test 3: Wrong tenant cannot release another tenant's block
+            # First register a new tenant
+            register_suffix = uuid.uuid4().hex[:8]
+            register_response = requests.post(
+                f'{self.backend_url}/api/auth/register',
+                json={
+                    'property_name': f'Test Property {register_suffix}',
+                    'email': f'test-{register_suffix}@example.com',
+                    'password': 'test123',
+                    'name': f'Test User {register_suffix}',
+                    'phone': '+905550000000',
+                    'address': 'Test Address',
+                    'location': 'Test City',
+                }
+            )
+            
+            if register_response.status_code == 200:
+                other_token = register_response.json()['access_token']
+                
+                wrong_tenant_response = requests.post(
+                    f'{self.backend_url}/api/pms/room-blocks/{test_block["id"]}/cancel',
+                    headers={
+                        'Authorization': f'Bearer {other_token}',
+                        'Content-Type': 'application/json',
+                        'Idempotency-Key': f'test-wrong-tenant-{uuid.uuid4()}',
+                    }
+                )
+                
+                if wrong_tenant_response.status_code != 404:
+                    self.log_result("Wrong Tenant Isolation", False, 
+                                  f"Expected 404, got {wrong_tenant_response.status_code}", critical=True)
+                    return False
+            
+            self.log_result("Validations", True, 
+                          "Missing key->400, wrong property->403, tenant isolation working")
+            return True
+            
+        except Exception as e:
+            self.log_result("Validations", False, f"Exception: {str(e)}", critical=True)
+            return False
+    
+    def run_comprehensive_test(self) -> bool:
+        """Run all test cases in sequence"""
+        print("🚀 Starting RoomBlockRelease Semantic Migration Test Suite")
+        print("=" * 60)
+        
+        # Test Case 1: Authentication
+        if not self.authenticate():
+            return False
+        
+        # Setup: Find available room
+        if not self.find_available_room():
+            return False
+        
+        # Test Case 2: Create room block
+        main_block = self.create_room_block()
+        if not main_block:
+            return False
+        
+        # Verify block was created and room is now unavailable
+        try:
+            start_date = self.test_dates['start_date']
+            end_date = self.test_dates['end_date']
+            
+            availability_response = self.session.get(
+                f'{self.backend_url}/api/pms/rooms/availability'
+                f'?check_in={start_date}&check_out={end_date}'
+            )
+            
+            if availability_response.status_code == 200:
+                availability = availability_response.json()
+                blocked_room = next((room for room in availability if room['id'] == self.test_room['id']), None)
+                
+                if blocked_room and not blocked_room.get('available'):
+                    self.log_result("Room Blocked Before Release", True, 
+                                  f"Room {self.test_room['room_number']} correctly blocked")
                 else:
-                    text = await resp.text()
-                    self.test_results.append(f"❌ {test_name}: Invalid date range not rejected (HTTP {resp.status}): {text}")
+                    self.log_result("Room Blocked Before Release", False, 
+                                  f"Room {self.test_room['room_number']} not blocked as expected", critical=True)
         except Exception as e:
-            self.test_results.append(f"❌ {test_name}: Exception testing invalid date range - {str(e)}")
+            self.log_result("Room Blocked Before Release", False, f"Exception: {str(e)}")
         
-        # Test wrong property scope
-        try:
-            payload = self._build_room_block_payload()
-            idem_key = f'test-5c-{uuid.uuid4()}'
-            headers = self._get_headers(idempotency_key=idem_key, property_id='wrong-property-id')
-            
-            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
-                if resp.status == 403:
-                    self.test_results.append(f"✅ {test_name}: Wrong property scope properly rejected (HTTP 403)")
-                else:
-                    text = await resp.text()
-                    self.test_results.append(f"❌ {test_name}: Wrong property scope not rejected (HTTP {resp.status}): {text}")
-        except Exception as e:
-            self.test_results.append(f"❌ {test_name}: Exception testing wrong property scope - {str(e)}")
-
-    async def test_6_availability_impact(self):
-        """Test 6: Availability etkisi beklenen şekilde görünüyor mu?"""
-        test_name = "Availability Impact"
-        try:
-            # Create room block
-            payload = self._build_room_block_payload()
-            idem_key = f'test-6-{uuid.uuid4()}'
-            headers = self._get_headers(idempotency_key=idem_key)
-            
-            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    self.test_results.append(f"❌ {test_name}: Room block create failed: HTTP {resp.status} - {text}")
-                    return
-                
-                data = await resp.json()
-                blocked_room_id = payload['room_id']
-            
-            # Check availability impact
-            headers = self._get_headers()
-            url = f'{BASE_URL}/api/pms/rooms/availability?check_in={self.test_start_date}&check_out={self.test_end_date}'
-            
-            async with self.session.get(url, headers=headers) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    self.test_results.append(f"❌ {test_name}: Failed to get availability: HTTP {resp.status} - {text}")
-                    return
-                
-                availability = await resp.json()
-                blocked_room = next((room for room in availability if room.get('id') == blocked_room_id), None)
-                
-                if not blocked_room:
-                    self.test_results.append(f"❌ {test_name}: Blocked room not found in availability response")
-                    return
-                
-                if blocked_room.get('available') is not False:
-                    self.test_results.append(f"❌ {test_name}: Blocked room still shows as available: {blocked_room.get('available')}")
-                    return
-                
-                # Check if reason includes block information
-                reason = blocked_room.get('reason', '')
-                blocks = blocked_room.get('blocks', [])
-                
-                if 'out_of_order' not in reason and not blocks:
-                    self.test_results.append(f"❌ {test_name}: Block not reflected in availability reason/blocks: reason='{reason}', blocks={blocks}")
-                    return
-                
-                self.test_results.append(f"✅ {test_name}: Availability correctly shows room as blocked (available=False)")
-            
-        except Exception as e:
-            self.test_results.append(f"❌ {test_name}: Exception - {str(e)}")
-
-    async def test_7_response_contract_integrity(self):
-        """Test 7: Response contract bozulmuş mu?"""
-        test_name = "Response Contract Integrity"
-        try:
-            payload = self._build_room_block_payload()
-            idem_key = f'test-7-{uuid.uuid4()}'
-            headers = self._get_headers(idempotency_key=idem_key)
-            
-            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    self.test_results.append(f"❌ {test_name}: Room block create failed: HTTP {resp.status} - {text}")
-                    return
-                
-                data = await resp.json()
-                
-                # Check required response fields
-                required_fields = ['message', 'block', 'room_number']
-                missing_fields = [field for field in required_fields if field not in data]
-                if missing_fields:
-                    self.test_results.append(f"❌ {test_name}: Response missing required fields: {missing_fields}")
-                    return
-                
-                # Check block object structure
-                block = data['block']
-                required_block_fields = ['id', 'room_id', 'type', 'reason', 'start_date', 'status', 'created_by', 'created_at']
-                missing_block_fields = [field for field in required_block_fields if field not in block]
-                if missing_block_fields:
-                    self.test_results.append(f"❌ {test_name}: Block object missing required fields: {missing_block_fields}")
-                    return
-                
-                # Validate field values
-                if block['type'] != payload['type']:
-                    self.test_results.append(f"❌ {test_name}: Block type mismatch: expected {payload['type']}, got {block['type']}")
-                    return
-                
-                if block['room_id'] != payload['room_id']:
-                    self.test_results.append(f"❌ {test_name}: Block room_id mismatch: expected {payload['room_id']}, got {block['room_id']}")
-                    return
-                
-                # Check if warnings array exists
-                if 'warnings' not in data:
-                    self.test_results.append(f"❌ {test_name}: Response missing warnings array")
-                    return
-                
-                self.test_results.append(f"✅ {test_name}: Response contract intact - all required fields present and valid")
-                
-        except Exception as e:
-            self.test_results.append(f"❌ {test_name}: Exception - {str(e)}")
-
-    async def run_all_tests(self):
-        """Run all validation tests"""
-        print("🚀 Starting Room Block Create Package Validation Tests...")
-        print("=" * 70)
+        # Test Case 3: Release room block
+        release_response = self.release_room_block(main_block)
+        if not release_response:
+            return False
         
-        await self.setup()
+        # Test Case 4: Validate response structure
+        if not self.validate_release_response_structure(release_response, main_block):
+            return False
         
-        print("\n📋 Running validation tests...")
+        # Test Case 5: Verify outbox event
+        if not self.verify_outbox_event(main_block):
+            return False
         
-        # Run all tests
-        await self.test_1_semantic_service_create_working()
-        await self.test_2_idempotency_enforcement()
-        await self.test_3_outbox_event_creation()
-        await self.test_4_audit_log_creation()
-        await self.test_5_security_validations()
-        await self.test_6_availability_impact()
-        await self.test_7_response_contract_integrity()
-
-    async def cleanup(self):
-        """Cleanup resources"""
-        if self.session:
-            await self.session.close()
-
-    def print_results(self):
-        """Print test results summary"""
-        print("\n" + "=" * 70)
-        print("📊 ROOM BLOCK CREATE PACKAGE VALIDATION RESULTS")
-        print("=" * 70)
+        # Test Case 6: Verify audit log
+        if not self.verify_audit_log(main_block):
+            return False
         
-        passed = sum(1 for result in self.test_results if result.startswith('✅'))
-        failed = sum(1 for result in self.test_results if result.startswith('❌'))
+        # Test Case 7: Verify availability effects
+        if not self.verify_availability_effects(main_block):
+            return False
         
-        for result in self.test_results:
-            print(result)
+        # Test Case 8: Test idempotency behavior
+        if not self.test_idempotency_behavior():
+            return False
         
-        print("\n" + "=" * 70)
-        print(f"📈 SUMMARY: {passed} PASSED, {failed} FAILED, {passed + failed} TOTAL")
+        # Test Case 9: Test validations
+        if not self.test_validations():
+            return False
         
-        if failed > 0:
-            print("❌ KRİTİK HATALAR VAR - Ana ajana bildir!")
-        else:
-            print("✅ TÜM TESTLER BAŞARILI - Room block create paketi çalışıyor!")
+        return True
+    
+    def print_summary(self):
+        """Print comprehensive test summary"""
+        print("\n" + "=" * 60)
+        print("🎯 ROOMBLOCKRELEASE SEMANTIC MIGRATION TEST SUMMARY")
+        print("=" * 60)
         
-        print("=" * 70)
-        return failed == 0
+        total_tests = len(self.results)
+        passed_tests = sum(1 for r in self.results if r['passed'])
+        failed_tests = total_tests - passed_tests
+        
+        print(f"📊 Total Tests: {total_tests}")
+        print(f"✅ Passed: {passed_tests}")
+        print(f"❌ Failed: {failed_tests}")
+        print(f"🎯 Success Rate: {(passed_tests/total_tests*100):.1f}%")
+        
+        if self.critical_issues:
+            print(f"\n🚨 CRITICAL ISSUES ({len(self.critical_issues)}):")
+            for issue in self.critical_issues:
+                print(f"  {issue}")
+        
+        if self.minor_issues:
+            print(f"\n⚠️  MINOR ISSUES ({len(self.minor_issues)}):")
+            for issue in self.minor_issues:
+                print(f"  {issue}")
+        
+        if not self.critical_issues and not self.minor_issues:
+            print("\n🎉 ALL TESTS PASSED - RoomBlockRelease semantic migration is working correctly!")
+        
+        print("\n📋 DETAILED TEST RESULTS:")
+        for result in self.results:
+            status = "✅ PASS" if result['passed'] else ("❌ CRITICAL FAIL" if result['critical'] else "⚠️  MINOR FAIL")
+            print(f"  {status:<16} {result['test']}")
+            if result['details'] and not result['passed']:
+                print(f"    └─ {result['details']}")
 
 
-async def main():
+def main():
     """Main test execution"""
-    validator = RoomBlockTestValidator()
     try:
-        await validator.run_all_tests()
-        return validator.print_results()
+        tester = RoomBlockReleaseSemanticMigrationTest()
+        success = tester.run_comprehensive_test()
+        tester.print_summary()
+        
+        # Return appropriate exit code
+        if tester.critical_issues:
+            print("\n❌ CRITICAL ISSUES DETECTED - MIGRATION HAS PROBLEMS")
+            sys.exit(1)
+        elif not success:
+            print("\n⚠️  SOME TESTS FAILED - CHECK SUMMARY ABOVE")
+            sys.exit(1)
+        else:
+            print("\n✅ ALL TESTS PASSED - ROOMBLOCKRELEASE SEMANTIC MIGRATION WORKING")
+            sys.exit(0)
+            
     except Exception as e:
-        print(f"❌ KRITIK HATA: Test çalıştırma başarısız - {str(e)}")
-        return False
-    finally:
-        await validator.cleanup()
+        print(f"\n💥 FATAL ERROR: {str(e)}")
+        sys.exit(1)
 
 
-if __name__ == '__main__':
-    success = asyncio.run(main())
-    exit(0 if success else 1)
+if __name__ == "__main__":
+    main()
