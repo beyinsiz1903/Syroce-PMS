@@ -101,6 +101,15 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - **Added regression tests:** `backend/tests/test_create_room_block_bridge.py`
 - **Validation:** room block bridge suite **7/7 PASS**, backend validation **PASS**, frontend smoke **PASS**
 
+### FolioOpen Bridge + Outbox Package (COMPLETED - Mar 2026)
+- **Added semantic folio write service:** `backend/modules/folio/services/open_folio_service.py`
+- **Bridged legacy endpoint:** active `POST /api/folio/create` path now calls the semantic folio service while preserving the existing folio response contract
+- **Added idempotency enforcement:** `Idempotency-Key` is now required for folio open; duplicate retry with the same key returns the same folio, and duplicate open attempts for the same booking + folio type are rejected with `409`
+- **Added outbox + audit:** successful folio open now writes `folio.opened.v1` to `outbox_events` and creates `folio_opened` audit log entries
+- **Added finance validation:** booking reference is tenant-scoped, property scope mismatch rejects with `403`, and company/guest references are validated for supported folio types; folio records now persist resolved currency metadata for downstream read/event consumers
+- **Added regression tests:** `backend/tests/test_open_folio_bridge.py`
+- **Validation:** folio open bridge suite **7/7 PASS**, testing agent backend validation **PASS**, frontend smoke **PASS**
+
 ### Root Directory Cleanup (COMPLETED - Feb 2026)
 - Removed 152 test .py files from root directory
 - Clean project structure
@@ -114,7 +123,7 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 │   │   ├── reservations/      # Reservation read abstraction + future write migration
 │   │   ├── stays/             # Stay aggregate read abstraction + future write migration
 │   │   ├── inventory/         # Availability read abstraction + future inventory migration
-│   │   └── folio/             # Folio balance/detail read abstraction + future finance migration
+│   │   └── folio/             # Folio balance/detail reads + folio-open write migration
 │   ├── shared_kernel/         # Tenant/event/audit/idempotency primitives (NEW)
 │   ├── core/
 │   │   ├── database.py        # MongoDB connection
@@ -160,10 +169,10 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 ## Prioritized Backlog
 
 ### P0 (Next)
-- Kısa gözlem periyodu ardından Sprint 2 devamı: `folio open` tek write-path olarak açılacak
+- Kısa stabilizasyon/gözlem periyodu ardından Sprint 2 devamı: `room block release` tek write-path olarak açılacak
 
 ### P1
-- Semantic Migration Sprint 2: `folio open`, ardından `room block release`, sonra stabilizasyon sonrası reservation modify/cancel ve charge post
+- Semantic Migration Sprint 2: `room block release`, sonra stabilizasyon sonrası reservation modify/cancel ve `charge post`
 - Semantic Migration Sprint 3: stay aggregate writes (room assign/move, check-in/out, extend) with state machine + rollback playbook
 - Semantic Migration Sprint 4: finance risk paths (payment, refund, invoice) with idempotency + reconciliation
 - Redis-based Caching (replace in-memory SimpleCache)
