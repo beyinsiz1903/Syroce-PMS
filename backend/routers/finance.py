@@ -51,6 +51,7 @@ from core.utils import (
     generate_folio_number, calculate_folio_balance,
     create_excel_workbook, excel_response,
 )
+from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 
 try:
     from cache_manager import cached
@@ -62,6 +63,7 @@ except ImportError:
 
 router = APIRouter(prefix="/api", tags=["finance"])
 security = HTTPBearer()
+folio_balance_read_service = FolioBalanceReadService()
 
 
 # ── ERP Connectors (mock) ──
@@ -420,33 +422,10 @@ async def get_booking_folios(booking_id: str, current_user: User = Depends(get_c
 @cached(ttl=180, key_prefix="folio_details")  # Cache for 3 min
 async def get_folio_details(folio_id: str, current_user: User = Depends(get_current_user)):
     """Get folio with charges and payments"""
-    folio = await db.folios.find_one({
-        'id': folio_id,
-        'tenant_id': current_user.tenant_id
-    }, {'_id': 0})
-    
-    if not folio:
-        raise HTTPException(status_code=404, detail="Folio not found")
-    
-    charges = await db.folio_charges.find({
-        'folio_id': folio_id,
-        'tenant_id': current_user.tenant_id
-    }, {'_id': 0}).to_list(1000)
-    
-    payments = await db.payments.find({
-        'folio_id': folio_id,
-        'tenant_id': current_user.tenant_id
-    }, {'_id': 0}).to_list(1000)
-    
-    balance = await calculate_folio_balance(folio_id, current_user.tenant_id)
-    folio['balance'] = balance
-    
-    return {
-        'folio': folio,
-        'charges': charges,
-        'payments': payments,
-        'balance': balance
-    }
+    return await folio_balance_read_service.get_folio_details(
+        tenant_id=current_user.tenant_id,
+        folio_id=folio_id,
+    )
 
 
 

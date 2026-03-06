@@ -23,6 +23,11 @@ from passlib.context import CryptContext
 import asyncio
 
 
+# IMPORTANT GOVERNANCE RULE
+# server.py must not contain business logic.
+# All domain logic must live inside semantic modules.
+
+
 # ── Modular imports (extracted from monolithic server.py) ──────────────
 from models.enums import (
     UserRole, Permission, RoomStatus, BookingStatus, PaymentStatus,

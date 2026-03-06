@@ -51,6 +51,8 @@ from core.utils import (
     generate_qr_code, generate_time_based_qr_token,
     get_cancellation_policy_details,
 )
+from modules.inventory.services.availability_read_service import AvailabilityReadService
+from modules.reservations.services.reservation_read_service import ReservationReadService
 
 try:
     from cache_manager import cached
@@ -62,6 +64,8 @@ except ImportError:
 
 router = APIRouter(prefix="/api", tags=["pms"])
 security = HTTPBearer()
+reservation_read_service = ReservationReadService()
+availability_read_service = AvailabilityReadService()
 
 # ── Local models ──
 
@@ -880,74 +884,14 @@ async def get_bookings(
                     bookings.append(booking)
                 return bookings
 
-    # Fallback: Build query
-    query = {'tenant_id': current_user.tenant_id}
-    
-    if start_date or end_date:
-        # For calendar view, we need bookings that overlap with the date range
-        # A booking overlaps if: check_in < end_date AND check_out > start_date
-        date_filter = {}
-        if start_date and end_date:
-            # Booking must checkout after start_date AND checkin before end_date
-            query['$and'] = [
-                {'check_out': {'$gt': start_date}},  # checkout after range start
-                {'check_in': {'$lt': end_date}}      # checkin before range end
-            ]
-        elif start_date:
-            # At least checkout after start_date
-            query['check_out'] = {'$gt': start_date}
-        elif end_date:
-            # At least checkin before end_date
-            query['check_in'] = {'$lt': end_date}
-    
-    if status:
-        query['status'] = status
-    
-    # Execute query with pagination
-    cursor = db.bookings.find(query, {'_id': 0}).sort('check_in', -1).skip(offset).limit(limit)
-    bookings_raw = await cursor.to_list(length=limit)
-
-
-    
-    # Process bookings
-    bookings = []
-    for booking in bookings_raw:
-        # Add guest_name if not present
-        if not booking.get('guest_name') and booking.get('guest_id'):
-            guest = await db.guests.find_one({'id': booking['guest_id']}, {'first_name': 1, 'last_name': 1, '_id': 0})
-            if guest:
-                first_name = guest.get('first_name', '')
-                last_name = guest.get('last_name', '')
-                booking['guest_name'] = f"{first_name} {last_name}".strip() or 'Unknown Guest'
-        
-        # Always enrich room_number from the room document (handles room moves)
-        if booking.get('room_id'):
-            room = await db.rooms.find_one({'id': booking['room_id']}, {'room_number': 1, '_id': 0})
-            if room:
-                booking['room_number'] = room.get('room_number', 'Unknown Room')
-            elif not booking.get('room_number'):
-                booking['room_number'] = 'Unknown Room'
-        
-        # Map rate_type values
-        if 'rate_type' in booking:
-            rate_map = {
-                'advance_purchase': 'promotional',
-                'member': 'promotional'
-            }
-            if booking['rate_type'] in rate_map:
-                booking['rate_type'] = rate_map[booking['rate_type']]
-        
-        # Map market_segment values  
-        if 'market_segment' in booking:
-            segment_map = {
-                'business': 'corporate'
-            }
-            if booking['market_segment'] in segment_map:
-                booking['market_segment'] = segment_map[booking['market_segment']]
-        
-        bookings.append(booking)
-    
-    return bookings
+    return await reservation_read_service.list_reservations(
+        tenant_id=current_user.tenant_id,
+        limit=limit,
+        offset=offset,
+        start_date=start_date,
+        end_date=end_date,
+        status=status,
+    )
 
 
 @router.get("/bookings/{booking_id}/override-logs", response_model=List[RateOverrideLog])
@@ -1524,64 +1468,12 @@ async def check_room_availability(
     current_user: User = Depends(get_current_user)
 ):
     """Check room availability including blocks"""
-    query = {'tenant_id': current_user.tenant_id}
-    
-    if room_type:
-        query['room_type'] = room_type
-    
-    rooms = await db.rooms.find(query, {'_id': 0}).to_list(1000)
-    
-    # Get bookings
-    bookings = await db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['confirmed', 'checked_in', 'guaranteed']},
-        'check_in': {'$lt': check_out},
-        'check_out': {'$gt': check_in}
-    }, {'_id': 0}).to_list(1000)
-    
-    # Get blocks
-    blocks = await db.room_blocks.find({
-        'tenant_id': current_user.tenant_id,
-        'status': 'active',
-        'start_date': {'$lt': check_out},
-        '$or': [
-            {'end_date': {'$gt': check_in}},
-            {'end_date': None}  # Open-ended blocks
-        ]
-    }, {'_id': 0}).to_list(1000)
-    
-    # Filter available rooms
-    available = []
-    for room in rooms:
-        # Check bookings
-        is_booked = any(b['room_id'] == room['id'] for b in bookings)
-        
-        # Check blocks
-        room_blocks = [b for b in blocks if b['room_id'] == room['id']]
-        is_blocked = any(not b.get('allow_sell', False) for b in room_blocks)
-        
-        if not is_booked and not is_blocked:
-            available.append({
-                **room,
-                'available': True
-            })
-        else:
-            unavailable_reason = []
-            if is_booked:
-                unavailable_reason.append('booked')
-            if is_blocked:
-                block_info = [b for b in room_blocks if not b.get('allow_sell')]
-                if block_info:
-                    unavailable_reason.append(f"{block_info[0]['type']}")
-            
-            available.append({
-                **room,
-                'available': False,
-                'reason': ', '.join(unavailable_reason),
-                'blocks': room_blocks
-            })
-    
-    return available
+    return await availability_read_service.get_availability(
+        tenant_id=current_user.tenant_id,
+        check_in=check_in,
+        check_out=check_out,
+        room_type=room_type,
+    )
 
 
 @router.get("/pms/staff-tasks")
