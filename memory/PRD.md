@@ -83,6 +83,15 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - **Added validation tests:** `backend/tests/test_shadow_metrics.py`
 - **Validation:** shadow metrics tests **4/4 PASS**, combined contract + shadow suite **20/20 PASS**, backend + frontend smoke passed
 
+### CreateReservation Bridge + Outbox Package (COMPLETED - Mar 2026)
+- **Added semantic write service:** `backend/modules/reservations/services/create_reservation_service.py`
+- **Bridged legacy endpoint:** `POST /api/pms/bookings` now calls the semantic create service while preserving legacy response contract
+- **Added idempotency enforcement:** `Idempotency-Key` is now required for reservation creation; duplicate retry with same key returns the same reservation response
+- **Added outbox + audit:** successful create now writes `reservation.created.v1` to `outbox_events` and creates `reservation_created` audit log entries
+- **Added safety checks:** wrong property scope rejects with 403; wrong tenant using foreign room/guest rejects safely; missing key rejects with 400
+- **Added regression tests:** `backend/tests/test_create_reservation_bridge.py`
+- **Validation:** CreateReservation bridge suite **6/6 PASS**, backend validation **PASS**, frontend smoke **PASS**
+
 ### Root Directory Cleanup (COMPLETED - Feb 2026)
 - Removed 152 test .py files from root directory
 - Clean project structure
@@ -142,10 +151,10 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 ## Prioritized Backlog
 
 ### P0 (Next)
-- Semantic Migration Sprint 2 write-path başlangıcı: `CreateReservation`, reservation outbox, room block create, folio open
+- Kısa gözlem periyodu ardından Sprint 2 devamı: room block create, folio open, sonra reservation modify/cancel değil yalnızca sıradaki tek write-path
 
 ### P1
-- Semantic Migration Sprint 2: reservation writes, room block create/release, folio open/charge, outbox + shadow mode
+- Semantic Migration Sprint 2: room block create/release, folio open/charge ve yalnızca stabilizasyon sonrası reservation modify/cancel
 - Semantic Migration Sprint 3: stay aggregate writes (room assign/move, check-in/out, extend) with state machine + rollback playbook
 - Semantic Migration Sprint 4: finance risk paths (payment, refund, invoice) with idempotency + reconciliation
 - Redis-based Caching (replace in-memory SimpleCache)
