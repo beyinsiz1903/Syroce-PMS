@@ -222,7 +222,7 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
                         <CardDescription>Son 24 saatte saatlik event akışı</CardDescription>
                       </CardHeader>
                       <CardContent className="h-[280px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={280}>
                           <BarChart data={overview?.throughput?.hourly_series || []}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                             <XAxis dataKey="label" tick={{ fontSize: 11 }} />
@@ -239,7 +239,7 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
                         <CardDescription>Pending, processed, failed ve dead-letter dağılımı</CardDescription>
                       </CardHeader>
                       <CardContent className="h-[280px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={280}>
                           <PieChart>
                             <Pie data={queueData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={90} paddingAngle={4}>
                               {queueData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
