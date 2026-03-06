@@ -17,6 +17,7 @@ const QUEUE_COLORS = ['#0f766e', '#0891b2', '#dc2626', '#b45309', '#6b7280'];
 
 const formatTime = (value) => value ? new Date(value).toLocaleString('tr-TR') : '—';
 const formatMs = (value) => (typeof value === 'number' ? `${value.toFixed(0)} ms` : 'N/A');
+const formatAgeMinutes = (value) => (typeof value === 'number' ? `${Math.round(value)} dk` : '—');
 const HEALTH_SCORE_STYLES = {
   green: {
     badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
@@ -82,8 +83,15 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
   }, [loadData]);
 
   const queueData = useMemo(() => {
-    if (!data?.outbox?.queue_depth) return [];
-    return Object.entries(data.outbox.queue_depth).map(([name, value], index) => ({
+    const lifecycle = data?.outbox?.lifecycle;
+    if (!lifecycle) return [];
+    return [
+      ['pending', lifecycle.pending_count ?? 0],
+      ['processing', lifecycle.processing_count ?? 0],
+      ['processed', lifecycle.processed_count ?? 0],
+      ['failed', lifecycle.failed_count ?? 0],
+      ['parked', lifecycle.parked_count ?? 0],
+    ].map(([name, value], index) => ({
       name,
       value,
       fill: QUEUE_COLORS[index % QUEUE_COLORS.length],
@@ -91,6 +99,7 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
   }, [data]);
 
   const overview = data?.outbox;
+  const lifecycle = overview?.lifecycle;
   const healthScore = data?.health_score;
   const healthStyle = HEALTH_SCORE_STYLES[healthScore?.status || 'green'];
 
@@ -202,9 +211,9 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
 
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <StatCard icon={Activity} label="24h throughput" value={overview?.throughput?.events_last_24h ?? 0} helper={`${overview?.throughput?.events_per_second_24h ?? 0} events/sec`} tone="bg-teal-100 text-teal-700" testId="migration-stat-throughput" />
-                <StatCard icon={AlertTriangle} label="Pending queue" value={overview?.queue_depth?.pending ?? 0} helper={`${overview?.queue_depth?.stale_pending ?? 0} stale pending`} tone="bg-amber-100 text-amber-700" testId="migration-stat-pending" />
+                <StatCard icon={AlertTriangle} label="Pending queue" value={overview?.queue_depth?.pending ?? 0} helper={`${overview?.queue_depth?.stale_pending ?? 0} stale · ${lifecycle?.processing_count ?? 0} processing`} tone="bg-amber-100 text-amber-700" testId="migration-stat-pending" />
                 <StatCard icon={ShieldAlert} label="Shadow mismatch" value={`${(data?.shadow?.summary || []).reduce((sum, item) => sum + (item.mismatches || 0), 0)}`} helper="Availability + folio toplam mismatch" tone="bg-rose-100 text-rose-700" testId="migration-stat-shadow" />
-                <StatCard icon={Clock3} label="Event lag" value={formatMs(overview?.lag?.avg_ms)} helper={overview?.lag?.future_ready ? 'Future-ready / N-A' : `P95 ${formatMs(overview?.lag?.p95_ms)}`} tone="bg-sky-100 text-sky-700" testId="migration-stat-lag" />
+                <StatCard icon={Clock3} label="Event lag" value={formatMs(overview?.lag?.avg_ms)} helper={`Oldest pending ${formatAgeMinutes(lifecycle?.oldest_pending_age_minutes)}`} tone="bg-sky-100 text-sky-700" testId="migration-stat-lag" />
               </div>
 
               <StalePendingTriageCard triage={overview?.stale_triage} />
@@ -239,7 +248,7 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
                     <Card className="border-white/70 bg-white/90" data-testid="migration-overview-queue-chart-card">
                       <CardHeader>
                         <CardTitle>Queue depth snapshot</CardTitle>
-                        <CardDescription>Pending, processed, failed ve dead-letter dağılımı</CardDescription>
+                        <CardDescription>Pending, processing, processed, failed ve parked dağılımı</CardDescription>
                       </CardHeader>
                       <CardContent className="h-[280px]">
                         <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={280}>
@@ -269,6 +278,10 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
                               <TableHead>Event</TableHead>
                               <TableHead>Total</TableHead>
                               <TableHead>Pending</TableHead>
+                              <TableHead>Processing</TableHead>
+                              <TableHead>Processed</TableHead>
+                              <TableHead>Failed</TableHead>
+                              <TableHead>Parked</TableHead>
                               <TableHead>Last seen</TableHead>
                             </TableRow>
                           </TableHeader>
@@ -278,6 +291,10 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
                                 <TableCell className="font-medium">{item.event_type}</TableCell>
                                 <TableCell>{item.total_count}</TableCell>
                                 <TableCell>{item.pending_count}</TableCell>
+                                <TableCell>{item.processing_count}</TableCell>
+                                <TableCell>{item.processed_count}</TableCell>
+                                <TableCell>{item.failed_count}</TableCell>
+                                <TableCell>{item.parked_count}</TableCell>
                                 <TableCell>{formatTime(item.last_seen_at)}</TableCell>
                               </TableRow>
                             ))}
@@ -287,17 +304,35 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
                     </Card>
                     <Card className="border-white/70 bg-white/90" data-testid="migration-outbox-future-ready-card">
                       <CardHeader>
-                        <CardTitle>Retry & lag readiness</CardTitle>
-                        <CardDescription>Retry/dead-letter ve processed lag için future-ready durumu</CardDescription>
+                        <CardTitle>Lifecycle controls</CardTitle>
+                        <CardDescription>Operational worker state machine ve drain sinyalleri</CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-4">
+                        <div className="rounded-2xl bg-slate-50 p-4" data-testid="migration-outbox-lifecycle-panel">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium text-slate-700">Lifecycle state machine</span>
+                            <Badge variant="outline">temporary operational worker</Badge>
+                          </div>
+                          <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-700">
+                            <div className="flex items-center justify-between gap-3"><span>Pending</span><span data-testid="migration-outbox-pending-count">{lifecycle?.pending_count ?? 0}</span></div>
+                            <div className="flex items-center justify-between gap-3"><span>Processing</span><span data-testid="migration-outbox-processing-count">{lifecycle?.processing_count ?? 0}</span></div>
+                            <div className="flex items-center justify-between gap-3"><span>Processed</span><span data-testid="migration-outbox-processed-count">{lifecycle?.processed_count ?? 0}</span></div>
+                            <div className="flex items-center justify-between gap-3"><span>Failed</span><span data-testid="migration-outbox-failed-count">{lifecycle?.failed_count ?? 0}</span></div>
+                            <div className="flex items-center justify-between gap-3"><span>Parked</span><span data-testid="migration-outbox-parked-count">{lifecycle?.parked_count ?? 0}</span></div>
+                            <div className="flex items-center justify-between gap-3"><span>Retries</span><span data-testid="migration-outbox-retry-total">{lifecycle?.retry_attempts_total ?? 0}</span></div>
+                          </div>
+                          <div className="mt-4 space-y-2 text-xs text-slate-500">
+                            <div className="flex items-center justify-between gap-3"><span>Oldest pending age</span><span data-testid="migration-outbox-oldest-pending-age">{formatAgeMinutes(lifecycle?.oldest_pending_age_minutes)}</span></div>
+                            <div className="flex items-center justify-between gap-3"><span>Oldest failed age</span><span data-testid="migration-outbox-oldest-failed-age">{formatAgeMinutes(lifecycle?.oldest_failed_age_minutes)}</span></div>
+                          </div>
+                        </div>
                         <div className="rounded-2xl bg-slate-50 p-4" data-testid="migration-outbox-retries-panel">
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-medium text-slate-700">Retry attempts</span>
                             <Badge variant="outline">{overview?.retries?.future_ready ? 'Future-ready / N-A' : 'Active'}</Badge>
                           </div>
                           <div className="mt-3 text-2xl font-semibold text-slate-900">{overview?.retries?.total_attempts ?? 0}</div>
-                          <div className="mt-1 text-sm text-slate-500">Dead letter: {overview?.retries?.dead_letter_count ?? 0}</div>
+                          <div className="mt-1 text-sm text-slate-500">Failed: {overview?.retries?.active_failed_count ?? 0} · Parked: {overview?.retries?.parked_count ?? 0}</div>
                         </div>
                         <div className="rounded-2xl bg-slate-50 p-4" data-testid="migration-outbox-lag-panel">
                           <div className="flex items-center justify-between">

@@ -468,11 +468,13 @@ class MigrationObservabilityService:
         stale_pending_count = 0
         status_counter: Counter[str] = Counter()
         event_counter: Counter[str] = Counter()
-        event_pending_counter: Counter[str] = Counter()
+        event_status_breakdown: Dict[str, Counter[str]] = defaultdict(Counter)
         latest_event_at: Dict[str, str] = {}
         retry_attempts_total = 0
         retry_fields_found = False
         latency_values: List[float] = []
+        oldest_pending_at: Optional[datetime] = None
+        oldest_failed_at: Optional[datetime] = None
 
         for event in outbox_events:
             created_at = _parse_timestamp(event.get("created_at"))
@@ -482,8 +484,7 @@ class MigrationObservabilityService:
 
             status_counter[status_value] += 1
             event_counter[event_type] += 1
-            if status_value == "pending":
-                event_pending_counter[event_type] += 1
+            event_status_breakdown[event_type][status_value] += 1
 
             if created_at and created_at >= twenty_four_hours_ago:
                 recent_outbox.append(event)
@@ -491,6 +492,12 @@ class MigrationObservabilityService:
             if created_at and status_value == "pending" and created_at <= fifteen_minutes_ago:
                 stale_pending_count += 1
                 stale_pending_events.append(event)
+            if created_at and status_value == "pending":
+                if oldest_pending_at is None or created_at < oldest_pending_at:
+                    oldest_pending_at = created_at
+            if created_at and status_value == "failed":
+                if oldest_failed_at is None or created_at < oldest_failed_at:
+                    oldest_failed_at = created_at
 
             if created_at and processed_at:
                 latency_values.append(max((processed_at - created_at).total_seconds() * 1000, 0.0))
@@ -513,7 +520,11 @@ class MigrationObservabilityService:
             {
                 "event_type": event_type,
                 "total_count": count,
-                "pending_count": event_pending_counter.get(event_type, 0),
+                "pending_count": event_status_breakdown[event_type].get("pending", 0),
+                "processing_count": event_status_breakdown[event_type].get("processing", 0),
+                "processed_count": event_status_breakdown[event_type].get("processed", 0),
+                "failed_count": event_status_breakdown[event_type].get("failed", 0),
+                "parked_count": event_status_breakdown[event_type].get("parked", 0),
                 "last_seen_at": latest_event_at.get(event_type),
             }
             for event_type, count in event_counter.most_common()
@@ -534,10 +545,26 @@ class MigrationObservabilityService:
 
         queue_depth = {
             "pending": status_counter.get("pending", 0),
+            "processing": status_counter.get("processing", 0),
             "processed": status_counter.get("processed", 0),
             "failed": status_counter.get("failed", 0),
+            "parked": status_counter.get("parked", 0),
             "dead_letter": status_counter.get("dead_letter", 0),
             "stale_pending": stale_pending_count,
+        }
+        oldest_pending_age_minutes = round((now - oldest_pending_at).total_seconds() / 60, 2) if oldest_pending_at else None
+        oldest_failed_age_minutes = round((now - oldest_failed_at).total_seconds() / 60, 2) if oldest_failed_at else None
+        lifecycle = {
+            "pending_count": queue_depth["pending"],
+            "processing_count": queue_depth["processing"],
+            "processed_count": queue_depth["processed"],
+            "failed_count": queue_depth["failed"],
+            "parked_count": queue_depth["parked"],
+            "retry_attempts_total": retry_attempts_total,
+            "oldest_pending_at": oldest_pending_at.isoformat() if oldest_pending_at else None,
+            "oldest_pending_age_minutes": oldest_pending_age_minutes,
+            "oldest_failed_at": oldest_failed_at.isoformat() if oldest_failed_at else None,
+            "oldest_failed_age_minutes": oldest_failed_age_minutes,
         }
 
         audit_action_breakdown = Counter(log.get("action") or "unknown" for log in audit_logs_24h)
@@ -607,14 +634,17 @@ class MigrationObservabilityService:
                 "status": event.get("status") or "pending",
                 "correlation_id": event.get("correlation_id"),
                 "created_at": event.get("created_at"),
+                "processed_at": event.get("processed_at"),
                 "entity_id": event.get("reservation_id") or event.get("room_block_id") or event.get("folio_id"),
+                "retry_count": event.get("retry_count") or 0,
+                "last_error": event.get("last_error"),
             }
             for event in outbox_events[:12]
         ]
 
         health_score = build_health_score(
             generated_at=now.isoformat(),
-            failed_outbox_count=queue_depth["failed"] + queue_depth["dead_letter"],
+            failed_outbox_count=queue_depth["failed"] + queue_depth["parked"] + queue_depth["dead_letter"],
             stale_pending_count=queue_depth["stale_pending"],
             audit_gap_count=audit_gap_count,
             shadow_summary=shadow_summary,
@@ -637,10 +667,13 @@ class MigrationObservabilityService:
                     "hourly_series": _bucket_series(recent_outbox, "created_at", hours=24),
                 },
                 "queue_depth": queue_depth,
+                "lifecycle": lifecycle,
                 "event_breakdown": outbox_breakdown,
                 "retries": {
                     "total_attempts": retry_attempts_total,
                     "dead_letter_count": queue_depth["dead_letter"],
+                    "active_failed_count": queue_depth["failed"],
+                    "parked_count": queue_depth["parked"],
                     "future_ready": not retry_fields_found,
                 },
                 "stale_triage": stale_triage,

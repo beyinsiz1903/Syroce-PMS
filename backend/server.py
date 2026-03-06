@@ -9410,8 +9410,24 @@ async def startup_db_seed():
         print(f"⚠️ Index creation warning: {str(e)}")
         print("   Indexes may already exist or database not ready")
 
+    # Temporary operational outbox worker for semantic migration lifecycle validation
+    try:
+        from shared_kernel.outbox_lifecycle import outbox_lifecycle_worker
+
+        await outbox_lifecycle_worker.start()
+        app.state.outbox_lifecycle_worker = outbox_lifecycle_worker
+        print("✅ Temporary operational outbox worker started")
+    except Exception as e:
+        print(f"⚠️ Outbox lifecycle worker startup warning: {str(e)}")
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    worker = getattr(app.state, "outbox_lifecycle_worker", None)
+    if worker is not None:
+        try:
+            await worker.stop()
+        except Exception as e:
+            print(f"⚠️ Outbox lifecycle worker shutdown warning: {str(e)}")
     client.close()
 from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
 from typing import List, Optional

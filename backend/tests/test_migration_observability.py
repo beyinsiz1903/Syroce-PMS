@@ -87,10 +87,11 @@ class TestMigrationObservability:
 
         assert {'generated_at', 'health_score', 'outbox', 'audit', 'shadow'} <= set(payload.keys())
         assert {'status', 'display_status', 'calculated_at', 'time_window', 'reasons', 'operational_guidance', 'signals'} <= set(payload['health_score'].keys())
-        assert {'throughput', 'queue_depth', 'event_breakdown', 'retries', 'stale_triage', 'lag', 'recent_events'} <= set(payload['outbox'].keys())
+        assert {'throughput', 'queue_depth', 'lifecycle', 'event_breakdown', 'retries', 'stale_triage', 'lag', 'recent_events'} <= set(payload['outbox'].keys())
         assert {'recent_count', 'audit_gap_count', 'actions_breakdown', 'recent_stream'} <= set(payload['audit'].keys())
         assert {'summary', 'recent_events'} <= set(payload['shadow'].keys())
         assert {'total_stale_pending', 'event_type_breakdown', 'property_breakdown', 'source_breakdown', 'delivery_signals', 'assessment'} <= set(payload['outbox']['stale_triage'].keys())
+        assert {'pending_count', 'processing_count', 'processed_count', 'failed_count', 'parked_count', 'retry_attempts_total', 'oldest_pending_age_minutes', 'oldest_failed_age_minutes'} <= set(payload['outbox']['lifecycle'].keys())
 
         breakdown_types = {item['event_type'] for item in payload['outbox']['event_breakdown']}
         assert 'reservation.created.v1' in breakdown_types
