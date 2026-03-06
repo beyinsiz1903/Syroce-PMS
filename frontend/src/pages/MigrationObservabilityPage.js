@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { StalePendingTriageCard } from '@/components/migration/StalePendingTriageCard';
 
 
 const QUEUE_COLORS = ['#0f766e', '#0891b2', '#dc2626', '#b45309', '#6b7280'];
@@ -205,6 +206,8 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
                 <StatCard icon={ShieldAlert} label="Shadow mismatch" value={`${(data?.shadow?.summary || []).reduce((sum, item) => sum + (item.mismatches || 0), 0)}`} helper="Availability + folio toplam mismatch" tone="bg-rose-100 text-rose-700" testId="migration-stat-shadow" />
                 <StatCard icon={Clock3} label="Event lag" value={formatMs(overview?.lag?.avg_ms)} helper={overview?.lag?.future_ready ? 'Future-ready / N-A' : `P95 ${formatMs(overview?.lag?.p95_ms)}`} tone="bg-sky-100 text-sky-700" testId="migration-stat-lag" />
               </div>
+
+              <StalePendingTriageCard triage={overview?.stale_triage} />
 
               <Tabs defaultValue="overview" className="space-y-4" data-testid="migration-observability-tabs">
                 <TabsList className="h-auto flex-wrap justify-start gap-2 rounded-2xl bg-white/80 p-2" data-testid="migration-observability-tabs-list">

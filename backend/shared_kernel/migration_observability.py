@@ -59,6 +59,37 @@ MIGRATION_EVENT_AUDIT_MAP = {
     },
 }
 
+EVENT_SOURCE_HINTS = {
+    "reservation.created.v1": {
+        "source": "semantic_reservations_service",
+        "origin": "semantic",
+    },
+    "inventory.blocked.v1": {
+        "source": "semantic_inventory_service",
+        "origin": "semantic",
+    },
+    "inventory.released.v1": {
+        "source": "semantic_inventory_service",
+        "origin": "semantic",
+    },
+    "folio.opened.v1": {
+        "source": "semantic_folio_service",
+        "origin": "semantic",
+    },
+    "reservation.modified.v1": {
+        "source": "semantic_reservations_service",
+        "origin": "semantic",
+    },
+    "reservation.cancelled.v1": {
+        "source": "semantic_reservations_service",
+        "origin": "semantic",
+    },
+    "folio.charge_posted.v1": {
+        "source": "semantic_folio_service",
+        "origin": "semantic",
+    },
+}
+
 
 def _parse_timestamp(raw_value: Any) -> Optional[datetime]:
     if isinstance(raw_value, datetime):
@@ -99,6 +130,212 @@ def _bucket_series(events: List[Dict[str, Any]], key: str, hours: int = 24) -> L
         }
         for timestamp, count in buckets.items()
     ]
+
+
+def _derive_event_source(event: Dict[str, Any]) -> Dict[str, str]:
+    event_type = str(event.get("event_type") or "unknown")
+    payload = event.get("payload") or {}
+    hint = EVENT_SOURCE_HINTS.get(event_type, {})
+
+    source = (
+        payload.get("source")
+        or payload.get("origin")
+        or event.get("source")
+        or hint.get("source")
+        or "unknown"
+    )
+    source_lower = str(source).lower()
+
+    if "legacy" in source_lower:
+        origin = "legacy"
+    elif event_type in MIGRATION_EVENT_TYPES or source_lower.startswith("semantic_"):
+        origin = "semantic"
+    else:
+        origin = hint.get("origin") or "unknown"
+
+    return {
+        "source": str(source),
+        "origin": origin,
+    }
+
+
+def build_stale_pending_triage(
+    *,
+    generated_at: str,
+    stale_events: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    if not stale_events:
+        return {
+            "generated_at": generated_at,
+            "total_stale_pending": 0,
+            "oldest_pending_at": None,
+            "oldest_pending_age_minutes": None,
+            "newest_pending_at": None,
+            "newest_pending_age_minutes": None,
+            "event_type_breakdown": [],
+            "tenant_breakdown": [],
+            "property_breakdown": [],
+            "source_breakdown": [],
+            "origin_breakdown": [],
+            "delivery_signals": {
+                "processed_count": 0,
+                "retry_metadata_count": 0,
+                "has_delivery_lifecycle": False,
+            },
+            "assessment": {
+                "backlog_shape": "clear",
+                "source_scope": "Stale pending event yok",
+                "likely_root_cause": "Triage gerekmiyor",
+                "recommended_action": "Mevcut health score sinyaliyle devam edilebilir",
+            },
+            "sample_events": [],
+        }
+
+    now = _parse_timestamp(generated_at) or datetime.now(timezone.utc)
+    event_type_counter: Counter[str] = Counter()
+    tenant_counter: Counter[str] = Counter()
+    property_counter: Counter[str] = Counter()
+    source_counter: Counter[str] = Counter()
+    origin_counter: Counter[str] = Counter()
+    source_origin_map: Dict[str, str] = {}
+    processed_count = 0
+    retry_metadata_count = 0
+    samples: List[Dict[str, Any]] = []
+
+    sorted_events = sorted(
+        stale_events,
+        key=lambda event: _parse_timestamp(event.get("created_at")) or now,
+    )
+
+    oldest_pending_at = _parse_timestamp(sorted_events[0].get("created_at"))
+    newest_pending_at = _parse_timestamp(sorted_events[-1].get("created_at"))
+
+    for event in sorted_events:
+        event_type = str(event.get("event_type") or "unknown")
+        tenant_id = str(event.get("tenant_id") or "missing")
+        property_id = str(event.get("property_id") or "missing")
+        source_info = _derive_event_source(event)
+        source = source_info["source"]
+        origin = source_info["origin"]
+
+        event_type_counter[event_type] += 1
+        tenant_counter[tenant_id] += 1
+        property_counter[property_id] += 1
+        source_counter[source] += 1
+        origin_counter[origin] += 1
+        source_origin_map[source] = origin
+
+        if event.get("processed_at"):
+            processed_count += 1
+        if any(event.get(field) is not None for field in ["retry_attempts", "retry_count", "attempt_count"]):
+            retry_metadata_count += 1
+
+        if len(samples) < 8:
+            samples.append(
+                {
+                    "event_id": event.get("event_id") or event.get("id"),
+                    "event_type": event_type,
+                    "created_at": event.get("created_at"),
+                    "status": event.get("status") or "pending",
+                    "tenant_id": tenant_id,
+                    "property_id": property_id,
+                    "entity_id": event.get("reservation_id") or event.get("room_block_id") or event.get("folio_id") or event.get("folio_charge_id"),
+                    "source": source,
+                    "origin": origin,
+                }
+            )
+
+    total_stale = len(sorted_events)
+    oldest_age_minutes = round((now - oldest_pending_at).total_seconds() / 60, 2) if oldest_pending_at else None
+    newest_age_minutes = round((now - newest_pending_at).total_seconds() / 60, 2) if newest_pending_at else None
+
+    if oldest_age_minutes is not None and oldest_age_minutes <= 360:
+        backlog_shape = "same_day_backlog"
+    elif oldest_age_minutes is not None and oldest_age_minutes <= 1440:
+        backlog_shape = "last_24h_backlog"
+    else:
+        backlog_shape = "historical_backlog"
+
+    semantic_count = origin_counter.get("semantic", 0)
+    if semantic_count == total_stale:
+        source_scope = "Tüm stale pending kayıtları semantic write-path kaynaklı"
+    elif semantic_count == 0:
+        source_scope = "Stale pending kayıtlarında semantic kaynak tespit edilmedi"
+    else:
+        source_scope = f"Stale pending kayıtlarının {semantic_count}/{total_stale} adedi semantic kaynaklı"
+
+    if processed_count == 0 and retry_metadata_count == 0:
+        likely_root_cause = "Worker/consumer bağlı değil veya outbox state transition lifecycle henüz aktif değil"
+    elif processed_count == 0:
+        likely_root_cause = "Consumer denemesi görünmüyor; queue backlog aktif ama işleme sinyali yok"
+    else:
+        likely_root_cause = "Consumer kısmen aktif; state transition veya retry davranışı ayrıca incelenmeli"
+
+    recommended_action = (
+        "Yeni write-path açmadan önce consumer/worker stratejisini netleştir, gerekiyorsa outbox cleanup ya da explicit park policy tanımla"
+    )
+
+    return {
+        "generated_at": generated_at,
+        "total_stale_pending": total_stale,
+        "oldest_pending_at": oldest_pending_at.isoformat() if oldest_pending_at else None,
+        "oldest_pending_age_minutes": oldest_age_minutes,
+        "newest_pending_at": newest_pending_at.isoformat() if newest_pending_at else None,
+        "newest_pending_age_minutes": newest_age_minutes,
+        "event_type_breakdown": [
+            {
+                "event_type": event_type,
+                "count": count,
+                "share_percent": round((count / total_stale) * 100, 2),
+            }
+            for event_type, count in event_type_counter.most_common()
+        ],
+        "tenant_breakdown": [
+            {
+                "tenant_id": tenant_id,
+                "count": count,
+                "share_percent": round((count / total_stale) * 100, 2),
+            }
+            for tenant_id, count in tenant_counter.most_common()
+        ],
+        "property_breakdown": [
+            {
+                "property_id": property_id,
+                "count": count,
+                "share_percent": round((count / total_stale) * 100, 2),
+            }
+            for property_id, count in property_counter.most_common()
+        ],
+        "source_breakdown": [
+            {
+                "source": source,
+                "origin": source_origin_map.get(source, "unknown"),
+                "count": count,
+                "share_percent": round((count / total_stale) * 100, 2),
+            }
+            for source, count in source_counter.most_common()
+        ],
+        "origin_breakdown": [
+            {
+                "origin": origin,
+                "count": count,
+                "share_percent": round((count / total_stale) * 100, 2),
+            }
+            for origin, count in origin_counter.most_common()
+        ],
+        "delivery_signals": {
+            "processed_count": processed_count,
+            "retry_metadata_count": retry_metadata_count,
+            "has_delivery_lifecycle": processed_count > 0 or retry_metadata_count > 0,
+        },
+        "assessment": {
+            "backlog_shape": backlog_shape,
+            "source_scope": source_scope,
+            "likely_root_cause": likely_root_cause,
+            "recommended_action": recommended_action,
+        },
+        "sample_events": samples,
+    }
 
 
 def build_health_score(
@@ -227,6 +464,7 @@ class MigrationObservabilityService:
         ]
 
         recent_outbox = []
+        stale_pending_events: List[Dict[str, Any]] = []
         stale_pending_count = 0
         status_counter: Counter[str] = Counter()
         event_counter: Counter[str] = Counter()
@@ -252,6 +490,7 @@ class MigrationObservabilityService:
 
             if created_at and status_value == "pending" and created_at <= fifteen_minutes_ago:
                 stale_pending_count += 1
+                stale_pending_events.append(event)
 
             if created_at and processed_at:
                 latency_values.append(max((processed_at - created_at).total_seconds() * 1000, 0.0))
@@ -380,6 +619,10 @@ class MigrationObservabilityService:
             audit_gap_count=audit_gap_count,
             shadow_summary=shadow_summary,
         )
+        stale_triage = build_stale_pending_triage(
+            generated_at=now.isoformat(),
+            stale_events=stale_pending_events,
+        )
 
         return {
             "generated_at": now.isoformat(),
@@ -400,6 +643,7 @@ class MigrationObservabilityService:
                     "dead_letter_count": queue_depth["dead_letter"],
                     "future_ready": not retry_fields_found,
                 },
+                "stale_triage": stale_triage,
                 "lag": {
                     "avg_ms": avg_latency_ms,
                     "p95_ms": p95_latency_ms,

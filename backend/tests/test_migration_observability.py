@@ -6,7 +6,7 @@ import pytest
 import requests
 
 from core.database import db
-from shared_kernel.migration_observability import build_health_score
+from shared_kernel.migration_observability import build_health_score, build_stale_pending_triage
 
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
@@ -87,9 +87,10 @@ class TestMigrationObservability:
 
         assert {'generated_at', 'health_score', 'outbox', 'audit', 'shadow'} <= set(payload.keys())
         assert {'status', 'display_status', 'calculated_at', 'time_window', 'reasons', 'operational_guidance', 'signals'} <= set(payload['health_score'].keys())
-        assert {'throughput', 'queue_depth', 'event_breakdown', 'retries', 'lag', 'recent_events'} <= set(payload['outbox'].keys())
+        assert {'throughput', 'queue_depth', 'event_breakdown', 'retries', 'stale_triage', 'lag', 'recent_events'} <= set(payload['outbox'].keys())
         assert {'recent_count', 'audit_gap_count', 'actions_breakdown', 'recent_stream'} <= set(payload['audit'].keys())
         assert {'summary', 'recent_events'} <= set(payload['shadow'].keys())
+        assert {'total_stale_pending', 'event_type_breakdown', 'property_breakdown', 'source_breakdown', 'delivery_signals', 'assessment'} <= set(payload['outbox']['stale_triage'].keys())
 
         breakdown_types = {item['event_type'] for item in payload['outbox']['event_breakdown']}
         assert 'reservation.created.v1' in breakdown_types
@@ -161,3 +162,38 @@ def test_health_score_red_override_for_audit_gap():
     assert score['status'] == 'red'
     assert score['signals']['audit_gap_count'] == 1
     assert any('audit gap' in reason for reason in score['reasons'])
+
+
+def test_stale_pending_triage_classifies_semantic_backlog_without_delivery_signals():
+    now = datetime.now(timezone.utc)
+    triage = build_stale_pending_triage(
+        generated_at=now.isoformat(),
+        stale_events=[
+            {
+                'event_id': 'evt-1',
+                'event_type': 'reservation.created.v1',
+                'tenant_id': 'tenant-1',
+                'property_id': 'property-1',
+                'status': 'pending',
+                'created_at': (now - timedelta(hours=2)).isoformat(),
+                'reservation_id': 'res-1',
+                'payload': {},
+            },
+            {
+                'event_id': 'evt-2',
+                'event_type': 'inventory.released.v1',
+                'tenant_id': 'tenant-1',
+                'property_id': 'property-1',
+                'status': 'pending',
+                'created_at': (now - timedelta(hours=1)).isoformat(),
+                'room_block_id': 'block-1',
+                'payload': {'source': 'semantic_inventory_service'},
+            },
+        ],
+    )
+
+    assert triage['total_stale_pending'] == 2
+    assert triage['assessment']['backlog_shape'] == 'same_day_backlog'
+    assert triage['origin_breakdown'][0]['origin'] == 'semantic'
+    assert triage['delivery_signals']['has_delivery_lifecycle'] is False
+    assert 'Worker/consumer' in triage['assessment']['likely_root_cause']

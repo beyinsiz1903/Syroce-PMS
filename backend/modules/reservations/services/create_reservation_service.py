@@ -167,6 +167,7 @@ class CreateReservationService:
                     "check_in": booking_dict['check_in'],
                     "check_out": booking_dict['check_out'],
                     "status": booking_dict['status'],
+                    "source": "semantic_reservations_service",
                 },
             ).model_dump()
             outbox_doc = {

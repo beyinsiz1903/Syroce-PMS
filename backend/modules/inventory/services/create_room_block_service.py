@@ -120,6 +120,7 @@ class CreateRoomBlockService:
                     'start_date': block.start_date,
                     'end_date': block.end_date,
                     'allow_sell': block.allow_sell,
+                    'source': 'semantic_inventory_service',
                 },
             ).model_dump()
             outbox_doc = {

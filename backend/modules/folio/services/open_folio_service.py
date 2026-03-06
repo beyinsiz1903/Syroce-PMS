@@ -135,6 +135,7 @@ class OpenFolioService:
                     "company_id": resolved_company_id,
                     "created_at": created_at,
                     "property_id": property_context.property_id or tenant_context.tenant_id,
+                    "source": "semantic_folio_service",
                 },
             ).model_dump()
             outbox_doc = {

@@ -137,6 +137,14 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - **Added regression tests:** expanded `backend/tests/test_migration_observability.py` with endpoint contract and threshold unit coverage
 - **Validation:** health score suite **5/5 PASS**, backend deep validation **PASS**, frontend smoke/regression **PASS**
 
+### Outbox Stale Pending Triage (COMPLETED - Mar 2026)
+- **Added backend triage layer:** `backend/shared_kernel/migration_observability.py` now returns `outbox.stale_triage` with stale pending event-type breakdown, oldest/newest pending age, tenant/property/source/origin distribution, delivery lifecycle signals, and root-cause assessment
+- **Observed live state:** current tenant has **120 stale pending** migration events, all within the same property and same-day backlog window; dominant types are `inventory.blocked.v1`, `reservation.created.v1`, `inventory.released.v1`, `folio.opened.v1`
+- **Interpretation now explicit:** dashboard flags the backlog as **semantic-source**, with **0 processed** and **0 retry metadata** signals, pointing to likely **worker/consumer or state-transition lifecycle not active yet**
+- **Frontend triage surface:** `/app/migration-observability` now includes a dedicated stale triage panel visible on initial load, so Yellow status is explained without switching tabs
+- **Future data quality:** new semantic outbox writes now stamp payload `source` for reservation create, room block create, and folio open events to improve source attribution going forward
+- **Validation:** migration observability tests **4 PASS / 2 skipped**, live API verification **PASS**, frontend selector smoke **PASS**
+
 ### Root Directory Cleanup (COMPLETED - Feb 2026)
 - Removed 152 test .py files from root directory
 - Clean project structure
@@ -197,10 +205,11 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 ## Prioritized Backlog
 
 ### P0 (Next)
-- Kısa stabilizasyon/gözlem periyodu ardından `ModifyReservation` tek write-path olarak açılacak
+- Outbox stale pending backlog için karar ver: consumer/worker bağlanacak mı, yoksa explicit park/cleanup policy mi tanımlanacak?
+- Health score Yellow durumunu “açıklanmış ve kontrollü” seviyeye getirmeden `ModifyReservation` başlatılmayacak
 
 ### P1
-- Semantic Migration Sprint 2: `ModifyReservation`, sonra `CancelReservation` ve kontrollü `charge post`
+- Semantic Migration Sprint 2: stale pending kararı sonrası `ModifyReservation`, sonra `CancelReservation` ve kontrollü `charge post`
 - Migration observability paneline `processed_at`, retry metadata ve dead-letter lifecycle geldiğinde gerçek lag/retry grafikleri bağlanacak
 - Health score kartına ileride trend/history ve cutover recommendation history eklenebilir
 - Semantic Migration Sprint 3: stay aggregate writes (room assign/move, check-in/out, extend) with state machine + rollback playbook
