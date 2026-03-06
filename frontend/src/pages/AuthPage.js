@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +15,7 @@ import LanguageSelector from '@/components/LanguageSelector';
 const AuthPage = ({ onLogin }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState('hotel-login');
   const [loading, setLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -50,6 +52,8 @@ const AuthPage = ({ onLogin }) => {
     email: '', password: '', name: '', phone: ''
   });
 
+  const loginRedirectPath = location.state?.redirectTo || '/app/dashboard';
+
   const handleHotelLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -60,6 +64,7 @@ const AuthPage = ({ onLogin }) => {
       
       // Call onLogin to update app state - React Router handles redirect
       onLogin(response.data.access_token, response.data.user, response.data.tenant);
+      navigate(loginRedirectPath, { replace: true });
     } catch (error) {
       const errorMessage = error.response?.data?.detail || error.message || t('auth.loginFailed');
       toast.error(errorMessage);
@@ -325,6 +330,14 @@ const AuthPage = ({ onLogin }) => {
                           className="w-full" 
                           disabled={loading} 
                           data-testid="hotel-login-btn"
+                          onClick={(e) => {
+                            if (!loading) {
+                              const form = e.target.closest('form');
+                              if (form) {
+                                form.requestSubmit();
+                              }
+                            }
+                          }}
                           style={isMobile ? { height: '48px', fontSize: '16px' } : {}}
                         >
                           {loading ? t('common.loading') : t('common.login')}

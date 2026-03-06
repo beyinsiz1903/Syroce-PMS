@@ -528,7 +528,7 @@ function App() {
               isAuthenticated ? (
                 <PMSModule user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
-                <Navigate to="/auth" replace />
+                <Navigate to="/auth" replace state={{ redirectTo: '/pms' }} />
               )
             }
           />
@@ -538,7 +538,7 @@ function App() {
               isAuthenticated ? (
                 <PMSModule user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
-                <Navigate to="/auth" replace />
+                <Navigate to="/auth" replace state={{ redirectTo: '/app/pms' }} />
               )
             }
           />
