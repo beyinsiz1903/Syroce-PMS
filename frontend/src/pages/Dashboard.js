@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import Layout from '@/components/Layout';
-import { Hotel, FileText, TrendingUp, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Crown, Shield, Sparkles, Bot, Star, Building, CreditCard, Gift, Globe, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor } from 'lucide-react';
+import { Hotel, FileText, TrendingUp, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Crown, Shield, Sparkles, Bot, Star, Building, CreditCard, Gift, Globe, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor, ArrowRight } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import cacheDB from '@/utils/cacheDB';
 
@@ -749,6 +749,39 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                 </Card>
               </div>
             )}
+
+            <Card className="overflow-hidden border-0 bg-[linear-gradient(135deg,#0f172a_0%,#115e59_52%,#f59e0b_100%)] text-white shadow-xl shadow-teal-200/50" data-testid="migration-observability-dashboard-card">
+              <CardContent className="grid gap-5 p-6 md:grid-cols-[1.15fr_0.85fr] md:p-7">
+                <div className="space-y-3">
+                  <Badge className="w-fit bg-white/15 text-white hover:bg-white/15" data-testid="migration-observability-dashboard-badge">Migration Observability</Badge>
+                  <div>
+                    <h2 className="text-2xl font-bold" style={{ fontFamily: 'Space Grotesk' }} data-testid="migration-observability-dashboard-title">
+                      Semantic çekirdek geçişini canlı panelden izleyin.
+                    </h2>
+                    <p className="mt-2 max-w-2xl text-sm leading-7 text-white/80" data-testid="migration-observability-dashboard-description">
+                      Outbox event breakdown, audit stream ve shadow mismatch oranlarını ayrı bir kontrol yüzeyinde görün. Bu panel yeni write-path açmadan önce operasyonel güvenlik sinyallerini toplar.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-col justify-between gap-4 rounded-[24px] border border-white/15 bg-white/10 p-5 backdrop-blur-sm" data-testid="migration-observability-dashboard-sidepanel">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm text-white/80">
+                      <Monitor className="h-4 w-4" />
+                      Outbox + Audit + Shadow
+                    </div>
+                    <p className="text-sm text-white/70">Observability önce, sonra yeni write-path — mevcut migration stratejisi için önerilen güvenlik katmanı.</p>
+                  </div>
+                  <Button
+                    onClick={() => navigate('/app/migration-observability')}
+                    className="rounded-full bg-white text-slate-900 hover:bg-amber-50"
+                    data-testid="migration-observability-dashboard-open-button"
+                  >
+                    Paneli aç
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Modules Grid - Categorized with Accordion */}
 

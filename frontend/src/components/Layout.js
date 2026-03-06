@@ -163,6 +163,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
             : 'hover:bg-gray-100'
         }`}
         data-nav-key={item.key}
+        data-testid={`nav-${item.key}-button`}
       >
         <Icon className={isMobile ? "w-4 h-4" : "w-3.5 h-3.5"} />
         <span className="font-medium">{item.label}</span>

@@ -70,6 +70,7 @@ const RateManagementMobile = lazy(() => import("@/pages/RateManagementMobile"));
 const RevenueMobile = lazy(() => import("@/pages/RevenueMobile"));
 const ChannelManagerMobile = lazy(() => import("@/pages/ChannelManagerMobile"));
 const CorporateContractsMobile = lazy(() => import("@/pages/CorporateContractsMobile"));
+const MigrationObservabilityPage = lazy(() => import("@/pages/MigrationObservabilityPage"));
 const SystemPerformanceMonitor = lazy(() => import("@/pages/SystemPerformanceMonitor"));
 const LogViewer = lazy(() => import("@/pages/LogViewer"));
 const MobileLogViewer = lazy(() => import("@/pages/MobileLogViewer"));
@@ -441,6 +442,18 @@ function App() {
             element={
               isAuthenticated ? (
                 <Dashboard user={user} tenant={tenant} modules={modules} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/app/migration-observability"
+            element={
+              isAuthenticated ? (
+                <Suspense fallback={<LoadingFallback />}>
+                  <MigrationObservabilityPage user={user} tenant={tenant} onLogout={handleLogout} />
+                </Suspense>
               ) : (
                 <Navigate to="/auth" replace />
               )

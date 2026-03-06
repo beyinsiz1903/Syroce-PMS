@@ -53,6 +53,7 @@ from core.utils import (
     night_audit_recalculate_ar, night_audit_housekeeping_rollup,
     night_audit_ota_reconciliation,
 )
+from shared_kernel.migration_observability import MigrationObservabilityService
 
 try:
     from logging_service import get_logging_service
@@ -69,6 +70,15 @@ except ImportError:
 
 router = APIRouter(prefix="/api", tags=["reports"])
 security = HTTPBearer()
+migration_observability_service = MigrationObservabilityService()
+
+
+@router.get("/reports/migration-observability")
+async def get_migration_observability(
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_module("reports")),
+):
+    return await migration_observability_service.get_dashboard(current_user.tenant_id)
 
 @router.post("/reports/send-flash-now")
 async def send_flash_report_now(
