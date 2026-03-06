@@ -110,6 +110,14 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - **Added regression tests:** `backend/tests/test_open_folio_bridge.py`
 - **Validation:** folio open bridge suite **7/7 PASS**, testing agent backend validation **PASS**, frontend smoke **PASS**
 
+### Migration Observability Mini Panel (COMPLETED - Mar 2026)
+- **Added backend observability service:** `backend/shared_kernel/migration_observability.py` aggregates migration-safe telemetry from `outbox_events`, `audit_logs`, and in-memory shadow metrics
+- **Added reporting endpoint:** `GET /api/reports/migration-observability` returns outbox throughput, queue depth, event breakdown, retry/lag readiness, audit stream, and shadow mismatch summaries
+- **Added dedicated frontend route:** `/app/migration-observability` with a separate operational control surface page and dashboard CTA entry point
+- **Added UI coverage:** outbox chart/table, audit stream table, shadow summary cards, recent shadow events, refresh control, and `data-testid` coverage for critical elements
+- **Added regression tests:** `backend/tests/test_migration_observability.py`
+- **Validation:** observability suite **2/2 PASS**, combined backend validation **9/9 PASS**, backend API agent **PASS**, frontend testing agent **PASS**
+
 ### Root Directory Cleanup (COMPLETED - Feb 2026)
 - Removed 152 test .py files from root directory
 - Clean project structure
@@ -125,6 +133,7 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 │   │   ├── inventory/         # Availability read abstraction + future inventory migration
 │   │   └── folio/             # Folio balance/detail reads + folio-open write migration
 │   ├── shared_kernel/         # Tenant/event/audit/idempotency primitives (NEW)
+│   │   └── migration_observability.py # Outbox/audit/shadow telemetry aggregation for migration control panel
 │   ├── core/
 │   │   ├── database.py        # MongoDB connection
 │   │   ├── security.py        # JWT auth, password hashing
@@ -173,6 +182,7 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 
 ### P1
 - Semantic Migration Sprint 2: `room block release`, sonra stabilizasyon sonrası reservation modify/cancel ve `charge post`
+- Migration observability paneline `processed_at`, retry metadata ve dead-letter lifecycle geldiğinde gerçek lag/retry grafikleri bağlanacak
 - Semantic Migration Sprint 3: stay aggregate writes (room assign/move, check-in/out, extend) with state machine + rollback playbook
 - Semantic Migration Sprint 4: finance risk paths (payment, refund, invoice) with idempotency + reconciliation
 - Redis-based Caching (replace in-memory SimpleCache)
