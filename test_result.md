@@ -141,6 +141,18 @@ test_plan:
         agent: "testing"
         comment: "✅ CONTRACT TEST PACKAGE VALIDATION COMPLETE: (1) All 16 contract tests PASS - tenant isolation, auth rejection, response shape validation working ✅ (2) Sprint 1 alignment confirmed - read-side security layer for /api/pms/bookings, /api/pms/rooms/availability, /api/folio/{folio_id} adequately hardened ✅ (3) Test harnesses properly validate cross-tenant isolation, property header behavior, and contract snapshots ✅ (4) No gaps detected - comprehensive coverage for read-side güven katmanı ✅ Read-side security contracts are solid and Sprint 1 compliant."
 
+  - task: "Shadow Metrics Instrumentation - Availability + Folio Read"
+    implemented: true
+    working: true
+    file: "routers/pms.py, routers/finance.py, shared_kernel/shadow_metrics.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TURKISH SPRINT SHADOW METRICS VALIDATION: (1) GET /api/pms/rooms/availability hala 200 dönüyor ✅ (2) GET /api/folio/{folio_id} hala 200 dönüyor ✅ (3) Shadow compare log/metric davranışı endpoint response'unu bozmadan çalışıyor - 6/6 stability test calls successful ✅ (4) 500 veya response drift yok - all integrity checks passed ✅ (5) Shadow metrics infrastructure tested and working correctly - events recording and logging functional ✅ VERDICT: Instrumentation only implemented successfully - no cutover, endpoints stable, shadow metrics operational without affecting user experience."
+
 agent_communication:
   - agent: "testing"
     message: "Backend smoke/regression testing completed for Turkish sprint requirements. All 6 core endpoints tested successfully: (1) Auth login demo@hotel.com/demo123 ✅ (2) GET /api/pms/bookings ✅ (3) GET /api/pms/rooms/availability ✅ (4) GET /api/folio/list ✅ (5) GET /api/folio/{folio_id} with balance field ✅ (6) Foundation changes regression test ✅. No 500 errors detected. Read-side services integration confirmed functional. Backend foundation + read-side changes are stable."
@@ -150,3 +162,5 @@ agent_communication:
     message: "✅ CONTRACT TEST HARDENING VALIDATION COMPLETED: Yeni test paketi Sprint 1 hedefiyle mükemmel uyum gösteriyor. Tüm 16 contract test geçti - tenant isolation, auth rejection, response shape validation çalışıyor. Read-side güven katmanı /api/pms/bookings, /api/pms/rooms/availability, /api/folio/{folio_id} için yeterli biçimde sertleştirilmiş. Belirgin açık/gap yok - comprehensive coverage achieved for semantic read contracts."
   - agent: "testing"
     message: "✅ SHADOW METRICS SMOKE TEST COMPLETED: Backend'e availability ve folio read için shadow metric instrumentation eklendikten sonra frontend regression smoke test yapıldı. Sonuç: (1) Uygulama normal yükleniyor ✅ (2) Login akışı çalışıyor ✅ (3) Dashboard ve PMS section erişilebilir ✅ (4) Console'da critical error yok ✅ VERDICT: Shadow metric instrumentation frontend'e herhangi bir regresyon üretmemiş. Tüm core flows stabil."
+  - agent: "testing"
+    message: "✅ TÜRKÇE SPRINT SHADOW METRICS BACKEND VALIDATION TAMAMLANDI: Shadow metric instrumentation test sonuçları mükemmel. (1) GET /api/pms/rooms/availability → HTTP 200, 30 rooms döndürülüyor, normal çalışıyor ✅ (2) GET /api/folio/{folio_id} → HTTP 200, balance field ile detaylar getiriliyor ✅ (3) Shadow metrics davranışı → 6/6 stability calls başarılı, endpoint performance'ını etkilemiyor ✅ (4) Response integrity → 4/4 endpoint'te 500 error yok, drift tespit edilmedi ✅ (5) Shadow metrics infrastructure test edildi ve çalışıyor - event logging active ✅ SONUÇ: Instrumentation only fase başarılı. Cutover yok. Endpointler stabil. Shadow metrics operasyonel ve kullanıcı deneyimini etkilemiyor. Turkish sprint requirements karşılandı."
