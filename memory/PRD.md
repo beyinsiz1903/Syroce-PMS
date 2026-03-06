@@ -76,6 +76,13 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - **Files added/updated:** `backend/tests/test_semantic_read_contracts.py`, `backend/tests/harnesses/contract.py`, `backend/tests/harnesses/tenant_isolation.py`
 - **Test result:** contract hardening suite **16/16 PASS**
 
+### Shadow Metrics Start Pack (COMPLETED - Mar 2026)
+- **Added instrumentation-only shadow compare layer:** availability and folio read paths now execute semantic response as primary path and compare against legacy logic in the background
+- **Created shared shadow metrics utilities:** `backend/shared_kernel/shadow_metrics.py` provides canonical normalization, hashing, compare helpers, structured logging, and in-memory shadow metric counters
+- **Activated shadow compare on live endpoints:** `/api/pms/rooms/availability` and `/api/folio/{folio_id}` now emit compare result, mismatch fields, hashes, tenant/property/correlation context, and duration without changing response contract
+- **Added validation tests:** `backend/tests/test_shadow_metrics.py`
+- **Validation:** shadow metrics tests **4/4 PASS**, combined contract + shadow suite **20/20 PASS**, backend + frontend smoke passed
+
 ### Root Directory Cleanup (COMPLETED - Feb 2026)
 - Removed 152 test .py files from root directory
 - Clean project structure
@@ -135,7 +142,7 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 ## Prioritized Backlog
 
 ### P0 (Next)
-- Shadow metric altyapısı başlangıcı (availability + folio read için) ve ardından Semantic Migration Sprint 2 write-path başlangıcı
+- Semantic Migration Sprint 2 write-path başlangıcı: `CreateReservation`, reservation outbox, room block create, folio open
 
 ### P1
 - Semantic Migration Sprint 2: reservation writes, room block create/release, folio open/charge, outbox + shadow mode
