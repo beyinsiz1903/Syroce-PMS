@@ -7,11 +7,12 @@ import random
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from core.database import db
 from core.security import get_current_user
+from modules.inventory.services.create_room_block_service import CreateRoomBlockService
 from models.schemas import User, HousekeepingTask
 
 try:
@@ -29,6 +30,7 @@ except ImportError:
 
 router = APIRouter(prefix="/api", tags=["housekeeping"])
 security = HTTPBearer()
+create_room_block_service = CreateRoomBlockService()
 
 
 # ============= HOUSEKEEPING =============
@@ -511,113 +513,10 @@ async def get_room_blocks(
 @router.post("/pms/room-blocks")
 async def create_room_block(
     block_data: RoomBlockCreate,
+    request: Request,
     current_user: User = Depends(get_current_user)
 ):
-    """Create a new room block"""
-    # Verify room exists
-    room = await db.rooms.find_one({
-        'id': block_data.room_id,
-        'tenant_id': current_user.tenant_id
-    }, {'_id': 0})
-    
-    if not room:
-        raise HTTPException(status_code=404, detail="Room not found")
-    
-    # Check for existing active reservations that conflict
-    start_date = datetime.fromisoformat(block_data.start_date)
-    end_date = datetime.fromisoformat(block_data.end_date) if block_data.end_date else None
-    
-    # Query for overlapping bookings
-    booking_query = {
-        'tenant_id': current_user.tenant_id,
-        'room_id': block_data.room_id,
-        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-        'check_in': {'$lt': block_data.end_date if block_data.end_date else '9999-12-31'},
-        'check_out': {'$gt': block_data.start_date}
-    }
-    
-    conflicting_bookings = await db.bookings.find(booking_query, {'_id': 0}).to_list(100)
-    
-    # Create the block
-    block = RoomBlock(
-        id=str(uuid.uuid4()),
-        room_id=block_data.room_id,
-        type=block_data.type,
-        reason=block_data.reason,
-        details=block_data.details,
-        start_date=block_data.start_date,
-        end_date=block_data.end_date,
-        allow_sell=block_data.allow_sell,
-        created_by=current_user.id,
-        created_at=datetime.now(timezone.utc).isoformat(),
-        status=BlockStatus.ACTIVE
-    )
-    
-    block_dict = block.model_dump()
-    await db.room_blocks.insert_one({**block_dict, 'tenant_id': current_user.tenant_id})
-    
-    # Create audit log
-    await db.audit_logs.insert_one({
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'user_id': current_user.id,
-        'user_name': current_user.name,
-        'user_role': current_user.role,
-        'action': 'CREATE_ROOM_BLOCK',
-        'entity_type': 'room_block',
-        'entity_id': block.id,
-        'changes': {
-            'room_id': block.room_id,
-            'type': block.type,
-            'reason': block.reason,
-            'start_date': block.start_date,
-            'end_date': block.end_date,
-            'allow_sell': block.allow_sell
-        },
-        'timestamp': datetime.now(timezone.utc).isoformat()
-    })
-    
-    # If there are conflicting bookings, create exception queue items
-    if conflicting_bookings and not block_data.allow_sell:
-        for booking in conflicting_bookings:
-            await db.exceptions.insert_one({
-                'id': str(uuid.uuid4()),
-                'tenant_id': current_user.tenant_id,
-                'exception_type': 'room_blocked_with_reservation',
-                'entity_type': 'booking',
-                'entity_id': booking['id'],
-                'severity': 'high',
-                'message': f"Room {room['room_number']} blocked ({block.type}) but has active reservation",
-                'details': {
-                    'room_id': block_data.room_id,
-                    'room_number': room['room_number'],
-                    'block_id': block.id,
-                    'block_type': block.type,
-                    'block_reason': block.reason,
-                    'booking_id': booking['id'],
-                    'guest_name': booking.get('guest_name', 'Unknown'),
-                    'check_in': booking['check_in'],
-                    'check_out': booking['check_out']
-                },
-                'status': 'pending',
-                'created_at': datetime.now(timezone.utc).isoformat()
-            })
-    
-    response = {
-        'message': 'Room block created successfully',
-        'block': block,
-        'room_number': room['room_number'],
-        'warnings': []
-    }
-    
-    if conflicting_bookings and not block_data.allow_sell:
-        response['warnings'].append({
-            'type': 'conflicting_reservations',
-            'count': len(conflicting_bookings),
-            'message': f"{len(conflicting_bookings)} active reservation(s) conflict with this block. Move or cancel required."
-        })
-    
-    return response
+    return await create_room_block_service.create(block_data, current_user, request)
 
 @router.patch("/pms/room-blocks/{block_id}")
 async def update_room_block(

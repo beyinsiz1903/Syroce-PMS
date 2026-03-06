@@ -43,8 +43,10 @@ from models.schemas import (
 )
 
 try:
+    from room_block_models import RoomBlockCreate
     from night_audit_module import QueueRoom
 except ImportError:
+    RoomBlockCreate = None
     QueueRoom = None
 
 from core.utils import (
@@ -53,6 +55,7 @@ from core.utils import (
     get_cancellation_policy_details,
 )
 from modules.inventory.services.availability_read_service import AvailabilityReadService
+from modules.inventory.services.create_room_block_service import CreateRoomBlockService
 from modules.reservations.services.create_reservation_service import CreateReservationService
 from modules.reservations.services.reservation_read_service import ReservationReadService
 from shared_kernel.shadow_metrics import compare_availability_payloads, run_shadow_compare
@@ -68,6 +71,7 @@ except ImportError:
 router = APIRouter(prefix="/api", tags=["pms"])
 security = HTTPBearer()
 create_reservation_service = CreateReservationService()
+create_room_block_service = CreateRoomBlockService()
 reservation_read_service = ReservationReadService()
 availability_read_service = AvailabilityReadService()
 
@@ -1179,87 +1183,11 @@ async def get_room_blocks(
 @router.post("/pms/room-blocks")
 async def create_room_block(
     block_data: dict,
+    request: Request,
     current_user: User = Depends(get_current_user)
 ):
-    """Create a new room block"""
-    # Validate dates
-    start = datetime.fromisoformat(block_data['start_date']).date()
-    end_date = block_data.get('end_date')
-    
-    if end_date:
-        end = datetime.fromisoformat(end_date).date()
-        if end < start:
-            raise HTTPException(400, "End date must be after start date")
-    
-    # Check for conflicts with existing bookings
-    room = await db.rooms.find_one({
-        'tenant_id': current_user.tenant_id,
-        'id': block_data['room_id']
-    })
-    
-    if not room:
-        raise HTTPException(404, "Room not found")
-    
-    # Check existing bookings
-    query = {
-        'tenant_id': current_user.tenant_id,
-        'room_id': block_data['room_id'],
-        'status': {'$in': ['confirmed', 'checked_in', 'guaranteed']},
-        'check_in': {'$lt': end_date or '9999-12-31'},
-        'check_out': {'$gt': block_data['start_date']}
-    }
-    
-    conflicting_bookings = await db.bookings.find(query, {'_id': 0}).to_list(100)
-    
-    if conflicting_bookings and not block_data.get('force_override'):
-        return {
-            'status': 'conflict',
-            'message': f"Room has {len(conflicting_bookings)} active bookings during this period",
-            'conflicting_bookings': conflicting_bookings
-        }
-    
-    # Create block
-    block = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'room_id': block_data['room_id'],
-        'type': block_data['type'],
-        'reason': block_data['reason'],
-        'details': block_data.get('details'),
-        'start_date': block_data['start_date'],
-        'end_date': end_date,
-        'allow_sell': block_data.get('allow_sell', False),
-        'created_by': current_user.name,
-        'created_at': datetime.now(timezone.utc).isoformat(),
-        'status': 'active'
-    }
-    
-    await db.room_blocks.insert_one(block)
-    
-    # Update room status
-    if block['type'] == 'out_of_order':
-        await db.rooms.update_one(
-            {'id': block_data['room_id']},
-            {'$set': {'status': 'out_of_order'}}
-        )
-    
-    # Audit log
-    await db.audit_logs.insert_one({
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'action': 'room_block_created',
-        'entity_type': 'room_block',
-        'entity_id': block['id'],
-        'user': current_user.name,
-        'timestamp': datetime.now(timezone.utc).isoformat(),
-        'details': {
-            'room_id': block_data['room_id'],
-            'type': block_data['type'],
-            'reason': block_data['reason']
-        }
-    })
-    
-    return block
+    payload = RoomBlockCreate(**block_data)
+    return await create_room_block_service.create(payload, current_user, request)
 
 
 @router.patch("/pms/room-blocks/{block_id}")

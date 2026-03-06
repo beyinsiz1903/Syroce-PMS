@@ -1,514 +1,504 @@
 #!/usr/bin/env python3
 """
-Turkish Sprint Shadow Metrics Instrumentation Backend Test
+Backend test for Turkish Room Block Create package validation
+Test Focus:
+1. POST /api/pms/room-blocks yeni semantic service üzerinden çalışıyor mu?
+2. Idempotency enforcement aktif mi?
+3. Başarılı create sonrası inventory.blocked.v1 outbox kaydı oluşuyor mu?
+4. Audit kaydı oluşuyor mu?
+5. Invalid date range / missing key / wrong property scope güvenli mi?
+6. Availability etkisi beklenen şekilde görünüyor mu?
+7. Response contract bozulmuş mu?
 """
-import asyncio
-import httpx
+
+import os
+import uuid
 import json
-import sys
-from datetime import datetime, timezone
+import asyncio
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Any, Optional
+
+import aiohttp
+import asyncio
 
 
-# Configuration
-BASE_URL = "https://hotel-pms-test.preview.emergentagent.com/api"
-TEST_CREDENTIALS = {
-    "email": "demo@hotel.com",
-    "password": "demo123"
-}
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+print(f"Testing backend at: {BASE_URL}")
 
-# Test data - real looking demo data for Turkish hotel context
-TEST_FOLIO_ID = None
-TEST_CHECK_IN = "2024-12-01"
-TEST_CHECK_OUT = "2024-12-02"
-
-class Colors:
-    GREEN = '\033[92m'
-    RED = '\033[91m'
-    YELLOW = '\033[93m'
-    BLUE = '\033[94m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-
-def log_info(message):
-    print(f"{Colors.BLUE}ℹ️  {message}{Colors.ENDC}")
-
-def log_success(message):
-    print(f"{Colors.GREEN}✅ {message}{Colors.ENDC}")
-
-def log_error(message):
-    print(f"{Colors.RED}❌ {message}{Colors.ENDC}")
-
-def log_warning(message):
-    print(f"{Colors.YELLOW}⚠️  {message}{Colors.ENDC}")
-
-class BackendTester:
+class RoomBlockTestValidator:
     def __init__(self):
-        self.token = None
-        self.tenant_id = None
-        self.client = httpx.AsyncClient(timeout=30.0)
-        self.test_results = {
-            "auth_login": {"status": "pending", "details": ""},
-            "pms_rooms_availability": {"status": "pending", "details": ""},
-            "folio_details": {"status": "pending", "details": ""},
-            "shadow_metrics": {"status": "pending", "details": ""},
-            "response_integrity": {"status": "pending", "details": ""}
+        self.session: Optional[aiohttp.ClientSession] = None
+        self.token: Optional[str] = None
+        self.tenant_id: Optional[str] = None
+        self.test_results = []
+        self.available_room = None
+        self.test_start_date = None
+        self.test_end_date = None
+
+    async def setup(self):
+        """Setup authentication and get available room"""
+        if not BASE_URL:
+            raise Exception("REACT_APP_BACKEND_URL missing from environment")
+        
+        self.session = aiohttp.ClientSession()
+        
+        # Login
+        login_payload = {
+            'email': 'demo@hotel.com', 
+            'password': 'demo123'
         }
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.client.aclose()
-
-    async def login(self):
-        """Test authentication and get token"""
-        log_info("🔐 Testing auth login...")
-        try:
-            response = await self.client.post(
-                f"{BASE_URL}/auth/login",
-                json=TEST_CREDENTIALS
-            )
+        
+        async with self.session.post(f'{BASE_URL}/api/auth/login', json=login_payload) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                raise Exception(f"Login failed: {resp.status} - {text}")
             
-            if response.status_code == 200:
-                data = response.json()
-                self.token = data.get("access_token")
-                if self.token:
-                    log_success(f"Auth login successful - Token received: {self.token[:20]}...")
-                    self.test_results["auth_login"]["status"] = "pass"
-                    self.test_results["auth_login"]["details"] = f"✅ HTTP {response.status_code} - Token: {self.token[:20]}..."
-                    
-                    # Extract tenant_id from token payload if available
-                    import base64
-                    try:
-                        # Simple JWT decode for tenant_id (for testing only)
-                        parts = self.token.split('.')
-                        if len(parts) >= 2:
-                            payload_data = parts[1] + '=' * (4 - len(parts[1]) % 4)  # Add padding
-                            decoded = base64.b64decode(payload_data)
-                            payload = json.loads(decoded.decode('utf-8'))
-                            self.tenant_id = payload.get('tenant_id')
-                            if self.tenant_id:
-                                log_info(f"Extracted tenant_id: {self.tenant_id}")
-                    except Exception as e:
-                        log_warning(f"Could not extract tenant_id from token: {e}")
-                    
-                    return True
-                else:
-                    log_error("No access token in response")
-                    self.test_results["auth_login"]["status"] = "fail"
-                    self.test_results["auth_login"]["details"] = "❌ No access token in response"
-                    return False
-            else:
-                log_error(f"Auth login failed: HTTP {response.status_code}")
-                self.test_results["auth_login"]["status"] = "fail"
-                self.test_results["auth_login"]["details"] = f"❌ HTTP {response.status_code} - {response.text[:200]}"
-                return False
-        except Exception as e:
-            log_error(f"Auth login error: {str(e)}")
-            self.test_results["auth_login"]["status"] = "fail"
-            self.test_results["auth_login"]["details"] = f"❌ Exception: {str(e)}"
-            return False
+            login_data = await resp.json()
+            self.token = login_data['access_token']
+            self.tenant_id = login_data['user']['tenant_id']
+        
+        # Get available room for testing
+        await self._find_available_room()
+        print(f"✅ Setup complete. Token obtained, tenant_id: {self.tenant_id}")
+        print(f"✅ Test room: {self.available_room['room_number']} ({self.available_room['id']})")
+        print(f"✅ Test dates: {self.test_start_date} to {self.test_end_date}")
 
-    async def test_pms_rooms_availability(self):
-        """Test GET /api/pms/rooms/availability with shadow metrics instrumentation"""
-        log_info("🏨 Testing PMS rooms availability endpoint...")
+    async def _find_available_room(self):
+        """Find an available room for testing"""
+        self.test_start_date = (datetime.utcnow().date() + timedelta(days=30)).isoformat()
+        self.test_end_date = (datetime.utcnow().date() + timedelta(days=32)).isoformat()
         
-        if not self.token:
-            log_error("No auth token - skipping availability test")
-            self.test_results["pms_rooms_availability"]["status"] = "skip"
-            return False
+        headers = {'Authorization': f'Bearer {self.token}'}
+        url = f'{BASE_URL}/api/pms/rooms/availability?check_in={self.test_start_date}&check_out={self.test_end_date}'
         
+        async with self.session.get(url, headers=headers) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                raise Exception(f"Failed to get availability: {resp.status} - {text}")
+            
+            availability = await resp.json()
+            available_rooms = [room for room in availability if room.get('available') is True]
+            
+            if not available_rooms:
+                raise Exception("No available rooms found for testing date range")
+            
+            self.available_room = available_rooms[0]
+
+    def _get_headers(self, idempotency_key: str = None, property_id: str = None):
+        """Build request headers"""
         headers = {
-            "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json",
-            "x-correlation-id": f"test-{datetime.now(timezone.utc).isoformat()}",
-            "x-property-id": self.tenant_id or "test-property"
+            'Authorization': f'Bearer {self.token}',
+            'Content-Type': 'application/json'
         }
-        
-        try:
-            # Test with realistic Turkish hotel dates
-            params = {
-                "check_in": TEST_CHECK_IN,
-                "check_out": TEST_CHECK_OUT
-            }
-            
-            log_info(f"Requesting availability: {TEST_CHECK_IN} to {TEST_CHECK_OUT}")
-            response = await self.client.get(
-                f"{BASE_URL}/pms/rooms/availability",
-                params=params,
-                headers=headers
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                log_success(f"✅ Availability API HTTP 200 - Found {len(data)} rooms")
-                
-                # Validate response structure  
-                if isinstance(data, list):
-                    sample_rooms = data[:3]  # Check first 3 rooms
-                    for i, room in enumerate(sample_rooms):
-                        expected_fields = ['id', 'room_number', 'room_type', 'available']
-                        missing = [f for f in expected_fields if f not in room]
-                        if missing:
-                            log_warning(f"Room {i+1} missing fields: {missing}")
-                        else:
-                            log_info(f"Room {i+1}: {room.get('room_number')} ({room.get('room_type')}) - Available: {room.get('available')}")
-                    
-                    self.test_results["pms_rooms_availability"]["status"] = "pass"
-                    self.test_results["pms_rooms_availability"]["details"] = f"✅ HTTP 200 - {len(data)} rooms returned"
-                    return True
-                else:
-                    log_error("Invalid response format - expected array")
-                    self.test_results["pms_rooms_availability"]["status"] = "fail"
-                    self.test_results["pms_rooms_availability"]["details"] = "❌ Invalid response format"
-                    return False
-            else:
-                log_error(f"Availability API failed: HTTP {response.status_code}")
-                self.test_results["pms_rooms_availability"]["status"] = "fail"
-                self.test_results["pms_rooms_availability"]["details"] = f"❌ HTTP {response.status_code} - {response.text[:200]}"
-                return False
-                
-        except Exception as e:
-            log_error(f"Availability API error: {str(e)}")
-            self.test_results["pms_rooms_availability"]["status"] = "fail"
-            self.test_results["pms_rooms_availability"]["details"] = f"❌ Exception: {str(e)}"
-            return False
+        if idempotency_key:
+            headers['Idempotency-Key'] = idempotency_key
+        if property_id:
+            headers['x-property-id'] = property_id
+        return headers
 
-    async def get_test_folio_id(self):
-        """Get a folio ID for testing"""
-        global TEST_FOLIO_ID
-        
-        if not self.token:
-            return None
-        
-        headers = {"Authorization": f"Bearer {self.token}"}
-        
-        try:
-            # First try to get existing folios
-            response = await self.client.get(f"{BASE_URL}/folio/list", headers=headers)
-            if response.status_code == 200:
-                data = response.json()
-                folios = data.get('folios', [])
-                if folios:
-                    TEST_FOLIO_ID = folios[0]['id']
-                    log_info(f"Found existing folio for testing: {TEST_FOLIO_ID}")
-                    return TEST_FOLIO_ID
-            
-            log_warning("No existing folios found - test will skip folio endpoint")
-            return None
-            
-        except Exception as e:
-            log_warning(f"Could not get test folio ID: {e}")
-            return None
-
-    async def test_folio_details(self):
-        """Test GET /api/folio/{folio_id} with shadow metrics instrumentation"""
-        log_info("💰 Testing folio details endpoint...")
-        
-        if not self.token:
-            log_error("No auth token - skipping folio test")
-            self.test_results["folio_details"]["status"] = "skip"
-            return False
-        
-        # Get a test folio ID
-        folio_id = await self.get_test_folio_id()
-        if not folio_id:
-            log_warning("No folio ID available - skipping folio test")
-            self.test_results["folio_details"]["status"] = "skip"
-            self.test_results["folio_details"]["details"] = "⚠️ No test folio available"
-            return False
-        
-        headers = {
-            "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json",
-            "x-correlation-id": f"test-folio-{datetime.now(timezone.utc).isoformat()}",
-            "x-property-id": self.tenant_id or "test-property"
+    def _build_room_block_payload(self, room_id: str = None, start_date: str = None, end_date: str = None):
+        """Build room block create payload"""
+        return {
+            'room_id': room_id or self.available_room['id'],
+            'type': 'out_of_order',
+            'reason': f'TEST-semantic-room-block-{uuid.uuid4().hex[:8]}',
+            'details': 'Semantic room block bridge validation test',
+            'start_date': start_date or self.test_start_date,
+            'end_date': end_date or self.test_end_date,
+            'allow_sell': False
         }
+
+    async def _check_database_records(self, block_id: str):
+        """Check if outbox and audit records were created"""
+        from core.database import db
         
+        # Check outbox event
+        outbox = await db.outbox_events.find_one({
+            'room_block_id': block_id,
+            'event_type': 'inventory.blocked.v1',
+            'tenant_id': self.tenant_id
+        }, {'_id': 0})
+        
+        # Check audit log
+        audit = await db.audit_logs.find_one({
+            'entity_type': 'room_block',
+            'entity_id': block_id,
+            'action': 'room_block_created',
+            'tenant_id': self.tenant_id
+        }, {'_id': 0})
+        
+        return outbox, audit
+
+    async def test_1_semantic_service_create_working(self):
+        """Test 1: POST /api/pms/room-blocks yeni semantic service üzerinden çalışıyor mu?"""
+        test_name = "Semantic Service Create Working"
         try:
-            response = await self.client.get(
-                f"{BASE_URL}/folio/{folio_id}",
-                headers=headers
-            )
+            payload = self._build_room_block_payload()
+            idem_key = f'test-1-{uuid.uuid4()}'
+            headers = self._get_headers(idempotency_key=idem_key)
             
-            if response.status_code == 200:
-                data = response.json()
-                log_success(f"✅ Folio details API HTTP 200")
+            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    self.test_results.append(f"❌ {test_name}: HTTP {resp.status} - {text}")
+                    return
+                
+                data = await resp.json()
                 
                 # Validate response structure
-                required_fields = ['folio', 'balance']
-                missing = [f for f in required_fields if f not in data]
-                if missing:
-                    log_warning(f"Response missing fields: {missing}")
-                else:
-                    folio = data.get('folio', {})
-                    balance = data.get('balance', 0)
-                    log_info(f"Folio ID: {folio.get('id')}, Balance: {balance}")
-                    
-                    # Check folio structure
-                    folio_fields = ['id', 'folio_number', 'status']
-                    folio_missing = [f for f in folio_fields if f not in folio]
-                    if folio_missing:
-                        log_warning(f"Folio object missing fields: {folio_missing}")
+                if 'block' not in data or 'message' not in data:
+                    self.test_results.append(f"❌ {test_name}: Response structure invalid - missing block or message")
+                    return
                 
-                self.test_results["folio_details"]["status"] = "pass"
-                self.test_results["folio_details"]["details"] = f"✅ HTTP 200 - Balance: {data.get('balance', 'N/A')}"
-                return True
-            else:
-                log_error(f"Folio details API failed: HTTP {response.status_code}")
-                self.test_results["folio_details"]["status"] = "fail"
-                self.test_results["folio_details"]["details"] = f"❌ HTTP {response.status_code} - {response.text[:200]}"
-                return False
+                block = data['block']
+                if block.get('room_id') != payload['room_id'] or block.get('type') != payload['type']:
+                    self.test_results.append(f"❌ {test_name}: Block data mismatch")
+                    return
+                
+                self.test_results.append(f"✅ {test_name}: Semantic service creates room blocks successfully")
+                return block['id']
                 
         except Exception as e:
-            log_error(f"Folio details API error: {str(e)}")
-            self.test_results["folio_details"]["status"] = "fail"
-            self.test_results["folio_details"]["details"] = f"❌ Exception: {str(e)}"
-            return False
+            self.test_results.append(f"❌ {test_name}: Exception - {str(e)}")
+            return None
 
-    async def test_shadow_metrics_behavior(self):
-        """Test that shadow metrics don't break endpoint responses"""
-        log_info("📊 Testing shadow metrics behavior (non-intrusive)...")
-        
-        # This test validates that endpoints still work correctly with shadow metrics
-        # We can't directly verify shadow metrics logging without backend access,
-        # but we can ensure they don't cause response drift or 500 errors
-        
+    async def test_2_idempotency_enforcement(self):
+        """Test 2: Idempotency enforcement aktif mi?"""
+        test_name = "Idempotency Enforcement"
         try:
-            # Test multiple calls to see if shadow metrics affect performance/stability
-            availability_calls = []
-            folio_calls = []
+            payload = self._build_room_block_payload()
+            idem_key = f'test-2-{uuid.uuid4()}'
+            headers = self._get_headers(idempotency_key=idem_key)
             
-            if self.token:
-                headers = {
-                    "Authorization": f"Bearer {self.token}",
-                    "x-correlation-id": f"shadow-test-{datetime.now(timezone.utc).isoformat()}"
-                }
+            # First request
+            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    self.test_results.append(f"❌ {test_name}: First request failed: HTTP {resp.status} - {text}")
+                    return
                 
-                # Multiple availability calls
-                log_info("Testing availability endpoint stability...")
-                for i in range(3):
-                    try:
-                        response = await self.client.get(
-                            f"{BASE_URL}/pms/rooms/availability",
-                            params={"check_in": TEST_CHECK_IN, "check_out": TEST_CHECK_OUT},
-                            headers=headers
-                        )
-                        availability_calls.append({
-                            "call": i+1,
-                            "status_code": response.status_code,
-                            "response_time": response.elapsed.total_seconds() if hasattr(response, 'elapsed') else 0,
-                            "success": response.status_code == 200
-                        })
-                    except Exception as e:
-                        availability_calls.append({
-                            "call": i+1,
-                            "status_code": 0,
-                            "error": str(e),
-                            "success": False
-                        })
+                first_response = await resp.json()
+                first_block_id = first_response['block']['id']
+            
+            # Second request with same idempotency key
+            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    self.test_results.append(f"❌ {test_name}: Second request failed: HTTP {resp.status} - {text}")
+                    return
                 
-                # Test folio endpoint stability (if we have a folio)
-                folio_id = await self.get_test_folio_id()
-                if folio_id:
-                    log_info("Testing folio endpoint stability...")
-                    for i in range(3):
-                        try:
-                            response = await self.client.get(
-                                f"{BASE_URL}/folio/{folio_id}",
-                                headers=headers
-                            )
-                            folio_calls.append({
-                                "call": i+1,
-                                "status_code": response.status_code,
-                                "success": response.status_code == 200
-                            })
-                        except Exception as e:
-                            folio_calls.append({
-                                "call": i+1,
-                                "status_code": 0,
-                                "error": str(e),
-                                "success": False
-                            })
+                second_response = await resp.json()
+                second_block_id = second_response['block']['id']
+            
+            # Validate idempotency
+            if first_block_id != second_block_id:
+                self.test_results.append(f"❌ {test_name}: Different block IDs returned ({first_block_id} vs {second_block_id})")
+                return
+            
+            self.test_results.append(f"✅ {test_name}: Idempotency enforcement working - same block returned")
+            return first_block_id
+            
+        except Exception as e:
+            self.test_results.append(f"❌ {test_name}: Exception - {str(e)}")
+            return None
+
+    async def test_3_outbox_event_creation(self):
+        """Test 3: Başarılı create sonrası inventory.blocked.v1 outbox kaydı oluşuyor mu?"""
+        test_name = "Outbox Event Creation"
+        try:
+            payload = self._build_room_block_payload()
+            idem_key = f'test-3-{uuid.uuid4()}'
+            headers = self._get_headers(idempotency_key=idem_key)
+            
+            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    self.test_results.append(f"❌ {test_name}: Room block create failed: HTTP {resp.status} - {text}")
+                    return
                 
-                # Analyze results
-                availability_success = sum(1 for call in availability_calls if call.get("success")) 
-                folio_success = sum(1 for call in folio_calls if call.get("success"))
+                data = await resp.json()
+                block_id = data['block']['id']
+            
+            # Check outbox record
+            outbox, _ = await self._check_database_records(block_id)
+            
+            if not outbox:
+                self.test_results.append(f"❌ {test_name}: No outbox event found for block {block_id}")
+                return
+            
+            # Validate outbox event structure
+            expected_fields = ['event_type', 'tenant_id', 'room_block_id', 'payload']
+            missing_fields = [field for field in expected_fields if field not in outbox]
+            if missing_fields:
+                self.test_results.append(f"❌ {test_name}: Outbox event missing fields: {missing_fields}")
+                return
+            
+            if outbox['event_type'] != 'inventory.blocked.v1':
+                self.test_results.append(f"❌ {test_name}: Wrong event type: {outbox['event_type']}")
+                return
+            
+            self.test_results.append(f"✅ {test_name}: inventory.blocked.v1 outbox event created successfully")
+            
+        except Exception as e:
+            self.test_results.append(f"❌ {test_name}: Exception - {str(e)}")
+
+    async def test_4_audit_log_creation(self):
+        """Test 4: Audit kaydı oluşuyor mu?"""
+        test_name = "Audit Log Creation"
+        try:
+            payload = self._build_room_block_payload()
+            idem_key = f'test-4-{uuid.uuid4()}'
+            headers = self._get_headers(idempotency_key=idem_key)
+            
+            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    self.test_results.append(f"❌ {test_name}: Room block create failed: HTTP {resp.status} - {text}")
+                    return
                 
-                total_calls = len(availability_calls) + len(folio_calls)
-                total_success = availability_success + folio_success
-                
-                if total_calls > 0 and total_success == total_calls:
-                    log_success("✅ Shadow metrics behavior: All endpoint calls successful")
-                    self.test_results["shadow_metrics"]["status"] = "pass"
-                    self.test_results["shadow_metrics"]["details"] = f"✅ {total_success}/{total_calls} calls successful"
-                    return True
-                elif total_success > 0:
-                    log_warning(f"⚠️ Shadow metrics behavior: {total_success}/{total_calls} calls successful")
-                    self.test_results["shadow_metrics"]["status"] = "partial"
-                    self.test_results["shadow_metrics"]["details"] = f"⚠️ {total_success}/{total_calls} calls successful"
-                    return False
+                data = await resp.json()
+                block_id = data['block']['id']
+            
+            # Check audit record
+            _, audit = await self._check_database_records(block_id)
+            
+            if not audit:
+                self.test_results.append(f"❌ {test_name}: No audit log found for block {block_id}")
+                return
+            
+            # Validate audit log structure
+            expected_fields = ['entity_type', 'entity_id', 'action', 'tenant_id']
+            missing_fields = [field for field in expected_fields if field not in audit]
+            if missing_fields:
+                self.test_results.append(f"❌ {test_name}: Audit log missing fields: {missing_fields}")
+                return
+            
+            if audit['action'] != 'room_block_created':
+                self.test_results.append(f"❌ {test_name}: Wrong audit action: {audit['action']}")
+                return
+            
+            self.test_results.append(f"✅ {test_name}: Audit log created successfully")
+            
+        except Exception as e:
+            self.test_results.append(f"❌ {test_name}: Exception - {str(e)}")
+
+    async def test_5_security_validations(self):
+        """Test 5: Invalid date range / missing key / wrong property scope güvenli mi?"""
+        test_name = "Security Validations"
+        
+        # Test missing idempotency key
+        try:
+            payload = self._build_room_block_payload()
+            headers = self._get_headers()  # No idempotency key
+            
+            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
+                if resp.status == 400:
+                    text = await resp.text()
+                    if 'Idempotency-Key' in text or 'idempotency' in text.lower():
+                        self.test_results.append(f"✅ {test_name}: Missing idempotency key properly rejected (HTTP 400)")
+                    else:
+                        self.test_results.append(f"❌ {test_name}: Missing idempotency key rejected but wrong error message: {text}")
                 else:
-                    log_error("❌ Shadow metrics behavior: All calls failed")
-                    self.test_results["shadow_metrics"]["status"] = "fail" 
-                    self.test_results["shadow_metrics"]["details"] = "❌ All calls failed"
-                    return False
-            else:
-                log_error("No auth token - cannot test shadow metrics behavior")
-                self.test_results["shadow_metrics"]["status"] = "skip"
-                self.test_results["shadow_metrics"]["details"] = "⚠️ No auth token"
-                return False
+                    text = await resp.text()
+                    self.test_results.append(f"❌ {test_name}: Missing idempotency key not rejected (HTTP {resp.status}): {text}")
+        except Exception as e:
+            self.test_results.append(f"❌ {test_name}: Exception testing missing idempotency key - {str(e)}")
+        
+        # Test invalid date range (end < start)
+        try:
+            payload = self._build_room_block_payload(
+                start_date=self.test_end_date,  # Swap dates to make invalid
+                end_date=self.test_start_date
+            )
+            idem_key = f'test-5b-{uuid.uuid4()}'
+            headers = self._get_headers(idempotency_key=idem_key)
+            
+            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
+                if resp.status == 400:
+                    self.test_results.append(f"✅ {test_name}: Invalid date range properly rejected (HTTP 400)")
+                else:
+                    text = await resp.text()
+                    self.test_results.append(f"❌ {test_name}: Invalid date range not rejected (HTTP {resp.status}): {text}")
+        except Exception as e:
+            self.test_results.append(f"❌ {test_name}: Exception testing invalid date range - {str(e)}")
+        
+        # Test wrong property scope
+        try:
+            payload = self._build_room_block_payload()
+            idem_key = f'test-5c-{uuid.uuid4()}'
+            headers = self._get_headers(idempotency_key=idem_key, property_id='wrong-property-id')
+            
+            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
+                if resp.status == 403:
+                    self.test_results.append(f"✅ {test_name}: Wrong property scope properly rejected (HTTP 403)")
+                else:
+                    text = await resp.text()
+                    self.test_results.append(f"❌ {test_name}: Wrong property scope not rejected (HTTP {resp.status}): {text}")
+        except Exception as e:
+            self.test_results.append(f"❌ {test_name}: Exception testing wrong property scope - {str(e)}")
+
+    async def test_6_availability_impact(self):
+        """Test 6: Availability etkisi beklenen şekilde görünüyor mu?"""
+        test_name = "Availability Impact"
+        try:
+            # Create room block
+            payload = self._build_room_block_payload()
+            idem_key = f'test-6-{uuid.uuid4()}'
+            headers = self._get_headers(idempotency_key=idem_key)
+            
+            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    self.test_results.append(f"❌ {test_name}: Room block create failed: HTTP {resp.status} - {text}")
+                    return
+                
+                data = await resp.json()
+                blocked_room_id = payload['room_id']
+            
+            # Check availability impact
+            headers = self._get_headers()
+            url = f'{BASE_URL}/api/pms/rooms/availability?check_in={self.test_start_date}&check_out={self.test_end_date}'
+            
+            async with self.session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    self.test_results.append(f"❌ {test_name}: Failed to get availability: HTTP {resp.status} - {text}")
+                    return
+                
+                availability = await resp.json()
+                blocked_room = next((room for room in availability if room.get('id') == blocked_room_id), None)
+                
+                if not blocked_room:
+                    self.test_results.append(f"❌ {test_name}: Blocked room not found in availability response")
+                    return
+                
+                if blocked_room.get('available') is not False:
+                    self.test_results.append(f"❌ {test_name}: Blocked room still shows as available: {blocked_room.get('available')}")
+                    return
+                
+                # Check if reason includes block information
+                reason = blocked_room.get('reason', '')
+                blocks = blocked_room.get('blocks', [])
+                
+                if 'out_of_order' not in reason and not blocks:
+                    self.test_results.append(f"❌ {test_name}: Block not reflected in availability reason/blocks: reason='{reason}', blocks={blocks}")
+                    return
+                
+                self.test_results.append(f"✅ {test_name}: Availability correctly shows room as blocked (available=False)")
+            
+        except Exception as e:
+            self.test_results.append(f"❌ {test_name}: Exception - {str(e)}")
+
+    async def test_7_response_contract_integrity(self):
+        """Test 7: Response contract bozulmuş mu?"""
+        test_name = "Response Contract Integrity"
+        try:
+            payload = self._build_room_block_payload()
+            idem_key = f'test-7-{uuid.uuid4()}'
+            headers = self._get_headers(idempotency_key=idem_key)
+            
+            async with self.session.post(f'{BASE_URL}/api/pms/room-blocks', json=payload, headers=headers) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    self.test_results.append(f"❌ {test_name}: Room block create failed: HTTP {resp.status} - {text}")
+                    return
+                
+                data = await resp.json()
+                
+                # Check required response fields
+                required_fields = ['message', 'block', 'room_number']
+                missing_fields = [field for field in required_fields if field not in data]
+                if missing_fields:
+                    self.test_results.append(f"❌ {test_name}: Response missing required fields: {missing_fields}")
+                    return
+                
+                # Check block object structure
+                block = data['block']
+                required_block_fields = ['id', 'room_id', 'type', 'reason', 'start_date', 'status', 'created_by', 'created_at']
+                missing_block_fields = [field for field in required_block_fields if field not in block]
+                if missing_block_fields:
+                    self.test_results.append(f"❌ {test_name}: Block object missing required fields: {missing_block_fields}")
+                    return
+                
+                # Validate field values
+                if block['type'] != payload['type']:
+                    self.test_results.append(f"❌ {test_name}: Block type mismatch: expected {payload['type']}, got {block['type']}")
+                    return
+                
+                if block['room_id'] != payload['room_id']:
+                    self.test_results.append(f"❌ {test_name}: Block room_id mismatch: expected {payload['room_id']}, got {block['room_id']}")
+                    return
+                
+                # Check if warnings array exists
+                if 'warnings' not in data:
+                    self.test_results.append(f"❌ {test_name}: Response missing warnings array")
+                    return
+                
+                self.test_results.append(f"✅ {test_name}: Response contract intact - all required fields present and valid")
                 
         except Exception as e:
-            log_error(f"Shadow metrics behavior test error: {str(e)}")
-            self.test_results["shadow_metrics"]["status"] = "fail"
-            self.test_results["shadow_metrics"]["details"] = f"❌ Exception: {str(e)}"
-            return False
+            self.test_results.append(f"❌ {test_name}: Exception - {str(e)}")
 
-    async def test_response_integrity(self):
-        """Test for 500 errors and response drift"""
-        log_info("🔍 Testing for 500 errors and response drift...")
+    async def run_all_tests(self):
+        """Run all validation tests"""
+        print("🚀 Starting Room Block Create Package Validation Tests...")
+        print("=" * 70)
         
-        if not self.token:
-            log_error("No auth token - skipping response integrity test")
-            self.test_results["response_integrity"]["status"] = "skip"
-            return False
+        await self.setup()
         
-        headers = {"Authorization": f"Bearer {self.token}"}
+        print("\n📋 Running validation tests...")
         
-        # Test various endpoints for 500 errors
-        test_endpoints = [
-            {"path": "/pms/dashboard", "method": "GET"},
-            {"path": "/pms/rooms", "method": "GET", "params": {"limit": "10"}},
-            {"path": "/pms/guests", "method": "GET", "params": {"limit": "5"}},
-            {"path": "/folio/dashboard-stats", "method": "GET"}
-        ]
-        
-        error_count = 0
-        success_count = 0
-        
-        for endpoint in test_endpoints:
-            try:
-                if endpoint["method"] == "GET":
-                    response = await self.client.get(
-                        f"{BASE_URL}{endpoint['path']}",
-                        params=endpoint.get("params"),
-                        headers=headers
-                    )
-                
-                if response.status_code >= 500:
-                    log_error(f"500 error on {endpoint['path']}: HTTP {response.status_code}")
-                    error_count += 1
-                elif response.status_code == 200:
-                    log_info(f"✅ {endpoint['path']}: HTTP 200")
-                    success_count += 1
-                else:
-                    log_warning(f"⚠️ {endpoint['path']}: HTTP {response.status_code}")
-                    
-            except Exception as e:
-                log_error(f"Error testing {endpoint['path']}: {str(e)}")
-                error_count += 1
-        
-        if error_count == 0:
-            log_success("✅ Response integrity: No 500 errors found")
-            self.test_results["response_integrity"]["status"] = "pass"
-            self.test_results["response_integrity"]["details"] = f"✅ {success_count} endpoints OK, 0 server errors"
-            return True
-        else:
-            log_error(f"❌ Response integrity: {error_count} errors found")
-            self.test_results["response_integrity"]["status"] = "fail"
-            self.test_results["response_integrity"]["details"] = f"❌ {error_count} endpoints with errors"
-            return False
+        # Run all tests
+        await self.test_1_semantic_service_create_working()
+        await self.test_2_idempotency_enforcement()
+        await self.test_3_outbox_event_creation()
+        await self.test_4_audit_log_creation()
+        await self.test_5_security_validations()
+        await self.test_6_availability_impact()
+        await self.test_7_response_contract_integrity()
 
-    def print_summary(self):
-        """Print test summary"""
-        print(f"\n{Colors.BOLD}📋 TÜRKÇE SPRINT SHADOW METRICS TEST SONUÇLARI{Colors.ENDC}")
-        print("=" * 60)
+    async def cleanup(self):
+        """Cleanup resources"""
+        if self.session:
+            await self.session.close()
+
+    def print_results(self):
+        """Print test results summary"""
+        print("\n" + "=" * 70)
+        print("📊 ROOM BLOCK CREATE PACKAGE VALIDATION RESULTS")
+        print("=" * 70)
         
-        total_tests = len(self.test_results)
-        passed = sum(1 for result in self.test_results.values() if result["status"] == "pass")
-        failed = sum(1 for result in self.test_results.values() if result["status"] == "fail")
-        skipped = sum(1 for result in self.test_results.values() if result["status"] == "skip")
+        passed = sum(1 for result in self.test_results if result.startswith('✅'))
+        failed = sum(1 for result in self.test_results if result.startswith('❌'))
         
-        for test_name, result in self.test_results.items():
-            status = result["status"]
-            details = result["details"]
-            
-            if status == "pass":
-                print(f"✅ {test_name.replace('_', ' ').title()}: BAŞARILI")
-            elif status == "fail":
-                print(f"❌ {test_name.replace('_', ' ').title()}: BAŞARISIZ")
-            elif status == "skip":
-                print(f"⏭️  {test_name.replace('_', ' ').title()}: ATLANDI")
-            else:
-                print(f"⏸️  {test_name.replace('_', ' ').title()}: BEKLEMEDE")
-            
-            if details:
-                print(f"   └─ {details}")
+        for result in self.test_results:
+            print(result)
         
-        print("\n" + "=" * 60)
-        print(f"📊 ÖZET: {passed} Başarılı, {failed} Başarısız, {skipped} Atlandı (Toplam: {total_tests})")
+        print("\n" + "=" * 70)
+        print(f"📈 SUMMARY: {passed} PASSED, {failed} FAILED, {passed + failed} TOTAL")
         
-        # Key findings for shadow metrics
-        print(f"\n{Colors.BOLD}🎯 SHADOW METRICS DURUMU:{Colors.ENDC}")
-        
-        availability_ok = self.test_results["pms_rooms_availability"]["status"] == "pass"
-        folio_ok = self.test_results["folio_details"]["status"] in ["pass", "skip"]
-        shadow_ok = self.test_results["shadow_metrics"]["status"] in ["pass", "partial"]
-        no_500s = self.test_results["response_integrity"]["status"] == "pass"
-        
-        if availability_ok:
-            print("✅ GET /api/pms/rooms/availability hala 200 dönüyor")
+        if failed > 0:
+            print("❌ KRİTİK HATALAR VAR - Ana ajana bildir!")
         else:
-            print("❌ GET /api/pms/rooms/availability problemi var")
+            print("✅ TÜM TESTLER BAŞARILI - Room block create paketi çalışıyor!")
         
-        if folio_ok:
-            print("✅ GET /api/folio/{folio_id} hala 200 dönüyor")
-        else:
-            print("❌ GET /api/folio/{folio_id} problemi var")
-        
-        if shadow_ok:
-            print("✅ Shadow compare log/metric davranışı endpoint response'unu bozmadan çalışıyor")
-        else:
-            print("❌ Shadow metrics endpoint davranışını etkiliyor olabilir")
-        
-        if no_500s:
-            print("✅ 500 veya response drift yok")
-        else:
-            print("❌ 500 hatası veya response drift tespit edildi")
-        
-        # Overall assessment
-        critical_passed = availability_ok and no_500s
-        if critical_passed and folio_ok and shadow_ok:
-            print(f"\n{Colors.GREEN}{Colors.BOLD}🎉 GENEL DURUM: BAŞARILI - Shadow metric instrumentation çalışıyor{Colors.ENDC}")
-        elif critical_passed:
-            print(f"\n{Colors.YELLOW}{Colors.BOLD}⚠️ GENEL DURUM: KISMEN BAŞARILI - Temel endpointler çalışıyor{Colors.ENDC}")
-        else:
-            print(f"\n{Colors.RED}{Colors.BOLD}💥 GENEL DURUM: BAŞARISIZ - Kritik problemler var{Colors.ENDC}")
+        print("=" * 70)
+        return failed == 0
+
 
 async def main():
-    """Main test runner"""
-    print(f"{Colors.BOLD}🇹🇷 TÜRKÇE SPRINT - SHADOW METRICS BACKEND TEST{Colors.ENDC}")
-    print("Testing availability + folio read shadow metric instrumentation")
-    print("=" * 60)
-    
-    async with BackendTester() as tester:
-        # Run tests in sequence
-        await tester.login()
-        await tester.test_pms_rooms_availability()
-        await tester.test_folio_details()
-        await tester.test_shadow_metrics_behavior()
-        await tester.test_response_integrity()
-        
-        # Print results
-        tester.print_summary()
-
-if __name__ == "__main__":
+    """Main test execution"""
+    validator = RoomBlockTestValidator()
     try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print(f"\n{Colors.YELLOW}Test interrupted by user{Colors.ENDC}")
-        sys.exit(1)
+        await validator.run_all_tests()
+        return validator.print_results()
     except Exception as e:
-        print(f"\n{Colors.RED}Test failed with error: {str(e)}{Colors.ENDC}")
-        sys.exit(1)
+        print(f"❌ KRITIK HATA: Test çalıştırma başarısız - {str(e)}")
+        return False
+    finally:
+        await validator.cleanup()
+
+
+if __name__ == '__main__':
+    success = asyncio.run(main())
+    exit(0 if success else 1)
