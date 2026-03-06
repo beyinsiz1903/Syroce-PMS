@@ -61,6 +61,14 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
   - Edit Reservation → navigates to /pms#bookings
   - Send Confirmation → calls WhatsApp API with toast feedback
 
+### Semantic Migration Sprint 1 Foundations (COMPLETED - Mar 2026)
+- **Created semantic module skeletons:** `backend/modules/reservations`, `stays`, `inventory`, `folio`
+- **Created shared kernel primitives:** `backend/shared_kernel/tenancy_context.py`, `event_envelope.py`, `audit_helper.py`, `idempotency.py`
+- **Added governance:** `server.py` now contains explicit no-new-business-logic rule; semantic extraction ADR created at `backend/SEMANTIC_EXTRACTION_ADR.md`
+- **Started read-side abstraction:** added reservation, stay, availability, and folio balance read services
+- **Bridged low-risk read paths:** `GET /api/pms/bookings`, `GET /api/pms/rooms/availability`, `GET /api/folio/{folio_id}` now delegate to semantic read services without changing external contracts
+- **Testing:** backend regression smoke passed; frontend smoke passed; new foundation tests added under `backend/tests/`
+
 ### Root Directory Cleanup (COMPLETED - Feb 2026)
 - Removed 152 test .py files from root directory
 - Clean project structure
@@ -70,6 +78,12 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 /app
 ├── backend/
 │   ├── server.py              # Main server (41,622 lines)
+│   ├── modules/               # Semantic migration foundations (NEW)
+│   │   ├── reservations/      # Reservation read abstraction + future write migration
+│   │   ├── stays/             # Stay aggregate read abstraction + future write migration
+│   │   ├── inventory/         # Availability read abstraction + future inventory migration
+│   │   └── folio/             # Folio balance/detail read abstraction + future finance migration
+│   ├── shared_kernel/         # Tenant/event/audit/idempotency primitives (NEW)
 │   ├── core/
 │   │   ├── database.py        # MongoDB connection
 │   │   ├── security.py        # JWT auth, password hashing
@@ -91,6 +105,8 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 │   └── tests/
 │       ├── test_pms_finance_reports_routers.py  # (NEW)
 │       └── test_router_modularization.py        # (NEW)
+│       ├── test_semantic_migration_foundations.py # Sprint 1 foundation tests (NEW)
+│       └── harnesses/         # Contract + tenant isolation test harnesses (NEW)
 ├── frontend/
 │   └── src/
 │       ├── locales/           # i18n files
@@ -112,9 +128,11 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 ## Prioritized Backlog
 
 ### P0 (Next)
-- Phase 6: Integrations & Automation (Channel Manager enhancements, Stripe)
+- Semantic Migration Sprint 2: reservation writes, room block create/release, folio open/charge, outbox + shadow mode
 
 ### P1
+- Semantic Migration Sprint 3: stay aggregate writes (room assign/move, check-in/out, extend) with state machine + rollback playbook
+- Semantic Migration Sprint 4: finance risk paths (payment, refund, invoice) with idempotency + reconciliation
 - Redis-based Caching (replace in-memory SimpleCache)
 - Continue server.py modularization (target: <35K lines - POS, maintenance, sales/CRM, dashboard routes)
 
