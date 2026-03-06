@@ -129,6 +129,14 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - **Added regression tests:** `backend/tests/test_release_room_block_bridge.py`
 - **Validation:** create + release bridge suites **13/13 PASS** (+1 skipped availability fallback), backend deep testing **PASS**, frontend retest for auth/PMS redirect **PASS**
 
+### Mini Migration Health Score (COMPLETED - Mar 2026)
+- **Added backend health scoring layer:** `backend/shared_kernel/migration_observability.py` now computes `health_score` using approved thresholds for failed outbox events, stale pending queue, shadow mismatch rate, compare errors, and audit gap Red override
+- **Added explicit contract:** `GET /api/reports/migration-observability` now returns `health_score { status, display_status, calculated_at, time_window, time_window_label, reasons, operational_guidance, signals }`
+- **Added UI card on observability page:** `/app/migration-observability` now shows a dedicated Green/Yellow/Red health score card with last-24h window, calculated timestamp, max 3 short reasons, and signal breakdown
+- **Added audit gap visibility:** response now exposes `audit.audit_gap_count` and uses audit-gap detection as a Red override in health scoring
+- **Added regression tests:** expanded `backend/tests/test_migration_observability.py` with endpoint contract and threshold unit coverage
+- **Validation:** health score suite **5/5 PASS**, backend deep validation **PASS**, frontend smoke/regression **PASS**
+
 ### Root Directory Cleanup (COMPLETED - Feb 2026)
 - Removed 152 test .py files from root directory
 - Clean project structure
@@ -189,11 +197,12 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 ## Prioritized Backlog
 
 ### P0 (Next)
-- Kısa stabilizasyon/gözlem periyodu ardından mini `migration health score` eklenecek
+- Kısa stabilizasyon/gözlem periyodu ardından `ModifyReservation` tek write-path olarak açılacak
 
 ### P1
-- Semantic Migration Sprint 2: `migration health score`, ardından `ModifyReservation`, sonra `CancelReservation` ve kontrollü `charge post`
+- Semantic Migration Sprint 2: `ModifyReservation`, sonra `CancelReservation` ve kontrollü `charge post`
 - Migration observability paneline `processed_at`, retry metadata ve dead-letter lifecycle geldiğinde gerçek lag/retry grafikleri bağlanacak
+- Health score kartına ileride trend/history ve cutover recommendation history eklenebilir
 - Semantic Migration Sprint 3: stay aggregate writes (room assign/move, check-in/out, extend) with state machine + rollback playbook
 - Semantic Migration Sprint 4: finance risk paths (payment, refund, invoice) with idempotency + reconciliation
 - Redis-based Caching (replace in-memory SimpleCache)
