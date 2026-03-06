@@ -146,6 +146,13 @@ const AuthRedirectWithMemory = ({ targetPath }) => {
   return <Navigate to="/auth" replace state={{ redirectTo: targetPath }} />;
 };
 
+const PostAuthRedirect = () => {
+  const redirectTarget = sessionStorage.getItem('postLoginRedirect') || '/app/dashboard';
+  sessionStorage.removeItem('postLoginRedirect');
+
+  return <Navigate to={redirectTarget} replace />;
+};
+
 const RAW_BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '/api';
 // Ensure /api suffix for Kubernetes ingress routing
 const BACKEND_URL = RAW_BACKEND_URL.endsWith('/api')
@@ -504,7 +511,7 @@ function App() {
               !isAuthenticated ? (
                 <AuthPage onLogin={handleLogin} />
               ) : (
-                <Navigate to="/" replace />
+                <PostAuthRedirect />
               )
             }
           />
