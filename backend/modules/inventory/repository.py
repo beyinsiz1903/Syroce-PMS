@@ -49,6 +49,15 @@ class InventoryRepository:
             {"_id": 0},
         )
 
+    async def get_room_block_for_tenant(self, tenant_id: str, block_id: str) -> Optional[Dict[str, Any]]:
+        return await db.room_blocks.find_one(
+            {
+                "tenant_id": tenant_id,
+                "id": block_id,
+            },
+            {"_id": 0},
+        )
+
     async def list_conflicting_bookings(
         self,
         tenant_id: str,
@@ -69,6 +78,15 @@ class InventoryRepository:
 
     async def insert_room_block(self, block_doc: Dict[str, Any]) -> None:
         await db.room_blocks.insert_one(block_doc)
+
+    async def update_room_block(self, tenant_id: str, block_id: str, update_doc: Dict[str, Any]) -> None:
+        await db.room_blocks.update_one(
+            {
+                "tenant_id": tenant_id,
+                "id": block_id,
+            },
+            {"$set": update_doc},
+        )
 
     async def insert_exception(self, exception_doc: Dict[str, Any]) -> None:
         await db.exceptions.insert_one(exception_doc)

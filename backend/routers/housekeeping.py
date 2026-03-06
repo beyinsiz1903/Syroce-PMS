@@ -13,6 +13,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from core.database import db
 from core.security import get_current_user
 from modules.inventory.services.create_room_block_service import CreateRoomBlockService
+from modules.inventory.services.release_room_block_service import ReleaseRoomBlockService
 from models.schemas import User, HousekeepingTask
 
 try:
@@ -31,6 +32,7 @@ except ImportError:
 router = APIRouter(prefix="/api", tags=["housekeeping"])
 security = HTTPBearer()
 create_room_block_service = CreateRoomBlockService()
+release_room_block_service = ReleaseRoomBlockService()
 
 
 # ============= HOUSEKEEPING =============
@@ -598,52 +600,11 @@ async def update_room_block(
 @router.post("/pms/room-blocks/{block_id}/cancel")
 async def cancel_room_block(
     block_id: str,
+    request: Request,
     reason: Optional[str] = None,
     current_user: User = Depends(get_current_user)
 ):
-    """Cancel a room block"""
-    block = await db.room_blocks.find_one({
-        'id': block_id,
-        'tenant_id': current_user.tenant_id
-    }, {'_id': 0})
-    
-    if not block:
-        raise HTTPException(status_code=404, detail="Room block not found")
-    
-    if block['status'] == 'cancelled':
-        raise HTTPException(status_code=400, detail="Block is already cancelled")
-    
-    # Update status to cancelled
-    await db.room_blocks.update_one(
-        {'id': block_id, 'tenant_id': current_user.tenant_id},
-        {'$set': {
-            'status': 'cancelled',
-            'cancelled_at': datetime.now(timezone.utc).isoformat(),
-            'cancelled_by': current_user.id,
-            'cancellation_reason': reason or 'Cancelled by user'
-        }}
-    )
-    
-    # Create audit log
-    await db.audit_logs.insert_one({
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'user_id': current_user.id,
-        'user_name': current_user.name,
-        'user_role': current_user.role,
-        'action': 'CANCEL_ROOM_BLOCK',
-        'entity_type': 'room_block',
-        'entity_id': block_id,
-        'changes': {
-            'status': {'old': block['status'], 'new': 'cancelled'},
-            'reason': reason or 'Cancelled by user'
-        },
-        'timestamp': datetime.now(timezone.utc).isoformat()
-    })
-    
-    return {
-        'message': 'Room block cancelled successfully',
-        'block_id': block_id
-    }
+    """Release a room block through the semantic inventory service."""
+    return await release_room_block_service.release(block_id, current_user, request, reason=reason)
 
 # ============= LOYALTY PROGRAM =============

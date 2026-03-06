@@ -1230,9 +1230,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     }
     
     try {
+      const idempotencyKey = window.crypto?.randomUUID?.() || `room-block-create-${Date.now()}-${Math.random()}`;
       const response = await axios.post('/pms/room-blocks', {
         room_id: selectedRoom.id,
         ...newRoomBlock
+      }, {
+        headers: {
+          'Idempotency-Key': idempotencyKey
+        }
       });
       
       if (response.data.warnings && response.data.warnings.length > 0) {
@@ -1261,7 +1266,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   const cancelRoomBlock = async (blockId) => {
     try {
-      await axios.post(`/pms/room-blocks/${blockId}/cancel`);
+      const idempotencyKey = window.crypto?.randomUUID?.() || `room-block-release-${Date.now()}-${Math.random()}`;
+      await axios.post(`/pms/room-blocks/${blockId}/cancel`, null, {
+        headers: {
+          'Idempotency-Key': idempotencyKey
+        }
+      });
       toast.success('Room block cancelled');
       loadHousekeepingData();
       loadData();

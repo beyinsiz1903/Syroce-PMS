@@ -56,6 +56,7 @@ from core.utils import (
 )
 from modules.inventory.services.availability_read_service import AvailabilityReadService
 from modules.inventory.services.create_room_block_service import CreateRoomBlockService
+from modules.inventory.services.release_room_block_service import ReleaseRoomBlockService
 from modules.reservations.services.create_reservation_service import CreateReservationService
 from modules.reservations.services.reservation_read_service import ReservationReadService
 from shared_kernel.shadow_metrics import compare_availability_payloads, run_shadow_compare
@@ -72,6 +73,7 @@ router = APIRouter(prefix="/api", tags=["pms"])
 security = HTTPBearer()
 create_reservation_service = CreateReservationService()
 create_room_block_service = CreateRoomBlockService()
+release_room_block_service = ReleaseRoomBlockService()
 reservation_read_service = ReservationReadService()
 availability_read_service = AvailabilityReadService()
 
@@ -1241,48 +1243,12 @@ async def update_room_block(
 @router.post("/pms/room-blocks/{block_id}/cancel")
 async def cancel_room_block(
     block_id: str,
+    request: Request,
+    reason: Optional[str] = None,
     current_user: User = Depends(get_current_user)
 ):
-    """Cancel a room block"""
-    existing = await db.room_blocks.find_one({
-        'tenant_id': current_user.tenant_id,
-        'id': block_id
-    })
-    
-    if not existing:
-        raise HTTPException(404, "Block not found")
-    
-    if existing['status'] == 'cancelled':
-        raise HTTPException(400, "Block already cancelled")
-    
-    await db.room_blocks.update_one(
-        {'id': block_id},
-        {'$set': {
-            'status': 'cancelled',
-            'cancelled_at': datetime.now(timezone.utc).isoformat(),
-            'cancelled_by': current_user.name
-        }}
-    )
-    
-    # If room was out_of_order, restore to available
-    if existing['type'] == 'out_of_order':
-        await db.rooms.update_one(
-            {'id': existing['room_id']},
-            {'$set': {'status': 'available'}}
-        )
-    
-    # Audit log
-    await db.audit_logs.insert_one({
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'action': 'room_block_cancelled',
-        'entity_type': 'room_block',
-        'entity_id': block_id,
-        'user': current_user.name,
-        'timestamp': datetime.now(timezone.utc).isoformat()
-    })
-    
-    return {'message': 'Block cancelled successfully', 'block_id': block_id}
+    """Release a room block through the semantic inventory service."""
+    return await release_room_block_service.release(block_id, current_user, request, reason=reason)
 
 
 @router.get("/pms/rooms/availability")
