@@ -145,6 +145,15 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 - **Future data quality:** new semantic outbox writes now stamp payload `source` for reservation create, room block create, and folio open events to improve source attribution going forward
 - **Validation:** migration observability tests **4 PASS / 2 skipped**, live API verification **PASS**, frontend selector smoke **PASS**
 
+### Minimal Outbox Lifecycle Fix (COMPLETED - Mar 2026)
+- **Added temporary operational worker:** `backend/shared_kernel/outbox_lifecycle.py` starts from backend startup, uses MongoDB lease lock (`outbox_worker_locks`), and acts as a minimal in-process consumer until a dedicated worker is extracted
+- **Activated lifecycle state machine:** semantic outbox events now move through `pending -> processing -> processed / failed / parked` with atomic claim, controlled batch drain, retry backoff, `retry_count`, `attempt_count`, `processed_at`, `last_error`, `parked_at`, and `parked_reason`
+- **Added retry policy:** max **3** attempts then `parked`; stale `processing` events are recovered via timeout handling so lifecycle cannot silently freeze
+- **Expanded observability contract:** `/api/reports/migration-observability` now returns `outbox.lifecycle` plus status counts for `processing/processed/failed/parked`, oldest pending/failed ages, retry totals, and richer recent event fields
+- **Upgraded frontend control surface:** Outbox tab now shows lifecycle controls, event breakdown by status columns, and chart rendering was stabilized to remove Recharts width/height console warnings during tab changes
+- **Live outcome:** previous **120 stale pending** backlog drained; current observed state is **Health = GREEN**, `pending=0`, `processed=122`, `failed=0`, `parked=0`, `stale_pending=0`
+- **Validation:** backend tests **7 PASS**, migration observability tests **4 PASS / 2 skipped**, testing agent backend/frontend validation **PASS**, live reservation-create E2E outbox processing **PASS**
+
 ### Root Directory Cleanup (COMPLETED - Feb 2026)
 - Removed 152 test .py files from root directory
 - Clean project structure
@@ -205,12 +214,13 @@ Otel Yonetim Sistemi (Syroce PMS) - 5 yildizli otel operasyonlari icin kapsamli 
 ## Prioritized Backlog
 
 ### P0 (Next)
-- Outbox stale pending backlog için karar ver: consumer/worker bağlanacak mı, yoksa explicit park/cleanup policy mi tanımlanacak?
-- Health score Yellow durumunu “açıklanmış ve kontrollü” seviyeye getirmeden `ModifyReservation` başlatılmayacak
+- Temporary operational worker artık backlog’u temizliyor; bir sonraki karar noktası bunun ne kadar gözlemlenip stabil kabul edileceği
+- `ModifyReservation` öncesi kısa stabilizasyon periyodunda health score ve processed/failure sinyalleri izlenecek
 
 ### P1
-- Semantic Migration Sprint 2: stale pending kararı sonrası `ModifyReservation`, sonra `CancelReservation` ve kontrollü `charge post`
+- Semantic Migration Sprint 2: kısa stabilizasyon/gözlem sonrası `ModifyReservation`, sonra `CancelReservation` ve kontrollü `charge post`
 - Migration observability paneline `processed_at`, retry metadata ve dead-letter lifecycle geldiğinde gerçek lag/retry grafikleri bağlanacak
+- Temporary operational worker ileride ayrı process/pod worker’a çıkarılacak
 - Health score kartına ileride trend/history ve cutover recommendation history eklenebilir
 - Semantic Migration Sprint 3: stay aggregate writes (room assign/move, check-in/out, extend) with state machine + rollback playbook
 - Semantic Migration Sprint 4: finance risk paths (payment, refund, invoice) with idempotency + reconciliation

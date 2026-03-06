@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { Activity, AlertTriangle, Clock3, RefreshCw, ShieldAlert, Waves } from 'lucide-react';
-import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, Tooltip, XAxis, YAxis } from 'recharts';
 
 import Layout from '@/components/Layout';
 import { Badge } from '@/components/ui/badge';
@@ -59,6 +59,9 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [chartsReady, setChartsReady] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(() => (typeof window === 'undefined' ? 1280 : window.innerWidth));
 
   const loadData = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setRefreshing(true);
@@ -82,6 +85,22 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
     return () => clearInterval(interval);
   }, [loadData]);
 
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'overview' || loading || !data) {
+      setChartsReady(false);
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => setChartsReady(true), 180);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, loading, data]);
+
   const queueData = useMemo(() => {
     const lifecycle = data?.outbox?.lifecycle;
     if (!lifecycle) return [];
@@ -102,6 +121,8 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
   const lifecycle = overview?.lifecycle;
   const healthScore = data?.health_score;
   const healthStyle = HEALTH_SCORE_STYLES[healthScore?.status || 'green'];
+  const throughputChartWidth = viewportWidth >= 1440 ? 760 : viewportWidth >= 1024 ? 620 : Math.max(viewportWidth - 120, 260);
+  const queueChartWidth = viewportWidth >= 1440 ? 420 : viewportWidth >= 1024 ? 360 : Math.max(viewportWidth - 120, 260);
 
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
@@ -218,7 +239,7 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
 
               <StalePendingTriageCard triage={overview?.stale_triage} />
 
-              <Tabs defaultValue="overview" className="space-y-4" data-testid="migration-observability-tabs">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4" data-testid="migration-observability-tabs">
                 <TabsList className="h-auto flex-wrap justify-start gap-2 rounded-2xl bg-white/80 p-2" data-testid="migration-observability-tabs-list">
                   <TabsTrigger value="overview" data-testid="migration-tab-overview">Overview</TabsTrigger>
                   <TabsTrigger value="outbox" data-testid="migration-tab-outbox">Outbox</TabsTrigger>
@@ -233,16 +254,16 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
                         <CardTitle>Outbox event throughput</CardTitle>
                         <CardDescription>Son 24 saatte saatlik event akışı</CardDescription>
                       </CardHeader>
-                      <CardContent className="h-[280px]">
-                        <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={280}>
-                          <BarChart data={overview?.throughput?.hourly_series || []}>
+                      <CardContent className="flex h-[280px] items-center justify-center overflow-hidden">
+                        {activeTab === 'overview' && chartsReady ? (
+                          <BarChart width={throughputChartWidth} height={260} data={overview?.throughput?.hourly_series || []}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                             <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                             <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                             <Tooltip />
                             <Bar dataKey="count" fill="#0f766e" radius={[8, 8, 0, 0]} />
                           </BarChart>
-                        </ResponsiveContainer>
+                        ) : null}
                       </CardContent>
                     </Card>
                     <Card className="border-white/70 bg-white/90" data-testid="migration-overview-queue-chart-card">
@@ -250,15 +271,15 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
                         <CardTitle>Queue depth snapshot</CardTitle>
                         <CardDescription>Pending, processing, processed, failed ve parked dağılımı</CardDescription>
                       </CardHeader>
-                      <CardContent className="h-[280px]">
-                        <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={280}>
-                          <PieChart>
+                      <CardContent className="flex h-[280px] items-center justify-center overflow-hidden">
+                        {activeTab === 'overview' && chartsReady ? (
+                          <PieChart width={queueChartWidth} height={260}>
                             <Pie data={queueData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={90} paddingAngle={4}>
                               {queueData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
                             </Pie>
                             <Tooltip />
                           </PieChart>
-                        </ResponsiveContainer>
+                        ) : null}
                       </CardContent>
                     </Card>
                   </div>
