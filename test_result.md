@@ -153,6 +153,18 @@ test_plan:
         agent: "testing"
         comment: "✅ TURKISH SPRINT SHADOW METRICS VALIDATION: (1) GET /api/pms/rooms/availability hala 200 dönüyor ✅ (2) GET /api/folio/{folio_id} hala 200 dönüyor ✅ (3) Shadow compare log/metric davranışı endpoint response'unu bozmadan çalışıyor - 6/6 stability test calls successful ✅ (4) 500 veya response drift yok - all integrity checks passed ✅ (5) Shadow metrics infrastructure tested and working correctly - events recording and logging functional ✅ VERDICT: Instrumentation only implemented successfully - no cutover, endpoints stable, shadow metrics operational without affecting user experience."
 
+  - task: "CreateReservation Bridge + Outbox Package"
+    implemented: true
+    working: true
+    file: "modules/reservations/services/create_reservation_service.py, modules/reservations/repository.py, routers/pms.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ CREATE RESERVATION BRIDGE + OUTBOX VALIDATION COMPLETE: (1) POST /api/pms/bookings yeni semantic service üzerinden çalışıyor ✅ (2) Idempotency enforcement aktif - aynı key ile duplicate create yok ✅ (3) Başarılı create sonrası reservation.created.v1 outbox kaydı oluşuyor ✅ (4) Audit kaydı oluşuyor ✅ (5) Missing Idempotency-Key doğru reddediliyor (HTTP 400) ✅ (6) Property scope mismatch güvenli (HTTP 403) ✅ (7) Response contract bozulmamış - all required fields present ✅ VERDICT: CreateReservation bridge + outbox paketi mükemmel çalışıyor. Semantic service integration, idempotency patterns, outbox events, audit logging ve security controls tamamen fonksiyonel."
+
 agent_communication:
   - agent: "testing"
     message: "Backend smoke/regression testing completed for Turkish sprint requirements. All 6 core endpoints tested successfully: (1) Auth login demo@hotel.com/demo123 ✅ (2) GET /api/pms/bookings ✅ (3) GET /api/pms/rooms/availability ✅ (4) GET /api/folio/list ✅ (5) GET /api/folio/{folio_id} with balance field ✅ (6) Foundation changes regression test ✅. No 500 errors detected. Read-side services integration confirmed functional. Backend foundation + read-side changes are stable."
@@ -164,3 +176,5 @@ agent_communication:
     message: "✅ SHADOW METRICS SMOKE TEST COMPLETED: Backend'e availability ve folio read için shadow metric instrumentation eklendikten sonra frontend regression smoke test yapıldı. Sonuç: (1) Uygulama normal yükleniyor ✅ (2) Login akışı çalışıyor ✅ (3) Dashboard ve PMS section erişilebilir ✅ (4) Console'da critical error yok ✅ VERDICT: Shadow metric instrumentation frontend'e herhangi bir regresyon üretmemiş. Tüm core flows stabil."
   - agent: "testing"
     message: "✅ TÜRKÇE SPRINT SHADOW METRICS BACKEND VALIDATION TAMAMLANDI: Shadow metric instrumentation test sonuçları mükemmel. (1) GET /api/pms/rooms/availability → HTTP 200, 30 rooms döndürülüyor, normal çalışıyor ✅ (2) GET /api/folio/{folio_id} → HTTP 200, balance field ile detaylar getiriliyor ✅ (3) Shadow metrics davranışı → 6/6 stability calls başarılı, endpoint performance'ını etkilemiyor ✅ (4) Response integrity → 4/4 endpoint'te 500 error yok, drift tespit edilmedi ✅ (5) Shadow metrics infrastructure test edildi ve çalışıyor - event logging active ✅ SONUÇ: Instrumentation only fase başarılı. Cutover yok. Endpointler stabil. Shadow metrics operasyonel ve kullanıcı deneyimini etkilemiyor. Turkish sprint requirements karşılandı."
+  - agent: "testing"
+    message: "✅ TÜRKÇE CREATE RESERVATION BRIDGE + OUTBOX VALIDATION COMPLETE: CreateReservation bridge + outbox paketi comprehensive test edildi ve 8/8 test geçti. (1) POST /api/pms/bookings semantic service integration çalışıyor - QR code, folio oluşturma ✅ (2) Idempotency enforcement mükemmel - aynı key ile aynı reservation dönüyor ✅ (3) Outbox pattern aktif - reservation.created.v1 events oluşuyor ✅ (4) Audit logging çalışıyor - correlation ID tracking ✅ (5) Security: Missing Idempotency-Key → HTTP 400 ✅ (6) Property scope mismatch → HTTP 403 ✅ (7) Response contract integrity korunmuş ✅ VERDICT: Semantic create service bridge tamamen operational ve production-ready. Tüm güvenlik kontrolleri, idempotency patterns ve event sourcing çalışıyor."
