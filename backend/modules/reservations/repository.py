@@ -66,8 +66,26 @@ class ReservationsRepository:
             {"_id": 0},
         )
 
+    async def update_room_for_tenant(self, tenant_id: str, room_id: str, update_doc: Dict[str, Any]) -> None:
+        await db.rooms.update_one(
+            {"tenant_id": tenant_id, "id": room_id},
+            {"$set": update_doc},
+        )
+
     async def get_guest_for_tenant(self, tenant_id: str, guest_id: str) -> Optional[Dict[str, Any]]:
         return await db.guests.find_one({"tenant_id": tenant_id, "id": guest_id}, {"_id": 0})
+
+    async def get_booking_for_tenant(self, tenant_id: str, booking_id: str) -> Optional[Dict[str, Any]]:
+        return await db.bookings.find_one(
+            {"tenant_id": tenant_id, "id": booking_id},
+            {"_id": 0},
+        )
+
+    async def update_booking(self, tenant_id: str, booking_id: str, update_doc: Dict[str, Any]) -> None:
+        await db.bookings.update_one(
+            {"tenant_id": tenant_id, "id": booking_id},
+            {"$set": update_doc},
+        )
 
     async def insert_booking(self, booking_doc: Dict[str, Any]) -> None:
         await db.bookings.insert_one(booking_doc)

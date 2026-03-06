@@ -1,0 +1,102 @@
+{
+  "summary": "ModifyReservation bridge testing complete. Backend: 14/14 pytest tests passed covering PUT /api/pms/bookings/{id} bridge, idempotency enforcement, outbox events, audit logs, and room-move regression. Frontend: ReservationCalendar page loads correctly (route is /reservation-calendar NOT /calendar) with all controls visible including Find Room, Enterprise/AI/Deluxe+ buttons.",
+
+  "features_tested": [
+    "PUT /api/pms/bookings/{booking_id} ModifyReservation bridge end-to-end ✅",
+    "Idempotency-Key header required for ModifyReservation (returns 400 if missing) ✅",
+    "Same Idempotency-Key + same payload returns same reservation response (idempotent) ✅",
+    "New Idempotency-Key for already-applied same target state is deterministic (no duplicate outbox events) ✅",
+    "ModifyReservation writes reservation.modified.v1 to outbox_events ✅",
+    "ModifyReservation writes reservation_modified to audit_logs ✅",
+    "Wrong property scope (x-property-id header mismatch) returns 403 without mutating booking ✅",
+    "Wrong tenant cannot modify demo reservation (returns 404) ✅",
+    "Room move regression: room_number stays in sync with room_id after room change ✅",
+    "Room move regression: booking count stable after room move (no disappearing reservations) ✅",
+    "Frontend /reservation-calendar page loads with all controls ✅"
+  ],
+
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Reservation Calendar",
+        "issues": [
+          "Shows 11 overbooking conflicts for Room 101/123 with Ahmet Garcia - test data has intentional overlaps"
+        ]
+      }
+    ]
+  },
+
+  "test_report_links": [
+    "/app/backend/tests/test_modify_reservation_bridge.py",
+    "/app/backend/tests/test_booking_room_move_fix.py",
+    "/app/test_reports/pytest/pytest_modify_reservation.xml"
+  ],
+
+  "action_items": [],
+
+  "critical_code_review_comments": [
+    "UpdateReservationService correctly enforces Idempotency-Key header via ensure_idempotent_request(required=True)",
+    "Idempotency lock uses SHA256 hash of tenant_id:scope:key for deduplication with MongoDB upsert pattern",
+    "Request hash compares tenant_id + booking_id + normalized payload for conflict detection",
+    "Room move updates both room_id and room_number atomically in booking document",
+    "outbox_events written with status=pending, processed by OutboxLifecycleWorker",
+    "audit_logs written via shared_kernel.audit_helper for compliance trail"
+  ],
+
+  "updated_files": [],
+
+  "success_rate": {
+    "backend": "100% (14/14 pytest tests passed)",
+    "frontend": "100% (ReservationCalendar loads with all controls)"
+  },
+
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123",
+    "role": "admin"
+  },
+
+  "seed_data_creation": "Backend tests create test reservations with semantic-modify-* prefix during test runs; cleaned up implicitly",
+
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+
+  "context_for_next_testing_agent": "ModifyReservation bridge fully operational. PUT /api/pms/bookings/{id} now delegates to UpdateReservationService which enforces Idempotency-Key header, creates outbox events (reservation.modified.v1), and writes audit logs. Frontend ReservationCalendar uses correct handleConfirmMove flow with Idempotency-Key header. usePMSData.useUpdateBooking also sends Idempotency-Key. The /calendar route does NOT exist - correct route is /reservation-calendar.",
+
+  "pytest_results": {
+    "test_file_1": "test_modify_reservation_bridge.py",
+    "tests_passed_1": 6,
+    "test_file_2": "test_booking_room_move_fix.py", 
+    "tests_passed_2": 8,
+    "total_passed": 14,
+    "total_failed": 0
+  },
+
+  "idempotency_verification": {
+    "header_name": "Idempotency-Key",
+    "required": true,
+    "missing_key_returns": 400,
+    "same_key_same_payload": "Returns cached response without duplicate processing",
+    "same_key_different_payload": "Returns 409 Conflict",
+    "lock_implementation": "MongoDB idempotency_keys collection with _id = SHA256(tenant:scope:key)"
+  },
+
+  "outbox_verification": {
+    "event_type": "reservation.modified.v1",
+    "triggered_by": "PUT /api/pms/bookings/{id} with actual field changes",
+    "no_event_when": "Target state same as current state (no changes to persist)"
+  },
+
+  "frontend_route_correction": {
+    "incorrect_route": "/calendar",
+    "correct_route": "/reservation-calendar",
+    "note": "Route defined in App.js at lines 637-650"
+  }
+}

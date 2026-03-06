@@ -162,6 +162,9 @@ class TestBookingRoomMoveFix:
         update_response = self.session.put(f"{BASE_URL}/api/pms/bookings/{booking_id}", json={
             **test_booking,
             'room_id': new_room_id
+        }, headers={
+            'Authorization': f'Bearer {self.token}',
+            'Idempotency-Key': f'room-move-{uuid.uuid4()}'
         })
         
         assert update_response.status_code == 200, f"Room move failed: {update_response.status_code} - {update_response.text}"
@@ -201,6 +204,9 @@ class TestBookingRoomMoveFix:
         restore_response = self.session.put(f"{BASE_URL}/api/pms/bookings/{booking_id}", json={
             **test_booking,
             'room_id': original_room_id
+        }, headers={
+            'Authorization': f'Bearer {self.token}',
+            'Idempotency-Key': f'room-move-restore-{uuid.uuid4()}'
         })
         if restore_response.status_code == 200:
             print(f"✅ Restored booking to original room: {original_room_number}")

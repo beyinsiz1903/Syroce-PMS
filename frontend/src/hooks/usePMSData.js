@@ -121,7 +121,12 @@ export const useUpdateBooking = () => {
 
   return useMutation({
     mutationFn: async ({ id, data }) => {
-      const response = await axios.put(`/pms/bookings/${id}`, data);
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-update-${Date.now()}-${Math.random()}`;
+      const response = await axios.put(`/pms/bookings/${id}`, data, {
+        headers: {
+          'Idempotency-Key': idempotencyKey,
+        },
+      });
       return response.data;
     },
     onSuccess: () => {

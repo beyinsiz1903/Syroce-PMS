@@ -510,10 +510,15 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     
     try {
       // Update booking with new room and dates — send only changed fields
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-move-${Date.now()}-${Math.random()}`;
       const updateResponse = await axios.put(`/pms/bookings/${moveData.booking.id}`, {
         room_id: moveData.newRoomId,
         check_in: moveData.newCheckIn,
         check_out: moveData.newCheckOut
+      }, {
+        headers: {
+          'Idempotency-Key': idempotencyKey,
+        },
       });
       
       console.log('✅ Booking updated:', updateResponse.data);
