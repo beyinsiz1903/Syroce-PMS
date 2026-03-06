@@ -96,17 +96,17 @@ backend:
         comment: "Shared kernel components (event_envelope, tenancy_context, audit_helper, idempotency) are functional per test_semantic_migration_foundations.py."
 
 frontend:
-  - task: "Frontend Integration Testing"
-    implemented: false
-    working: "NA"
-    file: "N/A"
+  - task: "Frontend Smoke Test - Turkish Sprint"
+    implemented: true
+    working: true
+    file: "Frontend Application"
     stuck_count: 0
-    priority: "low"
+    priority: "high"
     needs_retesting: false
     status_history:
-      - working: "NA"
+      - working: true
         agent: "testing"
-        comment: "Frontend testing not performed as per system limitations. Backend API endpoints are confirmed working."
+        comment: "✅ SMOKE TEST PASS: (1) Uygulama white screen olmadan açılıyor ✅ (2) Login (demo@hotel.com/demo123) çalışıyor ✅ (3) Dashboard yükleniyor (AI Daily Briefing, occupancy metrics gösteriliyor) ✅ (4) Ana navigasyon çalışıyor ✅ (5) Console error yok, sadece 1 CDN request failed (kritik değil) ✅ REGRESSION CHECK: Backend foundation değişiklikleri frontend'i regresyona sokmamış. Temel application shell ve navigasyon stabil."
 
 metadata:
   created_by: "testing_agent"
@@ -129,3 +129,5 @@ test_plan:
 agent_communication:
   - agent: "testing"
     message: "Backend smoke/regression testing completed for Turkish sprint requirements. All 6 core endpoints tested successfully: (1) Auth login demo@hotel.com/demo123 ✅ (2) GET /api/pms/bookings ✅ (3) GET /api/pms/rooms/availability ✅ (4) GET /api/folio/list ✅ (5) GET /api/folio/{folio_id} with balance field ✅ (6) Foundation changes regression test ✅. No 500 errors detected. Read-side services integration confirmed functional. Backend foundation + read-side changes are stable."
+  - agent: "testing"
+    message: "✅ FRONTEND SMOKE TEST COMPLETED - Turkish Sprint: Full application smoke test performed successfully. (1) App loads without white screen ✅ (2) Login flow works with demo credentials ✅ (3) Dashboard renders with AI briefing and metrics ✅ (4) Navigation functional ✅ (5) No console errors, minimal CDN failures ✅ VERDICT: Backend foundation değişiklikleri frontend'i regresyona sokmamış. Core UI shell stabil ve çalışıyor."
