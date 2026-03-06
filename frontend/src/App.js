@@ -365,6 +365,14 @@ function App() {
     setTenant(tenantData);
     setIsAuthenticated(true);
     fetchModules();
+
+    const redirectAfterLogin = sessionStorage.getItem('postLoginRedirect');
+    if (redirectAfterLogin) {
+      sessionStorage.removeItem('postLoginRedirect');
+      window.location.assign(redirectAfterLogin);
+      return;
+    }
+
     console.log('✅ Auth state updated:', { isAuthenticated: true, user: userData?.email, role: userData?.role });
   };
 
