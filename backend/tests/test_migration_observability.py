@@ -6,6 +6,7 @@ import pytest
 import requests
 
 from core.database import db
+from shared_kernel.migration_observability import build_health_score
 
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
@@ -16,6 +17,9 @@ class TestMigrationObservability:
     def setup(self):
         if not BASE_URL:
             pytest.skip('REACT_APP_BACKEND_URL missing')
+
+        self.created_outbox_event_ids = []
+        self.created_audit_log_ids = []
 
         self.session = requests.Session()
         self.session.headers.update({'Content-Type': 'application/json'})
@@ -29,6 +33,10 @@ class TestMigrationObservability:
         self.tenant_id = login.json()['user']['tenant_id']
         self.session.headers.update({'Authorization': f'Bearer {self.token}'})
         yield
+        if self.created_outbox_event_ids:
+            db.delegate['outbox_events'].delete_many({'event_id': {'$in': self.created_outbox_event_ids}})
+        if self.created_audit_log_ids:
+            db.delegate['audit_logs'].delete_many({'id': {'$in': self.created_audit_log_ids}})
 
     def _insert_outbox_event(self, tenant_id: str, event_type: str, status: str = 'pending'):
         event_id = str(uuid.uuid4())
@@ -42,11 +50,13 @@ class TestMigrationObservability:
             'created_at': datetime.now(timezone.utc).isoformat(),
             'reservation_id': str(uuid.uuid4()),
         })
+        self.created_outbox_event_ids.append(event_id)
         return event_id
 
     def _insert_audit_log(self, tenant_id: str, action: str, entity_id: str):
+        audit_id = str(uuid.uuid4())
         db.delegate['audit_logs'].insert_one({
-            'id': str(uuid.uuid4()),
+            'id': audit_id,
             'actor_id': 'observer-test',
             'tenant_id': tenant_id,
             'property_id': tenant_id,
@@ -57,6 +67,7 @@ class TestMigrationObservability:
             'correlation_id': f'corr-{uuid.uuid4()}',
             'timestamp': datetime.now(timezone.utc).isoformat(),
         })
+        self.created_audit_log_ids.append(audit_id)
 
     def test_observability_endpoint_returns_expected_sections(self):
         self._insert_outbox_event(self.tenant_id, 'reservation.created.v1')
@@ -74,9 +85,10 @@ class TestMigrationObservability:
         assert response.status_code == 200, response.text
         payload = response.json()
 
-        assert {'generated_at', 'outbox', 'audit', 'shadow'} <= set(payload.keys())
+        assert {'generated_at', 'health_score', 'outbox', 'audit', 'shadow'} <= set(payload.keys())
+        assert {'status', 'display_status', 'calculated_at', 'time_window', 'reasons', 'operational_guidance', 'signals'} <= set(payload['health_score'].keys())
         assert {'throughput', 'queue_depth', 'event_breakdown', 'retries', 'lag', 'recent_events'} <= set(payload['outbox'].keys())
-        assert {'recent_count', 'actions_breakdown', 'recent_stream'} <= set(payload['audit'].keys())
+        assert {'recent_count', 'audit_gap_count', 'actions_breakdown', 'recent_stream'} <= set(payload['audit'].keys())
         assert {'summary', 'recent_events'} <= set(payload['shadow'].keys())
 
         breakdown_types = {item['event_type'] for item in payload['outbox']['event_breakdown']}
@@ -99,3 +111,53 @@ class TestMigrationObservability:
 
         recent_audit_ids = {item['entity_id'] for item in payload['audit']['recent_stream']}
         assert foreign_entity_id not in recent_audit_ids
+
+
+def test_health_score_is_green_when_signals_are_healthy():
+    score = build_health_score(
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        failed_outbox_count=0,
+        stale_pending_count=0,
+        audit_gap_count=0,
+        shadow_summary=[
+            {'endpoint': 'availability', 'mismatch_rate_percent': 0.2, 'errors': 0},
+            {'endpoint': 'folio', 'mismatch_rate_percent': 0.0, 'errors': 0},
+        ],
+    )
+
+    assert score['status'] == 'green'
+    assert score['display_status'] == 'Green'
+    assert len(score['reasons']) == 3
+
+
+def test_health_score_is_yellow_for_stale_pending_or_compare_error():
+    score = build_health_score(
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        failed_outbox_count=0,
+        stale_pending_count=2,
+        audit_gap_count=0,
+        shadow_summary=[
+            {'endpoint': 'availability', 'mismatch_rate_percent': 1.7, 'errors': 1},
+            {'endpoint': 'folio', 'mismatch_rate_percent': 0.0, 'errors': 0},
+        ],
+    )
+
+    assert score['status'] == 'yellow'
+    assert any('stale pending' in reason for reason in score['reasons'])
+
+
+def test_health_score_red_override_for_audit_gap():
+    score = build_health_score(
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        failed_outbox_count=0,
+        stale_pending_count=0,
+        audit_gap_count=1,
+        shadow_summary=[
+            {'endpoint': 'availability', 'mismatch_rate_percent': 0.0, 'errors': 0},
+            {'endpoint': 'folio', 'mismatch_rate_percent': 0.0, 'errors': 0},
+        ],
+    )
+
+    assert score['status'] == 'red'
+    assert score['signals']['audit_gap_count'] == 1
+    assert any('audit gap' in reason for reason in score['reasons'])

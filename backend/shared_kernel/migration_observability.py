@@ -28,6 +28,37 @@ MIGRATION_AUDIT_ACTIONS = [
     "folio_charge_posted",
 ]
 
+MIGRATION_EVENT_AUDIT_MAP = {
+    "reservation.created.v1": {
+        "action": "reservation_created",
+        "entity_key": "reservation_id",
+    },
+    "inventory.blocked.v1": {
+        "action": "room_block_created",
+        "entity_key": "room_block_id",
+    },
+    "inventory.released.v1": {
+        "action": "room_block_released",
+        "entity_key": "room_block_id",
+    },
+    "folio.opened.v1": {
+        "action": "folio_opened",
+        "entity_key": "folio_id",
+    },
+    "reservation.modified.v1": {
+        "action": "reservation_modified",
+        "entity_key": "reservation_id",
+    },
+    "reservation.cancelled.v1": {
+        "action": "reservation_cancelled",
+        "entity_key": "reservation_id",
+    },
+    "folio.charge_posted.v1": {
+        "action": "folio_charge_posted",
+        "entity_key": "folio_charge_id",
+    },
+}
+
 
 def _parse_timestamp(raw_value: Any) -> Optional[datetime]:
     if isinstance(raw_value, datetime):
@@ -70,8 +101,91 @@ def _bucket_series(events: List[Dict[str, Any]], key: str, hours: int = 24) -> L
     ]
 
 
+def build_health_score(
+    *,
+    generated_at: str,
+    failed_outbox_count: int,
+    stale_pending_count: int,
+    audit_gap_count: int,
+    shadow_summary: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    compare_error_count = sum(int(item.get("errors") or 0) for item in shadow_summary)
+    max_mismatch_rate_percent = max(
+        [float(item.get("mismatch_rate_percent") or 0.0) for item in shadow_summary] or [0.0]
+    )
+    highest_mismatch = max(
+        shadow_summary,
+        key=lambda item: float(item.get("mismatch_rate_percent") or 0.0),
+        default={"endpoint": "shadow", "mismatch_rate_percent": 0.0},
+    )
+
+    status = "green"
+    reasons: List[str] = []
+
+    if audit_gap_count > 0:
+        status = "red"
+        reasons.append(f"{audit_gap_count} audit gap detected")
+
+    if failed_outbox_count > 0:
+        status = "red"
+        reasons.append(f"{failed_outbox_count} failed outbox event")
+
+    if max_mismatch_rate_percent > 5.0:
+        status = "red"
+        reasons.append(
+            f"{highest_mismatch.get('endpoint', 'shadow')} mismatch rate %{max_mismatch_rate_percent:.1f}"
+        )
+
+    if status != "red":
+        if stale_pending_count > 0:
+            reasons.append(f"{stale_pending_count} stale pending event")
+        if 1.0 <= max_mismatch_rate_percent <= 5.0:
+            reasons.append(
+                f"{highest_mismatch.get('endpoint', 'shadow')} mismatch rate %{max_mismatch_rate_percent:.1f}"
+            )
+        if compare_error_count > 0:
+            reasons.append(f"{compare_error_count} compare error")
+        if reasons:
+            status = "yellow"
+
+    if status == "green":
+        reasons = [
+            "Failed outbox event yok",
+            "Stale pending event yok",
+            "Mismatch rate %1 altında ve compare error yok",
+        ]
+
+    operational_guidance = {
+        "green": "Green → sıradaki dar write-path’e geçilebilir",
+        "yellow": "Yellow → geçmeden önce gözlem ve inceleme gerekir",
+        "red": "Red → yeni write-path açılmaz, önce sorun çözülür",
+    }[status]
+
+    return {
+        "status": status,
+        "display_status": status.capitalize(),
+        "calculated_at": generated_at,
+        "time_window": "last_24h",
+        "time_window_label": "Last 24h",
+        "reasons": reasons[:3],
+        "operational_guidance": operational_guidance,
+        "signals": {
+            "failed_outbox_count": failed_outbox_count,
+            "stale_pending_count": stale_pending_count,
+            "audit_gap_count": audit_gap_count,
+            "compare_error_count": compare_error_count,
+            "max_mismatch_rate_percent": round(max_mismatch_rate_percent, 2),
+        },
+    }
+
+
 class MigrationObservabilityService:
     async def get_dashboard(self, tenant_id: str) -> Dict[str, Any]:
+        now = datetime.now(timezone.utc)
+        twenty_four_hours_ago = now - timedelta(hours=24)
+        five_minutes_ago = now - timedelta(minutes=5)
+        fifteen_minutes_ago = now - timedelta(minutes=15)
+
         outbox_events = await db.outbox_events.find(
             {
                 "tenant_id": tenant_id,
@@ -80,10 +194,11 @@ class MigrationObservabilityService:
             {"_id": 0},
         ).sort("created_at", -1).to_list(500)
 
-        audit_logs = await db.audit_logs.find(
+        audit_logs_24h = await db.audit_logs.find(
             {
                 "tenant_id": tenant_id,
                 "action": {"$in": MIGRATION_AUDIT_ACTIONS},
+                "timestamp": {"$gte": twenty_four_hours_ago.isoformat()},
             },
             {
                 "_id": 0,
@@ -97,18 +212,19 @@ class MigrationObservabilityService:
                 "timestamp": 1,
                 "metadata": 1,
             },
-        ).sort("timestamp", -1).limit(20).to_list(20)
+        ).sort("timestamp", -1).to_list(500)
+
+        audit_logs = audit_logs_24h[:20]
 
         shadow_events = [
             event
             for event in shadow_metrics_store.get_recent_events()
-            if event.get("tenant_id") == tenant_id and event.get("endpoint") in {"availability", "folio"}
+            if (
+                event.get("tenant_id") == tenant_id
+                and event.get("endpoint") in {"availability", "folio"}
+                and (_parse_timestamp(event.get("timestamp")) or now) >= twenty_four_hours_ago
+            )
         ]
-
-        now = datetime.now(timezone.utc)
-        twenty_four_hours_ago = now - timedelta(hours=24)
-        five_minutes_ago = now - timedelta(minutes=5)
-        fifteen_minutes_ago = now - timedelta(minutes=15)
 
         recent_outbox = []
         stale_pending_count = 0
@@ -185,7 +301,7 @@ class MigrationObservabilityService:
             "stale_pending": stale_pending_count,
         }
 
-        audit_action_breakdown = Counter(log.get("action") or "unknown" for log in audit_logs)
+        audit_action_breakdown = Counter(log.get("action") or "unknown" for log in audit_logs_24h)
 
         endpoint_metrics: Dict[str, Dict[str, Any]] = defaultdict(
             lambda: {
@@ -226,6 +342,26 @@ class MigrationObservabilityService:
             reverse=True,
         )[:12]
 
+        audit_lookup = {
+            (
+                str(log.get("action") or ""),
+                str(log.get("entity_id") or ""),
+            )
+            for log in audit_logs_24h
+        }
+        audit_gap_count = 0
+        for event in recent_outbox:
+            event_type = str(event.get("event_type") or "")
+            expected = MIGRATION_EVENT_AUDIT_MAP.get(event_type)
+            if not expected:
+                continue
+            entity_key = expected["entity_key"]
+            entity_id = event.get(entity_key) or (event.get("payload") or {}).get(entity_key)
+            if not entity_id:
+                continue
+            if (expected["action"], str(entity_id)) not in audit_lookup:
+                audit_gap_count += 1
+
         recent_outbox_events = [
             {
                 "event_type": event.get("event_type"),
@@ -237,8 +373,17 @@ class MigrationObservabilityService:
             for event in outbox_events[:12]
         ]
 
+        health_score = build_health_score(
+            generated_at=now.isoformat(),
+            failed_outbox_count=queue_depth["failed"] + queue_depth["dead_letter"],
+            stale_pending_count=queue_depth["stale_pending"],
+            audit_gap_count=audit_gap_count,
+            shadow_summary=shadow_summary,
+        )
+
         return {
             "generated_at": now.isoformat(),
+            "health_score": health_score,
             "outbox": {
                 "total_events": len(outbox_events),
                 "throughput": {
@@ -264,6 +409,7 @@ class MigrationObservabilityService:
             },
             "audit": {
                 "recent_count": len(audit_logs),
+                "audit_gap_count": audit_gap_count,
                 "actions_breakdown": [
                     {"action": action, "count": count}
                     for action, count in audit_action_breakdown.most_common()

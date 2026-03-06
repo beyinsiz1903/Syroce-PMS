@@ -16,6 +16,23 @@ const QUEUE_COLORS = ['#0f766e', '#0891b2', '#dc2626', '#b45309', '#6b7280'];
 
 const formatTime = (value) => value ? new Date(value).toLocaleString('tr-TR') : '—';
 const formatMs = (value) => (typeof value === 'number' ? `${value.toFixed(0)} ms` : 'N/A');
+const HEALTH_SCORE_STYLES = {
+  green: {
+    badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    glow: 'shadow-emerald-200/60',
+    panel: 'from-emerald-50 to-white',
+  },
+  yellow: {
+    badge: 'bg-amber-100 text-amber-700 border-amber-200',
+    glow: 'shadow-amber-200/60',
+    panel: 'from-amber-50 to-white',
+  },
+  red: {
+    badge: 'bg-rose-100 text-rose-700 border-rose-200',
+    glow: 'shadow-rose-200/60',
+    panel: 'from-rose-50 to-white',
+  },
+};
 
 
 const StatCard = ({ icon: Icon, label, value, helper, tone, testId }) => (
@@ -73,6 +90,8 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
   }, [data]);
 
   const overview = data?.outbox;
+  const healthScore = data?.health_score;
+  const healthStyle = HEALTH_SCORE_STYLES[healthScore?.status || 'green'];
 
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
@@ -128,6 +147,58 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
             </div>
           ) : (
             <>
+              <Card
+                className={`overflow-hidden border-white/80 bg-gradient-to-r ${healthStyle.panel} shadow-xl ${healthStyle.glow}`}
+                data-testid="migration-health-score-card"
+              >
+                <CardContent className="grid gap-6 p-6 md:grid-cols-[0.85fr_1.15fr] md:p-7">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <Badge className={`border ${healthStyle.badge}`} data-testid="migration-health-score-status-badge">
+                        {healthScore?.display_status || 'Green'}
+                      </Badge>
+                      <span className="text-xs uppercase tracking-[0.25em] text-slate-500" data-testid="migration-health-score-time-window">
+                        {healthScore?.time_window_label || 'Last 24h'}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-sm uppercase tracking-[0.25em] text-slate-500">Migration health score</p>
+                      <h2 className="mt-2 text-3xl font-semibold text-slate-950" style={{ fontFamily: 'Space Grotesk' }} data-testid="migration-health-score-title">
+                        {healthScore?.operational_guidance || 'Green → sıradaki dar write-path’e geçilebilir'}
+                      </h2>
+                    </div>
+                    <p className="text-sm text-slate-600" data-testid="migration-health-score-calculated-at">
+                      Son hesaplanma: {formatTime(healthScore?.calculated_at)}
+                    </p>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-[1fr_0.9fr]">
+                    <div className="rounded-[24px] border border-white bg-white/80 p-5" data-testid="migration-health-score-reasons-panel">
+                      <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Kısa nedenler</p>
+                      <ul className="mt-4 space-y-3 text-sm text-slate-700">
+                        {(healthScore?.reasons || []).map((reason, index) => (
+                          <li key={`${reason}-${index}`} className="flex items-start gap-3" data-testid={`migration-health-score-reason-${index}`}>
+                            <span className="mt-1 h-2 w-2 rounded-full bg-slate-900" />
+                            <span>{reason}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="rounded-[24px] border border-white bg-slate-950 p-5 text-white" data-testid="migration-health-score-signals-panel">
+                      <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Signals</p>
+                      <div className="mt-4 space-y-3 text-sm">
+                        <div className="flex items-center justify-between"><span>Failed outbox</span><span data-testid="migration-health-score-failed-outbox">{healthScore?.signals?.failed_outbox_count ?? 0}</span></div>
+                        <div className="flex items-center justify-between"><span>Stale pending</span><span data-testid="migration-health-score-stale-pending">{healthScore?.signals?.stale_pending_count ?? 0}</span></div>
+                        <div className="flex items-center justify-between"><span>Audit gap</span><span data-testid="migration-health-score-audit-gap">{healthScore?.signals?.audit_gap_count ?? 0}</span></div>
+                        <div className="flex items-center justify-between"><span>Compare error</span><span data-testid="migration-health-score-compare-error">{healthScore?.signals?.compare_error_count ?? 0}</span></div>
+                        <div className="flex items-center justify-between"><span>Max mismatch</span><span data-testid="migration-health-score-mismatch-rate">%{healthScore?.signals?.max_mismatch_rate_percent ?? 0}</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <StatCard icon={Activity} label="24h throughput" value={overview?.throughput?.events_last_24h ?? 0} helper={`${overview?.throughput?.events_per_second_24h ?? 0} events/sec`} tone="bg-teal-100 text-teal-700" testId="migration-stat-throughput" />
                 <StatCard icon={AlertTriangle} label="Pending queue" value={overview?.queue_depth?.pending ?? 0} helper={`${overview?.queue_depth?.stale_pending ?? 0} stale pending`} tone="bg-amber-100 text-amber-700" testId="migration-stat-pending" />
