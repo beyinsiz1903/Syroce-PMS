@@ -138,6 +138,16 @@ const LoadingFallback = () => (
   </div>
 );
 
+const AuthRedirectWithMemory = ({ targetPath }) => {
+  useEffect(() => {
+    if (targetPath) {
+      sessionStorage.setItem('postLoginRedirect', targetPath);
+    }
+  }, [targetPath]);
+
+  return <Navigate to="/auth" replace />;
+};
+
 const RAW_BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '/api';
 // Ensure /api suffix for Kubernetes ingress routing
 const BACKEND_URL = RAW_BACKEND_URL.endsWith('/api')
@@ -528,7 +538,7 @@ function App() {
               isAuthenticated ? (
                 <PMSModule user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
-                <Navigate to="/auth" replace state={{ redirectTo: '/pms' }} />
+                <AuthRedirectWithMemory targetPath="/pms" />
               )
             }
           />
@@ -538,7 +548,7 @@ function App() {
               isAuthenticated ? (
                 <PMSModule user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
-                <Navigate to="/auth" replace state={{ redirectTo: '/app/pms' }} />
+                <AuthRedirectWithMemory targetPath="/app/pms" />
               )
             }
           />

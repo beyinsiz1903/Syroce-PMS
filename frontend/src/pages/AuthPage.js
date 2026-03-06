@@ -52,7 +52,7 @@ const AuthPage = ({ onLogin }) => {
     email: '', password: '', name: '', phone: ''
   });
 
-  const loginRedirectPath = location.state?.redirectTo || '/app/dashboard';
+  const loginRedirectPath = location.state?.redirectTo || sessionStorage.getItem('postLoginRedirect') || '/app/dashboard';
 
   const handleHotelLogin = async (e) => {
     e.preventDefault();
@@ -64,6 +64,7 @@ const AuthPage = ({ onLogin }) => {
       
       // Call onLogin to update app state - React Router handles redirect
       onLogin(response.data.access_token, response.data.user, response.data.tenant);
+      sessionStorage.removeItem('postLoginRedirect');
       navigate(loginRedirectPath, { replace: true });
     } catch (error) {
       const errorMessage = error.response?.data?.detail || error.message || t('auth.loginFailed');
