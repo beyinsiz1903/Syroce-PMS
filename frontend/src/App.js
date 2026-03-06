@@ -139,13 +139,11 @@ const LoadingFallback = () => (
 );
 
 const AuthRedirectWithMemory = ({ targetPath }) => {
-  useEffect(() => {
-    if (targetPath) {
-      sessionStorage.setItem('postLoginRedirect', targetPath);
-    }
-  }, [targetPath]);
+  if (targetPath) {
+    sessionStorage.setItem('postLoginRedirect', targetPath);
+  }
 
-  return <Navigate to="/auth" replace />;
+  return <Navigate to="/auth" replace state={{ redirectTo: targetPath }} />;
 };
 
 const RAW_BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '/api';
