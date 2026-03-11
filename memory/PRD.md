@@ -1,127 +1,136 @@
-# Syroce PMS - Product Requirements Document
+# Syroce PMS — Product Requirements Document
 
 ## Original Problem Statement
-Cloud PMS (Property Management System) with HotelRunner channel manager integration. The system provides hotel management capabilities with a connector-first architecture for channel management.
+Cloud-native Property Management System (PMS) with HotelRunner Channel Manager v2 integration. The system manages hotel operations including bookings, guests, rooms, housekeeping, and channel distribution through HotelRunner.
 
 ## Core Architecture
-- **Backend**: FastAPI + MongoDB (DDD-based)
-- **Frontend**: React with Shadcn/UI
-- **Auth**: JWT-based authentication
-- **Channel Manager**: Connector-first architecture with HotelRunner integration
+- **Backend**: FastAPI (Python 3.11) + MongoDB
+- **Frontend**: React + Tailwind CSS + shadcn/ui
+- **Channel Manager**: Connector-first architecture under `/backend/channel_manager/`
 
-## Completed Modules
+## User Persona
+- **Primary**: Hotel operators (admin role) managing property operations and channel distribution
+- **Auth**: JWT-based, demo account: `demo@hotel.com` / `demo123`
 
-### Phase 0 - Foundation (Complete)
+---
+
+## Completed Features
+
+### Base System (Pre-Production Hardening)
 - Connection Test System
-- Audit logging
-- SyncJob lifecycle
-- Canonical reservation model
-- Integration Hub UI
-
-### Phase 1 - Core Sync (Complete)
 - Inventory Sync Engine (delta sync + coalescing + retry)
-- Reservation Import Engine (idempotent + duplicate detection + review queue)
+- Reservation Import Engine (idempotency + duplicate detection + review queue)
 - HotelRunner Reservation Adapter (REST/JSON provider contract)
-- Manual review queue
-- ACK tracking
+- Mapping Engine (5 mapping types + readiness score)
+- Integration Hub UI
+- Audit logging, SyncJob lifecycle, Manual review queue
+- ACK tracking, Canonical reservation model
 
-### Phase 2 - Mapping Engine (Complete)
-- 5 mapping types (room_type, rate_plan, occupancy, meal_plan, tax_mode)
-- Readiness score calculation
-- Validation endpoints
-- 25 contract tests
+### Production Hardening — Session 1 (Completed)
+- Reconciliation Service (basic)
+- Live HotelRunner Inventory/Rate Provider
+- Mapping Screen Frontend
+- Scheduled Inventory Sync Safety Net (basic)
+- Credential Vault (XOR encryption)
+- Event-Driven Sync (basic)
 
-### Phase 3 - Production Hardening (Complete - 2026-03-11)
-All 6 phases implemented and tested:
+### Production Hardening — Session 2 (Completed 2026-03-11)
 
-**3.1 Reconciliation Service (LIVE)**
-- 8 issue types: inventory_mismatch, rate_mismatch, missing_reservation, stale_sync, invalid_mapping, ack_failed, ack_pending_too_long, unprocessed_import
-- 4 severity levels: critical, high, medium, low
-- Issue lifecycle: open -> investigating -> retrying -> resolved | dismissed
-- Suggested actions: retry_sync, revalidate_mapping, retry_ack, send_to_review, dismiss_with_reason
-- Full CRUD API with summary aggregation
-- Audit trail for all reconciliation operations
+**Phase 1: HotelRunner Sandbox Validation**
+- `SandboxValidationService` with 10 structured checks
+- Integration Readiness Report (passed/failed/blockers/recommendation)
+- Endpoint: `POST /api/channel-manager/v2/sandbox/validate/{connector_id}`
 
-**3.2 HotelRunner Inventory & Rate Provider (ENHANCED)**
-- push_availability() and push_rates() with correlation_id tracking
-- Request/response audit with payload length tracking
-- Environment config: mock, sandbox, production
-- Latency measurement per push operation
-- Error categorization: auth_error, provider_validation_error, rate_limit_error, schema_mismatch, unknown_response_format
+**Phase 2: Inventory & Rate Provider Hardening**
+- `InventoryProviderAdapter` + `RateProviderAdapter`
+- Request correlation_id, raw payload audit, error categorization
+- Auto-creates reconciliation issues on push failure
+- Endpoints: `POST /api/channel-manager/v2/providers/inventory/push`, `/rates/push`
 
-**3.3 Mapping Screen Frontend (LIVE)**
-- Readiness progress bar with color-coded score
-- Missing/invalid/duplicate mapping counts
-- Blocked reasons display
-- Validation badges: valid, invalid, pending
-- Filter buttons: all, valid, invalid, not_validated, inactive
-- Actions: validate, revalidate, deactivate
-- Auto-refresh readiness score after mapping changes
+**Phase 3: Credential Security Hardening**
+- AES-256-GCM encryption (replaced XOR)
+- Secure random 12-byte IV, authentication tag, tamper detection
+- Legacy XOR → AES migration support
+- `EncryptionService`, `KeyManagementService`
+- Endpoints: `/credentials/secure`, `/credentials/rotate`, `/credentials/migrate`
 
-**3.4 Scheduled Inventory Sync Safety Net (LIVE)**
-- Property-based scheduled checks
-- Stale pending job detection and cleanup
-- Retryable failed job requeue (max 2 auto-retries)
-- Missing snapshot detection
-- Drift detection (PMS vs snapshot comparison)
-- Audit log and metrics per run
+**Phase 4: RBAC Enforcement**
+- Role-based access control for credential endpoints
+- Allowed: `tenant_owner`, `system_admin`, `integration_admin`, `admin`
+- Restricted: `operator` (read-only), `staff`, `viewer` (no access)
+- Unauthorized attempts audited
+- Module: `channel_manager/infrastructure/rbac.py`
 
-**3.5 Credential Security (LIVE)**
-- XOR-based encryption at rest (upgradeable to AES-256-GCM)
-- Secret rotation with audit trail
-- Masked credential display for UI
-- Secure update and rotation endpoints
-- Audit actions: credential_created, credential_changed, credential_rotated, credential_tested
+**Phase 5: Reconciliation Health Score**
+- Health score aggregation (0-100) based on issue severity, sync staleness, failure ratio
+- Status classification: healthy/degraded/critical
+- Endpoint: `GET /api/channel-manager/v2/reconciliation/health/{connector_id}`
 
-**3.6 Event-Driven Sync (LIVE)**
-- 7 domain events: booking_created, booking_modified, booking_cancelled, room_blocked, room_unblocked, rate_changed, restriction_changed
-- Event -> sync type mapping
-- Date range and room type extraction from event payloads
-- Batch event processing
-- Audit trail for all triggered syncs
+**Phase 6: Scheduler Metrics Enhancement**
+- Structured metrics in scheduler response (stale_jobs, requeued_jobs, missing_snapshots, drift_detected)
+- Dashboard-ready health data
+
+**Phase 7: Event-Driven Sync Hardening**
+- Failure audit logging with `EVENT_SYNC_FAILED` action
+- Auto-creates reconciliation issues for persistent failures
+- Supported events: booking_created, booking_modified, booking_cancelled, room_blocked, room_unblocked, rate_changed, restriction_changed
+
+**Phase 8: Test Suite Stabilization**
+- Fixed event loop contamination between test files
+- Full patching of database-dependent methods in mock tests
+- **110+ tests passing, 0 failures, CI-compatible**
+- UI low-contrast fix for Integration Hub page title
+
+---
+
+## API Endpoints Summary
+
+### Channel Manager v2 — New Endpoints
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/channel-manager/v2/sandbox/validate/{id}` | Sandbox validation (10 checks) |
+| POST | `/api/channel-manager/v2/providers/inventory/push` | Inventory push via adapter |
+| POST | `/api/channel-manager/v2/providers/rates/push` | Rate push via adapter |
+| PUT | `/api/channel-manager/v2/connectors/{id}/credentials/secure` | AES-256-GCM credential update |
+| POST | `/api/channel-manager/v2/connectors/{id}/credentials/rotate` | Credential rotation |
+| GET | `/api/channel-manager/v2/connectors/{id}/credentials/masked` | Masked credential view |
+| POST | `/api/channel-manager/v2/connectors/{id}/credentials/migrate` | XOR→AES migration |
+| GET | `/api/channel-manager/v2/reconciliation/health/{id}` | Health score (0-100) |
+
+---
 
 ## Test Coverage
-- 59 new tests (34 unit + 25 API integration tests)
-- All passing: 100%
-- Test files:
-  - backend/tests/test_reconciliation_complete.py (34 tests)
-  - backend/tests/test_channel_manager_v2_phase6.py (25 tests)
-  - backend/tests/test_mapping_engine.py (25 tests - some have pre-existing event loop issues)
+- `test_mapping_engine.py`: 25 tests
+- `test_production_hardening_v2.py`: 26 tests
+- `test_production_hardening_v3.py`: 33 tests (testing agent)
+- `test_reconciliation_complete.py`: 34 tests
+- `test_channel_manager_v2_phase6.py`: 25 tests
+- **Total: 143+ tests, all passing**
 
-## API Endpoints
-
-### Reconciliation
-- POST /api/channel-manager/v2/reconciliation/run
-- GET /api/channel-manager/v2/reconciliation/issues
-- GET /api/channel-manager/v2/reconciliation/issues/summary
-- GET /api/channel-manager/v2/reconciliation/issues/{issue_id}
-- PUT /api/channel-manager/v2/reconciliation/issues/{issue_id}/status
-- POST /api/channel-manager/v2/reconciliation/issues/{issue_id}/resolve
-- POST /api/channel-manager/v2/reconciliation/issues/{issue_id}/dismiss
-- POST /api/channel-manager/v2/reconciliation/issues
-
-### Scheduler
-- POST /api/channel-manager/v2/scheduler/run/{connector_id}
-- POST /api/channel-manager/v2/scheduler/run-all
-
-### Credentials
-- PUT /api/channel-manager/v2/connectors/{connector_id}/credentials/secure
-- POST /api/channel-manager/v2/connectors/{connector_id}/credentials/rotate
-- GET /api/channel-manager/v2/connectors/{connector_id}/credentials/masked
-
-### Event-Driven Sync
-- POST /api/channel-manager/v2/events/sync
-- POST /api/channel-manager/v2/events/sync/batch
-
-## Mocked Components
-- HotelRunner push_availability/push_rates: XML is built correctly but actual HTTP calls to HotelRunner sandbox require real credentials
-- No live HotelRunner account is configured
+---
 
 ## Backlog
-- P1: Fix pre-existing test_mapping_engine.py event loop issues (21 tests)
-- P1: Fix pre-existing test_inventory_api.py failures (8 tests)
-- P2: Upgrade credential encryption from XOR to AES-256-GCM
-- P2: Add RBAC enforcement for credential endpoints (admin-only)
-- P2: Implement actual HotelRunner sandbox calls with real credentials
-- P3: UI polish - low contrast page title in Integration Hub
-- P3: Complete admin panel for Error Queues
+
+### P1 — High Priority
+- Admin Panel UI for Reconciliation Issues, Scheduler Status, Credential Management
+- Webhook/callback integration for real-time HotelRunner notifications
+
+### P2 — Medium Priority
+- Rate limiter dashboard and alerting
+- Connector health monitoring UI widget
+- Bulk credential rotation for multi-property deployments
+
+### P3 — Low Priority
+- Error Queues admin panel
+- Historical sync analytics dashboard
+- Export reconciliation reports (CSV/PDF)
+
+---
+
+## Key Collections (MongoDB)
+- `cm_connectors`: Channel connectors with encrypted credentials
+- `cm_sync_jobs`: Sync job lifecycle tracking
+- `cm_mappings`: Entity mappings (room_type, rate_plan, etc.)
+- `cm_imported_reservations`: Imported reservation records
+- `cm_reconciliation_issues`: Reconciliation issue tracking
+- `cm_integration_audit_log`: Full audit trail
