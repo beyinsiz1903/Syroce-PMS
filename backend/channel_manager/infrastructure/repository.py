@@ -19,6 +19,8 @@ MAPPINGS = "cm_mappings"
 SYNC_JOBS = "cm_sync_jobs"
 SYNC_EVENTS = "cm_sync_events"
 PUSH_RECEIPTS = "cm_push_receipts"
+CHANGE_RECORDS = "cm_change_records"
+SYNC_SNAPSHOTS = "cm_sync_snapshots"
 IMPORT_BATCHES = "cm_import_batches"
 IMPORTED_RESERVATIONS = "cm_imported_reservations"
 RECONCILIATION_ISSUES = "cm_reconciliation_issues"
@@ -119,6 +121,65 @@ class ChannelManagerRepository:
 
     async def get_sync_events(self, job_id: str, limit: int = 200) -> List[Dict]:
         return await db[SYNC_EVENTS].find({"job_id": job_id}, _NO_ID).to_list(limit)
+
+    async def get_sync_events_by_status(self, job_id: str, status: str) -> List[Dict]:
+        return await db[SYNC_EVENTS].find({"job_id": job_id, "status": status}, _NO_ID).to_list(500)
+
+    async def update_sync_events_batch(self, event_ids: List[str], updates: Dict) -> None:
+        if event_ids:
+            updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+            await db[SYNC_EVENTS].update_many({"id": {"$in": event_ids}}, {"$set": updates})
+
+    # ─── Change Records ─────────────────────────────────────────────────
+
+    async def create_change_records(self, docs: List[Dict]) -> None:
+        if docs:
+            await db[CHANGE_RECORDS].insert_many(docs)
+
+    async def get_pending_changes(self, tenant_id: str, connector_id: str, limit: int = 1000) -> List[Dict]:
+        return await db[CHANGE_RECORDS].find(
+            {"tenant_id": tenant_id, "connector_id": connector_id, "is_coalesced": False},
+            _NO_ID,
+        ).sort("created_at", 1).to_list(limit)
+
+    async def mark_changes_coalesced(self, change_ids: List[str], event_id: str) -> None:
+        if change_ids:
+            await db[CHANGE_RECORDS].update_many(
+                {"id": {"$in": change_ids}},
+                {"$set": {"is_coalesced": True, "coalesced_into": event_id}},
+            )
+
+    # ─── Sync Snapshots (last synced state for delta detection) ─────────
+
+    async def get_sync_snapshot(self, tenant_id: str, connector_id: str, room_type_id: str, date: str) -> Optional[Dict]:
+        return await db[SYNC_SNAPSHOTS].find_one(
+            {"tenant_id": tenant_id, "connector_id": connector_id, "room_type_id": room_type_id, "date": date},
+            _NO_ID,
+        )
+
+    async def upsert_sync_snapshot(self, doc: Dict) -> None:
+        await db[SYNC_SNAPSHOTS].replace_one(
+            {"tenant_id": doc["tenant_id"], "connector_id": doc["connector_id"],
+             "room_type_id": doc["room_type_id"], "date": doc["date"]},
+            doc, upsert=True,
+        )
+
+    async def upsert_sync_snapshots_batch(self, docs: List[Dict]) -> None:
+        for doc in docs:
+            await self.upsert_sync_snapshot(doc)
+
+    # ─── Manual Review Queue ────────────────────────────────────────────
+
+    async def get_manual_review_jobs(self, tenant_id: str, connector_id: Optional[str] = None, limit: int = 50) -> List[Dict]:
+        q: Dict[str, Any] = {"tenant_id": tenant_id, "status": "manual_review"}
+        if connector_id:
+            q["connector_id"] = connector_id
+        return await db[SYNC_JOBS].find(q, _NO_ID).sort("created_at", -1).to_list(limit)
+
+    async def get_failed_events_for_job(self, job_id: str) -> List[Dict]:
+        return await db[SYNC_EVENTS].find(
+            {"job_id": job_id, "status": {"$in": ["failed", "manual_review"]}}, _NO_ID,
+        ).to_list(200)
 
     # ─── Push Receipts ─────────────────────────────────────────────────
 

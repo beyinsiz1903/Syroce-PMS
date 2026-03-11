@@ -54,6 +54,9 @@ class TriggerSyncRequest(BaseModel):
     rate_plan_ids: Optional[List[str]] = None
     reason: str = ""
 
+class RetryJobRequest(BaseModel):
+    job_id: str
+
 class TriggerImportRequest(BaseModel):
     connector_id: str
     date_start: Optional[str] = None
@@ -316,7 +319,53 @@ async def get_sync_job(
     if not job:
         raise HTTPException(status_code=404, detail="Sync job not found")
     events = await repo.get_sync_events(job_id)
-    return {"job": job, "events": events}
+    return {"job": job, "events": events, "event_count": len(events)}
+
+@router.get("/sync/jobs/{job_id}/events")
+async def get_sync_job_events(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    from ..infrastructure.repository import ChannelManagerRepository
+    repo = ChannelManagerRepository()
+    job = await repo.get_sync_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Sync job not found")
+    events = await repo.get_sync_events(job_id, limit=500)
+    return {"events": events, "count": len(events)}
+
+@router.get("/sync/manual-review")
+async def get_manual_review_queue(
+    connector_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+):
+    svc = InventorySyncService()
+    queue = await svc.get_manual_review_queue(current_user.tenant_id, connector_id)
+    return {"queue": queue, "count": len(queue)}
+
+@router.post("/sync/manual-review/{job_id}/retry")
+async def retry_manual_review_job(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    svc = InventorySyncService()
+    try:
+        result = await svc.retry_failed_job(current_user.tenant_id, job_id, current_user.id)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/sync/manual-review/{job_id}/dismiss")
+async def dismiss_manual_review_job(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    svc = InventorySyncService()
+    try:
+        result = await svc.dismiss_manual_review(current_user.tenant_id, job_id, current_user.id)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 # ─── Reservation Import Endpoints ────────────────────────────────────
 

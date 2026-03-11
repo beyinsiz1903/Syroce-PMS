@@ -13,7 +13,8 @@ import {
   Network, Plus, RefreshCw, CheckCircle, AlertTriangle, XCircle,
   Clock, ArrowUpDown, Link2, Unlink, Shield, Activity, FileText,
   Download, Eye, ChevronRight, Zap, Settings, Database, Map,
-  Loader2, Wifi, Key, Home, BedDouble, DollarSign, FileCode
+  Loader2, Wifi, Key, Home, BedDouble, DollarSign, FileCode,
+  RotateCcw, AlertOctagon, ChevronDown, ChevronUp, Timer
 } from 'lucide-react';
 
 const API_BASE = '/channel-manager/v2';
@@ -42,14 +43,20 @@ const StatusBadge = ({ status }) => {
     error: 'bg-red-500/15 text-red-400 border-red-500/30',
     disabled: 'bg-red-500/15 text-red-300 border-red-500/30',
     completed: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    succeeded: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
     failed: 'bg-red-500/15 text-red-400 border-red-500/30',
     open: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
     queued: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+    pending: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+    batched: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+    dispatched: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
+    retrying: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+    manual_review: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
     in_progress: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
   };
   return (
     <Badge data-testid={`status-${status}`} className={`${map[status] || map.draft} border text-xs`}>
-      {status?.replace('_', ' ')}
+      {status?.replace(/_/g, ' ')}
     </Badge>
   );
 };
@@ -78,6 +85,11 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
   const [testResult, setTestResult] = useState(null);
   const [showTestResult, setShowTestResult] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [jobEvents, setJobEvents] = useState([]);
+  const [showJobDetail, setShowJobDetail] = useState(false);
+  const [jobDetailLoading, setJobDetailLoading] = useState(false);
+  const [manualReviewQueue, setManualReviewQueue] = useState([]);
 
   const fetchDashboard = useCallback(async () => {
     try {
@@ -98,16 +110,18 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
     setLoading(true);
     await fetchDashboard();
     try {
-      const [jobsRes, importRes, issuesRes, auditRes] = await Promise.all([
+      const [jobsRes, importRes, issuesRes, auditRes, reviewRes] = await Promise.all([
         axios.get(`${API_BASE}/sync/jobs`).catch(() => ({ data: { jobs: [] } })),
         axios.get(`${API_BASE}/reservations/imported`).catch(() => ({ data: { reservations: [] } })),
         axios.get(`${API_BASE}/reconciliation/issues`).catch(() => ({ data: { issues: [] } })),
         axios.get(`${API_BASE}/audit`).catch(() => ({ data: { logs: [] } })),
+        axios.get(`${API_BASE}/sync/manual-review`).catch(() => ({ data: { queue: [] } })),
       ]);
       setSyncJobs(jobsRes.data.jobs || []);
       setImportedReservations(importRes.data.reservations || []);
       setIssues(issuesRes.data.issues || []);
       setAuditLogs(auditRes.data.logs || []);
+      setManualReviewQueue(reviewRes.data.queue || []);
     } catch { /* silent */ }
     setLoading(false);
   }, [fetchDashboard]);
@@ -220,6 +234,36 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
       toast.success('Sorun çözüldü');
       fetchData();
     } catch { toast.error('Çözüm başarısız'); }
+  };
+
+  const handleViewJobDetail = async (jobId) => {
+    setJobDetailLoading(true);
+    setShowJobDetail(true);
+    setJobEvents([]);
+    try {
+      const { data } = await axios.get(`${API_BASE}/sync/jobs/${jobId}`);
+      setSelectedJob(data.job || null);
+      setJobEvents(data.events || []);
+    } catch { toast.error('Job detayları yüklenemedi'); }
+    setJobDetailLoading(false);
+  };
+
+  const handleRetryJob = async (jobId) => {
+    try {
+      const { data } = await axios.post(`${API_BASE}/sync/manual-review/${jobId}/retry`);
+      toast.success(`Retry tamamlandı: ${data.succeeded || 0} başarılı, ${data.still_failed || 0} hala başarısız`);
+      fetchData();
+      if (showJobDetail) handleViewJobDetail(jobId);
+    } catch (e) { toast.error(e.response?.data?.detail || 'Retry başarısız'); }
+  };
+
+  const handleDismissJob = async (jobId) => {
+    try {
+      await axios.post(`${API_BASE}/sync/manual-review/${jobId}/dismiss`);
+      toast.success('Job manual review\'dan kaldırıldı');
+      fetchData();
+      setShowJobDetail(false);
+    } catch (e) { toast.error(e.response?.data?.detail || 'Dismiss başarısız'); }
   };
 
   const hs = dashboard?.health_summary || {};
@@ -500,33 +544,122 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
 
           {/* Sync Jobs Tab */}
           <TabsContent value="sync">
-            <Card className="bg-slate-900/50 border-slate-800">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base text-white">Sync History</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {syncJobs.length > 0 ? (
-                  <div className="space-y-2">
-                    {syncJobs.map((j) => (
-                      <div key={j.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+            <div className="space-y-4">
+              {/* Manual Review Queue */}
+              {manualReviewQueue.length > 0 && (
+                <Card className="bg-rose-950/30 border-rose-800/50">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base text-rose-300 flex items-center gap-2">
+                      <AlertOctagon className="w-4 h-4" /> Manual Review Queue ({manualReviewQueue.length})
+                    </CardTitle>
+                    <CardDescription className="text-rose-400/70 text-xs">
+                      Bu job'lar maksimum retry sayısını aştı ve manuel inceleme gerektiriyor
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {manualReviewQueue.map((j) => (
+                      <div key={j.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 border border-rose-800/30">
                         <div className="flex items-center gap-3">
                           <div className="flex flex-col">
                             <span className="text-sm text-white font-medium">{j.sync_type} ({j.direction})</span>
-                            <span className="text-xs text-slate-500">{j.id?.slice(0, 8)} &middot; {new Date(j.created_at).toLocaleString('tr-TR')}</span>
+                            <span className="text-xs text-slate-500">{j.id?.slice(0, 8)} &middot; {j.last_error?.slice(0, 60)}</span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs text-slate-400">{j.completed_events || 0}/{j.total_events || 0} events</span>
-                          <StatusBadge status={j.status} />
+                        <div className="flex items-center gap-2">
+                          <Button size="sm" className="text-xs h-7 bg-amber-600 hover:bg-amber-700"
+                            onClick={() => handleRetryJob(j.id)} data-testid={`retry-job-${j.id?.slice(0, 8)}`}>
+                            <RotateCcw className="w-3 h-3 mr-1" /> Retry
+                          </Button>
+                          <Button size="sm" variant="outline" className="text-xs h-7 border-slate-700 text-slate-400"
+                            onClick={() => handleDismissJob(j.id)} data-testid={`dismiss-job-${j.id?.slice(0, 8)}`}>
+                            Dismiss
+                          </Button>
+                          <Button size="sm" variant="ghost" className="text-xs h-7 text-slate-400"
+                            onClick={() => handleViewJobDetail(j.id)}>
+                            <Eye className="w-3 h-3" />
+                          </Button>
                         </div>
                       </div>
                     ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-slate-500 text-sm">Henüz sync job yok</div>
-                )}
-              </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Sync History */}
+              <Card className="bg-slate-900/50 border-slate-800">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base text-white">Sync History</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {syncJobs.length > 0 ? (
+                    <div className="space-y-2">
+                      {syncJobs.map((j) => (
+                        <div key={j.id}
+                          className="flex items-center justify-between p-3 rounded-lg bg-slate-800/30 border border-slate-800 hover:border-slate-700 transition-colors cursor-pointer"
+                          onClick={() => handleViewJobDetail(j.id)}
+                          data-testid={`sync-job-row-${j.id?.slice(0, 8)}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-white font-medium">{j.sync_type} ({j.direction})</span>
+                                {j.change_types?.length > 0 && (
+                                  <div className="flex gap-1">
+                                    {j.change_types.slice(0, 3).map((ct) => (
+                                      <Badge key={ct} variant="outline" className="text-[10px] border-slate-700 text-slate-500 py-0">
+                                        {ct.replace('_changed', '').replace('_', ' ')}
+                                      </Badge>
+                                    ))}
+                                    {j.change_types.length > 3 && (
+                                      <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-500 py-0">+{j.change_types.length - 3}</Badge>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-xs text-slate-500">{j.id?.slice(0, 8)}</span>
+                                <span className="text-xs text-slate-600">&middot;</span>
+                                <span className="text-xs text-slate-500">{new Date(j.created_at).toLocaleString('tr-TR')}</span>
+                                {j.duration_ms != null && (
+                                  <>
+                                    <span className="text-xs text-slate-600">&middot;</span>
+                                    <span className="text-xs text-slate-500 font-mono flex items-center gap-0.5">
+                                      <Timer className="w-3 h-3" /> {j.duration_ms}ms
+                                    </span>
+                                  </>
+                                )}
+                                {j.triggered_by && (
+                                  <>
+                                    <span className="text-xs text-slate-600">&middot;</span>
+                                    <span className="text-xs text-slate-500">{j.triggered_by}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {j.total_changes_detected > 0 && (
+                              <div className="text-right">
+                                <span className="text-[10px] text-slate-500 block">delta</span>
+                                <span className="text-xs text-slate-400">{j.total_changes_after_coalescing || j.total_changes_detected}/{j.total_changes_detected}</span>
+                              </div>
+                            )}
+                            <div className="text-right">
+                              <span className="text-[10px] text-slate-500 block">events</span>
+                              <span className="text-xs text-slate-400">{j.completed_events || 0}/{j.total_events || 0}</span>
+                            </div>
+                            <StatusBadge status={j.status} />
+                            <ChevronRight className="w-4 h-4 text-slate-600" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-slate-500 text-sm">Henüz sync job yok</div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           {/* Reservations Tab */}
@@ -852,6 +985,181 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                       {testResult.provider}
                     </Badge>
                   )}
+                </div>
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+
+        {/* Sync Job Detail Dialog */}
+        <Dialog open={showJobDetail} onOpenChange={setShowJobDetail}>
+          <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="job-detail-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ArrowUpDown className="w-5 h-5" />
+                Sync Job Detayı
+              </DialogTitle>
+            </DialogHeader>
+
+            {jobDetailLoading ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-3">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
+                <p className="text-sm text-slate-400">Job detayları yükleniyor...</p>
+              </div>
+            ) : selectedJob ? (
+              <div className="space-y-4">
+                {/* Job Header */}
+                <div className="flex items-start justify-between p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-medium text-white">{selectedJob.sync_type} ({selectedJob.direction})</span>
+                      <StatusBadge status={selectedJob.status} />
+                    </div>
+                    <div className="text-xs text-slate-500 space-y-0.5">
+                      <p>ID: <span className="font-mono">{selectedJob.id?.slice(0, 12)}</span></p>
+                      <p>Tetikleyen: {selectedJob.triggered_by} {selectedJob.trigger_reason ? `— ${selectedJob.trigger_reason}` : ''}</p>
+                      <p>Tarih aralığı: {selectedJob.date_range_start} → {selectedJob.date_range_end}</p>
+                    </div>
+                  </div>
+                  <div className="text-right text-xs text-slate-400">
+                    {selectedJob.duration_ms != null && (
+                      <p className="font-mono text-sm text-slate-300">{selectedJob.duration_ms}ms</p>
+                    )}
+                    <p>{new Date(selectedJob.created_at).toLocaleString('tr-TR')}</p>
+                  </div>
+                </div>
+
+                {/* Lifecycle Timeline */}
+                <div className="flex items-center gap-1 px-2 overflow-x-auto">
+                  {['pending', 'batched', 'dispatched', 'succeeded'].map((step, idx) => {
+                    const isActive = selectedJob.status === step;
+                    const isFailed = selectedJob.status === 'failed' || selectedJob.status === 'manual_review';
+                    const isPast = ['pending', 'batched', 'dispatched', 'succeeded'].indexOf(selectedJob.status) > idx
+                      || (isFailed && idx <= 2);
+                    const isFailStep = idx === 3 && isFailed;
+                    return (
+                      <div key={step} className="flex items-center gap-1">
+                        <div className={`px-2.5 py-1 rounded text-[10px] font-medium border transition-colors ${
+                          isActive ? 'bg-blue-500/20 border-blue-500/40 text-blue-300' :
+                          isFailStep ? 'bg-red-500/20 border-red-500/40 text-red-300' :
+                          isPast ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                          'bg-slate-800/50 border-slate-700 text-slate-600'
+                        }`}>
+                          {isFailStep ? (selectedJob.status === 'manual_review' ? 'manual review' : 'failed') : step}
+                        </div>
+                        {idx < 3 && <ChevronRight className="w-3 h-3 text-slate-700" />}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Delta Stats */}
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="p-2.5 rounded-lg bg-slate-800/30 border border-slate-800 text-center">
+                    <p className="text-[10px] text-slate-500">Algılanan</p>
+                    <p className="text-lg font-bold text-white" data-testid="detected-count">{selectedJob.total_changes_detected || 0}</p>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-800/30 border border-slate-800 text-center">
+                    <p className="text-[10px] text-slate-500">Birleştirilen</p>
+                    <p className="text-lg font-bold text-white" data-testid="coalesced-count">{selectedJob.total_changes_after_coalescing || 0}</p>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
+                    <p className="text-[10px] text-emerald-400">Başarılı</p>
+                    <p className="text-lg font-bold text-emerald-300" data-testid="completed-count">{selectedJob.completed_events || 0}</p>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-center">
+                    <p className="text-[10px] text-red-400">Başarısız</p>
+                    <p className="text-lg font-bold text-red-300" data-testid="failed-count">{selectedJob.failed_events || 0}</p>
+                  </div>
+                </div>
+
+                {/* Change Types */}
+                {selectedJob.change_types?.length > 0 && (
+                  <div>
+                    <p className="text-xs text-slate-500 mb-1.5">Değişiklik Türleri</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedJob.change_types.map((ct) => (
+                        <Badge key={ct} variant="outline" className="text-xs border-slate-700 text-slate-400">
+                          {ct.replace('_changed', '').replace(/_/g, ' ')}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Error Display */}
+                {selectedJob.last_error && (
+                  <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                    <p className="text-xs text-red-400 font-medium mb-1">Son Hata</p>
+                    <p className="text-xs text-red-300 font-mono">{selectedJob.last_error}</p>
+                  </div>
+                )}
+
+                {/* Action Buttons for failed/manual_review */}
+                {(selectedJob.status === 'failed' || selectedJob.status === 'manual_review') && (
+                  <div className="flex gap-2">
+                    <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-xs"
+                      onClick={() => handleRetryJob(selectedJob.id)} data-testid="detail-retry-btn">
+                      <RotateCcw className="w-3 h-3 mr-1" /> Yeniden Dene
+                    </Button>
+                    {selectedJob.status === 'manual_review' && (
+                      <Button size="sm" variant="outline" className="text-xs border-slate-700 text-slate-400"
+                        onClick={() => handleDismissJob(selectedJob.id)} data-testid="detail-dismiss-btn">
+                        Dismiss
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* Event List */}
+                {jobEvents.length > 0 && (
+                  <div>
+                    <p className="text-xs text-slate-500 mb-2">Sync Events ({jobEvents.length})</p>
+                    <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                      {jobEvents.map((evt) => (
+                        <div key={evt.id} className="flex items-center justify-between p-2.5 rounded bg-slate-800/20 border border-slate-800/50" data-testid={`event-row-${evt.id?.slice(0, 8)}`}>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <StatusBadge status={evt.status} />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs text-white font-medium">{evt.sync_type}</span>
+                                {evt.change_type && (
+                                  <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-500 py-0">
+                                    {evt.change_type.replace('_changed', '').replace(/_/g, ' ')}
+                                  </Badge>
+                                )}
+                                <span className="text-[10px] text-slate-600">batch #{evt.batch_index}</span>
+                              </div>
+                              {evt.error_message && (
+                                <p className="text-[10px] text-red-400 truncate mt-0.5">{evt.error_message}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            {evt.coalesced_count > 1 && (
+                              <span className="text-[10px] text-slate-500">{evt.coalesced_count} merged</span>
+                            )}
+                            {evt.latency_ms != null && (
+                              <span className="text-xs font-mono text-slate-500">{evt.latency_ms}ms</span>
+                            )}
+                            {evt.retry_count > 0 && (
+                              <span className="text-[10px] text-amber-400">retry:{evt.retry_count}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Timestamps */}
+                <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+                  <div className="flex gap-4 text-[10px] text-slate-600">
+                    {selectedJob.started_at && <span>Start: {new Date(selectedJob.started_at).toLocaleTimeString('tr-TR')}</span>}
+                    {selectedJob.batched_at && <span>Batch: {new Date(selectedJob.batched_at).toLocaleTimeString('tr-TR')}</span>}
+                    {selectedJob.dispatched_at && <span>Dispatch: {new Date(selectedJob.dispatched_at).toLocaleTimeString('tr-TR')}</span>}
+                    {selectedJob.completed_at && <span>End: {new Date(selectedJob.completed_at).toLocaleTimeString('tr-TR')}</span>}
+                  </div>
                 </div>
               </div>
             ) : null}
