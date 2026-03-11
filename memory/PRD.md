@@ -36,22 +36,34 @@ Cloud-based Property Management System (PMS) for hospitality industry. Multi-ten
 ### Channel Manager v2 - HotelRunner Integration (March 2026)
 **Production-grade, connector-first channel manager architecture:**
 
-- **Domain Models**: ConnectorAccount, ExternalProperty/Room/Rate, MappingRule, SyncJob/SyncEvent/PushReceipt, ReservationImportBatch/ImportedReservation, ReconciliationIssue, IntegrationAuditLog
+- **Domain Models**: ConnectorAccount, ExternalProperty/Room/Rate, MappingRule, SyncJob/SyncEvent/PushReceipt/ChangeRecord, ReservationImportBatch/ImportedReservation, ReconciliationIssue, IntegrationAuditLog
 - **Canonical Data Model**: CanonicalRoomType, CanonicalRatePlan, InventorySlice, RestrictionSet, CanonicalReservation, CanonicalGuest, PriceBreakdown, TaxBreakdown
 - **HotelRunner Connector**: HTTP client, XML builder/parser (OTA protocol), mapper, auth, rate limiter, retry policy, typed errors
 - **Application Services**: ConnectorService, MappingService, InventorySyncService, ReservationImportService, ReconciliationService, ObservabilityService
 - **Infrastructure**: MongoDB repository with tenant isolation, indexes
 - **API**: 25+ endpoints under /api/channel-manager/v2/
 - **Frontend**: Integration Hub page at /app/integration-hub with dashboard, connector management, mapping UI, sync history, reservation imports, reconciliation, audit log
-- **Tests**: 23/25 backend tests passed, 100% frontend working
 
 ### Connection Test Detailed Flow (March 2026)
 **Production-grade connector test with 5-step validation:**
-- **Backend**: `test_connection_detailed()` in HotelRunnerClient validates auth, property access, room types, rate plans, and XML API connectivity separately
-- **Response Model**: ConnectionTestResponse with per-step `status` (pass/fail/warn), `latency_ms`, `error_code`, `message`
-- **Audit**: Each test writes `connection_tested` action to audit log with metadata (success, summary, latency, provider)
-- **Frontend**: Dialog with loading spinner, colored per-step results, Turkish error messages, monospace error codes
-- **Tests**: 8/8 backend pytest + frontend UI verification passed
+- Backend: `test_connection_detailed()` validates auth, property access, room types, rate plans, and XML API
+- Response Model: Per-step status, latency_ms, error_code, message
+- Audit: Each test writes `connection_tested` action to audit log
+- Frontend: Dialog with loading spinner, colored per-step results, Turkish error messages
+
+### Inventory Sync Engine (March 2026)
+**Production-grade delta sync engine with full job lifecycle:**
+- **SyncJob Lifecycle**: pending → batched → dispatched → succeeded | retrying → failed → manual_review
+- **Change Types**: availability_changed, stop_sell_changed, closed_to_arrival_changed, closed_to_departure_changed, minimum_stay_changed, rate_changed
+- **Delta Detection**: Compares current PMS state (rooms, bookings, restrictions, rates) against last-synced snapshots
+- **Coalescing**: Merges consecutive changes for same room_type/rate_plan/date_range into single updates
+- **Batching**: Groups coalesced updates into efficient API batches (50 per batch)
+- **Rate-Limit Aware Dispatch**: Token-bucket rate limiter + retry with exponential backoff
+- **Error Handling**: Retryable (RateLimitError, ProviderUnavailableError) vs non-retryable (AuthenticationError, ValidationError, XmlParseError)
+- **Manual Review Queue**: Jobs exceeding max retries escalated to manual_review for human intervention
+- **Audit Logging**: Every lifecycle transition and dispatch attempt logged with latency
+- **Separate Payloads**: Inventory (OTA_HotelAvailNotifRQ) and rates (OTA_HotelRateAmountNotifRQ) dispatched independently
+- **Frontend**: Enhanced Sync Jobs tab with change type badges, delta stats, clickable job detail dialog showing lifecycle timeline, stats grid, events list, retry/dismiss actions
 
 ### Semantic Migration (Previous Work)
 - Outbox event processing system (pending → processing → processed/failed/parked)
@@ -80,11 +92,14 @@ Cloud-based Property Management System (PMS) for hospitality industry. Multi-ten
 
 ## Prioritized Backlog
 
-### P0 - In Progress
+### P0 - Completed
 - ✅ Channel Manager v2 architecture + HotelRunner connector
 - ✅ Integration Hub admin panel
+- ✅ Connection Test detailed flow
+- ✅ Inventory Sync Engine with delta sync, coalescing, lifecycle, manual review
 
 ### P1 - Next
+- [ ] Reservation Import Engine business logic
 - [ ] HotelRunner sandbox testing with real credentials
 - [ ] CancelReservation write-path migration
 - [ ] Scheduled inventory sync (cron)
@@ -97,39 +112,34 @@ Cloud-based Property Management System (PMS) for hospitality industry. Multi-ten
 - [ ] Second connector (SiteMinder or Channex)
 
 ### P3 - Technical Debt
+- [ ] Remove old ChannelManagerModule.js
 - [ ] Refactor outbox worker to separate service
 - [ ] server.py monolith decomposition
 - [ ] Worker locking/leasing model
-- [ ] Health Score "why changed" history
-- [ ] stays Aggregate Migration
-- [ ] task_engine Implementation
-- [ ] platform Module Migration
-- [ ] integrations Hub
-- [ ] analytics_read_models Build-out
 
 ## Key API Endpoints
 
-### Channel Manager v2 (NEW)
+### Channel Manager v2
 - `GET/POST /api/channel-manager/v2/connectors` - Connector CRUD
+- `POST /api/channel-manager/v2/connectors/{id}/test` - Connection test
 - `GET/POST /api/channel-manager/v2/mappings/{connector_id}` - Mapping CRUD
-- `POST /api/channel-manager/v2/sync/inventory` - Push inventory
-- `POST /api/channel-manager/v2/sync/rates` - Push rates
+- `POST /api/channel-manager/v2/sync/inventory` - Push inventory (delta)
+- `POST /api/channel-manager/v2/sync/rates` - Push rates (delta)
+- `GET /api/channel-manager/v2/sync/jobs` - List sync jobs
+- `GET /api/channel-manager/v2/sync/jobs/{id}` - Job detail with events
+- `GET /api/channel-manager/v2/sync/jobs/{id}/events` - Job events
+- `GET /api/channel-manager/v2/sync/manual-review` - Manual review queue
+- `POST /api/channel-manager/v2/sync/manual-review/{id}/retry` - Retry failed job
+- `POST /api/channel-manager/v2/sync/manual-review/{id}/dismiss` - Dismiss review
 - `POST /api/channel-manager/v2/reservations/pull` - Pull reservations
 - `GET /api/channel-manager/v2/dashboard` - Dashboard overview
-- `GET /api/channel-manager/v2/health/{id}` - Connector health
 - `POST /api/channel-manager/v2/reconciliation/run` - Run reconciliation
 - `GET /api/channel-manager/v2/audit` - Audit log
 
-### Legacy
-- `PUT /api/reservations/semantic/{id}` - ModifyReservation
-- `/api/migration/observability` - Migration metrics
-- `/api/migration/health` - Migration health score
-
 ## 3rd Party Integrations
 - **HotelRunner** (Channel Manager): OTA/XML protocol, token + hr_id auth (sandbox mode)
-  - Note: HotelRunner API calls use test credentials - real sandbox credentials needed for live testing
 
 ## Testing Status
-- Channel Manager v2: Backend 92% (23/25), Frontend 100%
-- Test file: /app/backend/tests/test_channel_manager_v2.py
-- Test report: /app/test_reports/iteration_19.json
+- Inventory Sync Engine: Backend 17/17 (100%), Frontend 100%
+- Test file: /app/backend/tests/test_inventory_sync_engine.py
+- Test report: /app/test_reports/iteration_21.json

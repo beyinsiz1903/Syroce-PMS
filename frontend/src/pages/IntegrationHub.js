@@ -993,13 +993,14 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
 
         {/* Sync Job Detail Dialog */}
         <Dialog open={showJobDetail} onOpenChange={setShowJobDetail}>
-          <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="job-detail-dialog">
+          <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="job-detail-dialog" aria-describedby="job-detail-desc">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <ArrowUpDown className="w-5 h-5" />
                 Sync Job Detayı
               </DialogTitle>
             </DialogHeader>
+            <p id="job-detail-desc" className="sr-only">Sync job lifecycle detayları, değişiklik istatistikleri ve event listesi</p>
 
             {jobDetailLoading ? (
               <div className="flex flex-col items-center justify-center py-10 gap-3">
