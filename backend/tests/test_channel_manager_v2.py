@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 if not BASE_URL:
-    BASE_URL = "https://pms-production-ready.preview.emergentagent.com"
+    BASE_URL = "https://hotel-integration-2.preview.emergentagent.com"
 BASE_URL = BASE_URL.rstrip('/') + "/api"
 
 CM_V2_BASE = f"{BASE_URL}/channel-manager/v2"

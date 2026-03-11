@@ -13,7 +13,7 @@ import os
 import time
 from datetime import datetime
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://pms-production-ready.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://hotel-integration-2.preview.emergentagent.com')
 
 # Test credentials
 VALID_EMAIL = "demo@hotel.com"
