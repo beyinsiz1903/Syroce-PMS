@@ -35,6 +35,9 @@ from core.database import db
 
 logger = logging.getLogger("channel_manager.application.reservation_import_service")
 
+IMPORTED_RESERVATIONS = "cm_imported_reservations"
+IMPORT_BATCHES = "cm_import_batches"
+
 
 class ReservationImportService:
     """Orchestrates reservation pull, dedup, import, and acknowledgement."""
@@ -773,6 +776,131 @@ class ReservationImportService:
 
     async def get_imported_reservation_detail(self, tenant_id: str, reservation_id: str) -> Optional[Dict]:
         return await self._repo.get_imported_reservation_by_id(tenant_id, reservation_id)
+
+    # ─── Reservation Stats & Summary ────────────────────────────────
+
+    async def get_reservation_stats(self, tenant_id: str, connector_id: Optional[str] = None) -> Dict[str, Any]:
+        """Get reservation import stats for dashboard display."""
+        base_q: Dict[str, Any] = {"tenant_id": tenant_id}
+        if connector_id:
+            base_q["connector_id"] = connector_id
+
+        total = await db[IMPORTED_RESERVATIONS].count_documents(base_q)
+        # Status breakdown
+        status_pipeline = [
+            {"$match": base_q},
+            {"$group": {"_id": "$import_status", "count": {"$sum": 1}}},
+        ]
+        by_status: Dict[str, int] = {}
+        async for doc in db[IMPORTED_RESERVATIONS].aggregate(status_pipeline):
+            by_status[doc["_id"]] = doc["count"]
+
+        # ACK breakdown
+        ack_pipeline = [
+            {"$match": base_q},
+            {"$group": {"_id": "$ack_status", "count": {"$sum": 1}}},
+        ]
+        by_ack: Dict[str, int] = {}
+        async for doc in db[IMPORTED_RESERVATIONS].aggregate(ack_pipeline):
+            by_ack[doc["_id"]] = doc["count"]
+
+        # Review queue count
+        review_q = {**base_q, "import_status": {"$in": ["review", "conflict", "out_of_order"]}}
+        review_count = await db[IMPORTED_RESERVATIONS].count_documents(review_q)
+
+        # Failed ACK count
+        ack_failed_count = by_ack.get("ack_failed", 0)
+
+        # Recent batches (last 5)
+        batch_q: Dict[str, Any] = {"tenant_id": tenant_id}
+        if connector_id:
+            batch_q["connector_id"] = connector_id
+        recent_batches = await db[IMPORT_BATCHES].find(batch_q, {"_id": 0}).sort("started_at", -1).to_list(5)
+
+        return {
+            "total_reservations": total,
+            "by_status": by_status,
+            "by_ack_status": by_ack,
+            "review_queue_count": review_count,
+            "ack_failed_count": ack_failed_count,
+            "recent_batches": recent_batches,
+            "success_rate": round(
+                (by_status.get("created", 0) + by_status.get("modified", 0) + by_status.get("cancelled", 0))
+                / max(total, 1) * 100, 1
+            ),
+        }
+
+    # ─── Retry Failed ACKs ──────────────────────────────────────────
+
+    async def retry_failed_acks(self, tenant_id: str, connector_id: str, actor_id: Optional[str] = None) -> Dict[str, Any]:
+        """Retry all failed ACKs for a connector."""
+        connector_doc = await self._repo.get_connector(tenant_id, connector_id)
+        if not connector_doc:
+            raise ValueError("Connector not found")
+
+        connector = ConnectorAccount.from_doc(connector_doc)
+        property_id = connector.property_id
+
+        # Get all ack_failed reservations
+        failed_q = {
+            "tenant_id": tenant_id,
+            "connector_id": connector_id,
+            "ack_status": AckStatus.ACK_FAILED.value,
+        }
+        failed_docs = await db[IMPORTED_RESERVATIONS].find(failed_q, {"_id": 0}).to_list(200)
+
+        if not failed_docs:
+            return {"retried": 0, "message": "No failed ACKs to retry"}
+
+        # Mark all as retrying
+        for doc in failed_docs:
+            await self._repo.update_imported_reservation(tenant_id, doc["id"], {
+                "ack_status": AckStatus.ACK_RETRYING.value,
+            })
+
+        # Build ACK items
+        ack_items = [
+            {"message_uid": doc.get("message_uid", ""), "pms_number": doc.get("pms_booking_id")}
+            for doc in failed_docs if doc.get("message_uid")
+        ]
+
+        sent = 0
+        failed = 0
+        try:
+            result = await self._acknowledge_to_provider(connector, ack_items)
+            sent = result.get("sent", 0)
+            failed = result.get("failed", 0)
+            for doc in failed_docs:
+                await self._repo.update_imported_reservation(tenant_id, doc["id"], {
+                    "ack_status": AckStatus.ACK_SENT.value,
+                    "ack_sent_at": datetime.now(timezone.utc).isoformat(),
+                })
+            await self._audit(
+                tenant_id, property_id, connector_id,
+                AuditAction.RESERVATION_ACK_SENT,
+                actor_id=actor_id,
+                metadata={"action": "retry_acks", "sent": sent, "failed": failed},
+            )
+        except ConnectorError as e:
+            for doc in failed_docs:
+                await self._repo.update_imported_reservation(tenant_id, doc["id"], {
+                    "ack_status": AckStatus.ACK_FAILED.value,
+                    "ack_failed_reason": f"Retry failed: {e.message}",
+                })
+            failed = len(ack_items)
+            await self._audit(
+                tenant_id, property_id, connector_id,
+                AuditAction.RESERVATION_ACK_FAILED,
+                actor_id=actor_id,
+                metadata={"action": "retry_acks_failed", "error": e.message},
+            )
+
+        return {"retried": len(failed_docs), "ack_sent": sent, "ack_failed": failed}
+
+    # ─── Audit Log Query ─────────────────────────────────────────────
+
+    async def get_audit_trail(self, tenant_id: str, connector_id: Optional[str] = None, limit: int = 100) -> List[Dict]:
+        return await self._repo.get_audit_logs(tenant_id, connector_id, limit)
 
     # ─── Audit ───────────────────────────────────────────────────────
 

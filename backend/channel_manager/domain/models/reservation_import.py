@@ -52,6 +52,7 @@ class AckStatus(str, Enum):
     ACK_PENDING = "ack_pending"
     ACK_SENT = "ack_sent"
     ACK_FAILED = "ack_failed"
+    ACK_RETRYING = "ack_retrying"
     NOT_REQUIRED = "not_required"
 
 

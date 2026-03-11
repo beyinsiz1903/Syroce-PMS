@@ -57,6 +57,28 @@ class HistoricalMetricsService:
                 {"tenant_id": tenant_id, "connector_id": cid, "ack_status": "ack_failed"}
             )
 
+            # Reservation import metrics
+            import_created = await db.cm_imported_reservations.count_documents(
+                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "created"}
+            )
+            import_modified = await db.cm_imported_reservations.count_documents(
+                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "modified"}
+            )
+            import_cancelled = await db.cm_imported_reservations.count_documents(
+                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "cancelled"}
+            )
+            import_failed = await db.cm_imported_reservations.count_documents(
+                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "failed"}
+            )
+            import_review = await db.cm_imported_reservations.count_documents(
+                {"tenant_id": tenant_id, "connector_id": cid, "import_status": {"$in": ["review", "conflict", "out_of_order"]}}
+            )
+            import_duplicate = await db.cm_imported_reservations.count_documents(
+                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "duplicate"}
+            )
+            import_success = import_created + import_modified + import_cancelled
+            import_success_rate = round(import_success / max(total_imports, 1) * 100, 1)
+
             # Sync stats
             jobs = metrics.get("sync_jobs", {})
             total_sync = sum(jobs.values())
@@ -105,6 +127,15 @@ class HistoricalMetricsService:
                     "error_ack_failed": error_summary.get("ack_failed", 0),
                     "recon_total_open": recon_summary.get("total_open", 0),
                     "recon_by_severity": recon_summary.get("by_severity", {}),
+                    # Reservation import metrics
+                    "import_total": total_imports,
+                    "import_created": import_created,
+                    "import_modified": import_modified,
+                    "import_cancelled": import_cancelled,
+                    "import_failed": import_failed,
+                    "import_review": import_review,
+                    "import_duplicate": import_duplicate,
+                    "import_success_rate": import_success_rate,
                 },
                 "created_at": now.isoformat(),
             }

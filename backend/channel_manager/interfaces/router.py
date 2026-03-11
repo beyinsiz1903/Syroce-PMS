@@ -568,6 +568,35 @@ async def get_import_batch_detail(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
+@router.get("/reservations/stats")
+async def get_reservation_stats(
+    connector_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+):
+    svc = ReservationImportService()
+    return await svc.get_reservation_stats(current_user.tenant_id, connector_id)
+
+@router.post("/reservations/retry-acks")
+async def retry_failed_acks(
+    connector_id: str = Body(..., embed=True),
+    current_user: User = Depends(get_current_user),
+):
+    svc = ReservationImportService()
+    try:
+        return await svc.retry_failed_acks(current_user.tenant_id, connector_id, current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/reservations/audit-trail")
+async def get_reservation_audit_trail(
+    connector_id: Optional[str] = None,
+    limit: int = Query(100, le=500),
+    current_user: User = Depends(get_current_user),
+):
+    svc = ReservationImportService()
+    logs = await svc.get_audit_trail(current_user.tenant_id, connector_id, limit)
+    return {"audit_logs": logs, "count": len(logs)}
+
 # ─── Reconciliation Endpoints ────────────────────────────────────────
 
 @router.post("/reconciliation/run")

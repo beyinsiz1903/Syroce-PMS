@@ -34,6 +34,8 @@ DEFAULT_RULES = [
     {"trigger": "retry_spike", "threshold": 30, "severity": "warning", "description": "Retry rate exceeded threshold %", "enabled": True},
     {"trigger": "recon_critical_increase", "threshold": 1, "severity": "critical", "description": "New critical reconciliation issues", "enabled": True},
     {"trigger": "provider_unavailable", "threshold": 1, "severity": "critical", "description": "Provider is unreachable", "enabled": True},
+    {"trigger": "import_failure_spike", "threshold": 5, "severity": "warning", "description": "Reservation import failures exceeded threshold", "enabled": True},
+    {"trigger": "import_failure_spike", "threshold": 10, "severity": "critical", "description": "Critical reservation import failure count", "enabled": True},
 ]
 
 
@@ -171,6 +173,12 @@ class AlertingService:
         elif trigger == "provider_unavailable":
             return connector.get("status") == "error"
 
+        elif trigger == "import_failure_spike":
+            failed_imports = await db.cm_imported_reservations.count_documents({
+                "tenant_id": tenant_id, "connector_id": cid, "import_status": "failed",
+            })
+            return failed_imports >= threshold
+
         return False
 
     async def _create_alert(self, tenant_id: str, connector: Dict, rule: Dict) -> Dict:
@@ -220,6 +228,7 @@ class AlertingService:
             "retry_spike": "Investigate root cause of frequent retries",
             "recon_critical_increase": "Review critical reconciliation issues immediately",
             "provider_unavailable": "Check provider status and network connectivity",
+            "import_failure_spike": "Review failed reservation imports and check mapping configuration",
         }
         return actions.get(trigger, "Investigate the issue")
 

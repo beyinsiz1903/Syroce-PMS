@@ -195,6 +195,12 @@ class MultiPropertyService:
             acks = await db.cm_imported_reservations.count_documents(
                 {"tenant_id": tenant_id, "connector_id": cid, "ack_status": "ack_sent"}
             )
+            import_failed_count = await db.cm_imported_reservations.count_documents(
+                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "failed"}
+            )
+            import_review_count = await db.cm_imported_reservations.count_documents(
+                {"tenant_id": tenant_id, "connector_id": cid, "import_status": {"$in": ["review", "conflict", "out_of_order"]}}
+            )
             total_imports += imports
             total_ack_sent += acks
 
@@ -208,12 +214,20 @@ class MultiPropertyService:
                 "provider": c.get("provider", ""),
                 "status": c.get("status", ""),
                 "health_score": health.get("health_score", 0),
+                "import_total": imports,
+                "import_failed": import_failed_count,
+                "import_review": import_review_count,
             })
 
         avg_health = round(total_health / max(len(connectors), 1))
         sync_rate = round(total_succeeded / max(total_syncs, 1) * 100, 1)
         ack_rate = round(total_ack_sent / max(total_imports, 1) * 100, 1)
         retry_rate = round(total_retries / max(total_syncs, 1) * 100, 1)
+        total_import_failed = sum(c.get("import_failed", 0) for c in connector_details)
+        total_import_review = sum(c.get("import_review", 0) for c in connector_details)
+        import_success_rate = round(
+            (total_imports - total_import_failed - total_import_review) / max(total_imports, 1) * 100, 1
+        )
 
         return {
             "property_id": property_id,
@@ -228,6 +242,10 @@ class MultiPropertyService:
             "succeeded_syncs": total_succeeded,
             "failed_syncs": total_failed,
             "open_issues": open_issues,
+            "total_imports": total_imports,
+            "import_failed": total_import_failed,
+            "import_review": total_import_review,
+            "import_success_rate": import_success_rate,
             "connectors": connector_details,
         }
 

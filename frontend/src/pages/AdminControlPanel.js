@@ -1,6 +1,6 @@
 import { useState, Suspense, lazy } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-import { Loader2, Activity, AlertTriangle, Clock, Key, AlertOctagon, BarChart3, Shield, Bell, TrendingUp, Boxes, Building2 } from 'lucide-react';
+import { Loader2, Activity, AlertTriangle, Clock, Key, AlertOctagon, BarChart3, Shield, Bell, TrendingUp, Boxes, Building2, FileText } from 'lucide-react';
 
 const SyncHealthTab = lazy(() => import('./admin/tabs/SyncHealthTab'));
 const ReconciliationTab = lazy(() => import('./admin/tabs/ReconciliationTab'));
@@ -13,9 +13,11 @@ const AlertsTab = lazy(() => import('./admin/tabs/AlertsTab'));
 const ReliabilityTab = lazy(() => import('./admin/tabs/ReliabilityTab'));
 const SandboxValidationTab = lazy(() => import('./admin/tabs/SandboxValidationTab'));
 const MultiPropertyTab = lazy(() => import('./admin/tabs/MultiPropertyTab'));
+const ReservationsTab = lazy(() => import('./admin/tabs/ReservationsTab'));
 
 const TABS = [
   { id: 'sync-health', label: 'Sync Health', icon: Activity },
+  { id: 'reservations', label: 'Reservations', icon: FileText },
   { id: 'alerts', label: 'Alerts', icon: Bell },
   { id: 'reliability', label: 'Reliability', icon: TrendingUp },
   { id: 'reconciliation', label: 'Reconciliation', icon: AlertTriangle },
@@ -31,6 +33,7 @@ const TABS = [
 const TabContent = ({ tabId }) => {
   const map = {
     'sync-health': <SyncHealthTab />,
+    'reservations': <ReservationsTab />,
     'alerts': <AlertsTab />,
     'reliability': <ReliabilityTab />,
     'reconciliation': <ReconciliationTab />,

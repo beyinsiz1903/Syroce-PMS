@@ -63,8 +63,22 @@ class ReliabilityService:
         # ─── Recon frequency ───
         recon_summary = await self._repo.get_reconciliation_summary(tenant_id, connector_id)
 
+        # ─── Reservation Import Metrics ───
+        import_total = await db.cm_imported_reservations.count_documents(
+            {"tenant_id": tenant_id, "connector_id": connector_id}
+        )
+        import_failed = await db.cm_imported_reservations.count_documents(
+            {"tenant_id": tenant_id, "connector_id": connector_id, "import_status": "failed"}
+        )
+        import_review = await db.cm_imported_reservations.count_documents(
+            {"tenant_id": tenant_id, "connector_id": connector_id, "import_status": {"$in": ["review", "conflict", "out_of_order"]}}
+        )
+        import_success_rate = round(
+            (import_total - import_failed - import_review) / max(import_total, 1) * 100, 1
+        )
+
         # ─── Classification ───
-        classification = self._classify_connector(sync_success_rate, uptime, mttr, len(failed))
+        classification = self._classify_connector(sync_success_rate, uptime, mttr, len(failed), import_success_rate)
 
         return {
             "connector_id": connector_id,
@@ -84,6 +98,10 @@ class ReliabilityService:
             "total_failed": len(failed),
             "total_retries": len(retry_jobs),
             "recon_open_issues": recon_summary.get("total_open", 0),
+            "import_total": import_total,
+            "import_failed": import_failed,
+            "import_review": import_review,
+            "import_success_rate": import_success_rate,
             "failure_patterns": patterns,
             "classification": classification,
             "calculated_at": datetime.now(timezone.utc).isoformat(),
@@ -255,13 +273,14 @@ class ReliabilityService:
         return patterns
 
     @staticmethod
-    def _classify_connector(success_rate: float, uptime: float, mttr: float, failed_count: int) -> str:
-        """Classify connector reliability."""
-        if success_rate >= 95 and uptime >= 98:
+    def _classify_connector(success_rate: float, uptime: float, mttr: float, failed_count: int, import_success_rate: float = 100.0) -> str:
+        """Classify connector reliability including import health."""
+        combined_rate = (success_rate * 0.6 + import_success_rate * 0.4)
+        if combined_rate >= 95 and uptime >= 98:
             return "stable"
-        elif success_rate >= 80 and uptime >= 90:
+        elif combined_rate >= 80 and uptime >= 90:
             return "healthy"
-        elif success_rate >= 50 or uptime >= 70:
+        elif combined_rate >= 50 or uptime >= 70:
             return "degraded"
         else:
             return "unstable"
