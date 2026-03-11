@@ -66,6 +66,9 @@ class ApproveReviewRequest(BaseModel):
     reservation_id: str
     room_type_override: Optional[str] = None
 
+class ReprocessReviewRequest(BaseModel):
+    room_type_override: Optional[str] = None
+
 class ResolveIssueRequest(BaseModel):
     resolution: str
 
@@ -397,6 +400,17 @@ async def list_imported_reservations(
     )
     return {"reservations": reservations, "count": len(reservations)}
 
+@router.get("/reservations/imported/{reservation_id}")
+async def get_imported_reservation_detail(
+    reservation_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    svc = ReservationImportService()
+    detail = await svc.get_imported_reservation_detail(current_user.tenant_id, reservation_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Imported reservation not found")
+    return detail
+
 @router.get("/reservations/review-queue")
 async def get_review_queue(
     connector_id: Optional[str] = None,
@@ -405,6 +419,37 @@ async def get_review_queue(
     svc = ReservationImportService()
     queue = await svc.get_review_queue(current_user.tenant_id, connector_id)
     return {"queue": queue, "count": len(queue)}
+
+@router.post("/reservations/review-queue/{reservation_id}/reprocess")
+async def reprocess_review_reservation(
+    reservation_id: str,
+    req: ReprocessReviewRequest = None,
+    current_user: User = Depends(get_current_user),
+):
+    svc = ReservationImportService()
+    try:
+        override = req.room_type_override if req else None
+        result = await svc.reprocess_review(
+            current_user.tenant_id, reservation_id,
+            current_user.id, override,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/reservations/review-queue/{reservation_id}/dismiss")
+async def dismiss_review_reservation(
+    reservation_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    svc = ReservationImportService()
+    try:
+        result = await svc.dismiss_review(
+            current_user.tenant_id, reservation_id, current_user.id,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/reservations/approve")
 async def approve_review(
@@ -426,6 +471,18 @@ async def list_import_batches(
     svc = ReservationImportService()
     batches = await svc.get_import_batches(current_user.tenant_id, connector_id)
     return {"batches": batches, "count": len(batches)}
+
+@router.get("/reservations/batches/{batch_id}")
+async def get_import_batch_detail(
+    batch_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    svc = ReservationImportService()
+    try:
+        detail = await svc.get_import_batch_detail(current_user.tenant_id, batch_id)
+        return detail
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 # ─── Reconciliation Endpoints ────────────────────────────────────────
 

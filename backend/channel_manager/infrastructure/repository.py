@@ -209,6 +209,17 @@ class ChannelManagerRepository:
             doc, upsert=True,
         )
 
+    async def update_imported_reservation(self, tenant_id: str, reservation_id: str, updates: Dict) -> None:
+        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await db[IMPORTED_RESERVATIONS].update_one(
+            {"tenant_id": tenant_id, "id": reservation_id}, {"$set": updates},
+        )
+
+    async def get_imported_reservation_by_id(self, tenant_id: str, reservation_id: str) -> Optional[Dict]:
+        return await db[IMPORTED_RESERVATIONS].find_one(
+            {"tenant_id": tenant_id, "id": reservation_id}, _NO_ID,
+        )
+
     async def get_imported_reservation_by_external_id(self, tenant_id: str, connector_id: str, external_id: str) -> Optional[Dict]:
         return await db[IMPORTED_RESERVATIONS].find_one(
             {"tenant_id": tenant_id, "connector_id": connector_id, "external_reservation_id": external_id}, _NO_ID,
@@ -225,11 +236,29 @@ class ChannelManagerRepository:
             q["import_status"] = status
         return await db[IMPORTED_RESERVATIONS].find(q, _NO_ID).sort("created_at", -1).to_list(limit)
 
+    async def get_reservation_review_queue(
+        self, tenant_id: str, connector_id: Optional[str] = None, limit: int = 100,
+    ) -> List[Dict]:
+        q: Dict[str, Any] = {"tenant_id": tenant_id, "import_status": {"$in": ["review", "conflict", "out_of_order"]}}
+        if connector_id:
+            q["connector_id"] = connector_id
+        return await db[IMPORTED_RESERVATIONS].find(q, _NO_ID).sort("created_at", -1).to_list(limit)
+
+    async def get_imported_reservations_by_batch(self, batch_id: str, limit: int = 500) -> List[Dict]:
+        return await db[IMPORTED_RESERVATIONS].find(
+            {"batch_id": batch_id}, _NO_ID,
+        ).sort("created_at", -1).to_list(limit)
+
     async def count_imported_reservations(self, tenant_id: str, connector_id: str, status: Optional[str] = None) -> int:
         q: Dict[str, Any] = {"tenant_id": tenant_id, "connector_id": connector_id}
         if status:
             q["import_status"] = status
         return await db[IMPORTED_RESERVATIONS].count_documents(q)
+
+    async def get_import_batch_by_id(self, tenant_id: str, batch_id: str) -> Optional[Dict]:
+        return await db[IMPORT_BATCHES].find_one(
+            {"tenant_id": tenant_id, "id": batch_id}, _NO_ID,
+        )
 
     # ─── Reconciliation Issues ─────────────────────────────────────────
 

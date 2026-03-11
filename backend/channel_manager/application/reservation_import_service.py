@@ -1,13 +1,16 @@
 """
-Reservation Import Service - Pulls and imports reservations from external providers.
+Reservation Import Service - Production-grade engine for pulling and importing
+reservations from external providers.
 
 Features:
-  - Idempotent import (duplicate protection via external_reservation_id)
-  - Modification detection and handling
-  - Cancellation processing
-  - Manual review queue for edge cases
-  - Acknowledgement to provider after successful import
-  - Audit trail for every import action
+  - Idempotent import (connector_id + external_reservation_id + payload_fingerprint)
+  - Delta detection: new, duplicate, modification, cancellation, out_of_order
+  - Cancellation rules: checked-in → review, already_cancelled → duplicate_cancel,
+    modification after cancel → conflict
+  - Manual review queue with review_reason_code and suggested_action
+  - Acknowledgement tracking: ack_pending → ack_sent / ack_failed
+  - Batch-level summary
+  - Full audit trail
 """
 import logging
 import uuid
@@ -15,7 +18,10 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 
-from ..domain.models.reservation_import import ReservationImportBatch, ImportedReservation, ImportStatus
+from ..domain.models.reservation_import import (
+    ReservationImportBatch, ImportedReservation, ImportStatus,
+    ReviewReasonCode, AckStatus,
+)
 from ..domain.models.connector_account import ConnectorAccount, ConnectorProvider
 from ..domain.models.canonical import CanonicalReservation, ReservationStatus
 from ..domain.models.audit import IntegrationAuditLog, AuditAction
@@ -37,6 +43,8 @@ class ReservationImportService:
         self._repo = repo or ChannelManagerRepository()
         self._mapper = HotelRunnerMapper()
 
+    # ─── Main Entry Point ────────────────────────────────────────────
+
     async def pull_and_import(
         self,
         tenant_id: str,
@@ -46,8 +54,8 @@ class ReservationImportService:
         triggered_by: str = "system",
     ) -> Dict[str, Any]:
         """
-        Main entry point: pull reservations from provider and import into PMS.
-        Returns batch summary with counts of new, modified, cancelled, duplicate, review, failed.
+        Pull reservations from provider, process each with full lifecycle,
+        acknowledge successes, and return batch summary.
         """
         connector_doc = await self._repo.get_connector(tenant_id, connector_id)
         if not connector_doc:
@@ -69,25 +77,31 @@ class ReservationImportService:
         )
         await self._repo.create_import_batch(batch.to_doc())
 
+        await self._audit(
+            tenant_id, property_id, connector_id,
+            AuditAction.RESERVATION_IMPORT_STARTED,
+            metadata={"batch_id": batch.id, "triggered_by": triggered_by},
+        )
+
         start_time = time.monotonic()
 
         try:
-            # Pull from provider
             raw_reservations = await self._pull_from_provider(connector, date_start, date_end)
-            batch_updates = {"total_reservations": len(raw_reservations)}
-            await self._repo.update_import_batch(batch.id, batch_updates)
+            await self._repo.update_import_batch(batch.id, {"total_reservations": len(raw_reservations)})
 
             if not raw_reservations:
+                duration = int((time.monotonic() - start_time) * 1000)
                 await self._repo.update_import_batch(batch.id, {
                     "status": "completed",
                     "completed_at": datetime.now(timezone.utc).isoformat(),
-                    "duration_ms": int((time.monotonic() - start_time) * 1000),
+                    "duration_ms": duration,
                 })
+                await self._audit(
+                    tenant_id, property_id, connector_id,
+                    AuditAction.RESERVATION_IMPORT_COMPLETED,
+                    metadata={"batch_id": batch.id, "total": 0},
+                )
                 return {"batch_id": batch.id, "status": "completed", "total": 0}
-
-            # Process each reservation
-            stats = {"new": 0, "modified": 0, "cancelled": 0, "duplicate": 0, "review": 0, "failed": 0}
-            acknowledged_ids = []
 
             # Get mapping lookups
             from ..application.mapping_service import MappingService
@@ -95,22 +109,61 @@ class ReservationImportService:
             room_reverse = await mapping_svc.get_reverse_lookup(tenant_id, connector_id, "room_type")
             rate_reverse = await mapping_svc.get_reverse_lookup(tenant_id, connector_id, "rate_plan")
 
+            # Process each reservation
+            stats = {
+                "new": 0, "modified": 0, "cancelled": 0, "duplicate": 0,
+                "duplicate_cancel": 0, "conflict": 0, "review": 0,
+                "failed": 0, "out_of_order": 0,
+            }
+            ack_results = {"sent": 0, "failed": 0}
+            ack_pending_ids = []
+
             for raw in raw_reservations:
                 canonical = self._mapper.reservation_to_canonical(raw)
                 result = await self._process_single_reservation(
                     tenant_id, property_id, connector_id, batch.id,
                     canonical, room_reverse, rate_reverse,
                 )
-                stats[result["action"]] = stats.get(result["action"], 0) + 1
+                action = result["action"]
+                stats[action] = stats.get(action, 0) + 1
                 if result.get("acknowledge"):
-                    acknowledged_ids.append(canonical.external_id)
+                    ack_pending_ids.append({
+                        "external_id": canonical.external_id,
+                        "reservation_id": result.get("reservation_id"),
+                    })
 
             # Acknowledge to provider
-            if acknowledged_ids:
+            if ack_pending_ids:
+                ext_ids = [a["external_id"] for a in ack_pending_ids]
+                res_ids = [a["reservation_id"] for a in ack_pending_ids]
                 try:
-                    await self._acknowledge_to_provider(connector, acknowledged_ids)
+                    await self._acknowledge_to_provider(connector, ext_ids)
+                    for rid in res_ids:
+                        if rid:
+                            await self._repo.update_imported_reservation(tenant_id, rid, {
+                                "ack_status": AckStatus.ACK_SENT.value,
+                                "ack_sent_at": datetime.now(timezone.utc).isoformat(),
+                            })
+                    ack_results["sent"] = len(ext_ids)
+                    await self._audit(
+                        tenant_id, property_id, connector_id,
+                        AuditAction.RESERVATION_ACK_SENT,
+                        metadata={"batch_id": batch.id, "count": len(ext_ids)},
+                    )
                 except ConnectorError as e:
                     logger.warning("Acknowledgement failed: %s", e.message)
+                    for rid in res_ids:
+                        if rid:
+                            await self._repo.update_imported_reservation(tenant_id, rid, {
+                                "ack_status": AckStatus.ACK_FAILED.value,
+                                "ack_failed_reason": e.message,
+                            })
+                    ack_results["failed"] = len(ext_ids)
+                    await self._audit(
+                        tenant_id, property_id, connector_id,
+                        AuditAction.RESERVATION_ACK_FAILED,
+                        metadata={"batch_id": batch.id, "error": e.message},
+                    )
 
             # Finalize batch
             duration = int((time.monotonic() - start_time) * 1000)
@@ -120,28 +173,49 @@ class ReservationImportService:
                 "modified_count": stats["modified"],
                 "cancelled_count": stats["cancelled"],
                 "duplicate_count": stats["duplicate"],
+                "duplicate_cancel_count": stats["duplicate_cancel"],
+                "conflict_count": stats["conflict"],
                 "review_count": stats["review"],
                 "failed_count": stats["failed"],
+                "out_of_order_count": stats["out_of_order"],
+                "ack_sent_count": ack_results["sent"],
+                "ack_failed_count": ack_results["failed"],
                 "completed_at": datetime.now(timezone.utc).isoformat(),
                 "duration_ms": duration,
             })
 
             await self._audit(
                 tenant_id, property_id, connector_id,
-                AuditAction.RESERVATIONS_PULLED,
+                AuditAction.RESERVATION_IMPORT_COMPLETED,
                 metadata={"batch_id": batch.id, "total": len(raw_reservations), **stats},
             )
 
-            return {"batch_id": batch.id, "status": "completed", "total": len(raw_reservations), **stats}
+            return {
+                "batch_id": batch.id,
+                "status": "completed",
+                "total": len(raw_reservations),
+                "duration_ms": duration,
+                **stats,
+                "ack_sent": ack_results["sent"],
+                "ack_failed": ack_results["failed"],
+            }
 
         except Exception as e:
+            duration = int((time.monotonic() - start_time) * 1000)
             await self._repo.update_import_batch(batch.id, {
                 "status": "failed",
                 "completed_at": datetime.now(timezone.utc).isoformat(),
-                "duration_ms": int((time.monotonic() - start_time) * 1000),
+                "duration_ms": duration,
             })
+            await self._audit(
+                tenant_id, property_id, connector_id,
+                AuditAction.RESERVATION_IMPORT_FAILED,
+                metadata={"batch_id": batch.id, "error": str(e)},
+            )
             logger.error("Import batch %s failed: %s", batch.id, str(e))
             raise
+
+    # ─── Single Reservation Processing ───────────────────────────────
 
     async def _process_single_reservation(
         self, tenant_id: str, property_id: str, connector_id: str, batch_id: str,
@@ -149,9 +223,12 @@ class ReservationImportService:
         room_reverse: Dict[str, str],
         rate_reverse: Dict[str, str],
     ) -> Dict[str, Any]:
-        """Process a single reservation: dedup, import/modify/cancel."""
+        """Process a single reservation with full lifecycle handling."""
 
-        # Check for existing import (idempotency)
+        # Compute payload fingerprint
+        fingerprint = ImportedReservation.compute_fingerprint(canonical.model_dump())
+
+        # Check for existing import
         existing = await self._repo.get_imported_reservation_by_external_id(
             tenant_id, connector_id, canonical.external_id,
         )
@@ -168,6 +245,7 @@ class ReservationImportService:
             batch_id=batch_id,
             external_reservation_id=canonical.external_id,
             external_confirmation_number=canonical.confirmation_number,
+            payload_fingerprint=fingerprint,
             channel_name=canonical.channel_name,
             guest_name=f"{canonical.guest.first_name} {canonical.guest.last_name}".strip(),
             guest_email=canonical.guest.email,
@@ -187,61 +265,212 @@ class ReservationImportService:
             raw_payload=canonical.raw_provider_data,
         )
 
-        # Determine action
+        # ── Cancellation path ──────────────────────────────────────
         if canonical.status == ReservationStatus.CANCELLED:
-            imported.is_cancellation = True
-            if existing and existing.get("pms_booking_id"):
-                # Cancel existing PMS booking
-                await self._cancel_pms_booking(tenant_id, existing["pms_booking_id"])
-                imported.import_status = ImportStatus.CANCELLED
-                imported.pms_booking_id = existing["pms_booking_id"]
-                await self._repo.upsert_imported_reservation(imported.to_doc())
-                return {"action": "cancelled", "acknowledge": True}
-            elif existing:
-                imported.import_status = ImportStatus.CANCELLED
-                await self._repo.upsert_imported_reservation(imported.to_doc())
-                return {"action": "cancelled", "acknowledge": True}
-            else:
-                imported.import_status = ImportStatus.CANCELLED
-                await self._repo.upsert_imported_reservation(imported.to_doc())
-                return {"action": "cancelled", "acknowledge": True}
+            return await self._handle_cancellation(
+                tenant_id, property_id, connector_id, imported, existing, fingerprint,
+            )
 
+        # ── Existing reservation path ──────────────────────────────
         if existing:
-            if existing.get("import_status") in ("created", "modified", "acknowledged"):
-                # Check if this is a modification
-                if self._is_modification(existing, imported.to_doc()):
-                    imported.is_modification = True
-                    imported.previous_version_id = existing.get("id")
-                    imported.pms_booking_id = existing.get("pms_booking_id")
-                    if imported.pms_booking_id:
-                        await self._modify_pms_booking(tenant_id, imported)
-                    imported.import_status = ImportStatus.MODIFIED
-                    await self._repo.upsert_imported_reservation(imported.to_doc())
-                    return {"action": "modified", "acknowledge": True}
-                else:
-                    imported.import_status = ImportStatus.DUPLICATE
-                    await self._repo.upsert_imported_reservation(imported.to_doc())
-                    return {"action": "duplicate", "acknowledge": True}
+            existing_status = existing.get("import_status", "")
 
-        # New reservation - check mapping validity
+            # Modification after cancellation → conflict
+            if existing_status in (ImportStatus.CANCELLED.value, ImportStatus.DUPLICATE_CANCEL.value):
+                imported.import_status = ImportStatus.CONFLICT
+                imported.conflict_reason = "Modification received after cancellation"
+                imported.review_reason_code = ReviewReasonCode.MODIFICATION_AFTER_CANCEL.value
+                imported.suggested_action = "Verify with provider if reservation was re-opened"
+                imported.ack_status = AckStatus.NOT_REQUIRED
+                await self._repo.upsert_imported_reservation(imported.to_doc())
+                await self._audit(
+                    tenant_id, property_id, connector_id,
+                    AuditAction.RESERVATION_CONFLICT,
+                    metadata={"external_id": canonical.external_id, "reason": "modification_after_cancel"},
+                )
+                return {"action": "conflict", "acknowledge": False, "reservation_id": imported.id}
+
+            # Exact duplicate check (same fingerprint)
+            if existing.get("payload_fingerprint") == fingerprint:
+                imported.import_status = ImportStatus.DUPLICATE
+                imported.ack_status = AckStatus.ACK_PENDING
+                await self._repo.upsert_imported_reservation(imported.to_doc())
+                await self._audit(
+                    tenant_id, property_id, connector_id,
+                    AuditAction.RESERVATION_DUPLICATE,
+                    metadata={"external_id": canonical.external_id},
+                )
+                return {"action": "duplicate", "acknowledge": True, "reservation_id": imported.id}
+
+            # Payload differs → modification
+            if existing_status in (ImportStatus.CREATED.value, ImportStatus.MODIFIED.value, ImportStatus.ACKNOWLEDGED.value):
+                imported.is_modification = True
+                imported.previous_version_id = existing.get("id")
+                imported.pms_booking_id = existing.get("pms_booking_id")
+                if imported.pms_booking_id:
+                    await self._modify_pms_booking(tenant_id, imported)
+                imported.import_status = ImportStatus.MODIFIED
+                imported.ack_status = AckStatus.ACK_PENDING
+                await self._repo.upsert_imported_reservation(imported.to_doc())
+                await self._audit(
+                    tenant_id, property_id, connector_id,
+                    AuditAction.RESERVATION_MODIFIED,
+                    metadata={
+                        "external_id": canonical.external_id,
+                        "pms_booking_id": imported.pms_booking_id,
+                        "old_fingerprint": existing.get("payload_fingerprint"),
+                        "new_fingerprint": fingerprint,
+                    },
+                )
+                return {"action": "modified", "acknowledge": True, "reservation_id": imported.id}
+
+            # Payload differs but status is unexpected → out_of_order
+            imported.import_status = ImportStatus.OUT_OF_ORDER
+            imported.review_reason = f"Unexpected existing status: {existing_status}"
+            imported.review_reason_code = ReviewReasonCode.MANUAL_ESCALATION.value
+            imported.suggested_action = "Check reservation timeline on provider side"
+            imported.ack_status = AckStatus.NOT_REQUIRED
+            await self._repo.upsert_imported_reservation(imported.to_doc())
+            await self._audit(
+                tenant_id, property_id, connector_id,
+                AuditAction.RESERVATION_OUT_OF_ORDER,
+                metadata={"external_id": canonical.external_id, "existing_status": existing_status},
+            )
+            return {"action": "out_of_order", "acknowledge": False, "reservation_id": imported.id}
+
+        # ── New reservation path ────────────────────────────────────
+
+        # Check room type mapping
         if not pms_room_type:
             imported.import_status = ImportStatus.REVIEW
             imported.review_reason = f"No mapping for room type: {canonical.room_type_id}"
+            imported.review_reason_code = ReviewReasonCode.MISSING_ROOM_MAPPING.value
+            imported.suggested_action = "Create room type mapping and reprocess"
+            imported.ack_status = AckStatus.NOT_REQUIRED
             await self._repo.upsert_imported_reservation(imported.to_doc())
-            return {"action": "review", "acknowledge": False}
+            await self._audit(
+                tenant_id, property_id, connector_id,
+                AuditAction.RESERVATION_REVIEW_QUEUED,
+                metadata={
+                    "external_id": canonical.external_id,
+                    "reason_code": ReviewReasonCode.MISSING_ROOM_MAPPING.value,
+                },
+            )
+            return {"action": "review", "acknowledge": False, "reservation_id": imported.id}
 
         # Create PMS booking
         try:
             pms_booking_id = await self._create_pms_booking(tenant_id, property_id, canonical, pms_room_type)
             imported.pms_booking_id = pms_booking_id
             imported.import_status = ImportStatus.CREATED
+            imported.ack_status = AckStatus.ACK_PENDING
             await self._repo.upsert_imported_reservation(imported.to_doc())
-            return {"action": "new", "acknowledge": True}
+            await self._audit(
+                tenant_id, property_id, connector_id,
+                AuditAction.RESERVATION_CREATED,
+                metadata={
+                    "external_id": canonical.external_id,
+                    "pms_booking_id": pms_booking_id,
+                    "channel": canonical.channel_name,
+                },
+            )
+            return {"action": "new", "acknowledge": True, "reservation_id": imported.id}
         except Exception as e:
             imported.import_status = ImportStatus.FAILED
             imported.error_message = str(e)
+            imported.ack_status = AckStatus.NOT_REQUIRED
             await self._repo.upsert_imported_reservation(imported.to_doc())
-            return {"action": "failed", "acknowledge": False}
+            return {"action": "failed", "acknowledge": False, "reservation_id": imported.id}
+
+    # ─── Cancellation Handler ────────────────────────────────────────
+
+    async def _handle_cancellation(
+        self, tenant_id: str, property_id: str, connector_id: str,
+        imported: ImportedReservation, existing: Optional[Dict],
+        fingerprint: str,
+    ) -> Dict[str, Any]:
+        """Handle cancellation with checked-in protection and duplicate detection."""
+        imported.is_cancellation = True
+
+        if existing:
+            existing_status = existing.get("import_status", "")
+
+            # Already cancelled → duplicate cancel
+            if existing_status in (ImportStatus.CANCELLED.value, ImportStatus.DUPLICATE_CANCEL.value):
+                imported.import_status = ImportStatus.DUPLICATE_CANCEL
+                imported.ack_status = AckStatus.ACK_PENDING
+                await self._repo.upsert_imported_reservation(imported.to_doc())
+                await self._audit(
+                    tenant_id, property_id, connector_id,
+                    AuditAction.RESERVATION_DUPLICATE_CANCEL,
+                    metadata={"external_id": imported.external_reservation_id},
+                )
+                return {"action": "duplicate_cancel", "acknowledge": True, "reservation_id": imported.id}
+
+            pms_booking_id = existing.get("pms_booking_id")
+            if pms_booking_id:
+                # Check if booking is checked-in
+                pms_booking = await db.bookings.find_one(
+                    {"id": pms_booking_id, "tenant_id": tenant_id}, {"_id": 0, "status": 1},
+                )
+                if pms_booking and pms_booking.get("status") == "checked_in":
+                    imported.import_status = ImportStatus.REVIEW
+                    imported.review_reason = "Cancellation received for checked-in guest"
+                    imported.review_reason_code = ReviewReasonCode.CHECKED_IN_CANCELLATION.value
+                    imported.suggested_action = "Contact guest and provider before cancelling"
+                    imported.pms_booking_id = pms_booking_id
+                    imported.ack_status = AckStatus.NOT_REQUIRED
+                    await self._repo.upsert_imported_reservation(imported.to_doc())
+                    await self._audit(
+                        tenant_id, property_id, connector_id,
+                        AuditAction.RESERVATION_REVIEW_QUEUED,
+                        metadata={
+                            "external_id": imported.external_reservation_id,
+                            "reason_code": ReviewReasonCode.CHECKED_IN_CANCELLATION.value,
+                            "pms_booking_id": pms_booking_id,
+                        },
+                    )
+                    return {"action": "review", "acknowledge": False, "reservation_id": imported.id}
+
+                # Normal cancel
+                await self._cancel_pms_booking(tenant_id, pms_booking_id)
+                imported.import_status = ImportStatus.CANCELLED
+                imported.pms_booking_id = pms_booking_id
+                imported.ack_status = AckStatus.ACK_PENDING
+                await self._repo.upsert_imported_reservation(imported.to_doc())
+                await self._audit(
+                    tenant_id, property_id, connector_id,
+                    AuditAction.RESERVATION_CANCELLED,
+                    metadata={
+                        "external_id": imported.external_reservation_id,
+                        "pms_booking_id": pms_booking_id,
+                    },
+                )
+                return {"action": "cancelled", "acknowledge": True, "reservation_id": imported.id}
+            else:
+                # No PMS booking linked yet, just mark as cancelled
+                imported.import_status = ImportStatus.CANCELLED
+                imported.ack_status = AckStatus.ACK_PENDING
+                await self._repo.upsert_imported_reservation(imported.to_doc())
+                await self._audit(
+                    tenant_id, property_id, connector_id,
+                    AuditAction.RESERVATION_CANCELLED,
+                    metadata={"external_id": imported.external_reservation_id, "note": "no_pms_booking"},
+                )
+                return {"action": "cancelled", "acknowledge": True, "reservation_id": imported.id}
+        else:
+            # Cancellation for unknown reservation → still record it
+            imported.import_status = ImportStatus.CANCELLED
+            imported.ack_status = AckStatus.ACK_PENDING
+            await self._repo.upsert_imported_reservation(imported.to_doc())
+            await self._audit(
+                tenant_id, property_id, connector_id,
+                AuditAction.RESERVATION_CANCELLED,
+                metadata={"external_id": imported.external_reservation_id, "note": "no_prior_import"},
+            )
+            return {"action": "cancelled", "acknowledge": True, "reservation_id": imported.id}
+
+    # ─── PMS Booking Operations ──────────────────────────────────────
 
     async def _create_pms_booking(
         self, tenant_id: str, property_id: str,
@@ -249,8 +478,6 @@ class ReservationImportService:
     ) -> str:
         """Create a booking in the PMS from a canonical reservation."""
         booking_id = str(uuid.uuid4())
-
-        # Find or create guest
         guest_id = await self._find_or_create_guest(tenant_id, canonical)
 
         booking = {
@@ -280,7 +507,6 @@ class ReservationImportService:
         return booking_id
 
     async def _modify_pms_booking(self, tenant_id: str, imported: ImportedReservation):
-        """Modify an existing PMS booking based on imported changes."""
         if not imported.pms_booking_id:
             return
         updates = {
@@ -302,7 +528,6 @@ class ReservationImportService:
         logger.info("Modified PMS booking %s", imported.pms_booking_id)
 
     async def _cancel_pms_booking(self, tenant_id: str, pms_booking_id: str):
-        """Cancel an existing PMS booking."""
         await db.bookings.update_one(
             {"id": pms_booking_id, "tenant_id": tenant_id},
             {"$set": {
@@ -314,7 +539,6 @@ class ReservationImportService:
         logger.info("Cancelled PMS booking %s", pms_booking_id)
 
     async def _find_or_create_guest(self, tenant_id: str, canonical: CanonicalReservation) -> str:
-        """Find existing guest by email or create new one."""
         if canonical.guest.email:
             existing = await db.guests.find_one(
                 {"tenant_id": tenant_id, "email": canonical.guest.email}, {"_id": 0, "id": 1},
@@ -338,19 +562,12 @@ class ReservationImportService:
         await db.guests.insert_one(guest)
         return guest_id
 
-    def _is_modification(self, existing: Dict, new: Dict) -> bool:
-        """Detect if a re-received reservation is a modification."""
-        compare_fields = ["arrival_date", "departure_date", "adult_count", "child_count", "total_amount", "room_type_external_id"]
-        for f in compare_fields:
-            if existing.get(f) != new.get(f):
-                return True
-        return False
+    # ─── Provider Communication ──────────────────────────────────────
 
     async def _pull_from_provider(
         self, connector: ConnectorAccount,
         date_start: Optional[str], date_end: Optional[str],
     ) -> List[Dict[str, Any]]:
-        """Pull reservations from the external provider."""
         if connector.provider == ConnectorProvider.HOTELRUNNER:
             auth = HotelRunnerAuth.from_credentials(connector.credentials)
             client = HotelRunnerClient(auth=auth, sandbox=True)
@@ -361,7 +578,6 @@ class ReservationImportService:
         raise ValueError(f"Unsupported provider: {connector.provider}")
 
     async def _acknowledge_to_provider(self, connector: ConnectorAccount, reservation_ids: List[str]):
-        """Send acknowledgement to provider for received reservations."""
         if connector.provider == ConnectorProvider.HOTELRUNNER:
             auth = HotelRunnerAuth.from_credentials(connector.credentials)
             client = HotelRunnerClient(auth=auth, sandbox=True)
@@ -370,29 +586,47 @@ class ReservationImportService:
             finally:
                 await client.close()
 
-    async def get_review_queue(self, tenant_id: str, connector_id: Optional[str] = None) -> List[Dict]:
-        """Get reservations needing manual review."""
-        return await self._repo.get_imported_reservations(tenant_id, connector_id, status="review")
+    # ─── Manual Review Queue ─────────────────────────────────────────
 
-    async def approve_review(
+    async def get_review_queue(self, tenant_id: str, connector_id: Optional[str] = None) -> List[Dict]:
+        return await self._repo.get_reservation_review_queue(tenant_id, connector_id)
+
+    async def reprocess_review(
         self, tenant_id: str, reservation_id: str, actor_id: str,
         room_type_override: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Approve a reservation in the review queue and import it."""
-        imported = await self._repo.get_imported_reservation_by_external_id(tenant_id, "", reservation_id)
-        # Fetch by id if external lookup fails
-        if not imported:
-            results = await self._repo.get_imported_reservations(tenant_id, status="review")
-            imported = next((r for r in results if r.get("id") == reservation_id), None)
-
+        """Reprocess a reservation from the review queue."""
+        imported = await self._repo.get_imported_reservation_by_id(tenant_id, reservation_id)
         if not imported:
             raise ValueError("Imported reservation not found")
+        if imported.get("import_status") not in ("review", "conflict", "out_of_order"):
+            raise ValueError("Reservation is not in review status")
 
         pms_room_type = room_type_override or imported.get("room_type_mapped_id")
         if not pms_room_type:
-            raise ValueError("Room type mapping required for approval")
+            raise ValueError("Room type mapping required for reprocessing")
 
-        # Create canonical for PMS booking creation
+        # If it was a cancellation in review
+        if imported.get("is_cancellation"):
+            pms_booking_id = imported.get("pms_booking_id")
+            if pms_booking_id:
+                await self._cancel_pms_booking(tenant_id, pms_booking_id)
+            await self._repo.update_imported_reservation(tenant_id, reservation_id, {
+                "import_status": ImportStatus.CANCELLED.value,
+                "reviewed_by": actor_id,
+                "reviewed_at": datetime.now(timezone.utc).isoformat(),
+                "reprocessed_at": datetime.now(timezone.utc).isoformat(),
+                "ack_status": AckStatus.ACK_PENDING.value,
+            })
+            await self._audit(
+                tenant_id, imported.get("property_id", ""), imported.get("connector_id", ""),
+                AuditAction.RESERVATION_REVIEW_REPROCESSED,
+                actor_id=actor_id,
+                metadata={"reservation_id": reservation_id, "action": "cancel_approved"},
+            )
+            return {"reservation_id": reservation_id, "status": "cancelled", "action": "reprocessed"}
+
+        # Create PMS booking for the reservation
         canonical = CanonicalReservation(
             external_id=imported.get("external_reservation_id", ""),
             confirmation_number=imported.get("external_confirmation_number", ""),
@@ -413,22 +647,81 @@ class ReservationImportService:
             tenant_id, imported.get("property_id", ""), canonical, pms_room_type,
         )
 
-        imported["pms_booking_id"] = pms_booking_id
-        imported["import_status"] = ImportStatus.CREATED.value
-        imported["reviewed_by"] = actor_id
-        imported["reviewed_at"] = datetime.now(timezone.utc).isoformat()
-        await self._repo.upsert_imported_reservation(imported)
+        await self._repo.update_imported_reservation(tenant_id, reservation_id, {
+            "pms_booking_id": pms_booking_id,
+            "import_status": ImportStatus.CREATED.value,
+            "room_type_mapped_id": pms_room_type,
+            "reviewed_by": actor_id,
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
+            "reprocessed_at": datetime.now(timezone.utc).isoformat(),
+            "ack_status": AckStatus.ACK_PENDING.value,
+        })
+
+        await self._audit(
+            tenant_id, imported.get("property_id", ""), imported.get("connector_id", ""),
+            AuditAction.RESERVATION_REVIEW_REPROCESSED,
+            actor_id=actor_id,
+            metadata={"reservation_id": reservation_id, "pms_booking_id": pms_booking_id},
+        )
 
         return {"reservation_id": reservation_id, "pms_booking_id": pms_booking_id, "status": "created"}
 
+    async def dismiss_review(
+        self, tenant_id: str, reservation_id: str, actor_id: str,
+    ) -> Dict[str, Any]:
+        """Dismiss a reservation from the review queue."""
+        imported = await self._repo.get_imported_reservation_by_id(tenant_id, reservation_id)
+        if not imported:
+            raise ValueError("Imported reservation not found")
+        if imported.get("import_status") not in ("review", "conflict", "out_of_order"):
+            raise ValueError("Reservation is not in review status")
+
+        await self._repo.update_imported_reservation(tenant_id, reservation_id, {
+            "import_status": ImportStatus.DISMISSED.value,
+            "dismissed_by": actor_id,
+            "dismissed_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+        await self._audit(
+            tenant_id, imported.get("property_id", ""), imported.get("connector_id", ""),
+            AuditAction.RESERVATION_REVIEW_DISMISSED,
+            actor_id=actor_id,
+            metadata={"reservation_id": reservation_id},
+        )
+
+        return {"reservation_id": reservation_id, "status": "dismissed"}
+
+    # ─── Approve Review (legacy compat) ──────────────────────────────
+
+    async def approve_review(
+        self, tenant_id: str, reservation_id: str, actor_id: str,
+        room_type_override: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Alias for reprocess_review for backward compatibility."""
+        return await self.reprocess_review(tenant_id, reservation_id, actor_id, room_type_override)
+
+    # ─── Batch & Reservation Queries ─────────────────────────────────
+
     async def get_import_batches(self, tenant_id: str, connector_id: Optional[str] = None) -> List[Dict]:
         return await self._repo.get_import_batches(tenant_id, connector_id)
+
+    async def get_import_batch_detail(self, tenant_id: str, batch_id: str) -> Dict[str, Any]:
+        batch = await self._repo.get_import_batch_by_id(tenant_id, batch_id)
+        if not batch:
+            raise ValueError("Batch not found")
+        reservations = await self._repo.get_imported_reservations_by_batch(batch_id)
+        return {"batch": batch, "reservations": reservations, "reservation_count": len(reservations)}
 
     async def get_imported_reservations(
         self, tenant_id: str, connector_id: Optional[str] = None,
         status: Optional[str] = None, limit: int = 100,
     ) -> List[Dict]:
         return await self._repo.get_imported_reservations(tenant_id, connector_id, status, limit)
+
+    async def get_imported_reservation_detail(self, tenant_id: str, reservation_id: str) -> Optional[Dict]:
+        return await self._repo.get_imported_reservation_by_id(tenant_id, reservation_id)
+
+    # ─── Audit ───────────────────────────────────────────────────────
 
     async def _audit(self, tenant_id, property_id, connector_id, action, actor_id=None, metadata=None):
         log = IntegrationAuditLog(

@@ -45,6 +45,23 @@ class AuditAction(str, Enum):
     MANUAL_REVIEW_DISMISSED = "manual_review_dismissed"
     ERROR_OCCURRED = "error_occurred"
     CONNECTION_TESTED = "connection_tested"
+    # Reservation import lifecycle
+    RESERVATION_IMPORT_STARTED = "reservation_import_started"
+    RESERVATION_IMPORT_COMPLETED = "reservation_import_completed"
+    RESERVATION_IMPORT_FAILED = "reservation_import_failed"
+    RESERVATION_CREATED = "reservation_created"
+    RESERVATION_MODIFIED = "reservation_modified"
+    RESERVATION_CANCELLED = "reservation_cancelled"
+    RESERVATION_DUPLICATE = "reservation_duplicate"
+    RESERVATION_DUPLICATE_CANCEL = "reservation_duplicate_cancel"
+    RESERVATION_CONFLICT = "reservation_conflict"
+    RESERVATION_OUT_OF_ORDER = "reservation_out_of_order"
+    RESERVATION_REVIEW_QUEUED = "reservation_review_queued"
+    RESERVATION_REVIEW_REPROCESSED = "reservation_review_reprocessed"
+    RESERVATION_REVIEW_DISMISSED = "reservation_review_dismissed"
+    RESERVATION_REVIEW_RESOLVED = "reservation_review_resolved"
+    RESERVATION_ACK_SENT = "reservation_ack_sent"
+    RESERVATION_ACK_FAILED = "reservation_ack_failed"
 
 
 class IntegrationAuditLog(BaseModel):

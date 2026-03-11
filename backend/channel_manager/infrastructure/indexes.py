@@ -66,6 +66,20 @@ async def create_cm_indexes():
         await db.cm_imported_reservations.create_index(
             [("tenant_id", 1), ("import_status", 1)], name="cm_impres_tid_status"
         )
+        await db.cm_imported_reservations.create_index(
+            [("tenant_id", 1), ("connector_id", 1), ("payload_fingerprint", 1)],
+            name="cm_impres_tid_cid_fingerprint"
+        )
+        await db.cm_imported_reservations.create_index(
+            [("tenant_id", 1), ("ack_status", 1)], name="cm_impres_tid_ack"
+        )
+        await db.cm_imported_reservations.create_index(
+            [("batch_id", 1)], name="cm_impres_batch"
+        )
+        await db.cm_imported_reservations.create_index(
+            [("tenant_id", 1), ("review_reason_code", 1)],
+            name="cm_impres_tid_review_reason"
+        )
 
         # Reconciliation issues
         await db.cm_reconciliation_issues.create_index(

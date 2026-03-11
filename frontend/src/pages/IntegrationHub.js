@@ -14,7 +14,9 @@ import {
   Clock, ArrowUpDown, Link2, Unlink, Shield, Activity, FileText,
   Download, Eye, ChevronRight, Zap, Settings, Database, Map,
   Loader2, Wifi, Key, Home, BedDouble, DollarSign, FileCode,
-  RotateCcw, AlertOctagon, ChevronDown, ChevronUp, Timer
+  RotateCcw, AlertOctagon, ChevronDown, ChevronUp, Timer,
+  UserCheck, Ban, PackageCheck, AlertCircle, MailCheck, MailX,
+  Search, Filter, ExternalLink
 } from 'lucide-react';
 
 const API_BASE = '/channel-manager/v2';
@@ -53,10 +55,38 @@ const StatusBadge = ({ status }) => {
     retrying: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
     manual_review: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
     in_progress: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+    created: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    modified: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
+    cancelled: 'bg-red-500/15 text-red-400 border-red-500/30',
+    duplicate: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
+    duplicate_cancel: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
+    conflict: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
+    review: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+    dismissed: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
+    resolved: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    out_of_order: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
   };
   return (
     <Badge data-testid={`status-${status}`} className={`${map[status] || map.draft} border text-xs`}>
       {status?.replace(/_/g, ' ')}
+    </Badge>
+  );
+};
+
+const AckBadge = ({ ackStatus }) => {
+  const map = {
+    ack_pending: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+    ack_sent: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    ack_failed: 'bg-red-500/15 text-red-400 border-red-500/30',
+    not_required: 'bg-slate-500/15 text-slate-500 border-slate-700',
+  };
+  if (!ackStatus || ackStatus === 'not_required') return null;
+  return (
+    <Badge data-testid={`ack-${ackStatus}`} className={`${map[ackStatus] || ''} border text-[10px]`}>
+      {ackStatus === 'ack_pending' && <Clock className="w-2.5 h-2.5 mr-0.5" />}
+      {ackStatus === 'ack_sent' && <MailCheck className="w-2.5 h-2.5 mr-0.5" />}
+      {ackStatus === 'ack_failed' && <MailX className="w-2.5 h-2.5 mr-0.5" />}
+      {ackStatus.replace('ack_', '').replace('_', ' ')}
     </Badge>
   );
 };
@@ -90,6 +120,15 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
   const [showJobDetail, setShowJobDetail] = useState(false);
   const [jobDetailLoading, setJobDetailLoading] = useState(false);
   const [manualReviewQueue, setManualReviewQueue] = useState([]);
+  const [importBatches, setImportBatches] = useState([]);
+  const [reservationReviewQueue, setReservationReviewQueue] = useState([]);
+  const [selectedReservation, setSelectedReservation] = useState(null);
+  const [showReservationDetail, setShowReservationDetail] = useState(false);
+  const [selectedBatch, setSelectedBatch] = useState(null);
+  const [showBatchDetail, setShowBatchDetail] = useState(false);
+  const [batchReservations, setBatchReservations] = useState([]);
+  const [batchDetailLoading, setBatchDetailLoading] = useState(false);
+  const [pullLoading, setPullLoading] = useState(false);
 
   const fetchDashboard = useCallback(async () => {
     try {
@@ -110,18 +149,22 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
     setLoading(true);
     await fetchDashboard();
     try {
-      const [jobsRes, importRes, issuesRes, auditRes, reviewRes] = await Promise.all([
+      const [jobsRes, importRes, issuesRes, auditRes, reviewRes, batchRes, resReviewRes] = await Promise.all([
         axios.get(`${API_BASE}/sync/jobs`).catch(() => ({ data: { jobs: [] } })),
         axios.get(`${API_BASE}/reservations/imported`).catch(() => ({ data: { reservations: [] } })),
         axios.get(`${API_BASE}/reconciliation/issues`).catch(() => ({ data: { issues: [] } })),
         axios.get(`${API_BASE}/audit`).catch(() => ({ data: { logs: [] } })),
         axios.get(`${API_BASE}/sync/manual-review`).catch(() => ({ data: { queue: [] } })),
+        axios.get(`${API_BASE}/reservations/batches`).catch(() => ({ data: { batches: [] } })),
+        axios.get(`${API_BASE}/reservations/review-queue`).catch(() => ({ data: { queue: [] } })),
       ]);
       setSyncJobs(jobsRes.data.jobs || []);
       setImportedReservations(importRes.data.reservations || []);
       setIssues(issuesRes.data.issues || []);
       setAuditLogs(auditRes.data.logs || []);
       setManualReviewQueue(reviewRes.data.queue || []);
+      setImportBatches(batchRes.data.batches || []);
+      setReservationReviewQueue(resReviewRes.data.queue || []);
     } catch { /* silent */ }
     setLoading(false);
   }, [fetchDashboard]);
@@ -213,11 +256,59 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
   };
 
   const handlePullReservations = async (connectorId) => {
+    setPullLoading(true);
     try {
       const { data } = await axios.post(`${API_BASE}/reservations/pull`, { connector_id: connectorId });
-      toast.success(`Rezervasyon çekme tamamlandı: ${data.total || 0} adet`);
+      const summary = [];
+      if (data.new > 0) summary.push(`${data.new} yeni`);
+      if (data.modified > 0) summary.push(`${data.modified} değişiklik`);
+      if (data.cancelled > 0) summary.push(`${data.cancelled} iptal`);
+      if (data.duplicate > 0) summary.push(`${data.duplicate} duplikat`);
+      if (data.review > 0) summary.push(`${data.review} inceleme`);
+      if (data.conflict > 0) summary.push(`${data.conflict} çakışma`);
+      const msg = summary.length > 0 ? summary.join(', ') : 'Yeni kayıt yok';
+      toast.success(`Rezervasyon çekme tamamlandı: ${data.total || 0} kayıt — ${msg}`);
       fetchData();
     } catch (e) { toast.error(e.response?.data?.detail || 'Rezervasyon çekme başarısız'); }
+    setPullLoading(false);
+  };
+
+  const handleViewBatchDetail = async (batchId) => {
+    setBatchDetailLoading(true);
+    setShowBatchDetail(true);
+    setBatchReservations([]);
+    try {
+      const { data } = await axios.get(`${API_BASE}/reservations/batches/${batchId}`);
+      setSelectedBatch(data.batch || null);
+      setBatchReservations(data.reservations || []);
+    } catch { toast.error('Batch detayları yüklenemedi'); }
+    setBatchDetailLoading(false);
+  };
+
+  const handleViewReservationDetail = async (reservationId) => {
+    try {
+      const { data } = await axios.get(`${API_BASE}/reservations/imported/${reservationId}`);
+      setSelectedReservation(data);
+      setShowReservationDetail(true);
+    } catch { toast.error('Rezervasyon detayı yüklenemedi'); }
+  };
+
+  const handleReprocessReview = async (reservationId) => {
+    try {
+      const { data } = await axios.post(`${API_BASE}/reservations/review-queue/${reservationId}/reprocess`);
+      toast.success(`Yeniden işlendi: ${data.status}`);
+      fetchData();
+      setShowReservationDetail(false);
+    } catch (e) { toast.error(e.response?.data?.detail || 'Reprocess başarısız'); }
+  };
+
+  const handleDismissReview = async (reservationId) => {
+    try {
+      await axios.post(`${API_BASE}/reservations/review-queue/${reservationId}/dismiss`);
+      toast.success('Rezervasyon inceleme kuyruğundan kaldırıldı');
+      fetchData();
+      setShowReservationDetail(false);
+    } catch (e) { toast.error(e.response?.data?.detail || 'Dismiss başarısız'); }
   };
 
   const handleRunReconciliation = async (connectorId) => {
@@ -664,41 +755,201 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
 
           {/* Reservations Tab */}
           <TabsContent value="reservations">
-            <Card className="bg-slate-900/50 border-slate-800">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base text-white">Imported Reservations</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {importedReservations.length > 0 ? (
-                  <div className="border border-slate-800 rounded-lg overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead className="bg-slate-800/50 text-slate-400">
-                        <tr>
-                          <th className="text-left px-4 py-2">Ref</th>
-                          <th className="text-left px-4 py-2">Misafir</th>
-                          <th className="text-left px-4 py-2">Tarih</th>
-                          <th className="text-left px-4 py-2">Kanal</th>
-                          <th className="text-left px-4 py-2">Durum</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800">
-                        {importedReservations.map((r) => (
-                          <tr key={r.id} className="text-slate-300 hover:bg-slate-800/30">
-                            <td className="px-4 py-2 text-xs">{r.external_confirmation_number || r.external_reservation_id?.slice(0, 10)}</td>
-                            <td className="px-4 py-2">{r.guest_name}</td>
-                            <td className="px-4 py-2 text-xs">{r.arrival_date} → {r.departure_date}</td>
-                            <td className="px-4 py-2 text-xs">{r.channel_name}</td>
-                            <td className="px-4 py-2"><StatusBadge status={r.import_status} /></td>
-                          </tr>
+            <div className="space-y-4">
+              {/* Pull Reservations Action */}
+              {connectors.filter(c => c.status === 'active').length > 0 && (
+                <Card className="bg-slate-900/50 border-slate-800">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Download className="w-4 h-4 text-blue-400" />
+                        <span className="text-sm text-white font-medium">Rezervasyon Çek</span>
+                        <span className="text-xs text-slate-500">Provider'dan yeni ve güncellenmiş rezervasyonları çek</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {connectors.filter(c => c.status === 'active').map(c => (
+                          <Button key={c.connector_id} size="sm" className="text-xs h-7 bg-blue-600 hover:bg-blue-700"
+                            onClick={() => handlePullReservations(c.connector_id)}
+                            disabled={pullLoading}
+                            data-testid={`pull-res-${c.connector_id}`}>
+                            {pullLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Download className="w-3 h-3 mr-1" />}
+                            {c.display_name || c.provider}
+                          </Button>
                         ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-slate-500 text-sm">Henüz import edilen rezervasyon yok</div>
-                )}
-              </CardContent>
-            </Card>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Reservation Review Queue */}
+              {reservationReviewQueue.length > 0 && (
+                <Card className="bg-amber-950/30 border-amber-800/50">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base text-amber-300 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4" /> Manuel İnceleme Kuyruğu ({reservationReviewQueue.length})
+                    </CardTitle>
+                    <CardDescription className="text-amber-400/70 text-xs">
+                      Bu rezervasyonlar manuel inceleme gerektiriyor
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {reservationReviewQueue.map((r) => (
+                      <div key={r.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 border border-amber-800/30"
+                        data-testid={`res-review-${r.id?.slice(0, 8)}`}>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex flex-col min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-white font-medium">{r.guest_name || 'Bilinmeyen Misafir'}</span>
+                              <StatusBadge status={r.import_status} />
+                              {r.review_reason_code && (
+                                <Badge variant="outline" className="text-[10px] border-amber-700/50 text-amber-400 py-0">
+                                  {r.review_reason_code.replace(/_/g, ' ')}
+                                </Badge>
+                              )}
+                            </div>
+                            <span className="text-xs text-slate-500 truncate">
+                              {r.external_confirmation_number || r.external_reservation_id?.slice(0, 10)}
+                              {r.review_reason && ` — ${r.review_reason}`}
+                            </span>
+                            {r.suggested_action && (
+                              <span className="text-[10px] text-amber-400/70 mt-0.5">Önerilen: {r.suggested_action}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button size="sm" className="text-xs h-7 bg-emerald-600 hover:bg-emerald-700"
+                            onClick={() => handleReprocessReview(r.id)} data-testid={`reprocess-${r.id?.slice(0, 8)}`}>
+                            <RotateCcw className="w-3 h-3 mr-1" /> Reprocess
+                          </Button>
+                          <Button size="sm" variant="outline" className="text-xs h-7 border-slate-700 text-slate-400"
+                            onClick={() => handleDismissReview(r.id)} data-testid={`dismiss-res-${r.id?.slice(0, 8)}`}>
+                            Dismiss
+                          </Button>
+                          <Button size="sm" variant="ghost" className="text-xs h-7 text-slate-400"
+                            onClick={() => handleViewReservationDetail(r.id)}>
+                            <Eye className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Import Batches */}
+              {importBatches.length > 0 && (
+                <Card className="bg-slate-900/50 border-slate-800">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base text-white flex items-center gap-2">
+                      <PackageCheck className="w-4 h-4 text-violet-400" /> Import Batches
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {importBatches.map((b) => (
+                        <div key={b.id}
+                          className="flex items-center justify-between p-3 rounded-lg bg-slate-800/30 border border-slate-800 hover:border-slate-700 transition-colors cursor-pointer"
+                          onClick={() => handleViewBatchDetail(b.id)}
+                          data-testid={`batch-row-${b.id?.slice(0, 8)}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-white font-medium font-mono">{b.id?.slice(0, 8)}</span>
+                                <StatusBadge status={b.status} />
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-xs text-slate-500">{new Date(b.started_at).toLocaleString('tr-TR')}</span>
+                                {b.duration_ms != null && (
+                                  <>
+                                    <span className="text-xs text-slate-600">&middot;</span>
+                                    <span className="text-xs text-slate-500 font-mono">{b.duration_ms}ms</span>
+                                  </>
+                                )}
+                                <span className="text-xs text-slate-600">&middot;</span>
+                                <span className="text-xs text-slate-500">{b.triggered_by}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="grid grid-cols-4 gap-2 text-center">
+                              {b.new_count > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">{b.new_count} yeni</span>}
+                              {b.modified_count > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">{b.modified_count} mod</span>}
+                              {b.cancelled_count > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">{b.cancelled_count} iptal</span>}
+                              {b.review_count > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">{b.review_count} review</span>}
+                              {b.duplicate_count > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-400 border border-slate-500/20">{b.duplicate_count} dup</span>}
+                              {b.conflict_count > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">{b.conflict_count} conflict</span>}
+                              {b.out_of_order_count > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20">{b.out_of_order_count} ooo</span>}
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[10px] text-slate-500 block">toplam</span>
+                              <span className="text-xs text-slate-400">{b.total_reservations || 0}</span>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-slate-600" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Imported Reservations Table */}
+              <Card className="bg-slate-900/50 border-slate-800">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base text-white">Imported Reservations</CardTitle>
+                  <CardDescription className="text-xs text-slate-500">{importedReservations.length} kayıt</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {importedReservations.length > 0 ? (
+                    <div className="border border-slate-800 rounded-lg overflow-hidden">
+                      <table className="w-full text-sm" data-testid="reservations-table">
+                        <thead className="bg-slate-800/50 text-slate-400">
+                          <tr>
+                            <th className="text-left px-4 py-2">Ref</th>
+                            <th className="text-left px-4 py-2">Misafir</th>
+                            <th className="text-left px-4 py-2">Tarih</th>
+                            <th className="text-left px-4 py-2">Kanal</th>
+                            <th className="text-right px-4 py-2">Tutar</th>
+                            <th className="text-left px-4 py-2">Durum</th>
+                            <th className="text-left px-4 py-2">ACK</th>
+                            <th className="text-center px-4 py-2">Detay</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800">
+                          {importedReservations.map((r) => (
+                            <tr key={r.id} className="text-slate-300 hover:bg-slate-800/30" data-testid={`res-row-${r.id?.slice(0, 8)}`}>
+                              <td className="px-4 py-2 text-xs font-mono">{r.external_confirmation_number || r.external_reservation_id?.slice(0, 10)}</td>
+                              <td className="px-4 py-2">{r.guest_name}</td>
+                              <td className="px-4 py-2 text-xs">{r.arrival_date} → {r.departure_date}</td>
+                              <td className="px-4 py-2 text-xs">{r.channel_name}</td>
+                              <td className="px-4 py-2 text-xs text-right font-mono">{r.total_amount?.toLocaleString('tr-TR')} {r.currency}</td>
+                              <td className="px-4 py-2">
+                                <div className="flex items-center gap-1">
+                                  <StatusBadge status={r.import_status} />
+                                  {r.is_modification && <Badge variant="outline" className="text-[10px] border-cyan-700/50 text-cyan-400 py-0">mod</Badge>}
+                                  {r.is_cancellation && <Badge variant="outline" className="text-[10px] border-red-700/50 text-red-400 py-0">cancel</Badge>}
+                                </div>
+                              </td>
+                              <td className="px-4 py-2"><AckBadge ackStatus={r.ack_status} /></td>
+                              <td className="px-4 py-2 text-center">
+                                <Button size="sm" variant="ghost" className="text-xs h-6 w-6 p-0 text-slate-400"
+                                  onClick={() => handleViewReservationDetail(r.id)} data-testid={`view-res-${r.id?.slice(0, 8)}`}>
+                                  <Eye className="w-3 h-3" />
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-slate-500 text-sm">Henüz import edilen rezervasyon yok</div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           {/* Reconciliation Tab */}
@@ -1162,6 +1413,290 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                     {selectedJob.completed_at && <span>End: {new Date(selectedJob.completed_at).toLocaleTimeString('tr-TR')}</span>}
                   </div>
                 </div>
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+
+        {/* Reservation Detail Dialog */}
+        <Dialog open={showReservationDetail} onOpenChange={setShowReservationDetail}>
+          <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-lg max-h-[85vh] overflow-y-auto" data-testid="reservation-detail-dialog" aria-describedby="res-detail-desc">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                Rezervasyon Detayı
+              </DialogTitle>
+            </DialogHeader>
+            <p id="res-detail-desc" className="sr-only">İthal edilen rezervasyon detayları, durum bilgisi ve aksiyonlar</p>
+
+            {selectedReservation ? (
+              <div className="space-y-4">
+                {/* Status Header */}
+                <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={selectedReservation.import_status} />
+                    <AckBadge ackStatus={selectedReservation.ack_status} />
+                    {selectedReservation.is_modification && <Badge variant="outline" className="text-[10px] border-cyan-700/50 text-cyan-400 py-0">modification</Badge>}
+                    {selectedReservation.is_cancellation && <Badge variant="outline" className="text-[10px] border-red-700/50 text-red-400 py-0">cancellation</Badge>}
+                  </div>
+                  <span className="text-xs font-mono text-slate-500">{selectedReservation.id?.slice(0, 12)}</span>
+                </div>
+
+                {/* Guest & Stay Info */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                    <p className="text-[10px] text-slate-500 mb-1">Misafir</p>
+                    <p className="text-sm text-white font-medium">{selectedReservation.guest_name || '-'}</p>
+                    {selectedReservation.guest_email && <p className="text-xs text-slate-400">{selectedReservation.guest_email}</p>}
+                    {selectedReservation.guest_phone && <p className="text-xs text-slate-400">{selectedReservation.guest_phone}</p>}
+                  </div>
+                  <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                    <p className="text-[10px] text-slate-500 mb-1">Konaklama</p>
+                    <p className="text-sm text-white">{selectedReservation.arrival_date} → {selectedReservation.departure_date}</p>
+                    <p className="text-xs text-slate-400">{selectedReservation.adult_count} yetişkin, {selectedReservation.child_count} çocuk</p>
+                  </div>
+                </div>
+
+                {/* Booking & Payment */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                    <p className="text-[10px] text-slate-500 mb-1">Referans</p>
+                    <p className="text-xs text-white font-mono">{selectedReservation.external_confirmation_number || selectedReservation.external_reservation_id?.slice(0, 16)}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{selectedReservation.channel_name}</p>
+                    {selectedReservation.pms_booking_id && (
+                      <p className="text-[10px] text-emerald-400 mt-1">PMS: {selectedReservation.pms_booking_id.slice(0, 12)}</p>
+                    )}
+                  </div>
+                  <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                    <p className="text-[10px] text-slate-500 mb-1">Ödeme</p>
+                    <p className="text-lg font-bold text-white">{selectedReservation.total_amount?.toLocaleString('tr-TR')} {selectedReservation.currency}</p>
+                    {selectedReservation.payment_type && <p className="text-xs text-slate-400">{selectedReservation.payment_type}</p>}
+                  </div>
+                </div>
+
+                {/* Mapping Info */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                    <p className="text-[10px] text-slate-500 mb-1">Oda Tipi</p>
+                    <p className="text-xs text-white">{selectedReservation.room_type_external_id}</p>
+                    {selectedReservation.room_type_mapped_id ? (
+                      <p className="text-[10px] text-emerald-400">→ {selectedReservation.room_type_mapped_id}</p>
+                    ) : (
+                      <p className="text-[10px] text-amber-400">Mapping yok</p>
+                    )}
+                  </div>
+                  <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                    <p className="text-[10px] text-slate-500 mb-1">Fiyat Planı</p>
+                    <p className="text-xs text-white">{selectedReservation.rate_plan_external_id || '-'}</p>
+                    {selectedReservation.rate_plan_mapped_id && (
+                      <p className="text-[10px] text-emerald-400">→ {selectedReservation.rate_plan_mapped_id}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Fingerprint */}
+                {selectedReservation.payload_fingerprint && (
+                  <div className="px-3 py-2 rounded bg-slate-800/20 border border-slate-800">
+                    <span className="text-[10px] text-slate-500">Fingerprint: </span>
+                    <span className="text-[10px] font-mono text-slate-400">{selectedReservation.payload_fingerprint}</span>
+                  </div>
+                )}
+
+                {/* Review Info */}
+                {selectedReservation.review_reason && (
+                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                    <div className="flex items-center gap-2 mb-1">
+                      <AlertTriangle className="w-3 h-3 text-amber-400" />
+                      <p className="text-xs text-amber-400 font-medium">İnceleme Sebebi</p>
+                      {selectedReservation.review_reason_code && (
+                        <Badge variant="outline" className="text-[10px] border-amber-700/50 text-amber-400 py-0">
+                          {selectedReservation.review_reason_code.replace(/_/g, ' ')}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-amber-300">{selectedReservation.review_reason}</p>
+                    {selectedReservation.suggested_action && (
+                      <p className="text-[10px] text-amber-400/70 mt-1">Önerilen: {selectedReservation.suggested_action}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Conflict Info */}
+                {selectedReservation.conflict_reason && (
+                  <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20">
+                    <p className="text-xs text-rose-400 font-medium mb-1">Çakışma Sebebi</p>
+                    <p className="text-xs text-rose-300">{selectedReservation.conflict_reason}</p>
+                  </div>
+                )}
+
+                {/* Error */}
+                {selectedReservation.error_message && (
+                  <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                    <p className="text-xs text-red-400 font-medium mb-1">Hata</p>
+                    <p className="text-xs text-red-300 font-mono">{selectedReservation.error_message}</p>
+                  </div>
+                )}
+
+                {/* Actions for review items */}
+                {['review', 'conflict', 'out_of_order'].includes(selectedReservation.import_status) && (
+                  <div className="flex gap-2 pt-2 border-t border-slate-800">
+                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-xs"
+                      onClick={() => handleReprocessReview(selectedReservation.id)} data-testid="detail-reprocess-btn">
+                      <RotateCcw className="w-3 h-3 mr-1" /> Reprocess
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-xs border-slate-700 text-slate-400"
+                      onClick={() => handleDismissReview(selectedReservation.id)} data-testid="detail-dismiss-res-btn">
+                      Dismiss
+                    </Button>
+                  </div>
+                )}
+
+                {/* Timestamps */}
+                <div className="flex flex-wrap gap-3 pt-2 border-t border-slate-800 text-[10px] text-slate-600">
+                  <span>Oluşturulma: {new Date(selectedReservation.created_at).toLocaleString('tr-TR')}</span>
+                  {selectedReservation.reviewed_at && <span>İncelendi: {new Date(selectedReservation.reviewed_at).toLocaleString('tr-TR')}</span>}
+                  {selectedReservation.reprocessed_at && <span>Reprocess: {new Date(selectedReservation.reprocessed_at).toLocaleString('tr-TR')}</span>}
+                  {selectedReservation.ack_sent_at && <span>ACK: {new Date(selectedReservation.ack_sent_at).toLocaleString('tr-TR')}</span>}
+                </div>
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+
+        {/* Batch Detail Dialog */}
+        <Dialog open={showBatchDetail} onOpenChange={setShowBatchDetail}>
+          <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="batch-detail-dialog" aria-describedby="batch-detail-desc">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <PackageCheck className="w-5 h-5" />
+                Import Batch Detayı
+              </DialogTitle>
+            </DialogHeader>
+            <p id="batch-detail-desc" className="sr-only">Import batch detayları ve içerdiği rezervasyonlar</p>
+
+            {batchDetailLoading ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-3">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
+                <p className="text-sm text-slate-400">Batch detayları yükleniyor...</p>
+              </div>
+            ) : selectedBatch ? (
+              <div className="space-y-4">
+                {/* Batch Header */}
+                <div className="flex items-start justify-between p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-medium text-white font-mono">{selectedBatch.id?.slice(0, 12)}</span>
+                      <StatusBadge status={selectedBatch.status} />
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      <p>Tetikleyen: {selectedBatch.triggered_by}</p>
+                      {selectedBatch.pull_from && <p>Tarih aralığı: {selectedBatch.pull_from} → {selectedBatch.pull_to || '...'}</p>}
+                    </div>
+                  </div>
+                  <div className="text-right text-xs text-slate-400">
+                    {selectedBatch.duration_ms != null && <p className="font-mono text-sm text-slate-300">{selectedBatch.duration_ms}ms</p>}
+                    <p>{new Date(selectedBatch.started_at).toLocaleString('tr-TR')}</p>
+                  </div>
+                </div>
+
+                {/* Summary Stats */}
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="p-2 rounded-lg bg-slate-800/30 border border-slate-800 text-center">
+                    <p className="text-[10px] text-slate-500">Toplam</p>
+                    <p className="text-lg font-bold text-white">{selectedBatch.total_reservations || 0}</p>
+                  </div>
+                  <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
+                    <p className="text-[10px] text-emerald-400">Yeni</p>
+                    <p className="text-lg font-bold text-emerald-300">{selectedBatch.new_count || 0}</p>
+                  </div>
+                  <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-center">
+                    <p className="text-[10px] text-cyan-400">Değişiklik</p>
+                    <p className="text-lg font-bold text-cyan-300">{selectedBatch.modified_count || 0}</p>
+                  </div>
+                  <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-center">
+                    <p className="text-[10px] text-red-400">İptal</p>
+                    <p className="text-lg font-bold text-red-300">{selectedBatch.cancelled_count || 0}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  {selectedBatch.duplicate_count > 0 && (
+                    <div className="p-2 rounded bg-slate-800/30 border border-slate-800 text-center">
+                      <p className="text-[10px] text-slate-500">Duplikat</p>
+                      <p className="text-sm font-bold text-slate-400">{selectedBatch.duplicate_count}</p>
+                    </div>
+                  )}
+                  {selectedBatch.duplicate_cancel_count > 0 && (
+                    <div className="p-2 rounded bg-slate-800/30 border border-slate-800 text-center">
+                      <p className="text-[10px] text-slate-500">Dup.İptal</p>
+                      <p className="text-sm font-bold text-slate-400">{selectedBatch.duplicate_cancel_count}</p>
+                    </div>
+                  )}
+                  {selectedBatch.conflict_count > 0 && (
+                    <div className="p-2 rounded bg-rose-500/10 border border-rose-500/20 text-center">
+                      <p className="text-[10px] text-rose-400">Çakışma</p>
+                      <p className="text-sm font-bold text-rose-300">{selectedBatch.conflict_count}</p>
+                    </div>
+                  )}
+                  {selectedBatch.review_count > 0 && (
+                    <div className="p-2 rounded bg-amber-500/10 border border-amber-500/20 text-center">
+                      <p className="text-[10px] text-amber-400">İnceleme</p>
+                      <p className="text-sm font-bold text-amber-300">{selectedBatch.review_count}</p>
+                    </div>
+                  )}
+                  {selectedBatch.out_of_order_count > 0 && (
+                    <div className="p-2 rounded bg-orange-500/10 border border-orange-500/20 text-center">
+                      <p className="text-[10px] text-orange-400">OOO</p>
+                      <p className="text-sm font-bold text-orange-300">{selectedBatch.out_of_order_count}</p>
+                    </div>
+                  )}
+                  {selectedBatch.failed_count > 0 && (
+                    <div className="p-2 rounded bg-red-500/10 border border-red-500/20 text-center">
+                      <p className="text-[10px] text-red-400">Başarısız</p>
+                      <p className="text-sm font-bold text-red-300">{selectedBatch.failed_count}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* ACK Summary */}
+                {(selectedBatch.ack_sent_count > 0 || selectedBatch.ack_failed_count > 0) && (
+                  <div className="flex items-center gap-3 px-3 py-2 rounded bg-slate-800/20 border border-slate-800">
+                    <MailCheck className="w-4 h-4 text-emerald-400" />
+                    <span className="text-xs text-slate-400">ACK Gönderildi: {selectedBatch.ack_sent_count || 0}</span>
+                    {selectedBatch.ack_failed_count > 0 && (
+                      <>
+                        <MailX className="w-4 h-4 text-red-400" />
+                        <span className="text-xs text-red-400">ACK Başarısız: {selectedBatch.ack_failed_count}</span>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Batch Reservations */}
+                {batchReservations.length > 0 && (
+                  <div>
+                    <p className="text-xs text-slate-500 mb-2">Rezervasyonlar ({batchReservations.length})</p>
+                    <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                      {batchReservations.map((r) => (
+                        <div key={r.id}
+                          className="flex items-center justify-between p-2.5 rounded bg-slate-800/20 border border-slate-800/50 cursor-pointer hover:border-slate-700"
+                          onClick={() => { setShowBatchDetail(false); handleViewReservationDetail(r.id); }}
+                          data-testid={`batch-res-${r.id?.slice(0, 8)}`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <StatusBadge status={r.import_status} />
+                            <span className="text-xs text-white">{r.guest_name || '-'}</span>
+                            <span className="text-[10px] text-slate-500 font-mono">{r.external_confirmation_number || r.external_reservation_id?.slice(0, 8)}</span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <AckBadge ackStatus={r.ack_status} />
+                            <span className="text-xs text-slate-500">{r.arrival_date}</span>
+                            <ChevronRight className="w-3 h-3 text-slate-600" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : null}
           </DialogContent>
