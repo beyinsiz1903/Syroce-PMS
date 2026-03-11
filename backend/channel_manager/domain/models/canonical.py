@@ -115,22 +115,36 @@ class CanonicalGuest(BaseModel):
     email: str = ""
     phone: str = ""
     nationality: str = ""
+    national_id: str = ""
+    is_citizen: bool = False
     address: str = ""
     city: str = ""
+    state: str = ""
     country: str = ""
+    country_code: str = ""
     postal_code: str = ""
+    street: str = ""
+    street_2: str = ""
     company_name: str = ""
     loyalty_id: str = ""
     notes: str = ""
+    billing_address: Dict[str, Any] = Field(default_factory=dict)
 
 
 class CanonicalReservation(BaseModel):
     """Provider-agnostic reservation representation."""
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     external_id: str = ""
+    hr_number: str = ""
     confirmation_number: str = ""
     channel_name: str = ""
+    channel_code: str = ""
     status: ReservationStatus = ReservationStatus.CONFIRMED
+
+    # Provider delivery tracking
+    message_uid: str = ""
+    requires_ack: bool = False
+    modified: bool = False
 
     # Guest
     guest: CanonicalGuest = Field(default_factory=CanonicalGuest)
@@ -151,9 +165,14 @@ class CanonicalReservation(BaseModel):
 
     # Pricing
     total_amount: float = 0.0
+    sub_total: float = 0.0
+    tax_total: float = 0.0
+    extras_total: float = 0.0
+    paid_amount: float = 0.0
     currency: str = "TRY"
     price_breakdown: List[PriceBreakdown] = Field(default_factory=list)
     tax_breakdown: List[TaxBreakdown] = Field(default_factory=list)
+    daily_prices: List[Dict[str, Any]] = Field(default_factory=list)
     commission_amount: float = 0.0
     commission_rate: float = 0.0
 
@@ -161,15 +180,20 @@ class CanonicalReservation(BaseModel):
     payment_type: str = ""  # prepaid, pay_at_hotel, credit_card_guarantee
     card_type: str = ""
     card_last_four: str = ""
+    payments: List[Dict[str, Any]] = Field(default_factory=list)
 
     # Policy
     meal_plan: MealPlan = MealPlan.RO
     cancellation_policy: str = ""
     cancellation_deadline: Optional[str] = None
+    non_refundable: bool = False
 
     # Notes
     special_requests: str = ""
     internal_notes: str = ""
+
+    # Rooms raw data (multi-room support)
+    rooms: List[Dict[str, Any]] = Field(default_factory=list)
 
     # Timestamps
     booked_at: Optional[str] = None

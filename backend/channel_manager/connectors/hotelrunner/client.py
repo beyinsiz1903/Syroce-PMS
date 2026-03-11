@@ -1,12 +1,14 @@
 """
 HotelRunner HTTP Client - Production-grade API client with rate limiting, retry, and structured error handling.
 
+Supports both XML/OTA endpoints (inventory, rates) and REST/JSON endpoints (reservations).
 This is the ONLY module that makes HTTP calls to HotelRunner.
-All other modules interact through this client.
 """
 import logging
 import time
-from typing import Dict, Any, Optional
+import uuid as _uuid
+from datetime import datetime, timezone
+from typing import Dict, Any, Optional, List, Tuple
 
 import httpx
 
@@ -15,15 +17,39 @@ from .rate_limit import RateLimiter
 from .retry_policy import RetryPolicy
 from .errors import (
     ConnectorError, AuthenticationError, RateLimitError,
-    ProviderUnavailableError, XmlParseError,
+    ProviderUnavailableError, XmlParseError, ResponseParseError,
+    PaginationExhaustedError, AcknowledgementError,
 )
 from . import xml_builder, xml_parser
 
 logger = logging.getLogger("channel_manager.hotelrunner.client")
 
-# HotelRunner API base URLs
 HOTELRUNNER_API_BASE = "https://app.hotelrunner.com/api/v2"
 HOTELRUNNER_SANDBOX_BASE = "https://sandbox.hotelrunner.com/api/v2"
+
+# Safety limits
+MAX_PAGINATION_PAGES = 100
+DEFAULT_PER_PAGE = 50
+AUDIT_TRUNCATE_LEN = 4000
+MASK_KEYS = {"token", "password", "secret", "api_key"}
+
+
+def _mask_params(params: Dict[str, str]) -> Dict[str, str]:
+    """Mask sensitive query parameters for audit logs."""
+    masked = {}
+    for k, v in params.items():
+        if k.lower() in MASK_KEYS:
+            masked[k] = f"{v[:4]}****" if len(v) > 4 else "****"
+        else:
+            masked[k] = v
+    return masked
+
+
+def _truncate(text: str, max_len: int = AUDIT_TRUNCATE_LEN) -> str:
+    """Truncate text for audit storage."""
+    if len(text) <= max_len:
+        return text
+    return text[:max_len] + f"... [truncated, total {len(text)} chars]"
 
 
 class HotelRunnerClient:
@@ -31,12 +57,13 @@ class HotelRunnerClient:
     Production-grade async HTTP client for HotelRunner API.
 
     Features:
-      - Token-based authentication
+      - Token-based authentication (token + hr_id query params)
+      - REST/JSON for reservations, XML/OTA for inventory/rates
+      - Paginated reservation retrieval
+      - Confirm delivery acknowledgement
       - Rate limiting (token bucket)
       - Automatic retry with exponential backoff
-      - Structured error handling
-      - Request/response logging
-      - Sandbox mode for development
+      - Raw request/response audit with correlation_id, masking, truncation
     """
 
     def __init__(
@@ -55,9 +82,20 @@ class HotelRunnerClient:
             follow_redirects=True,
         )
         self._sandbox = sandbox
+        self._audit_entries: List[Dict[str, Any]] = []
 
     async def close(self):
         await self._client.aclose()
+
+    @property
+    def audit_entries(self) -> List[Dict[str, Any]]:
+        """Return collected audit entries from this session."""
+        return list(self._audit_entries)
+
+    def clear_audit(self):
+        self._audit_entries.clear()
+
+    # ─── XML/OTA Request (inventory, rates) ──────────────────────────
 
     async def _request(
         self,
@@ -66,8 +104,7 @@ class HotelRunnerClient:
         xml_body: Optional[str] = None,
         params: Optional[Dict[str, str]] = None,
     ) -> str:
-        """Make an authenticated request to HotelRunner API."""
-        # Rate limit
+        """Make an authenticated XML request to HotelRunner API."""
         acquired = await self._rate_limiter.acquire(timeout=120)
         if not acquired:
             raise RateLimitError(retry_after_seconds=60, message="Local rate limit exceeded")
@@ -89,7 +126,84 @@ class HotelRunnerClient:
 
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.info(
-                "HR API %s %s -> %d (%dms)",
+                "HR XML %s %s -> %d (%dms)",
+                method, path, response.status_code, duration_ms,
+            )
+
+            if response.status_code == 401:
+                raise AuthenticationError("HotelRunner returned 401")
+            if response.status_code == 429:
+                retry_after = int(response.headers.get("Retry-After", "60"))
+                raise RateLimitError(retry_after_seconds=retry_after)
+            if response.status_code >= 500:
+                raise ProviderUnavailableError(f"HotelRunner returned {response.status_code}")
+            if response.status_code >= 400:
+                raise ConnectorError(
+                    f"HotelRunner returned {response.status_code}: {response.text[:500]}",
+                    recoverable=False,
+                )
+            return response.text
+
+        except httpx.ConnectError:
+            raise ProviderUnavailableError("Cannot connect to HotelRunner API")
+        except httpx.TimeoutException:
+            raise ProviderUnavailableError("HotelRunner API request timed out")
+
+    # ─── REST/JSON Request (reservations) ────────────────────────────
+
+    async def _request_json(
+        self,
+        method: str,
+        path: str,
+        params: Optional[Dict[str, str]] = None,
+        correlation_id: Optional[str] = None,
+    ) -> Tuple[Any, Dict[str, Any]]:
+        """
+        Make an authenticated REST/JSON request to HotelRunner API.
+        Returns (parsed_json, audit_entry).
+        """
+        acquired = await self._rate_limiter.acquire(timeout=120)
+        if not acquired:
+            raise RateLimitError(retry_after_seconds=60, message="Local rate limit exceeded")
+
+        corr_id = correlation_id or str(_uuid.uuid4())
+        url = f"{self._base_url}{path}"
+        merged_params = {**(params or {}), **self._auth.get_auth_params()}
+        headers = {
+            "Accept": "application/json",
+            "Cache-Control": "no-cache",
+        }
+
+        audit = {
+            "correlation_id": corr_id,
+            "method": method.upper(),
+            "url": f"{self._base_url}{path}",
+            "params": _mask_params(merged_params),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        start = time.monotonic()
+        try:
+            if method.upper() == "PUT":
+                response = await self._client.put(
+                    url, params=merged_params, headers=headers,
+                )
+            elif method.upper() == "POST":
+                response = await self._client.post(
+                    url, params=merged_params, headers=headers,
+                )
+            else:
+                response = await self._client.get(
+                    url, params=merged_params, headers=headers,
+                )
+
+            duration_ms = int((time.monotonic() - start) * 1000)
+            audit["latency_ms"] = duration_ms
+            audit["status_code"] = response.status_code
+            audit["response_body"] = _truncate(response.text)
+
+            logger.info(
+                "HR REST %s %s -> %d (%dms)",
                 method, path, response.status_code, duration_ms,
             )
 
@@ -106,18 +220,39 @@ class HotelRunnerClient:
                     recoverable=False,
                 )
 
-            return response.text
+            try:
+                data = response.json()
+            except Exception as e:
+                raise ResponseParseError(
+                    f"Invalid JSON response: {e}",
+                    raw_response=response.text[:2000],
+                )
 
+            self._audit_entries.append(audit)
+            return data, audit
+
+        except (AuthenticationError, RateLimitError, ProviderUnavailableError,
+                ConnectorError, ResponseParseError):
+            audit["latency_ms"] = int((time.monotonic() - start) * 1000)
+            self._audit_entries.append(audit)
+            raise
         except httpx.ConnectError:
+            audit["latency_ms"] = int((time.monotonic() - start) * 1000)
+            audit["error"] = "connection_refused"
+            self._audit_entries.append(audit)
             raise ProviderUnavailableError("Cannot connect to HotelRunner API")
         except httpx.TimeoutException:
+            audit["latency_ms"] = int((time.monotonic() - start) * 1000)
+            audit["error"] = "timeout"
+            self._audit_entries.append(audit)
             raise ProviderUnavailableError("HotelRunner API request timed out")
+
+    # ─── Inventory / Rates (XML) ─────────────────────────────────────
 
     async def push_availability(self, updates: list) -> Dict[str, Any]:
         """Push inventory availability to HotelRunner."""
         xml_body = xml_builder.build_availability_notif(
-            hr_id=self._auth.hr_id,
-            updates=updates,
+            hr_id=self._auth.hr_id, updates=updates,
         )
 
         async def _do():
@@ -129,8 +264,7 @@ class HotelRunnerClient:
     async def push_rates(self, updates: list) -> Dict[str, Any]:
         """Push rate amounts to HotelRunner."""
         xml_body = xml_builder.build_rate_amount_notif(
-            hr_id=self._auth.hr_id,
-            updates=updates,
+            hr_id=self._auth.hr_id, updates=updates,
         )
 
         async def _do():
@@ -139,36 +273,192 @@ class HotelRunnerClient:
 
         return await self._retry_policy.execute_with_retry(_do)
 
+    # ─── Reservations (REST/JSON) ────────────────────────────────────
+
     async def pull_reservations(
         self,
         date_start: Optional[str] = None,
         date_end: Optional[str] = None,
-    ) -> list:
-        """Pull undelivered reservations from HotelRunner."""
-        xml_body = xml_builder.build_read_rq(
-            hr_id=self._auth.hr_id,
-            date_start=date_start,
-            date_end=date_end,
+        per_page: int = DEFAULT_PER_PAGE,
+        undelivered: bool = True,
+        modified_only: bool = False,
+        booked_only: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """
+        Pull reservations from HotelRunner REST/JSON endpoint with pagination.
+
+        GET /api/v2/apps/reservations
+        Auth: token + hr_id as query params
+        Returns: list of raw reservation JSON dicts
+        """
+        all_reservations: List[Dict[str, Any]] = []
+        page = 1
+        corr_id = str(_uuid.uuid4())
+
+        async def _do_page(pg: int) -> Tuple[List[Dict], int]:
+            params: Dict[str, str] = {
+                "per_page": str(per_page),
+            }
+            if undelivered:
+                params["undelivered"] = "true"
+            else:
+                params["undelivered"] = "false"
+                params["page"] = str(pg)
+
+            if modified_only:
+                params["modified"] = "true"
+            if booked_only:
+                params["booked"] = "true"
+            if date_start:
+                params["from_date"] = date_start
+            if date_end:
+                params["from_last_update_date"] = date_end
+
+            data, _ = await self._request_json(
+                "GET", "/apps/reservations",
+                params=params,
+                correlation_id=f"{corr_id}-page-{pg}",
+            )
+
+            reservations = data.get("reservations", [])
+            total_pages = data.get("pages", 1)
+            return reservations, total_pages
+
+        # First page with retry
+        async def _first():
+            return await _do_page(1)
+
+        page_data, total_pages = await self._retry_policy.execute_with_retry(_first)
+        all_reservations.extend(page_data)
+
+        if not undelivered and total_pages > 1:
+            # Paginate through remaining pages
+            for page in range(2, min(total_pages + 1, MAX_PAGINATION_PAGES + 1)):
+
+                async def _next(p=page):
+                    return await _do_page(p)
+
+                next_data, _ = await self._retry_policy.execute_with_retry(_next)
+                if not next_data:
+                    break
+                all_reservations.extend(next_data)
+
+            if total_pages > MAX_PAGINATION_PAGES:
+                logger.warning(
+                    "Pagination safety limit reached: %d/%d pages fetched",
+                    MAX_PAGINATION_PAGES, total_pages,
+                )
+                raise PaginationExhaustedError(MAX_PAGINATION_PAGES, len(all_reservations))
+
+        logger.info(
+            "Pulled %d reservations across %d pages (corr=%s)",
+            len(all_reservations), min(total_pages, MAX_PAGINATION_PAGES), corr_id,
         )
+        return all_reservations
+
+    async def acknowledge_reservation(
+        self,
+        message_uid: str,
+        pms_number: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Confirm delivery of a single reservation to HotelRunner.
+
+        PUT /api/v2/apps/reservations/~
+        Params: token, hr_id, message_uid, pms_number (optional)
+        Returns: {"status": "ok"} on success
+        """
+        params: Dict[str, str] = {"message_uid": message_uid}
+        if pms_number:
+            params["pms_number"] = pms_number
+
+        corr_id = str(_uuid.uuid4())
 
         async def _do():
-            resp_xml = await self._request("POST", "/reservations/read", xml_body=xml_body)
-            return xml_parser.parse_reservations_response(resp_xml)
+            data, _ = await self._request_json(
+                "PUT", "/apps/reservations/~",
+                params=params,
+                correlation_id=corr_id,
+            )
+            if data.get("status") != "ok":
+                raise AcknowledgementError(
+                    message_uid=message_uid,
+                    reason=data.get("message", "Unknown error"),
+                )
+            return data
 
         return await self._retry_policy.execute_with_retry(_do)
 
-    async def acknowledge_reservations(self, reservation_ids: list) -> Dict[str, Any]:
-        """Acknowledge received reservations to HotelRunner."""
-        xml_body = xml_builder.build_notif_report_rq(
-            hr_id=self._auth.hr_id,
-            reservation_ids=reservation_ids,
-        )
+    async def acknowledge_reservations(
+        self,
+        ack_items: List[Dict[str, str]],
+    ) -> Dict[str, Any]:
+        """
+        Confirm delivery of multiple reservations.
+
+        Each item: {"message_uid": str, "pms_number": Optional[str]}
+        Returns: {"sent": int, "failed": int, "errors": list}
+        """
+        results = {"sent": 0, "failed": 0, "errors": []}
+
+        for item in ack_items:
+            msg_uid = item.get("message_uid", "")
+            pms_num = item.get("pms_number")
+            if not msg_uid:
+                results["failed"] += 1
+                results["errors"].append({"message_uid": "", "error": "Empty message_uid"})
+                continue
+            try:
+                await self.acknowledge_reservation(msg_uid, pms_num)
+                results["sent"] += 1
+            except (ConnectorError, AcknowledgementError) as e:
+                results["failed"] += 1
+                results["errors"].append({
+                    "message_uid": msg_uid,
+                    "error": str(e),
+                })
+                logger.warning("ACK failed for uid=%s: %s", msg_uid, e)
+
+        return results
+
+    async def update_reservation_state(
+        self,
+        hr_number: str,
+        event: str,
+        cancel_reason: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Update reservation state (confirm/cancel) on HotelRunner.
+        Only valid when requires_response=true.
+
+        PUT /api/v2/apps/reservations/fire
+        Params: hr_number, event (confirm|cancel), cancel_reason
+        """
+        params: Dict[str, str] = {
+            "hr_number": hr_number,
+            "event": event,
+        }
+        if event == "cancel" and cancel_reason:
+            params["cancel_reason"] = cancel_reason
+
+        corr_id = str(_uuid.uuid4())
 
         async def _do():
-            resp_xml = await self._request("POST", "/reservations/acknowledge", xml_body=xml_body)
-            return xml_parser.parse_response_status(resp_xml)
+            data, _ = await self._request_json(
+                "PUT", "/apps/reservations/fire",
+                params=params,
+                correlation_id=corr_id,
+            )
+            if data.get("status") == "error":
+                raise ConnectorError(
+                    f"State update failed: {data.get('message', 'unknown')}",
+                    recoverable=False,
+                )
+            return data
 
         return await self._retry_policy.execute_with_retry(_do)
+
+    # ─── Connection Test ─────────────────────────────────────────────
 
     async def _test_single_step(self, step_name: str, method: str, path: str, xml_body: Optional[str] = None) -> Dict[str, Any]:
         """Execute a single test step and capture the result with latency."""
@@ -215,9 +505,7 @@ class HotelRunnerClient:
         Production-grade connection test that validates each integration layer separately.
         Returns a structured result with per-step status, latency, and actionable error messages.
         """
-        from datetime import datetime, timezone as tz
-
-        tested_at = datetime.now(tz.utc).isoformat()
+        tested_at = datetime.now(timezone.utc).isoformat()
 
         # Step 1: Authentication validity
         auth_result = await self._test_single_step(
@@ -239,15 +527,12 @@ class HotelRunnerClient:
             "rate_plan_fetch", "GET", f"/hotels/{self._auth.hr_id}/rate_plans",
         )
 
-        # Step 5: XML API connectivity (OTA ReadRQ)
-        from . import xml_builder
-        read_xml = xml_builder.build_read_rq(hr_id=self._auth.hr_id)
-        xml_result = await self._test_single_step(
-            "xml_api", "POST", "/reservations/read", xml_body=read_xml,
+        # Step 5: REST reservation endpoint (JSON)
+        rest_result = await self._test_single_step(
+            "rest_reservations", "GET", "/apps/reservations",
         )
 
-        # Aggregate latency
-        steps = [auth_result, property_result, room_result, rate_result, xml_result]
+        steps = [auth_result, property_result, room_result, rate_result, rest_result]
         total_latency = sum(s["latency_ms"] for s in steps)
         failed_count = sum(1 for s in steps if s["status"] == "fail")
         warn_count = sum(1 for s in steps if s["status"] == "warn")
@@ -263,7 +548,7 @@ class HotelRunnerClient:
             "inventory_read_status": room_result,
             "rate_read_status": rate_result,
             "property_access_status": property_result,
-            "xml_connectivity_status": xml_result,
+            "xml_connectivity_status": rest_result,
         }
 
     async def test_connection(self) -> Dict[str, Any]:

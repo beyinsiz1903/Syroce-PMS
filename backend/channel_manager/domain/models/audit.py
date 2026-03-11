@@ -49,6 +49,8 @@ class AuditAction(str, Enum):
     RESERVATION_IMPORT_STARTED = "reservation_import_started"
     RESERVATION_IMPORT_COMPLETED = "reservation_import_completed"
     RESERVATION_IMPORT_FAILED = "reservation_import_failed"
+    RESERVATION_PULL_STARTED = "reservation_pull_started"
+    RESERVATION_PULL_AUDIT = "reservation_pull_audit"
     RESERVATION_CREATED = "reservation_created"
     RESERVATION_MODIFIED = "reservation_modified"
     RESERVATION_CANCELLED = "reservation_cancelled"

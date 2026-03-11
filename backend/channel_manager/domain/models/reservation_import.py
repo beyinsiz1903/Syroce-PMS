@@ -103,8 +103,11 @@ class ImportedReservation(BaseModel):
     # Idempotency key fields
     external_reservation_id: str
     external_confirmation_number: str = ""
+    hr_number: str = ""
+    message_uid: str = ""
     payload_fingerprint: str = ""
     channel_name: str = ""
+    requires_ack: bool = False
 
     import_status: ImportStatus = ImportStatus.PENDING
 

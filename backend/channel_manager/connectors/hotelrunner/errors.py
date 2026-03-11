@@ -61,3 +61,33 @@ class DuplicateError(ConnectorError):
         self.entity_type = entity_type
         self.external_id = external_id
         super().__init__(f"Duplicate {entity_type}: {external_id}", recoverable=False)
+
+
+class ResponseParseError(ConnectorError):
+    """Failed to parse provider JSON/REST response."""
+    def __init__(self, message: str = "Response parse error", raw_response: str = ""):
+        self.raw_response = raw_response[:2000]
+        super().__init__(message, recoverable=False)
+
+
+class PaginationExhaustedError(ConnectorError):
+    """Pagination safety limit reached to prevent infinite loops."""
+    def __init__(self, max_pages: int, fetched_count: int):
+        self.max_pages = max_pages
+        self.fetched_count = fetched_count
+        super().__init__(
+            f"Pagination safety limit reached: {max_pages} pages, {fetched_count} items",
+            recoverable=False,
+        )
+
+
+class AcknowledgementError(ConnectorError):
+    """Failed to confirm delivery of a reservation to provider."""
+    def __init__(self, message_uid: str, hr_number: str = "", reason: str = ""):
+        self.message_uid = message_uid
+        self.hr_number = hr_number
+        self.reason = reason
+        super().__init__(
+            f"Acknowledgement failed for {hr_number} (uid={message_uid}): {reason}",
+            recoverable=True,
+        )

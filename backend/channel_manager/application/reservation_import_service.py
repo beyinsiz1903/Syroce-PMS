@@ -29,7 +29,7 @@ from ..infrastructure.repository import ChannelManagerRepository
 from ..connectors.hotelrunner.client import HotelRunnerClient
 from ..connectors.hotelrunner.auth import HotelRunnerAuth
 from ..connectors.hotelrunner.mapper import HotelRunnerMapper
-from ..connectors.hotelrunner.errors import ConnectorError
+from ..connectors.hotelrunner.errors import ConnectorError, AcknowledgementError
 
 from core.database import db
 
@@ -129,26 +129,44 @@ class ReservationImportService:
                 if result.get("acknowledge"):
                     ack_pending_ids.append({
                         "external_id": canonical.external_id,
+                        "message_uid": canonical.message_uid,
+                        "hr_number": canonical.hr_number,
+                        "pms_booking_id": result.get("pms_booking_id"),
                         "reservation_id": result.get("reservation_id"),
                     })
 
-            # Acknowledge to provider
+            # Acknowledge to provider (confirm delivery via message_uid)
             if ack_pending_ids:
-                ext_ids = [a["external_id"] for a in ack_pending_ids]
+                ack_items = [
+                    {
+                        "message_uid": a["message_uid"],
+                        "pms_number": a.get("pms_booking_id"),
+                    }
+                    for a in ack_pending_ids if a.get("message_uid")
+                ]
                 res_ids = [a["reservation_id"] for a in ack_pending_ids]
                 try:
-                    await self._acknowledge_to_provider(connector, ext_ids)
-                    for rid in res_ids:
-                        if rid:
+                    ack_result = await self._acknowledge_to_provider(connector, ack_items)
+                    ack_sent = ack_result.get("sent", 0)
+                    ack_failed = ack_result.get("failed", 0)
+                    # Update individual reservation ACK statuses
+                    for i, rid in enumerate(res_ids):
+                        if rid and i < len(ack_items):
                             await self._repo.update_imported_reservation(tenant_id, rid, {
                                 "ack_status": AckStatus.ACK_SENT.value,
                                 "ack_sent_at": datetime.now(timezone.utc).isoformat(),
                             })
-                    ack_results["sent"] = len(ext_ids)
+                    ack_results["sent"] = ack_sent
+                    ack_results["failed"] = ack_failed
                     await self._audit(
                         tenant_id, property_id, connector_id,
                         AuditAction.RESERVATION_ACK_SENT,
-                        metadata={"batch_id": batch.id, "count": len(ext_ids)},
+                        metadata={
+                            "batch_id": batch.id,
+                            "sent": ack_sent,
+                            "failed": ack_failed,
+                            "errors": ack_result.get("errors", []),
+                        },
                     )
                 except ConnectorError as e:
                     logger.warning("Acknowledgement failed: %s", e.message)
@@ -158,7 +176,7 @@ class ReservationImportService:
                                 "ack_status": AckStatus.ACK_FAILED.value,
                                 "ack_failed_reason": e.message,
                             })
-                    ack_results["failed"] = len(ext_ids)
+                    ack_results["failed"] = len(ack_items)
                     await self._audit(
                         tenant_id, property_id, connector_id,
                         AuditAction.RESERVATION_ACK_FAILED,
@@ -245,8 +263,11 @@ class ReservationImportService:
             batch_id=batch_id,
             external_reservation_id=canonical.external_id,
             external_confirmation_number=canonical.confirmation_number,
+            hr_number=canonical.hr_number,
+            message_uid=canonical.message_uid,
             payload_fingerprint=fingerprint,
             channel_name=canonical.channel_name,
+            requires_ack=canonical.requires_ack,
             guest_name=f"{canonical.guest.first_name} {canonical.guest.last_name}".strip(),
             guest_email=canonical.guest.email,
             guest_phone=canonical.guest.phone,
@@ -269,13 +290,14 @@ class ReservationImportService:
         if canonical.status == ReservationStatus.CANCELLED:
             return await self._handle_cancellation(
                 tenant_id, property_id, connector_id, imported, existing, fingerprint,
+                requires_ack=canonical.requires_ack,
             )
 
         # ── Existing reservation path ──────────────────────────────
         if existing:
             existing_status = existing.get("import_status", "")
 
-            # Modification after cancellation → conflict
+            # Modification after cancellation -> conflict
             if existing_status in (ImportStatus.CANCELLED.value, ImportStatus.DUPLICATE_CANCEL.value):
                 imported.import_status = ImportStatus.CONFLICT
                 imported.conflict_reason = "Modification received after cancellation"
@@ -293,7 +315,7 @@ class ReservationImportService:
             # Exact duplicate check (same fingerprint)
             if existing.get("payload_fingerprint") == fingerprint:
                 imported.import_status = ImportStatus.DUPLICATE
-                imported.ack_status = AckStatus.ACK_PENDING
+                imported.ack_status = AckStatus.ACK_PENDING if canonical.requires_ack else AckStatus.ACK_PENDING
                 await self._repo.upsert_imported_reservation(imported.to_doc())
                 await self._audit(
                     tenant_id, property_id, connector_id,
@@ -302,7 +324,7 @@ class ReservationImportService:
                 )
                 return {"action": "duplicate", "acknowledge": True, "reservation_id": imported.id}
 
-            # Payload differs → modification
+            # Payload differs -> modification
             if existing_status in (ImportStatus.CREATED.value, ImportStatus.MODIFIED.value, ImportStatus.ACKNOWLEDGED.value):
                 imported.is_modification = True
                 imported.previous_version_id = existing.get("id")
@@ -322,9 +344,9 @@ class ReservationImportService:
                         "new_fingerprint": fingerprint,
                     },
                 )
-                return {"action": "modified", "acknowledge": True, "reservation_id": imported.id}
+                return {"action": "modified", "acknowledge": True, "reservation_id": imported.id, "pms_booking_id": imported.pms_booking_id}
 
-            # Payload differs but status is unexpected → out_of_order
+            # Payload differs but status is unexpected -> out_of_order
             imported.import_status = ImportStatus.OUT_OF_ORDER
             imported.review_reason = f"Unexpected existing status: {existing_status}"
             imported.review_reason_code = ReviewReasonCode.MANUAL_ESCALATION.value
@@ -363,6 +385,7 @@ class ReservationImportService:
             pms_booking_id = await self._create_pms_booking(tenant_id, property_id, canonical, pms_room_type)
             imported.pms_booking_id = pms_booking_id
             imported.import_status = ImportStatus.CREATED
+            # requires_ack=true → ACK mandatory; otherwise still pending
             imported.ack_status = AckStatus.ACK_PENDING
             await self._repo.upsert_imported_reservation(imported.to_doc())
             await self._audit(
@@ -372,9 +395,10 @@ class ReservationImportService:
                     "external_id": canonical.external_id,
                     "pms_booking_id": pms_booking_id,
                     "channel": canonical.channel_name,
+                    "requires_ack": canonical.requires_ack,
                 },
             )
-            return {"action": "new", "acknowledge": True, "reservation_id": imported.id}
+            return {"action": "new", "acknowledge": True, "reservation_id": imported.id, "pms_booking_id": pms_booking_id}
         except Exception as e:
             imported.import_status = ImportStatus.FAILED
             imported.error_message = str(e)
@@ -387,7 +411,7 @@ class ReservationImportService:
     async def _handle_cancellation(
         self, tenant_id: str, property_id: str, connector_id: str,
         imported: ImportedReservation, existing: Optional[Dict],
-        fingerprint: str,
+        fingerprint: str, requires_ack: bool = False,
     ) -> Dict[str, Any]:
         """Handle cancellation with checked-in protection and duplicate detection."""
         imported.is_cancellation = True
@@ -572,19 +596,48 @@ class ReservationImportService:
             auth = HotelRunnerAuth.from_credentials(connector.credentials)
             client = HotelRunnerClient(auth=auth, sandbox=True)
             try:
-                return await client.pull_reservations(date_start, date_end)
+                reservations = await client.pull_reservations(
+                    date_start=date_start,
+                    date_end=date_end,
+                )
+                # Store audit entries from the pull session
+                if client.audit_entries:
+                    for entry in client.audit_entries:
+                        await self._audit(
+                            connector.tenant_id,
+                            connector.property_id,
+                            connector.id,
+                            AuditAction.RESERVATION_PULL_AUDIT,
+                            metadata={
+                                "type": "raw_request_response",
+                                "correlation_id": entry.get("correlation_id"),
+                                "method": entry.get("method"),
+                                "url": entry.get("url"),
+                                "status_code": entry.get("status_code"),
+                                "latency_ms": entry.get("latency_ms"),
+                            },
+                        )
+                return reservations
             finally:
                 await client.close()
         raise ValueError(f"Unsupported provider: {connector.provider}")
 
-    async def _acknowledge_to_provider(self, connector: ConnectorAccount, reservation_ids: List[str]):
+    async def _acknowledge_to_provider(
+        self, connector: ConnectorAccount, ack_items: List[Dict[str, str]],
+    ) -> Dict[str, Any]:
+        """
+        Confirm delivery of reservations to HotelRunner.
+        Each item: {"message_uid": str, "pms_number": Optional[str]}
+        """
         if connector.provider == ConnectorProvider.HOTELRUNNER:
             auth = HotelRunnerAuth.from_credentials(connector.credentials)
             client = HotelRunnerClient(auth=auth, sandbox=True)
             try:
-                await client.acknowledge_reservations(reservation_ids)
+                result = await client.acknowledge_reservations(ack_items)
+                return result
             finally:
                 await client.close()
+        raise ValueError(f"Unsupported provider: {connector.provider}")
 
     # ─── Manual Review Queue ─────────────────────────────────────────
 
