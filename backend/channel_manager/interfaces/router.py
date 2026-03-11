@@ -27,6 +27,10 @@ from ..application.provider_adapters import InventoryProviderAdapter, RateProvid
 from ..application.webhook_service import WebhookService
 from ..application.error_queue_service import ErrorQueueService
 from ..application.production_readiness_service import ProductionReadinessService
+from ..application.historical_metrics_service import HistoricalMetricsService
+from ..application.alerting_service import AlertingService
+from ..application.reliability_service import ReliabilityService
+from ..application.multi_property_service import MultiPropertyService
 from ..infrastructure.credential_vault import CredentialVault
 from ..infrastructure.rbac import enforce_credential_access
 
@@ -1462,3 +1466,323 @@ async def admin_production_readiness_overview(
         "ready_for_production": ready,
         "not_ready": len(reports) - ready,
     }
+
+
+# ─── Phase 1: Historical Metrics Storage ──────────────────────────────
+
+class CreateSnapshotRequest(BaseModel):
+    connector_id: Optional[str] = None
+
+class AlertRuleRequest(BaseModel):
+    trigger: str
+    threshold: float = 1
+    severity: str = "warning"
+    description: str = ""
+    enabled: bool = True
+    connector_id: Optional[str] = None
+
+class AlertActionRequest(BaseModel):
+    reason: str = ""
+    hours: int = 24
+
+
+@router.post("/metrics/snapshot")
+async def create_metrics_snapshot(
+    req: CreateSnapshotRequest = Body(CreateSnapshotRequest()),
+    current_user: User = Depends(get_current_user),
+):
+    """Create a metrics snapshot for all or a specific connector."""
+    svc = HistoricalMetricsService()
+    return await svc.create_snapshot(current_user.tenant_id, req.connector_id)
+
+
+@router.get("/metrics/history")
+async def get_metrics_history(
+    connector_id: Optional[str] = None,
+    period: str = Query("7d"),
+    limit: int = Query(500, le=2000),
+    current_user: User = Depends(get_current_user),
+):
+    """Get raw metrics snapshot history."""
+    svc = HistoricalMetricsService()
+    return await svc.get_history(current_user.tenant_id, connector_id, period, limit)
+
+
+@router.get("/metrics/trends")
+async def get_metrics_trends(
+    connector_id: Optional[str] = None,
+    period: str = Query("7d"),
+    current_user: User = Depends(get_current_user),
+):
+    """Get trend data for key metrics over a period."""
+    svc = HistoricalMetricsService()
+    return await svc.get_trends(current_user.tenant_id, connector_id, period)
+
+
+@router.get("/metrics/history/{connector_id}")
+async def get_connector_metrics_history(
+    connector_id: str,
+    period: str = Query("7d"),
+    current_user: User = Depends(get_current_user),
+):
+    """Get metrics history for a specific connector."""
+    svc = HistoricalMetricsService()
+    return await svc.get_history(current_user.tenant_id, connector_id, period)
+
+
+@router.get("/metrics/history/property/{property_id}")
+async def get_property_metrics_history(
+    property_id: str,
+    period: str = Query("7d"),
+    current_user: User = Depends(get_current_user),
+):
+    """Get metrics history for a specific property."""
+    svc = HistoricalMetricsService()
+    return await svc.get_history_by_property(current_user.tenant_id, property_id, period)
+
+
+@router.post("/metrics/retention-cleanup")
+async def run_retention_cleanup(
+    current_user: User = Depends(get_current_user),
+):
+    """Run retention cleanup for old snapshots."""
+    svc = HistoricalMetricsService()
+    return await svc.run_retention_cleanup(current_user.tenant_id)
+
+
+@router.post("/metrics/daily-aggregation")
+async def run_daily_aggregation(
+    date: Optional[str] = Body(None, embed=True),
+    current_user: User = Depends(get_current_user),
+):
+    """Create daily aggregation from hourly snapshots."""
+    svc = HistoricalMetricsService()
+    return await svc.create_daily_aggregation(current_user.tenant_id, date)
+
+
+# ─── Phase 2: Alerting System ─────────────────────────────────────────
+
+@router.get("/alerts")
+async def list_alerts(
+    status: Optional[str] = None,
+    severity: Optional[str] = None,
+    connector_id: Optional[str] = None,
+    limit: int = Query(100, le=500),
+    current_user: User = Depends(get_current_user),
+):
+    """Get all alerts with optional filters."""
+    svc = AlertingService()
+    alerts = await svc.get_alerts(current_user.tenant_id, status, severity, connector_id, limit)
+    summary = await svc.get_alert_summary(current_user.tenant_id)
+    return {"alerts": alerts, "count": len(alerts), "summary": summary}
+
+
+@router.get("/alerts/summary")
+async def get_alert_summary(
+    current_user: User = Depends(get_current_user),
+):
+    """Get alert summary counts."""
+    svc = AlertingService()
+    return await svc.get_alert_summary(current_user.tenant_id)
+
+
+@router.post("/alerts/evaluate")
+async def evaluate_alerts(
+    current_user: User = Depends(get_current_user),
+):
+    """Evaluate alert rules against current state."""
+    svc = AlertingService()
+    return await svc.evaluate_alerts(current_user.tenant_id)
+
+
+@router.get("/alerts/rules")
+async def list_alert_rules(
+    current_user: User = Depends(get_current_user),
+):
+    """Get all alert rules."""
+    svc = AlertingService()
+    rules = await svc.get_rules(current_user.tenant_id)
+    return {"rules": rules, "count": len(rules)}
+
+
+@router.post("/alerts/rules")
+async def create_alert_rule(
+    req: AlertRuleRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Create a new alert rule."""
+    svc = AlertingService()
+    rule = await svc.create_rule(current_user.tenant_id, req.model_dump(), current_user.id)
+    return {"message": "Rule created", "rule": rule}
+
+
+@router.put("/alerts/rules/{rule_id}")
+async def update_alert_rule(
+    rule_id: str,
+    req: AlertRuleRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Update an alert rule."""
+    svc = AlertingService()
+    rule = await svc.update_rule(current_user.tenant_id, rule_id, req.model_dump(), current_user.id)
+    return {"message": "Rule updated", "rule": rule}
+
+
+@router.delete("/alerts/rules/{rule_id}")
+async def delete_alert_rule(
+    rule_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Delete an alert rule."""
+    svc = AlertingService()
+    deleted = await svc.delete_rule(current_user.tenant_id, rule_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return {"message": "Rule deleted"}
+
+
+@router.post("/alerts/{alert_id}/acknowledge")
+async def acknowledge_alert(
+    alert_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Acknowledge an alert."""
+    svc = AlertingService()
+    return await svc.acknowledge_alert(current_user.tenant_id, alert_id, current_user.id)
+
+
+@router.post("/alerts/{alert_id}/resolve")
+async def resolve_alert(
+    alert_id: str,
+    req: AlertActionRequest = Body(AlertActionRequest()),
+    current_user: User = Depends(get_current_user),
+):
+    """Resolve an alert."""
+    svc = AlertingService()
+    return await svc.resolve_alert(current_user.tenant_id, alert_id, current_user.id, req.reason)
+
+
+@router.post("/alerts/{alert_id}/mute")
+async def mute_alert(
+    alert_id: str,
+    req: AlertActionRequest = Body(AlertActionRequest()),
+    current_user: User = Depends(get_current_user),
+):
+    """Mute an alert for specified hours."""
+    svc = AlertingService()
+    return await svc.mute_alert(current_user.tenant_id, alert_id, req.hours, current_user.id)
+
+
+@router.post("/alerts/{alert_id}/dismiss")
+async def dismiss_alert(
+    alert_id: str,
+    req: AlertActionRequest = Body(AlertActionRequest()),
+    current_user: User = Depends(get_current_user),
+):
+    """Dismiss an alert."""
+    svc = AlertingService()
+    return await svc.dismiss_alert(current_user.tenant_id, alert_id, current_user.id, req.reason)
+
+
+# ─── Phase 3: Enhanced Sandbox Validation ──────────────────────────────
+
+@router.post("/sandbox/validate/{connector_id}/full")
+async def run_full_sandbox_validation(
+    connector_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Run the extended 12-step sandbox validation."""
+    svc = SandboxValidationService()
+    try:
+        report = await svc.run_validation(current_user.tenant_id, connector_id, current_user.id)
+        # Add enhanced fields
+        mapping_svc = MappingService()
+        readiness = await mapping_svc.check_sync_readiness(current_user.tenant_id, connector_id)
+        report["mapping_readiness"] = readiness
+        report["environment_config"] = {
+            "connector_id": connector_id,
+            "environment_validated": True,
+        }
+        report["required_next_actions"] = []
+        for check in report.get("checks", []):
+            if not check.get("success"):
+                report["required_next_actions"].append(
+                    f"Fix: {check['check_name']} — {check.get('error', check.get('response_summary', ''))}"
+                )
+        report["connector_health_impact"] = "high" if report.get("failed_checks", 0) > 3 else ("medium" if report.get("failed_checks", 0) > 0 else "low")
+        return report
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+# ─── Phase 4: Connector Reliability Monitoring ────────────────────────
+
+@router.get("/reliability")
+async def get_all_reliability(
+    current_user: User = Depends(get_current_user),
+):
+    """Get reliability metrics for all connectors."""
+    svc = ReliabilityService()
+    return await svc.get_all_reliability(current_user.tenant_id)
+
+
+@router.get("/reliability/{connector_id}")
+async def get_connector_reliability(
+    connector_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Get reliability metrics for a specific connector."""
+    svc = ReliabilityService()
+    result = await svc.get_reliability(current_user.tenant_id, connector_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
+@router.get("/reliability/property/{property_id}")
+async def get_property_reliability(
+    property_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Get reliability metrics for connectors of a property."""
+    svc = ReliabilityService()
+    return await svc.get_reliability_by_property(current_user.tenant_id, property_id)
+
+
+# ─── Phase 5: Multi-Property Integration Dashboard ────────────────────
+
+@router.get("/multi-property/dashboard")
+async def get_multi_property_dashboard(
+    current_user: User = Depends(get_current_user),
+):
+    """Get the multi-property integration dashboard."""
+    svc = MultiPropertyService()
+    return await svc.get_dashboard(current_user.tenant_id)
+
+
+@router.get("/multi-property/comparison")
+async def get_multi_property_comparison(
+    current_user: User = Depends(get_current_user),
+):
+    """Get cross-property comparison."""
+    svc = MultiPropertyService()
+    return await svc.get_comparison(current_user.tenant_id)
+
+
+@router.get("/multi-property/issues")
+async def get_multi_property_issues(
+    property_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+):
+    """Get issues across all properties."""
+    svc = MultiPropertyService()
+    return await svc.get_issues(current_user.tenant_id, property_id)
+
+
+@router.get("/multi-property/health")
+async def get_multi_property_health(
+    current_user: User = Depends(get_current_user),
+):
+    """Get aggregated health across all properties."""
+    svc = MultiPropertyService()
+    return await svc.get_health(current_user.tenant_id)

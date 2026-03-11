@@ -102,6 +102,14 @@ class AuditAction(str, Enum):
     ERROR_ESCALATED = "error_escalated"
     # Production readiness
     PRODUCTION_READINESS_CHECK = "production_readiness_check"
+    # Alerting
+    ALERT_CREATED = "alert_created"
+    ALERT_ACKNOWLEDGED = "alert_acknowledged"
+    ALERT_RESOLVED = "alert_resolved"
+    ALERT_MUTED = "alert_muted"
+    # Historical metrics
+    METRICS_SNAPSHOT_CREATED = "metrics_snapshot_created"
+    METRICS_RETENTION_CLEANUP = "metrics_retention_cleanup"
 
 
 class IntegrationAuditLog(BaseModel):
