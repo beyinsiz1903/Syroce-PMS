@@ -6,6 +6,7 @@ Indexes:
   - (tenant_id, connector_id, entity_type, pms_entity_id): unique
   - (tenant_id, connector_id, entity_type, external_entity_id): unique
   - (tenant_id, status)
+  - (tenant_id, connector_id, validation_status)
 """
 import uuid
 from datetime import datetime, timezone
@@ -22,6 +23,13 @@ class MappingStatus(str, Enum):
     DISABLED = "disabled"
 
 
+class ValidationStatus(str, Enum):
+    PENDING = "pending"
+    VALID = "valid"
+    INVALID = "invalid"
+    STALE = "stale"
+
+
 class MappingDirection(str, Enum):
     BIDIRECTIONAL = "bidirectional"
     PMS_TO_EXTERNAL = "pms_to_external"
@@ -35,6 +43,21 @@ class MappingEntityType(str, Enum):
     CANCELLATION_POLICY = "cancellation_policy"
     TAX_MODE = "tax_mode"
     OCCUPANCY = "occupancy"
+
+# Required mapping types for sync readiness
+REQUIRED_MAPPING_TYPES = [
+    MappingEntityType.ROOM_TYPE,
+    MappingEntityType.RATE_PLAN,
+]
+
+# All supported mapping types for validation
+SUPPORTED_MAPPING_TYPES = [
+    MappingEntityType.ROOM_TYPE,
+    MappingEntityType.RATE_PLAN,
+    MappingEntityType.OCCUPANCY,
+    MappingEntityType.MEAL_PLAN,
+    MappingEntityType.TAX_MODE,
+]
 
 
 class MappingRule(BaseModel):
@@ -63,8 +86,10 @@ class MappingRule(BaseModel):
     rate_offset: Optional[float] = None  # add this to rate before push
 
     # Validation
+    validation_status: ValidationStatus = ValidationStatus.PENDING
     last_validated_at: Optional[str] = None
     validation_errors: List[str] = Field(default_factory=list)
+    invalid_reason: Optional[str] = None
 
     # Audit
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

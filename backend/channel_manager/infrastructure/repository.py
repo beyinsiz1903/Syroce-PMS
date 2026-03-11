@@ -89,6 +89,61 @@ class ChannelManagerRepository:
         r = await db[MAPPINGS].delete_one({"tenant_id": tenant_id, "id": mapping_id})
         return r.deleted_count > 0
 
+    async def find_duplicate_mappings(
+        self, tenant_id: str, connector_id: str, entity_type: str,
+        pms_entity_id: str, external_entity_id: str,
+        exclude_mapping_id: Optional[str] = None,
+    ) -> List[Dict]:
+        q: Dict[str, Any] = {
+            "tenant_id": tenant_id,
+            "connector_id": connector_id,
+            "entity_type": entity_type,
+            "$or": [
+                {"pms_entity_id": pms_entity_id},
+                {"external_entity_id": external_entity_id},
+            ],
+        }
+        if exclude_mapping_id:
+            q["id"] = {"$ne": exclude_mapping_id}
+        return await db[MAPPINGS].find(q, _NO_ID).to_list(50)
+
+    async def count_mappings_by_type(
+        self, tenant_id: str, connector_id: str,
+    ) -> Dict[str, Dict[str, int]]:
+        pipeline = [
+            {"$match": {"tenant_id": tenant_id, "connector_id": connector_id}},
+            {"$group": {
+                "_id": {"entity_type": "$entity_type", "status": "$status"},
+                "count": {"$sum": 1},
+            }},
+        ]
+        result: Dict[str, Dict[str, int]] = {}
+        async for doc in db[MAPPINGS].aggregate(pipeline):
+            et = doc["_id"]["entity_type"]
+            st = doc["_id"]["status"]
+            if et not in result:
+                result[et] = {}
+            result[et][st] = doc["count"]
+        return result
+
+    async def get_mappings_by_validation_status(
+        self, tenant_id: str, connector_id: str, validation_status: str,
+    ) -> List[Dict]:
+        return await db[MAPPINGS].find(
+            {"tenant_id": tenant_id, "connector_id": connector_id, "validation_status": validation_status},
+            _NO_ID,
+        ).to_list(500)
+
+    async def bulk_update_mapping_validation(
+        self, tenant_id: str, mapping_ids: List[str], updates: Dict,
+    ) -> None:
+        if mapping_ids:
+            updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+            await db[MAPPINGS].update_many(
+                {"tenant_id": tenant_id, "id": {"$in": mapping_ids}},
+                {"$set": updates},
+            )
+
     # ─── Sync Jobs ─────────────────────────────────────────────────────
 
     async def create_sync_job(self, doc: Dict) -> None:

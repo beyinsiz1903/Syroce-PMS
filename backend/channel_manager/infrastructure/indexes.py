@@ -31,6 +31,18 @@ async def create_cm_indexes():
             [("tenant_id", 1), ("connector_id", 1), ("entity_type", 1), ("status", 1)],
             name="cm_map_tid_cid_type_status"
         )
+        await db.cm_mappings.create_index(
+            [("tenant_id", 1), ("connector_id", 1), ("entity_type", 1), ("pms_entity_id", 1)],
+            name="cm_map_tid_cid_type_pms"
+        )
+        await db.cm_mappings.create_index(
+            [("tenant_id", 1), ("connector_id", 1), ("entity_type", 1), ("external_entity_id", 1)],
+            name="cm_map_tid_cid_type_ext"
+        )
+        await db.cm_mappings.create_index(
+            [("tenant_id", 1), ("connector_id", 1), ("validation_status", 1)],
+            name="cm_map_tid_cid_valstatus"
+        )
 
         # Sync jobs
         await db.cm_sync_jobs.create_index(

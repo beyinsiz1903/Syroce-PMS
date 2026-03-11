@@ -213,19 +213,22 @@ async def create_mapping(
     if not connector:
         raise HTTPException(status_code=404, detail="Connector not found")
 
-    result = await svc.create_mapping(
-        tenant_id=current_user.tenant_id,
-        property_id=connector.get("property_id", ""),
-        connector_id=req.connector_id,
-        entity_type=req.entity_type,
-        pms_entity_id=req.pms_entity_id,
-        pms_entity_name=req.pms_entity_name,
-        external_entity_id=req.external_entity_id,
-        external_entity_name=req.external_entity_name,
-        actor_id=current_user.id,
-        extras=req.extras,
-    )
-    return {"message": "Mapping created", "mapping": result}
+    try:
+        result = await svc.create_mapping(
+            tenant_id=current_user.tenant_id,
+            property_id=connector.get("property_id", ""),
+            connector_id=req.connector_id,
+            entity_type=req.entity_type,
+            pms_entity_id=req.pms_entity_id,
+            pms_entity_name=req.pms_entity_name,
+            external_entity_id=req.external_entity_id,
+            external_entity_name=req.external_entity_name,
+            actor_id=current_user.id,
+            extras=req.extras,
+        )
+        return {"message": "Mapping created", "mapping": result}
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
 @router.delete("/mappings/{mapping_id}")
 async def delete_mapping(
@@ -247,6 +250,19 @@ async def validate_mappings(
     result = await svc.validate_mappings(current_user.tenant_id, connector_id)
     return result
 
+@router.post("/mappings/{connector_id}/validate/{mapping_id}")
+async def validate_single_mapping(
+    connector_id: str,
+    mapping_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    svc = MappingService()
+    try:
+        result = await svc.validate_single(current_user.tenant_id, mapping_id)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
 @router.get("/mappings/{connector_id}/sync-readiness")
 async def check_sync_readiness(
     connector_id: str,
@@ -254,6 +270,14 @@ async def check_sync_readiness(
 ):
     svc = MappingService()
     return await svc.check_sync_readiness(current_user.tenant_id, connector_id)
+
+@router.get("/mappings/{connector_id}/readiness-report")
+async def get_readiness_report(
+    connector_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    svc = MappingService()
+    return await svc.get_readiness_report(current_user.tenant_id, connector_id)
 
 # ─── Inventory Sync Endpoints ────────────────────────────────────────
 

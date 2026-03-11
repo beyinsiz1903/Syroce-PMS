@@ -64,6 +64,10 @@ class AuditAction(str, Enum):
     RESERVATION_REVIEW_RESOLVED = "reservation_review_resolved"
     RESERVATION_ACK_SENT = "reservation_ack_sent"
     RESERVATION_ACK_FAILED = "reservation_ack_failed"
+    # Mapping engine lifecycle
+    MAPPING_REVALIDATED = "mapping_revalidated"
+    MAPPING_INVALIDATED = "mapping_invalidated"
+    MAPPING_READINESS_CHECKED = "mapping_readiness_checked"
 
 
 class IntegrationAuditLog(BaseModel):
