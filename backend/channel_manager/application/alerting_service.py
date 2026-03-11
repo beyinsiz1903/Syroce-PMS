@@ -315,3 +315,51 @@ class AlertingService:
             {"$set": {"status": "dismissed", "dismissed_at": now, "dismissed_by": actor_id, "dismiss_reason": reason}},
         )
         return {"success": True, "alert_id": alert_id, "action": "dismissed"}
+
+
+    async def check_and_fire_alert(
+        self, tenant_id: str, trigger: str,
+        connector_id: Optional[str] = None,
+        metadata: Optional[Dict] = None,
+    ) -> Optional[Dict]:
+        """
+        Programmatic alert creation for automated triggers
+        (e.g., reservation import failure spike, sandbox validation failures).
+        Checks for duplicate active alerts before creating.
+        """
+        # Dedup: don't fire if same trigger is already active
+        existing = await db[ALERTS].find_one({
+            "tenant_id": tenant_id,
+            "trigger": trigger,
+            "connector_id": connector_id or "",
+            "status": {"$in": ["active", "acknowledged"]},
+        })
+        if existing:
+            return None
+
+        now = datetime.now(timezone.utc).isoformat()
+        alert = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "connector_id": connector_id or "",
+            "trigger": trigger,
+            "severity": "critical" if "failure" in trigger else "warning",
+            "title": f"Alert: {trigger.replace('_', ' ').title()}",
+            "description": f"Automated alert triggered by {trigger}",
+            "status": "active",
+            "metadata": metadata or {},
+            "created_at": now,
+            "updated_at": now,
+        }
+        await db[ALERTS].insert_one(alert)
+        alert.pop("_id", None)
+
+        log = IntegrationAuditLog(
+            tenant_id=tenant_id,
+            connector_id=connector_id,
+            action=AuditAction.ALERT_CREATED,
+            metadata={"trigger": trigger, "alert_id": alert["id"]},
+        )
+        await self._repo.create_audit_log(log.to_doc())
+
+        return alert

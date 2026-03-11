@@ -1,0 +1,25 @@
+"""
+Router Registry — Central registration for all feature-based CM routers.
+Replaces the monolithic router.py with modular, feature-scoped sub-routers.
+
+All routes are prefixed with /api/channel-manager/v2/ to preserve backward compatibility.
+"""
+from fastapi import APIRouter
+
+from .routers.connector_router import router as connector_router
+from .routers.sync_router import router as sync_router
+from .routers.reservation_router import router as reservation_router
+from .routers.audit_router import router as audit_router
+from .routers.metrics_router import router as metrics_router
+from .routers.alert_router import router as alert_router
+from .routers.scheduler_router import router as scheduler_router
+
+router = APIRouter(prefix="/api/channel-manager/v2", tags=["Channel Manager v2"])
+
+router.include_router(connector_router)
+router.include_router(sync_router)
+router.include_router(reservation_router)
+router.include_router(audit_router)
+router.include_router(metrics_router)
+router.include_router(alert_router)
+router.include_router(scheduler_router)

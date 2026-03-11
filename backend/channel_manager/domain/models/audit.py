@@ -102,6 +102,17 @@ class AuditAction(str, Enum):
     ERROR_ESCALATED = "error_escalated"
     # Production readiness
     PRODUCTION_READINESS_CHECK = "production_readiness_check"
+    # Scheduled import jobs
+    IMPORT_JOB_STARTED = "import_job_started"
+    IMPORT_JOB_COMPLETED = "import_job_completed"
+    IMPORT_JOB_RETRYING = "import_job_retrying"
+    IMPORT_JOB_FAILED = "import_job_failed"
+    SAFETY_NET_SYNC_RUN = "safety_net_sync_run"
+    # Credential security
+    CREDENTIAL_ROTATION_STARTED = "credential_rotation_started"
+    CREDENTIAL_ROTATION_COMPLETED = "credential_rotation_completed"
+    CREDENTIAL_VALIDATION_PASSED = "credential_validation_passed"
+    CREDENTIAL_VALIDATION_FAILED = "credential_validation_failed"
     # Alerting
     ALERT_CREATED = "alert_created"
     ALERT_ACKNOWLEDGED = "alert_acknowledged"

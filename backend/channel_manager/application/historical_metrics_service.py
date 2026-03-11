@@ -305,3 +305,26 @@ class HistoricalMetricsService:
             created += 1
 
         return {"aggregated": created, "date": date}
+
+
+    async def record_validation_result(
+        self, tenant_id: str, connector_id: str,
+        passed: int, failed: int, total: int,
+    ) -> None:
+        """Record a sandbox validation result as a metrics snapshot."""
+        doc = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "connector_id": connector_id,
+            "property_id": "",
+            "granularity": "event",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "metrics": {
+                "validation_passed": passed,
+                "validation_failed": failed,
+                "validation_total": total,
+                "validation_score": round(passed / max(total, 1) * 100, 1),
+            },
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db[SNAPSHOTS].insert_one(doc)

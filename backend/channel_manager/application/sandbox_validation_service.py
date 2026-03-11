@@ -115,6 +115,9 @@ class SandboxValidationService:
 
         report = self._report(connector_id, property_id, checks, blocker_issues)
 
+        # ── Integration with operational maturity services ──
+        await self._integrate_with_ops_services(tenant_id, connector_id, report)
+
         # Audit
         await self._audit(
             tenant_id, property_id, connector_id,
@@ -376,12 +379,30 @@ class SandboxValidationService:
         failed = [c for c in checks if not c["success"]]
         has_blockers = len(blocker_issues) > 0
 
+        # Classify warnings vs errors
+        warnings = []
+        contract_mismatches = []
+        for c in failed:
+            err = c.get("error", "") or c.get("response_summary", "")
+            if "schema" in err.lower() or "mismatch" in err.lower() or "format" in err.lower():
+                contract_mismatches.append({
+                    "check": c["check_name"],
+                    "detail": err[:200],
+                })
+            elif c["check_name"] not in {"authentication", "inventory_push", "rate_push"}:
+                warnings.append({
+                    "check": c["check_name"],
+                    "detail": err[:200],
+                })
+
         if has_blockers:
             recommendation = "NOT_READY — resolve blocker issues before going live"
         elif len(failed) > 0:
             recommendation = "CONDITIONAL — non-critical checks failed, review before production"
         else:
-            recommendation = "READY — all checks passed, safe to proceed to production"
+            recommendation = "READY_FOR_PRODUCTION"
+
+        total_latency = sum(c.get("latency_ms", 0) for c in checks)
 
         return {
             "connector_id": connector_id,
@@ -390,7 +411,10 @@ class SandboxValidationService:
             "passed_checks": len(passed),
             "failed_checks": len(failed),
             "blocker_issues": blocker_issues,
+            "warnings": warnings,
+            "contract_mismatches": contract_mismatches,
             "production_recommendation": recommendation,
+            "total_latency_ms": total_latency,
             "checks": checks,
             "run_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -401,3 +425,46 @@ class SandboxValidationService:
             action=action, actor_id=actor_id, metadata=metadata or {},
         )
         await self._repo.create_audit_log(log.to_doc())
+
+    async def _integrate_with_ops_services(
+        self, tenant_id: str, connector_id: str, report: Dict[str, Any],
+    ):
+        """Push validation results into historical metrics, alerting, and reliability."""
+        try:
+            from .historical_metrics_service import HistoricalMetricsService
+            metrics_svc = HistoricalMetricsService(repo=self._repo)
+            await metrics_svc.record_validation_result(
+                tenant_id, connector_id,
+                passed=report["passed_checks"],
+                failed=report["failed_checks"],
+                total=report["total_checks"],
+            )
+        except Exception as e:
+            logger.warning("Failed to record validation metrics: %s", e)
+
+        try:
+            if report["failed_checks"] >= 3:
+                from .alerting_service import AlertingService
+                alert_svc = AlertingService(repo=self._repo)
+                await alert_svc.check_and_fire_alert(
+                    tenant_id=tenant_id,
+                    trigger="sandbox_validation_failures",
+                    connector_id=connector_id,
+                    metadata={
+                        "failed_checks": report["failed_checks"],
+                        "blocker_issues": report.get("blocker_issues", []),
+                    },
+                )
+        except Exception as e:
+            logger.warning("Failed to fire validation alert: %s", e)
+
+        try:
+            from .reliability_service import ReliabilityService
+            rel_svc = ReliabilityService(repo=self._repo)
+            await rel_svc.record_validation_event(
+                tenant_id, connector_id,
+                success=report["failed_checks"] == 0,
+                details={"recommendation": report.get("production_recommendation", "")},
+            )
+        except Exception as e:
+            logger.warning("Failed to record reliability event: %s", e)

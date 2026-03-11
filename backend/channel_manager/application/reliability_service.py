@@ -257,7 +257,8 @@ class ReliabilityService:
         # Pattern: error type concentration
         error_types = {}
         for j in failed_jobs:
-            err = j.get("last_error", "unknown")[:50]
+            err = j.get("last_error") or "unknown"
+            err = err[:50] if err else "unknown"
             error_types[err] = error_types.get(err, 0) + 1
 
         for err, count in error_types.items():
@@ -284,3 +285,17 @@ class ReliabilityService:
             return "degraded"
         else:
             return "unstable"
+
+
+    async def record_validation_event(
+        self, tenant_id: str, connector_id: str,
+        success: bool, details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Record a validation result for reliability tracking."""
+        await db["cm_validation_events"].insert_one({
+            "tenant_id": tenant_id,
+            "connector_id": connector_id,
+            "success": success,
+            "details": details or {},
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })

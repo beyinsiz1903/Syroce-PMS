@@ -8,7 +8,7 @@ import json
 import asyncio
 import aiohttp
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://hotel-maturity-hub.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://ack-tracking-hub.preview.emergentagent.com').rstrip('/')
 
 async def detailed_response_inspection():
     """Inspect the actual response data in detail"""

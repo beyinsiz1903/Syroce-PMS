@@ -41669,7 +41669,7 @@ async def get_compset_real_time_prices(
 # CHANNEL MANAGER V2 - Production-Grade Connector Architecture
 # ============================================================================
 try:
-    from channel_manager.interfaces.router import router as cm_v2_router
+    from channel_manager.interfaces.router_registry import router as cm_v2_router
     app.include_router(cm_v2_router, tags=["Channel Manager v2"])
     print("✅ Channel Manager v2 router included (connector-first architecture)")
 except Exception as e:
