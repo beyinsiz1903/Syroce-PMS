@@ -1,183 +1,145 @@
 # Syroce PMS — Product Requirements Document
 
 ## Original Problem Statement
-Cloud-native Property Management System (PMS) with advanced HotelRunner Channel Manager integration. Multi-tenant, production-grade hospitality platform.
+Cloud PMS + Channel Manager integration platform. User acts as principal SaaS architect building a production-grade HotelRunner integration engine with operational maturity features.
 
-## Core Architecture
-- **Backend**: FastAPI + MongoDB (multi-tenant)
-- **Frontend**: React + Shadcn/UI + Tailwind
-- **Auth**: JWT-based, RBAC
-- **Channel Manager**: DDD architecture (Domain/Application/Infrastructure/Interfaces)
+## Architecture
+- Backend: FastAPI + MongoDB (async)
+- Frontend: React + Tailwind + Shadcn/UI
+- Pattern: Connector-first, domain-driven design
+- Encryption: AES-256-GCM for credential security
 
-## Completed Modules
+## Code Structure
+```
+backend/channel_manager/
+├── application/          # Business logic services
+│   ├── alerting_service.py
+│   ├── connector_service.py
+│   ├── error_queue_service.py
+│   ├── event_sync_service.py
+│   ├── historical_metrics_service.py
+│   ├── inventory_sync_service.py
+│   ├── mapping_service.py
+│   ├── multi_property_service.py
+│   ├── observability_service.py
+│   ├── production_readiness_service.py
+│   ├── provider_adapters.py
+│   ├── reconciliation_service.py
+│   ├── reliability_service.py
+│   ├── reservation_import_service.py
+│   ├── sandbox_validation_service.py
+│   ├── scheduled_import_service.py     # NEW: Sprint 3
+│   ├── scheduler_service.py
+│   └── webhook_service.py
+├── connectors/hotelrunner/
+│   ├── auth.py
+│   ├── client.py
+│   ├── contract_errors.py              # NEW: Sprint 1
+│   ├── environment_config.py           # NEW: Sprint 1
+│   ├── errors.py
+│   ├── rate_limit.py
+│   ├── retry_policy.py
+│   ├── xml_builder.py
+│   └── xml_parser.py
+├── domain/models/
+│   ├── audit.py
+│   ├── canonical.py
+│   ├── connector_account.py
+│   ├── credential_security.py          # NEW: Sprint 4
+│   ├── reservation_import.py
+│   └── sync.py
+├── infrastructure/
+│   ├── credential_vault.py
+│   ├── encryption_service.py
+│   ├── indexes.py
+│   ├── rbac.py
+│   └── repository.py
+└── interfaces/
+    ├── router_registry.py              # NEW: Sprint 2
+    ├── router.py                       # LEGACY (preserved)
+    └── routers/                        # NEW: Sprint 2
+        ├── alert_router.py
+        ├── audit_router.py
+        ├── connector_router.py
+        ├── metrics_router.py
+        ├── reservation_router.py
+        ├── scheduler_router.py
+        └── sync_router.py
+```
 
-### Foundation (Complete)
-- Connection test system
-- Inventory sync engine
-- Reservation import engine
-- Real HotelRunner reservation adapter
-- Mapping engine (entity-level, validation, auto-mapping)
-- Reconciliation service
-- Credential security (AES-256-GCM)
-- RBAC enforcement
-- Scheduled sync
-- Event-driven sync architecture
-- Webhook ingestion (HMAC signature verification)
-- Production readiness validation
+## Completed Features
 
-### Phase 1-6 Hotel Integration Platform (Complete — Feb 2026)
-- Admin Control Panel (7-tab UI)
-- Webhook/Callback Integration
-- Connector Health Monitoring
-- Error Queue Admin Panel
-- Operational Observability
-- Production Readiness Validation
+### Core Platform (Phase 1-3)
+- Channel Manager v2 connector-first architecture
+- HotelRunner client with rate limiting, retry, audit
+- Inventory Sync Engine (delta sync, coalescing, batching)
+- Reservation Import Engine (idempotency, duplicate protection)
+- Entity mapping service with validation
 
-### Phase 7 — Operational Maturity (Complete — Mar 11, 2026)
-5 new modules implemented + AdminControlPanel refactored:
+### Operational Maturity (Phase 4-6)
+- Historical metrics storage with retention
+- Alerting engine with rules and severity levels
+- Connector reliability monitoring (uptime, MTTR, MTBF)
+- Sandbox validation (10-check suite)
+- Multi-property dashboard
+- Integration audit log
+- Error queue with bulk operations
+- Webhook ingestion
+- Production readiness checker
+- RBAC for credential access
 
-1. **Historical Metrics Storage**
-   - `cm_metrics_snapshots` collection
-   - Snapshot creation (hourly), daily aggregation
-   - Trend calculation (24h, 7d, 30d, 90d, 1y)
-   - Retention cleanup (30d hourly, 90d daily, 1y weekly)
-   - Property-level and connector-level queries
-   - Endpoints: POST /metrics/snapshot, GET /metrics/history, GET /metrics/trends
+### Sprint Implementation (2026-03-11)
 
-2. **Alerting System**
-   - `cm_alerts` and `cm_alert_rules` collections
-   - 12 default alert rules (health drop, sync failures, stale sync, import_failure_spike, etc.)
-   - Alert evaluation engine
-   - Actions: acknowledge, resolve, mute, dismiss
-   - Severity: info, warning, critical
-   - Endpoints: GET/POST /alerts, GET/POST /alerts/rules, POST /alerts/{id}/acknowledge|resolve|mute|dismiss
+#### Sprint 1: HotelRunner Sandbox Validation Enhancement
+- Environment config: mock/sandbox/production with per-env settings
+- Enhanced readiness report with warnings, contract mismatches
+- Ops integration: validation results -> metrics, alerting, reliability
+- Typed provider contract errors (InvalidXml, MissingField, SchemaMismatch, ProviderError, UnknownFormat)
 
-3. **Enhanced Sandbox Validation**
-   - Extended 12-step validation process
-   - Mapping readiness dependency validation
-   - Connector health impact assessment
-   - Required next actions generation
-   - Endpoint: POST /sandbox/validate/{id}/full
+#### Sprint 2: Router Refactoring
+- Broke 1800+ line router.py into 7 feature-based routers
+- Central router_registry.py for registration
+- All endpoint URLs preserved (zero breaking changes)
+- 26 API tests verify no regression
 
-4. **Connector Reliability Monitoring**
-   - MTBF, MTTR, uptime calculation
-   - Failure pattern detection (consecutive, time-window, repeated errors)
-   - Connector classification (stable, healthy, degraded, unstable)
-   - Import success rate factored into classification (60% sync + 40% import weight)
-   - Endpoints: GET /reliability, GET /reliability/{id}, GET /reliability/property/{id}
+#### Sprint 3: Scheduled Reservation Import Jobs
+- Background import job system with lifecycle: pending -> running -> completed/retrying/failed
+- Duplicate job prevention via in-memory lock
+- Retry with exponential backoff (max 3)
+- Import failure spike -> alerting engine
+- Cron safety-net inventory sync
+- Per-connector configurable polling interval
+- New Import Jobs tab in Admin Panel
 
-5. **Multi-Property Integration Dashboard**
-   - Property-level aggregation
-   - Tenant-wide health scoring
-   - Cross-property comparison
-   - Import health card per property (import_total, import_failed, import_review, import_success_rate)
-   - Top failing/retrying properties
-   - Provider distribution
-   - Endpoints: GET /multi-property/dashboard|comparison|issues|health
+#### Sprint 4: Credential Security Hardening
+- ConnectorCredential, EncryptedSecret, SecretRotationLog models
+- AES-256-GCM encryption at rest
+- Masked credential viewing (UI + API)
+- RBAC-enforced credential operations
+- Secure rotation with audit trail
+- Post-rotation auto-validation
 
-6. **AdminControlPanel Refactor**
-   - Monolithic component split into 12 lazy-loaded tab components
-   - New directory: frontend/src/pages/admin/tabs/
-   - Shared UI components extracted to admin/shared.js
-
-### Phase 8 — Reservation Import Engine Production Hardening (Complete — Mar 11, 2026)
-
-**Core Workflow:**
-- HotelRunner reservation pull with batch processing
-- Per-batch summary with detailed counts (new, modified, cancelled, duplicate, conflict, review, failed, out_of_order)
-- Full processing lifecycle (pending → created/modified/cancelled/review/failed)
-
-**Idempotency & Duplicate Protection:**
-- Idempotency key: connector_id + external_reservation_id + payload_fingerprint
-- SHA-256 fingerprint on key fields (dates, room, rate, amount, status, email, requests)
-- Duplicate detection → duplicate status
-- Different payload with same external_id → modification or conflict
-
-**Supported States:**
-- new reservation → created
-- duplicate reservation → duplicate
-- modification → modified (PMS booking updated)
-- cancellation → cancelled (PMS booking cancelled)
-- out_of_order event → out_of_order (review queue)
-- re-import after partial failure → reprocess from review queue
-
-**Cancellation / Modification Rules:**
-- checked-in stay cancellation → manual review (CHECKED_IN_CANCELLATION)
-- missing mapping → manual review (MISSING_ROOM_MAPPING)
-- already_cancelled → duplicate_cancel
-- modification after cancellation → conflict (MODIFICATION_AFTER_CANCEL)
-- older payload doesn't overwrite newer state (fingerprint check)
-
-**Manual Review Queue:**
-- review_reason_code (9 codes: missing_room_mapping, checked_in_cancellation, modification_after_cancel, etc.)
-- severity via import_status
-- suggested_action per review reason
-- resolution_status tracking (reviewed_by, reviewed_at)
-- reprocess action (creates PMS booking or processes cancel)
-- dismiss action (marks as dismissed)
-- Full audit trail for all review actions
-
-**ACK / Notification State Tracking:**
-- ack_pending → ack_sent | ack_failed | ack_retrying
-- audit log entry per ACK attempt
-- Failed ACKs visible in alerting system (ack_failure_spike trigger)
-- Retry failed ACKs endpoint: POST /reservations/retry-acks
-
-**Operational Maturity Integration:**
-- Historical metrics: import_total, import_created, import_modified, import_cancelled, import_failed, import_review, import_duplicate, import_success_rate written to snapshots
-- Alerting: import_failure_spike trigger (warning at 5, critical at 10)
-- Reliability: import_success_rate factored into connector classification
-- Multi-property: import health card per property (import_total, import_failed, import_review, import_success_rate)
-
-**Data Models:**
-- ImportedReservation (35+ fields, idempotency, ACK tracking, review metadata)
-- ReservationImportBatch (batch-level summary with 12 count fields)
-- ReconciliationIssue (existing)
-- IntegrationAuditLog (40+ action types including all reservation lifecycle events)
-- Indexes: (tenant_id, connector_id, external_reservation_id) unique, (tenant_id, import_status), (tenant_id, ack_status), (batch_id)
-
-**API Endpoints:**
-- POST /reservations/pull — trigger import
-- GET /reservations/imported — list with filters
-- GET /reservations/imported/{id} — detail
-- GET /reservations/review-queue — manual review items
-- POST /reservations/review-queue/{id}/reprocess — reprocess
-- POST /reservations/review-queue/{id}/dismiss — dismiss
-- POST /reservations/approve — legacy compat
-- GET /reservations/batches — batch list
-- GET /reservations/batches/{id} — batch detail
-- GET /reservations/stats — dashboard stats (by_status, by_ack, review count, success rate, recent batches)
-- POST /reservations/retry-acks — retry failed ACKs
-- GET /reservations/audit-trail — import audit logs
-
-**Frontend — ReservationsTab:**
-- 5 sub-sections: Overview, Reservations, Review, Batches, Audit
-- Overview: 4 metric cards, import/ACK status breakdowns, recent batch cards
-- Reservations: filterable table with status/ACK badges, detail dialog
-- Review: action-oriented queue with reprocess/dismiss buttons
-- Batches: batch summary cards with all count metrics
-- Audit: chronological timeline of import events
-- Reservation detail dialog with full info, review actions, error display
+### Frontend
+- 13-tab Admin Control Panel (Sync Health, Reservations, Alerts, Reliability, Reconciliation, Scheduler, Import Jobs, Credentials, Error Queue, Observability, Readiness, Sandbox Validation, Multi-Property)
 
 ## Test Coverage
-- `/app/backend/tests/test_reservation_import_engine.py`: 25 tests, 100% passing
-- `/app/backend/tests/test_reservation_import_api.py`: 15 API tests, 100% passing
-- `/app/backend/tests/test_operational_maturity.py`: 27 tests, 100% passing
-- Testing agent validation: Backend 100%, Frontend 100%
+- 40 unit tests (test_sprint_suite.py) — 100% pass
+- 26 API integration tests (test_sprint_features_api.py) — 100% pass
+- 21 reservation engine tests — 100% pass
+- 19 reservation API tests — 100% pass
 
-## API Endpoints Summary
-All endpoints prefixed with `/api/channel-manager/v2/`
-- Metrics: snapshot, history, trends, retention-cleanup, daily-aggregation
-- Alerts: list, evaluate, rules CRUD, acknowledge, resolve, mute, dismiss
-- Sandbox: full validation
-- Reliability: all, per-connector, per-property
-- Multi-Property: dashboard, comparison, issues, health
-- Reservations: pull, imported, imported/{id}, review-queue, reprocess, dismiss, approve, batches, batches/{id}, stats, retry-acks, audit-trail
-- Admin: sync-health, reconciliation, scheduler, credentials, error-queue, observability, readiness
+## Remaining Work
 
-## Backlog
-- (P1) Backend Router Refactoring — split router.py into feature-based router files
-- (P2) Alert notification delivery (email, SMS, webhook channels)
-- (P2) Real-time WebSocket updates for admin panel
-- (P3) Advanced analytics and custom report builder
-- (P3) Multi-language support (i18n)
+### P1 - Next
+- Alert delivery channels (email via SendGrid, SMS via Twilio, webhooks)
+- Real HotelRunner sandbox credentials for E2E validation
+
+### P2 - Enhancement
+- UI/UX polish for all admin tabs
+- Advanced data visualizations
+- Background scheduler worker (cron/APScheduler)
+
+### P3 - Future
+- Multi-language support (i18n)
+- Performance optimization
+- Report builder

@@ -1,6 +1,6 @@
 import { useState, Suspense, lazy } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-import { Loader2, Activity, AlertTriangle, Clock, Key, AlertOctagon, BarChart3, Shield, Bell, TrendingUp, Boxes, Building2, FileText } from 'lucide-react';
+import { Loader2, Activity, AlertTriangle, Clock, Key, AlertOctagon, BarChart3, Shield, Bell, TrendingUp, Boxes, Building2, FileText, PlayCircle } from 'lucide-react';
 
 const SyncHealthTab = lazy(() => import('./admin/tabs/SyncHealthTab'));
 const ReconciliationTab = lazy(() => import('./admin/tabs/ReconciliationTab'));
@@ -14,6 +14,7 @@ const ReliabilityTab = lazy(() => import('./admin/tabs/ReliabilityTab'));
 const SandboxValidationTab = lazy(() => import('./admin/tabs/SandboxValidationTab'));
 const MultiPropertyTab = lazy(() => import('./admin/tabs/MultiPropertyTab'));
 const ReservationsTab = lazy(() => import('./admin/tabs/ReservationsTab'));
+const ImportJobsTab = lazy(() => import('./admin/tabs/ImportJobsTab'));
 
 const TABS = [
   { id: 'sync-health', label: 'Sync Health', icon: Activity },
@@ -22,6 +23,7 @@ const TABS = [
   { id: 'reliability', label: 'Reliability', icon: TrendingUp },
   { id: 'reconciliation', label: 'Reconciliation', icon: AlertTriangle },
   { id: 'scheduler', label: 'Scheduler', icon: Clock },
+  { id: 'import-jobs', label: 'Import Jobs', icon: PlayCircle },
   { id: 'credentials', label: 'Credentials', icon: Key },
   { id: 'error-queue', label: 'Error Queue', icon: AlertOctagon },
   { id: 'observability', label: 'Observability', icon: BarChart3 },
@@ -38,6 +40,7 @@ const TabContent = ({ tabId }) => {
     'reliability': <ReliabilityTab />,
     'reconciliation': <ReconciliationTab />,
     'scheduler': <SchedulerTab />,
+    'import-jobs': <ImportJobsTab />,
     'credentials': <CredentialsTab />,
     'error-queue': <ErrorQueueTab />,
     'observability': <ObservabilityTab />,
