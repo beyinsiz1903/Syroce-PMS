@@ -86,6 +86,14 @@ export const NAV_ITEMS = [
     group: "professional",
   },
   {
+    key: "admin_control_panel",
+    label: "Admin Control Panel",
+    path: "/app/admin-control-panel",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+  },
+  {
     key: "reports",
     label: "Gelişmiş Raporlar",
     path: "/app/gelismis-raporlar",

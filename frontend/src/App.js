@@ -131,6 +131,7 @@ const MLDashboard = lazy(() => import("@/pages/MLDashboard"));
 
 // Channel Manager v2 - Integration Hub
 const IntegrationHub = lazy(() => import("@/pages/IntegrationHub"));
+const AdminControlPanel = lazy(() => import("@/pages/AdminControlPanel"));
 
 import { Toaster } from "@/components/ui/sonner";
 
@@ -491,6 +492,18 @@ function App() {
               isAuthenticated ? (
                 <Suspense fallback={<LoadingFallback />}>
                   <IntegrationHub user={user} tenant={tenant} onLogout={handleLogout} />
+                </Suspense>
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/app/admin-control-panel"
+            element={
+              isAuthenticated ? (
+                <Suspense fallback={<LoadingFallback />}>
+                  <AdminControlPanel user={user} tenant={tenant} onLogout={handleLogout} />
                 </Suspense>
               ) : (
                 <Navigate to="/auth" replace />

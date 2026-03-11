@@ -447,3 +447,113 @@ class ChannelManagerRepository:
             "sync_events": event_stats,
             "open_issues": issue_count,
         }
+
+    # ─── Error Queue ───────────────────────────────────────────────────
+
+    async def get_error_queue(
+        self, tenant_id: str, connector_id: Optional[str] = None,
+        error_type: Optional[str] = None, limit: int = 100,
+    ) -> List[Dict]:
+        """Get failed items across sync jobs, imports, and ACK failures."""
+        items = []
+        # Failed sync jobs
+        q_jobs: Dict[str, Any] = {"tenant_id": tenant_id, "status": "failed"}
+        if connector_id:
+            q_jobs["connector_id"] = connector_id
+        if not error_type or error_type == "sync_failed":
+            async for doc in db[SYNC_JOBS].find(q_jobs, _NO_ID).sort("created_at", -1).limit(limit):
+                items.append({**doc, "error_type": "sync_failed"})
+
+        # Failed reservation imports
+        q_imports: Dict[str, Any] = {"tenant_id": tenant_id, "import_status": "failed"}
+        if connector_id:
+            q_imports["connector_id"] = connector_id
+        if not error_type or error_type == "import_failed":
+            async for doc in db[IMPORTED_RESERVATIONS].find(q_imports, _NO_ID).sort("created_at", -1).limit(limit):
+                items.append({**doc, "error_type": "import_failed"})
+
+        # ACK failures
+        q_ack: Dict[str, Any] = {"tenant_id": tenant_id, "ack_status": "ack_failed"}
+        if connector_id:
+            q_ack["connector_id"] = connector_id
+        if not error_type or error_type == "ack_failed":
+            async for doc in db[IMPORTED_RESERVATIONS].find(q_ack, _NO_ID).sort("created_at", -1).limit(limit):
+                items.append({**doc, "error_type": "ack_failed"})
+
+        items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        return items[:limit]
+
+    async def get_error_queue_summary(
+        self, tenant_id: str, connector_id: Optional[str] = None,
+    ) -> Dict[str, int]:
+        q_base: Dict[str, Any] = {"tenant_id": tenant_id}
+        if connector_id:
+            q_base["connector_id"] = connector_id
+        failed_jobs = await db[SYNC_JOBS].count_documents({**q_base, "status": "failed"})
+        failed_imports = await db[IMPORTED_RESERVATIONS].count_documents({**q_base, "import_status": "failed"})
+        ack_failed = await db[IMPORTED_RESERVATIONS].count_documents({**q_base, "ack_status": "ack_failed"})
+        return {
+            "sync_failed": failed_jobs,
+            "import_failed": failed_imports,
+            "ack_failed": ack_failed,
+            "total": failed_jobs + failed_imports + ack_failed,
+        }
+
+    # ─── Sync Trend Data (24h) ─────────────────────────────────────────
+
+    async def get_sync_trend_24h(
+        self, tenant_id: str, connector_id: Optional[str] = None,
+    ) -> List[Dict]:
+        """Get hourly sync job counts for last 24h."""
+        from datetime import timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        q: Dict[str, Any] = {"tenant_id": tenant_id, "created_at": {"$gte": cutoff}}
+        if connector_id:
+            q["connector_id"] = connector_id
+        pipeline = [
+            {"$match": q},
+            {"$addFields": {"hour": {"$substr": ["$created_at", 0, 13]}}},
+            {"$group": {
+                "_id": {"hour": "$hour", "status": "$status"},
+                "count": {"$sum": 1},
+            }},
+            {"$sort": {"_id.hour": 1}},
+        ]
+        trend = {}
+        async for doc in db[SYNC_JOBS].aggregate(pipeline):
+            hour = doc["_id"]["hour"]
+            status = doc["_id"]["status"]
+            if hour not in trend:
+                trend[hour] = {"hour": hour, "succeeded": 0, "failed": 0, "total": 0}
+            trend[hour][status] = trend[hour].get(status, 0) + doc["count"]
+            trend[hour]["total"] += doc["count"]
+        return list(trend.values())
+
+    # ─── Webhook Events ────────────────────────────────────────────────
+
+    async def store_webhook_event(self, doc: Dict) -> None:
+        await db["cm_webhook_events"].insert_one(doc)
+
+    async def get_webhook_events(
+        self, tenant_id: str, limit: int = 50,
+    ) -> List[Dict]:
+        return await db["cm_webhook_events"].find(
+            {"tenant_id": tenant_id}, _NO_ID,
+        ).sort("received_at", -1).to_list(limit)
+
+    # ─── Bulk Operations ───────────────────────────────────────────────
+
+    async def bulk_retry_sync_jobs(self, tenant_id: str, job_ids: List[str]) -> int:
+        result = await db[SYNC_JOBS].update_many(
+            {"tenant_id": tenant_id, "id": {"$in": job_ids}, "status": "failed"},
+            {"$set": {"status": "pending", "updated_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        return result.modified_count
+
+    async def bulk_dismiss_issues(self, tenant_id: str, issue_ids: List[str], reason: str) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        result = await db[RECONCILIATION_ISSUES].update_many(
+            {"tenant_id": tenant_id, "id": {"$in": issue_ids}, "status": {"$in": ["open", "investigating", "retrying"]}},
+            {"$set": {"status": "dismissed", "dismiss_reason": reason, "resolved_at": now, "updated_at": now}},
+        )
+        return result.modified_count

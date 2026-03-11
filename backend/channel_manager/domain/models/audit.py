@@ -90,6 +90,18 @@ class AuditAction(str, Enum):
     CREDENTIAL_ACCESSED = "credential_accessed"
     # Provider adapters
     PROVIDER_PUSH_FAILED = "provider_push_failed"
+    # Webhook
+    WEBHOOK_RECEIVED = "webhook_received"
+    WEBHOOK_VERIFIED = "webhook_verified"
+    WEBHOOK_FAILED = "webhook_failed"
+    WEBHOOK_SIGNATURE_INVALID = "webhook_signature_invalid"
+    # Admin actions
+    BULK_RETRY = "bulk_retry"
+    BULK_DISMISS = "bulk_dismiss"
+    ADMIN_CONNECTOR_DISABLED = "admin_connector_disabled"
+    ERROR_ESCALATED = "error_escalated"
+    # Production readiness
+    PRODUCTION_READINESS_CHECK = "production_readiness_check"
 
 
 class IntegrationAuditLog(BaseModel):
