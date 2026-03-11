@@ -45,6 +45,14 @@ Cloud-based Property Management System (PMS) for hospitality industry. Multi-ten
 - **Frontend**: Integration Hub page at /app/integration-hub with dashboard, connector management, mapping UI, sync history, reservation imports, reconciliation, audit log
 - **Tests**: 23/25 backend tests passed, 100% frontend working
 
+### Connection Test Detailed Flow (March 2026)
+**Production-grade connector test with 5-step validation:**
+- **Backend**: `test_connection_detailed()` in HotelRunnerClient validates auth, property access, room types, rate plans, and XML API connectivity separately
+- **Response Model**: ConnectionTestResponse with per-step `status` (pass/fail/warn), `latency_ms`, `error_code`, `message`
+- **Audit**: Each test writes `connection_tested` action to audit log with metadata (success, summary, latency, provider)
+- **Frontend**: Dialog with loading spinner, colored per-step results, Turkish error messages, monospace error codes
+- **Tests**: 8/8 backend pytest + frontend UI verification passed
+
 ### Semantic Migration (Previous Work)
 - Outbox event processing system (pending → processing → processed/failed/parked)
 - ModifyReservation write-path (PUT /api/reservations/semantic/{id})
