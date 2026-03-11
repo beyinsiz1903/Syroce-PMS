@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 # Configuration
-BASE_URL = "https://semantic-core-worker.preview.emergentagent.com/api"
+BASE_URL = "https://strangler-fig-verify.preview.emergentagent.com/api"
 TEST_CREDENTIALS = {
     "email": "demo@hotel.com", 
     "password": "demo123"

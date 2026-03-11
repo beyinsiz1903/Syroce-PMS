@@ -9,7 +9,7 @@ import requests
 from datetime import datetime
 
 def main():
-    backend_url = "https://semantic-core-worker.preview.emergentagent.com"
+    backend_url = "https://strangler-fig-verify.preview.emergentagent.com"
     
     # Authenticate
     session = requests.Session()
