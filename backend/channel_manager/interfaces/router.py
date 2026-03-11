@@ -20,6 +20,9 @@ from ..application.inventory_sync_service import InventorySyncService
 from ..application.reservation_import_service import ReservationImportService
 from ..application.reconciliation_service import ReconciliationService
 from ..application.observability_service import ObservabilityService
+from ..application.scheduler_service import SchedulerService
+from ..application.event_sync_service import EventSyncService
+from ..infrastructure.credential_vault import CredentialVault
 
 logger = logging.getLogger("channel_manager.interfaces.router")
 
@@ -71,6 +74,30 @@ class ReprocessReviewRequest(BaseModel):
 
 class ResolveIssueRequest(BaseModel):
     resolution: str
+
+class DismissIssueRequest(BaseModel):
+    reason: str = ""
+
+class UpdateIssueStatusRequest(BaseModel):
+    status: str
+
+class CreateIssueRequest(BaseModel):
+    connector_id: str
+    issue_type: str
+    severity: str
+    description: str
+    suggested_actions: Optional[List[str]] = None
+    evidence_payload: Optional[dict] = None
+
+class RotateCredentialsRequest(BaseModel):
+    credentials: dict
+
+class DomainEventRequest(BaseModel):
+    event_type: str
+    payload: dict = Field(default_factory=dict)
+
+class BatchEventsRequest(BaseModel):
+    events: List[DomainEventRequest]
 
 # ─── Connector Endpoints ──────────────────────────────────────────────
 
@@ -523,11 +550,43 @@ async def run_reconciliation(
 async def list_reconciliation_issues(
     connector_id: Optional[str] = None,
     status: str = Query("open"),
+    limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
     svc = ReconciliationService()
-    issues = await svc.get_issues(current_user.tenant_id, connector_id, status)
+    issues = await svc.get_issues(current_user.tenant_id, connector_id, status, limit)
     return {"issues": issues, "count": len(issues)}
+
+@router.get("/reconciliation/issues/summary")
+async def get_reconciliation_summary(
+    connector_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+):
+    svc = ReconciliationService()
+    return await svc.get_issue_summary(current_user.tenant_id, connector_id)
+
+@router.get("/reconciliation/issues/{issue_id}")
+async def get_reconciliation_issue_detail(
+    issue_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    svc = ReconciliationService()
+    detail = await svc.get_issue_detail(current_user.tenant_id, issue_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    return detail
+
+@router.put("/reconciliation/issues/{issue_id}/status")
+async def update_issue_status(
+    issue_id: str,
+    req: UpdateIssueStatusRequest,
+    current_user: User = Depends(get_current_user),
+):
+    svc = ReconciliationService()
+    try:
+        return await svc.update_issue_status(current_user.tenant_id, issue_id, req.status, current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/reconciliation/issues/{issue_id}/resolve")
 async def resolve_issue(
@@ -541,10 +600,33 @@ async def resolve_issue(
 @router.post("/reconciliation/issues/{issue_id}/dismiss")
 async def dismiss_issue(
     issue_id: str,
+    req: DismissIssueRequest = Body(DismissIssueRequest()),
     current_user: User = Depends(get_current_user),
 ):
     svc = ReconciliationService()
-    return await svc.dismiss_issue(current_user.tenant_id, issue_id, current_user.id)
+    return await svc.dismiss_issue(current_user.tenant_id, issue_id, req.reason, current_user.id)
+
+@router.post("/reconciliation/issues")
+async def create_reconciliation_issue(
+    req: CreateIssueRequest,
+    current_user: User = Depends(get_current_user),
+):
+    svc = ReconciliationService()
+    connector_svc = ConnectorService()
+    connector = await connector_svc.get_connector(current_user.tenant_id, req.connector_id)
+    if not connector:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    result = await svc.create_issue(
+        tenant_id=current_user.tenant_id,
+        property_id=connector.get("property_id", ""),
+        connector_id=req.connector_id,
+        issue_type=req.issue_type,
+        severity=req.severity,
+        description=req.description,
+        suggested_actions=req.suggested_actions,
+        evidence_payload=req.evidence_payload,
+    )
+    return {"message": "Issue created", "issue": result}
 
 # ─── Observability Endpoints ─────────────────────────────────────────
 
@@ -573,3 +655,102 @@ async def get_audit_log(
     repo = ChannelManagerRepository()
     logs = await repo.get_audit_logs(current_user.tenant_id, connector_id, limit)
     return {"logs": logs, "count": len(logs)}
+
+
+# ─── Scheduled Sync Endpoints ────────────────────────────────────────
+
+@router.post("/scheduler/run/{connector_id}")
+async def run_scheduled_check(
+    connector_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    svc = SchedulerService()
+    try:
+        result = await svc.run_scheduled_check(
+            current_user.tenant_id, connector_id, current_user.id,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/scheduler/run-all")
+async def run_all_scheduled_checks(
+    current_user: User = Depends(get_current_user),
+):
+    svc = SchedulerService()
+    return await svc.run_all_connectors(current_user.tenant_id)
+
+# ─── Credential Management Endpoints ─────────────────────────────────
+
+@router.put("/connectors/{connector_id}/credentials/secure")
+async def update_credentials_secure(
+    connector_id: str,
+    req: UpdateCredentialsRequest,
+    current_user: User = Depends(get_current_user),
+):
+    vault = CredentialVault()
+    try:
+        await vault.store_credentials(
+            current_user.tenant_id, connector_id,
+            req.credentials, current_user.id,
+        )
+        return {"message": "Credentials securely updated"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@router.post("/connectors/{connector_id}/credentials/rotate")
+async def rotate_credentials(
+    connector_id: str,
+    req: RotateCredentialsRequest,
+    current_user: User = Depends(get_current_user),
+):
+    vault = CredentialVault()
+    try:
+        await vault.rotate_credentials(
+            current_user.tenant_id, connector_id,
+            req.credentials, current_user.id,
+        )
+        return {"message": "Credentials rotated successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@router.get("/connectors/{connector_id}/credentials/masked")
+async def get_masked_credentials(
+    connector_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    svc = ConnectorService()
+    connector = await svc.get_connector(current_user.tenant_id, connector_id)
+    if not connector:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    vault = CredentialVault()
+    masked = vault.mask_credentials(connector.get("credentials", {}))
+    return {
+        "connector_id": connector_id,
+        "credentials": masked,
+        "encrypted": connector.get("credentials_encrypted", False),
+        "last_updated": connector.get("credentials_updated_at"),
+        "last_rotated": connector.get("credentials_rotated_at"),
+    }
+
+# ─── Event-Driven Sync Endpoints ─────────────────────────────────────
+
+@router.post("/events/sync")
+async def trigger_event_sync(
+    req: DomainEventRequest,
+    current_user: User = Depends(get_current_user),
+):
+    svc = EventSyncService()
+    result = await svc.handle_event(
+        current_user.tenant_id, req.event_type, req.payload,
+    )
+    return result
+
+@router.post("/events/sync/batch")
+async def trigger_batch_event_sync(
+    req: BatchEventsRequest,
+    current_user: User = Depends(get_current_user),
+):
+    svc = EventSyncService()
+    events = [{"event_type": e.event_type, "payload": e.payload} for e in req.events]
+    return await svc.handle_batch_events(current_user.tenant_id, events)

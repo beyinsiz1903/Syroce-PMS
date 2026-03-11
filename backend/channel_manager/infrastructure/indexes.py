@@ -98,6 +98,17 @@ async def create_cm_indexes():
             [("tenant_id", 1), ("connector_id", 1), ("status", 1)],
             name="cm_recon_tid_cid_status"
         )
+        await db.cm_reconciliation_issues.create_index(
+            [("tenant_id", 1), ("severity", 1), ("created_at", -1)],
+            name="cm_recon_tid_sev_created"
+        )
+        await db.cm_reconciliation_issues.create_index(
+            [("tenant_id", 1), ("issue_type", 1), ("status", 1)],
+            name="cm_recon_tid_type_status"
+        )
+        await db.cm_reconciliation_issues.create_index(
+            [("id", 1)], unique=True, name="cm_recon_id"
+        )
 
         # Integration audit log
         await db.cm_integration_audit.create_index(

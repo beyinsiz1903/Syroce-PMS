@@ -68,6 +68,20 @@ class AuditAction(str, Enum):
     MAPPING_REVALIDATED = "mapping_revalidated"
     MAPPING_INVALIDATED = "mapping_invalidated"
     MAPPING_READINESS_CHECKED = "mapping_readiness_checked"
+    # Credential lifecycle
+    CREDENTIAL_CREATED = "credential_created"
+    CREDENTIAL_CHANGED = "credential_changed"
+    CREDENTIAL_ROTATED = "credential_rotated"
+    CREDENTIAL_TESTED = "credential_tested"
+    # Reconciliation
+    RECONCILIATION_ISSUE_CREATED = "reconciliation_issue_created"
+    RECONCILIATION_ISSUE_INVESTIGATING = "reconciliation_issue_investigating"
+    RECONCILIATION_ISSUE_DISMISSED = "reconciliation_issue_dismissed"
+    # Scheduler
+    SCHEDULED_SYNC_RUN = "scheduled_sync_run"
+    SCHEDULED_SYNC_REQUEUED = "scheduled_sync_requeued"
+    # Event-driven sync
+    EVENT_SYNC_TRIGGERED = "event_sync_triggered"
 
 
 class IntegrationAuditLog(BaseModel):

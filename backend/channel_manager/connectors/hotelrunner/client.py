@@ -26,12 +26,16 @@ logger = logging.getLogger("channel_manager.hotelrunner.client")
 
 HOTELRUNNER_API_BASE = "https://app.hotelrunner.com/api/v2"
 HOTELRUNNER_SANDBOX_BASE = "https://sandbox.hotelrunner.com/api/v2"
+HOTELRUNNER_MOCK_BASE = "http://localhost:9999/api/v2"
 
 # Safety limits
 MAX_PAGINATION_PAGES = 100
 DEFAULT_PER_PAGE = 50
 AUDIT_TRUNCATE_LEN = 4000
 MASK_KEYS = {"token", "password", "secret", "api_key"}
+
+# Environment config
+VALID_ENVIRONMENTS = ("mock", "sandbox", "production")
 
 
 def _mask_params(params: Dict[str, str]) -> Dict[str, str]:
@@ -70,18 +74,26 @@ class HotelRunnerClient:
         self,
         auth: HotelRunnerAuth,
         sandbox: bool = True,
+        environment: str = "sandbox",
         rate_limiter: Optional[RateLimiter] = None,
         retry_policy: Optional[RetryPolicy] = None,
     ):
         self._auth = auth
-        self._base_url = HOTELRUNNER_SANDBOX_BASE if sandbox else HOTELRUNNER_API_BASE
+        # Environment-based URL selection
+        if environment == "production":
+            self._base_url = HOTELRUNNER_API_BASE
+        elif environment == "mock":
+            self._base_url = HOTELRUNNER_MOCK_BASE
+        else:
+            self._base_url = HOTELRUNNER_SANDBOX_BASE
+        self._environment = environment
         self._rate_limiter = rate_limiter or RateLimiter()
         self._retry_policy = retry_policy or RetryPolicy()
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(30.0, connect=10.0),
             follow_redirects=True,
         )
-        self._sandbox = sandbox
+        self._sandbox = sandbox or environment == "sandbox"
         self._audit_entries: List[Dict[str, Any]] = []
 
     async def close(self):
@@ -249,29 +261,107 @@ class HotelRunnerClient:
 
     # ─── Inventory / Rates (XML) ─────────────────────────────────────
 
-    async def push_availability(self, updates: list) -> Dict[str, Any]:
-        """Push inventory availability to HotelRunner."""
+    async def push_availability(
+        self, updates: list, correlation_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Push inventory availability to HotelRunner.
+
+        Returns: {success: bool, errors: [], warnings: [], correlation_id, latency_ms, raw_request_len, raw_response_len}
+        """
+        corr_id = correlation_id or str(_uuid.uuid4())
         xml_body = xml_builder.build_availability_notif(
             hr_id=self._auth.hr_id, updates=updates,
         )
 
+        audit = {
+            "correlation_id": corr_id,
+            "operation": "push_availability",
+            "environment": self._environment,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "request_payload_len": len(xml_body),
+            "update_count": len(updates),
+        }
+        start = time.monotonic()
+
         async def _do():
             resp_xml = await self._request("POST", "/ari/availability", xml_body=xml_body)
-            return xml_parser.parse_response_status(resp_xml)
+            return resp_xml
 
-        return await self._retry_policy.execute_with_retry(_do)
+        try:
+            resp_xml = await self._retry_policy.execute_with_retry(_do)
+            latency_ms = int((time.monotonic() - start) * 1000)
+            result = xml_parser.parse_response_status(resp_xml)
+            audit["latency_ms"] = latency_ms
+            audit["response_payload_len"] = len(resp_xml)
+            audit["success"] = result.get("success", False)
+            self._audit_entries.append(audit)
 
-    async def push_rates(self, updates: list) -> Dict[str, Any]:
-        """Push rate amounts to HotelRunner."""
+            result["correlation_id"] = corr_id
+            result["latency_ms"] = latency_ms
+            result["raw_request_len"] = len(xml_body)
+            result["raw_response_len"] = len(resp_xml)
+            return result
+
+        except Exception as e:
+            latency_ms = int((time.monotonic() - start) * 1000)
+            audit["latency_ms"] = latency_ms
+            audit["error"] = str(e)[:500]
+            audit["error_type"] = type(e).__name__
+            audit["success"] = False
+            self._audit_entries.append(audit)
+            raise
+
+    async def push_rates(
+        self, updates: list, correlation_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Push rate amounts to HotelRunner.
+
+        Returns: {success: bool, errors: [], warnings: [], correlation_id, latency_ms}
+        """
+        corr_id = correlation_id or str(_uuid.uuid4())
         xml_body = xml_builder.build_rate_amount_notif(
             hr_id=self._auth.hr_id, updates=updates,
         )
 
+        audit = {
+            "correlation_id": corr_id,
+            "operation": "push_rates",
+            "environment": self._environment,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "request_payload_len": len(xml_body),
+            "update_count": len(updates),
+        }
+        start = time.monotonic()
+
         async def _do():
             resp_xml = await self._request("POST", "/ari/rates", xml_body=xml_body)
-            return xml_parser.parse_response_status(resp_xml)
+            return resp_xml
 
-        return await self._retry_policy.execute_with_retry(_do)
+        try:
+            resp_xml = await self._retry_policy.execute_with_retry(_do)
+            latency_ms = int((time.monotonic() - start) * 1000)
+            result = xml_parser.parse_response_status(resp_xml)
+            audit["latency_ms"] = latency_ms
+            audit["response_payload_len"] = len(resp_xml)
+            audit["success"] = result.get("success", False)
+            self._audit_entries.append(audit)
+
+            result["correlation_id"] = corr_id
+            result["latency_ms"] = latency_ms
+            result["raw_request_len"] = len(xml_body)
+            result["raw_response_len"] = len(resp_xml)
+            return result
+
+        except Exception as e:
+            latency_ms = int((time.monotonic() - start) * 1000)
+            audit["latency_ms"] = latency_ms
+            audit["error"] = str(e)[:500]
+            audit["error_type"] = type(e).__name__
+            audit["success"] = False
+            self._audit_entries.append(audit)
+            raise
 
     # ─── Reservations (REST/JSON) ────────────────────────────────────
 

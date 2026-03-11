@@ -332,6 +332,38 @@ class ChannelManagerRepository:
     async def update_reconciliation_issue(self, issue_id: str, updates: Dict) -> None:
         await db[RECONCILIATION_ISSUES].update_one({"id": issue_id}, {"$set": updates})
 
+    async def get_reconciliation_issue(self, tenant_id: str, issue_id: str) -> Optional[Dict]:
+        return await db[RECONCILIATION_ISSUES].find_one(
+            {"tenant_id": tenant_id, "id": issue_id}, _NO_ID,
+        )
+
+    async def get_reconciliation_summary(
+        self, tenant_id: str, connector_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Aggregate issue counts by type and severity."""
+        match = {"tenant_id": tenant_id, "status": {"$in": ["open", "investigating", "retrying"]}}
+        if connector_id:
+            match["connector_id"] = connector_id
+
+        pipeline = [
+            {"$match": match},
+            {"$group": {
+                "_id": {"issue_type": "$issue_type", "severity": "$severity"},
+                "count": {"$sum": 1},
+            }},
+        ]
+        by_type: Dict[str, int] = {}
+        by_severity: Dict[str, int] = {}
+        total = 0
+        async for doc in db[RECONCILIATION_ISSUES].aggregate(pipeline):
+            it = doc["_id"]["issue_type"]
+            sev = doc["_id"]["severity"]
+            cnt = doc["count"]
+            by_type[it] = by_type.get(it, 0) + cnt
+            by_severity[sev] = by_severity.get(sev, 0) + cnt
+            total += cnt
+        return {"total_open": total, "by_type": by_type, "by_severity": by_severity}
+
     # ─── Integration Audit Log ─────────────────────────────────────────
 
     async def create_audit_log(self, doc: Dict) -> None:

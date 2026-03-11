@@ -32,6 +32,28 @@ class ProviderUnavailableError(ConnectorError):
         super().__init__(message, recoverable=True)
 
 
+class ProviderValidationError(ConnectorError):
+    """Provider rejected the request due to invalid data in the push payload."""
+    def __init__(self, message: str = "Provider validation failed", details: dict = None):
+        self.details = details or {}
+        super().__init__(message, recoverable=False)
+
+
+class SchemaMismatchError(ConnectorError):
+    """Response schema doesn't match expected format."""
+    def __init__(self, message: str = "Schema mismatch", expected: str = "", actual: str = ""):
+        self.expected = expected
+        self.actual = actual
+        super().__init__(message, recoverable=False)
+
+
+class UnknownResponseFormatError(ConnectorError):
+    """Response format is unrecognizable."""
+    def __init__(self, message: str = "Unknown response format", raw_response: str = ""):
+        self.raw_response = raw_response[:2000]
+        super().__init__(message, recoverable=False)
+
+
 class ValidationError(ConnectorError):
     """Provider rejected the request due to invalid data."""
     def __init__(self, message: str = "Validation failed", details: dict = None):

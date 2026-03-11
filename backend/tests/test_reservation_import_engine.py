@@ -15,7 +15,7 @@ import os
 import uuid
 from datetime import datetime, timezone, timedelta
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://live-reservations.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://mapping-validator.preview.emergentagent.com').rstrip('/')
 TENANT_ID = "044f122b-87b5-480a-88b4-b9534b0c8c90"
 
 class TestAuth:
