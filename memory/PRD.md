@@ -41,7 +41,7 @@ Cloud-based Property Management System (PMS) for hospitality industry. Multi-ten
 - **HotelRunner Connector**: HTTP client, XML builder/parser (OTA protocol), mapper, auth, rate limiter, retry policy, typed errors
 - **Application Services**: ConnectorService, MappingService, InventorySyncService, ReservationImportService, ReconciliationService, ObservabilityService
 - **Infrastructure**: MongoDB repository with tenant isolation, indexes
-- **API**: 25+ endpoints under /api/channel-manager/v2/
+- **API**: 30+ endpoints under /api/channel-manager/v2/
 - **Frontend**: Integration Hub page at /app/integration-hub with dashboard, connector management, mapping UI, sync history, reservation imports, reconciliation, audit log
 
 ### Connection Test Detailed Flow (March 2026)
@@ -53,7 +53,7 @@ Cloud-based Property Management System (PMS) for hospitality industry. Multi-ten
 
 ### Inventory Sync Engine (March 2026)
 **Production-grade delta sync engine with full job lifecycle:**
-- **SyncJob Lifecycle**: pending → batched → dispatched → succeeded | retrying → failed → manual_review
+- **SyncJob Lifecycle**: pending -> batched -> dispatched -> succeeded | retrying -> failed -> manual_review
 - **Change Types**: availability_changed, stop_sell_changed, closed_to_arrival_changed, closed_to_departure_changed, minimum_stay_changed, rate_changed
 - **Delta Detection**: Compares current PMS state (rooms, bookings, restrictions, rates) against last-synced snapshots
 - **Coalescing**: Merges consecutive changes for same room_type/rate_plan/date_range into single updates
@@ -65,8 +65,26 @@ Cloud-based Property Management System (PMS) for hospitality industry. Multi-ten
 - **Separate Payloads**: Inventory (OTA_HotelAvailNotifRQ) and rates (OTA_HotelRateAmountNotifRQ) dispatched independently
 - **Frontend**: Enhanced Sync Jobs tab with change type badges, delta stats, clickable job detail dialog showing lifecycle timeline, stats grid, events list, retry/dismiss actions
 
+### Reservation Import Engine (March 2026)
+**Production-grade reservation import with idempotency and full lifecycle:**
+- **Idempotency Key**: connector_id + external_reservation_id + payload_fingerprint (SHA256 hash of canonical fields)
+- **14 Import States**: pending, matched, created, modified, cancelled, duplicate, duplicate_cancel, conflict, review, failed, acknowledged, dismissed, resolved, out_of_order
+- **9 Review Reason Codes**: missing_room_mapping, missing_rate_mapping, checked_in_cancellation, modification_after_cancel, payload_conflict, unknown_room_type, amount_mismatch, date_overlap, manual_escalation
+- **ACK Tracking**: ack_pending -> ack_sent | ack_failed | not_required
+- **Batch Processing**: Each pull creates a ReservationImportBatch with summary counts (new, modified, cancelled, duplicate, conflict, review, failed, out_of_order, ack_sent, ack_failed)
+- **Cancellation Rules**:
+  - Checked-in stay -> manual review (checked_in_cancellation)
+  - Already cancelled -> duplicate_cancel
+  - Modification after cancellation -> conflict (modification_after_cancel)
+  - Missing mapping -> review (missing_room_mapping)
+- **Manual Review Queue**: Reprocess (creates PMS booking or approves cancel) and dismiss actions
+- **PMS Integration**: Creates/modifies/cancels bookings in PMS, creates guests
+- **Audit Logging**: 15 reservation-specific audit actions
+- **Frontend**: Enhanced Reservations tab with pull action, import batch cards, reservations table with status/ACK badges, review queue with reprocess/dismiss, reservation detail dialog, batch detail dialog
+- **New Endpoints**: 9 endpoints for pull, list, detail, review queue, reprocess, dismiss, batches, batch detail, approve
+
 ### Semantic Migration (Previous Work)
-- Outbox event processing system (pending → processing → processed/failed/parked)
+- Outbox event processing system (pending -> processing -> processed/failed/parked)
 - ModifyReservation write-path (PUT /api/reservations/semantic/{id})
 - Migration health score (GREEN)
 
@@ -93,17 +111,17 @@ Cloud-based Property Management System (PMS) for hospitality industry. Multi-ten
 ## Prioritized Backlog
 
 ### P0 - Completed
-- ✅ Channel Manager v2 architecture + HotelRunner connector
-- ✅ Integration Hub admin panel
-- ✅ Connection Test detailed flow
-- ✅ Inventory Sync Engine with delta sync, coalescing, lifecycle, manual review
+- [x] Channel Manager v2 architecture + HotelRunner connector
+- [x] Integration Hub admin panel
+- [x] Connection Test detailed flow
+- [x] Inventory Sync Engine with delta sync, coalescing, lifecycle, manual review
+- [x] Reservation Import Engine with idempotency, lifecycle, review queue, ACK tracking
 
 ### P1 - Next
-- [ ] Reservation Import Engine business logic
 - [ ] HotelRunner sandbox testing with real credentials
 - [ ] CancelReservation write-path migration
 - [ ] Scheduled inventory sync (cron)
-- [ ] Event-driven sync (booking change → auto push)
+- [ ] Event-driven sync (booking change -> auto push)
 
 ### P2
 - [ ] ChargePost write-path migration
@@ -131,7 +149,15 @@ Cloud-based Property Management System (PMS) for hospitality industry. Multi-ten
 - `GET /api/channel-manager/v2/sync/manual-review` - Manual review queue
 - `POST /api/channel-manager/v2/sync/manual-review/{id}/retry` - Retry failed job
 - `POST /api/channel-manager/v2/sync/manual-review/{id}/dismiss` - Dismiss review
-- `POST /api/channel-manager/v2/reservations/pull` - Pull reservations
+- `POST /api/channel-manager/v2/reservations/pull` - Pull reservations from provider
+- `GET /api/channel-manager/v2/reservations/imported` - List imported reservations
+- `GET /api/channel-manager/v2/reservations/imported/{id}` - Reservation detail
+- `GET /api/channel-manager/v2/reservations/review-queue` - Manual review queue
+- `POST /api/channel-manager/v2/reservations/review-queue/{id}/reprocess` - Reprocess review
+- `POST /api/channel-manager/v2/reservations/review-queue/{id}/dismiss` - Dismiss review
+- `GET /api/channel-manager/v2/reservations/batches` - List import batches
+- `GET /api/channel-manager/v2/reservations/batches/{id}` - Batch detail
+- `POST /api/channel-manager/v2/reservations/approve` - Approve review (backward compat)
 - `GET /api/channel-manager/v2/dashboard` - Dashboard overview
 - `POST /api/channel-manager/v2/reconciliation/run` - Run reconciliation
 - `GET /api/channel-manager/v2/audit` - Audit log
@@ -141,5 +167,10 @@ Cloud-based Property Management System (PMS) for hospitality industry. Multi-ten
 
 ## Testing Status
 - Inventory Sync Engine: Backend 17/17 (100%), Frontend 100%
-- Test file: /app/backend/tests/test_inventory_sync_engine.py
-- Test report: /app/test_reports/iteration_21.json
+- Reservation Import Engine: Backend 22/22 (100%), Frontend 100%
+- Test files: /app/backend/tests/test_inventory_sync_engine.py, /app/backend/tests/test_reservation_import_engine.py
+- Test reports: /app/test_reports/iteration_21.json, /app/test_reports/iteration_22.json
+
+## Mocked/Stubbed
+- HotelRunner connector client: `pull_reservations()`, `acknowledge_reservations()`, `update_availability_and_rates()` methods are stubbed (sandbox endpoint doesn't exist)
+- MappingService: `get_reverse_lookup()` returns empty dict when no mappings configured
