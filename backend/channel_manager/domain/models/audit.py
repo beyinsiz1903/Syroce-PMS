@@ -82,6 +82,14 @@ class AuditAction(str, Enum):
     SCHEDULED_SYNC_REQUEUED = "scheduled_sync_requeued"
     # Event-driven sync
     EVENT_SYNC_TRIGGERED = "event_sync_triggered"
+    EVENT_SYNC_FAILED = "event_sync_failed"
+    # Sandbox validation
+    SANDBOX_VALIDATION_RUN = "sandbox_validation_run"
+    # RBAC
+    UNAUTHORIZED_CREDENTIAL_ACCESS = "unauthorized_credential_access"
+    CREDENTIAL_ACCESSED = "credential_accessed"
+    # Provider adapters
+    PROVIDER_PUSH_FAILED = "provider_push_failed"
 
 
 class IntegrationAuditLog(BaseModel):

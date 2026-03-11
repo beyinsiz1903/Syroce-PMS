@@ -1,79 +1,38 @@
 """
-Credential Vault - Encryption at rest for connector credentials.
+Credential Vault - AES-256-GCM encryption at rest for connector credentials.
 
 Features:
-  - AES-256-GCM encryption for credential storage
+  - AES-256-GCM encryption with secure random IV and auth tag (tamper detection)
+  - Legacy XOR migration support
   - Secret rotation support
   - Masked display for UI
-  - Role-based access (admin only for write)
   - Audit trail for all credential operations
 """
-import base64
-import hashlib
 import logging
-import os
-import secrets
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
 from ..domain.models.audit import IntegrationAuditLog, AuditAction
 from ..infrastructure.repository import ChannelManagerRepository
+from ..infrastructure.encryption_service import EncryptionService
 
 logger = logging.getLogger("channel_manager.infrastructure.credential_vault")
 
-# Derive a stable encryption key from an environment variable or generate one
-_ENV_KEY = os.environ.get("CM_CREDENTIAL_KEY", "")
-
-
-def _get_key() -> bytes:
-    """Get or derive the 32-byte encryption key."""
-    if _ENV_KEY:
-        return hashlib.sha256(_ENV_KEY.encode()).digest()
-    return hashlib.sha256(b"syroce-pms-default-key-change-in-production").digest()
-
-
-def _xor_encrypt(data: bytes, key: bytes) -> bytes:
-    """Simple XOR-based encryption (production should use AES-256-GCM)."""
-    key_len = len(key)
-    return bytes(b ^ key[i % key_len] for i, b in enumerate(data))
-
 
 class CredentialVault:
-    """Manages encrypted credential storage with audit trail."""
+    """Manages AES-256-GCM encrypted credential storage with audit trail."""
 
     def __init__(self, repo: Optional[ChannelManagerRepository] = None):
         self._repo = repo or ChannelManagerRepository()
-        self._key = _get_key()
+        self._encryption = EncryptionService()
 
     def encrypt_credentials(self, credentials: Dict[str, str]) -> Dict[str, str]:
-        """Encrypt credential values for storage."""
-        encrypted = {}
-        for k, v in credentials.items():
-            if isinstance(v, str) and v:
-                raw = v.encode("utf-8")
-                nonce = secrets.token_bytes(16)
-                cipher = _xor_encrypt(raw, self._key + nonce)
-                encrypted[k] = base64.b64encode(nonce + cipher).decode("ascii")
-            else:
-                encrypted[k] = v
-        return encrypted
+        """Encrypt credential values using AES-256-GCM."""
+        return self._encryption.encrypt_credentials(credentials)
 
     def decrypt_credentials(self, encrypted: Dict[str, str]) -> Dict[str, str]:
-        """Decrypt credential values for use."""
-        decrypted = {}
-        for k, v in encrypted.items():
-            if isinstance(v, str) and v:
-                try:
-                    raw = base64.b64decode(v)
-                    nonce = raw[:16]
-                    cipher = raw[16:]
-                    plain = _xor_encrypt(cipher, self._key + nonce)
-                    decrypted[k] = plain.decode("utf-8")
-                except Exception:
-                    decrypted[k] = v  # fallback: assume unencrypted
-            else:
-                decrypted[k] = v
-        return decrypted
+        """Decrypt credential values (supports both AES-GCM and legacy XOR)."""
+        return self._encryption.decrypt_credentials(encrypted)
 
     @staticmethod
     def mask_credentials(credentials: Dict[str, Any]) -> Dict[str, str]:
@@ -96,7 +55,7 @@ class CredentialVault:
         actor_id: Optional[str] = None,
         is_rotation: bool = False,
     ) -> None:
-        """Encrypt and store credentials for a connector."""
+        """Encrypt and store credentials using AES-256-GCM."""
         encrypted = self.encrypt_credentials(credentials)
 
         connector = await self._repo.get_connector(tenant_id, connector_id)
@@ -105,6 +64,7 @@ class CredentialVault:
 
         connector["credentials"] = encrypted
         connector["credentials_encrypted"] = True
+        connector["encryption_algorithm"] = "AES-256-GCM"
         connector["credentials_updated_at"] = datetime.now(timezone.utc).isoformat()
         if is_rotation:
             connector["credentials_rotated_at"] = datetime.now(timezone.utc).isoformat()
@@ -114,7 +74,7 @@ class CredentialVault:
         await self._audit(
             tenant_id, connector.get("property_id", ""), connector_id,
             action, actor_id,
-            {"keys_updated": list(credentials.keys()), "encrypted": True},
+            {"keys_updated": list(credentials.keys()), "encrypted": True, "algorithm": "AES-256-GCM"},
         )
 
     async def retrieve_credentials(
@@ -141,6 +101,44 @@ class CredentialVault:
             tenant_id, connector_id, new_credentials,
             actor_id=actor_id, is_rotation=True,
         )
+
+    async def migrate_legacy_credentials(
+        self,
+        tenant_id: str,
+        connector_id: str,
+        actor_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Migrate XOR-encrypted credentials to AES-256-GCM."""
+        connector = await self._repo.get_connector(tenant_id, connector_id)
+        if not connector:
+            raise ValueError("Connector not found")
+
+        creds = connector.get("credentials", {})
+        if not creds:
+            return {"migrated": False, "reason": "No credentials found"}
+
+        already_aes = all(
+            self._encryption.is_aes_encrypted(v)
+            for v in creds.values()
+            if isinstance(v, str) and v
+        )
+        if already_aes:
+            return {"migrated": False, "reason": "Already AES-256-GCM encrypted"}
+
+        migrated = self._encryption.migrate_credentials(creds)
+        connector["credentials"] = migrated
+        connector["credentials_encrypted"] = True
+        connector["encryption_algorithm"] = "AES-256-GCM"
+        connector["credentials_updated_at"] = datetime.now(timezone.utc).isoformat()
+        await self._repo.upsert_connector(connector)
+
+        await self._audit(
+            tenant_id, connector.get("property_id", ""), connector_id,
+            AuditAction.CREDENTIAL_CHANGED, actor_id,
+            {"migration": "XOR->AES-256-GCM", "keys_migrated": list(creds.keys())},
+        )
+
+        return {"migrated": True, "keys_migrated": list(creds.keys()), "algorithm": "AES-256-GCM"}
 
     async def _audit(self, tenant_id, property_id, connector_id, action, actor_id=None, metadata=None):
         log = IntegrationAuditLog(

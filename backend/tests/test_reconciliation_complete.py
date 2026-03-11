@@ -128,7 +128,11 @@ class TestReconciliationService:
     @pytest.mark.asyncio
     async def test_run_reconciliation_detects_stale_sync(self, mock_repo):
         svc = ReconciliationService(mock_repo)
-        with patch.object(svc, '_check_inventory_mismatch', return_value=[]), \
+        with patch.object(svc, '_check_mapping_validity', return_value=[]), \
+             patch.object(svc, '_check_unprocessed_imports', return_value=[]), \
+             patch.object(svc, '_check_ack_failures', return_value=[]), \
+             patch.object(svc, '_check_ack_pending', return_value=[]), \
+             patch.object(svc, '_check_inventory_mismatch', return_value=[]), \
              patch.object(svc, '_check_rate_mismatch', return_value=[]):
             result = await svc.run_reconciliation("t1", "c1")
         assert result["issues_found"] >= 1

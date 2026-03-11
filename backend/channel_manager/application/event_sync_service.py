@@ -129,10 +129,27 @@ class EventSyncService:
                 # Audit failure
                 await self._audit(
                     tenant_id, property_id, connector_id,
-                    AuditAction.EVENT_SYNC_TRIGGERED, metadata={
+                    AuditAction.EVENT_SYNC_FAILED, metadata={
                         "event_type": event_type,
                         "error": str(e)[:200],
                         "success": False,
+                    },
+                )
+
+                # Create reconciliation issue for persistent event sync failures
+                from ..application.reconciliation_service import ReconciliationService
+                recon = ReconciliationService(self._repo)
+                await recon.create_issue(
+                    tenant_id=tenant_id,
+                    property_id=property_id,
+                    connector_id=connector_id,
+                    issue_type="stale_sync",
+                    severity="high",
+                    description=f"Event sync failed for {event_type}: {str(e)[:200]}",
+                    suggested_actions=["retry_sync"],
+                    evidence_payload={
+                        "event_type": event_type,
+                        "error": str(e)[:200],
                     },
                 )
                 continue

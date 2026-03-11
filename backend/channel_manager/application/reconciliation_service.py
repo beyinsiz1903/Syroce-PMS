@@ -177,6 +177,86 @@ class ReconciliationService:
         """Aggregate issue counts by type and severity for dashboard."""
         return await self._repo.get_reconciliation_summary(tenant_id, connector_id)
 
+    async def get_health_score(
+        self, tenant_id: str, connector_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Compute an operational health score (0-100) for a connector.
+
+        Factors:
+          - Open critical/high issues (heavy penalty)
+          - Stale sync age
+          - Failed sync ratio
+          - Unprocessed imports
+        """
+        summary = await self._repo.get_reconciliation_summary(tenant_id, connector_id)
+        connector = await self._repo.get_connector(tenant_id, connector_id)
+
+        score = 100
+        details = {}
+
+        # Penalty for open issues by severity
+        by_severity = summary.get("by_severity", {})
+        critical_count = by_severity.get("critical", 0)
+        high_count = by_severity.get("high", 0)
+        medium_count = by_severity.get("medium", 0)
+        low_count = by_severity.get("low", 0)
+
+        issue_penalty = critical_count * 20 + high_count * 10 + medium_count * 3 + low_count * 1
+        score -= min(issue_penalty, 60)
+        details["issue_penalty"] = issue_penalty
+
+        # Penalty for stale sync
+        if connector:
+            last_sync = connector.get("last_successful_sync")
+            if not last_sync:
+                score -= 20
+                details["sync_staleness"] = "no_successful_sync"
+            else:
+                try:
+                    last_dt = datetime.fromisoformat(last_sync.replace("Z", "+00:00"))
+                    age_hours = (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600
+                    if age_hours > 48:
+                        score -= 15
+                        details["sync_staleness"] = f"{age_hours:.0f}h"
+                    elif age_hours > 24:
+                        score -= 5
+                        details["sync_staleness"] = f"{age_hours:.0f}h"
+                    else:
+                        details["sync_staleness"] = "healthy"
+                except (ValueError, TypeError):
+                    pass
+
+            # Penalty for consecutive failures
+            consecutive = connector.get("consecutive_failures", 0)
+            if consecutive >= 5:
+                score -= 15
+            elif consecutive >= 3:
+                score -= 8
+            elif consecutive >= 1:
+                score -= 3
+            details["consecutive_failures"] = consecutive
+
+        score = max(0, min(100, score))
+
+        if score >= 80:
+            status = "healthy"
+        elif score >= 50:
+            status = "degraded"
+        else:
+            status = "critical"
+
+        return {
+            "connector_id": connector_id,
+            "health_score": score,
+            "status": status,
+            "open_issues": summary.get("total_open", 0),
+            "by_severity": by_severity,
+            "by_type": summary.get("by_type", {}),
+            "details": details,
+            "calculated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
     # ------------------------------------------------------------------ #
     #  Check: Stale Sync                                                   #
     # ------------------------------------------------------------------ #

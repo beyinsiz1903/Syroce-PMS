@@ -76,6 +76,12 @@ class SchedulerService:
             "property_id": property_id,
             "actions_taken": actions_taken,
             "total_actions": len(actions_taken),
+            "metrics": {
+                "stale_jobs": sum(1 for a in actions_taken if a["type"] == "stale_job_failed"),
+                "requeued_jobs": sum(1 for a in actions_taken if a["type"] == "failed_job_requeued"),
+                "missing_snapshots": sum(1 for a in actions_taken if a["type"] == "missing_snapshot"),
+                "drift_detected": any(a["type"] == "drift_detected" for a in actions_taken),
+            },
             "run_at": datetime.now(timezone.utc).isoformat(),
         }
 

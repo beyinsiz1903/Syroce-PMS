@@ -22,7 +22,10 @@ from ..application.reconciliation_service import ReconciliationService
 from ..application.observability_service import ObservabilityService
 from ..application.scheduler_service import SchedulerService
 from ..application.event_sync_service import EventSyncService
+from ..application.sandbox_validation_service import SandboxValidationService
+from ..application.provider_adapters import InventoryProviderAdapter, RateProviderAdapter
 from ..infrastructure.credential_vault import CredentialVault
+from ..infrastructure.rbac import enforce_credential_access
 
 logger = logging.getLogger("channel_manager.interfaces.router")
 
@@ -98,6 +101,11 @@ class DomainEventRequest(BaseModel):
 
 class BatchEventsRequest(BaseModel):
     events: List[DomainEventRequest]
+
+class ProviderPushRequest(BaseModel):
+    connector_id: str
+    updates: List[dict]
+    environment: str = "sandbox"
 
 # ─── Connector Endpoints ──────────────────────────────────────────────
 
@@ -680,7 +688,7 @@ async def run_all_scheduled_checks(
     svc = SchedulerService()
     return await svc.run_all_connectors(current_user.tenant_id)
 
-# ─── Credential Management Endpoints ─────────────────────────────────
+# ─── Credential Management Endpoints (Phase 3 & 4: AES-256-GCM + RBAC) ──
 
 @router.put("/connectors/{connector_id}/credentials/secure")
 async def update_credentials_secure(
@@ -688,13 +696,18 @@ async def update_credentials_secure(
     req: UpdateCredentialsRequest,
     current_user: User = Depends(get_current_user),
 ):
+    from ..infrastructure.repository import ChannelManagerRepository
+    repo = ChannelManagerRepository()
+    await enforce_credential_access(
+        current_user, "credential_update", connector_id, repo, require_write=True,
+    )
     vault = CredentialVault()
     try:
         await vault.store_credentials(
             current_user.tenant_id, connector_id,
             req.credentials, current_user.id,
         )
-        return {"message": "Credentials securely updated"}
+        return {"message": "Credentials securely updated (AES-256-GCM)"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -704,13 +717,18 @@ async def rotate_credentials(
     req: RotateCredentialsRequest,
     current_user: User = Depends(get_current_user),
 ):
+    from ..infrastructure.repository import ChannelManagerRepository
+    repo = ChannelManagerRepository()
+    await enforce_credential_access(
+        current_user, "credential_rotation", connector_id, repo, require_write=True,
+    )
     vault = CredentialVault()
     try:
         await vault.rotate_credentials(
             current_user.tenant_id, connector_id,
             req.credentials, current_user.id,
         )
-        return {"message": "Credentials rotated successfully"}
+        return {"message": "Credentials rotated successfully (AES-256-GCM)"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -719,19 +737,56 @@ async def get_masked_credentials(
     connector_id: str,
     current_user: User = Depends(get_current_user),
 ):
+    from ..infrastructure.repository import ChannelManagerRepository
+    repo = ChannelManagerRepository()
+    await enforce_credential_access(
+        current_user, "credential_view", connector_id, repo, require_write=False,
+    )
     svc = ConnectorService()
     connector = await svc.get_connector(current_user.tenant_id, connector_id)
     if not connector:
         raise HTTPException(status_code=404, detail="Connector not found")
+
+    # Audit the access
+    from ..domain.models.audit import IntegrationAuditLog, AuditAction as AA
+    log = IntegrationAuditLog(
+        tenant_id=current_user.tenant_id,
+        connector_id=connector_id,
+        action=AA.CREDENTIAL_ACCESSED,
+        actor_id=current_user.id,
+        metadata={"action": "credential_view"},
+    )
+    await repo.create_audit_log(log.to_doc())
+
     vault = CredentialVault()
     masked = vault.mask_credentials(connector.get("credentials", {}))
     return {
         "connector_id": connector_id,
         "credentials": masked,
         "encrypted": connector.get("credentials_encrypted", False),
+        "algorithm": connector.get("encryption_algorithm", "unknown"),
         "last_updated": connector.get("credentials_updated_at"),
         "last_rotated": connector.get("credentials_rotated_at"),
     }
+
+@router.post("/connectors/{connector_id}/credentials/migrate")
+async def migrate_credentials(
+    connector_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    from ..infrastructure.repository import ChannelManagerRepository
+    repo = ChannelManagerRepository()
+    await enforce_credential_access(
+        current_user, "credential_update", connector_id, repo, require_write=True,
+    )
+    vault = CredentialVault()
+    try:
+        result = await vault.migrate_legacy_credentials(
+            current_user.tenant_id, connector_id, current_user.id,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 # ─── Event-Driven Sync Endpoints ─────────────────────────────────────
 
@@ -754,3 +809,74 @@ async def trigger_batch_event_sync(
     svc = EventSyncService()
     events = [{"event_type": e.event_type, "payload": e.payload} for e in req.events]
     return await svc.handle_batch_events(current_user.tenant_id, events)
+
+
+# ─── Phase 1: Sandbox Validation Endpoints ────────────────────────────
+
+@router.post("/sandbox/validate/{connector_id}")
+async def run_sandbox_validation(
+    connector_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    svc = SandboxValidationService()
+    try:
+        return await svc.run_validation(
+            current_user.tenant_id, connector_id, current_user.id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+# ─── Phase 2: Provider Adapter Endpoints ──────────────────────────────
+
+@router.post("/providers/inventory/push")
+async def push_inventory_via_adapter(
+    req: ProviderPushRequest,
+    current_user: User = Depends(get_current_user),
+):
+    connector_svc = ConnectorService()
+    connector = await connector_svc.get_connector(current_user.tenant_id, req.connector_id)
+    if not connector:
+        raise HTTPException(status_code=404, detail="Connector not found")
+
+    adapter = InventoryProviderAdapter()
+    return await adapter.push(
+        tenant_id=current_user.tenant_id,
+        connector_id=req.connector_id,
+        property_id=connector.get("property_id", ""),
+        updates=req.updates,
+        credentials=connector.get("credentials", {}),
+        environment=req.environment,
+    )
+
+
+@router.post("/providers/rates/push")
+async def push_rates_via_adapter(
+    req: ProviderPushRequest,
+    current_user: User = Depends(get_current_user),
+):
+    connector_svc = ConnectorService()
+    connector = await connector_svc.get_connector(current_user.tenant_id, req.connector_id)
+    if not connector:
+        raise HTTPException(status_code=404, detail="Connector not found")
+
+    adapter = RateProviderAdapter()
+    return await adapter.push(
+        tenant_id=current_user.tenant_id,
+        connector_id=req.connector_id,
+        property_id=connector.get("property_id", ""),
+        updates=req.updates,
+        credentials=connector.get("credentials", {}),
+        environment=req.environment,
+    )
+
+
+# ─── Phase 5: Reconciliation Health Score ─────────────────────────────
+
+@router.get("/reconciliation/health/{connector_id}")
+async def get_reconciliation_health(
+    connector_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    svc = ReconciliationService()
+    return await svc.get_health_score(current_user.tenant_id, connector_id)
