@@ -84,16 +84,19 @@ async def create_connector(
 ):
     svc = ConnectorService()
     property_id = req.property_id or getattr(current_user, "property_id", "")
-    result = await svc.create_connector(
-        tenant_id=current_user.tenant_id,
-        property_id=property_id,
-        provider=req.provider,
-        display_name=req.display_name,
-        credentials=req.credentials,
-        actor_id=current_user.id,
-        sync_config=req.sync_config,
-    )
-    return {"message": "Connector created", "connector": result}
+    try:
+        result = await svc.create_connector(
+            tenant_id=current_user.tenant_id,
+            property_id=property_id,
+            provider=req.provider,
+            display_name=req.display_name,
+            credentials=req.credentials,
+            actor_id=current_user.id,
+            sync_config=req.sync_config,
+        )
+        return {"message": "Connector created", "connector": result}
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
 @router.get("/connectors/{connector_id}")
 async def get_connector(

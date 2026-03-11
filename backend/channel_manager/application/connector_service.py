@@ -32,6 +32,8 @@ class ConnectorService:
         sync_config: Optional[Dict[str, bool]] = None,
     ) -> Dict[str, Any]:
         """Create a new connector account in DRAFT status."""
+        from pymongo.errors import DuplicateKeyError
+
         connector = ConnectorAccount(
             tenant_id=tenant_id,
             property_id=property_id,
@@ -47,7 +49,11 @@ class ConnectorService:
             connector.sync_reservations = sync_config.get("reservations", True)
             connector.sync_restrictions = sync_config.get("restrictions", True)
 
-        await self._repo.upsert_connector(connector.to_doc())
+        try:
+            await self._repo.upsert_connector(connector.to_doc())
+        except DuplicateKeyError:
+            raise ValueError("A connector for this provider already exists on this property")
+
         await self._audit(
             tenant_id, property_id, connector.id,
             AuditAction.CONNECTOR_CREATED, actor_id=actor_id,
