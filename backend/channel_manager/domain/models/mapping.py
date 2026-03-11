@@ -1,0 +1,80 @@
+"""
+MappingRule - Links PMS entities to external provider entities.
+Central to the connector-first architecture: all sync flows depend on valid mappings.
+
+Indexes:
+  - (tenant_id, connector_id, entity_type, pms_entity_id): unique
+  - (tenant_id, connector_id, entity_type, external_entity_id): unique
+  - (tenant_id, status)
+"""
+import uuid
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Optional, Dict, Any, List
+
+from pydantic import BaseModel, Field
+
+
+class MappingStatus(str, Enum):
+    DRAFT = "draft"
+    ACTIVE = "active"
+    INVALID = "invalid"
+    DISABLED = "disabled"
+
+
+class MappingDirection(str, Enum):
+    BIDIRECTIONAL = "bidirectional"
+    PMS_TO_EXTERNAL = "pms_to_external"
+    EXTERNAL_TO_PMS = "external_to_pms"
+
+
+class MappingEntityType(str, Enum):
+    ROOM_TYPE = "room_type"
+    RATE_PLAN = "rate_plan"
+    MEAL_PLAN = "meal_plan"
+    CANCELLATION_POLICY = "cancellation_policy"
+    TAX_MODE = "tax_mode"
+    OCCUPANCY = "occupancy"
+
+
+class MappingRule(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tenant_id: str
+    property_id: str
+    connector_id: str
+
+    entity_type: MappingEntityType
+    direction: MappingDirection = MappingDirection.BIDIRECTIONAL
+    status: MappingStatus = MappingStatus.DRAFT
+
+    # PMS side
+    pms_entity_id: str
+    pms_entity_name: str = ""
+    pms_entity_meta: Dict[str, Any] = Field(default_factory=dict)
+
+    # External/Provider side
+    external_entity_id: str
+    external_entity_name: str = ""
+    external_entity_meta: Dict[str, Any] = Field(default_factory=dict)
+
+    # Transformation rules
+    occupancy_offset: int = 0  # e.g., PMS max_occ=3 but OTA expects 2
+    rate_modifier: Optional[float] = None  # multiply rate by this before push
+    rate_offset: Optional[float] = None  # add this to rate before push
+
+    # Validation
+    last_validated_at: Optional[str] = None
+    validation_errors: List[str] = Field(default_factory=list)
+
+    # Audit
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_by: Optional[str] = None
+    updated_at: Optional[str] = None
+
+    def to_doc(self) -> Dict[str, Any]:
+        return self.model_dump()
+
+    @classmethod
+    def from_doc(cls, doc: Dict[str, Any]) -> "MappingRule":
+        doc.pop("_id", None)
+        return cls(**doc)

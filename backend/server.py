@@ -9420,6 +9420,14 @@ async def startup_db_seed():
     except Exception as e:
         print(f"⚠️ Outbox lifecycle worker startup warning: {str(e)}")
 
+    # Channel Manager v2 indexes
+    try:
+        from channel_manager.infrastructure.indexes import create_cm_indexes
+        await create_cm_indexes()
+        print("✅ Channel Manager v2 indexes created")
+    except Exception as e:
+        print(f"⚠️ Channel Manager v2 indexes warning: {str(e)}")
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
     worker = getattr(app.state, "outbox_lifecycle_worker", None)
@@ -41655,3 +41663,15 @@ async def get_compset_real_time_prices(
         'last_updated': datetime.now(timezone.utc).isoformat()
     }
 
+
+
+# ============================================================================
+# CHANNEL MANAGER V2 - Production-Grade Connector Architecture
+# ============================================================================
+try:
+    from channel_manager.interfaces.router import router as cm_v2_router
+    app.include_router(cm_v2_router, tags=["Channel Manager v2"])
+    print("✅ Channel Manager v2 router included (connector-first architecture)")
+except Exception as e:
+    print(f"⚠️ Channel Manager v2 not available: {e}")
+    import traceback; traceback.print_exc()

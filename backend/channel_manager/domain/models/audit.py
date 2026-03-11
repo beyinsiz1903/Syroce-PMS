@@ -1,0 +1,65 @@
+"""
+IntegrationAuditLog - Immutable log of all channel manager operations.
+
+Indexes:
+  - (tenant_id, connector_id, action, created_at)
+  - (tenant_id, entity_type, entity_id)
+"""
+import uuid
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Optional, Dict, Any
+
+from pydantic import BaseModel, Field
+
+
+class AuditAction(str, Enum):
+    CONNECTOR_CREATED = "connector_created"
+    CONNECTOR_ACTIVATED = "connector_activated"
+    CONNECTOR_PAUSED = "connector_paused"
+    CONNECTOR_DISABLED = "connector_disabled"
+    CREDENTIALS_UPDATED = "credentials_updated"
+    MAPPING_CREATED = "mapping_created"
+    MAPPING_UPDATED = "mapping_updated"
+    MAPPING_DELETED = "mapping_deleted"
+    MAPPING_VALIDATED = "mapping_validated"
+    INVENTORY_PUSHED = "inventory_pushed"
+    RATES_PUSHED = "rates_pushed"
+    RESTRICTIONS_PUSHED = "restrictions_pushed"
+    RESERVATIONS_PULLED = "reservations_pulled"
+    RESERVATION_IMPORTED = "reservation_imported"
+    RESERVATION_ACKNOWLEDGED = "reservation_acknowledged"
+    RECONCILIATION_RUN = "reconciliation_run"
+    RECONCILIATION_RESOLVED = "reconciliation_resolved"
+    SYNC_JOB_STARTED = "sync_job_started"
+    SYNC_JOB_COMPLETED = "sync_job_completed"
+    SYNC_JOB_FAILED = "sync_job_failed"
+    MANUAL_RETRY = "manual_retry"
+    ERROR_OCCURRED = "error_occurred"
+
+
+class IntegrationAuditLog(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tenant_id: str
+    property_id: Optional[str] = None
+    connector_id: Optional[str] = None
+
+    action: AuditAction
+    entity_type: str = ""
+    entity_id: str = ""
+
+    actor_id: Optional[str] = None
+    actor_type: str = "system"  # system, user, webhook
+
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    correlation_id: Optional[str] = None
+
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_doc(self) -> Dict[str, Any]:
+        return self.model_dump()
+
+    @classmethod
+    def from_doc(cls, doc: Dict[str, Any]) -> "IntegrationAuditLog":
+        doc.pop("_id", None)
+        return cls(**doc)

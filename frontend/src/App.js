@@ -129,6 +129,9 @@ const CentralPricingManager = lazy(() => import("@/pages/CentralPricingManager")
 const CrossPropertyGuests = lazy(() => import("@/pages/CrossPropertyGuests"));
 const MLDashboard = lazy(() => import("@/pages/MLDashboard"));
 
+// Channel Manager v2 - Integration Hub
+const IntegrationHub = lazy(() => import("@/pages/IntegrationHub"));
+
 import { Toaster } from "@/components/ui/sonner";
 
 // Loading component
@@ -476,6 +479,18 @@ function App() {
               isAuthenticated ? (
                 <Suspense fallback={<LoadingFallback />}>
                   <MigrationObservabilityPage user={user} tenant={tenant} onLogout={handleLogout} />
+                </Suspense>
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/app/integration-hub"
+            element={
+              isAuthenticated ? (
+                <Suspense fallback={<LoadingFallback />}>
+                  <IntegrationHub user={user} tenant={tenant} onLogout={handleLogout} />
                 </Suspense>
               ) : (
                 <Navigate to="/auth" replace />

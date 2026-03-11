@@ -78,6 +78,14 @@ export const NAV_ITEMS = [
     group: "professional",
   },
   {
+    key: "integration_hub",
+    label: "Integration Hub",
+    path: "/app/integration-hub",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+  },
+  {
     key: "reports",
     label: "Gelişmiş Raporlar",
     path: "/app/gelismis-raporlar",
