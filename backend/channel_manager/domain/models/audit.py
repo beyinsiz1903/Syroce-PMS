@@ -36,6 +36,7 @@ class AuditAction(str, Enum):
     SYNC_JOB_FAILED = "sync_job_failed"
     MANUAL_RETRY = "manual_retry"
     ERROR_OCCURRED = "error_occurred"
+    CONNECTION_TESTED = "connection_tested"
 
 
 class IntegrationAuditLog(BaseModel):

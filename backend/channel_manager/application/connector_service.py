@@ -62,25 +62,78 @@ class ConnectorService:
         return connector.to_doc()
 
     async def test_connection(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
-        """Test connectivity with the external provider."""
+        """
+        Production-grade connection test.
+        Validates auth, property access, room types, rate plans, and XML connectivity.
+        Logs result to audit trail.
+        """
+
         doc = await self._repo.get_connector(tenant_id, connector_id)
         if not doc:
-            return {"success": False, "message": "Connector not found"}
+            return {"success": False, "message": "Connector not found", "tested_at": datetime.now(timezone.utc).isoformat()}
 
         connector = ConnectorAccount.from_doc(doc)
+
         if connector.provider == ConnectorProvider.HOTELRUNNER:
+            result = None
             try:
                 auth = HotelRunnerAuth.from_credentials(connector.credentials)
                 client = HotelRunnerClient(auth=auth, sandbox=True)
-                result = await client.test_connection()
+                result = await client.test_connection_detailed()
                 await client.close()
-                return result
             except AuthenticationError:
-                return {"success": False, "message": "Invalid HotelRunner credentials"}
+                result = {
+                    "success": False,
+                    "tested_at": datetime.now(timezone.utc).isoformat(),
+                    "total_latency_ms": 0,
+                    "summary": "Kimlik bilgileri eksik veya geçersiz",
+                    "auth_status": {"status": "fail", "latency_ms": 0, "error_code": "CRED_MISSING", "message": "Token veya HR ID eksik"},
+                    "inventory_read_status": {"status": "fail", "latency_ms": 0, "error_code": "SKIPPED", "message": "Auth başarısız olduğu için atlandı"},
+                    "rate_read_status": {"status": "fail", "latency_ms": 0, "error_code": "SKIPPED", "message": "Auth başarısız olduğu için atlandı"},
+                    "property_access_status": {"status": "fail", "latency_ms": 0, "error_code": "SKIPPED", "message": "Auth başarısız olduğu için atlandı"},
+                    "xml_connectivity_status": {"status": "fail", "latency_ms": 0, "error_code": "SKIPPED", "message": "Auth başarısız olduğu için atlandı"},
+                }
             except Exception as e:
-                return {"success": False, "message": str(e)}
+                result = {
+                    "success": False,
+                    "tested_at": datetime.now(timezone.utc).isoformat(),
+                    "total_latency_ms": 0,
+                    "summary": f"Test sırasında beklenmeyen hata: {str(e)[:200]}",
+                    "auth_status": {"status": "fail", "latency_ms": 0, "error_code": "UNKNOWN", "message": str(e)[:200]},
+                    "inventory_read_status": {"status": "fail", "latency_ms": 0, "error_code": "SKIPPED", "message": "Önceki adım başarısız"},
+                    "rate_read_status": {"status": "fail", "latency_ms": 0, "error_code": "SKIPPED", "message": "Önceki adım başarısız"},
+                    "property_access_status": {"status": "fail", "latency_ms": 0, "error_code": "SKIPPED", "message": "Önceki adım başarısız"},
+                    "xml_connectivity_status": {"status": "fail", "latency_ms": 0, "error_code": "SKIPPED", "message": "Önceki adım başarısız"},
+                }
 
-        return {"success": False, "message": f"Provider {connector.provider} not yet supported"}
+            # Write to audit log
+            await self._audit(
+                tenant_id,
+                connector.property_id,
+                connector_id,
+                AuditAction.CONNECTION_TESTED,
+                actor_id=None,
+                metadata={
+                    "success": result["success"],
+                    "summary": result.get("summary", ""),
+                    "total_latency_ms": result.get("total_latency_ms", 0),
+                    "provider": connector.provider.value,
+                },
+            )
+
+            # Add connector context to result
+            result["connector_id"] = connector_id
+            result["provider"] = connector.provider.value
+            result["display_name"] = connector.display_name
+            return result
+
+        return {
+            "success": False,
+            "message": f"Provider {connector.provider} not yet supported",
+            "tested_at": datetime.now(timezone.utc).isoformat(),
+            "connector_id": connector_id,
+            "provider": connector.provider.value,
+        }
 
     async def activate_connector(self, tenant_id: str, connector_id: str, actor_id: Optional[str] = None) -> Dict[str, Any]:
         """Activate a connector (allows sync operations)."""

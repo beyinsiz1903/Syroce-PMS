@@ -1,79 +1,67 @@
 <analysis>**original_problem_statement:**
-The user, a CTO, is leading a major architectural refactoring of a hospitality SaaS platform from a monolith to a scalable, Hospitality Operating System built around a semantic core using the Strangler Fig pattern.
+The user, a principal software architect, has requested a complete, production-grade refactoring of a cloud PMS application. The primary goal is to replace the existing mock channel manager with a real, scalable, connector-first architecture to integrate with HotelRunner.
 
-**PRODUCT REQUIREMENTS (latest from CTO):**
-After successfully implementing and verifying a fix for the outbox event processing system, the migration health score is now 'GREEN'. The CTO has given the explicit go-ahead to proceed with the next write-path migration.
-
-The current P0 task is the migration of the **** write-path. This must follow the same disciplined approach as previous migrations: narrow scope, contract preservation, idempotency, outbox event generation, audit logging, and regression testing.
+**PRODUCT REQUIREMENTS:**
+- Analyze the existing repository and identify critical technical debt, security risks, and architectural flaws.
+- Design and implement a new system architecture based on Domain-Driven Design (DDD) and bounded contexts.
+- Create a robust, multi-tenant data model for MongoDB to support the new architecture, including models for connectors, mappings, sync jobs, and a canonical representation of hospitality concepts (RoomType, RatePlan, etc.).
+- Build the skeleton for a HotelRunner connector, including clients, XML builders/parsers, mappers, and handlers for rate limiting and retries.
+- Design and implement the core engines for inventory synchronization and reservation import, focusing on delta updates, idempotency, and reliability.
+- Design a mapping engine to link PMS data with external provider data.
+- Design a reconciliation system to detect data discrepancies.
+- Propose UI screens for an admin panel to manage the new integration hub.
+- Propose solutions for security hardening and observability.
+- Provide a detailed, file-by-file implementation plan for the first batch of changes.
+- The user explicitly instructed the agent to proceed without asking for confirmation, using a set of provided assumptions.
 
 **User's preferred language**: Turkish
 
 **what currently exists?**
-The application has a React frontend, a FastAPI backend, and a MongoDB database. An outbox event processing system with a background worker is fully functional, processing events through a  lifecycle. This fix has been verified, the event backlog is cleared, and the Migration Health Score is 'GREEN'.
-
-The agent has just completed the implementation for the  write-path migration. This includes a new semantic backend endpoint () and updates to the frontend reservation details page to call this new endpoint.
+A massive architectural refactoring has been completed. A production-grade, connector-first Channel Manager v2 module has been built from the ground up within the FastAPI backend. This includes:
+- **Backend Architecture**: A new  directory organized by DDD layers (domain, application, infrastructure, interfaces, connectors).
+- **Data Models**: All necessary Pydantic models and MongoDB collections (e.g., , , ) have been created. Indexes are now automatically created on application startup.
+- **Canonical Model**: A provider-agnostic canonical data model has been defined to ensure future extensibility to other channel managers.
+- **Core Services & Connector Skeletons**: The foundational services for inventory sync, reservation import, and reconciliation have been created as skeletons. A skeleton for the HotelRunner connector is also in place.
+- **API Layer**: A full suite of v2 APIs under  has been implemented and tested for managing connectors, mappings, and monitoring health. An exception handler was added to return a  on duplicate key errors.
+- **Frontend UI**: A new Integration Hub page () has been created in React. It runs in parallel with the old system and provides a dashboard to view connector status, health, and trigger actions. This page successfully lists the connector created via the API.
 
 **Last working item**:
-- Last item agent was working: Implementing the  write-path migration. The agent has coded the necessary backend logic (new endpoint, service function, models) and frontend changes (API client function, UI form handler). A  test confirmed the backend endpoint works, and screenshots verified the frontend page loads. The final step was reviewing the frontend files.
+- Last item agent was working: Finalizing the Channel Manager v2 foundation. The agent had just received results from the testing agent, fixed two minor issues (a backend 500 error that should be 409, and a frontend text contrast issue), verified the backend fix with a  test, and began writing the  documentation file.
 - Status: IN PROGRESS
-- Agent Testing Done: N
-- Which testing method agent to use? both
-  - An end-to-end test is required. The  is recommended to simulate a user modifying a reservation on the UI and saving the changes.
-  - The test should verify:
-    1.  The UI updates correctly after saving.
-    2.  The reservation document is updated in the  MongoDB collection.
-    3.  A  event is created in the  collection with .
+- Agent Testing Done: Y
+- Which testing method agent to use? NA
 - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  - Issue 1: End-to-End Verification of  Migration (Priority: P0)
-
-  Issues Detail:
-  - Issue 1: 
-     - Description: The code for the  feature is written for both frontend and backend. However, a full end-to-end test has not been performed to confirm that clicking the Save button on the frontend successfully triggers the backend API, updates the database, and creates the corresponding outbox event.
-     - Attempted fixes: The backend endpoint was successfully tested in isolation using . The frontend component was visually inspected via screenshot. No integrated test has been run.
-     - Next debug checklist:
-        1. Use the  or manually test the flow: navigate to a reservation's detail page, edit a field (e.g., arrival date or guest name), and click save.
-        2. Check the browser's network tab (or app logs) to confirm the  call was made and returned a 200 OK status.
-        3. Query the MongoDB  collection to verify the data was updated.
-        4. Query the  collection to confirm a  event was created.
-     - Why fix this issue and what will be achieved with the fix? This is the final step to complete the  migration task. Verifying it will mark another key write-path as successfully migrated, allowing the team to move on to the next item in the roadmap ().
-     - Status: IN PROGRESS
-     - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? Both
-     - Blocked on other issue: None
+There are no outstanding bugs. The work consists of completing the planned feature implementation.
 
 **In progress Task List**:
-  - Task 1: Complete and Verify the  Migration (Priority: P0)
-     - Where to resume: The implementation is done. The immediate next step is to perform the end-to-end verification as described in Issue 1 above.
-     - What will be achieved with this? A fully functional and verified  write-path integrated into the new semantic architecture.
+  - Task 1: Finalize Documentation (Priority: P0)
+     - Where to resume: The  file was created but needs to be populated with the detailed architecture that was just built. The  should also be updated to reflect the completion of this foundational phase.
+     - What will be achieved with this? A fully documented, production-ready foundation for the Channel Manager v2, ready for the next phase of implementation.
      - Status: IN PROGRESS
-     - Should Test frontend/backend/both after fix? Both
-     - Blocked on something: None.
+     - Should Test frontend/backend/both after fix? NA
+     - Blocked on something: None
 
 **Upcoming and Future Tasks**
-*   **Upcoming Tasks (CTO-approved priority):**
-    *   **P1:**  write-path migration.
-    *   **P2:** Controlled  write-path migration.
-    *   **P3:** Implement export and a simple re-drive mechanism for / events.
+*   **Upcoming Tasks (P0 - Next Implementation Sprint):**
+    *   **Implement Inventory Sync Engine Logic**: Flesh out the skeleton at . This involves connecting to internal PMS events, implementing the logic for delta sync, batching, and rate-limit-aware dispatch to the connector.
+    *   **Implement Reservation Import Engine Logic**: Flesh out . Implement the process of pulling reservations, ensuring idempotency, handling duplicates, and managing modifications/cancellations.
 
-*   **Future Tasks (Technical Debt & Roadmap):**
-    *   Refactor the temporary in-process outbox worker into a separate, robust, and independently scalable service.
-    *   Mature the worker's locking/leasing model.
-    *   Tune retry/backoff policies.
-    *   Add a why changed history to the Health Score.
-    *    Aggregate Migration (, , ).
-    *    Implementation.
-    *    Module Migration (auth, authorization, tenant logic).
-    *    Hub Implementation.
-    *    Build-out.
+*   **Future Tasks (Roadmap):**
+    *   **Flesh out HotelRunner Connector**: Implement the actual XML building and parsing logic in , , and .
+    *   **Implement Mapping Engine**: Build the business logic for the mapping service.
+    *   **Implement Reconciliation Service**: Build the logic to compare PMS and HotelRunner data.
+    *   **Complete Admin Panel UI**: Build out the React components for the Mapping screen, Sync History, Error Queues, etc., based on the new v2 APIs.
+    *   **Implement Test Suite**: Write unit, integration, and contract tests for the new services as per the test plan.
+    *   **Security & Observability**: Implement the remaining security hardening and observability metric collection points.
 
 **Completed work in this session**
-- **Verified Minimal Outbox Lifecycle Fix**: Confirmed the background worker functions correctly, the event backlog was cleared, and the system is stable.
-- **Achieved 'GREEN' Health Score**: The successful outbox fix resolved the stale events issue, turning the Migration Health Score to 'GREEN'.
-- **Implemented  Migration**:
-  - Created the backend endpoint  with all necessary business logic, database updates, audit logging, and outbox event creation.
-  - Updated the frontend  page to use this new semantic endpoint for modifications.
+- **Architected & Implemented Channel Manager v2**: A complete, production-grade backend module was designed and built from scratch using DDD principles.
+- **Created Full Data Model**: All required MongoDB collections and Pydantic models for the new architecture were created and indexed.
+- **Built & Tested V2 APIs**: A full suite of RESTful APIs for managing connectors, mappings, and health was implemented, tested with , and validated by the testing agent.
+- **Created New Frontend Integration Hub**: A new dashboard was built in React to manage and monitor the v2 channel manager, successfully displaying live data from the backend.
+- **Passed Testing Agent Review**: The entire implementation was validated by the testing agent, and the two minor reported issues were immediately fixed and verified.
 
 **Earlier issues found/mentioned but not fixed**
 None.
@@ -85,65 +73,72 @@ None.
 
 
 **Key Technical Concepts**
-- Strangler Fig Pattern
-- Domain-Driven Design (DDD)
-- Outbox Pattern
-- Background Worker
-- Event-Driven State Machine
-- Idempotency
+- Connector-First Architecture
+- Domain-Driven Design (DDD) & Bounded Contexts
+- Canonical Data Model
+- Outbox/Inbox Pattern (for Sync Engine)
+- Idempotency & Duplicate Protection
+- Reconciliation
+- FastAPI, Pydantic, MongoDB
 
 **key DB schema**
-- **outbox**: 
-- **reservations**: 
-- **audit_log**: 
+- **cm_connector_accounts**: 
+- **cm_mapping_rules**: 
+- **cm_sync_jobs**: 
+- **cm_push_receipts**: 
+- **cm_imported_reservations**: 
+- **cm_reconciliation_issues**: 
+- **cm_audit_logs**: 
 
 **changes in tech stack**
-None.
+-  was added to .
 
 **All files of reference**
-*   : Core logic for modifying a reservation semantically.
-*   : Defines the new  endpoint.
-*   : Contains the Pydantic models for the modify request and response.
-*   : The React component containing the form and logic to call the new modification API.
-*   : The frontend API client, updated with the  function.
-*   : The background worker that processes events created by the new endpoint.
+- : The entire new module and all its subdirectories.
+- : The main entry point for the new frontend UI.
+- : Directory containing all new UI components.
+- : The new API client for the v2 endpoints.
+- : Modified to register the new API router and DB index creation logic.
+- : The in-progress documentation file.
 
 **Areas that need refactoring**:
-- The outbox worker is a  running in-process. The CTO has approved this for now, but it is logged as technical debt to be moved to a separate, independently scalable service in the future.
+- The skeletons created in the  layer (e.g., ) are intentionally empty and need to be filled with business logic.
+- The old  is now technical debt and should be scheduled for removal once the new Integration Hub achieves feature parity.
 
 **key api endpoints**
-- ****: **(NEW)** Modifies an existing reservation using the new semantic logic.
-- : Returns detailed metrics on the outbox event lifecycle.
-- : Returns the overall migration health score.
+- : Create a new connector account.
+- : List all connectors.
+- : Activate/pause a connector.
+- : Validate mapping rules.
+- : Get a health summary.
+- All other CRUD endpoints for mappings and audit logs under .
 
 **Critical Info for New Agent**
-1.  **Priority 1 is Verification**: Your immediate task is to perform a full end-to-end test of the  feature. The code is written, but its integrated functionality is unconfirmed.
-2.  **CTO Green Light**: The user (CTO) has explicitly approved moving forward with  because the underlying outbox system is now stable and trusted.
-3.  **Follow the Roadmap**: Once  is verified and complete, the next task is  migration. Do not deviate from the CTO's prioritized list.
+1.  **Foundation is Built**: Do not change the core architecture. Your task is to build on top of the established, tested foundation.
+2.  **Next Step is Logic Implementation**: The immediate priority is to implement the business logic inside the service skeletons, starting with the **Inventory Sync Engine**.
+3.  **Follow the Roadmap**: The user has provided a clear roadmap. After Inventory Sync, move to Reservation Import.
+4.  **Work in Parallel**: The new  exists alongside the old UI. Do not modify the old channel manager code; focus only on the new v2 modules.
 
 **documents and test reports created in this job**
-None.
+- 
+- 
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User (CTO)**: Confirmed that the agent's work on the outbox lifecycle was excellent and successful.
-2.  **User (CTO)**: Verified that the health score is now 'GREEN', pending events are 0, and the backlog is cleared.
-3.  **User (CTO)**: Stated that the conditions have been met to unblock further write-path migrations.
-4.  **User (CTO)**: Gave the explicit direction to **start the  migration now**.
-5.  **User (CTO)**: Outlined the next steps in order:  ->  -> .
-6.  **User (CTO)**: Acknowledged the current background worker is a temporary solution and should be logged as technical debt to be refactored later.
-7.  **User (CTO)**: Deprioritized the task of exporting/re-driving parked events, placing it after .
-8.  **User (CTO)**: Final directive: If the health score remains Green, start the migration now.
+The last several user messages were extremely detailed, providing the full specification for the architectural refactoring. The user explicitly instructed the agent **not to ask for confirmation** and to proceed directly with implementation based on a given set of assumptions. There are no pending questions for the user.
 
 **Project Health Check:**
-- **Unverified**: The  feature is fully implemented but requires end-to-end testing to be considered complete.
+- **Broken**: None.
+- **Mocked**:
+    - The HotelRunner connector () is a skeleton. It does not make real API calls.
+    - The core application services (, , etc.) are skeletons without business logic.
 
 **3rd Party Integrations**
-None.
+- A comprehensive architecture has been built to support the **HotelRunner** integration, but no live API calls are being made yet.
 
 **Testing status**
-- Testing agent used after significant changes: NO
+- Testing agent used after significant changes: YES
 - Troubleshoot agent used after agent stuck in loop: NO
-- Test files created: None
+- Test files created: []
 - Known regressions: None
 
 **Credentials to test flow:**
@@ -152,4 +147,4 @@ None.
 | **Demo Admin**|||Admin|
 
 **What agent forgot to execute**
-The agent implemented the  feature across the stack but did not perform a complete end-to-end test to verify that the user-facing action (editing and saving a form) correctly triggers the entire backend process (API call, DB update, outbox event creation). This final verification step is crucial.</analysis>
+The agent successfully executed the vast majority of the user's request. The only pending item from the last step is to complete writing the content for the  file, which was started just before the session ended.</analysis>

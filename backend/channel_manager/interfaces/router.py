@@ -112,7 +112,28 @@ async def get_connector(
         connector["credentials"] = {k: "***" for k in connector["credentials"]}
     return connector
 
-@router.post("/connectors/{connector_id}/test")
+class ConnectionTestStepResult(BaseModel):
+    status: str  # pass, fail, warn
+    latency_ms: int = 0
+    error_code: Optional[str] = None
+    message: str = ""
+
+class ConnectionTestResponse(BaseModel):
+    success: bool
+    connector_id: str = ""
+    provider: str = ""
+    display_name: str = ""
+    tested_at: str = ""
+    total_latency_ms: int = 0
+    summary: str = ""
+    auth_status: Optional[ConnectionTestStepResult] = None
+    property_access_status: Optional[ConnectionTestStepResult] = None
+    inventory_read_status: Optional[ConnectionTestStepResult] = None
+    rate_read_status: Optional[ConnectionTestStepResult] = None
+    xml_connectivity_status: Optional[ConnectionTestStepResult] = None
+    message: Optional[str] = None
+
+@router.post("/connectors/{connector_id}/test", response_model=ConnectionTestResponse)
 async def test_connector(
     connector_id: str,
     current_user: User = Depends(get_current_user),

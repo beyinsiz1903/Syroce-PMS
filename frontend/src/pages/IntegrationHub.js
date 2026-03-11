@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import {
   Network, Plus, RefreshCw, CheckCircle, AlertTriangle, XCircle,
   Clock, ArrowUpDown, Link2, Unlink, Shield, Activity, FileText,
-  Download, Eye, ChevronRight, Zap, Settings, Database, Map
+  Download, Eye, ChevronRight, Zap, Settings, Database, Map,
+  Loader2, Wifi, Key, Home, BedDouble, DollarSign, FileCode
 } from 'lucide-react';
 
 const API_BASE = '/channel-manager/v2';
@@ -74,6 +75,9 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
     pms_entity_id: '', pms_entity_name: '',
     external_entity_id: '', external_entity_name: '',
   });
+  const [testResult, setTestResult] = useState(null);
+  const [showTestResult, setShowTestResult] = useState(false);
+  const [testLoading, setTestLoading] = useState(false);
 
   const fetchDashboard = useCallback(async () => {
     try {
@@ -137,11 +141,27 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
   };
 
   const handleTestConnection = async (id) => {
+    setTestLoading(true);
+    setTestResult(null);
+    setShowTestResult(true);
     try {
       const { data } = await axios.post(`${API_BASE}/connectors/${id}/test`);
-      if (data.success) toast.success('Bağlantı başarılı');
-      else toast.error(data.message || 'Bağlantı başarısız');
-    } catch (e) { toast.error('Bağlantı testi başarısız'); }
+      setTestResult(data);
+    } catch (e) {
+      setTestResult({
+        success: false,
+        summary: 'Bağlantı testi başarısız oldu',
+        tested_at: new Date().toISOString(),
+        total_latency_ms: 0,
+        auth_status: { status: 'fail', latency_ms: 0, error_code: 'NETWORK', message: 'Sunucuya ulaşılamadı' },
+        property_access_status: { status: 'fail', latency_ms: 0, error_code: 'SKIPPED', message: 'Önceki adım başarısız' },
+        inventory_read_status: { status: 'fail', latency_ms: 0, error_code: 'SKIPPED', message: 'Önceki adım başarısız' },
+        rate_read_status: { status: 'fail', latency_ms: 0, error_code: 'SKIPPED', message: 'Önceki adım başarısız' },
+        xml_connectivity_status: { status: 'fail', latency_ms: 0, error_code: 'SKIPPED', message: 'Önceki adım başarısız' },
+      });
+    } finally {
+      setTestLoading(false);
+    }
   };
 
   const handleCreateMapping = async () => {
@@ -721,6 +741,120 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                 Mapping Oluştur
               </Button>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Connection Test Result Dialog */}
+        <Dialog open={showTestResult} onOpenChange={setShowTestResult}>
+          <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-lg" data-testid="test-result-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Wifi className="w-5 h-5" />
+                Bağlantı Test Sonuçları
+              </DialogTitle>
+            </DialogHeader>
+
+            {testLoading ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-3" data-testid="test-loading">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
+                <p className="text-sm text-slate-400">Bağlantı testleri çalıştırılıyor...</p>
+                <p className="text-xs text-slate-500">5 farklı bağlantı noktası doğrulanıyor</p>
+              </div>
+            ) : testResult ? (
+              <div className="space-y-4">
+                {/* Overall Status */}
+                <div className={`flex items-center justify-between p-3 rounded-lg border ${
+                  testResult.success
+                    ? 'bg-emerald-500/10 border-emerald-500/30'
+                    : 'bg-red-500/10 border-red-500/30'
+                }`} data-testid="test-overall-status">
+                  <div className="flex items-center gap-2">
+                    {testResult.success
+                      ? <CheckCircle className="w-5 h-5 text-emerald-400" />
+                      : <XCircle className="w-5 h-5 text-red-400" />}
+                    <div>
+                      <p className={`text-sm font-medium ${testResult.success ? 'text-emerald-300' : 'text-red-300'}`}>
+                        {testResult.success ? 'Bağlantı Başarılı' : 'Bağlantı Başarısız'}
+                      </p>
+                      <p className="text-xs text-slate-400">{testResult.summary}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-slate-400">Toplam Latency</p>
+                    <p className="text-sm font-mono text-slate-300">{testResult.total_latency_ms}ms</p>
+                  </div>
+                </div>
+
+                {/* Individual test steps */}
+                <div className="space-y-2">
+                  {[
+                    { key: 'auth_status', label: 'Authentication', icon: Key, desc: 'Token ve kimlik doğrulama' },
+                    { key: 'property_access_status', label: 'Property Access', icon: Home, desc: 'Otel erişim kontrolü' },
+                    { key: 'inventory_read_status', label: 'Room Types', icon: BedDouble, desc: 'Oda tipleri okuma' },
+                    { key: 'rate_read_status', label: 'Rate Plans', icon: DollarSign, desc: 'Fiyat planları okuma' },
+                    { key: 'xml_connectivity_status', label: 'XML API', icon: FileCode, desc: 'OTA XML bağlantısı' },
+                  ].map(({ key, label, icon: Icon, desc }) => {
+                    const step = testResult[key];
+                    if (!step) return null;
+                    const isPassing = step.status === 'pass';
+                    const isWarn = step.status === 'warn';
+                    const isFail = step.status === 'fail';
+                    return (
+                      <div key={key}
+                        className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
+                          isPassing ? 'bg-emerald-500/5 border-emerald-500/20' :
+                          isWarn ? 'bg-amber-500/5 border-amber-500/20' :
+                          'bg-red-500/5 border-red-500/20'
+                        }`}
+                        data-testid={`test-step-${key}`}
+                      >
+                        <div className={`mt-0.5 p-1.5 rounded ${
+                          isPassing ? 'bg-emerald-500/20' : isWarn ? 'bg-amber-500/20' : 'bg-red-500/20'
+                        }`}>
+                          <Icon className={`w-4 h-4 ${
+                            isPassing ? 'text-emerald-400' : isWarn ? 'text-amber-400' : 'text-red-400'
+                          }`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-white">{label}</span>
+                              {isPassing && <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />}
+                              {isWarn && <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />}
+                              {isFail && <XCircle className="w-3.5 h-3.5 text-red-400" />}
+                            </div>
+                            <span className="text-xs font-mono text-slate-500">{step.latency_ms}ms</span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
+                          {(isFail || isWarn) && step.message && (
+                            <div className={`mt-1.5 px-2 py-1 rounded text-xs ${
+                              isWarn ? 'bg-amber-500/10 text-amber-300' : 'bg-red-500/10 text-red-300'
+                            }`}>
+                              {step.message}
+                            </div>
+                          )}
+                          {step.error_code && step.error_code !== 'SKIPPED' && isFail && (
+                            <p className="text-[10px] text-slate-600 mt-1 font-mono">Hata kodu: {step.error_code}</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Footer info */}
+                <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+                  <p className="text-[10px] text-slate-600">
+                    Test zamanı: {testResult.tested_at ? new Date(testResult.tested_at).toLocaleString('tr-TR') : '-'}
+                  </p>
+                  {testResult.provider && (
+                    <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-500">
+                      {testResult.provider}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </DialogContent>
         </Dialog>
       </div>
