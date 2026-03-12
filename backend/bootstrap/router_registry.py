@@ -107,6 +107,8 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("domains.channel_manager.validation_router", "router", ["CM Provider Validation"], None, None),
     ("security.tenant_isolation_router", "router", ["Tenant Isolation v2"], None, None),
     ("ops.pilot_router", "router", ["Pilot Readiness"], None, None),
+    # Phase 6 — Runtime Validation & Go-Live
+    ("ops.validation_router", "router", ["Runtime Validation & Go-Live"], None, None),
 ]
 
 # Optional routers with special import paths

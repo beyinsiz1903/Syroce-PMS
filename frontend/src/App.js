@@ -161,6 +161,8 @@ const ProductionGoLiveDashboard = lazy(() => import("@/pages/ProductionGoLiveDas
 const AuditTimelinePage = lazy(() => import("@/pages/AuditTimelinePage"));
 const PilotReadinessPage = lazy(() => import("@/pages/PilotReadinessPage"));
 const IncidentDashboardPage = lazy(() => import("@/pages/IncidentDashboardPage"));
+// Phase 6 — Go-Live & Validation
+const GoLiveDashboardPage = lazy(() => import("@/pages/GoLiveDashboardPage"));
 
 import { Toaster } from "@/components/ui/sonner";
 
@@ -1374,6 +1376,16 @@ function App() {
             element={
               isAuthenticated ? (
                 <IncidentDashboardPage user={user} tenant={tenant} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/golive-dashboard"
+            element={
+              isAuthenticated ? (
+                <GoLiveDashboardPage user={user} tenant={tenant} />
               ) : (
                 <Navigate to="/auth" replace />
               )
