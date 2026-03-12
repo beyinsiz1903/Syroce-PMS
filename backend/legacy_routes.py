@@ -1,6 +1,21 @@
 """
-Legacy Routes — All inline endpoint definitions extracted from the monolithic server.py.
-Phase B will decompose these into domain-specific router modules.
+Legacy Routes — Compatibility Layer
+
+Phase B: Domain Module Separation COMPLETE
+==========================================
+All 404 endpoint definitions have been extracted into domain-specific routers
+under backend/domains/. This file now contains only:
+
+1. Shared inline Pydantic model definitions (used by domain routers and server.py)
+2. The api_router instance (empty, kept for backward compatibility)
+3. Helper function imports re-exported for server.py
+
+Migration Status:
+- 0 endpoints remain (all moved to backend/domains/)
+- 18 domain routers created
+- 408 routes registered
+
+Next Phase: Move remaining inline models to models/ package
 """
 from fastapi import APIRouter, HTTPException, Depends, status, File, UploadFile, Form, Request, Header, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
