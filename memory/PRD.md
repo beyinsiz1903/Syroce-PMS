@@ -1,139 +1,98 @@
-# Syroce PMS — Production Hardening PRD
+# Syroce PMS — Product Requirements Document
 
 ## Original Problem Statement
-Cloud PMS + Channel Manager Integration Platform. A comprehensive hotel management system with HotelRunner channel manager integration supporting inventory sync, reservation import, and operational maturity features.
+Cloud PMS + Channel Manager entegrasyon platformu. HotelRunner provider ile connector-first mimari üzerinden entegrasyon. Sistem production-grade olacak şekilde tasarlanmış olup, gerçek provider doğrulaması ve operasyonel olgunluk katmanları içerir.
 
 ## Core Architecture
-- **Backend**: FastAPI + MongoDB (connector-first architecture)
-- **Frontend**: React with Shadcn/UI components
-- **Channel Manager**: HotelRunner OTA-standard XML integration
+- **Backend**: FastAPI + MongoDB (Motor async driver)
+- **Frontend**: React + Shadcn/UI + TailwindCSS
+- **Channel Manager**: Connector-first architecture with DDD patterns
+- **Security**: AES-256-GCM credential encryption, RBAC, JWT auth
 
-## What Has Been Implemented
+## Completed Features
 
-### Phase 1-3: Foundation (Previous Sessions)
-- Channel Manager v2 connector-first architecture
-- Inventory Sync Engine (delta sync, coalescing, batching)
-- Reservation Import Engine (idempotency, duplicate protection, manual review)
-- Operational maturity layer (metrics, alerting, reliability, sandbox validation, multi-property dashboard)
-- Admin panel with 13 tabs
-- Router decomposition (7 modular routers)
-- Scheduled reservation import jobs (APScheduler)
-- Credential security (AES-256-GCM encryption at rest)
-- RBAC enforced credential management
-- Full audit trail system
+### Phase 1 - Core PMS (Completed)
+- Multi-tenant architecture with RBAC
+- Room, booking, guest, folio management
+- Dashboard with analytics
+- Housekeeping and task management
 
-### Phase 4: Production Hardening (Current Session - 2026-03-12)
+### Phase 2 - Channel Manager v2 (Completed)
+- Connector-first architecture (create/activate/pause/disable)
+- HotelRunner provider integration (OTA XML)
+- Inventory sync engine (delta sync, coalescing, batching)
+- Reservation import engine (idempotency, duplicate protection, manual review)
+- Mapping engine (room types, rate plans, validation)
+- Credential security (AES-256-GCM encryption)
+- Full audit trail
 
-#### 1. Provider Contract Hardening (DONE)
-- Enhanced XML parser with typed error classes (InvalidXml, MissingRequiredField, SchemaMismatch, ProviderErrorResponse, UnknownResponseFormat)
-- Unknown fields silently ignored
-- Missing optional fields tolerated with defaults
-- Unexpected enum values handled with fallback
-- Safe numeric parsing (_safe_float, _safe_int)
-- Raw payload audit with sensitive data masking (CardNumber, CVV, etc.)
-- Payload truncation for storage
-- Correlation ID support
-- Source channel extraction from POS element
+### Phase 3 - Operational Maturity (Completed)
+- Historical metrics storage & aggregation
+- Alerting engine with rules
+- Reliability monitoring
+- Connector health dashboard
+- Background worker scheduler (APScheduler)
+- Alert delivery channels (email, webhook, Slack, Teams)
+- Production readiness checklist
+- Admin operational dashboard (19 tabs)
 
-#### 2. Alert Delivery Channels (DONE)
-- Email delivery (SMTP + SendGrid API)
-- Webhook delivery (generic HTTP POST with HMAC signature)
-- Slack incoming webhook
-- Microsoft Teams incoming webhook
-- Severity-based filtering per channel
-- Alert deduplication (SHA-256 fingerprint)
-- Throttling (configurable per-channel rate limit)
-- Delivery retry with exponential backoff (3 attempts)
-- Delivery audit log
-- Tenant + connector-scoped channel configuration
-- Auto-delivery hooked into alerting engine
+### Phase 4 - Production Integration Readiness (Completed - 2026-03-12)
+1. **Mapping Completeness Validation**: Room type, rate plan, occupancy, tax mode, meal plan mapping checks. Sync/import gating. Admin readiness score display.
+2. **Rate Push Success Tracking**: Success/failure/retry metrics. Failure classification (auth_error, timeout, rate_limited, validation_error, provider_unavailable, provider_rejected). Integrated into health score.
+3. **Connector Health Trend Analytics**: Daily/weekly trend snapshots. Period comparison with delta calculation. Time-series charts in admin dashboard.
+4. **WebSocket Real-Time Admin Updates**: Live event broadcasting (alert_triggered, connector_health_change, sync_job_update, reservation_import_batch_update, scheduler_job_state_change). Auto-reconnect. Ping/pong keep-alive.
+5. **Enhanced Production Readiness**: 12-point checklist including rate push and mapping completeness. 3-tier recommendation (NOT_READY / CONDITIONALLY_READY / PRODUCTION_READY).
+6. **Comprehensive Testing**: 84 unit tests + 15 API tests. 100% pass rate.
 
-#### 3. Background Scheduler Worker (DONE)
-- 4 job types: reservation_import, inventory_safety_sync, connector_health_check, metrics_aggregation
-- Default intervals: 5min, 30min, 15min, 30min
-- DB-based distributed lock
-- Duplicate job prevention
-- Retry with exponential backoff
-- Job lifecycle audit log
-- Job failure alerting (auto-triggers alert engine)
-- Manual trigger via API
+## Current Admin Panel Tabs (19 total)
+1. Sync Health
+2. Health Dashboard
+3. Health Trends (NEW)
+4. Mapping Readiness (NEW)
+5. Rate Push (NEW)
+6. Reservations
+7. Alerts
+8. Alert Delivery
+9. Reliability
+10. Reconciliation
+11. Scheduler
+12. Import Jobs
+13. Background Worker
+14. Credentials
+15. Error Queue
+16. Observability
+17. Readiness
+18. Sandbox Validation
+19. Multi-Property
 
-#### 4. Connector Health Dashboard (DONE)
-- Per-connector health metrics: uptime, sync/import rates, alerts, retries
-- Health score formula: sync(30%) + import(30%) + uptime(20%) + alert_penalty(10%) + retry_penalty(10%)
-- Classification: HEALTHY (>=85), DEGRADED (>=60), CRITICAL (<60)
-- Multi-property aggregation
-- Average health score
-- Real-time refresh
+## API Endpoints (New in Phase 4)
+- `GET /api/channel-manager/v2/mapping-completeness/{connector_id}`
+- `GET /api/channel-manager/v2/mapping-completeness/{connector_id}/sync-gate`
+- `GET /api/channel-manager/v2/mapping-completeness/{connector_id}/import-gate`
+- `GET /api/channel-manager/v2/rate-push-metrics/{connector_id}`
+- `GET /api/channel-manager/v2/health-trend/{connector_id}/daily`
+- `GET /api/channel-manager/v2/health-trend/{connector_id}/weekly`
+- `GET /api/channel-manager/v2/health-trend/{connector_id}/summary`
+- `WS /api/channel-manager/v2/ws/admin-updates?tenant_id=X`
 
-#### 5. Enhanced Production Readiness Validation (DONE)
-- 10-item checklist: auth, inventory push, reservation import/modify/cancel, ACK lifecycle, alerts, metrics, scheduler, credential security
-- Three-tier recommendation: NOT_READY, CONDITIONALLY_READY, PRODUCTION_READY
-- Integrated with audit log
+## Data Models (New)
+- `cm_rate_push_metrics`: Rate push operation records
+- `cm_health_snapshots`: Time-series health score snapshots
 
-#### 6. Frontend (DONE)
-- ConnectorHealthTab: Health score bars, classification badges, metric grids
-- AlertDeliveryTab: Channel CRUD, config editor, test delivery, delivery log
-- BackgroundWorkerTab: Job type cards, manual trigger, job history table
-- All tabs integrated into AdminControlPanel (now 16 tabs total)
+## Test Coverage
+- `/app/backend/tests/test_production_hardening.py` - 42 tests
+- `/app/backend/tests/test_v2_integration.py` - 42 tests
+- `/app/backend/tests/test_v2_new_endpoints_api.py` - 15 API tests
+- Test reports: `/app/test_reports/iteration_31.json`
 
-#### 7. Testing (DONE)
-- 42 unit tests covering: XML parser resilience, contract errors, alert delivery, worker service, health scoring, contract scenarios, environment config, XML builder
-- 18 API integration tests (created by testing agent)
-- 100% pass rate
+## Backlog
+- **(P1)** Real HotelRunner sandbox end-to-end lifecycle validation with live API
+- **(P1)** Enhanced UI/UX with historical trend graphs and advanced data visualizations
+- **(P2)** Additional alert delivery channels (PagerDuty, SMS gateway)
+- **(P2)** SLA tracking and compliance reporting based on health trends
+- **(P3)** Multi-provider support beyond HotelRunner
 
-## Prioritized Backlog
-
-### P0 (Critical)
-- None — all critical features implemented and tested
-
-### P1 (High)
-- HotelRunner sandbox credential verification against real sandbox API
-- Rate push success tracking in production readiness
-- Full mapping completeness check
-
-### P2 (Medium)
-- Reconciliation issue tracking in readiness check
-- Real-time WebSocket health updates
-- Alert delivery metrics dashboard
-- Scheduled auto-readiness checks
-- i18n (internationalization)
-
-### P3 (Low)
-- Performance optimization
-- Report builder
-- Mobile-responsive health dashboard
-- Advanced data visualizations
-- Email template customization for alerts
-
-## Key API Endpoints
-
-### Health Dashboard
-- `GET /api/channel-manager/v2/health-dashboard/connectors`
-- `GET /api/channel-manager/v2/health-dashboard/connectors/{id}`
-- `GET /api/channel-manager/v2/health-dashboard/properties/{id}`
-
-### Alert Delivery
-- `GET /api/channel-manager/v2/delivery/channels`
-- `POST /api/channel-manager/v2/delivery/channels`
-- `DELETE /api/channel-manager/v2/delivery/channels/{id}`
-- `POST /api/channel-manager/v2/delivery/test/{id}`
-- `GET /api/channel-manager/v2/delivery/log`
-
-### Background Worker
-- `POST /api/channel-manager/v2/worker/jobs/run?job_type=...`
-- `POST /api/channel-manager/v2/worker/jobs/run-all`
-- `GET /api/channel-manager/v2/worker/jobs`
-- `GET /api/channel-manager/v2/worker/stats`
-
-## Data Models
-- `cm_alert_delivery_channels`: Channel configurations
-- `cm_alert_delivery_log`: Delivery audit trail
-- `cm_alert_fingerprints`: Deduplication fingerprints
-- `cm_worker_jobs`: Background worker job records
-- `cm_worker_locks`: Distributed lock records
-
-## Test Reports
-- `/app/backend/tests/test_production_hardening.py` (42 unit tests)
-- `/app/backend/tests/test_production_hardening_api.py` (18 API tests)
-- `/app/test_reports/iteration_30.json` (latest test run)
+## Credentials
+| User | Email | Password |
+|---|---|---|
+| Demo Admin | demo@hotel.com | demo123 |
