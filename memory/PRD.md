@@ -1,98 +1,90 @@
 # Syroce PMS — Product Requirements Document
 
 ## Original Problem Statement
-Cloud PMS + Channel Manager entegrasyon platformu. HotelRunner provider ile connector-first mimari üzerinden entegrasyon. Sistem production-grade olacak şekilde tasarlanmış olup, gerçek provider doğrulaması ve operasyonel olgunluk katmanları içerir.
+Cloud PMS + Channel Manager entegrasyon platformu. PMS çekirdeğini production-grade seviyeye çıkarmak.
 
 ## Core Architecture
-- **Backend**: FastAPI + MongoDB (Motor async driver)
+- **Backend**: FastAPI + MongoDB (async)
 - **Frontend**: React + Shadcn/UI + TailwindCSS
-- **Channel Manager**: Connector-first architecture with DDD patterns
-- **Security**: AES-256-GCM credential encryption, RBAC, JWT auth
+- **Auth**: JWT-based custom auth
+- **Real-time**: WebSocket for admin dashboard
 
-## Completed Features
+## What's Been Implemented
 
-### Phase 1 - Core PMS (Completed)
-- Multi-tenant architecture with RBAC
-- Room, booking, guest, folio management
-- Dashboard with analytics
-- Housekeeping and task management
-
-### Phase 2 - Channel Manager v2 (Completed)
-- Connector-first architecture (create/activate/pause/disable)
-- HotelRunner provider integration (OTA XML)
-- Inventory sync engine (delta sync, coalescing, batching)
-- Reservation import engine (idempotency, duplicate protection, manual review)
-- Mapping engine (room types, rate plans, validation)
-- Credential security (AES-256-GCM encryption)
-- Full audit trail
-
-### Phase 3 - Operational Maturity (Completed)
-- Historical metrics storage & aggregation
-- Alerting engine with rules
-- Reliability monitoring
-- Connector health dashboard
-- Background worker scheduler (APScheduler)
-- Alert delivery channels (email, webhook, Slack, Teams)
+### Phase 1: Channel Manager & Production Validation (DONE)
+- HotelRunner sandbox integration
+- Reservation import/export
+- Inventory sync engine
+- Connector health monitoring
+- Alert delivery system
 - Production readiness checklist
-- Admin operational dashboard (19 tabs)
+- Mapping completeness validation
+- Rate push tracking
+- WebSocket real-time updates
+- Health trend analytics
 
-### Phase 4 - Production Integration Readiness (Completed - 2026-03-12)
-1. **Mapping Completeness Validation**: Room type, rate plan, occupancy, tax mode, meal plan mapping checks. Sync/import gating. Admin readiness score display.
-2. **Rate Push Success Tracking**: Success/failure/retry metrics. Failure classification (auth_error, timeout, rate_limited, validation_error, provider_unavailable, provider_rejected). Integrated into health score.
-3. **Connector Health Trend Analytics**: Daily/weekly trend snapshots. Period comparison with delta calculation. Time-series charts in admin dashboard.
-4. **WebSocket Real-Time Admin Updates**: Live event broadcasting (alert_triggered, connector_health_change, sync_job_update, reservation_import_batch_update, scheduler_job_state_change). Auto-reconnect. Ping/pong keep-alive.
-5. **Enhanced Production Readiness**: 12-point checklist including rate push and mapping completeness. 3-tier recommendation (NOT_READY / CONDITIONALLY_READY / PRODUCTION_READY).
-6. **Comprehensive Testing**: 84 unit tests + 15 API tests. 100% pass rate.
+### Phase 2: PMS Core Hardening (DONE - 2026-03-12)
+8-point production hardening plan fully implemented:
 
-## Current Admin Panel Tabs (19 total)
-1. Sync Health
-2. Health Dashboard
-3. Health Trends (NEW)
-4. Mapping Readiness (NEW)
-5. Rate Push (NEW)
-6. Reservations
-7. Alerts
-8. Alert Delivery
-9. Reliability
-10. Reconciliation
-11. Scheduler
-12. Import Jobs
-13. Background Worker
-14. Credentials
-15. Error Queue
-16. Observability
-17. Readiness
-18. Sandbox Validation
-19. Multi-Property
+1. **Reservation State Machine** - Valid transitions enforced (pending→confirmed→checked_in→checked_out). Terminal states (cancelled, no_show, checked_out) reject further transitions. Overbooking prevention. Duplicate reservation detection.
+2. **Front Desk Workflow** - Check-in with room readiness validation, checkout with folio balance check, room move for checked-in guests, walk-in with immediate check-in, early check-in/late checkout, room upgrade with rate adjustment.
+3. **Folio/Billing Hardening** - Charge posting, payment posting, refund handling, split folio, tax breakdown, city ledger transfer, void/reversal with mandatory reason, transaction audit trail.
+4. **Housekeeping State Machine** - Room status transitions (available→occupied→dirty→cleaning→inspected→available), inspection approval/rejection, room readiness blocker, maintenance impact analysis.
+5. **Night Audit Engine** - Business date roll, room charge posting, pending arrival/departure control, no-show processing, unbalanced folio detection, tax consistency checks, daily audit snapshot, exceptions queue.
+6. **Role/Permission RBAC** - Permission enforcement per operation, supervisor override detection, per-role permission listing.
+7. **PMS Operational Dashboard** - Arrivals/departures today, in-house guests, room status summary, pending folio issues, audit exceptions, blocked check-ins.
+8. **Comprehensive Testing** - 53 unit tests + 25 API tests, all passing.
 
-## API Endpoints (New in Phase 4)
-- `GET /api/channel-manager/v2/mapping-completeness/{connector_id}`
-- `GET /api/channel-manager/v2/mapping-completeness/{connector_id}/sync-gate`
-- `GET /api/channel-manager/v2/mapping-completeness/{connector_id}/import-gate`
-- `GET /api/channel-manager/v2/rate-push-metrics/{connector_id}`
-- `GET /api/channel-manager/v2/health-trend/{connector_id}/daily`
-- `GET /api/channel-manager/v2/health-trend/{connector_id}/weekly`
-- `GET /api/channel-manager/v2/health-trend/{connector_id}/summary`
-- `WS /api/channel-manager/v2/ws/admin-updates?tenant_id=X`
+## Key API Endpoints
 
-## Data Models (New)
-- `cm_rate_push_metrics`: Rate push operation records
-- `cm_health_snapshots`: Time-series health score snapshots
+### PMS Core (prefix: /api/pms-core)
+- POST /check-in, /checkout, /walk-in, /cancel, /no-show
+- POST /room-move, /room-upgrade, /late-checkout, /early-checkin
+- GET /checkout-preview/{booking_id}, /overbooking-check
+- POST /folio/charge, /folio/payment, /folio/refund
+- POST /folio/void-charge, /folio/void-payment, /folio/split
+- GET /folio/tax-breakdown/{folio_id}, /folio/audit/{folio_id}
+- POST /folio/city-ledger-transfer
+- POST /housekeeping/room-status, /housekeeping/inspection-approval
+- GET /housekeeping/room-readiness/{room_id}, /housekeeping/room-summary
+- GET /housekeeping/maintenance-impact
+- POST /night-audit/run, /night-audit/resolve-exception
+- GET /night-audit/business-date, /night-audit/exceptions, /night-audit/snapshot/{date}
+- GET /dashboard/operational, /permissions/me, /audit-trail
+- GET /reservation-audit/{booking_id}
 
-## Test Coverage
-- `/app/backend/tests/test_production_hardening.py` - 42 tests
-- `/app/backend/tests/test_v2_integration.py` - 42 tests
-- `/app/backend/tests/test_v2_new_endpoints_api.py` - 15 API tests
-- Test reports: `/app/test_reports/iteration_31.json`
+## File Architecture (PMS Core)
+```
+backend/modules/pms_core/
+├── __init__.py
+├── reservation_state_machine.py
+├── front_desk_service.py
+├── folio_hardening_service.py
+├── housekeeping_state_service.py
+├── night_audit_engine.py
+├── pms_dashboard_service.py
+└── role_permission_service.py
+backend/routers/pms_hardening.py
+backend/tests/test_pms_hardening.py
+backend/tests/test_pms_hardening_api.py
+frontend/src/pages/PMSOperationalDashboard.js
+```
 
-## Backlog
-- **(P1)** Real HotelRunner sandbox end-to-end lifecycle validation with live API
-- **(P1)** Enhanced UI/UX with historical trend graphs and advanced data visualizations
-- **(P2)** Additional alert delivery channels (PagerDuty, SMS gateway)
-- **(P2)** SLA tracking and compliance reporting based on health trends
-- **(P3)** Multi-provider support beyond HotelRunner
-
-## Credentials
+## Test Credentials
 | User | Email | Password |
 |---|---|---|
 | Demo Admin | demo@hotel.com | demo123 |
+
+## Prioritized Backlog
+
+### P1 - Next
+- Interactive charts for operational dashboard
+- Date range filters for audit trail
+- Folio detailed view in dashboard
+
+### P2 - Future
+- Multi-property night audit coordination
+- Automated housekeeping task assignment
+- Revenue analytics integration
+- Guest communication for check-in/checkout
+- Mobile front desk workflow
