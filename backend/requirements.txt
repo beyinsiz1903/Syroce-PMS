@@ -1,3 +1,4 @@
+--extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
 aiodataloader==0.2.1
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.3
