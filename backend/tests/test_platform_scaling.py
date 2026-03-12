@@ -6,7 +6,7 @@ import pytest
 import httpx
 import os
 
-API_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://hotel-hardening.preview.emergentagent.com")
+API_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://redis-messaging-go.preview.emergentagent.com")
 
 @pytest.fixture(scope="module")
 def auth_headers():
