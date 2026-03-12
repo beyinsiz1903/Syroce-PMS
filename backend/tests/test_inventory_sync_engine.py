@@ -21,7 +21,7 @@ import requests
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 if not BASE_URL:
-    BASE_URL = "https://trend-analytics-hub-1.preview.emergentagent.com"
+    BASE_URL = "https://hotel-core-ops.preview.emergentagent.com"
 BASE_URL = BASE_URL.rstrip('/') + "/api"
 
 CM_V2_BASE = f"{BASE_URL}/channel-manager/v2"

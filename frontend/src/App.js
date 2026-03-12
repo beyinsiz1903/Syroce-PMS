@@ -115,6 +115,7 @@ const FnbBeoGenerator = lazy(() => import("@/pages/FnbBeoGenerator"));
 const KitchenDisplay = lazy(() => import("@/pages/KitchenDisplay"));
 const NightAuditLogs = lazy(() => import("@/pages/NightAuditLogs"));
 const PMSOperationalDashboard = lazy(() => import("@/pages/PMSOperationalDashboard"));
+const FolioDetailView = lazy(() => import("@/pages/FolioDetailView"));
 const FrontdeskAuditChecklist = lazy(() => import("@/pages/FrontdeskAuditChecklist"));
 const CorporateContractsDashboard = lazy(() => import("@/pages/CorporateContractsDashboard"));
 const MaintenanceWorkOrders = lazy(() => import("@/pages/MaintenanceWorkOrders"));
@@ -1115,6 +1116,26 @@ function App() {
             element={
               isAuthenticated ? (
                 <PMSOperationalDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/folio-detail"
+            element={
+              isAuthenticated ? (
+                <FolioDetailView />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/folio-detail/:folioId"
+            element={
+              isAuthenticated ? (
+                <FolioDetailView />
               ) : (
                 <Navigate to="/auth" replace />
               )

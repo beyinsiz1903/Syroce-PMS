@@ -44,6 +44,14 @@ export const NAV_ITEMS = [
     group: "core",
   },
   {
+    key: "folio_detail",
+    label: "Folio Detail",
+    path: "/folio-detail",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "core",
+  },
+  {
     key: "reports_basic",
     label: "Raporlar",
     path: "/app/raporlar",

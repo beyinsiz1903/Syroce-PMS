@@ -18,6 +18,10 @@ from modules.pms_core.housekeeping_state_service import HousekeepingStateService
 from modules.pms_core.night_audit_engine import NightAuditEngine
 from modules.pms_core.pms_dashboard_service import PMSDashboardService
 from modules.pms_core.role_permission_service import RolePermissionService
+from modules.pms_core.folio_detail_service import FolioDetailService
+from modules.pms_core.dashboard_trends_service import DashboardTrendsService
+from modules.pms_core.multi_property_audit_service import MultiPropertyAuditService
+from modules.pms_core.auto_housekeeping_service import AutoHousekeepingService
 
 router = APIRouter(prefix="/api/pms-core", tags=["pms-core"])
 
@@ -28,6 +32,10 @@ hk_svc = HousekeepingStateService()
 night_audit = NightAuditEngine()
 dashboard_svc = PMSDashboardService()
 perm_svc = RolePermissionService()
+folio_detail_svc = FolioDetailService()
+trends_svc = DashboardTrendsService()
+mp_audit_svc = MultiPropertyAuditService()
+auto_hk_svc = AutoHousekeepingService()
 
 
 # ── REQUEST MODELS ──
@@ -441,3 +449,116 @@ async def api_get_audit_trail(entity_type: Optional[str] = None, entity_id: Opti
         query["entity_id"] = entity_id
     trail = await db.pms_audit_trail.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
     return {"count": len(trail), "trail": trail}
+
+
+# ══════════════════════════════════════════════
+# FOLIO DETAIL VIEW
+# ══════════════════════════════════════════════
+
+@router.get("/folio/detail/{folio_id}", tags=["folio"])
+async def api_folio_detail(folio_id: str, current_user: User = Depends(get_current_user)):
+    """Get comprehensive folio detail: timeline, running balance, splits, tax, audit."""
+    result = await folio_detail_svc.get_folio_detail(current_user.tenant_id, folio_id)
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result.get("error", "Folio not found"))
+    return result
+
+
+# ══════════════════════════════════════════════
+# DASHBOARD TRENDS + DATE RANGE FILTERS
+# ══════════════════════════════════════════════
+
+@router.get("/dashboard/trends", tags=["dashboard"])
+async def api_dashboard_trends(start_date: str, end_date: str, current_user: User = Depends(get_current_user)):
+    """Get operational trends for date range (arrivals, departures, occupancy, etc.)."""
+    from datetime import date as date_cls
+    try:
+        sd = date_cls.fromisoformat(start_date)
+        ed = date_cls.fromisoformat(end_date)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    if (ed - sd).days > 90:
+        raise HTTPException(status_code=400, detail="Max 90 day range")
+    if ed < sd:
+        raise HTTPException(status_code=400, detail="end_date must be >= start_date")
+    return await trends_svc.get_trends(current_user.tenant_id, start_date, end_date)
+
+
+# ══════════════════════════════════════════════
+# MULTI-PROPERTY NIGHT AUDIT COORDINATION
+# ══════════════════════════════════════════════
+
+@router.get("/multi-property/audit-board", tags=["multi-property"])
+async def api_audit_status_board(current_user: User = Depends(get_current_user)):
+    """Get multi-property night audit status board."""
+    return await mp_audit_svc.get_audit_status_board(current_user.tenant_id)
+
+@router.get("/multi-property/exception-summary", tags=["multi-property"])
+async def api_exception_summary(current_user: User = Depends(get_current_user)):
+    """Get aggregated exception summary across properties."""
+    return await mp_audit_svc.get_exception_summary(current_user.tenant_id)
+
+@router.get("/multi-property/unresolved-blockers", tags=["multi-property"])
+async def api_unresolved_blockers(current_user: User = Depends(get_current_user)):
+    """Get unresolved blockers across properties."""
+    return await mp_audit_svc.get_unresolved_blockers(current_user.tenant_id)
+
+@router.get("/multi-property/readiness-score", tags=["multi-property"])
+async def api_readiness_score(current_user: User = Depends(get_current_user)):
+    """Get multi-property audit readiness score."""
+    return await mp_audit_svc.get_readiness_score(current_user.tenant_id)
+
+
+class EscalateRequest(BaseModel):
+    exception_id: str
+    note: str
+
+@router.post("/multi-property/escalate", tags=["multi-property"])
+async def api_escalate_exception(req: EscalateRequest, current_user: User = Depends(get_current_user)):
+    """Escalate an audit exception."""
+    result = await mp_audit_svc.escalate_exception(current_user.tenant_id, req.exception_id, current_user.id, req.note)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+
+# ══════════════════════════════════════════════
+# AUTO HOUSEKEEPING TASK ASSIGNMENT
+# ══════════════════════════════════════════════
+
+class AutoAssignRequest(BaseModel):
+    booking_id: str
+
+@router.post("/housekeeping/auto-assign", tags=["housekeeping"])
+async def api_auto_assign_after_checkout(req: AutoAssignRequest, current_user: User = Depends(get_current_user)):
+    """Auto-assign housekeeping task after checkout."""
+    result = await auto_hk_svc.auto_assign_after_checkout(current_user.tenant_id, req.booking_id, current_user.id)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+@router.get("/housekeeping/assignment-suggestions", tags=["housekeeping"])
+async def api_assignment_suggestions(current_user: User = Depends(get_current_user)):
+    """Get housekeeping task assignment suggestions."""
+    return await auto_hk_svc.get_assignment_suggestions(current_user.tenant_id)
+
+@router.get("/housekeeping/room-eta/{room_id}", tags=["housekeeping"])
+async def api_room_readiness_eta(room_id: str, current_user: User = Depends(get_current_user)):
+    """Get room readiness ETA."""
+    return await auto_hk_svc.get_room_readiness_eta(current_user.tenant_id, room_id)
+
+
+class ManualOverrideRequest(BaseModel):
+    task_id: str
+    new_assignee_id: str
+    reason: str
+
+@router.post("/housekeeping/manual-override", tags=["housekeeping"])
+async def api_manual_override(req: ManualOverrideRequest, current_user: User = Depends(get_current_user)):
+    """Manually override a housekeeping task assignment."""
+    result = await auto_hk_svc.manual_override_assignment(
+        current_user.tenant_id, req.task_id, req.new_assignee_id, req.reason, current_user.id
+    )
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result)
+    return result
