@@ -1,9 +1,9 @@
 """
 Production Go-Live Router — All endpoints for production readiness validation,
-environment configuration, MongoDB health, worker runtime, provider activation,
-observability go-live, backup DR validation, security checklist, and readiness score.
+provider test connections, config activation, pre-launch validation suite,
+live ops alerts, and full dashboard data.
 """
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Body
 from typing import Optional
 from core.security import get_current_user
 from models.schemas import User
@@ -60,16 +60,36 @@ async def get_golive_summary(current_user: User = Depends(get_current_user)):
         "metrics": redis_cluster.get_metrics(),
     }
 
+    # Provider test status
+    from infra.provider_test_connection import provider_test_service
+    provider_test_status = provider_test_service.get_status()
+
+    # Config activation
+    from infra.config_activation import config_activation
+    config_activation_data = config_activation.validate_all()
+
+    # Pre-launch latest
+    from infra.prelaunch_validator import prelaunch_validator
+    prelaunch_latest = prelaunch_validator.get_latest()
+
+    # Alerts summary
+    from infra.live_ops_alerts import live_ops_alerts
+    alerts_summary = live_ops_alerts.get_alert_summary()
+
     return {
         "readiness": readiness,
         "configuration": config_validation,
+        "config_activation": config_activation_data,
         "redis": redis_data,
         "mongodb": mongo_report,
         "workers": worker_data,
         "providers": provider_status,
+        "provider_tests": provider_test_status,
         "backup": backup_data,
         "observability": observability_data,
         "security": security_result,
+        "prelaunch_latest": prelaunch_latest,
+        "alerts_summary": alerts_summary,
     }
 
 
@@ -77,37 +97,103 @@ async def get_golive_summary(current_user: User = Depends(get_current_user)):
 
 @router.get("/config/validate")
 async def validate_config(current_user: User = Depends(get_current_user)):
-    """Full environment variable validation."""
     from infra.production_config import production_config
     return production_config.validate_all()
 
 
 @router.get("/config/inspect")
 async def inspect_config(current_user: User = Depends(get_current_user)):
-    """Masked configuration inspection."""
     from infra.production_config import production_config
     return production_config.get_masked_config()
 
 
 @router.get("/config/startup-check")
 async def startup_check(current_user: User = Depends(get_current_user)):
-    """Startup configuration check — critical variables only."""
     from infra.production_config import production_config
     return production_config.startup_check()
 
 
 @router.get("/config/leak-scan")
 async def leak_scan(current_user: User = Depends(get_current_user)):
-    """Scan for potential secret leakage."""
     from infra.production_config import production_config
     return production_config.detect_leaked_secrets()
+
+
+# ── Config Activation Workflow ────────────────────────────────────
+
+@router.get("/config-activation/validate")
+async def config_activation_validate(current_user: User = Depends(get_current_user)):
+    """Full config activation validation with blocker/warning classification."""
+    from infra.config_activation import config_activation
+    return config_activation.validate_all()
+
+
+@router.get("/config-activation/boot-check")
+async def config_activation_boot_check(current_user: User = Depends(get_current_user)):
+    """Boot blocker check."""
+    from infra.config_activation import config_activation
+    return config_activation.get_boot_check()
+
+
+@router.get("/config-activation/category/{category}")
+async def config_activation_category(category: str, current_user: User = Depends(get_current_user)):
+    """Config status for a specific category."""
+    from infra.config_activation import config_activation
+    return config_activation.get_category_status(category)
+
+
+# ── Provider Test Connection ──────────────────────────────────────
+
+@router.post("/providers/{provider}/test")
+async def test_provider_connection(provider: str, current_user: User = Depends(get_current_user)):
+    """Live test connection for a specific provider."""
+    from infra.provider_test_connection import provider_test_service
+    return await provider_test_service.test_provider(provider, user_id=current_user.id)
+
+
+@router.post("/providers/test-all")
+async def test_all_providers(current_user: User = Depends(get_current_user)):
+    """Test all provider connections."""
+    from infra.provider_test_connection import provider_test_service
+    return await provider_test_service.test_all_providers(user_id=current_user.id)
+
+
+@router.get("/providers/status")
+async def provider_status(current_user: User = Depends(get_current_user)):
+    """All messaging provider status with delivery metrics."""
+    from infra.provider_activation import provider_manager
+    from infra.provider_test_connection import provider_test_service
+    base_status = provider_manager.get_all_provider_status()
+    test_status = provider_test_service.get_status()
+    return {**base_status, "test_results": test_status}
+
+
+@router.get("/providers/test-audit")
+async def provider_test_audit(
+    limit: int = Query(50, ge=1, le=200),
+    current_user: User = Depends(get_current_user),
+):
+    """Provider test audit log."""
+    from infra.provider_test_connection import provider_test_service
+    return {"audit_log": provider_test_service.get_audit_log(limit)}
+
+
+@router.get("/providers/validate")
+async def provider_validate(current_user: User = Depends(get_current_user)):
+    from infra.provider_activation import provider_manager
+    return await provider_manager.get_full_report()
+
+
+@router.get("/providers/delivery-metrics")
+async def provider_delivery_metrics(current_user: User = Depends(get_current_user)):
+    from infra.provider_activation import provider_manager
+    return provider_manager.get_delivery_metrics()
 
 
 # ── Redis Production ──────────────────────────────────────────────
 
 @router.get("/redis/cluster-validation")
 async def redis_cluster_validation(current_user: User = Depends(get_current_user)):
-    """Redis cluster connection validation with detailed metrics."""
     from infra.redis_cluster import redis_cluster
     from infra.distributed_lock import lock_manager
     health = await redis_cluster.health_check()
@@ -117,15 +203,12 @@ async def redis_cluster_validation(current_user: User = Depends(get_current_user
         "health": health,
         "metrics": redis_cluster.get_metrics(),
         "lock_metrics": lock_manager.get_metrics(),
-        "pool_config": {
-            "max_connections": int(redis_cluster._max_connections),
-        },
+        "pool_config": {"max_connections": int(redis_cluster._max_connections)},
     }
 
 
 @router.get("/redis/pubsub-health")
 async def redis_pubsub_health(current_user: User = Depends(get_current_user)):
-    """Redis pub/sub health monitoring."""
     from infra.redis_cluster import redis_cluster
     metrics = redis_cluster.get_metrics()
     return {
@@ -138,7 +221,6 @@ async def redis_pubsub_health(current_user: User = Depends(get_current_user)):
 
 @router.get("/redis/lock-safety")
 async def redis_lock_safety(current_user: User = Depends(get_current_user)):
-    """Distributed lock safety check."""
     from infra.distributed_lock import lock_manager
     return {
         "metrics": lock_manager.get_metrics(),
@@ -151,28 +233,24 @@ async def redis_lock_safety(current_user: User = Depends(get_current_user)):
 
 @router.get("/mongo/health")
 async def mongo_health(current_user: User = Depends(get_current_user)):
-    """Comprehensive MongoDB production health report."""
     from infra.mongo_production import mongo_validator
     return await mongo_validator.get_full_report()
 
 
 @router.get("/mongo/pool")
 async def mongo_pool(current_user: User = Depends(get_current_user)):
-    """MongoDB connection pool information."""
     from infra.mongo_production import mongo_validator
     return await mongo_validator.get_connection_pool_info()
 
 
 @router.get("/mongo/replica-set")
 async def mongo_replica_set(current_user: User = Depends(get_current_user)):
-    """Replica set detection and health."""
     from infra.mongo_production import mongo_validator
     return await mongo_validator.detect_replica_set()
 
 
 @router.get("/mongo/indexes")
 async def mongo_indexes(current_user: User = Depends(get_current_user)):
-    """Index validation for critical collections."""
     from infra.mongo_production import mongo_validator
     return await mongo_validator.validate_indexes()
 
@@ -182,21 +260,18 @@ async def mongo_slow_queries(
     threshold_ms: int = Query(100, ge=10, le=5000),
     current_user: User = Depends(get_current_user),
 ):
-    """Slow query metrics."""
     from infra.mongo_production import mongo_validator
     return await mongo_validator.get_slow_query_metrics(threshold_ms)
 
 
 @router.get("/mongo/schema-drift")
 async def mongo_schema_drift(current_user: User = Depends(get_current_user)):
-    """Schema drift detection for critical collections."""
     from infra.mongo_production import mongo_validator
     return await mongo_validator.detect_schema_drift()
 
 
 @router.get("/mongo/collections")
 async def mongo_collections(current_user: User = Depends(get_current_user)):
-    """Collection health summary."""
     from infra.mongo_production import mongo_validator
     return await mongo_validator.get_collection_health()
 
@@ -205,7 +280,6 @@ async def mongo_collections(current_user: User = Depends(get_current_user)):
 
 @router.get("/workers/validation")
 async def worker_validation(current_user: User = Depends(get_current_user)):
-    """Worker runtime validation — heartbeat, queue backlog, stuck tasks."""
     from infra.worker_queue import worker_queue_manager
     return {
         "summary": worker_queue_manager.get_worker_summary(),
@@ -218,47 +292,108 @@ async def worker_validation(current_user: User = Depends(get_current_user)):
 
 @router.get("/workers/scaling-readiness")
 async def worker_scaling_readiness(current_user: User = Depends(get_current_user)):
-    """Worker scaling readiness check."""
     from infra.worker_queue import worker_queue_manager
     summary = worker_queue_manager.get_worker_summary()
     return {
         "total_queues": summary.get("total_queues", 0),
         "queue_definitions": summary.get("queues", {}),
-        "scaling_ready": summary.get("total_queues", 0) > 0,
+        "scaling_ready": len(summary.get("queues", [])) > 0,
         "recommendation": "Scale workers per queue based on load",
     }
 
 
-# ── Provider Activation ──────────────────────────────────────────
+# ── Pre-Launch Validation Suite ───────────────────────────────────
 
-@router.get("/providers/status")
-async def provider_status(current_user: User = Depends(get_current_user)):
-    """All messaging provider status with delivery metrics."""
-    from infra.provider_activation import provider_manager
-    return provider_manager.get_all_provider_status()
+@router.post("/validate/run")
+async def run_prelaunch_validation(current_user: User = Depends(get_current_user)):
+    """Run full pre-launch validation suite."""
+    from infra.prelaunch_validator import prelaunch_validator
+    from core.database import db
+    prelaunch_validator.set_db(db)
+    result = await prelaunch_validator.run_full_validation()
+
+    # Auto-fire alert if NOT_READY
+    if result.get("recommendation") == "NOT_READY":
+        from infra.live_ops_alerts import live_ops_alerts
+        await live_ops_alerts.fire_alert("prelaunch_validation_failed", {
+            "readiness_score": result.get("readiness_score"),
+            "blocker_count": result.get("blocker_count"),
+        }, user_id=current_user.id)
+
+    return result
 
 
-@router.get("/providers/validate")
-async def provider_validate(current_user: User = Depends(get_current_user)):
-    """Validate all provider credentials."""
-    from infra.provider_activation import provider_manager
-    return await provider_manager.get_full_report()
+@router.get("/validate/history")
+async def prelaunch_validation_history(
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+):
+    """Get pre-launch validation history."""
+    from infra.prelaunch_validator import prelaunch_validator
+    return {"history": prelaunch_validator.get_history(limit)}
 
 
-@router.get("/providers/delivery-metrics")
-async def provider_delivery_metrics(current_user: User = Depends(get_current_user)):
-    """Delivery success rates and latency metrics."""
-    from infra.provider_activation import provider_manager
-    return provider_manager.get_delivery_metrics()
+@router.get("/validate/latest")
+async def prelaunch_validation_latest(current_user: User = Depends(get_current_user)):
+    """Get latest pre-launch validation result."""
+    from infra.prelaunch_validator import prelaunch_validator
+    latest = prelaunch_validator.get_latest()
+    return latest or {"status": "no_validation_run", "message": "Run validation first"}
+
+
+# ── Live Ops Alerts ───────────────────────────────────────────────
+
+@router.post("/alerts/fire")
+async def fire_alert(
+    alert_type: str = Body(...),
+    context: dict = Body(default={}),
+    current_user: User = Depends(get_current_user),
+):
+    """Manually fire a production alert."""
+    from infra.live_ops_alerts import live_ops_alerts
+    return await live_ops_alerts.fire_alert(alert_type, context, user_id=current_user.id)
+
+
+@router.get("/alerts/history")
+async def alert_history(
+    limit: int = Query(50, ge=1, le=200),
+    severity: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+):
+    """Get alert history with optional severity filter."""
+    from infra.live_ops_alerts import live_ops_alerts
+    return {"alerts": live_ops_alerts.get_alert_history(limit, severity)}
+
+
+@router.get("/alerts/summary")
+async def alert_summary(current_user: User = Depends(get_current_user)):
+    """Alert summary — counts by severity and type."""
+    from infra.live_ops_alerts import live_ops_alerts
+    return live_ops_alerts.get_alert_summary()
+
+
+@router.get("/alerts/definitions")
+async def alert_definitions(current_user: User = Depends(get_current_user)):
+    """All alert type definitions with runbooks."""
+    from infra.live_ops_alerts import live_ops_alerts
+    return {"definitions": live_ops_alerts.get_definitions()}
+
+
+@router.get("/alerts/delivery-log")
+async def alert_delivery_log(
+    limit: int = Query(50, ge=1, le=200),
+    current_user: User = Depends(get_current_user),
+):
+    """Webhook delivery log."""
+    from infra.live_ops_alerts import live_ops_alerts
+    return {"delivery_log": live_ops_alerts.get_delivery_log(limit)}
 
 
 # ── Observability Go-Live ────────────────────────────────────────
 
 @router.get("/observability/validation")
 async def observability_validation(current_user: User = Depends(get_current_user)):
-    """Observability stack validation — OTel, Sentry, Prometheus, Grafana."""
     from infra.cloud_observability import otel_tracer, sentry_integration, cloud_metrics
-
     return {
         "otel": {
             **otel_tracer.get_status(),
@@ -269,10 +404,7 @@ async def observability_validation(current_user: User = Depends(get_current_user
             "tracking_validation": "active" if sentry_integration.get_status().get("active") else "inactive",
         },
         "prometheus_metrics": cloud_metrics.get_summary(),
-        "grafana_dashboard": {
-            "template_available": True,
-            "path": "/ops/grafana/dashboard.json",
-        },
+        "grafana_dashboard": {"template_available": True, "path": "/ops/grafana/dashboard.json"},
         "overall_status": "active" if (
             otel_tracer.get_status().get("active") or sentry_integration.get_status().get("active")
         ) else "inactive",
@@ -281,7 +413,6 @@ async def observability_validation(current_user: User = Depends(get_current_user
 
 @router.get("/observability/key-metrics")
 async def observability_key_metrics(current_user: User = Depends(get_current_user)):
-    """Key production metrics — API latency, event throughput, queue lag."""
     from infra.cloud_observability import cloud_metrics
     summary = cloud_metrics.get_summary()
     return {
@@ -297,11 +428,9 @@ async def observability_key_metrics(current_user: User = Depends(get_current_use
 
 @router.get("/backup/validation")
 async def backup_validation(current_user: User = Depends(get_current_user)):
-    """Backup system validation — scheduled success, retention, restore simulation."""
     from infra.backup_manager import backup_manager
     status = backup_manager.get_status()
     history = backup_manager.get_history(5)
-
     last_backup = history[0] if history else None
     return {
         "enabled": status.get("enabled", False),
@@ -310,9 +439,7 @@ async def backup_validation(current_user: User = Depends(get_current_user)):
         "last_backup": last_backup,
         "rpo_target": "24h",
         "rto_target": "4h",
-        "retention_policy": {
-            "days": status.get("retention_days", 30),
-        },
+        "retention_policy": {"days": status.get("retention_days", 30)},
         "restore_test_available": True,
         "overall_status": "operational" if status.get("enabled") else "disabled",
     }
@@ -322,20 +449,17 @@ async def backup_validation(current_user: User = Depends(get_current_user)):
 
 @router.get("/security/checklist")
 async def security_full_checklist(current_user: User = Depends(get_current_user)):
-    """Complete security go-live checklist."""
     from infra.security_checklist import security_checklist
     return await security_checklist.run_full_checklist()
 
 
 @router.get("/security/tenant-isolation")
 async def security_tenant_isolation(current_user: User = Depends(get_current_user)):
-    """Tenant isolation validation."""
     from infra.security_checklist import security_checklist
     return await security_checklist.check_tenant_isolation()
 
 
 @router.get("/security/rbac")
 async def security_rbac(current_user: User = Depends(get_current_user)):
-    """RBAC validation."""
     from infra.security_checklist import security_checklist
     return await security_checklist.check_rbac()
