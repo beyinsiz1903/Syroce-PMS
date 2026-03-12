@@ -99,6 +99,14 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("routers.system_health_dashboard", "router", ["System Health"], None, None),
     ("routers.system_health_normalized", "router", ["System Health Normalized"], None, None),
     ("routers.system_health_live", "router", ["System Health Live"], None, None),
+    # Phase 5 — Production Hardening
+    ("domains.pms.frontdesk_router_v2", "router", ["Front Desk v2"], None, None),
+    ("domains.pms.pos_fnb_router_v2", "router", ["POS & F&B v2"], None, None),
+    ("modules.observability.alert_router", "router", ["Alert Enrichment"], None, None),
+    ("modules.incident.incident_router", "router", ["Incident Response"], None, None),
+    ("domains.channel_manager.validation_router", "router", ["CM Provider Validation"], None, None),
+    ("security.tenant_isolation_router", "router", ["Tenant Isolation v2"], None, None),
+    ("ops.pilot_router", "router", ["Pilot Readiness"], None, None),
 ]
 
 # Optional routers with special import paths

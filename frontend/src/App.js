@@ -157,6 +157,10 @@ const SystemHealthDashboard = lazy(() => import("@/pages/SystemHealthDashboard")
 const RuntimeInfrastructureDashboard = lazy(() => import("@/pages/RuntimeInfrastructureDashboard"));
 const InfraHardeningDashboard = lazy(() => import("@/pages/InfraHardeningDashboard"));
 const ProductionGoLiveDashboard = lazy(() => import("@/pages/ProductionGoLiveDashboard"));
+// Phase 5 — New operational pages
+const AuditTimelinePage = lazy(() => import("@/pages/AuditTimelinePage"));
+const PilotReadinessPage = lazy(() => import("@/pages/PilotReadinessPage"));
+const IncidentDashboardPage = lazy(() => import("@/pages/IncidentDashboardPage"));
 
 import { Toaster } from "@/components/ui/sonner";
 
@@ -1340,6 +1344,36 @@ function App() {
             element={
               isAuthenticated ? (
                 <ProductionGoLiveDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/audit-timeline"
+            element={
+              isAuthenticated ? (
+                <AuditTimelinePage user={user} tenant={tenant} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/pilot-readiness"
+            element={
+              isAuthenticated ? (
+                <PilotReadinessPage user={user} tenant={tenant} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/incident-dashboard"
+            element={
+              isAuthenticated ? (
+                <IncidentDashboardPage user={user} tenant={tenant} />
               ) : (
                 <Navigate to="/auth" replace />
               )
