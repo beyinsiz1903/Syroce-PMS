@@ -281,3 +281,105 @@ async def get_maturity_history(
     ctx = OperationContext.from_user(user)
     result = await golive_scorer.get_score_history(ctx, limit)
     return from_service_result(result)
+
+
+
+# ── Soak Test Results ────────────────────────────────────────────────
+
+@router.get("/soak-test/status")
+async def get_soak_test_status(user=Depends(get_current_user)):
+    """Get current soak test status and results."""
+    import json
+    from pathlib import Path
+
+    results = {
+        "soak_running": False,
+        "final_report": None,
+        "system_metrics": None,
+        "locust_stats": None,
+    }
+
+    # Check if locust is running
+    import subprocess
+    try:
+        ps = subprocess.run(["pgrep", "-f", "locust"], capture_output=True, text=True)
+        results["soak_running"] = bool(ps.stdout.strip())
+    except Exception:
+        pass
+
+    # Final report from locust event listener
+    final_path = Path("/app/test_reports/soak_final_report.json")
+    if final_path.exists():
+        try:
+            results["final_report"] = json.loads(final_path.read_text())
+        except Exception:
+            pass
+
+    # System metrics from monitor
+    metrics_path = Path("/app/test_reports/soak_system_metrics.json")
+    if metrics_path.exists():
+        try:
+            results["system_metrics"] = json.loads(metrics_path.read_text())
+        except Exception:
+            pass
+
+    # Latest CSV stats
+    report_dir = Path("/app/test_reports")
+    csv_files = sorted(report_dir.glob("soak_*_stats.csv"), reverse=True)
+    if csv_files:
+        try:
+            import csv
+            with open(csv_files[0]) as f:
+                reader = csv.DictReader(f)
+                results["locust_stats"] = list(reader)
+        except Exception:
+            pass
+
+    return results
+
+
+@router.post("/soak-test/start")
+async def start_soak_test(
+    duration: str = Query("15m", description="Test süresi: 15m, 30m, 1h, 12h"),
+    users: int = Query(20, ge=5, le=100),
+    user=Depends(get_current_user),
+):
+    """Start soak test in background."""
+    import subprocess
+
+    # Check if already running
+    try:
+        ps = subprocess.run(["pgrep", "-f", "locust"], capture_output=True, text=True)
+        if ps.stdout.strip():
+            raise HTTPException(400, "Soak test is already running")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    # Start in background
+    subprocess.Popen(
+        ["bash", "/app/load_tests/run_soak_test.sh", duration, str(users)],
+        stdout=open("/app/test_reports/soak_runner.log", "w"),
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+
+    return {
+        "status": "started",
+        "duration": duration,
+        "users": users,
+        "message": f"Soak test started: {users} users for {duration}",
+    }
+
+
+@router.post("/soak-test/stop")
+async def stop_soak_test(user=Depends(get_current_user)):
+    """Stop running soak test."""
+    import subprocess
+    try:
+        subprocess.run(["pkill", "-f", "locust"], capture_output=True)
+        subprocess.run(["pkill", "-f", "soak_monitor"], capture_output=True)
+        return {"status": "stopped", "message": "Soak test stopped"}
+    except Exception as e:
+        raise HTTPException(500, f"Failed to stop soak test: {str(e)}")

@@ -7,7 +7,7 @@ import pytest
 import httpx
 import os
 
-API = os.environ.get("REACT_APP_BACKEND_URL", "https://phase7-rollout.preview.emergentagent.com")
+API = os.environ.get("REACT_APP_BACKEND_URL", "https://hotelrunner-sandbox.preview.emergentagent.com")
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASS = "demo123"
 

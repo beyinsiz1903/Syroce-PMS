@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## 2026-03-12 — Operational Phase: Staging Soak Test Infrastructure
+
+### Soak Test Framework
+- NEW `load_tests/soak_test_staging.py` — 6-senaryo Locust soak test (OTA burst, ARI storm, dashboard polling, night audit, housekeeping, production ops)
+- NEW `load_tests/soak_monitor.py` — Sistem metrik toplayici (bellek, gecikme, endpoint probelari, anomali tespiti)
+- NEW `load_tests/run_soak_test.sh` — Orkestrasyon scripti (monitor + locust + rapor)
+- Custom `SoakTestShape` — Ramp-up + surekli yuk + periyodik mikro-patlama
+- 6 kullanici profili: FrontdeskOperator, ARIStormUser, DashboardPoller, NightAuditRunner, HousekeepingStaff, ProductionOpsMonitor
+
+### Backend (Soak Test API)
+- NEW `GET /api/production/soak-test/status` — Soak test durumu ve sonuclari
+- NEW `POST /api/production/soak-test/start` — Soak testi arka planda baslat
+- NEW `POST /api/production/soak-test/stop` — Calisan testi durdur
+- UPDATED `ops/production_rollout_router.py` — Soak test endpoint'leri eklendi
+
+### Frontend
+- NEW `pages/SoakTestDashboard.jsx` — Canli soak test dashboard (kontroller, metrikler, trend grafikleri, endpoint probelari, Locust istatistikleri)
+- UPDATED `App.js` — `/soak-test` route eklendi
+
+### Test Sonuclari (5dk Soak Test)
+- 990 istek, 0 hata (%0.00)
+- p50: 6ms, p95: 14ms, p99: 17ms
+- Bellek stabil (562MB backend, 96MB MongoDB)
+- Verdict: **PASS**
+
+---
+
 ## 2026-03-12 — Phase 7: Production Rollout & Pilot Readiness
 
 ### Backend Services (7 new services, 25 new API endpoints)

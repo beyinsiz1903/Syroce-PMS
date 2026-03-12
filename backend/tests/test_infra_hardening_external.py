@@ -8,7 +8,7 @@ import requests
 import os
 
 # Use public URL for testing
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://phase7-rollout.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://hotelrunner-sandbox.preview.emergentagent.com')
 
 
 @pytest.fixture(scope="module")

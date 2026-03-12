@@ -1,0 +1,84 @@
+{
+  "monitor_type": "soak_system_monitor",
+  "total_snapshots": 1,
+  "latest_snapshot": {
+    "timestamp": "2026-03-12T20:10:08.837970",
+    "backend_memory_mb": 563.9,
+    "mongo_memory_mb": 287.3,
+    "endpoint_probes": [
+      {
+        "endpoint": "/api/pms/rooms?limit=5",
+        "status": 200,
+        "latency_ms": 4.7,
+        "ok": true
+      },
+      {
+        "endpoint": "/api/arrivals/today",
+        "status": 200,
+        "latency_ms": 5.9,
+        "ok": true
+      },
+      {
+        "endpoint": "/api/metrics/operational",
+        "status": 200,
+        "latency_ms": 9.3,
+        "ok": true
+      },
+      {
+        "endpoint": "/api/audit/timeline?limit=5",
+        "status": 200,
+        "latency_ms": 6.4,
+        "ok": true
+      },
+      {
+        "endpoint": "/api/production/maturity/score",
+        "status": 200,
+        "latency_ms": 13.5,
+        "ok": true
+      }
+    ]
+  },
+  "analysis": {
+    "status": "PASS",
+    "issues": []
+  },
+  "snapshots": [
+    {
+      "timestamp": "2026-03-12T20:10:08.837970",
+      "backend_memory_mb": 563.9,
+      "mongo_memory_mb": 287.3,
+      "endpoint_probes": [
+        {
+          "endpoint": "/api/pms/rooms?limit=5",
+          "status": 200,
+          "latency_ms": 4.7,
+          "ok": true
+        },
+        {
+          "endpoint": "/api/arrivals/today",
+          "status": 200,
+          "latency_ms": 5.9,
+          "ok": true
+        },
+        {
+          "endpoint": "/api/metrics/operational",
+          "status": 200,
+          "latency_ms": 9.3,
+          "ok": true
+        },
+        {
+          "endpoint": "/api/audit/timeline?limit=5",
+          "status": 200,
+          "latency_ms": 6.4,
+          "ok": true
+        },
+        {
+          "endpoint": "/api/production/maturity/score",
+          "status": 200,
+          "latency_ms": 13.5,
+          "ok": true
+        }
+      ]
+    }
+  ]
+}

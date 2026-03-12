@@ -6,7 +6,7 @@ import pytest
 import httpx
 import os
 
-API_URL = os.environ.get("TEST_API_URL", "https://phase7-rollout.preview.emergentagent.com")
+API_URL = os.environ.get("TEST_API_URL", "https://hotelrunner-sandbox.preview.emergentagent.com")
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 
