@@ -240,6 +240,14 @@ export const NAV_ITEMS = [
     group: "enterprise",
   },
   {
+    key: "system_health",
+    label: "System Health",
+    path: "/system-health",
+    moduleKey: "advanced_analytics",
+    tier: "enterprise",
+    group: "enterprise",
+  },
+  {
     key: "observability",
     label: "Observability",
     path: "/observability",

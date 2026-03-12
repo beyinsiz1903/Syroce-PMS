@@ -1,0 +1,331 @@
+import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
+import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import {
+  Activity, Shield, Server, AlertTriangle, RefreshCw, CheckCircle2,
+  XCircle, Clock, Wifi, Lock, Eye, ArrowLeft, Loader2, Database
+} from "lucide-react";
+
+const API = process.env.REACT_APP_BACKEND_URL;
+
+function StatusBadge({ status }) {
+  const map = {
+    healthy: { label: "Healthy", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+    degraded: { label: "Degraded", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
+    critical: { label: "Critical", cls: "bg-red-500/15 text-red-400 border-red-500/30" },
+    active: { label: "Active", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+    ok: { label: "OK", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+  };
+  const m = map[status] || { label: status || "Unknown", cls: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30" };
+  return <Badge data-testid={`status-badge-${status}`} variant="outline" className={`${m.cls} text-xs font-mono`}>{m.label}</Badge>;
+}
+
+function SeverityChip({ severity }) {
+  const map = {
+    critical: "bg-red-500/20 text-red-300 border-red-500/40",
+    high: "bg-orange-500/20 text-orange-300 border-orange-500/40",
+    warning: "bg-amber-500/20 text-amber-300 border-amber-500/40",
+    info: "bg-sky-500/20 text-sky-300 border-sky-500/40",
+  };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${map[severity] || map.info}`}>
+      {severity}
+    </span>
+  );
+}
+
+function MetricCard({ icon: Icon, title, value, sub, testId }) {
+  return (
+    <div data-testid={testId} className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-4 flex items-start gap-3">
+      <div className="p-2 rounded-md bg-zinc-800">
+        <Icon className="w-4 h-4 text-zinc-400" />
+      </div>
+      <div>
+        <p className="text-xs text-zinc-500 mb-0.5">{title}</p>
+        <p className="text-lg font-semibold text-zinc-100 leading-none">{value}</p>
+        {sub && <p className="text-[11px] text-zinc-500 mt-1">{sub}</p>}
+      </div>
+    </div>
+  );
+}
+
+function PanelCard({ title, icon: Icon, children, status, onAction, actionLabel, actionLoading }) {
+  return (
+    <Card className="bg-zinc-950 border-zinc-800/70 shadow-lg">
+      <CardHeader className="pb-3 flex flex-row items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Icon className="w-4 h-4 text-zinc-400" />
+          <CardTitle className="text-sm font-semibold text-zinc-200">{title}</CardTitle>
+        </div>
+        <div className="flex items-center gap-2">
+          {status && <StatusBadge status={status} />}
+          {onAction && (
+            <Button
+              data-testid={`action-${title.toLowerCase().replace(/\s+/g, "-")}`}
+              size="sm" variant="outline"
+              className="h-7 text-xs border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
+              onClick={onAction} disabled={actionLoading}
+            >
+              {actionLoading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+              {actionLabel || "Scan"}
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">{children}</CardContent>
+    </Card>
+  );
+}
+
+export default function SystemHealthDashboard({ user, tenant, onLogout }) {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [cmStatus, setCmStatus] = useState(null);
+  const [queueHealth, setQueueHealth] = useState(null);
+  const [secAudit, setSecAudit] = useState(null);
+  const [rateLimit, setRateLimit] = useState(null);
+  const [tenantGuard, setTenantGuard] = useState(null);
+  const [logSanit, setLogSanit] = useState(null);
+  const [alerts, setAlerts] = useState(null);
+  const [metrics, setMetrics] = useState(null);
+  const [stuckTasks, setStuckTasks] = useState(null);
+  const [driftScanLoading, setDriftScanLoading] = useState(false);
+  const [reconLoading, setReconLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const token = localStorage.getItem("token");
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [cm, q, audit, rl, tg, ls, al, mt, st] = await Promise.allSettled([
+        axios.get(`${API}/api/channel-manager/runtime/status`, { headers }),
+        axios.get(`${API}/api/workers/queues/health`, { headers }),
+        axios.get(`${API}/api/security/audit/status`, { headers }),
+        axios.get(`${API}/api/security/rate-limit/status`, { headers }),
+        axios.get(`${API}/api/security/tenant-guard/status`, { headers }),
+        axios.get(`${API}/api/security/log-sanitization/status`, { headers }),
+        axios.get(`${API}/api/observability/runtime/alerts`, { headers }),
+        axios.get(`${API}/api/observability/runtime/metrics`, { headers }),
+        axios.get(`${API}/api/workers/tasks/stuck`, { headers }),
+      ]);
+      if (cm.status === "fulfilled") setCmStatus(cm.value.data);
+      if (q.status === "fulfilled") setQueueHealth(q.value.data);
+      if (audit.status === "fulfilled") setSecAudit(audit.value.data);
+      if (rl.status === "fulfilled") setRateLimit(rl.value.data);
+      if (tg.status === "fulfilled") setTenantGuard(tg.value.data);
+      if (ls.status === "fulfilled") setLogSanit(ls.value.data);
+      if (al.status === "fulfilled") setAlerts(al.value.data);
+      if (mt.status === "fulfilled") setMetrics(mt.value.data);
+      if (st.status === "fulfilled") setStuckTasks(st.value.data);
+      setLastUpdated(new Date().toLocaleTimeString());
+    } catch (e) { console.error(e); }
+    setLoading(false);
+  }, [token]);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const triggerDriftScan = async () => {
+    setDriftScanLoading(true);
+    try { await axios.post(`${API}/api/channel-manager/drift/scan`, null, { headers }); await fetchAll(); }
+    catch (e) { console.error(e); }
+    setDriftScanLoading(false);
+  };
+
+  const triggerRecon = async () => {
+    setReconLoading(true);
+    try { await axios.post(`${API}/api/channel-manager/reconciliation/run?auto_fix=true`, null, { headers }); await fetchAll(); }
+    catch (e) { console.error(e); }
+    setReconLoading(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-zinc-400 animate-spin" />
+      </div>
+    );
+  }
+
+  const alertCount = alerts?.count || 0;
+  const criticalAlerts = alerts?.critical || 0;
+
+  return (
+    <div data-testid="system-health-dashboard" className="min-h-screen bg-zinc-950 text-zinc-100">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <Button data-testid="back-btn" variant="ghost" size="sm" onClick={() => navigate(-1)} className="text-zinc-400 hover:text-zinc-200">
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight">System Health</h1>
+              <p className="text-xs text-zinc-500 mt-0.5">Runtime hardening & operations overview</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {lastUpdated && <span className="text-[11px] text-zinc-600">Updated {lastUpdated}</span>}
+            <Button data-testid="refresh-all-btn" size="sm" variant="outline" onClick={fetchAll}
+              className="h-8 border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-300">
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Refresh
+            </Button>
+          </div>
+        </div>
+
+        {/* Alert Banner */}
+        {criticalAlerts > 0 && (
+          <div data-testid="critical-alert-banner" className="mb-6 p-3 rounded-lg bg-red-950/40 border border-red-800/50 flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-red-300">{criticalAlerts} critical alert{criticalAlerts > 1 ? "s" : ""} active</p>
+              <p className="text-xs text-red-400/70 mt-0.5">Immediate attention required</p>
+            </div>
+          </div>
+        )}
+
+        {/* Top Metrics */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          <MetricCard testId="metric-cm-health" icon={Wifi} title="Channel Manager"
+            value={cmStatus?.health || "N/A"} sub={`${cmStatus?.active_connections || 0} connections`} />
+          <MetricCard testId="metric-queue-health" icon={Database} title="Queue Health"
+            value={queueHealth?.health || "N/A"} sub={`${queueHealth?.pending || 0} pending`} />
+          <MetricCard testId="metric-alerts" icon={AlertTriangle} title="Active Alerts"
+            value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} critical` : "All clear"} />
+          <MetricCard testId="metric-stuck-tasks" icon={Clock} title="Stuck Tasks"
+            value={stuckTasks?.count || 0} sub={stuckTasks?.count > 0 ? "Action needed" : "None"} />
+        </div>
+
+        {/* Main Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Channel Manager */}
+          <PanelCard title="Channel Manager" icon={Wifi} status={cmStatus?.health}
+            onAction={triggerDriftScan} actionLabel="Drift Scan" actionLoading={driftScanLoading}>
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between text-zinc-400">
+                <span>Sync Status</span>
+                <span className="text-zinc-200">{cmStatus?.sync_stats?.last_sync ? "Active" : "Idle"}</span>
+              </div>
+              <div className="flex justify-between text-zinc-400">
+                <span>Drift Issues</span>
+                <span className="text-zinc-200">{cmStatus?.drift?.active_drifts || 0}</span>
+              </div>
+              <div className="flex justify-between text-zinc-400">
+                <span>Reconciliation</span>
+                <StatusBadge status={cmStatus?.reconciliation?.status || "ok"} />
+              </div>
+              <div className="flex justify-between text-zinc-400">
+                <span>Providers</span>
+                <span className="text-zinc-200">{cmStatus?.providers?.healthy || 0} / {cmStatus?.providers?.total || 0}</span>
+              </div>
+              <Button data-testid="run-reconciliation-btn" size="sm" variant="outline" onClick={triggerRecon} disabled={reconLoading}
+                className="w-full mt-2 h-7 text-xs border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-300">
+                {reconLoading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                Run Reconciliation
+              </Button>
+            </div>
+          </PanelCard>
+
+          {/* Queue & Workers */}
+          <PanelCard title="Queue & Workers" icon={Server} status={queueHealth?.health}>
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between text-zinc-400">
+                <span>Pending Tasks</span>
+                <span className="text-zinc-200">{queueHealth?.pending || 0}</span>
+              </div>
+              <div className="flex justify-between text-zinc-400">
+                <span>Processing</span>
+                <span className="text-zinc-200">{queueHealth?.processing || 0}</span>
+              </div>
+              <div className="flex justify-between text-zinc-400">
+                <span>Failed</span>
+                <span className={`${(queueHealth?.failed || 0) > 0 ? "text-red-400" : "text-zinc-200"}`}>{queueHealth?.failed || 0}</span>
+              </div>
+              <div className="flex justify-between text-zinc-400">
+                <span>Saturation</span>
+                <span className="text-zinc-200">{queueHealth?.saturation_pct ?? 0}%</span>
+              </div>
+              <div className="flex justify-between text-zinc-400">
+                <span>Stuck Tasks</span>
+                <span className={`${(stuckTasks?.count || 0) > 0 ? "text-amber-400" : "text-zinc-200"}`}>{stuckTasks?.count || 0}</span>
+              </div>
+            </div>
+          </PanelCard>
+
+          {/* Security */}
+          <PanelCard title="Security Runtime" icon={Shield} status="active">
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between text-zinc-400">
+                <span>Audit Completeness</span>
+                <span className="text-zinc-200">
+                  {secAudit?.completeness?.completeness_pct != null
+                    ? `${secAudit.completeness.completeness_pct}%`
+                    : secAudit?.completeness?.is_complete ? "Complete" : "Partial"}
+                </span>
+              </div>
+              <div className="flex justify-between text-zinc-400">
+                <span>Rate Limiting</span>
+                <StatusBadge status={rateLimit?.enforcement || "active"} />
+              </div>
+              <div className="flex justify-between text-zinc-400">
+                <span>Tenant Guard</span>
+                <StatusBadge status={tenantGuard?.enforcement || "active"} />
+              </div>
+              <div className="flex justify-between text-zinc-400">
+                <span>Tenant Violations</span>
+                <span className={`${(tenantGuard?.violations?.total || 0) > 0 ? "text-red-400" : "text-zinc-200"}`}>
+                  {tenantGuard?.violations?.total || 0}
+                </span>
+              </div>
+              <div className="flex justify-between text-zinc-400">
+                <span>Log Sanitization</span>
+                <span className="text-zinc-200">{logSanit?.all_patterns_working ? "All OK" : "Issues"}</span>
+              </div>
+            </div>
+          </PanelCard>
+
+          {/* Alerts */}
+          <PanelCard title="Runtime Alerts" icon={AlertTriangle}
+            status={criticalAlerts > 0 ? "critical" : alertCount > 0 ? "degraded" : "healthy"}>
+            {alerts?.alerts?.length > 0 ? (
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {alerts.alerts.map((a, i) => (
+                  <div key={i} className="flex items-start gap-2 p-2 rounded bg-zinc-900/50 border border-zinc-800/50">
+                    <SeverityChip severity={a.severity} />
+                    <div className="min-w-0">
+                      <p className="text-xs text-zinc-300 truncate">{a.message || a.type}</p>
+                      {a.metric && <p className="text-[11px] text-zinc-500">{a.metric}: {a.value}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 py-4 justify-center text-zinc-500">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                <span className="text-xs">No active alerts</span>
+              </div>
+            )}
+          </PanelCard>
+        </div>
+
+        {/* Runtime Metrics Summary */}
+        {metrics && (
+          <div className="mt-6">
+            <h2 className="text-sm font-semibold text-zinc-300 mb-3">Runtime Metrics</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              {metrics.sync && <MetricCard testId="metric-sync-lag" icon={Clock} title="Sync Lag" value={`${metrics.sync.lag_seconds ?? 0}s`} />}
+              {metrics.drift && <MetricCard testId="metric-drift-count" icon={AlertTriangle} title="Drift Count" value={metrics.drift.active_count ?? 0} />}
+              {metrics.reconciliation && <MetricCard testId="metric-recon-rate" icon={CheckCircle2} title="Recon Rate" value={`${metrics.reconciliation.success_rate ?? 100}%`} />}
+              {metrics.queue && <MetricCard testId="metric-queue-backlog" icon={Database} title="Queue Backlog" value={metrics.queue.backlog ?? 0} />}
+              {metrics.security && <MetricCard testId="metric-sec-violations" icon={Shield} title="Violations" value={metrics.security.violations ?? 0} />}
+              <MetricCard testId="metric-total-alerts" icon={Eye} title="Total Alerts" value={alertCount} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

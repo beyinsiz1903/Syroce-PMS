@@ -1,0 +1,116 @@
+{
+  "summary": "Service Layer Wiring & SystemHealthDashboard - COMPLETE SUCCESS. All 33 backend tests passed (100%). Frontend SystemHealthDashboard page fully functional with all 9 API integrations, 4 MetricCards, 4 main panels (Channel Manager, Queue & Workers, Security Runtime, Runtime Alerts), 6 runtime metrics, and interactive buttons (Refresh, Drift Scan, Run Reconciliation).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_service_wiring.py",
+    "/app/test_reports/pytest/pytest_service_wiring_v2.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Service layer pattern correctly implemented: router → service → repository",
+    "CMRuntimeService, WorkerRuntimeService, SecurityRuntimeService all properly wired",
+    "Common contracts (ServiceResult, OperationContext, DomainError) working correctly",
+    "All 6 domain schemas (admin, channel_manager, guest, revenue, sales, pms) properly extracted and importable",
+    "SystemHealthDashboard UI well designed with dark theme, proper data-testid attributes",
+    "All 9 API endpoints integrated: runtime status, queues health, audit status, rate-limit status, tenant-guard status, log-sanitization status, runtime alerts, runtime metrics, stuck tasks"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (33/33 tests passed)",
+    "frontend": "100% (all UI elements verified, all interactions working)"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123",
+    "token_field": "access_token"
+  },
+  "seed_data_creation": "No new seed data created - using existing demo data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Service layer refactoring complete. All 24 hardening endpoints now use router → service → repository pattern. CMRuntimeService delegates to drift_detector, reconciliation_engine, sync_scheduler, provider_failover. WorkerRuntimeService delegates to task_status_service, queue_monitor. SecurityRuntimeService delegates to audit_validator, tenant_rate_limiter, credential_guard, tenant_guard, log_sanitizer. Frontend SystemHealthDashboard at /system-health route working correctly with all data-testid attributes.",
+  "passed_tests": {
+    "backend_schema_tests": [
+      "TestSchemaOrganization::test_admin_schemas_importable",
+      "TestSchemaOrganization::test_channel_manager_schemas_importable",
+      "TestSchemaOrganization::test_guest_schemas_importable",
+      "TestSchemaOrganization::test_revenue_schemas_importable",
+      "TestSchemaOrganization::test_sales_schemas_importable",
+      "TestSchemaOrganization::test_pms_schemas_importable"
+    ],
+    "backend_common_contracts": [
+      "TestCommonContracts::test_service_result_success",
+      "TestCommonContracts::test_service_result_fail",
+      "TestCommonContracts::test_paginated_result",
+      "TestCommonContracts::test_operation_context",
+      "TestCommonContracts::test_domain_errors"
+    ],
+    "backend_cm_hardening": [
+      "GET /api/channel-manager/runtime/status - returns health, sync_stats, drift, reconciliation, providers",
+      "POST /api/channel-manager/drift/scan - returns pms_room_types (6), drifts_found (0)",
+      "GET /api/channel-manager/drift/issues - returns scans list",
+      "POST /api/channel-manager/reconciliation/run?auto_fix=true - works",
+      "GET /api/channel-manager/reconciliation/history - returns results list",
+      "GET /api/channel-manager/sync/schedule - returns running, interval_seconds",
+      "POST /api/channel-manager/sync/trigger?event_type=manual - works",
+      "GET /api/channel-manager/providers/health - returns providers, circuit_breakers"
+    ],
+    "backend_worker_hardening": [
+      "GET /api/workers/queues/health - returns health, pending, stuck, saturation_pct",
+      "GET /api/workers/tasks/stuck - returns stuck_tasks, count",
+      "GET /api/workers/tasks/failures - returns failures",
+      "GET /api/workers/retries/summary - works"
+    ],
+    "backend_security_hardening": [
+      "GET /api/security/audit/status - returns completeness, summary",
+      "GET /api/security/rate-limit/status - returns enforcement=active",
+      "POST /api/security/credentials/check - returns scanned_users",
+      "GET /api/security/tenant-guard/status - works",
+      "GET /api/security/log-sanitization/status - returns all_patterns_working=true"
+    ],
+    "backend_observability": [
+      "GET /api/observability/runtime/metrics - returns sync, drift, queue metrics",
+      "GET /api/observability/runtime/alerts - returns alerts, count, critical"
+    ],
+    "backend_pms_regression": [
+      "GET /api/pms/rooms?limit=5 - works",
+      "GET /api/pms/bookings?limit=5 - works",
+      "GET /api/housekeeping/tasks - works"
+    ],
+    "frontend_system_health": [
+      "/system-health page loads with system-health-dashboard testid",
+      "4 MetricCards visible (metric-cm-health, metric-queue-health, metric-alerts, metric-stuck-tasks)",
+      "Channel Manager panel shows Healthy badge and Drift Scan button",
+      "Queue & Workers panel shows health metrics (pending, processing, failed, saturation, stuck)",
+      "Security Runtime panel shows audit completeness, rate limiting, tenant guard, log sanitization",
+      "Runtime Alerts panel shows 'No active alerts'",
+      "Runtime Metrics section shows 6 metric cards (Sync Lag, Drift Count, Recon Rate, Queue Backlog, Violations, Total Alerts)",
+      "Refresh button (refresh-all-btn) works and updates data",
+      "Drift Scan button (action-channel-manager) triggers scan",
+      "Run Reconciliation button (run-reconciliation-btn) triggers reconciliation"
+    ]
+  },
+  "verified_response_data": {
+    "cm_runtime_status": {
+      "keys": ["tenant_id", "health", "issues", "active_connections", "sync_stats", "drift", "reconciliation", "providers", "checked_at"],
+      "health": "healthy"
+    },
+    "drift_scan": {
+      "keys": ["tenant_id", "scanned_at", "pms_room_types", "channels_checked", "drifts_found", "critical_drifts", "drifts"],
+      "pms_room_types": 6,
+      "drifts_found": 0
+    },
+    "runtime_alerts": {
+      "keys": ["tenant_id", "alerts", "count", "critical"],
+      "count": 0,
+      "critical": 0
+    }
+  }
+}

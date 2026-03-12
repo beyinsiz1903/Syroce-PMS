@@ -40,62 +40,10 @@ except ImportError:
 router = APIRouter(prefix="/api", tags=["PMS / Front Desk"])
 
 
-# ── Inline Models ──
-
-class PassportScanData(BaseModel):
-    """Passport scan data from OCR"""
-    passport_number: Optional[str] = None
-    name: Optional[str] = None
-    surname: Optional[str] = None
-    nationality: Optional[str] = None
-    date_of_birth: Optional[str] = None
-    expiry_date: Optional[str] = None
-    sex: Optional[str] = None
-    mrz_line1: Optional[str] = None
-    mrz_line2: Optional[str] = None
-
-
-class PassportScanRequest(BaseModel):
-    """Request for passport scanning"""
-    image_base64: str  # Base64 encoded image
-    booking_id: Optional[str] = None
-
-
-class WalkInBookingRequest(BaseModel):
-    """Quick walk-in booking request"""
-    guest_name: str
-    guest_email: Optional[str] = None
-    guest_phone: str
-    guest_id_number: Optional[str] = None
-    nationality: Optional[str] = None
-    room_id: str
-    nights: int = 1
-    adults: int = 1
-    children: int = 0
-    rate_per_night: Optional[float] = None  # If not provided, use room base price
-    special_requests: Optional[str] = None
-
-
-class GuestAlert(BaseModel):
-    """Guest alert model"""
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    tenant_id: str
-    guest_id: str
-    alert_type: str  # vip, birthday, anniversary, special_request, complaint, preference
-    priority: str = "normal"  # low, normal, high, urgent
-    title: str
-    description: str
-    is_active: bool = True
-    show_on_checkin: bool = True
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    expires_at: Optional[datetime] = None
-
-
-class KeycardIssueRequest(BaseModel):
-    booking_id: str
-    card_type: str = "physical"  # physical, mobile, qr
-    validity_hours: int = 48
+from domains.pms.schemas import (  # noqa: E402
+    PassportScanData, PassportScanRequest, WalkInBookingRequest,
+    GuestAlert, KeycardIssueRequest,
+)
 
 
 @router.get("/arrivals/today")

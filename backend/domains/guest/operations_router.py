@@ -40,97 +40,13 @@ except ImportError:
 router = APIRouter(prefix="/api", tags=["Guest / Operations"])
 
 
-# ── Inline Models ──
+from domains.guest.schemas import (  # noqa: E402
+    GuestStayHistory, GuestPreference, GuestTag, GuestTagEnum,
+    RedeemPointsRequest, MinimumStockAlertRequest, LinenInventoryItem,
+    CleaningRequestCreate,
+)
 
 from enum import Enum
-
-class GuestStayHistory(BaseModel):
-    """Guest stay history entry"""
-    booking_id: str
-    check_in: str
-    check_out: str
-    room_number: str
-    nights: int
-    total_spent: float
-    rating: Optional[float] = None
-
-
-class GuestPreference(BaseModel):
-    """Guest preferences"""
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    tenant_id: str
-    guest_id: str
-    pillow_type: Optional[str] = None  # soft, firm, memory_foam
-    room_temperature: Optional[int] = None  # Celsius
-    smoking: bool = False
-    floor_preference: Optional[str] = None  # high, low, middle
-    room_view: Optional[str] = None  # sea, mountain, city
-    newspaper: Optional[str] = None
-    extra_requests: List[str] = []
-    dietary_restrictions: List[str] = []
-    allergies: List[str] = []
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-class GuestTag(BaseModel):
-    """Guest tags for categorization"""
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    tenant_id: str
-    guest_id: str
-    tag: str  # VIP, Honeymoon, Complainer, Corporate, Long-Stay, Repeat, Birthday
-    color: str = "blue"
-    added_by: str
-    notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-class GuestTagEnum(str, Enum):
-    VIP = "vip"
-    BLACKLIST = "blacklist"
-    HONEYMOON = "honeymoon"
-    ANNIVERSARY = "anniversary"
-    BUSINESS_TRAVELER = "business_traveler"
-    FREQUENT_GUEST = "frequent_guest"
-    COMPLAINER = "complainer"
-    HIGH_SPENDER = "high_spender"
-
-
-class RedeemPointsRequest(BaseModel):
-    points_to_redeem: int
-    reward_type: str  # free_night, upgrade, fnb_credit, spa_credit
-
-
-class MinimumStockAlertRequest(BaseModel):
-    item_id: str
-    min_stock_level: int
-    alert_recipients: List[str] = []
-
-
-class LinenInventoryItem(BaseModel):
-    """Linen inventory tracking"""
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    tenant_id: str
-    item_type: str  # sheet, pillowcase, towel, bathrobe, etc
-    size: Optional[str] = None  # single, double, king, etc
-    quantity_in_stock: int = 0
-    quantity_in_use: int = 0
-    quantity_in_laundry: int = 0
-    quantity_damaged: int = 0
-    reorder_level: int = 50
-    unit_cost: float = 0.0
-    last_restocked: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-class CleaningRequestCreate(BaseModel):
-    booking_id: Optional[str] = None
-    room_number: Optional[str] = None
-    type: str = "regular"  # regular, urgent, turndown, do_not_disturb
-    notes: Optional[str] = ""
 
 
 @router.post("/loyalty/points")

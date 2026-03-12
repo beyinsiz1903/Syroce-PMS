@@ -151,7 +151,8 @@ const EventBusDashboard = lazy(() => import("@/pages/EventBusDashboard"));
 const ObservabilityDashboard = lazy(() => import("@/pages/ObservabilityDashboard"));
 const SecurityHardeningDashboard = lazy(() => import("@/pages/SecurityHardeningDashboard"));
 
-// Runtime Infrastructure
+// System Health & Runtime Infrastructure
+const SystemHealthDashboard = lazy(() => import("@/pages/SystemHealthDashboard"));
 const RuntimeInfrastructureDashboard = lazy(() => import("@/pages/RuntimeInfrastructureDashboard"));
 const InfraHardeningDashboard = lazy(() => import("@/pages/InfraHardeningDashboard"));
 const ProductionGoLiveDashboard = lazy(() => import("@/pages/ProductionGoLiveDashboard"));
@@ -1277,6 +1278,16 @@ function App() {
             element={
               isAuthenticated ? (
                 <EventBusDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/system-health"
+            element={
+              isAuthenticated ? (
+                <SystemHealthDashboard user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )
