@@ -19,7 +19,10 @@ class CentralReservationService:
         ).to_list(100)
 
         if not properties:
-            properties = [{"id": tenant_id, "name": "Ana Otel", "hotel_name": "Ana Otel"}]
+            # Fallback: get tenant name from tenants collection
+            tenant_doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "hotel_name": 1, "name": 1})
+            t_name = (tenant_doc or {}).get("hotel_name") or (tenant_doc or {}).get("name") or "Ana Otel"
+            properties = [{"id": tenant_id, "name": t_name, "hotel_name": t_name}]
 
         today = date.today().isoformat()
         portfolio_data = []
@@ -86,7 +89,9 @@ class CentralReservationService:
         ).to_list(100)
 
         if not properties:
-            properties = [{"id": tenant_id, "name": "Ana Otel", "hotel_name": "Ana Otel"}]
+            tenant_doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "hotel_name": 1, "name": 1})
+            t_name = (tenant_doc or {}).get("hotel_name") or (tenant_doc or {}).get("name") or "Ana Otel"
+            properties = [{"id": tenant_id, "name": t_name, "hotel_name": t_name}]
 
         results = []
         for prop in properties:
@@ -180,7 +185,9 @@ class CentralRevenueManagement:
         ).to_list(100)
 
         if not properties:
-            properties = [{"id": tenant_id, "name": "Ana Otel", "hotel_name": "Ana Otel"}]
+            tenant_doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "hotel_name": 1, "name": 1})
+            t_name = (tenant_doc or {}).get("hotel_name") or (tenant_doc or {}).get("name") or "Ana Otel"
+            properties = [{"id": tenant_id, "name": t_name, "hotel_name": t_name}]
 
         cutoff = (date.today() - timedelta(days=days)).isoformat()
         portfolio_revenue = []
@@ -291,7 +298,9 @@ class GlobalAlertSystem:
         ).to_list(100)
 
         if not properties:
-            properties = [{"id": tenant_id, "hotel_name": "Ana Otel"}]
+            tenant_doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "hotel_name": 1, "name": 1})
+            t_name = (tenant_doc or {}).get("hotel_name") or (tenant_doc or {}).get("name") or "Ana Otel"
+            properties = [{"id": tenant_id, "hotel_name": t_name}]
 
         today = date.today().isoformat()
         alerts = []
