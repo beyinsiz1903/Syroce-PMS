@@ -22,7 +22,8 @@ connected_clients: Dict[str, Set[str]] = {
     'dashboard': set(),
     'pms': set(),
     'notifications': set(),
-    'kitchen': set()
+    'kitchen': set(),
+    'system-health': set(),
 }
 
 @sio.event
@@ -143,6 +144,44 @@ async def get_connected_clients_count() -> Dict[str, int]:
         room: len(clients)
         for room, clients in connected_clients.items()
     }
+
+
+# ── System Health Live Events ──
+
+async def broadcast_system_health_event(event_type: str, payload: Dict[str, Any], tenant_id: str = None, severity: str = "info"):
+    """
+    Broadcast system health events to system-health room subscribers.
+    Events: drift_detected, reconciliation_completed, queue_saturation,
+    stuck_task_detected, security_violation, provider_degraded,
+    runtime_alert_triggered, worker_recovered, backlog_reduced.
+    """
+    try:
+        await sio.emit('system_health_event', {
+            'event_type': event_type,
+            'severity': severity,
+            'tenant_id': tenant_id,
+            'payload': payload,
+            'timestamp': datetime.utcnow().isoformat(),
+        }, room='system-health')
+        logger.debug(f"System health event broadcasted: {event_type} [{severity}]")
+    except Exception as e:
+        logger.error(f"Failed to broadcast system health event: {e}")
+
+
+async def broadcast_health_metric_update(metric_type: str, data: Dict[str, Any], tenant_id: str = None):
+    """
+    Broadcast incremental metric updates (counters, gauges) without full page reload.
+    metric_type: queue_depth, drift_count, alert_count, worker_status, security_score, etc.
+    """
+    try:
+        await sio.emit('health_metric_update', {
+            'metric_type': metric_type,
+            'data': data,
+            'tenant_id': tenant_id,
+            'timestamp': datetime.utcnow().isoformat(),
+        }, room='system-health')
+    except Exception as e:
+        logger.error(f"Failed to broadcast health metric update: {e}")
 
 # Health check
 @sio.event

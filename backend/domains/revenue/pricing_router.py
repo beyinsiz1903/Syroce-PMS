@@ -26,6 +26,8 @@ from core.helpers import (
 )
 from models.schemas import User, RatePlan, Package, PriceAnalysis
 from models.enums import UserRole, RateType, MarketSegment, ChannelType, ChannelType, CancellationPolicyType
+from common.context import OperationContext
+from domains.revenue.pricing.pricing_service import pricing_service
 
 logger = logging.getLogger(__name__)
 
@@ -123,28 +125,9 @@ class RateOverrideRequest(BaseModel):
 @router.post("/rms/update-rate")
 async def update_room_rate(rate_data: dict, current_user: User = Depends(get_current_user)):
     """Oda fiyatini guncelle ve tum kanallara gonder"""
-    # Support both date and target_date
-    target_date = rate_data.get('target_date') or rate_data.get('date', datetime.now().strftime("%Y-%m-%d"))
-    
-    # Simulated rate update (real: OTA APIs)
-    rate_update = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'room_type': rate_data.get('room_type', 'Standard'),
-        'target_date': target_date,
-        'new_rate': rate_data.get('new_rate', 100.0),
-        'reason': rate_data.get('reason', 'Manual update'),
-        'updated_at': datetime.now(timezone.utc).isoformat(),
-        'pushed_to_channels': ['booking_com', 'expedia', 'website', 'direct']
-    }
-    
-    await db.rate_updates.insert_one(rate_update)
-    
-    return {
-        'success': True,
-        'message': f'{rate_update["room_type"]} icin fiyat {rate_update["new_rate"]} olarak guncellendi',
-        'pushed_to': rate_update['pushed_to_channels']
-    }
+    ctx = OperationContext.from_user(current_user)
+    result = await pricing_service.update_room_rate(ctx, rate_data)
+    return result.data
 
 # ============= PAYMENT & FINANCIAL (ALREADY ADDED ABOVE) =============
 

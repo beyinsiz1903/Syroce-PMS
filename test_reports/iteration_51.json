@@ -1,0 +1,101 @@
+{
+  "summary": "System Health Normalized API & Dashboard Testing - ALL PASSED. Backend: 16/16 tests passed (100%). Frontend: All dashboard elements verified - normalized overview bar, 4 metric cards, 4 panel cards, 4 subsystem cards, all interactive buttons working.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/push/status",
+        "issue": "Returns 500 error (Push notification service issue)",
+        "priority": "LOW - does not affect core functionality"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "System Health Dashboard",
+        "issues": ["WebSocket shows 'Offline' indicator - expected behavior as WS not configured"]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_system_health_normalized_api.py",
+    "/app/test_reports/pytest/pytest_system_health_normalized.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Normalized health API endpoints correctly return standardized fields: status, severity, scope_type, scope_id, last_updated_at, action_available, suggested_action, live_capable",
+    "Role-based dashboard correctly returns role, scope, panels shaped by user role (admin)",
+    "Service-wired endpoints (/api/arrivals/today, /api/unified/today-arrivals, /api/frontdesk/audit-checklist, /api/audit-logs, /api/logs/errors, /api/logs/night-audit) all working via frontdesk_service and night_audit_service",
+    "SystemHealthDashboard.js properly uses data-testid attributes for all interactive elements",
+    "All 4 subsystem cards (Channel Manager, Workers, Security, Observability) display correctly with status, severity, last_updated_at, live_capable"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_system_health_normalized_api.py"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 tests passed)",
+    "frontend": "100% (all UI elements verified, all interactions working)"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123"
+  },
+  "seed_data_creation": "No new seed data created - using existing demo data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "System Health Dashboard fully functional at /system-health route. All normalized health endpoints (/api/system-health/normalized/overview, /api/system-health/normalized/channel-manager, /api/system-health/normalized/workers, /api/system-health/normalized/security) return standardized health response envelopes. Role-based dashboard at /api/system-health/role-dashboard shapes data by user role. Service-wired endpoints for frontdesk and night_audit domains all working correctly.",
+  "passed_tests": {
+    "backend_auth": [
+      "test_login_success - Login with demo@hotel.com/demo123"
+    ],
+    "backend_normalized_health": [
+      "test_role_dashboard_endpoint - Returns role, scope, panels, tenant_id",
+      "test_normalized_overview_endpoint - Returns overall_status, overall_severity, subsystems (channel_manager, workers, security, observability)",
+      "test_normalized_channel_manager_endpoint - Returns status, severity, scope_type, last_updated_at, live_capable, action_available, suggested_action",
+      "test_normalized_workers_endpoint - Returns standardized health fields",
+      "test_normalized_security_endpoint - Returns standardized health fields"
+    ],
+    "backend_service_wired": [
+      "test_arrivals_today_endpoint - /api/arrivals/today returns arrivals",
+      "test_unified_today_arrivals_endpoint - /api/unified/today-arrivals returns arrivals",
+      "test_frontdesk_audit_checklist_endpoint - /api/frontdesk/audit-checklist returns checklist",
+      "test_audit_logs_endpoint - /api/audit-logs returns logs with count",
+      "test_error_logs_endpoint - /api/logs/errors returns error logs",
+      "test_night_audit_logs_endpoint - /api/logs/night-audit returns night audit logs"
+    ],
+    "backend_hardening_mocked": [
+      "test_channel_manager_runtime_status - /api/channel-manager/runtime/status returns health data (MOCKED)",
+      "test_workers_queues_health - /api/workers/queues/health returns health data (MOCKED)",
+      "test_security_audit_status - /api/security/audit/status returns data (MOCKED)",
+      "test_security_rate_limit_status - /api/security/rate-limit/status returns data (MOCKED)"
+    ],
+    "frontend_system_health_dashboard": [
+      "Login and navigate to /system-health successful",
+      "Normalized overview bar visible with Overall: Healthy | info, Scope: tenant, Role: admin",
+      "4 metric cards verified: metric-cm-health, metric-queue-health, metric-alerts, metric-stuck-tasks",
+      "4 panel cards verified: Channel Manager, Queue & Workers, Security Runtime, Runtime Alerts",
+      "4 subsystem health cards verified: channel_manager, workers, security, observability",
+      "Drift Scan button (action-channel-manager) clickable",
+      "Run Reconciliation button (run-reconciliation-btn) clickable",
+      "Refresh button (refresh-all-btn) clickable"
+    ]
+  },
+  "verified_response_data": {
+    "normalized_overview": {
+      "fields": ["overall_status", "overall_severity", "subsystems", "last_updated_at", "live_capable"],
+      "overall_status": "healthy"
+    },
+    "role_dashboard": {
+      "fields": ["role", "scope", "panels", "tenant_id"],
+      "role": "admin",
+      "scope": "tenant"
+    },
+    "normalized_channel_manager": {
+      "fields": ["status", "severity", "scope_type", "scope_id", "last_updated_at", "live_capable", "action_available", "suggested_action", "detail"]
+    }
+  },
+  "mocked_apis_note": "Channel Manager runtime, Worker queue health, and Security endpoints return placeholder/mocked data from CMRuntimeService, WorkerRuntimeService, SecurityRuntimeService as documented"
+}

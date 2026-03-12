@@ -95,13 +95,17 @@ export default function SystemHealthDashboard({ user, tenant, onLogout }) {
   const [driftScanLoading, setDriftScanLoading] = useState(false);
   const [reconLoading, setReconLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [normalizedOverview, setNormalizedOverview] = useState(null);
+  const [roleDashboard, setRoleDashboard] = useState(null);
+  const [wsConnected, setWsConnected] = useState(false);
+  const [liveEvents, setLiveEvents] = useState([]);
   const token = localStorage.getItem("token");
   const headers = { Authorization: `Bearer ${token}` };
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [cm, q, audit, rl, tg, ls, al, mt, st] = await Promise.allSettled([
+      const [cm, q, audit, rl, tg, ls, al, mt, st, norm, role] = await Promise.allSettled([
         axios.get(`${API}/api/channel-manager/runtime/status`, { headers }),
         axios.get(`${API}/api/workers/queues/health`, { headers }),
         axios.get(`${API}/api/security/audit/status`, { headers }),
@@ -111,6 +115,8 @@ export default function SystemHealthDashboard({ user, tenant, onLogout }) {
         axios.get(`${API}/api/observability/runtime/alerts`, { headers }),
         axios.get(`${API}/api/observability/runtime/metrics`, { headers }),
         axios.get(`${API}/api/workers/tasks/stuck`, { headers }),
+        axios.get(`${API}/api/system-health/normalized/overview`, { headers }),
+        axios.get(`${API}/api/system-health/role-dashboard`, { headers }),
       ]);
       if (cm.status === "fulfilled") setCmStatus(cm.value.data);
       if (q.status === "fulfilled") setQueueHealth(q.value.data);
@@ -121,6 +127,8 @@ export default function SystemHealthDashboard({ user, tenant, onLogout }) {
       if (al.status === "fulfilled") setAlerts(al.value.data);
       if (mt.status === "fulfilled") setMetrics(mt.value.data);
       if (st.status === "fulfilled") setStuckTasks(st.value.data);
+      if (norm.status === "fulfilled") setNormalizedOverview(norm.value.data);
+      if (role.status === "fulfilled") setRoleDashboard(role.value.data);
       setLastUpdated(new Date().toLocaleTimeString());
     } catch (e) { console.error(e); }
     setLoading(false);
@@ -175,6 +183,48 @@ export default function SystemHealthDashboard({ user, tenant, onLogout }) {
             </Button>
           </div>
         </div>
+
+        {/* Normalized Status Bar */}
+        {normalizedOverview && (
+          <div data-testid="normalized-overview-bar" className="mb-6 p-3 rounded-lg border flex items-center gap-4"
+            style={{
+              background: normalizedOverview.overall_status === "critical" ? "rgba(239,68,68,0.08)" :
+                normalizedOverview.overall_status === "degraded" ? "rgba(245,158,11,0.08)" : "rgba(16,185,129,0.08)",
+              borderColor: normalizedOverview.overall_status === "critical" ? "rgba(239,68,68,0.3)" :
+                normalizedOverview.overall_status === "degraded" ? "rgba(245,158,11,0.3)" : "rgba(16,185,129,0.3)",
+            }}>
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-zinc-300" />
+              <span className="text-sm font-medium text-zinc-200">Overall:</span>
+              <StatusBadge status={normalizedOverview.overall_status} />
+              <SeverityChip severity={normalizedOverview.overall_severity} />
+            </div>
+            {roleDashboard && (
+              <div className="ml-auto flex items-center gap-2 text-[11px] text-zinc-500">
+                <Lock className="w-3 h-3" />
+                <span>Scope: {roleDashboard.scope} | Role: {roleDashboard.role}</span>
+              </div>
+            )}
+            {!wsConnected && (
+              <span data-testid="ws-disconnected-badge" className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-amber-900/30 text-amber-400 border border-amber-700/40">
+                <Wifi className="w-3 h-3" /> Offline
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Live Events Strip */}
+        {liveEvents.length > 0 && (
+          <div data-testid="live-events-strip" className="mb-4 flex gap-2 overflow-x-auto pb-1">
+            {liveEvents.slice(0, 5).map((ev, i) => (
+              <div key={i} className="flex-shrink-0 px-3 py-1.5 rounded-md bg-zinc-900/70 border border-zinc-800 text-[11px] flex items-center gap-2">
+                <SeverityChip severity={ev.severity || "info"} />
+                <span className="text-zinc-300">{ev.event_type}</span>
+                <span className="text-zinc-600">{new Date(ev.timestamp).toLocaleTimeString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Alert Banner */}
         {criticalAlerts > 0 && (
@@ -322,6 +372,33 @@ export default function SystemHealthDashboard({ user, tenant, onLogout }) {
               {metrics.queue && <MetricCard testId="metric-queue-backlog" icon={Database} title="Queue Backlog" value={metrics.queue.backlog ?? 0} />}
               {metrics.security && <MetricCard testId="metric-sec-violations" icon={Shield} title="Violations" value={metrics.security.violations ?? 0} />}
               <MetricCard testId="metric-total-alerts" icon={Eye} title="Total Alerts" value={alertCount} />
+            </div>
+          </div>
+        )}
+
+        {/* Normalized Subsystem Health */}
+        {normalizedOverview?.subsystems && (
+          <div className="mt-6">
+            <h2 className="text-sm font-semibold text-zinc-300 mb-3">Subsystem Health (Normalized)</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {Object.entries(normalizedOverview.subsystems).map(([key, sub]) => (
+                <div key={key} data-testid={`normalized-${key}`} className="p-3 rounded-lg bg-zinc-900/60 border border-zinc-800">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-zinc-300 capitalize">{key.replace(/_/g, " ")}</span>
+                    <div className="flex items-center gap-1">
+                      <StatusBadge status={sub.status} />
+                      <SeverityChip severity={sub.severity} />
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-zinc-500 space-y-1">
+                    {sub.suggested_action && (
+                      <p className="text-amber-400/80">{sub.suggested_action}</p>
+                    )}
+                    <p>Updated: {new Date(sub.last_updated_at).toLocaleTimeString()}</p>
+                    {sub.live_capable && <span className="text-emerald-500/60">Live capable</span>}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
