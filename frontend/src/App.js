@@ -122,6 +122,10 @@ const GuestJourneyDashboard = lazy(() => import("@/pages/GuestJourneyDashboard")
 const PlatformScalingDashboard = lazy(() => import("@/pages/PlatformScalingDashboard"));
 const EnterpriseLiveDashboard = lazy(() => import("@/pages/EnterpriseLiveDashboard"));
 const DataIntelligenceDashboard = lazy(() => import("@/pages/DataIntelligenceDashboard"));
+const MessagingDashboard = lazy(() => import("@/pages/MessagingDashboard"));
+const MLSchedulerDashboard = lazy(() => import("@/pages/MLSchedulerDashboard"));
+const RevenueAutopilotDashboard = lazy(() => import("@/pages/RevenueAutopilotDashboard"));
+const AnalyticsExportDashboard = lazy(() => import("@/pages/AnalyticsExportDashboard"));
 const FrontdeskAuditChecklist = lazy(() => import("@/pages/FrontdeskAuditChecklist"));
 const CorporateContractsDashboard = lazy(() => import("@/pages/CorporateContractsDashboard"));
 const MaintenanceWorkOrders = lazy(() => import("@/pages/MaintenanceWorkOrders"));
@@ -1202,6 +1206,46 @@ function App() {
             element={
               isAuthenticated ? (
                 <DataIntelligenceDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/messaging-dashboard"
+            element={
+              isAuthenticated ? (
+                <MessagingDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/ml-scheduler"
+            element={
+              isAuthenticated ? (
+                <MLSchedulerDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/revenue-autopilot-v2"
+            element={
+              isAuthenticated ? (
+                <RevenueAutopilotDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/analytics-export"
+            element={
+              isAuthenticated ? (
+                <AnalyticsExportDashboard user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )

@@ -41282,6 +41282,52 @@ except Exception as e:
     print(f"Data Intelligence router not available: {e}")
     import traceback; traceback.print_exc()
 
+# Messaging Router (Twilio SMS, SendGrid Email, WhatsApp)
+try:
+    from routers.messaging import router as messaging_router
+    app.include_router(messaging_router, tags=["messaging"])
+    print("Messaging router included")
+except Exception as e:
+    print(f"Messaging router not available: {e}")
+    import traceback; traceback.print_exc()
+
+# ML Scheduler Router
+try:
+    from routers.ml_scheduler import router as ml_scheduler_router
+    app.include_router(ml_scheduler_router, tags=["ml-scheduler"])
+    print("ML Scheduler router included")
+except Exception as e:
+    print(f"ML Scheduler router not available: {e}")
+    import traceback; traceback.print_exc()
+
+# Revenue Autopilot v2 Router
+try:
+    from routers.revenue_autopilot_v2 import router as revenue_autopilot_v2_router
+    app.include_router(revenue_autopilot_v2_router, tags=["revenue-autopilot-v2"])
+    print("Revenue Autopilot v2 router included")
+except Exception as e:
+    print(f"Revenue Autopilot v2 router not available: {e}")
+    import traceback; traceback.print_exc()
+
+# WebSocket Health / Event Broadcast Router
+try:
+    from routers.websocket_health import router as ws_health_router
+    app.include_router(ws_health_router, tags=["websocket-health"])
+    print("WebSocket Health router included")
+except Exception as e:
+    print(f"WebSocket Health router not available: {e}")
+    import traceback; traceback.print_exc()
+
+# Analytics Export Router
+try:
+    from routers.analytics_export import router as analytics_export_router
+    app.include_router(analytics_export_router, tags=["analytics-export"])
+    print("Analytics Export router included")
+except Exception as e:
+    print(f"Analytics Export router not available: {e}")
+    import traceback; traceback.print_exc()
+
+
 
 
 
