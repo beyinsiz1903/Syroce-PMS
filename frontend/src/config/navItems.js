@@ -37,7 +37,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "pms_operations",
-    label: "PMS Operations",
+    label: "PMS Operasyonlar",
     path: "/pms-operations",
     moduleKey: "pms",
     tier: "basic",
