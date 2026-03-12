@@ -36,6 +36,14 @@ export const NAV_ITEMS = [
     group: "core",
   },
   {
+    key: "pms_operations",
+    label: "PMS Operations",
+    path: "/pms-operations",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "core",
+  },
+  {
     key: "reports_basic",
     label: "Raporlar",
     path: "/app/raporlar",

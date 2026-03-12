@@ -41208,6 +41208,16 @@ except Exception as e:
     print(f"⚠️ Finance router not available: {e}")
     import traceback; traceback.print_exc()
 
+# PMS Core Hardening Router
+try:
+    from routers.pms_hardening import router as pms_hardening_router
+    app.include_router(pms_hardening_router, tags=["pms-core"])
+    print("✅ PMS Core Hardening router included")
+except Exception as e:
+    print(f"⚠️ PMS Core Hardening router not available: {e}")
+    import traceback; traceback.print_exc()
+
+
 # Reports Router (extracted from server.py)
 try:
     from routers.reports import router as reports_router_extracted

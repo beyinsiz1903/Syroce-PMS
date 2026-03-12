@@ -114,6 +114,7 @@ const FnBComplete = lazy(() => import("@/pages/FnBComplete"));
 const FnbBeoGenerator = lazy(() => import("@/pages/FnbBeoGenerator"));
 const KitchenDisplay = lazy(() => import("@/pages/KitchenDisplay"));
 const NightAuditLogs = lazy(() => import("@/pages/NightAuditLogs"));
+const PMSOperationalDashboard = lazy(() => import("@/pages/PMSOperationalDashboard"));
 const FrontdeskAuditChecklist = lazy(() => import("@/pages/FrontdeskAuditChecklist"));
 const CorporateContractsDashboard = lazy(() => import("@/pages/CorporateContractsDashboard"));
 const MaintenanceWorkOrders = lazy(() => import("@/pages/MaintenanceWorkOrders"));
@@ -1104,6 +1105,16 @@ function App() {
             element={
               isAuthenticated ? (
                 <NightAuditLogs user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/pms-operations"
+            element={
+              isAuthenticated ? (
+                <PMSOperationalDashboard user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )

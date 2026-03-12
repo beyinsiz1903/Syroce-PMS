@@ -13,7 +13,7 @@ import {
 import {
   Home, Hotel, FileText, TrendingUp, Award, ShoppingCart,
   User, LogOut, Menu, Calendar, DollarSign, Settings as SettingsIcon,
-  Layers, BarChart3, Bot, Building2, Zap, Crown, Lock, Shield, Users
+  Layers, BarChart3, Bot, Building2, Zap, Crown, Lock, Shield, Users, ClipboardCheck
 } from 'lucide-react';
 import LanguageSelector from '@/components/LanguageSelector';
 import NotificationBell from '@/components/NotificationBell';
@@ -25,6 +25,7 @@ import { UpgradeBanner } from '@/components/UpgradeBanner';
 const ICON_BY_KEY = {
   dashboard: Home,
   pms: Hotel,
+  pms_operations: ClipboardCheck,
   reservation_calendar: Calendar,
   reports_basic: FileText,
   reports: BarChart3,
