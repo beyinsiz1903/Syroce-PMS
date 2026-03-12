@@ -7,7 +7,7 @@ import httpx
 import os
 import asyncio
 
-API_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://pilot-validation.preview.emergentagent.com")
+API_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://phase7-rollout.preview.emergentagent.com")
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 

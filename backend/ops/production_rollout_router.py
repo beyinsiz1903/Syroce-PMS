@@ -192,8 +192,8 @@ async def get_report_history(
 async def get_incident_readiness(user=Depends(get_current_user)):
     """Verify incident response readiness: lifecycle, recovery tools, runbooks."""
     ctx = OperationContext.from_user(user)
-    from modules.incident.incident_service import incident_service
-    health = await incident_service.get_service_health(ctx)
+    from modules.incident.incident_service import incident_response_service
+    health = await incident_response_service.get_service_health_matrix(ctx)
     return from_service_result(health)
 
 
