@@ -1,0 +1,130 @@
+{
+  "summary": "Data Intelligence Module - Complete Testing. All 3 new layers tested: 1) Revenue ML Pipeline (ML models → auto-pricing with confidence scores, explainability), 2) Operational AI (check-in load prediction, housekeeping workload, room readiness ETA, maintenance failure risk), 3) Guest Intelligence (lifetime value, segmentation, churn prediction, upsell recommendations). Turkish language UI. All 25 backend pytest tests pass. Frontend DataIntelligenceDashboard renders with 3 tabs and all features work correctly.",
+
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+
+  "test_report_links": [
+    "/app/backend/tests/test_data_intelligence.py",
+    "/app/test_reports/pytest/pytest_data_intelligence.xml"
+  ],
+
+  "action_items": [],
+
+  "critical_code_review_comments": [
+    "Revenue ML Pipeline: Well-implemented with demand forecast, rate elasticity, booking probability, cancellation prediction models feeding into ADR recommendations",
+    "Confidence scoring: Proper 0.1-0.95 range with high/medium/low bands and human override threshold at 0.60",
+    "Explainability: Each recommendation includes demand_signal, pace_signal, cancellation_risk, price_sensitivity factors",
+    "Operational AI: 4 predictors (check-in load, housekeeping workload, room readiness, maintenance risk) with Turkish notes",
+    "Guest Intelligence: LTV calculation, 6 segment types, churn prediction with risk factors, upsell recommendations",
+    "All endpoints properly authenticated via get_current_user dependency",
+    "Turkish language UI labels correctly implemented: 'Pipeline Calistir', 'Talep Tahmini', 'Misafir Deger Dagilimi' etc.",
+    "data-testid attributes present on all interactive elements for testing",
+    "No mocked APIs - all ML models use real MongoDB data from bookings, rooms, guests, folio_charges, survey_responses, guest_requests, housekeeping_tasks, maintenance_work_orders collections"
+  ],
+
+  "updated_files": [],
+
+  "success_rate": {
+    "backend": "100% (25/25 pytest tests pass)",
+    "frontend": "100% (all 3 tabs load, all interactive features work)"
+  },
+
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123"
+  },
+
+  "seed_data_creation": "Triggered ML pipeline run during testing, generated 6 room type recommendations",
+
+  "retest_needed": false,
+
+  "should_main_agent_self_test": false,
+
+  "context_for_next_testing_agent": "Data Intelligence Dashboard at /data-intelligence with 3 tabs: Revenue Intelligence (default), Operational AI, Guest Intelligence. All APIs at /api/data-intelligence/*. Revenue Pipeline execution at POST /api/data-intelligence/revenue/run-pipeline. Guest Intelligence may take a few seconds due to analyzing multiple guests.",
+
+  "passed_tests": {
+    "backend_pytest_25_tests": {
+      "revenue_ml_pipeline": [
+        "test_forecast_dashboard - GET /api/data-intelligence/revenue/forecast-dashboard returns demand_forecast, price_optimization, cancellation_risk, autopricing, ml_recommendations",
+        "test_forecast_has_14_days - Forecast contains exactly 14 days of predictions",
+        "test_run_pipeline - POST /api/data-intelligence/revenue/run-pipeline returns run_id, recommendations, signals",
+        "test_pipeline_recommendation_fields - Recommendations have confidence_score, confidence_band, auto_eligible, requires_human_approval, recommendation_reasons, explainability",
+        "test_pipeline_explainability - Explainability includes demand_signal, pace_signal, cancellation_risk, price_sensitivity, recommendation_reason",
+        "test_pipeline_signals - Signals include demand_summary, elasticity_summary, cancellation_risk, conversion_rates",
+        "test_confidence_threshold_behavior - Scores in 0.1-0.95 range, requires_human_approval when confidence < 0.6",
+        "test_get_recommendations - GET /api/data-intelligence/revenue/recommendations returns pending and history"
+      ],
+      "operational_ai": [
+        "test_operations_dashboard - GET /api/data-intelligence/operations/dashboard returns check_in_load, housekeeping_workload, room_readiness, maintenance_risk",
+        "test_checkin_load_structure - Check-in load has total_expected_arrivals, peak_hour, arrival_pressure_score, hourly_forecast, staffing_recommendation",
+        "test_housekeeping_workload_structure - HK workload has departures, stayovers, arrivals, total_rooms_to_clean, staffing_recommendation",
+        "test_room_readiness_structure - Room readiness has total_rooms_pending, predictions with ETA",
+        "test_maintenance_risk_structure - Maintenance risk has total_rooms_analyzed, at_risk_rooms, risk_items",
+        "test_maintenance_risk_scoring_range - Risk scores in 0-1 range with high/medium/low levels",
+        "test_staffing_recommendations - GET /api/data-intelligence/operations/staffing returns front_desk, housekeeping, combined_pressure",
+        "test_workload_heatmap - GET /api/data-intelligence/operations/workload-heatmap returns housekeeping_floors, checkin_hourly"
+      ],
+      "guest_intelligence": [
+        "test_guest_dashboard - GET /api/data-intelligence/guests/dashboard returns value_distribution, segment_distribution, churn_risk_summary, top_value_guests, high_churn_guests, upsell_opportunities",
+        "test_value_distribution_tiers - Value distribution includes platinum, gold, silver, bronze tiers",
+        "test_churn_risk_labels - Churn risk summary includes high, medium, low labels",
+        "test_guest_segments - GET /api/data-intelligence/guests/segments returns segment_distribution, value_distribution",
+        "test_churn_summary - GET /api/data-intelligence/guests/churn-summary returns churn_risk_summary, high_churn_guests",
+        "test_upsell_opportunities - GET /api/data-intelligence/guests/upsell-opportunities returns opportunities, total_potential"
+      ],
+      "tenant_isolation": [
+        "test_unauthorized_access - Returns 401/403 for unauthenticated requests",
+        "test_invalid_token - Returns 401/403 for invalid Bearer token"
+      ],
+      "empty_fallback": [
+        "test_pipeline_with_no_room_type - Returns empty recommendations for non-existent room type"
+      ]
+    },
+    "frontend_playwright_tests": [
+      "Dashboard loads at /data-intelligence with data-testid='data-intelligence-dashboard'",
+      "3 Tabs present: Revenue Intelligence (default), Operational AI, Guest Intelligence",
+      "Revenue Intelligence tab: Summary cards (Ort. Doluluk, Riskli Rez., Bekleyen Oneri, Uygulanan), Pipeline Calistir button, Demand Forecast (14 days), Son ML Onerileri table",
+      "Pipeline Calistir button triggers POST /api/data-intelligence/revenue/run-pipeline and displays Pipeline Sonuclari with room types (Deluxe, Family, Junior Suite, Standard, Suite, Superior)",
+      "Pipeline results show: room_type, confidence_band (Orta Guven), current_rate → suggested_rate, change_pct, recommendation_reasons with explainability",
+      "Operational AI tab: Summary cards (Beklenen Varis, Temizlenecek Oda, Hazirlik Bekleyen, Bakim Riski)",
+      "Staffing recommendations: Resepsiyon Personel Onerisi (1 onerilen ajan), Housekeeping Personel Onerisi (1 onerilen personel) with pressure badges",
+      "Check-in Saatlik Dagilim hourly forecast chart",
+      "Housekeeping Is Yuku Dagilimi (Departures/Stayovers/Arrivals breakdown)",
+      "Guest Intelligence tab: Summary cards (Analiz Edilen: 20, Platinum Misafir: 0, Yuksek Kayip Riski: 0, Upsell Firsati: 8)",
+      "Misafir Deger Dagilimi: Platinum (0), Gold (0), Silver (2), Bronze (18)",
+      "Segment Dagilimi: Occasional (13), First Timer (7)",
+      "Yuksek Kayip Riski: Empty state 'Yuksek riskli misafir yok'",
+      "Upsell Firsatlari: 8 opportunities with guest names (Basak Kaya, Serkan Muller, Elena Sahin, etc.) and TL values"
+    ]
+  },
+
+  "modules_tested": {
+    "revenue_ml_pipeline": {
+      "api_prefix": "/api/data-intelligence/revenue",
+      "features": ["Forecast dashboard (14 days)", "Run ML pipeline", "Recommendations with confidence scores", "Explainability", "Auto-pricing integration"],
+      "endpoints_tested": 3,
+      "room_types_analyzed": ["Deluxe", "Family", "Junior Suite", "Standard", "Suite", "Superior"]
+    },
+    "operational_ai": {
+      "api_prefix": "/api/data-intelligence/operations",
+      "features": ["Check-in load prediction", "Housekeeping workload", "Room readiness ETA", "Maintenance failure risk", "Staffing recommendations"],
+      "endpoints_tested": 5
+    },
+    "guest_intelligence": {
+      "api_prefix": "/api/data-intelligence/guests",
+      "features": ["Lifetime value (LTV)", "Segmentation (6 types)", "Churn prediction", "Upsell recommendations", "Value distribution tiers"],
+      "endpoints_tested": 6
+    }
+  },
+
+  "mocked_api_note": "No APIs are mocked for the Data Intelligence module. All ML models use real MongoDB data from bookings, rooms, guests, folio_charges, survey_responses, guest_requests, housekeeping_tasks, maintenance_work_orders collections."
+}

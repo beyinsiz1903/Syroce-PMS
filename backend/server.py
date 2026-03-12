@@ -41273,6 +41273,16 @@ except Exception as e:
     print(f"Enterprise Live router not available: {e}")
     import traceback; traceback.print_exc()
 
+# Data Intelligence Router (Revenue ML Pipeline, Operational AI, Guest Intelligence)
+try:
+    from routers.data_intelligence import router as data_intelligence_router
+    app.include_router(data_intelligence_router, tags=["data-intelligence"])
+    print("Data Intelligence router included")
+except Exception as e:
+    print(f"Data Intelligence router not available: {e}")
+    import traceback; traceback.print_exc()
+
+
 
 
 

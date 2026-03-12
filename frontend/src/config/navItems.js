@@ -184,13 +184,21 @@ export const NAV_ITEMS = [
     group: "enterprise",
   },
   {
+    key: "data_intelligence",
+    label: "Data Intelligence",
+    path: "/data-intelligence",
+    moduleKey: "advanced_analytics",
+    tier: "enterprise",
+    group: "enterprise",
+  },
+  {
     key: "marketplace",
     label: "Marketplace",
     path: "/app/marketplace",
     moduleKey: "marketplace",
     tier: "enterprise",
     group: "enterprise",
-    hidden: true, // Henüz aktif değil
+    hidden: true,
   },
 
   // ──── SUPER ADMIN ONLY ─────────────────────────────
