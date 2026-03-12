@@ -10,9 +10,9 @@ Multi-phase plan to deconstruct a monolithic backend into a domain-driven archit
 /app
 ├── backend/
 │   ├── app.py                      # FastAPI app instance + OpenAPI tag config
-│   ├── server.py                   # Thin entrypoint orchestrator (262 lines)
+│   ├── server.py                   # Thin entrypoint orchestrator (~270 lines)
 │   ├── startup.py                  # Startup/shutdown event handlers
-│   ├── legacy_routes.py            # Compatibility layer (0 endpoints, shared models only)
+│   ├── legacy_routes.py            # DEPRECATED — minimal shim (19 lines, 0 endpoints)
 │   ├── core/
 │   │   ├── audit.py                # Shared audit event logger
 │   │   ├── cache.py                # Shared cache decorator
@@ -21,57 +21,50 @@ Multi-phase plan to deconstruct a monolithic backend into a domain-driven archit
 │   │   ├── helpers.py              # Shared utilities
 │   │   └── utils.py                # Excel, file utilities
 │   ├── bootstrap/
-│   │   ├── router_registry.py      # Registers all 30 domain routers
+│   │   ├── router_registry.py      # Registers all 34 domain routers
 │   │   ├── dependency_container.py
 │   │   └── middleware_registry.py
-│   ├── domains/                    # DOMAIN ROUTERS (Phase B COMPLETE)
-│   │   ├── ai/
-│   │   │   └── router.py           # AI/ML, predictions, sentiment (45 routes)
-│   │   ├── admin/
-│   │   │   └── router.py           # Tenants, subscriptions, RBAC (42+ routes)
+│   ├── domains/                    # DOMAIN ROUTERS
+│   │   ├── ai/router.py            # AI/ML, predictions (45 routes)
+│   │   ├── admin/router.py         # Tenants, RBAC (42+ routes)
 │   │   ├── channel_manager/
 │   │   │   ├── router.py           # CM ARI + API key (5 routes)
-│   │   │   └── operations_router.py # OTA connections, room mapping (18 routes)
-│   │   ├── guest/
-│   │   │   ├── router.py           # VIP, blacklist, celebrations (9 routes)
-│   │   │   ├── checkin_router.py   # Online check-in, upsell (4 routes)
-│   │   │   ├── experience_router.py # CRM, feedback, mobile (41 routes)
-│   │   │   ├── operations_router.py # Loyalty, NPS, preferences (34 routes)
-│   │   │   └── messaging/
-│   │   │       └── router.py       # WhatsApp, SMS, email (12 routes)
-│   │   ├── sales/
-│   │   │   ├── router.py           # Leads, marketing, events (11 routes)
-│   │   │   └── crm_router.py       # Sales CRM, corporate (12 routes)
-│   │   ├── pms/
-│   │   │   ├── pos_router.py       # POS/F&B core (43 routes)
-│   │   │   ├── pos_fnb_router.py   # POS/F&B extended (29 routes)
-│   │   │   ├── mobile_router.py    # Mobile dashboard (39 routes)
-│   │   │   ├── enterprise_router.py # Critical features, RBAC (50 routes)
-│   │   │   ├── marketplace_router.py # Procurement (43 routes)
-│   │   │   ├── dashboard_router.py  # Dashboard, executive, GM KPIs (21 routes)
-│   │   │   ├── frontdesk_router.py  # Check-in, check-out, folio (25 routes)
-│   │   │   ├── housekeeping_router.py # Tasks, staff perf (19 routes)
-│   │   │   ├── night_audit_router.py # Logs, night audit (7 routes)
-│   │   │   ├── notification_router.py # Notifications, inbox (15 routes)
-│   │   │   ├── groups_router.py    # Group/block reservations (14 routes)
-│   │   │   ├── calendar_router.py  # Calendar, rate codes (14 routes)
-│   │   │   ├── approvals_router.py # Approval workflows (9 routes)
-│   │   │   ├── maintenance_router.py # Maintenance, IoT (16 routes)
-│   │   │   └── misc_router.py      # Multi-property, HR, payments (33 routes)
-│   │   ├── revenue/
-│   │   │   ├── analytics_router.py # GM dashboard, anomaly (51 routes)
-│   │   │   ├── rms_router.py       # Revenue management (31 routes)
-│   │   │   └── pricing_router.py   # Rates, pricing, RMS (43 routes)
-│   │   └── hr/
-│   │       └── router.py           # Staff, shifts (19 routes)
-│   ├── routers/                    # Original routers (pre-existing)
-│   ├── security/                   # (Scaffolded)
-│   ├── workers/                    # (Scaffolded)
+│   │   │   ├── operations_router.py # OTA connections (18 routes)
+│   │   │   ├── hardening_router.py # [NEW] Runtime status, drift, recon, providers (10 routes)
+│   │   │   ├── drift_detector.py   # Drift detection engine
+│   │   │   ├── reconciliation_engine.py # Auto-reconciliation
+│   │   │   ├── sync_scheduler.py   # Periodic sync scheduler
+│   │   │   ├── provider_failover.py # Circuit breaker + retry
+│   │   │   ├── encryption.py       # [NEW] Credential encryption at rest
+│   │   │   └── runtime_status.py   # [NEW] Aggregated health status
+│   │   ├── guest/                   # Guest domain routers
+│   │   ├── sales/                   # Sales/CRM routers
+│   │   ├── pms/                     # PMS domain routers (14 files)
+│   │   ├── revenue/                 # Revenue/Analytics routers
+│   │   └── hr/                      # HR operations router
+│   ├── workers/
+│   │   ├── queue_monitor.py        # Queue health monitoring
+│   │   ├── task_guard.py           # Task idempotency/dedup
+│   │   ├── retry_strategy.py       # Configurable retry with backoff
+│   │   ├── failure_archive.py      # Dead-letter archive
+│   │   ├── celery_hooks.py         # [NEW] Pre/post task hooks
+│   │   ├── task_status_service.py  # [NEW] Aggregated task metrics
+│   │   └── hardening_router.py     # [NEW] Worker health APIs (6 routes)
+│   ├── security/
+│   │   ├── rate_limiter.py         # Token bucket per-tenant
+│   │   ├── credential_guard.py     # Weak password scanner
+│   │   ├── log_sanitizer.py        # PII/secret redaction
+│   │   ├── audit_validator.py      # Audit completeness checker
+│   │   ├── tenant_guard.py         # [NEW] Tenant isolation enforcement
+│   │   ├── property_guard.py       # [NEW] Multi-property access guard
+│   │   ├── sensitive_output.py     # [NEW] Output field masking
+│   │   └── hardening_router.py     # [NEW] Security health APIs (6 routes)
+│   ├── modules/observability/
+│   │   ├── runtime_metrics.py      # [NEW] Cross-subsystem metrics
+│   │   └── hardening_router.py     # [NEW] Metrics + alerts APIs (2 routes)
 │   └── tests/
-│       └── runtime/                # (Scaffolded)
 ├── frontend/
-│   └── ...
-└── load_tests/                     # (Scaffolded)
+└── load_tests/
 ```
 
 ## Completed Phases
@@ -80,42 +73,71 @@ Multi-phase plan to deconstruct a monolithic backend into a domain-driven archit
 - Reduced server.py from 42K to 262 lines
 - Created app.py, startup.py, bootstrap modules
 
-### Phase B: Domain Module Separation ✅ COMPLETE
-- **Wave 1**: 347 endpoints → 12 domain routers
-- **Wave 2**: 404 endpoints → 18 new domain routers
-- **Total**: 751 endpoints extracted into 30 domain routers
-- **legacy_routes.py**: 0 endpoints remaining (only shared model definitions)
-- **Auth shadow cleanup**: Removed 16 shadow function definitions
-- **Duplicate audit**: Removed 23 cross-file + 5 intra-file duplicate endpoints
-- **OpenAPI tag grouping**: 18 domain-based tags configured
-- **Testing**: 31/31 tests passed (backend + frontend)
+### Phase B: Domain Module Separation ✅
+- 751 endpoints extracted into 30 domain routers
+- legacy_routes.py: 0 endpoints remaining
+- Auth shadow cleanup + 23 duplicate endpoints removed
+- OpenAPI tag grouping configured
+
+### Phase C: Channel Manager Hardening ✅ (2026-03-12)
+- Runtime status aggregation (sync, drift, reconciliation, providers)
+- Drift detection + scan-on-demand API
+- Reconciliation engine + auto-fix
+- Provider circuit breaker + health monitoring
+- Credential encryption at rest
+- Sync schedule + event-driven trigger APIs
+- 10 new API endpoints
+
+### Phase D: Queue & Worker Hardening ✅ (2026-03-12)
+- Queue health monitoring (backlog, saturation, stuck detection)
+- Task idempotency via dedup key
+- Dead-letter archive + replay
+- Retry strategy presets (gentle, aggressive, critical)
+- Pre/post task hooks for audit
+- 6 new API endpoints
+
+### Phase E: Security Hardening ✅ (2026-03-12)
+- Tenant isolation guard with violation tracking
+- Multi-property access guard
+- Weak credential scanning (admin-prioritized)
+- Audit trail completeness validation
+- Rate limiting per-tenant (token bucket)
+- Log sanitization verification
+- Sensitive output masking
+- Secret leakage detection
+- 6 new API endpoints
+
+### Phase F: Observability Wiring ✅ (2026-03-12)
+- Unified runtime metrics collector (sync, drift, recon, queue, security)
+- Threshold-based alert generation
+- Metrics snapshot persistence
+- 2 new API endpoints
+
+### Model Migration (Partial) ✅ (2026-03-12)
+- legacy_routes.py cleaned from 1718 to 19 lines
+- api_router moved to server.py
+- All inline models are dead code (domain routers define their own)
 
 ## Backlog
 
-### P1 — Phase C: Channel Manager Hardening
-- Credential encryption, scheduled syncing, drift detection, provider failover
+### P0 — Domain Service Wiring
+- Extract inline business logic from routers to service layer
+- Target: router → service → repository pattern
+- Priority services: RoomService, ReservationService, FolioService
 
-### P1 — Phase D: Queue & Worker Hardening
-- Task idempotency, queue monitoring, dead-letter archives
-
-### P2 — Phase E: Security Hardening
-- API rate limiting, tenant query guards, credential guarding, secret leakage detection
-
-### P2 — Phase F: Frontend Stabilization
+### P2 — Frontend Stabilization
 - Audit frontend dependencies, route-based code splitting
 
-### P2 — Model Migration
-- Move remaining 71 inline Pydantic models from legacy_routes.py to models/ package
-- Domain service wiring (router → service → repository pattern)
+### P3 — Operational Reliability Tests
+- Runtime stress tests in backend/tests/runtime/
 
-### P3 — Phase G: Operational Reliability Tests
-- Write runtime stress test code in backend/tests/runtime/
-
-### P3 — Phase H: PMS Load Test Framework
-- Write k6/Locust scripts in load_tests/
+### P3 — PMS Load Test Framework
+- k6/Locust scripts in load_tests/
 
 ## Key Metrics
-- **Total API operations**: 1,768
-- **OpenAPI tags**: 108 (18 domain-organized + legacy)
-- **Domain routers**: 30
+- **Total API operations**: 1,768+
+- **Hardening endpoints**: 24 new
+- **Domain routers**: 34 (30 original + 4 hardening)
 - **Legacy endpoints remaining**: 0
+- **legacy_routes.py**: 19 lines (from 24,600 original)
+- **Test pass rate**: 24/24 (hardening) + 31/31 (regression)
