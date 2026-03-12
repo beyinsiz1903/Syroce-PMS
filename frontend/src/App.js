@@ -145,6 +145,12 @@ const MLDashboard = lazy(() => import("@/pages/MLDashboard"));
 const IntegrationHub = lazy(() => import("@/pages/IntegrationHub"));
 const AdminControlPanel = lazy(() => import("@/pages/AdminControlPanel"));
 
+// Platform Hardening - Data Pipeline, Event Bus, Observability, Security
+const DataPipelineDashboard = lazy(() => import("@/pages/DataPipelineDashboard"));
+const EventBusDashboard = lazy(() => import("@/pages/EventBusDashboard"));
+const ObservabilityDashboard = lazy(() => import("@/pages/ObservabilityDashboard"));
+const SecurityHardeningDashboard = lazy(() => import("@/pages/SecurityHardeningDashboard"));
+
 import { Toaster } from "@/components/ui/sonner";
 
 // Loading component
@@ -1246,6 +1252,46 @@ function App() {
             element={
               isAuthenticated ? (
                 <AnalyticsExportDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/data-pipeline"
+            element={
+              isAuthenticated ? (
+                <DataPipelineDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/event-bus"
+            element={
+              isAuthenticated ? (
+                <EventBusDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/observability"
+            element={
+              isAuthenticated ? (
+                <ObservabilityDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/security-hardening"
+            element={
+              isAuthenticated ? (
+                <SecurityHardeningDashboard user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )

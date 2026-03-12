@@ -41327,7 +41327,41 @@ except Exception as e:
     print(f"Analytics Export router not available: {e}")
     import traceback; traceback.print_exc()
 
+# Data Pipeline Router (Feature Store, Dataset Generator, Model Registry, Prediction Service)
+try:
+    from routers.data_pipeline import router as data_pipeline_router
+    app.include_router(data_pipeline_router, tags=["data-pipeline"])
+    print("Data Pipeline router included")
+except Exception as e:
+    print(f"Data Pipeline router not available: {e}")
+    import traceback; traceback.print_exc()
 
+# Event Bus Router (Redis Pub/Sub abstraction with in-memory fallback)
+try:
+    from routers.event_bus import router as event_bus_router
+    app.include_router(event_bus_router, tags=["event-bus"])
+    print("Event Bus router included")
+except Exception as e:
+    print(f"Event Bus router not available: {e}")
+    import traceback; traceback.print_exc()
+
+# Observability Router (Metrics, Tracing, Error Tracking, Service Health)
+try:
+    from routers.observability import router as observability_router
+    app.include_router(observability_router, tags=["observability"])
+    print("Observability router included")
+except Exception as e:
+    print(f"Observability router not available: {e}")
+    import traceback; traceback.print_exc()
+
+# Security Hardening Router (Tenant Isolation, RBAC, Credential Vault, Data Masking)
+try:
+    from routers.security_hardening import router as security_hardening_router
+    app.include_router(security_hardening_router, tags=["security-hardening"])
+    print("Security Hardening router included")
+except Exception as e:
+    print(f"Security Hardening router not available: {e}")
+    import traceback; traceback.print_exc()
 
 
 
