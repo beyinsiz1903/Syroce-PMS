@@ -41264,6 +41264,16 @@ except Exception as e:
     print(f"Platform Scaling router not available: {e}")
     import traceback; traceback.print_exc()
 
+# Enterprise Live Features Router (WebSocket, Messaging, Auto-Pricing, Cross-Module)
+try:
+    from routers.enterprise_live import router as enterprise_live_router
+    app.include_router(enterprise_live_router, tags=["enterprise-live"])
+    print("Enterprise Live router included")
+except Exception as e:
+    print(f"Enterprise Live router not available: {e}")
+    import traceback; traceback.print_exc()
+
+
 
 
 

@@ -120,6 +120,7 @@ const RevenueEngineDashboard = lazy(() => import("@/pages/RevenueEngineDashboard
 const OperationalEventDashboard = lazy(() => import("@/pages/OperationalEventDashboard"));
 const GuestJourneyDashboard = lazy(() => import("@/pages/GuestJourneyDashboard"));
 const PlatformScalingDashboard = lazy(() => import("@/pages/PlatformScalingDashboard"));
+const EnterpriseLiveDashboard = lazy(() => import("@/pages/EnterpriseLiveDashboard"));
 const FrontdeskAuditChecklist = lazy(() => import("@/pages/FrontdeskAuditChecklist"));
 const CorporateContractsDashboard = lazy(() => import("@/pages/CorporateContractsDashboard"));
 const MaintenanceWorkOrders = lazy(() => import("@/pages/MaintenanceWorkOrders"));
@@ -1180,6 +1181,16 @@ function App() {
             element={
               isAuthenticated ? (
                 <PlatformScalingDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/enterprise-live"
+            element={
+              isAuthenticated ? (
+                <EnterpriseLiveDashboard user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )

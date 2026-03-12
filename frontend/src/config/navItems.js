@@ -84,6 +84,14 @@ export const NAV_ITEMS = [
     group: "enterprise",
   },
   {
+    key: "enterprise_live",
+    label: "Enterprise Live",
+    path: "/enterprise-live",
+    moduleKey: "pms",
+    tier: "enterprise",
+    group: "enterprise",
+  },
+  {
     key: "reports_basic",
     label: "Raporlar",
     path: "/app/raporlar",
