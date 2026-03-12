@@ -264,6 +264,14 @@ export const NAV_ITEMS = [
     group: "enterprise",
   },
   {
+    key: "infra_hardening",
+    label: "Infrastructure Hardening",
+    path: "/infra-hardening",
+    moduleKey: "advanced_analytics",
+    tier: "enterprise",
+    group: "enterprise",
+  },
+  {
     key: "marketplace",
     label: "Marketplace",
     path: "/app/marketplace",

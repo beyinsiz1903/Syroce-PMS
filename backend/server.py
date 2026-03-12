@@ -9453,8 +9453,48 @@ async def startup_db_seed():
     except Exception as e:
         print(f"⚠️ Persistence indexes warning: {str(e)}")
 
+    # ── Infrastructure Hardening Initialization ──
+    try:
+        from infra.redis_cluster import redis_cluster
+        connected = await redis_cluster.connect()
+        if connected:
+            from infra.distributed_lock import lock_manager
+            lock_manager.set_redis(redis_cluster.get_lock_client())
+            from infra.ws_redis_adapter import ws_redis_adapter
+            await ws_redis_adapter.initialize(
+                redis_cluster.get_pubsub_client(),
+                redis_cluster.instance_id if hasattr(redis_cluster, 'instance_id') else "main",
+            )
+            from infra.horizontal_scaling import scaling_manager
+            await scaling_manager.initialize(redis_cluster.get_client())
+            print(f"✅ Infrastructure Hardening initialized (Redis: {redis_cluster.mode})")
+        else:
+            print("ℹ️ Infrastructure Hardening: Redis unavailable, using fallback modes")
+    except Exception as e:
+        print(f"⚠️ Infrastructure Hardening init warning: {str(e)}")
+
+    # Initialize cloud observability (OTel + Sentry)
+    try:
+        from infra.cloud_observability import otel_tracer, sentry_integration
+        await otel_tracer.initialize()
+        await sentry_integration.initialize()
+        print("✅ Cloud observability initialized")
+    except Exception as e:
+        print(f"⚠️ Cloud observability init warning: {str(e)}")
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    # Infrastructure cleanup
+    try:
+        from infra.horizontal_scaling import scaling_manager
+        await scaling_manager.deregister()
+        from infra.ws_redis_adapter import ws_redis_adapter
+        await ws_redis_adapter.close()
+        from infra.redis_cluster import redis_cluster
+        await redis_cluster.close()
+    except Exception as e:
+        print(f"⚠️ Infrastructure shutdown warning: {str(e)}")
+
     worker = getattr(app.state, "outbox_lifecycle_worker", None)
     if worker is not None:
         try:
@@ -41397,6 +41437,14 @@ except Exception as e:
     print(f"Runtime Infrastructure router not available: {e}")
     import traceback; traceback.print_exc()
 
+# Infrastructure Hardening Router (Redis Cluster, Workers, Secrets, Backup, Scaling)
+try:
+    from routers.infra_hardening import router as infra_hardening_router
+    app.include_router(infra_hardening_router, tags=["infrastructure-hardening"])
+    print("Infrastructure Hardening router included")
+except Exception as e:
+    print(f"Infrastructure Hardening router not available: {e}")
+    import traceback; traceback.print_exc()
 
 
 
