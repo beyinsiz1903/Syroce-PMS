@@ -11,11 +11,14 @@ import { Languages } from 'lucide-react';
 const languages = [
   { code: 'en', name: 'English', flag: '\ud83c\uddec\ud83c\udde7' },
   { code: 'tr', name: 'T\u00fcrk\u00e7e', flag: '\ud83c\uddf9\ud83c\uddf7' },
-  { code: 'ar', name: '\u0627\u0644\u0639\u0631\u0628\u064a\u0629', flag: '\ud83c\uddf8\ud83c\udde6' },
-  { code: 'ru', name: '\u0420\u0443\u0441\u0441\u043a\u0438\u0439', flag: '\ud83c\uddf7\ud83c\uddfa' },
-  { code: 'it', name: 'Italiano', flag: '\ud83c\uddee\ud83c\uddf9' },
+  { code: 'de', name: 'Deutsch', flag: '\ud83c\udde9\ud83c\uddea' },
   { code: 'fr', name: 'Fran\u00e7ais', flag: '\ud83c\uddeb\ud83c\uddf7' },
-  { code: 'es', name: 'Espa\u00f1ol', flag: '\ud83c\uddea\ud83c\uddf8' }
+  { code: 'es', name: 'Espa\u00f1ol', flag: '\ud83c\uddea\ud83c\uddf8' },
+  { code: 'it', name: 'Italiano', flag: '\ud83c\uddee\ud83c\uddf9' },
+  { code: 'ru', name: '\u0420\u0443\u0441\u0441\u043a\u0438\u0439', flag: '\ud83c\uddf7\ud83c\uddfa' },
+  { code: 'ar', name: '\u0627\u0644\u0639\u0631\u0628\u064a\u0629', flag: '\ud83c\uddf8\ud83c\udde6' },
+  { code: 'pt', name: 'Portugu\u00eas', flag: '\ud83c\udde7\ud83c\uddf7' },
+  { code: 'zh', name: '\u4e2d\u6587', flag: '\ud83c\udde8\ud83c\uddf3' }
 ];
 
 const LanguageSelector = () => {
