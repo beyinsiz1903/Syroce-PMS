@@ -89,21 +89,52 @@ Enterprise hotel operating system platform requiring production-hardening across
    - Live Events: 2 tests (status, events)
    - WebSocket Broadcasting: 3 tests (room, broadcast functions)
 
+### Phase 3 (Current Session — Completed)
+
+9. **Audit Hook Standardization**:
+   - Created `common/audit_hook.py` with `@audited` decorator
+   - Standardized audit fields: actor_id, actor_role, tenant_id, property_id, service_name, operation_name, target_type, target_id, result_status, severity, before_snapshot, after_snapshot, override_reason, correlation_id, duration_ms
+   - `require_reason` enforcement for critical operations
+   - `capture_before` for mutation before-snapshots
+   - Silent failure on audit DB write errors (never breaks caller)
+   - Applied to PosFnbService, MobileOpsService, RmsService, FrontdeskService
+
+10. **API Response Normalization**:
+    - Created `common/response.py` with `api_response()` and `from_service_result()`
+    - Standard envelope: status, severity, message, data, correlation_id, action_available, suggested_action, last_updated_at
+
+11. **Role-Based Dashboard Polish**:
+    - GMPropertyView: property-level CM status, drift summary, property alerts, view-only panels
+    - AdminTenantView: tenant cross-property, queue/worker, security, audit & observability, action buttons
+    - SuperadminGlobalView: cross-tenant metrics, global subsystem health, runtime metrics, full action access
+    - ScopeBanner component with role-specific icon/color/label
+    - EmptyState component for clean no-data states
+    - DataRow helper for consistent panel rows
+    - Permission-aware CTA buttons (View Only vs actions)
+
+12. **Stress Test Deepening**:
+    - test_pos_fnb_burst.py: POS transaction burst (50), kitchen order contention, stock race, table reservation contention
+    - test_mobile_concurrency.py: 20 concurrent no-shows, 5 room changes, 30 task burst, 20 issue burst
+    - test_dashboard_websocket_storm.py: 200 event storm, 100 metric updates, 100 alert aggregation
+
+13. **Comprehensive Testing**:
+    - test_audit_service_wiring.py: 15 tests for audit hooks, response normalization, service wiring, scope leakage
+    - All 26 new tests pass (15 audit + 11 stress)
+    - Full testing agent validation: 100% backend + frontend success
+
 ## Remaining Backlog
 
-### P0
-- Complete service wiring for pos_fnb, rms, mobile routers
-
 ### P1
-- Role-based dashboard UI polish (conditional rendering by role)
-- Full frontend code splitting for all modules
+- k6/Locust load test scenarios (operational load simulation)
+- Implement real business logic in remaining placeholder service methods
+- Core PMS service business logic (NightAuditService deep logic, etc.)
 
 ### P2
-- Flesh out stress test logic in tests/runtime/ files
-- Flesh out load test logic in load_tests/ files
-- Implement real business logic in all service placeholder methods
-- Service business logic for FrontdeskService, NightAuditService, etc.
-- Audit & observability hooks within service methods
+- Frontend module boundary enforcement (runtime-health/, admin/, frontdesk/, etc.)
+- Additional frontend lazy-loaded modules
+- Network error recovery components
+- Reusable health card library extraction
+- WebSocket hook abstraction for other modules
 
 ## Key Endpoints
 | Endpoint | Method | Description |
