@@ -1,0 +1,148 @@
+{
+  "summary": "Service Wiring Completion & Dashboard Polish Testing - ALL TESTS PASSED. Backend: 15/15 audit_service_wiring tests passed, 11/11 runtime stress tests passed (26 total). All APIs return correct data. Frontend: SystemHealthDashboard fully functional with role-based views (Admin Tenant Scope) and all UI components verified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/push/status",
+        "issue": "Returns 500 error (Push notification service - not related to current testing scope)",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "System Health Dashboard",
+        "issues": ["WebSocket shows 'Polling' - expected behavior since WS connection not established in test env"]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_audit_service_wiring.py",
+    "/app/backend/tests/runtime/test_pos_fnb_burst.py",
+    "/app/backend/tests/runtime/test_mobile_concurrency.py",
+    "/app/backend/tests/runtime/test_dashboard_websocket_storm.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "audit_hook.py: @audited decorator writes audit trails with correct fields (tenant_id, actor_id, operation_name, target_type, severity, duration_ms, timestamp)",
+    "response.py: api_response() and from_service_result() provide normalized response envelope",
+    "PosFnbService: @audited decorators on create_pos_transaction, adjust_stock, complete_kitchen_order, update_kitchen_order_status",
+    "MobileOpsService: @audited decorators on process_no_show, change_room, create_quick_task, create_quick_issue",
+    "RmsService: @audited decorators on create_group_booking, create_corporate_contract, create_ota_promotion, record_inventory_usage",
+    "FrontdeskService: @audited decorators on checkin, checkout, express_checkin, issue_keycard, deactivate_keycard",
+    "SystemHealthDashboard correctly shows role-based views (GMPropertyView, AdminTenantView, SuperadminGlobalView)",
+    "ScopeBanner shows correct role label and scope (Admin - Tenant Scope)",
+    "EmptyState renders for no alerts",
+    "WebSocket status badge shows Polling/Live state"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (26/26 tests passed: 15 audit_service_wiring + 11 runtime stress)",
+    "frontend": "100% (all dashboard elements verified)"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123",
+    "auth_field": "access_token",
+    "localStorage_key": "token"
+  },
+  "seed_data_creation": "No new seed data - using existing demo data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Service wiring completed. All services (PosFnbService, MobileOpsService, RmsService, FrontdeskService) have @audited decorators on mutating methods. Runtime stress tests verify concurrent operations on POS transactions, kitchen orders, stock, mobile ops, and WebSocket events. Frontend role-based dashboard shows Admin Tenant View with all components working.",
+  "passed_tests": {
+    "backend_audit_hook": [
+      "test_audited_decorator_exists - decorator callable",
+      "test_audited_writes_audit_entry - writes to audit_logs with correct fields",
+      "test_audited_records_failure - records failure status and error_code",
+      "test_audited_require_reason_blocks_without_reason - blocks critical ops without reason",
+      "test_audited_require_reason_passes_with_reason - passes with reason and stores override_reason",
+      "test_audited_does_not_break_on_db_write_failure - audit failure doesn't break service method"
+    ],
+    "backend_api_response": [
+      "test_api_response_basic - returns status, data, message, last_updated_at",
+      "test_api_response_defaults - defaults to ok status, info severity",
+      "test_from_service_result_success - converts ServiceResult.success correctly",
+      "test_from_service_result_failure - converts ServiceResult.fail correctly"
+    ],
+    "backend_service_wiring": [
+      "test_pos_fnb_service_has_audit_hooks - PosFnbService has audited methods",
+      "test_mobile_ops_service_has_audit_hooks - MobileOpsService has audited methods",
+      "test_rms_service_has_audit_hooks - RmsService has audited methods",
+      "test_frontdesk_service_has_audit_hooks - FrontdeskService has audited methods"
+    ],
+    "backend_scope_leakage": [
+      "test_audit_entry_contains_tenant_id - verifies tenant isolation in audit entries"
+    ],
+    "backend_pos_fnb_burst": [
+      "test_pos_transaction_burst - 50 concurrent POS transactions",
+      "test_kitchen_order_concurrent_status_updates - concurrent status updates",
+      "test_stock_adjustment_race - stock race condition handling",
+      "test_table_reservation_contention - table reservation contention"
+    ],
+    "backend_mobile_concurrency": [
+      "test_concurrent_no_show_processing - 20 concurrent no-shows",
+      "test_concurrent_room_changes - 5 concurrent room changes",
+      "test_quick_task_burst - 30 concurrent housekeeping tasks",
+      "test_concurrent_quick_issues - 20 concurrent maintenance issues"
+    ],
+    "backend_websocket_storm": [
+      "test_websocket_event_storm - 200 concurrent health events",
+      "test_concurrent_metric_updates - 100 concurrent metric updates",
+      "test_alert_aggregation_under_load - 100 concurrent alerts"
+    ],
+    "frontend_system_health": [
+      "data-testid='system-health-dashboard' found",
+      "ScopeBanner shows 'Admin - Tenant Scope(tenant)'",
+      "WebSocket status badge shows 'Polling'",
+      "Normalized overview bar found",
+      "Refresh button found",
+      "EmptyState component found (no alerts)",
+      "AdminTenantView found - Admin role confirmed",
+      "Metric cards: admin-metric-cm, admin-metric-queue, admin-metric-alerts, admin-metric-stuck",
+      "Panels: admin-panel-cm, admin-panel-queue, admin-panel-security, admin-panel-alerts",
+      "9 status badges found",
+      "1 severity chip found"
+    ]
+  },
+  "verified_api_responses": {
+    "normalized_overview": {
+      "endpoint": "GET /api/system-health/normalized/overview",
+      "status": 200,
+      "verified_fields": ["overall_status", "overall_severity", "live_capable", "data_freshness", "subsystems"],
+      "subsystems": ["channel_manager", "workers", "security", "observability", "alerts"]
+    },
+    "role_dashboard": {
+      "endpoint": "GET /api/system-health/role-dashboard",
+      "status": 200,
+      "verified_fields": ["role", "tenant_id", "scope", "panels"],
+      "role": "admin",
+      "panels": ["queue_health", "security", "workers", "drift_summary", "sync_summary", "night_audit"]
+    },
+    "audit_metrics": {
+      "endpoint": "GET /api/system-health/audit/metrics",
+      "status": 200,
+      "verified_fields": ["period_hours", "drift", "reconciliation", "queue", "security", "dead_letter"]
+    },
+    "channel_manager_runtime": {
+      "endpoint": "GET /api/channel-manager/runtime/status",
+      "status": 200,
+      "verified_fields": ["tenant_id", "health", "severity", "providers", "sync_stats", "drift", "reconciliation"]
+    },
+    "workers_queues_health": {
+      "endpoint": "GET /api/workers/queues/health",
+      "status": 200,
+      "verified_fields": ["health", "severity", "per_queue", "dead_letter", "worker_heartbeat", "recommendations"]
+    },
+    "security_audit_status": {
+      "endpoint": "GET /api/security/audit/status",
+      "status": 200,
+      "verified_fields": ["completeness", "summary", "completeness_score", "severity", "gaps_found"]
+    }
+  },
+  "mocked_apis_note": "No APIs are mocked. All services query real MongoDB database."
+}

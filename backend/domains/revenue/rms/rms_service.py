@@ -10,6 +10,7 @@ import logging
 
 from common.context import OperationContext
 from common.result import ServiceResult
+from common.audit_hook import audited, SEVERITY_INFO, SEVERITY_WARNING
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ class RmsService:
         from core.database import db
         self._db = db
 
+    @audited("rms.create_group_booking", "group_booking", severity=SEVERITY_INFO)
     async def create_group_booking(self, ctx: OperationContext, data: dict) -> ServiceResult:
         group = {
             "id": str(uuid.uuid4()),
@@ -41,6 +43,7 @@ class RmsService:
         groups = await self._db.group_bookings.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
         return ServiceResult.success({"groups": groups, "count": len(groups)})
 
+    @audited("rms.create_corporate_contract", "corporate_contract", severity=SEVERITY_INFO)
     async def create_corporate_contract(self, ctx: OperationContext, data: dict) -> ServiceResult:
         contract = {
             "id": str(uuid.uuid4()),
@@ -61,6 +64,7 @@ class RmsService:
         contracts = await self._db.corporate_contracts.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
         return ServiceResult.success({"contracts": contracts, "count": len(contracts)})
 
+    @audited("rms.create_ota_promotion", "ota_promotion", severity=SEVERITY_INFO)
     async def create_ota_promotion(self, ctx: OperationContext, data: dict) -> ServiceResult:
         promo = {
             "id": str(uuid.uuid4()),
@@ -93,6 +97,7 @@ class RmsService:
         item.pop("_id", None)
         return ServiceResult.success(item)
 
+    @audited("rms.record_inventory_usage", "inventory", severity=SEVERITY_WARNING, capture_before=True)
     async def record_inventory_usage(self, ctx: OperationContext, data: dict) -> ServiceResult:
         item = await self._db.inventory.find_one({"id": data["item_id"], "tenant_id": ctx.tenant_id})
         if not item:

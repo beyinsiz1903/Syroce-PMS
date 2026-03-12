@@ -11,6 +11,7 @@ import logging
 from common.context import OperationContext
 from common.result import ServiceResult
 from common.errors import NotFoundError, ValidationError
+from common.audit_hook import audited, SEVERITY_INFO, SEVERITY_WARNING, SEVERITY_CRITICAL
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,7 @@ class FrontdeskService:
     # ------------------------------------------------------------------
     # Check-in
     # ------------------------------------------------------------------
+    @audited("frontdesk.checkin", "booking", severity=SEVERITY_INFO, capture_before=True)
     async def checkin(self, ctx: OperationContext, booking_id: str, create_folio: bool = True) -> ServiceResult:
         booking = await self._db.bookings.find_one({"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not booking:
@@ -115,6 +117,7 @@ class FrontdeskService:
     # ------------------------------------------------------------------
     # Check-out
     # ------------------------------------------------------------------
+    @audited("frontdesk.checkout", "booking", severity=SEVERITY_INFO, capture_before=True)
     async def checkout(
         self, ctx: OperationContext, booking_id: str,
         force: bool = False, auto_close_folios: bool = True,
@@ -187,6 +190,7 @@ class FrontdeskService:
     # ------------------------------------------------------------------
     # Express / Kiosk Check-in
     # ------------------------------------------------------------------
+    @audited("frontdesk.express_checkin", "booking", severity=SEVERITY_INFO)
     async def express_checkin(self, ctx: OperationContext, qr_code: str) -> ServiceResult:
         booking = await self._db.bookings.find_one(
             {"express_checkin_code": qr_code, "tenant_id": ctx.tenant_id}, {"_id": 0},
@@ -406,6 +410,7 @@ class FrontdeskService:
     # ------------------------------------------------------------------
     # Keycard
     # ------------------------------------------------------------------
+    @audited("frontdesk.issue_keycard", "keycard", severity=SEVERITY_INFO)
     async def issue_keycard(self, ctx: OperationContext, booking_id: str, card_type: str = "physical", validity_hours: int = 72) -> ServiceResult:
         booking = await self._db.bookings.find_one({"id": booking_id, "tenant_id": ctx.tenant_id})
         if not booking:
@@ -454,6 +459,7 @@ class FrontdeskService:
             "validity_hours": validity_hours,
         })
 
+    @audited("frontdesk.deactivate_keycard", "keycard", severity=SEVERITY_WARNING)
     async def deactivate_keycard(self, ctx: OperationContext, keycard_id: str, reason: str = "checkout") -> ServiceResult:
         keycard = await self._db.keycards.find_one({"id": keycard_id, "tenant_id": ctx.tenant_id})
         if not keycard:

@@ -10,6 +10,7 @@ import logging
 
 from common.context import OperationContext
 from common.result import ServiceResult
+from common.audit_hook import audited, SEVERITY_INFO, SEVERITY_WARNING, SEVERITY_CRITICAL
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ class MobileOpsService:
         from core.database import db
         self._db = db
 
+    @audited("mobile.process_no_show", "booking", severity=SEVERITY_WARNING, capture_before=True)
     async def process_no_show(self, ctx: OperationContext, booking_id: str) -> ServiceResult:
         booking = await self._db.bookings.find_one({"id": booking_id, "tenant_id": ctx.tenant_id})
         if not booking:
@@ -36,6 +38,7 @@ class MobileOpsService:
             )
         return ServiceResult.success({"message": "Booking marked as no-show", "booking_id": booking_id})
 
+    @audited("mobile.change_room", "booking", severity=SEVERITY_WARNING, capture_before=True)
     async def change_room(self, ctx: OperationContext, booking_id: str, new_room_id: str, reason: Optional[str] = None) -> ServiceResult:
         booking = await self._db.bookings.find_one({"id": booking_id, "tenant_id": ctx.tenant_id})
         if not booking:
@@ -60,6 +63,7 @@ class MobileOpsService:
             "reason": reason,
         })
 
+    @audited("mobile.create_quick_task", "housekeeping_task", severity=SEVERITY_INFO)
     async def create_quick_task(self, ctx: OperationContext, data: dict) -> ServiceResult:
         task = {
             "id": str(uuid.uuid4()),
@@ -76,6 +80,7 @@ class MobileOpsService:
         await self._db.housekeeping_tasks.insert_one(task)
         return ServiceResult.success(task)
 
+    @audited("mobile.create_quick_issue", "maintenance_task", severity=SEVERITY_INFO)
     async def create_quick_issue(self, ctx: OperationContext, data: dict) -> ServiceResult:
         issue = {
             "id": str(uuid.uuid4()),

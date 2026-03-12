@@ -8,12 +8,12 @@ import { Button } from "../components/ui/button";
 import {
   Activity, Shield, Server, AlertTriangle, RefreshCw, CheckCircle2,
   XCircle, Clock, Wifi, WifiOff, Lock, Eye, ArrowLeft, Loader2,
-  Database, Radio, Zap, TrendingUp
+  Database, Radio, Zap, TrendingUp, Users, Building2, Layers
 } from "lucide-react";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
-/* ── Tiny Components ─────────────────────────────────────── */
+/* ── Tiny Reusable Components ─────────────────────────── */
 
 function StatusBadge({ status }) {
   const map = {
@@ -56,9 +56,9 @@ function MetricCard({ icon: Icon, title, value, sub, testId }) {
   );
 }
 
-function PanelCard({ title, icon: Icon, children, status, onAction, actionLabel, actionLoading, testId }) {
+function PanelCard({ title, icon: Icon, children, status, onAction, actionLabel, actionLoading, testId, permissionGated }) {
   return (
-    <Card className="bg-zinc-950 border-zinc-800/70 shadow-lg">
+    <Card data-testid={testId} className="bg-zinc-950 border-zinc-800/70 shadow-lg">
       <CardHeader className="pb-3 flex flex-row items-center justify-between">
         <div className="flex items-center gap-2">
           <Icon className="w-4 h-4 text-zinc-400" />
@@ -66,8 +66,8 @@ function PanelCard({ title, icon: Icon, children, status, onAction, actionLabel,
         </div>
         <div className="flex items-center gap-2">
           {status && <StatusBadge status={status} />}
-          {onAction && (
-            <Button data-testid={testId || `action-${title.toLowerCase().replace(/\s+/g, "-")}`}
+          {onAction && !permissionGated && (
+            <Button data-testid={`${testId}-action` || `action-${title.toLowerCase().replace(/\s+/g, "-")}`}
               size="sm" variant="outline"
               className="h-7 text-xs border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
               onClick={onAction} disabled={actionLoading}>
@@ -75,10 +75,363 @@ function PanelCard({ title, icon: Icon, children, status, onAction, actionLabel,
               {actionLabel || "Scan"}
             </Button>
           )}
+          {permissionGated && (
+            <span className="text-[10px] text-zinc-600 flex items-center gap-1"><Lock className="w-3 h-3" /> View Only</span>
+          )}
         </div>
       </CardHeader>
       <CardContent className="pt-0">{children}</CardContent>
     </Card>
+  );
+}
+
+function EmptyState({ icon: Icon, message }) {
+  return (
+    <div data-testid="empty-state" className="flex flex-col items-center justify-center py-6 text-zinc-600">
+      <Icon className="w-6 h-6 mb-2 opacity-50" />
+      <span className="text-xs">{message}</span>
+    </div>
+  );
+}
+
+function ScopeBanner({ role, scope }) {
+  const roleConfig = {
+    superadmin: { icon: Layers, color: "text-violet-400", bg: "bg-violet-500/8 border-violet-500/20", label: "Superadmin - Global" },
+    admin: { icon: Building2, color: "text-sky-400", bg: "bg-sky-500/8 border-sky-500/20", label: "Admin - Tenant Scope" },
+    gm: { icon: Users, color: "text-amber-400", bg: "bg-amber-500/8 border-amber-500/20", label: "GM - Property Scope" },
+  };
+  const cfg = roleConfig[role] || roleConfig.admin;
+  const RIcon = cfg.icon;
+  return (
+    <div data-testid="scope-banner" className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium border ${cfg.bg}`}>
+      <RIcon className={`w-3 h-3 ${cfg.color}`} />
+      <span className={cfg.color}>{cfg.label}</span>
+      {scope && <span className="text-zinc-500 ml-1">({scope})</span>}
+    </div>
+  );
+}
+
+/* ── Row Helper ─────────────────────────────────────────── */
+function DataRow({ label, value, valueClass }) {
+  return (
+    <div className="flex justify-between text-zinc-400">
+      <span>{label}</span>
+      <span className={valueClass || "text-zinc-200"}>{value}</span>
+    </div>
+  );
+}
+
+/* ── GM Property Panel ──────────────────────────────────── */
+function GMPropertyView({ cmStatus, alerts, normalizedOverview }) {
+  const alertCount = alerts?.count || 0;
+  const criticalAlerts = alerts?.critical || 0;
+  const driftActive = cmStatus?.drift?.active_drifts || 0;
+
+  return (
+    <div data-testid="gm-property-view" className="space-y-4">
+      {/* Property Status Summary */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <MetricCard testId="gm-metric-cm" icon={Wifi} title="Channel Sync" value={cmStatus?.health || "N/A"} sub={`${cmStatus?.active_connections || 0} active`} />
+        <MetricCard testId="gm-metric-drift" icon={AlertTriangle} title="Drift Issues" value={driftActive} sub={driftActive > 0 ? "Needs review" : "In sync"} />
+        <MetricCard testId="gm-metric-alerts" icon={AlertTriangle} title="Alerts" value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} critical` : "Clear"} />
+        <MetricCard testId="gm-metric-recon" icon={CheckCircle2} title="Reconciliation" value={cmStatus?.reconciliation?.status || "OK"} sub={cmStatus?.reconciliation?.unresolved_issues > 0 ? `${cmStatus.reconciliation.unresolved_issues} issues` : "Resolved"} />
+      </div>
+
+      {/* CM Property Details */}
+      <PanelCard testId="gm-panel-cm" title="Channel Manager (Property)" icon={Wifi} status={cmStatus?.health} permissionGated>
+        <div className="space-y-2 text-xs">
+          <DataRow label="Sync Status" value={cmStatus?.sync_stats?.last_sync ? "Active" : "Idle"} />
+          <DataRow label="Sync Success Rate" value={`${cmStatus?.sync_stats?.success_rate ?? 100}%`} />
+          <DataRow label="Drift Issues" value={driftActive} valueClass={driftActive > 0 ? "text-amber-400" : "text-zinc-200"} />
+          <DataRow label="Providers" value={`${cmStatus?.providers?.healthy || 0} / ${cmStatus?.providers?.total || 0}`} />
+        </div>
+      </PanelCard>
+
+      {/* Property Alerts */}
+      <PanelCard testId="gm-panel-alerts" title="Property Alerts" icon={AlertTriangle}
+        status={criticalAlerts > 0 ? "critical" : alertCount > 0 ? "degraded" : "healthy"}>
+        {alerts?.alerts?.length > 0 ? (
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {alerts.alerts.map((a, i) => (
+              <div key={i} className="flex items-start gap-2 p-2 rounded bg-zinc-900/50 border border-zinc-800/50">
+                <SeverityChip severity={a.severity} />
+                <div className="min-w-0">
+                  <p className="text-xs text-zinc-300 truncate">{a.message || a.type}</p>
+                  {a.metric && <p className="text-[11px] text-zinc-500">{a.metric}: {a.value}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={CheckCircle2} message="No active property alerts" />
+        )}
+      </PanelCard>
+    </div>
+  );
+}
+
+/* ── Admin Tenant Panel ─────────────────────────────────── */
+function AdminTenantView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGuard, logSanit, alerts, stuckTasks, auditMetrics, triggerDriftScan, driftScanLoading, triggerRecon, reconLoading }) {
+  const alertCount = alerts?.count || 0;
+  const criticalAlerts = alerts?.critical || 0;
+
+  return (
+    <div data-testid="admin-tenant-view" className="space-y-4">
+      {/* Top Metrics */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <MetricCard testId="admin-metric-cm" icon={Wifi} title="Channel Manager" value={cmStatus?.health || "N/A"} sub={`${cmStatus?.active_connections || 0} connections`} />
+        <MetricCard testId="admin-metric-queue" icon={Database} title="Queue Health" value={queueHealth?.health || "N/A"} sub={`${queueHealth?.pending || 0} pending`} />
+        <MetricCard testId="admin-metric-alerts" icon={AlertTriangle} title="Active Alerts" value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} critical` : "All clear"} />
+        <MetricCard testId="admin-metric-stuck" icon={Clock} title="Stuck Tasks" value={stuckTasks?.count || 0} sub={stuckTasks?.count > 0 ? "Action needed" : "None"} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* CM Panel with actions */}
+        <PanelCard testId="admin-panel-cm" title="Channel Manager" icon={Wifi} status={cmStatus?.health}
+          onAction={triggerDriftScan} actionLabel="Drift Scan" actionLoading={driftScanLoading}>
+          <div className="space-y-2 text-xs">
+            <DataRow label="Sync Status" value={cmStatus?.sync_stats?.last_sync ? "Active" : "Idle"} />
+            <DataRow label="Drift Issues" value={cmStatus?.drift?.active_drifts || 0} />
+            <DataRow label="Sync Success Rate" value={`${cmStatus?.sync_stats?.success_rate ?? 100}%`} />
+            <div className="flex justify-between text-zinc-400">
+              <span>Reconciliation</span>
+              <StatusBadge status={cmStatus?.reconciliation?.status || "ok"} />
+            </div>
+            <DataRow label="Providers" value={`${cmStatus?.providers?.healthy || 0} / ${cmStatus?.providers?.total || 0}`} />
+            {cmStatus?.sync_stats?.sync_lag_seconds != null && (
+              <DataRow label="Sync Lag" value={`${Math.round(cmStatus.sync_stats.sync_lag_seconds / 60)}m`} />
+            )}
+            <Button data-testid="admin-run-recon-btn" size="sm" variant="outline" onClick={triggerRecon} disabled={reconLoading}
+              className="w-full mt-2 h-7 text-xs border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-300">
+              {reconLoading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+              Run Reconciliation
+            </Button>
+          </div>
+        </PanelCard>
+
+        {/* Queue & Workers */}
+        <PanelCard testId="admin-panel-queue" title="Queue & Workers" icon={Server} status={queueHealth?.health}>
+          <div className="space-y-2 text-xs">
+            <DataRow label="Pending Tasks" value={queueHealth?.pending || 0} />
+            <DataRow label="Processing" value={queueHealth?.processing || 0} />
+            <DataRow label="Failed" value={queueHealth?.failed || 0} valueClass={(queueHealth?.failed || 0) > 0 ? "text-red-400" : "text-zinc-200"} />
+            <DataRow label="Saturation" value={`${queueHealth?.saturation_pct ?? 0}%`} />
+            <DataRow label="Stuck Tasks" value={stuckTasks?.count || 0} valueClass={(stuckTasks?.count || 0) > 0 ? "text-amber-400" : "text-zinc-200"} />
+            <DataRow label="Dead Letter" value={queueHealth?.dead_letter?.total || 0} />
+            <div className="flex justify-between text-zinc-400">
+              <span>Workers</span>
+              <StatusBadge status={queueHealth?.worker_heartbeat?.responding ? "active" : "critical"} />
+            </div>
+          </div>
+        </PanelCard>
+
+        {/* Security */}
+        <PanelCard testId="admin-panel-security" title="Security Runtime" icon={Shield}
+          status={secAudit?.severity === "critical" ? "critical" : (secAudit?.severity === "warning" ? "degraded" : "active")}>
+          <div className="space-y-2 text-xs">
+            <DataRow label="Audit Score" value={`${secAudit?.completeness_score ?? "N/A"}%`} />
+            <DataRow label="Audit Gaps" value={secAudit?.gaps_found || 0} valueClass={(secAudit?.gaps_found || 0) > 0 ? "text-amber-400" : "text-zinc-200"} />
+            <div className="flex justify-between text-zinc-400"><span>Rate Limiting</span><StatusBadge status={rateLimit?.enforcement || "active"} /></div>
+            {rateLimit?.burst_detected && <DataRow label="Burst Detected" value="Yes" valueClass="text-red-400" />}
+            <div className="flex justify-between text-zinc-400"><span>Tenant Guard</span><StatusBadge status={tenantGuard?.enforcement || "active"} /></div>
+            <DataRow label="Violations" value={tenantGuard?.total_violations || 0} valueClass={(tenantGuard?.total_violations || 0) > 0 ? "text-red-400" : "text-zinc-200"} />
+            <DataRow label="Log Sanitization" value={logSanit?.all_patterns_working ? "All OK" : "Issues"} />
+          </div>
+        </PanelCard>
+
+        {/* Alerts */}
+        <PanelCard testId="admin-panel-alerts" title="Runtime Alerts" icon={AlertTriangle}
+          status={criticalAlerts > 0 ? "critical" : alertCount > 0 ? "degraded" : "healthy"}>
+          {alerts?.alerts?.length > 0 ? (
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {alerts.alerts.map((a, i) => (
+                <div key={i} className="flex items-start gap-2 p-2 rounded bg-zinc-900/50 border border-zinc-800/50">
+                  <SeverityChip severity={a.severity} />
+                  <div className="min-w-0">
+                    <p className="text-xs text-zinc-300 truncate">{a.message || a.type}</p>
+                    {a.metric && <p className="text-[11px] text-zinc-500">{a.metric}: {a.value}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState icon={CheckCircle2} message="No active alerts" />
+          )}
+        </PanelCard>
+      </div>
+
+      {/* Audit & Observability */}
+      {auditMetrics && (
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-300 mb-3 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4" /> Audit & Observability
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <MetricCard testId="admin-metric-drift" icon={Eye} title="Drift Scans" value={auditMetrics.drift?.scans_count ?? 0} sub={`${auditMetrics.drift?.total_drifts ?? 0} drifts`} />
+            <MetricCard testId="admin-metric-recon" icon={CheckCircle2} title="Recon Success" value={`${auditMetrics.reconciliation?.success_rate ?? 100}%`} sub={`${auditMetrics.reconciliation?.total_runs ?? 0} runs`} />
+            <MetricCard testId="admin-metric-backlog" icon={Database} title="Queue Backlog" value={auditMetrics.queue?.current_pending ?? 0} sub={`${auditMetrics.queue?.current_stuck ?? 0} stuck`} />
+            <MetricCard testId="admin-metric-violations" icon={Shield} title="Violations" value={auditMetrics.security?.violations_period ?? 0} sub="24h period" />
+            <MetricCard testId="admin-metric-dl" icon={XCircle} title="Dead Letter" value={auditMetrics.dead_letter?.total ?? 0} sub={`+${auditMetrics.dead_letter?.new_in_period ?? 0} new`} />
+            <MetricCard testId="admin-metric-total-alerts" icon={AlertTriangle} title="Total Alerts" value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} critical` : "Clear"} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Superadmin Global Panel ────────────────────────────── */
+function SuperadminGlobalView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGuard, logSanit, alerts, stuckTasks, metrics, auditMetrics, normalizedOverview, triggerDriftScan, driftScanLoading, triggerRecon, reconLoading }) {
+  const alertCount = alerts?.count || 0;
+  const criticalAlerts = alerts?.critical || 0;
+
+  return (
+    <div data-testid="superadmin-global-view" className="space-y-4">
+      {/* Top Metrics - expanded for superadmin */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        <MetricCard testId="sa-metric-cm" icon={Wifi} title="Channel Manager" value={cmStatus?.health || "N/A"} sub={`${cmStatus?.active_connections || 0} conn`} />
+        <MetricCard testId="sa-metric-queue" icon={Database} title="Queue Health" value={queueHealth?.health || "N/A"} sub={`${queueHealth?.pending || 0} pending`} />
+        <MetricCard testId="sa-metric-alerts" icon={AlertTriangle} title="Alerts" value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} critical` : "Clear"} />
+        <MetricCard testId="sa-metric-violations" icon={Shield} title="Guard Violations" value={tenantGuard?.total_violations || 0} sub="Cross-tenant" />
+        <MetricCard testId="sa-metric-stuck" icon={Clock} title="Stuck / DL" value={`${stuckTasks?.count || 0} / ${queueHealth?.dead_letter?.total || 0}`} sub="Stuck / Dead Letter" />
+      </div>
+
+      {/* Critical Alert Banner */}
+      {criticalAlerts > 0 && (
+        <div data-testid="sa-critical-banner" className="p-3 rounded-lg bg-red-950/40 border border-red-800/50 flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-red-300">{criticalAlerts} critical alert{criticalAlerts > 1 ? "s" : ""} — global scope</p>
+            <p className="text-xs text-red-400/70 mt-0.5">Immediate cross-tenant intervention required</p>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* CM with full actions */}
+        <PanelCard testId="sa-panel-cm" title="Channel Manager (Global)" icon={Wifi} status={cmStatus?.health}
+          onAction={triggerDriftScan} actionLabel="Drift Scan" actionLoading={driftScanLoading}>
+          <div className="space-y-2 text-xs">
+            <DataRow label="Sync Status" value={cmStatus?.sync_stats?.last_sync ? "Active" : "Idle"} />
+            <DataRow label="Drift Issues" value={cmStatus?.drift?.active_drifts || 0} />
+            <DataRow label="Sync Success Rate" value={`${cmStatus?.sync_stats?.success_rate ?? 100}%`} />
+            <div className="flex justify-between text-zinc-400"><span>Reconciliation</span><StatusBadge status={cmStatus?.reconciliation?.status || "ok"} /></div>
+            <DataRow label="Providers" value={`${cmStatus?.providers?.healthy || 0} / ${cmStatus?.providers?.total || 0}`} />
+            {cmStatus?.sync_stats?.sync_lag_seconds != null && <DataRow label="Sync Lag" value={`${Math.round(cmStatus.sync_stats.sync_lag_seconds / 60)}m`} />}
+            <Button data-testid="sa-run-recon-btn" size="sm" variant="outline" onClick={triggerRecon} disabled={reconLoading}
+              className="w-full mt-2 h-7 text-xs border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-300">
+              {reconLoading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+              Run Reconciliation
+            </Button>
+          </div>
+        </PanelCard>
+
+        {/* Queue & Workers */}
+        <PanelCard testId="sa-panel-queue" title="Queue & Workers (Global)" icon={Server} status={queueHealth?.health}>
+          <div className="space-y-2 text-xs">
+            <DataRow label="Pending Tasks" value={queueHealth?.pending || 0} />
+            <DataRow label="Processing" value={queueHealth?.processing || 0} />
+            <DataRow label="Failed" value={queueHealth?.failed || 0} valueClass={(queueHealth?.failed || 0) > 0 ? "text-red-400" : "text-zinc-200"} />
+            <DataRow label="Saturation" value={`${queueHealth?.saturation_pct ?? 0}%`} />
+            <DataRow label="Stuck Tasks" value={stuckTasks?.count || 0} valueClass={(stuckTasks?.count || 0) > 0 ? "text-amber-400" : "text-zinc-200"} />
+            <DataRow label="Dead Letter" value={queueHealth?.dead_letter?.total || 0} />
+            <div className="flex justify-between text-zinc-400">
+              <span>Workers</span>
+              <StatusBadge status={queueHealth?.worker_heartbeat?.responding ? "active" : "critical"} />
+            </div>
+          </div>
+        </PanelCard>
+
+        {/* Security - expanded */}
+        <PanelCard testId="sa-panel-security" title="Security Posture (Global)" icon={Shield}
+          status={secAudit?.severity === "critical" ? "critical" : (secAudit?.severity === "warning" ? "degraded" : "active")}>
+          <div className="space-y-2 text-xs">
+            <DataRow label="Audit Score" value={`${secAudit?.completeness_score ?? "N/A"}%`} />
+            <DataRow label="Audit Gaps" value={secAudit?.gaps_found || 0} valueClass={(secAudit?.gaps_found || 0) > 0 ? "text-amber-400" : "text-zinc-200"} />
+            <div className="flex justify-between text-zinc-400"><span>Rate Limiting</span><StatusBadge status={rateLimit?.enforcement || "active"} /></div>
+            {rateLimit?.burst_detected && <DataRow label="Burst Detected" value="Yes" valueClass="text-red-400" />}
+            <div className="flex justify-between text-zinc-400"><span>Tenant Guard</span><StatusBadge status={tenantGuard?.enforcement || "active"} /></div>
+            <DataRow label="Cross-Tenant Violations" value={tenantGuard?.total_violations || 0} valueClass={(tenantGuard?.total_violations || 0) > 0 ? "text-red-400" : "text-zinc-200"} />
+            <DataRow label="Log Sanitization" value={logSanit?.all_patterns_working ? "All OK" : "Issues"} />
+          </div>
+        </PanelCard>
+
+        {/* Alerts */}
+        <PanelCard testId="sa-panel-alerts" title="Global Alerts" icon={AlertTriangle}
+          status={criticalAlerts > 0 ? "critical" : alertCount > 0 ? "degraded" : "healthy"}>
+          {alerts?.alerts?.length > 0 ? (
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {alerts.alerts.map((a, i) => (
+                <div key={i} className="flex items-start gap-2 p-2 rounded bg-zinc-900/50 border border-zinc-800/50">
+                  <SeverityChip severity={a.severity} />
+                  <div className="min-w-0">
+                    <p className="text-xs text-zinc-300 truncate">{a.message || a.type}</p>
+                    {a.metric && <p className="text-[11px] text-zinc-500">{a.metric}: {a.value}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState icon={CheckCircle2} message="No active alerts globally" />
+          )}
+        </PanelCard>
+      </div>
+
+      {/* Audit & Observability */}
+      {auditMetrics && (
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-300 mb-3 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4" /> Audit & Observability (Global)
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <MetricCard testId="sa-audit-drift" icon={Eye} title="Drift Scans" value={auditMetrics.drift?.scans_count ?? 0} sub={`${auditMetrics.drift?.total_drifts ?? 0} drifts`} />
+            <MetricCard testId="sa-audit-recon" icon={CheckCircle2} title="Recon Success" value={`${auditMetrics.reconciliation?.success_rate ?? 100}%`} sub={`${auditMetrics.reconciliation?.total_runs ?? 0} runs`} />
+            <MetricCard testId="sa-audit-backlog" icon={Database} title="Queue Backlog" value={auditMetrics.queue?.current_pending ?? 0} sub={`${auditMetrics.queue?.current_stuck ?? 0} stuck`} />
+            <MetricCard testId="sa-audit-violations" icon={Shield} title="Violations" value={auditMetrics.security?.violations_period ?? 0} sub="24h period" />
+            <MetricCard testId="sa-audit-dl" icon={XCircle} title="Dead Letter" value={auditMetrics.dead_letter?.total ?? 0} sub={`+${auditMetrics.dead_letter?.new_in_period ?? 0} new`} />
+            <MetricCard testId="sa-audit-total" icon={AlertTriangle} title="Total Alerts" value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} critical` : "Clear"} />
+          </div>
+        </div>
+      )}
+
+      {/* Runtime Metrics */}
+      {metrics && (
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-300 mb-3">Runtime Metrics (Global)</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+            {metrics.sync && <MetricCard testId="sa-rt-sync" icon={Clock} title="Sync Lag" value={`${metrics.sync.lag_seconds ?? 0}s`} />}
+            {metrics.drift && <MetricCard testId="sa-rt-drift" icon={AlertTriangle} title="Active Drifts" value={metrics.drift.active_count ?? 0} />}
+            {metrics.reconciliation && <MetricCard testId="sa-rt-recon" icon={CheckCircle2} title="Recon Rate" value={`${metrics.reconciliation.success_rate ?? 100}%`} />}
+            {metrics.queue && <MetricCard testId="sa-rt-queue" icon={Database} title="Queue" value={metrics.queue.backlog ?? 0} />}
+            {metrics.security && <MetricCard testId="sa-rt-sec" icon={Shield} title="Violations" value={metrics.security.violations ?? 0} />}
+          </div>
+        </div>
+      )}
+
+      {/* Subsystem Health */}
+      {normalizedOverview?.subsystems && (
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-300 mb-3">Subsystem Health (Global)</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+            {Object.entries(normalizedOverview.subsystems).map(([key, sub]) => (
+              <div key={key} data-testid={`normalized-${key}`} className="p-3 rounded-lg bg-zinc-900/60 border border-zinc-800">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-zinc-300 capitalize">{key.replace(/_/g, " ")}</span>
+                  <StatusBadge status={sub.status} />
+                </div>
+                <div className="text-[11px] text-zinc-500 space-y-1">
+                  <SeverityChip severity={sub.severity} />
+                  {sub.evidence_summary && <p className="mt-1 text-zinc-400">{sub.evidence_summary}</p>}
+                  {sub.degraded_reason && <p className="text-amber-400/80">{sub.degraded_reason}</p>}
+                  {sub.suggested_action && <p className="text-sky-400/70">{sub.suggested_action}</p>}
+                  <p className="text-zinc-600">Updated: {sub.last_updated_at ? new Date(sub.last_updated_at).toLocaleTimeString() : "N/A"}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -112,7 +465,6 @@ export default function SystemHealthDashboard({ user }) {
   /* ── WebSocket Connection ────────────────────────────── */
   useEffect(() => {
     if (!API) return;
-    const wsUrl = API.replace(/^http/, "ws").replace(/\/api$/, "");
     const baseUrl = API.replace(/\/api$/, "");
 
     const socket = io(baseUrl, {
@@ -124,32 +476,20 @@ export default function SystemHealthDashboard({ user }) {
       reconnectionDelayMax: 30000,
       timeout: 10000,
     });
-
     socketRef.current = socket;
 
     socket.on("connect", () => {
       setWsConnected(true);
       socket.emit("join_room", { room: "system-health" });
     });
+    socket.on("disconnect", () => setWsConnected(false));
+    socket.on("connect_error", () => setWsConnected(false));
 
-    socket.on("disconnect", () => {
-      setWsConnected(false);
-    });
-
-    socket.on("connect_error", () => {
-      setWsConnected(false);
-    });
-
-    // Live system health events
     socket.on("system_health_event", (data) => {
       setLiveEvents((prev) => [data, ...prev].slice(0, 20));
-      // Auto-refresh on critical events
-      if (data?.severity === "critical") {
-        fetchAll();
-      }
+      if (data?.severity === "critical") fetchAll();
     });
 
-    // Incremental metric updates
     socket.on("health_metric_update", (data) => {
       if (!data) return;
       const { metric_type, data: metricData } = data;
@@ -159,9 +499,7 @@ export default function SystemHealthDashboard({ user }) {
     });
 
     socket.on("room_joined", (data) => {
-      if (data?.room === "system-health") {
-        setWsConnected(true);
-      }
+      if (data?.room === "system-health") setWsConnected(true);
     });
 
     return () => {
@@ -171,21 +509,16 @@ export default function SystemHealthDashboard({ user }) {
     };
   }, []);
 
-  // Fallback polling when WebSocket is disconnected
   useEffect(() => {
     if (!wsConnected) {
-      reconnectTimerRef.current = setInterval(() => {
-        fetchAll();
-      }, 30000);
+      reconnectTimerRef.current = setInterval(() => fetchAll(), 30000);
     } else {
       if (reconnectTimerRef.current) {
         clearInterval(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
       }
     }
-    return () => {
-      if (reconnectTimerRef.current) clearInterval(reconnectTimerRef.current);
-    };
+    return () => { if (reconnectTimerRef.current) clearInterval(reconnectTimerRef.current); };
   }, [wsConnected]);
 
   /* ── Data Fetching ───────────────────────────────────── */
@@ -247,15 +580,14 @@ export default function SystemHealthDashboard({ user }) {
     );
   }
 
-  const alertCount = alerts?.count || 0;
-  const criticalAlerts = alerts?.critical || 0;
-  const userRole = roleDashboard?.role || "admin";
+  const userRole = roleDashboard?.role || user?.role || "admin";
+  const userScope = roleDashboard?.scope || "";
 
   return (
     <div data-testid="system-health-dashboard" className="min-h-screen bg-zinc-950 text-zinc-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <Button data-testid="back-btn" variant="ghost" size="sm" onClick={() => navigate(-1)} className="text-zinc-400 hover:text-zinc-200">
               <ArrowLeft className="w-4 h-4" />
@@ -266,11 +598,9 @@ export default function SystemHealthDashboard({ user }) {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {/* WebSocket Status */}
+            <ScopeBanner role={userRole} scope={userScope} />
             <div data-testid="ws-status-badge" className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border ${
-              wsConnected
-                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                : "bg-amber-500/10 text-amber-400 border-amber-500/30"
+              wsConnected ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-amber-500/10 text-amber-400 border-amber-500/30"
             }`}>
               {wsConnected ? <Radio className="w-3 h-3 animate-pulse" /> : <WifiOff className="w-3 h-3" />}
               {wsConnected ? "Live" : "Polling"}
@@ -298,12 +628,6 @@ export default function SystemHealthDashboard({ user }) {
               <StatusBadge status={normalizedOverview.overall_status} />
               <SeverityChip severity={normalizedOverview.overall_severity} />
             </div>
-            {roleDashboard && (
-              <div className="ml-auto flex items-center gap-2 text-[11px] text-zinc-500">
-                <Lock className="w-3 h-3" />
-                <span>Scope: {roleDashboard.scope} | Role: {roleDashboard.role}</span>
-              </div>
-            )}
           </div>
         )}
 
@@ -321,231 +645,30 @@ export default function SystemHealthDashboard({ user }) {
           </div>
         )}
 
-        {/* Critical Alert Banner */}
-        {criticalAlerts > 0 && (
-          <div data-testid="critical-alert-banner" className="mb-6 p-3 rounded-lg bg-red-950/40 border border-red-800/50 flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-red-300">{criticalAlerts} critical alert{criticalAlerts > 1 ? "s" : ""} active</p>
-              <p className="text-xs text-red-400/70 mt-0.5">Immediate attention required</p>
-            </div>
-          </div>
+        {/* Role-Based Content Panels */}
+        {userRole === "gm" && (
+          <GMPropertyView cmStatus={cmStatus} alerts={alerts} normalizedOverview={normalizedOverview} />
         )}
 
-        {/* Top Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          <MetricCard testId="metric-cm-health" icon={Wifi} title="Channel Manager"
-            value={cmStatus?.health || "N/A"} sub={`${cmStatus?.active_connections || 0} connections`} />
-          <MetricCard testId="metric-queue-health" icon={Database} title="Queue Health"
-            value={queueHealth?.health || "N/A"} sub={`${queueHealth?.pending || 0} pending`} />
-          <MetricCard testId="metric-alerts" icon={AlertTriangle} title="Active Alerts"
-            value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} critical` : "All clear"} />
-          <MetricCard testId="metric-stuck-tasks" icon={Clock} title="Stuck Tasks"
-            value={stuckTasks?.count || 0} sub={stuckTasks?.count > 0 ? "Action needed" : "None"} />
-        </div>
-
-        {/* Main Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Channel Manager — visible to all roles */}
-          <PanelCard title="Channel Manager" icon={Wifi} status={cmStatus?.health}
-            onAction={triggerDriftScan} actionLabel="Drift Scan" actionLoading={driftScanLoading}
-            testId="action-drift-scan">
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between text-zinc-400">
-                <span>Sync Status</span>
-                <span className="text-zinc-200">{cmStatus?.sync_stats?.last_sync ? "Active" : "Idle"}</span>
-              </div>
-              <div className="flex justify-between text-zinc-400">
-                <span>Drift Issues</span>
-                <span className="text-zinc-200">{cmStatus?.drift?.active_drifts || 0}</span>
-              </div>
-              <div className="flex justify-between text-zinc-400">
-                <span>Sync Success Rate</span>
-                <span className="text-zinc-200">{cmStatus?.sync_stats?.success_rate ?? 100}%</span>
-              </div>
-              <div className="flex justify-between text-zinc-400">
-                <span>Reconciliation</span>
-                <StatusBadge status={cmStatus?.reconciliation?.status || "ok"} />
-              </div>
-              <div className="flex justify-between text-zinc-400">
-                <span>Providers</span>
-                <span className="text-zinc-200">{cmStatus?.providers?.healthy || 0} / {cmStatus?.providers?.total || 0}</span>
-              </div>
-              {cmStatus?.sync_stats?.sync_lag_seconds != null && (
-                <div className="flex justify-between text-zinc-400">
-                  <span>Sync Lag</span>
-                  <span className="text-zinc-200">{Math.round(cmStatus.sync_stats.sync_lag_seconds / 60)}m</span>
-                </div>
-              )}
-              <Button data-testid="run-reconciliation-btn" size="sm" variant="outline" onClick={triggerRecon} disabled={reconLoading}
-                className="w-full mt-2 h-7 text-xs border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-300">
-                {reconLoading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
-                Run Reconciliation
-              </Button>
-            </div>
-          </PanelCard>
-
-          {/* Queue & Workers — Admin/Superadmin only */}
-          {userRole !== "gm" && (
-            <PanelCard title="Queue & Workers" icon={Server} status={queueHealth?.health}>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between text-zinc-400">
-                  <span>Pending Tasks</span>
-                  <span className="text-zinc-200">{queueHealth?.pending || 0}</span>
-                </div>
-                <div className="flex justify-between text-zinc-400">
-                  <span>Processing</span>
-                  <span className="text-zinc-200">{queueHealth?.processing || 0}</span>
-                </div>
-                <div className="flex justify-between text-zinc-400">
-                  <span>Failed</span>
-                  <span className={`${(queueHealth?.failed || 0) > 0 ? "text-red-400" : "text-zinc-200"}`}>{queueHealth?.failed || 0}</span>
-                </div>
-                <div className="flex justify-between text-zinc-400">
-                  <span>Saturation</span>
-                  <span className="text-zinc-200">{queueHealth?.saturation_pct ?? 0}%</span>
-                </div>
-                <div className="flex justify-between text-zinc-400">
-                  <span>Stuck Tasks</span>
-                  <span className={`${(stuckTasks?.count || 0) > 0 ? "text-amber-400" : "text-zinc-200"}`}>{stuckTasks?.count || 0}</span>
-                </div>
-                <div className="flex justify-between text-zinc-400">
-                  <span>Dead Letter</span>
-                  <span className="text-zinc-200">{queueHealth?.dead_letter?.total || 0}</span>
-                </div>
-                <div className="flex justify-between text-zinc-400">
-                  <span>Workers</span>
-                  <StatusBadge status={queueHealth?.worker_heartbeat?.responding ? "active" : "critical"} />
-                </div>
-              </div>
-            </PanelCard>
-          )}
-
-          {/* Security — Admin/Superadmin only */}
-          {userRole !== "gm" && (
-            <PanelCard title="Security Runtime" icon={Shield} status={secAudit?.severity === "critical" ? "critical" : (secAudit?.severity === "warning" ? "degraded" : "active")}>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between text-zinc-400">
-                  <span>Audit Score</span>
-                  <span className="text-zinc-200">{secAudit?.completeness_score ?? "N/A"}%</span>
-                </div>
-                <div className="flex justify-between text-zinc-400">
-                  <span>Audit Gaps</span>
-                  <span className={`${(secAudit?.gaps_found || 0) > 0 ? "text-amber-400" : "text-zinc-200"}`}>{secAudit?.gaps_found || 0}</span>
-                </div>
-                <div className="flex justify-between text-zinc-400">
-                  <span>Rate Limiting</span>
-                  <StatusBadge status={rateLimit?.enforcement || "active"} />
-                </div>
-                {rateLimit?.burst_detected && (
-                  <div className="flex justify-between text-zinc-400">
-                    <span>Burst Detected</span>
-                    <span className="text-red-400">Yes</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-zinc-400">
-                  <span>Tenant Guard</span>
-                  <StatusBadge status={tenantGuard?.enforcement || "active"} />
-                </div>
-                <div className="flex justify-between text-zinc-400">
-                  <span>Violations</span>
-                  <span className={`${(tenantGuard?.total_violations || 0) > 0 ? "text-red-400" : "text-zinc-200"}`}>
-                    {tenantGuard?.total_violations || 0}
-                  </span>
-                </div>
-                <div className="flex justify-between text-zinc-400">
-                  <span>Log Sanitization</span>
-                  <span className="text-zinc-200">{logSanit?.all_patterns_working ? "All OK" : "Issues"}</span>
-                </div>
-              </div>
-            </PanelCard>
-          )}
-
-          {/* Alerts — All roles */}
-          <PanelCard title="Runtime Alerts" icon={AlertTriangle}
-            status={criticalAlerts > 0 ? "critical" : alertCount > 0 ? "degraded" : "healthy"}>
-            {alerts?.alerts?.length > 0 ? (
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {alerts.alerts.map((a, i) => (
-                  <div key={i} className="flex items-start gap-2 p-2 rounded bg-zinc-900/50 border border-zinc-800/50">
-                    <SeverityChip severity={a.severity} />
-                    <div className="min-w-0">
-                      <p className="text-xs text-zinc-300 truncate">{a.message || a.type}</p>
-                      {a.metric && <p className="text-[11px] text-zinc-500">{a.metric}: {a.value}</p>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 py-4 justify-center text-zinc-500">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                <span className="text-xs">No active alerts</span>
-              </div>
-            )}
-          </PanelCard>
-        </div>
-
-        {/* Audit & Observability Metrics */}
-        {auditMetrics && userRole !== "gm" && (
-          <div className="mt-6">
-            <h2 className="text-sm font-semibold text-zinc-300 mb-3 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4" /> Audit & Observability
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-              <MetricCard testId="metric-drift-scans" icon={Eye} title="Drift Scans"
-                value={auditMetrics.drift?.scans_count ?? 0} sub={`${auditMetrics.drift?.total_drifts ?? 0} drifts`} />
-              <MetricCard testId="metric-recon-rate" icon={CheckCircle2} title="Recon Success"
-                value={`${auditMetrics.reconciliation?.success_rate ?? 100}%`} sub={`${auditMetrics.reconciliation?.total_runs ?? 0} runs`} />
-              <MetricCard testId="metric-queue-pending" icon={Database} title="Queue Backlog"
-                value={auditMetrics.queue?.current_pending ?? 0} sub={`${auditMetrics.queue?.current_stuck ?? 0} stuck`} />
-              <MetricCard testId="metric-sec-violations" icon={Shield} title="Violations"
-                value={auditMetrics.security?.violations_period ?? 0} sub="24h period" />
-              <MetricCard testId="metric-dl-growth" icon={XCircle} title="Dead Letter"
-                value={auditMetrics.dead_letter?.total ?? 0} sub={`+${auditMetrics.dead_letter?.new_in_period ?? 0} new`} />
-              <MetricCard testId="metric-total-alerts" icon={AlertTriangle} title="Total Alerts"
-                value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} critical` : "Clear"} />
-            </div>
-          </div>
+        {userRole === "admin" && (
+          <AdminTenantView
+            cmStatus={cmStatus} queueHealth={queueHealth} secAudit={secAudit}
+            rateLimit={rateLimit} tenantGuard={tenantGuard} logSanit={logSanit}
+            alerts={alerts} stuckTasks={stuckTasks} auditMetrics={auditMetrics}
+            triggerDriftScan={triggerDriftScan} driftScanLoading={driftScanLoading}
+            triggerRecon={triggerRecon} reconLoading={reconLoading}
+          />
         )}
 
-        {/* Runtime Metrics (legacy) */}
-        {metrics && (
-          <div className="mt-6">
-            <h2 className="text-sm font-semibold text-zinc-300 mb-3">Runtime Metrics</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-              {metrics.sync && <MetricCard testId="metric-sync-lag" icon={Clock} title="Sync Lag" value={`${metrics.sync.lag_seconds ?? 0}s`} />}
-              {metrics.drift && <MetricCard testId="metric-active-drifts" icon={AlertTriangle} title="Active Drifts" value={metrics.drift.active_count ?? 0} />}
-              {metrics.reconciliation && <MetricCard testId="metric-recon-pct" icon={CheckCircle2} title="Recon Rate" value={`${metrics.reconciliation.success_rate ?? 100}%`} />}
-              {metrics.queue && <MetricCard testId="metric-queue-backlog" icon={Database} title="Queue" value={metrics.queue.backlog ?? 0} />}
-              {metrics.security && <MetricCard testId="metric-sec-count" icon={Shield} title="Violations" value={metrics.security.violations ?? 0} />}
-            </div>
-          </div>
-        )}
-
-        {/* Normalized Subsystem Health */}
-        {normalizedOverview?.subsystems && (
-          <div className="mt-6">
-            <h2 className="text-sm font-semibold text-zinc-300 mb-3">Subsystem Health</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-              {Object.entries(normalizedOverview.subsystems).map(([key, sub]) => (
-                <div key={key} data-testid={`normalized-${key}`} className="p-3 rounded-lg bg-zinc-900/60 border border-zinc-800">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium text-zinc-300 capitalize">{key.replace(/_/g, " ")}</span>
-                    <div className="flex items-center gap-1">
-                      <StatusBadge status={sub.status} />
-                    </div>
-                  </div>
-                  <div className="text-[11px] text-zinc-500 space-y-1">
-                    <SeverityChip severity={sub.severity} />
-                    {sub.evidence_summary && <p className="mt-1 text-zinc-400">{sub.evidence_summary}</p>}
-                    {sub.degraded_reason && <p className="text-amber-400/80">{sub.degraded_reason}</p>}
-                    {sub.suggested_action && <p className="text-sky-400/70">{sub.suggested_action}</p>}
-                    <p className="text-zinc-600">Updated: {sub.last_updated_at ? new Date(sub.last_updated_at).toLocaleTimeString() : "N/A"}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+        {(userRole === "superadmin" || (userRole !== "gm" && userRole !== "admin")) && (
+          <SuperadminGlobalView
+            cmStatus={cmStatus} queueHealth={queueHealth} secAudit={secAudit}
+            rateLimit={rateLimit} tenantGuard={tenantGuard} logSanit={logSanit}
+            alerts={alerts} stuckTasks={stuckTasks} metrics={metrics}
+            auditMetrics={auditMetrics} normalizedOverview={normalizedOverview}
+            triggerDriftScan={triggerDriftScan} driftScanLoading={driftScanLoading}
+            triggerRecon={triggerRecon} reconLoading={reconLoading}
+          />
         )}
       </div>
     </div>

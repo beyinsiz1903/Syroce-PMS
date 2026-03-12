@@ -10,6 +10,7 @@ import logging
 
 from common.context import OperationContext
 from common.result import ServiceResult
+from common.audit_hook import audited, SEVERITY_INFO, SEVERITY_WARNING
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class PosFnbService:
     # ------------------------------------------------------------------
     # Kitchen Orders
     # ------------------------------------------------------------------
+    @audited("pos.complete_kitchen_order", "kitchen_order", severity=SEVERITY_INFO)
     async def complete_kitchen_order(self, ctx: OperationContext, order_id: str) -> ServiceResult:
         await self._db.kitchen_orders.update_one(
             {"id": order_id},
@@ -62,6 +64,7 @@ class PosFnbService:
             "orders": orders,
         })
 
+    @audited("pos.update_kitchen_order_status", "kitchen_order", severity=SEVERITY_INFO)
     async def update_kitchen_order_status(self, ctx: OperationContext, order_id: str, new_status: str) -> ServiceResult:
         updates: Dict[str, Any] = {"status": new_status}
         if new_status == "ready":
@@ -74,6 +77,7 @@ class PosFnbService:
     # ------------------------------------------------------------------
     # POS Transactions
     # ------------------------------------------------------------------
+    @audited("pos.create_transaction", "pos_transaction", severity=SEVERITY_INFO)
     async def create_pos_transaction(self, ctx: OperationContext, amount: float, payment_method: str, folio_id: Optional[str] = None) -> ServiceResult:
         txn = {
             "id": str(uuid.uuid4()), "tenant_id": ctx.tenant_id,
@@ -261,6 +265,7 @@ class PosFnbService:
             "low_stock_count": len([i for i in items if i["is_low_stock"]]),
         })
 
+    @audited("pos.adjust_stock", "inventory", severity=SEVERITY_WARNING, capture_before=True)
     async def adjust_stock(self, ctx: OperationContext, product_id: str, adjustment_type: str, quantity: int, reason: str, notes: Optional[str] = None) -> ServiceResult:
         allowed_roles = ("admin", "warehouse", "fnb_manager", "supervisor")
         if ctx.actor_role not in allowed_roles:
