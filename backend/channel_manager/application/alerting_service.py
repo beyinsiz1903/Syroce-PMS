@@ -224,6 +224,14 @@ class AlertingService:
         except Exception as e:
             logger.warning("Alert delivery failed for alert %s: %s", alert["id"], e)
 
+        # Emit WebSocket event
+        try:
+            from .realtime_service import RealtimeEventService
+            await RealtimeEventService.emit_alert_triggered(tenant_id, alert)
+        except Exception as e:
+            logger.debug("WS emit failed: %s", e)
+
+
         return alert
 
     @staticmethod

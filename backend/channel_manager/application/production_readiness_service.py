@@ -36,7 +36,7 @@ class ProductionReadinessService:
     async def run_readiness_check(
         self, tenant_id: str, connector_id: str, actor_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Run all 10 production readiness checks and generate a report."""
+        """Run all 11 production readiness checks and generate a report."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
         if not connector:
             return {"error": "Connector not found"}
@@ -50,29 +50,35 @@ class ProductionReadinessService:
         # 2. Inventory push success
         checks.append(await self._check_inventory_push(tenant_id, connector_id))
 
-        # 3. Reservation import success
+        # 3. Rate push success
+        checks.append(await self._check_rate_push(tenant_id, connector_id))
+
+        # 4. Reservation import success
         checks.append(await self._check_reservation_pull(tenant_id, connector_id))
 
-        # 4. Reservation modification success
+        # 5. Reservation modification success
         checks.append(await self._check_reservation_modification(tenant_id, connector_id))
 
-        # 5. Reservation cancellation success
+        # 6. Reservation cancellation success
         checks.append(await self._check_reservation_cancellation(tenant_id, connector_id))
 
-        # 6. ACK lifecycle success
+        # 7. ACK lifecycle success
         checks.append(await self._check_reservation_ack(tenant_id, connector_id))
 
-        # 7. Alerts functioning
+        # 8. Alerts functioning
         checks.append(await self._check_alerts_functioning(tenant_id))
 
-        # 8. Metrics aggregation functioning
+        # 9. Metrics aggregation functioning
         checks.append(await self._check_metrics_aggregation(tenant_id, connector_id))
 
-        # 9. Scheduler jobs working
+        # 10. Scheduler jobs working
         checks.append(await self._check_scheduler_jobs(tenant_id, connector_id))
 
-        # 10. Credential security verified
+        # 11. Credential security verified
         checks.append(self._check_credential_security(connector))
+
+        # 12. Mapping completeness
+        checks.append(await self._check_mapping_completeness(tenant_id, connector_id))
 
         # Aggregate
         passed = [c for c in checks if c["status"] == "passed"]
@@ -226,3 +232,39 @@ class ProductionReadinessService:
                     "detail": f"Encrypted with {algo or 'unknown'}, recommend AES-256-GCM", "blocker": False}
         return {"check": "credential_security_verified", "status": "failed",
                 "detail": "Credentials not encrypted", "blocker": True}
+
+    async def _check_rate_push(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+        """Check rate push success metrics."""
+        succeeded = await db.cm_sync_jobs.count_documents({
+            "tenant_id": tenant_id, "connector_id": connector_id, "sync_type": "rates", "status": "succeeded",
+        })
+        failed = await db.cm_sync_jobs.count_documents({
+            "tenant_id": tenant_id, "connector_id": connector_id, "sync_type": "rates", "status": "failed",
+        })
+        if succeeded > 0:
+            rate = round(succeeded / max(succeeded + failed, 1) * 100, 1)
+            return {"check": "rate_push_success", "status": "passed",
+                    "detail": f"{succeeded} successful rate pushes ({rate}% success rate)"}
+        return {"check": "rate_push_success", "status": "warning",
+                "detail": "No successful rate pushes yet", "blocker": False}
+
+    async def _check_mapping_completeness(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+        """Check mapping completeness via mapping completeness service."""
+        try:
+            from .mapping_completeness_service import MappingCompletenessService
+            svc = MappingCompletenessService(repo=self._repo)
+            report = await svc.validate_completeness(tenant_id, connector_id)
+            score = report.get("readiness_score", 0)
+            sync_ok = report.get("sync_allowed", False)
+            if sync_ok and score >= 70:
+                return {"check": "mapping_completeness", "status": "passed",
+                        "detail": f"Mapping readiness score: {score}/100"}
+            elif score >= 40:
+                return {"check": "mapping_completeness", "status": "warning",
+                        "detail": f"Mapping readiness score: {score}/100, sync {'allowed' if sync_ok else 'blocked'}",
+                        "blocker": not sync_ok}
+            return {"check": "mapping_completeness", "status": "failed",
+                    "detail": f"Mapping readiness score: {score}/100", "blocker": True}
+        except Exception as e:
+            return {"check": "mapping_completeness", "status": "warning",
+                    "detail": f"Could not validate: {str(e)[:100]}", "blocker": False}

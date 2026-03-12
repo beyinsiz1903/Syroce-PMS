@@ -100,12 +100,39 @@ class ConnectorHealthService:
         import_job_total = len(import_jobs)
         import_job_failed = sum(1 for j in import_jobs if j.get("status") == "failed")
 
+        # Rate push metrics
+        rate_push_success_rate = 100.0
+        try:
+            from .rate_push_tracking_service import RatePushTrackingService
+            rpt_svc = RatePushTrackingService(repo=self._repo)
+            rp_metrics = await rpt_svc.get_metrics(tenant_id, connector_id)
+            rate_push_success_rate = rp_metrics.get("rate_push_success_rate", 100.0)
+        except Exception:
+            pass
+
         # Health score
         health_score = self._calc_health_score(
             sync_success_rate, import_success_rate, uptime,
             active_alerts, critical_alerts, retry_count, total_syncs,
+            rate_push_success_rate=rate_push_success_rate,
         )
         classification = self._classify(health_score)
+
+        # Record trend snapshot (fire-and-forget)
+        try:
+            from .health_trend_service import HealthTrendService
+            trend_svc = HealthTrendService(repo=self._repo)
+            await trend_svc.record_health_snapshot(
+                tenant_id, connector_id,
+                health_score=health_score,
+                sync_success_rate=sync_success_rate,
+                import_success_rate=import_success_rate,
+                active_alerts=active_alerts,
+                retry_count=retry_count,
+                rate_push_success_rate=rate_push_success_rate,
+            )
+        except Exception:
+            pass
 
         return {
             "connector_id": connector_id,
@@ -127,6 +154,7 @@ class ConnectorHealthService:
             "total_imports": import_total,
             "import_jobs_total": import_job_total,
             "import_jobs_failed": import_job_failed,
+            "rate_push_success_rate": rate_push_success_rate,
             "calculated_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -178,11 +206,13 @@ class ConnectorHealthService:
         sync_rate: float, import_rate: float, uptime: float,
         active_alerts: int, critical_alerts: int,
         retry_count: int, total_syncs: int,
+        rate_push_success_rate: float = 100.0,
     ) -> float:
-        # Base components
-        sync_component = sync_rate * 0.3
-        import_component = import_rate * 0.3
-        uptime_component = uptime * 0.2
+        # Base components (adjusted weights to include rate push)
+        sync_component = sync_rate * 0.25
+        import_component = import_rate * 0.25
+        uptime_component = uptime * 0.15
+        rate_push_component = rate_push_success_rate * 0.15
 
         # Alert penalty (max 10 points)
         alert_penalty = min(active_alerts * 2 + critical_alerts * 5, 10)
@@ -193,7 +223,7 @@ class ConnectorHealthService:
         retry_penalty = min(retry_rate / 5, 10)
         retry_component = max(0, 10 - retry_penalty)
 
-        score = sync_component + import_component + uptime_component + alert_component + retry_component
+        score = sync_component + import_component + uptime_component + rate_push_component + alert_component + retry_component
         return round(min(max(score, 0), 100), 1)
 
     @staticmethod

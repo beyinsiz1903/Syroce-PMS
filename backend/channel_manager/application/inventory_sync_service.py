@@ -338,6 +338,15 @@ class InventorySyncService:
                 "completed": completed, "failed": failed, "duration_ms": duration_ms,
             })
 
+        # Emit WebSocket event for inventory sync
+        try:
+            from .realtime_service import RealtimeEventService
+            await RealtimeEventService.emit_sync_job_update(
+                job.tenant_id, self._job_response(job, duration_ms=duration_ms, completed=completed, failed=failed),
+            )
+        except Exception:
+            pass
+
         return self._job_response(job, duration_ms=duration_ms, completed=completed, failed=failed)
 
     # ─── Pipeline: Rate Sync ────────────────────────────────────────────
@@ -417,6 +426,30 @@ class InventorySyncService:
         await self._audit_job(job, audit_action, metadata={
             "completed": completed, "failed": failed, "duration_ms": duration_ms,
         })
+
+        # Record rate push metrics
+        try:
+            from .rate_push_tracking_service import RatePushTrackingService
+            rpt = RatePushTrackingService(repo=self._repo)
+            await rpt.record_rate_push(
+                tenant_id=job.tenant_id, connector_id=job.connector_id,
+                success=final_status == SyncJobStatus.SUCCEEDED,
+                latency_ms=duration_ms,
+                error_type=type(Exception).__name__ if failed > 0 else "",
+                update_count=len(coalesced),
+                retry_count=retried,
+            )
+        except Exception:
+            pass
+
+        # Emit WebSocket event
+        try:
+            from .realtime_service import RealtimeEventService
+            await RealtimeEventService.emit_sync_job_update(
+                job.tenant_id, self._job_response(job, duration_ms=duration_ms, completed=completed, failed=failed),
+            )
+        except Exception:
+            pass
 
         return self._job_response(job, duration_ms=duration_ms, completed=completed, failed=failed)
 

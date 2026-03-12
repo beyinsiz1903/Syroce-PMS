@@ -16,6 +16,7 @@ from .routers.scheduler_router import router as scheduler_router
 from .routers.health_router import router as health_router
 from .routers.delivery_router import router as delivery_router
 from .routers.worker_router import router as worker_router
+from .routers.validation_router import router as validation_router
 
 router = APIRouter(prefix="/api/channel-manager/v2", tags=["Channel Manager v2"])
 
@@ -29,3 +30,4 @@ router.include_router(scheduler_router)
 router.include_router(health_router)
 router.include_router(delivery_router)
 router.include_router(worker_router)
+router.include_router(validation_router)

@@ -267,11 +267,11 @@ class TestConnectorHealthService:
     def test_health_score_calculation(self):
         from channel_manager.application.connector_health_service import ConnectorHealthService
         # Perfect score
-        score = ConnectorHealthService._calc_health_score(100, 100, 100, 0, 0, 0, 100)
+        score = ConnectorHealthService._calc_health_score(100, 100, 100, 0, 0, 0, 100, rate_push_success_rate=100)
         assert score == 100.0
 
-        # Zero everything
-        score_zero = ConnectorHealthService._calc_health_score(0, 0, 0, 10, 5, 100, 100)
+        # Zero everything (rate_push defaults to 100, so pass 0 explicitly)
+        score_zero = ConnectorHealthService._calc_health_score(0, 0, 0, 10, 5, 100, 100, rate_push_success_rate=0)
         assert score_zero == 0.0
 
     def test_classification(self):
