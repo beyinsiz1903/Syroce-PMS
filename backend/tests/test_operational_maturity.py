@@ -12,7 +12,7 @@ import os
 import json
 from datetime import datetime
 
-BASE = os.environ.get("TEST_BASE_URL", "https://night-audit-load.preview.emergentagent.com")
+BASE = os.environ.get("TEST_BASE_URL", "https://pilot-validation.preview.emergentagent.com")
 API = f"{BASE}/api/channel-manager/v2"
 AUTH = f"{BASE}/api/auth/login"
 CREDS = {"email": "demo@hotel.com", "password": "demo123"}
