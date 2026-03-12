@@ -173,18 +173,90 @@ Enterprise hotel operating system platform requiring production-hardening across
     - Full testing agent validation (iteration_54): 100% backend + frontend success
     - All 8 new API endpoints verified via curl
 
+### Phase 5 — Production Hardening (Current Session — Completed)
+
+21. **FrontdeskServiceV2 — Production-Grade Front Desk**:
+    - Concurrency guard via MongoDB operation locks with TTL
+    - Check-in: room readiness validation, HK task check, folio auto-creation, idempotency
+    - Check-out: folio balance check, force checkout (supervisor), keycard deactivation, HK task auto-creation
+    - Room move: room availability check, old room release, HK task, keycard deactivation, booking history
+    - Late checkout: charge posting, folio balance update, approval tracking
+    - No-show processing: first night charge, room release, idempotency
+    - Walk-in: guest + booking + folio + room occupation in one operation
+    - Post charge: folio charge with tax calculation, idempotency
+    - Void charge: supervisor-only with folio balance reversal
+
+22. **PosFnbServiceV2 — Production-Grade POS & F&B**:
+    - Order lifecycle: create with kitchen dispatch per station, close with payment, void (supervisor)
+    - Duplicate posting prevention via idempotency keys
+    - Stock adjustment with atomic version check (race-condition protection)
+    - Table reservation with contention guard
+    - Folio posting for room-charge F&B orders
+
+23. **Alert Enrichment Engine**:
+    - 15 alert rules covering: night_audit, queue, worker, channel_manager, reconciliation, websocket, messaging, security, tenant, ML
+    - Severity mapping (critical/high/warning/info)
+    - Cooldown/dedupe per rule
+    - Blast radius assessment (property/tenant/platform)
+    - Runbook hints per alert
+    - MTTA/MTTR tracking on acknowledge/resolve
+    - Grafana/Alertmanager/PagerDuty route compatibility
+
+24. **Incident Response & Recovery**:
+    - Incident lifecycle: create → acknowledge → resolve with timeline
+    - Recovery tools: DLQ replay, stuck worker recovery, force reconciliation
+    - Service health matrix (8 services with heartbeat age and incident count)
+    - MTTA/MTTR measurement
+
+25. **Channel Manager Provider Validation**:
+    - Provider contract definitions (HotelRunner, Booking.com, Expedia)
+    - 7-point validation suite: connection, ARI sync, reservation import, cancellation propagation, drift detection, reconciliation, rate limit
+    - Sync lag measurement (p50/p95/p99/max per sync type)
+    - Retryable vs non-retryable error classification per provider
+
+26. **Tenant Isolation Hardening**:
+    - Isolation validation suite: DB scope check (8 collections), cross-tenant violations, async task scope, cache/WS isolation
+    - Noisy tenant detection: request ratio analysis, classification (critical/warning), recommendation
+    - Resource fairness metrics: per-tenant document count and storage ratio
+
+27. **Pilot Hotel Readiness**:
+    - 17-item readiness checklist with auto/manual checks
+    - Categories: channel_manager, pms, messaging, infrastructure, security, observability, performance
+    - Feature toggle system: tenant-scoped, admin-only write
+    - Sign-off workflow for manual verification items
+    - Readiness score calculation with critical blocker identification
+
+28. **Frontend Operational Pages**:
+    - Audit Timeline Page: event timeline, severity badges, before/after diff preview, entity trail search, filters
+    - Incident Dashboard Page: service health matrix, active alerts with ack/resolve, alert summary, incident list
+    - Pilot Readiness Page: score ring, validation checklist, critical blockers, feature toggles
+
+29. **Load/Chaos/Soak Test Expansion**:
+    - Soak test: 6h sustained load for memory leak / reconnect leak / queue lag creep detection
+    - Chaos test: provider timeout burst, concurrent frontdesk mutation, noisy tenant flood
+    - Phase 5 stress test: frontdesk (100 rps), POS burst (80 rps), alert storm (20 rps)
+
+30. **Architecture Governance**:
+    - 10 Architecture Decision Records (ADR)
+    - Domain dependency rules and boundaries
+    - Code ownership map
+    - Deprecation policy, schema versioning, endpoint lifecycle
+    - Naming standards for audit operations, events, alerts, feature toggles
+
 ## Remaining Backlog
 
 ### P1
-- Implement real business logic in remaining placeholder service methods (FrontdeskService, PosFnbService etc.)
-- Expand existing k6 load test scenarios with more real-world edge cases
+- Execute load/stress/soak/chaos tests against deployed environment and collect performance baselines
+- Deepen remaining PMS service logic (HousekeepingService, ReservationService production-grade)
+- Populate frontend module pages (frontdesk/, housekeeping/, finance/)
 
 ### P2
-- Additional frontend module pages within established boundaries
-- Network error recovery enhancement for all modules
-- Reusable health card library extraction
-- Advanced audit timeline panel UI (foundations are in place)
-- Observability alerting integration (alert candidates defined)
+- Full GM training view for pilot onboarding
+- Canary rollout support with traffic splitting
+- Tenant-specific monitoring pack per pilot hotel
+- Advanced compliance export from audit timeline
+- Rollback automation for pilot incidents
+- Build modernization (CRA/CRACO → Vite migration assessment)
 
 ## Key Endpoints
 | Endpoint | Method | Description |
@@ -208,6 +280,42 @@ Enterprise hotel operating system platform requiring production-hardening across
 | /api/audit/summary | GET | Aggregated audit summary (by severity/operation/actor) |
 | /api/metrics/operational | GET | Operational metrics (rooms, bookings, folios, HK) |
 | /api/metrics/night-audit | GET | Night audit metrics (trends, success rate, duration) |
+| /api/frontdesk/v2/checkin | POST | Production-grade check-in with concurrency guard |
+| /api/frontdesk/v2/checkout | POST | Check-out with folio balance validation |
+| /api/frontdesk/v2/room-move | POST | Room move with HK task auto-creation |
+| /api/frontdesk/v2/late-checkout | POST | Late checkout with charge posting |
+| /api/frontdesk/v2/no-show | POST | No-show processing with first night charge |
+| /api/frontdesk/v2/walk-in | POST | Walk-in booking + check-in + folio creation |
+| /api/frontdesk/v2/post-charge | POST | Folio charge posting with idempotency |
+| /api/frontdesk/v2/void-charge | POST | Void charge (supervisor only) |
+| /api/pos/v2/orders | POST | Create POS order with kitchen dispatch |
+| /api/pos/v2/orders/close | POST | Close order with payment processing |
+| /api/pos/v2/orders/void | POST | Void order (supervisor only) |
+| /api/pos/v2/stock/adjust | POST | Stock adjustment with race-condition protection |
+| /api/pos/v2/tables/reserve | POST | Table reservation with contention guard |
+| /api/alerts/rules | GET | List all 15 alert rules |
+| /api/alerts/evaluate | POST | Evaluate metrics against alert rules |
+| /api/alerts/active | GET | Active (unresolved) alerts |
+| /api/alerts/acknowledge | POST | Acknowledge alert (calculates MTTA) |
+| /api/alerts/resolve | POST | Resolve alert (calculates MTTR) |
+| /api/alerts/summary | GET | Alert summary by severity/category |
+| /api/incidents/create | POST | Create incident |
+| /api/incidents/acknowledge | POST | Acknowledge incident |
+| /api/incidents/resolve | POST | Resolve incident |
+| /api/incidents/list | GET | List incidents |
+| /api/incidents/service-health | GET | Service health matrix (8 services) |
+| /api/incidents/recovery/replay-dlq | POST | Replay dead letter queue |
+| /api/incidents/recovery/stuck-workers | POST | Recover stuck workers |
+| /api/incidents/recovery/force-reconciliation | POST | Force reconciliation |
+| /api/cm/validation/run | POST | Run provider validation suite |
+| /api/cm/validation/providers | GET | List provider contracts |
+| /api/cm/validation/sync-lag/{id} | GET | Sync lag report |
+| /api/tenant-isolation/v2/validate | GET | Tenant isolation validation score |
+| /api/tenant-isolation/v2/noisy-tenants | GET | Noisy tenant detection |
+| /api/tenant-isolation/v2/resource-fairness | GET | Resource fairness metrics |
+| /api/pilot/readiness | GET | Pilot readiness checklist + score |
+| /api/pilot/sign-off | POST | Manual sign-off for readiness check |
+| /api/pilot/feature-toggles | GET/POST | Feature toggle management |
 
 ## Test Credentials
 | User | Email | Password |

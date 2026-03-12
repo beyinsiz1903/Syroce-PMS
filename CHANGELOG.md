@@ -1,5 +1,50 @@
 # Syroce Hotel PMS — Changelog
 
+## [2026-03-12] Phase 5: Production Hardening, Incident Response, Provider Validation & Pilot Readiness
+
+### Added — Backend
+- **FrontdeskServiceV2** (`domains/pms/frontdesk_service_v2.py`): Production-grade front desk with concurrency guard (MongoDB locks), room move, late checkout, no-show processing, walk-in booking, early checkout, folio charge posting, void charge with supervisor override. Full @audited integration.
+- **Frontdesk API v2** (`domains/pms/frontdesk_router_v2.py`): 8 endpoints — checkin, checkout, room-move, late-checkout, no-show, walk-in, post-charge, void-charge
+- **PosFnbServiceV2** (`domains/pms/pos_fnb/pos_fnb_service_v2.py`): Full POS lifecycle — create order with kitchen dispatch, close with payment, void order (supervisor only), stock adjustment with race-condition protection, table reservation with contention guard. Idempotency keys throughout.
+- **POS API v2** (`domains/pms/pos_fnb_router_v2.py`): 5 endpoints — orders, orders/close, orders/void, stock/adjust, tables/reserve
+- **Alert Enrichment Engine** (`modules/observability/alert_enrichment.py`): 15 alert rules with severity mapping, cooldown/dedupe, blast radius, runbook hints, MTTA/MTTR tracking, Grafana/Alertmanager/PagerDuty compatibility
+- **Alert API** (`modules/observability/alert_router.py`): evaluate, active, acknowledge, resolve, summary, rules
+- **Incident Response Service** (`modules/incident/incident_service.py`): Full incident lifecycle (create→ack→resolve), recovery tools (DLQ replay, stuck worker recovery, force reconciliation), service health matrix (8 services)
+- **Incident API** (`modules/incident/incident_router.py`): create, acknowledge, resolve, list, recovery/replay-dlq, recovery/stuck-workers, recovery/force-reconciliation, service-health
+- **Provider Validation Service** (`domains/channel_manager/provider_validation.py`): Provider contract definitions (HotelRunner, Booking.com, Expedia), 7-point validation suite (connection, ARI, reservation import, cancellation propagation, drift detection, reconciliation, rate limit), sync lag measurement
+- **CM Validation API** (`domains/channel_manager/validation_router.py`): run, sync-lag, providers
+- **Tenant Isolation Service** (`security/tenant_isolation_service.py`): Isolation validation suite (DB scope, cross-tenant violation, async task scope, cache, WebSocket room), noisy tenant detection with classification, resource fairness metrics
+- **Tenant Isolation API** (`security/tenant_isolation_router.py`): validate, noisy-tenants, resource-fairness
+- **Pilot Readiness Service** (`ops/pilot_readiness.py`): 17-item readiness checklist with auto/manual checks, feature toggle system, sign-off workflow, readiness score calculation
+- **Pilot API** (`ops/pilot_router.py`): readiness, sign-off, feature-toggles (GET/POST)
+
+### Added — Frontend
+- **Audit Timeline Page** (`pages/AuditTimelinePage.js`): Full audit timeline with event list, severity badges, before/after diff preview, entity trail search, cursor pagination, filters (severity, entity type, actor)
+- **Incident Dashboard Page** (`pages/IncidentDashboardPage.js`): Service health matrix (8 services), active alerts with acknowledge/resolve, alert summary, incident list
+- **Pilot Readiness Page** (`pages/PilotReadinessPage.js`): Score ring visualization, validation checklist with severity badges, critical blockers, feature toggles with toggle UI
+
+### Added — Load/Chaos/Soak Tests
+- **Soak Test** (`load_tests/k6/scenarios/soak_test.js`): 6h sustained load for memory leak, reconnect leak, queue lag creep detection
+- **Chaos Test** (`load_tests/k6/scenarios/chaos_test.js`): Provider timeout burst, concurrent frontdesk mutation, noisy tenant flood
+- **Phase 5 Stress Test** (`load_tests/k6/scenarios/phase5_stress.js`): Frontdesk stress (100 rps), POS burst (80 rps), alert evaluation storm (20 rps)
+
+### Added — Architecture Governance
+- **ADR Document** (`docs/ARCHITECTURE_DECISIONS.md`): 10 Architecture Decision Records (DDD, MongoDB, JWT/RBAC, Socket.IO, Audit Hook, Concurrency Guard, Alert Rules, Provider Contracts, Feature Toggles, Incident Lifecycle)
+- **Domain Rules** (`docs/DOMAIN_RULES.md`): Dependency rules, domain boundaries, shared package contracts, naming standards, deprecation policy, schema versioning, endpoint lifecycle
+
+### Changed
+- `bootstrap/router_registry.py` — Registered 7 new routers (frontdesk_v2, pos_v2, alerts, incidents, cm_validation, tenant_isolation_v2, pilot)
+- `App.js` — Added routes for /audit-timeline, /pilot-readiness, /incident-dashboard
+
+### Testing
+- 24 API integration tests (`tests/test_phase5_api.py`) — 100% pass
+- 26 comprehensive tests (`tests/test_phase5_comprehensive.py`) — 100% pass
+- Full testing agent validation (iteration_55): 100% backend + frontend success
+- 32 API endpoints verified, 3 frontend pages verified with data-testid coverage
+
+---
+
+
 ## [2026-03-12] Phase 4: PMS Core Logic, Load Tests, Module Boundaries & Audit Timeline
 
 ### Added
