@@ -11,7 +11,7 @@ import pytest
 import httpx
 import os
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://data-hub-52.preview.emergentagent.com")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://enterprise-hub-257.preview.emergentagent.com")
 LOGIN_PAYLOAD = {"email": "demo@hotel.com", "password": "demo123"}
 
 
