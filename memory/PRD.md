@@ -101,3 +101,8 @@ Enterprise hotel operating system platformunun production ortamına güvenli dep
 - Multi-region deployment
 - CDN integration for frontend assets
 - Database sharding strategy
+
+## Kullanıcı Giriş Bilgileri (Test)
+| Kullanıcı | E-posta | Şifre |
+|---|---|---|
+| **Demo Admin** | `demo@hotel.com` | `demo123` |
