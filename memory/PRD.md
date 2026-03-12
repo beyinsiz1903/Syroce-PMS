@@ -122,19 +122,69 @@ Enterprise hotel operating system platform requiring production-hardening across
     - All 26 new tests pass (15 audit + 11 stress)
     - Full testing agent validation: 100% backend + frontend success
 
+### Phase 4 (Current Session — Completed)
+
+14. **NightAuditCoreService — Real Production-Grade Logic**:
+    - Business date roll with idempotency guard
+    - Concurrent operation lock (MongoDB-based)
+    - Room charge posting (VAT + accommodation tax per Turkish tax law)
+    - No-show handling with fee posting and room release
+    - Pending arrival/departure validation
+    - Folio balance checking (unbalanced detection)
+    - Tax consistency validation
+    - Audit exception generation and persistence
+    - Dry-run mode (zero DB mutations)
+    - Force-rerun capability
+    - Pre-audit validation (HK tasks, POS transactions, orphan check-ins, concurrent audit)
+
+15. **Audit Timeline API Foundations**:
+    - GET /api/audit/timeline — cursor-based pagination, filtering by actor/action/severity/entity
+    - GET /api/audit/timeline/{entity_type}/{entity_id} — entity audit trail with before/after snapshot diffs
+    - GET /api/audit/summary — aggregated audit summary by severity/operation/actor/result
+    - Time-bucket grouping for timeline visualization
+
+16. **Operational Metrics API**:
+    - GET /api/metrics/operational — rooms, bookings, folios, HK, audit event counts
+    - GET /api/metrics/night-audit — business date status, last run, duration trends, success rate
+
+17. **Load Test Framework Expansion**:
+    - 8 k6 scenarios: ota_reservation_burst, ari_update_storm, queue_backlog_load, night_audit_load, system_health_dashboard_load, websocket_health_stream_load, pos_fnb_burst, mobile_ops_load
+    - Locust combined scenario: locust_pms.py with PMSUser + CheckoutSurge user classes
+    - Each scenario: custom metrics, thresholds, multiple load profiles (normal, burst, storm)
+    - README.md with failure interpretation guide
+
+18. **Frontend Module Boundaries**:
+    - 9 module index files: runtime-health, admin, frontdesk, housekeeping, finance, rms, pos_fnb, mobile, messaging
+    - ModuleErrorBoundary: per-module error isolation with retry
+    - useOperationalSocket hook: shared WebSocket abstraction with auto-reconnect and stale detection
+    - OperationalWidgets: SeverityBadge, EmptyState, DegradedState, NetworkError components
+    - AuditTimelineSummaryCard: embeddable audit summary for dashboards
+
+19. **Observability Enrichment**:
+    - Night audit duration/exception/revenue metrics
+    - Business date staleness detection
+    - Room/booking/folio/HK operational metrics
+    - Audit event rate tracking
+
+20. **Comprehensive Testing**:
+    - test_night_audit_and_timeline.py: 14 tests (service logic, idempotency, schema, imports)
+    - runtime/test_night_audit_core.py: 4 stress tests (concurrent guard, rerun safety, tenant isolation)
+    - runtime/test_audit_timeline_stress.py: 3 tests (grouping, aggregation)
+    - Full testing agent validation (iteration_54): 100% backend + frontend success
+    - All 8 new API endpoints verified via curl
+
 ## Remaining Backlog
 
 ### P1
-- k6/Locust load test scenarios (operational load simulation)
-- Implement real business logic in remaining placeholder service methods
-- Core PMS service business logic (NightAuditService deep logic, etc.)
+- Implement real business logic in remaining placeholder service methods (FrontdeskService, PosFnbService etc.)
+- Expand existing k6 load test scenarios with more real-world edge cases
 
 ### P2
-- Frontend module boundary enforcement (runtime-health/, admin/, frontdesk/, etc.)
-- Additional frontend lazy-loaded modules
-- Network error recovery components
+- Additional frontend module pages within established boundaries
+- Network error recovery enhancement for all modules
 - Reusable health card library extraction
-- WebSocket hook abstraction for other modules
+- Advanced audit timeline panel UI (foundations are in place)
+- Observability alerting integration (alert candidates defined)
 
 ## Key Endpoints
 | Endpoint | Method | Description |
@@ -149,6 +199,15 @@ Enterprise hotel operating system platform requiring production-hardening across
 | /api/system-health/audit/metrics | GET | Audit & observability metrics |
 | /api/system-health/live/status | GET | WebSocket connection status |
 | /api/system-health/live/events | GET | Recent system health events |
+| /api/night-audit/run | POST | Execute night audit (dry_run, force_rerun supported) |
+| /api/night-audit/business-date | GET | Current business date for tenant |
+| /api/night-audit/history | GET | Night audit run history |
+| /api/night-audit/exceptions/{id} | GET | Exceptions for a specific audit run |
+| /api/audit/timeline | GET | Timeline-friendly audit log (cursor-based pagination) |
+| /api/audit/timeline/{type}/{id} | GET | Entity audit trail with before/after snapshots |
+| /api/audit/summary | GET | Aggregated audit summary (by severity/operation/actor) |
+| /api/metrics/operational | GET | Operational metrics (rooms, bookings, folios, HK) |
+| /api/metrics/night-audit | GET | Night audit metrics (trends, success rate, duration) |
 
 ## Test Credentials
 | User | Email | Password |

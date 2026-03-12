@@ -1,5 +1,35 @@
 # Syroce Hotel PMS — Changelog
 
+## [2026-03-12] Phase 4: PMS Core Logic, Load Tests, Module Boundaries & Audit Timeline
+
+### Added
+- **NightAuditCoreService** (`domains/pms/night_audit/service.py`): Production-grade night audit engine with business date roll, room charge posting (VAT + accommodation tax), no-show handling, folio balance check, tax consistency validation, concurrent lock guard, idempotency, dry-run mode
+- **Night Audit API** (`domains/pms/night_audit/router.py`): POST /run, GET /business-date, GET /history, GET /exceptions/{id}
+- **Night Audit Schemas** (`domains/pms/night_audit/schemas.py`): NightAuditStatus, AuditExceptionSeverity, RunNightAuditRequest, NightAuditSummary, AuditException
+- **Night Audit Validations** (`domains/pms/night_audit/validations.py`): Pre-audit checks (HK tasks, POS transactions, orphan check-ins, concurrent audit)
+- **Audit Timeline API** (`routers/audit_timeline.py`): GET /timeline (cursor-based), GET /timeline/{entity}/{id} (entity trail with diffs), GET /summary (aggregation by severity/operation/actor)
+- **Operational Metrics API** (`routers/operational_metrics.py`): GET /metrics/operational, GET /metrics/night-audit
+- **Load Tests — k6**: ota_reservation_burst.js, ari_update_storm.js, queue_backlog_load.js, night_audit_load.js, system_health_dashboard_load.js, websocket_health_stream_load.js, pos_fnb_burst.js, mobile_ops_load.js
+- **Load Tests — Locust**: locust_pms.py (PMSUser + CheckoutSurge user classes)
+- **Load Test Docs**: README.md with profiles, thresholds, failure interpretation
+- **Frontend Module Boundaries**: 9 module index files (runtime-health, admin, frontdesk, housekeeping, finance, rms, pos_fnb, mobile, messaging)
+- **ModuleErrorBoundary**: Per-module error isolation with retry
+- **useOperationalSocket**: Shared WebSocket hook with auto-reconnect and stale detection
+- **OperationalWidgets**: SeverityBadge, EmptyState, DegradedState, NetworkError components
+- **AuditTimelineSummaryCard**: Embeddable audit summary card for dashboards
+- **Backend Tests**: test_night_audit_and_timeline.py (14), runtime/test_night_audit_core.py (4), runtime/test_audit_timeline_stress.py (3)
+
+### Changed
+- `bootstrap/router_registry.py` — Registered night_audit.router, audit_timeline, operational_metrics
+
+### Testing
+- All 21 new tests pass (14 unit + 7 runtime stress)
+- Full testing agent validation (iteration_54): 100% backend + frontend success
+- All 8 new API endpoints verified via curl with correct response schemas
+
+---
+
+
 ## [2026-03-12] Phase 3: Service Wiring, Audit Hooks & Dashboard Polish
 
 ### Added
