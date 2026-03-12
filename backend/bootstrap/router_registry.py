@@ -92,6 +92,7 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     # System Health Dashboard — role-based
     ("routers.system_health_dashboard", "router", ["System Health"], None, None),
     ("routers.system_health_normalized", "router", ["System Health Normalized"], None, None),
+    ("routers.system_health_live", "router", ["System Health Live"], None, None),
 ]
 
 # Optional routers with special import paths

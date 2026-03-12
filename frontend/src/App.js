@@ -9,6 +9,7 @@ import { queryClient } from '@/lib/queryClient';
 import usePushNotifications from '@/hooks/usePushNotifications';
 import { NotificationProvider } from '@/context/NotificationContext';
 import NotificationCenter from '@/components/NotificationCenter';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // Critical imports - loaded immediately
 import AuthPage from "@/pages/AuthPage";
@@ -477,6 +478,7 @@ function App() {
         <div className="App">
           <Toaster position="top-right" />
           <BrowserRouter>
+          <ErrorBoundary>
           <PlanRouteGuard tenant={tenant} user={user}>
           <Routes>
           {/* Public Landing Page */}
@@ -1811,6 +1813,7 @@ function App() {
           <Route path="/ml-dashboard" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><MLDashboard user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
         </Routes>
         </PlanRouteGuard>
+        </ErrorBoundary>
         </BrowserRouter>
         <NotificationCenter />
       </div>
