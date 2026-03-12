@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Layout from "../components/Layout";
-import { Shield, Activity, Server, Database, Radio, Bell, Rocket, RefreshCw, ChevronRight, AlertTriangle, CheckCircle2, XCircle, Clock, Zap, Settings, FileText, Play } from "lucide-react";
+import { Shield, Activity, Server, Database, Radio, Bell, Rocket, RefreshCw, ChevronRight, AlertTriangle, CheckCircle2, XCircle, Clock, Zap, Settings, FileText, Play, Box, GitBranch, HardDrive, Lock, BarChart3, Download } from "lucide-react";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -110,6 +110,9 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
   const [prelaunchResult, setPrelaunchResult] = useState(null);
   const [runningPrelaunch, setRunningPrelaunch] = useState(false);
   const [validationHistory, setValidationHistory] = useState([]);
+  const [deploymentData, setDeploymentData] = useState(null);
+  const [triggeringBackup, setTriggeringBackup] = useState(false);
+  const [backupResult, setBackupResult] = useState(null);
   const token = localStorage.getItem("token");
   const headers = { Authorization: `Bearer ${token}` };
 
@@ -161,6 +164,30 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
     setRunningPrelaunch(false);
   };
 
+  const fetchDeployment = useCallback(async () => {
+    try {
+      const [riskRes, stratRes, infraRes] = await Promise.all([
+        fetch(`${API}/api/production-golive/deployment/risk-assessment`, { headers }),
+        fetch(`${API}/api/production-golive/deployment/strategy`, { headers }),
+        fetch(`${API}/api/production-golive/deployment/infrastructure`, { headers }),
+      ]);
+      const [risk, strategy, infra] = await Promise.all([riskRes.json(), stratRes.json(), infraRes.json()]);
+      setDeploymentData({ risk, strategy, infra });
+    } catch (e) { console.error(e); }
+  }, [token]);
+
+  const triggerBackup = async () => {
+    setTriggeringBackup(true);
+    try {
+      const res = await fetch(`${API}/api/production-golive/backup/trigger`, { method: "POST", headers });
+      const json = await res.json();
+      setBackupResult(json);
+    } catch (e) { console.error(e); }
+    setTriggeringBackup(false);
+  };
+
+  useEffect(() => { if (activeTab === "deployment") fetchDeployment(); }, [activeTab, fetchDeployment]);
+
   if (loading) return <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="production_golive"><div data-testid="golive-loading" className="flex items-center justify-center min-h-[60vh]"><div className="text-zinc-400 animate-pulse text-lg">Production Go-Live kontrol ediliyor...</div></div></Layout>;
   if (error) return <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="production_golive"><div data-testid="golive-error" className="flex items-center justify-center min-h-[60vh]"><div className="text-red-400">Hata: {error}</div></div></Layout>;
 
@@ -182,6 +209,7 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
 
   const tabs = [
     { key: "overview", label: "Overview", icon: Activity },
+    { key: "deployment", label: "Deployment", icon: Box },
     { key: "providers", label: "Providers", icon: Radio },
     { key: "config", label: "Config", icon: Settings },
     { key: "infra", label: "Infrastructure", icon: Server },
@@ -268,6 +296,183 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
             </div>
           </div>
         )}
+
+        {/* TAB: Deployment */}
+        {activeTab === "deployment" && (
+          <div className="space-y-5">
+            {/* Risk Assessment */}
+            {deploymentData?.risk && (
+              <Panel title="Deployment Risk Assessment" status={deploymentData.risk.verdict} testId="panel-risk" icon={AlertTriangle}>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                  <MetricBox testId="safety-score" label="Safety Score" value={`${deploymentData.risk.safety_score}%`} sub={deploymentData.risk.verdict?.replace(/_/g, " ")} />
+                  <MetricBox testId="risk-score" label="Risk Score" value={deploymentData.risk.risk_score} sub={`${deploymentData.risk.risk_count} risk factors`} />
+                  <MetricBox testId="deploy-strategy" label="Strategy" value={deploymentData.strategy?.strategy?.replace(/_/g, " ")} sub={`Est. ${deploymentData.strategy?.estimated_duration_minutes || 0} min`} />
+                  <MetricBox testId="deploy-components" label="Components" value={deploymentData.infra?.total_components || 0} sub={`${deploymentData.infra?.critical_components || 0} critical`} />
+                </div>
+
+                {/* Risk factors */}
+                {deploymentData.risk.risks?.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Risk Factors</div>
+                    {deploymentData.risk.risks.map((r, i) => (
+                      <div key={i} className="flex items-center justify-between py-2 border-b border-zinc-800/50 last:border-0">
+                        <div className="flex items-center gap-2.5">
+                          <AlertTriangle size={12} className="text-amber-400" />
+                          <span className="text-sm text-zinc-300">{r.description}</span>
+                        </div>
+                        <span className="text-xs text-amber-400 font-bold tabular-nums">-{r.weight}pts</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Mitigations */}
+                {deploymentData.risk.mitigations?.length > 0 && (
+                  <div className="mt-4 bg-zinc-800/40 rounded-lg p-3.5">
+                    <div className="text-[11px] font-bold text-emerald-400 uppercase mb-2">Mitigations</div>
+                    {deploymentData.risk.mitigations.map((m, i) => (
+                      <div key={i} className="flex items-start gap-2 py-1">
+                        <ChevronRight size={10} className="text-emerald-500 mt-1 flex-shrink-0" />
+                        <span className="text-xs text-zinc-400">{m}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Panel>
+            )}
+
+            {/* Deployment Strategy */}
+            {deploymentData?.strategy && (
+              <Panel title="Deployment Strategy" status={deploymentData.strategy.strategy} testId="panel-strategy" icon={GitBranch}>
+                <div className="mb-3 text-sm text-zinc-400">{deploymentData.strategy.description}</div>
+
+                {/* Deployment batches */}
+                <div className="space-y-1">
+                  <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Deployment Order</div>
+                  {deploymentData.strategy.deployment_batches?.map((b, i) => (
+                    <div key={i} data-testid={`batch-${b.component}`} className="flex items-center justify-between py-2 border-b border-zinc-800/50 last:border-0">
+                      <div className="flex items-center gap-3">
+                        <span className="text-[10px] text-zinc-600 font-mono w-5 text-right">{b.order}</span>
+                        <div className={`w-2 h-2 rounded-full ${b.critical ? "bg-amber-400" : "bg-zinc-600"}`} />
+                        <span className="text-sm font-medium text-zinc-200">{b.component}</span>
+                        <span className="text-[10px] text-zinc-600">{b.type}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {b.health_check && <span className="text-[10px] text-zinc-600 font-mono">{b.health_check}</span>}
+                        <span className="text-[10px] text-zinc-500">x{b.replicas}</span>
+                        {b.critical && <span className="text-[9px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded font-bold">CRITICAL</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Pre/Post checks */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div className="bg-zinc-800/40 rounded-lg p-3">
+                    <div className="text-[11px] font-bold text-zinc-400 uppercase mb-2">Pre-Deployment</div>
+                    {deploymentData.strategy.pre_deployment_checks?.map((c, i) => (
+                      <div key={i} className="text-xs text-zinc-500 py-0.5 flex items-start gap-1.5"><CheckCircle2 size={10} className="text-zinc-600 mt-0.5" />{c}</div>
+                    ))}
+                  </div>
+                  <div className="bg-zinc-800/40 rounded-lg p-3">
+                    <div className="text-[11px] font-bold text-zinc-400 uppercase mb-2">Post-Deployment</div>
+                    {deploymentData.strategy.post_deployment_checks?.map((c, i) => (
+                      <div key={i} className="text-xs text-zinc-500 py-0.5 flex items-start gap-1.5"><CheckCircle2 size={10} className="text-zinc-600 mt-0.5" />{c}</div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Rollback plan */}
+                {deploymentData.strategy.rollback_plan && (
+                  <div className="mt-3 bg-red-500/5 border border-red-500/20 rounded-lg p-3">
+                    <div className="text-[11px] font-bold text-red-400 uppercase mb-1">Rollback Plan</div>
+                    <div className="text-xs text-zinc-400">Auto: {deploymentData.strategy.rollback_plan.auto_rollback ? "Enabled" : "Disabled"} | Health Check: {deploymentData.strategy.rollback_plan.health_check_interval_sec}s | Threshold: {deploymentData.strategy.rollback_plan.failure_threshold} failures</div>
+                  </div>
+                )}
+              </Panel>
+            )}
+
+            {/* Infrastructure Topology */}
+            {deploymentData?.infra && (
+              <Panel title="Infrastructure Topology" testId="panel-infra-topology" icon={HardDrive}>
+                {/* Monitoring Stack */}
+                <div className="mb-4">
+                  <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Monitoring Stack</div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {deploymentData.infra.monitoring_stack && Object.entries(deploymentData.infra.monitoring_stack).map(([k, v]) => (
+                      <div key={k} className="bg-zinc-800/40 rounded-lg p-2.5">
+                        <div className="text-[10px] text-zinc-600 uppercase">{k}</div>
+                        <div className="text-xs text-zinc-300 font-medium">{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Security */}
+                <div className="mb-4">
+                  <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Security Layer</div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {deploymentData.infra.security && Object.entries(deploymentData.infra.security).map(([k, v]) => (
+                      <div key={k} className="bg-zinc-800/40 rounded-lg p-2.5">
+                        <div className="text-[10px] text-zinc-600 uppercase">{k}</div>
+                        <div className="text-xs text-zinc-300">{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Config files */}
+                <div>
+                  <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Config File Inventory</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
+                    {deploymentData.infra.config_files && Object.entries(deploymentData.infra.config_files).map(([k, v]) => (
+                      <div key={k} className="flex items-center justify-between py-1.5">
+                        <span className="text-xs text-zinc-400">{k.replace(/_/g, " ")}</span>
+                        <span className="text-[10px] text-zinc-600 font-mono">{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Grafana Dashboards */}
+                {deploymentData.infra.grafana_dashboards && (
+                  <div className="mt-4">
+                    <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Grafana Dashboards</div>
+                    <div className="flex gap-2 flex-wrap">
+                      {deploymentData.infra.grafana_dashboards.map((d, i) => (
+                        <span key={i} className="px-3 py-1.5 bg-zinc-800/60 border border-zinc-700/40 rounded-lg text-xs text-zinc-300 font-medium flex items-center gap-1.5">
+                          <BarChart3 size={10} className="text-zinc-500" />{d.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </Panel>
+            )}
+
+            {/* Backup & DR */}
+            <Panel title="Backup & Disaster Recovery" testId="panel-deploy-backup" icon={Download} actions={
+              <button data-testid="trigger-backup-btn" onClick={triggerBackup} disabled={triggeringBackup} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-zinc-800 border border-zinc-700/60 text-zinc-300 hover:bg-zinc-700 transition-all disabled:opacity-40">
+                <HardDrive size={12} />{triggeringBackup ? "Running..." : "Trigger Backup"}
+              </button>
+            }>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <MetricBox testId="deploy-backup-enabled" label="Enabled" value={data?.backup?.enabled ? "Yes" : "No"} />
+                <MetricBox testId="deploy-backup-retention" label="Retention" value={`${data?.backup?.retention_days || 30}d`} />
+                <MetricBox testId="deploy-backup-rpo" label="RPO" value="24h" />
+                <MetricBox testId="deploy-backup-rto" label="RTO" value="4h" />
+              </div>
+              {backupResult && (
+                <div className="mt-3 bg-zinc-800/40 rounded-lg p-3">
+                  <div className="text-[11px] font-bold text-zinc-500 uppercase mb-1">Backup Result</div>
+                  <div className="text-sm text-zinc-300">ID: {backupResult.backup_id} | Status: <span className={STATUS_CLS(backupResult.status)}>{backupResult.status}</span></div>
+                  {backupResult.size_bytes > 0 && <div className="text-xs text-zinc-500">Size: {(backupResult.size_bytes / 1024).toFixed(1)} KB</div>}
+                </div>
+              )}
+            </Panel>
+          </div>
+        )}
+
 
         {/* TAB: Providers */}
         {activeTab === "providers" && (

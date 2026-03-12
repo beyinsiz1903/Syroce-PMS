@@ -463,3 +463,114 @@ async def security_tenant_isolation(current_user: User = Depends(get_current_use
 async def security_rbac(current_user: User = Depends(get_current_user)):
     from infra.security_checklist import security_checklist
     return await security_checklist.check_rbac()
+
+
+# ── Deployment Orchestration ──────────────────────────────────────
+
+@router.get("/deployment/risk-assessment")
+async def deployment_risk_assessment(current_user: User = Depends(get_current_user)):
+    """Full deployment risk assessment with safety score and mitigations."""
+    from infra.deployment_orchestrator import deployment_orchestrator
+    return deployment_orchestrator.assess_risk()
+
+
+@router.get("/deployment/strategy")
+async def deployment_strategy(current_user: User = Depends(get_current_user)):
+    """Recommended deployment strategy based on current risk profile."""
+    from infra.deployment_orchestrator import deployment_orchestrator
+    return deployment_orchestrator.get_deployment_strategy()
+
+
+@router.get("/deployment/infrastructure")
+async def deployment_infrastructure(current_user: User = Depends(get_current_user)):
+    """Infrastructure topology and config file inventory."""
+    from infra.deployment_orchestrator import deployment_orchestrator
+    return deployment_orchestrator.get_infra_summary()
+
+
+@router.get("/deployment/first-batch")
+async def deployment_first_batch(current_user: User = Depends(get_current_user)):
+    """First deployment batch — ordered component startup sequence."""
+    from infra.deployment_orchestrator import deployment_orchestrator
+    strategy = deployment_orchestrator.get_deployment_strategy()
+    return {
+        "strategy": strategy["strategy"],
+        "first_5_components": strategy["deployment_batches"][:5],
+        "pre_deployment_checks": strategy["pre_deployment_checks"],
+        "rollback_plan": strategy["rollback_plan"],
+    }
+
+
+# ── Secrets Manager ───────────────────────────────────────────────
+
+@router.get("/secrets/health")
+async def secrets_health(current_user: User = Depends(get_current_user)):
+    """Secrets manager health and provider status."""
+    from infra.secrets_manager import secrets_manager
+    return await secrets_manager.health_check()
+
+
+@router.get("/secrets/access-log")
+async def secrets_access_log(
+    limit: int = Query(30, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+):
+    """Recent secrets access log (masked)."""
+    from infra.secrets_manager import secrets_manager
+    return {"access_log": secrets_manager.get_access_log(limit)}
+
+
+@router.get("/secrets/metrics")
+async def secrets_metrics(current_user: User = Depends(get_current_user)):
+    """Secrets manager usage metrics."""
+    from infra.secrets_manager import secrets_manager
+    return secrets_manager.get_metrics()
+
+
+# ── Backup Trigger & Restore Test ─────────────────────────────────
+
+@router.post("/backup/trigger")
+async def trigger_backup(current_user: User = Depends(get_current_user)):
+    """Manually trigger a MongoDB backup."""
+    from infra.backup_manager import backup_manager
+    return await backup_manager.create_backup("manual")
+
+
+@router.post("/backup/restore-test/{backup_id}")
+async def test_restore(backup_id: str, current_user: User = Depends(get_current_user)):
+    """Test restore integrity for a specific backup."""
+    from infra.backup_manager import backup_manager
+    return await backup_manager.test_restore(backup_id)
+
+
+@router.post("/backup/cleanup")
+async def cleanup_backups(current_user: User = Depends(get_current_user)):
+    """Remove backups older than retention period."""
+    from infra.backup_manager import backup_manager
+    return await backup_manager.cleanup_old_backups()
+
+
+@router.get("/backup/history")
+async def backup_history(
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+):
+    """Backup history."""
+    from infra.backup_manager import backup_manager
+    return {"history": backup_manager.get_history(limit)}
+
+
+# ── Horizontal Scaling ────────────────────────────────────────────
+
+@router.get("/scaling/summary")
+async def scaling_summary(current_user: User = Depends(get_current_user)):
+    """Instance scaling status and health."""
+    from infra.horizontal_scaling import scaling_manager
+    return await scaling_manager.get_scaling_summary()
+
+
+@router.get("/scaling/stateless-check")
+async def stateless_check(current_user: User = Depends(get_current_user)):
+    """Statelessness validation for horizontal scaling."""
+    from infra.horizontal_scaling import scaling_manager
+    return scaling_manager.stateless_validation()

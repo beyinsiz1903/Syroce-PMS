@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: syroce-backend
+  namespace: syroce
+  labels:
+    app: syroce
+    component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: syroce
+      component: backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: syroce
+        component: backend
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: backend
+          image: ${REGISTRY}/syroce-backend:${IMAGE_TAG}
+          ports:
+            - containerPort: 8001
+              name: http
+          envFrom:
+            - secretRef:
+                name: syroce-secrets
+            - configMapRef:
+                name: syroce-config
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          livenessProbe:
+            httpGet:
+              path: /api/health/liveness
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health/readiness
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          volumeMounts:
+            - name: backup-volume
+              mountPath: /data/backups
+      volumes:
+        - name: backup-volume
+          persistentVolumeClaim:
+            claimName: syroce-backup-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: syroce-backend
+  namespace: syroce
+spec:
+  selector:
+    app: syroce
+    component: backend
+  ports:
+    - port: 8001
+      targetPort: 8001
+      name: http
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: syroce-backend-hpa
+  namespace: syroce
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: syroce-backend
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

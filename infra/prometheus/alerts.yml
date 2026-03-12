@@ -1,0 +1,98 @@
+groups:
+  - name: syroce-pms-critical
+    rules:
+      - alert: BackendDown
+        expr: up{job="syroce-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Backend API is down"
+          description: "Backend instance {{ $labels.instance }} has been unreachable for > 1 minute."
+          runbook: "Check container health. Review backend logs. Restart if needed."
+
+      - alert: HighErrorRate
+        expr: rate(hotel_pms_errors_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate exceeds 0.5/s for 5+ minutes."
+
+      - alert: HighAPILatency
+        expr: histogram_quantile(0.95, rate(hotel_pms_http_request_duration_seconds_bucket[5m])) > 2.0
+        for: 5m
+        labels:
+          severity: high
+          team: platform
+        annotations:
+          summary: "API p95 latency > 2 seconds"
+          description: "The 95th percentile latency for API requests exceeds 2s."
+
+  - name: syroce-pms-infrastructure
+    rules:
+      - alert: RedisDown
+        expr: hotel_pms_redis_connected == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "Redis is disconnected"
+          description: "Redis has been unreachable for > 1 minute. Cache, pub/sub, and event bus affected."
+          runbook: "Check Redis container. Verify REDIS_URL. Check network."
+
+      - alert: MongoHighConnections
+        expr: hotel_pms_db_active_connections > 80
+        for: 5m
+        labels:
+          severity: high
+          team: infra
+        annotations:
+          summary: "MongoDB connection count is high"
+          description: "Active MongoDB connections exceed 80."
+
+      - alert: WorkerQueueBacklog
+        expr: hotel_pms_worker_queue_depth > 100
+        for: 10m
+        labels:
+          severity: high
+          team: platform
+        annotations:
+          summary: "Worker queue backlog growing"
+          description: "Queue {{ $labels.queue }} has > 100 pending tasks for 10+ minutes."
+
+      - alert: BackupStale
+        expr: time() - hotel_pms_last_backup_timestamp > 90000
+        for: 5m
+        labels:
+          severity: high
+          team: infra
+        annotations:
+          summary: "Backup is stale (>25h)"
+          description: "Last successful backup is older than 25 hours."
+
+  - name: syroce-pms-business
+    rules:
+      - alert: MessagingDeliveryDegraded
+        expr: hotel_pms_messaging_delivery_success_rate < 0.9
+        for: 15m
+        labels:
+          severity: high
+          team: operations
+        annotations:
+          summary: "Messaging delivery rate below 90%"
+          description: "Channel {{ $labels.channel }} delivery success rate dropped below 90%."
+
+      - alert: WebSocketDropped
+        expr: hotel_pms_websocket_connections == 0
+        for: 5m
+        labels:
+          severity: medium
+          team: platform
+        annotations:
+          summary: "No active WebSocket connections"
+          description: "All WebSocket connections have dropped. Real-time features unavailable."

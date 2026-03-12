@@ -8,7 +8,7 @@ import requests
 import os
 
 # Use public URL for testing
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://readiness-validator-5.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://activation-suite.preview.emergentagent.com')
 
 
 @pytest.fixture(scope="module")

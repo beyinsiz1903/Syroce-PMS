@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: syroce-worker
+  namespace: syroce
+  labels:
+    app: syroce
+    component: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: syroce
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: syroce
+        component: worker
+    spec:
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: worker
+          image: ${REGISTRY}/syroce-worker:${IMAGE_TAG}
+          command: ["celery", "-A", "celery_app", "worker", "--loglevel=info", "-Q", "default,ml,analytics,messaging,pipeline,backup"]
+          envFrom:
+            - secretRef:
+                name: syroce-secrets
+            - configMapRef:
+                name: syroce-config
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          volumeMounts:
+            - name: backup-volume
+              mountPath: /data/backups
+      volumes:
+        - name: backup-volume
+          persistentVolumeClaim:
+            claimName: syroce-backup-pvc
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: syroce-worker-hpa
+  namespace: syroce
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: syroce-worker
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: syroce-beat
+  namespace: syroce
+spec:
+  schedule: "*/1 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: beat
+              image: ${REGISTRY}/syroce-worker:${IMAGE_TAG}
+              command: ["celery", "-A", "celery_app", "beat", "--loglevel=info", "--pidfile=/tmp/celerybeat.pid"]
+              envFrom:
+                - secretRef:
+                    name: syroce-secrets
+                - configMapRef:
+                    name: syroce-config
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 250m
+                  memory: 256Mi

@@ -1,0 +1,76 @@
+{
+  "dashboard": {
+    "title": "Syroce PMS — Business Metrics",
+    "uid": "syroce-business",
+    "timezone": "UTC",
+    "refresh": "1m",
+    "time": {"from": "now-7d", "to": "now"},
+    "tags": ["syroce", "business"],
+    "panels": [
+      {
+        "title": "Active Bookings",
+        "type": "stat",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "hotel_pms_active_bookings", "legendFormat": "Active"}],
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "title": "Occupancy Rate %",
+        "type": "gauge",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "hotel_pms_occupancy_rate * 100", "legendFormat": "Occupancy"}],
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+        "fieldConfig": {"defaults": {"min": 0, "max": 100, "thresholds": {"steps": [{"value": 0, "color": "red"}, {"value": 50, "color": "yellow"}, {"value": 75, "color": "green"}]}}}
+      },
+      {
+        "title": "Revenue Today",
+        "type": "stat",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "hotel_pms_daily_revenue", "legendFormat": "Revenue"}],
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0}
+      },
+      {
+        "title": "ADR (Average Daily Rate)",
+        "type": "stat",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "hotel_pms_adr", "legendFormat": "ADR"}],
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0}
+      },
+      {
+        "title": "Check-ins Today",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [
+          {"expr": "increase(hotel_pms_checkins_total[1h])", "legendFormat": "Check-ins"},
+          {"expr": "increase(hotel_pms_checkouts_total[1h])", "legendFormat": "Check-outs"}
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
+      },
+      {
+        "title": "Channel Booking Distribution",
+        "type": "piechart",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "hotel_pms_bookings_by_channel", "legendFormat": "{{channel}}"}],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
+      },
+      {
+        "title": "Guest Satisfaction Trend",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "hotel_pms_guest_satisfaction_score", "legendFormat": "Score"}],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12}
+      },
+      {
+        "title": "Messaging Volume by Channel",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [
+          {"expr": "rate(hotel_pms_messages_sent_total{channel=\"sms\"}[1h])", "legendFormat": "SMS"},
+          {"expr": "rate(hotel_pms_messages_sent_total{channel=\"email\"}[1h])", "legendFormat": "Email"},
+          {"expr": "rate(hotel_pms_messages_sent_total{channel=\"whatsapp\"}[1h])", "legendFormat": "WhatsApp"}
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12}
+      }
+    ]
+  }
+}

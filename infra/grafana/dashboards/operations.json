@@ -1,0 +1,107 @@
+{
+  "dashboard": {
+    "title": "Syroce PMS — Operations",
+    "uid": "syroce-ops",
+    "timezone": "UTC",
+    "refresh": "15s",
+    "time": {"from": "now-6h", "to": "now"},
+    "tags": ["syroce", "operations"],
+    "panels": [
+      {
+        "title": "System Status",
+        "type": "stat",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "up{job=\"syroce-backend\"}", "legendFormat": "Backend"}],
+        "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+        "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}]}}
+      },
+      {
+        "title": "Redis Connected",
+        "type": "stat",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "hotel_pms_redis_connected", "legendFormat": "Redis"}],
+        "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0}
+      },
+      {
+        "title": "Active WebSockets",
+        "type": "stat",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "hotel_pms_websocket_connections", "legendFormat": "WS"}],
+        "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0}
+      },
+      {
+        "title": "API Request Rate",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "rate(hotel_pms_http_requests_total[5m])", "legendFormat": "{{method}} {{endpoint}}"}],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
+      },
+      {
+        "title": "API Latency (p50/p95/p99)",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [
+          {"expr": "histogram_quantile(0.50, rate(hotel_pms_http_request_duration_seconds_bucket[5m]))", "legendFormat": "p50"},
+          {"expr": "histogram_quantile(0.95, rate(hotel_pms_http_request_duration_seconds_bucket[5m]))", "legendFormat": "p95"},
+          {"expr": "histogram_quantile(0.99, rate(hotel_pms_http_request_duration_seconds_bucket[5m]))", "legendFormat": "p99"}
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
+      },
+      {
+        "title": "Error Rate by Type",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "rate(hotel_pms_errors_total[5m])", "legendFormat": "{{error_type}}"}],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12}
+      },
+      {
+        "title": "Celery Task Throughput",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [
+          {"expr": "rate(hotel_pms_celery_tasks_total{status=\"success\"}[5m])", "legendFormat": "Success"},
+          {"expr": "rate(hotel_pms_celery_tasks_total{status=\"failure\"}[5m])", "legendFormat": "Failure"}
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12}
+      },
+      {
+        "title": "Worker Queue Depth",
+        "type": "gauge",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "hotel_pms_worker_queue_depth", "legendFormat": "{{queue}}"}],
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 20}
+      },
+      {
+        "title": "Messaging Delivery Rate",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "rate(hotel_pms_messaging_delivered_total[5m])", "legendFormat": "{{channel}}"}],
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 20}
+      },
+      {
+        "title": "MongoDB Connections",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [
+          {"expr": "hotel_pms_db_active_connections", "legendFormat": "Active"},
+          {"expr": "hotel_pms_db_available_connections", "legendFormat": "Available"}
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 20}
+      },
+      {
+        "title": "Redis Memory Usage",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "redis_memory_used_bytes / 1024 / 1024", "legendFormat": "Used (MB)"}],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28}
+      },
+      {
+        "title": "ML Pipeline Duration",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "hotel_pms_ml_pipeline_duration_seconds", "legendFormat": "{{pipeline}}"}],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28}
+      }
+    ]
+  }
+}

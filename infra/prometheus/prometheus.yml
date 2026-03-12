@@ -1,0 +1,54 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+rule_files:
+  - "alerts.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+scrape_configs:
+  - job_name: "syroce-backend"
+    metrics_path: "/api/metrics"
+    scrape_interval: 10s
+    static_configs:
+      - targets: ["backend:8001"]
+        labels:
+          service: "syroce-pms"
+          component: "backend"
+
+  - job_name: "otel-collector"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["otel-collector:8889"]
+        labels:
+          service: "syroce-pms"
+          component: "otel-collector"
+
+  - job_name: "redis"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+        labels:
+          service: "syroce-pms"
+          component: "redis"
+
+  - job_name: "nginx"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["nginx:9113"]
+        labels:
+          service: "syroce-pms"
+          component: "nginx"
+
+  - job_name: "node"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          service: "syroce-pms"
+          component: "host"

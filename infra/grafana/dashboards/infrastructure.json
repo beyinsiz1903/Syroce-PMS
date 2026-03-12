@@ -1,0 +1,97 @@
+{
+  "dashboard": {
+    "title": "Syroce PMS — Infrastructure",
+    "uid": "syroce-infra-v2",
+    "timezone": "UTC",
+    "refresh": "30s",
+    "time": {"from": "now-24h", "to": "now"},
+    "tags": ["syroce", "infrastructure"],
+    "panels": [
+      {
+        "title": "Redis Cluster Status",
+        "type": "stat",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "hotel_pms_redis_connected", "legendFormat": "Connected"}],
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "title": "Redis Keyspace Hit Rate",
+        "type": "gauge",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "redis_keyspace_hits_total / (redis_keyspace_hits_total + redis_keyspace_misses_total) * 100", "legendFormat": "Hit Rate %"}],
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "title": "Redis Commands/s",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "rate(redis_commands_processed_total[5m])", "legendFormat": "Commands/s"}],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
+      },
+      {
+        "title": "Redis Pub/Sub Channels",
+        "type": "stat",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "redis_pubsub_channels", "legendFormat": "Channels"}],
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0}
+      },
+      {
+        "title": "Redis Connected Clients",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "redis_connected_clients", "legendFormat": "Clients"}],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
+      },
+      {
+        "title": "MongoDB Operations/s",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [
+          {"expr": "rate(mongodb_opcounters_insert_total[5m])", "legendFormat": "Insert"},
+          {"expr": "rate(mongodb_opcounters_query_total[5m])", "legendFormat": "Query"},
+          {"expr": "rate(mongodb_opcounters_update_total[5m])", "legendFormat": "Update"},
+          {"expr": "rate(mongodb_opcounters_delete_total[5m])", "legendFormat": "Delete"}
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12}
+      },
+      {
+        "title": "MongoDB Document Count by Collection",
+        "type": "bargauge",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "mongodb_collection_documents_total", "legendFormat": "{{collection}}"}],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12}
+      },
+      {
+        "title": "CPU Usage by Container",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "rate(container_cpu_usage_seconds_total{name=~\"syroce.*\"}[5m])", "legendFormat": "{{name}}"}],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20}
+      },
+      {
+        "title": "Memory Usage by Container",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "container_memory_usage_bytes{name=~\"syroce.*\"} / 1024 / 1024", "legendFormat": "{{name}} (MB)"}],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20}
+      },
+      {
+        "title": "Network I/O",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [
+          {"expr": "rate(container_network_receive_bytes_total{name=~\"syroce.*\"}[5m]) / 1024", "legendFormat": "RX {{name}} (KB/s)"},
+          {"expr": "rate(container_network_transmit_bytes_total{name=~\"syroce.*\"}[5m]) / 1024", "legendFormat": "TX {{name}} (KB/s)"}
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 28}
+      },
+      {
+        "title": "Backup Status",
+        "type": "stat",
+        "datasource": "Prometheus",
+        "targets": [{"expr": "hotel_pms_backup_enabled", "legendFormat": "Enabled"}],
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0}
+      }
+    ]
+  }
+}
