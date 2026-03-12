@@ -2,30 +2,23 @@
 PMS / Front Desk Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends, status, Body, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import ORJSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta, date
-import os
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import HTTPAuthorizationCredentials
+from typing import Optional, Dict, Any
+from datetime import datetime, timezone, timedelta
 import uuid
-import random
 import logging
 import io
 
 from core.database import db
 from core.security import (
-    get_current_user, security, JWT_SECRET, JWT_ALGORITHM,
-    generate_qr_code, generate_time_based_qr_token,
+    get_current_user, security,
 )
 from core.helpers import (
-    create_audit_log, require_feature, require_module,
-    require_super_admin_guard as require_super_admin, require_admin,
-    get_tenant_modules, load_tenant_doc,
+    create_audit_log,
 )
-from models.schemas import User, BookingCreate, BookingExtended
-from models.enums import UserRole, RoomStatus, BookingStatus, FolioType, ChannelType
+from models.schemas import User
+from models.enums import RoomStatus, BookingStatus, FolioType, ChannelType
 
 from common.context import OperationContext
 from domains.pms.frontdesk_service import frontdesk_service
@@ -365,7 +358,7 @@ async def create_walk_in_booking(
         
         return {
             'success': True,
-            'message': f"Walk-in booking created and checked in successfully",
+            'message': "Walk-in booking created and checked in successfully",
             'booking_id': new_booking.id,
             'guest_id': guest_id,
             'folio_id': folio.id,

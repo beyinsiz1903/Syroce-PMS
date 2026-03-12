@@ -11,7 +11,6 @@ import pytest
 import requests
 import os
 import time
-from datetime import datetime
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://hotelrunner-sandbox.preview.emergentagent.com')
 
@@ -37,7 +36,7 @@ class TestSecurityHeaders:
         
         # Check X-Content-Type-Options
         assert 'X-Content-Type-Options' in headers, "X-Content-Type-Options header missing"
-        assert headers['X-Content-Type-Options'] == 'nosniff', f"X-Content-Type-Options value mismatch"
+        assert headers['X-Content-Type-Options'] == 'nosniff', "X-Content-Type-Options value mismatch"
         print(f"✅ X-Content-Type-Options: {headers['X-Content-Type-Options']}")
         
         # Check Strict-Transport-Security (HSTS)
@@ -106,7 +105,7 @@ class TestJWTTokenRefresh:
         assert data['expires_in'] > 0, "expires_in should be positive"
         assert len(data['access_token']) > 50, "New token seems too short"
         
-        print(f"✅ Token refresh successful")
+        print("✅ Token refresh successful")
         print(f"   token_type: {data['token_type']}")
         print(f"   expires_in: {data['expires_in']} seconds")
         print(f"   new token length: {len(data['access_token'])}")
@@ -160,7 +159,7 @@ class TestSecuritySummaryEndpoint:
         assert 'active_sessions' in overview, "active_sessions missing"
         assert 'total_users' in overview, "total_users missing"
         
-        print(f"✅ Security summary overview verified")
+        print("✅ Security summary overview verified")
         print(f"   failed_logins_24h: {overview['failed_logins_24h']}")
         print(f"   successful_logins_24h: {overview['successful_logins_24h']}")
         print(f"   active_sessions: {overview['active_sessions']}")
@@ -185,7 +184,7 @@ class TestSecuritySummaryEndpoint:
         assert 'error_rate' in apm, "error_rate missing"
         assert 'avg_response_ms' in apm, "avg_response_ms missing"
         
-        print(f"✅ Security summary APM verified")
+        print("✅ Security summary APM verified")
         print(f"   requests_per_minute: {apm['requests_per_minute']}")
         print(f"   error_rate: {apm['error_rate']}%")
         print(f"   avg_response_ms: {apm['avg_response_ms']}")
@@ -204,7 +203,7 @@ class TestSecuritySummaryEndpoint:
         assert 'recent_events' in data, "recent_events field missing"
         assert isinstance(data['recent_events'], list), "recent_events should be a list"
         
-        print(f"✅ Security summary recent_events verified")
+        print("✅ Security summary recent_events verified")
         print(f"   events count: {len(data['recent_events'])}")
         
         if data['recent_events']:
@@ -319,7 +318,7 @@ class TestLoginFlowStillWorks:
         assert 'email' in user, "user.email missing"
         assert user['email'] == VALID_EMAIL, f"Email mismatch: {user['email']}"
         
-        print(f"✅ Login response verified")
+        print("✅ Login response verified")
         print(f"   user: {user.get('name')} ({user.get('email')})")
         print(f"   role: {user.get('role')}")
     
@@ -342,7 +341,7 @@ class TestLoginFlowStillWorks:
         data = response.json()
         assert 'email' in data, "email field missing"
         assert data['email'] == VALID_EMAIL
-        print(f"✅ /auth/me works correctly")
+        print("✅ /auth/me works correctly")
 
 
 class TestRateLimiting:
@@ -370,7 +369,7 @@ class TestRateLimiting:
         overview = data.get('overview', {})
         assert 'rate_limit_hits' in overview, "rate_limit_hits field missing in overview"
         
-        print(f"✅ Rate limiting is active")
+        print("✅ Rate limiting is active")
         print(f"   rate_limit_hits: {overview.get('rate_limit_hits', 0)}")
 
 

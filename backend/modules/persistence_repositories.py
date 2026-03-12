@@ -4,7 +4,7 @@ Migrates in-memory stores to MongoDB with TTL, retention, and tenant isolation.
 """
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, List, Any
+from typing import Dict, List, Any
 import uuid
 
 from core.database import db

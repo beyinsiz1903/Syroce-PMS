@@ -2,10 +2,8 @@
 MongoDB Production Validator — Connection pool monitoring, replica set detection,
 slow query metrics, index validation, schema drift detection, and collection health.
 """
-import os
 import logging
-import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 from datetime import datetime, timezone
 
 logger = logging.getLogger("infra.mongo_production")

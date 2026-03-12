@@ -3,7 +3,7 @@ GDS Integration Models
 Amadeus, Sabre, Galileo global distribution system
 """
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime, timezone
 from enum import Enum
 import uuid

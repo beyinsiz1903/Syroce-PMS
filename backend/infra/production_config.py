@@ -8,7 +8,7 @@ provides a masked inspection endpoint for debugging without exposing secrets.
 import os
 import re
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 
 logger = logging.getLogger("infra.production_config")

@@ -4,14 +4,14 @@ Domain Router: POS & F&B
 Extracted from legacy_routes.py — Point of Sale, F&B operations, kitchen, transactions.
 """
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import BaseModel
+from typing import Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 import uuid
 
 from core.database import db
-from core.security import get_current_user, security, JWT_SECRET, JWT_ALGORITHM
+from core.security import get_current_user, security
 from core.cache import cached
 from models.schemas import User
 
@@ -25,7 +25,7 @@ async def get_pos_outlets(current_user: User = Depends(get_current_user)):
     try:
         outlets = await db.fnb_outlets.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(100)
         return outlets
-    except Exception as e:
+    except Exception:
         return []
 
 @router.get("/pos/menu-items")
@@ -34,7 +34,7 @@ async def get_menu_items(current_user: User = Depends(get_current_user)):
     try:
         items = await db.menu_items.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
         return items
-    except Exception as e:
+    except Exception:
         return []
 
 @router.get("/pos/daily-summary")
@@ -52,7 +52,7 @@ async def get_pos_daily_summary(date: str = None, current_user: User = Depends(g
             'transaction_count': len(transactions),
             'average_transaction': total_sales / len(transactions) if transactions else 0
         }
-    except Exception as e:
+    except Exception:
         return {'total_sales': 0, 'transaction_count': 0, 'average_transaction': 0}
 
 @router.get("/pos/transactions")
@@ -63,7 +63,7 @@ async def get_pos_transactions(limit: int = 10, current_user: User = Depends(get
             'tenant_id': current_user.tenant_id
         }, {'_id': 0}).sort('created_at', -1).to_list(limit)
         return transactions
-    except Exception as e:
+    except Exception:
         return []
 
 @router.get("/pos/z-report")
@@ -94,7 +94,7 @@ async def get_z_report(date: str = None, current_user: User = Depends(get_curren
                 'other': total_sales * 0.2
             }
         }
-    except Exception as e:
+    except Exception:
         return {'gross_sales': 0, 'transaction_count': 0}
 
 @router.get("/pos/void-transactions")
@@ -107,7 +107,7 @@ async def get_void_transactions(start_date: str = None, end_date: str = None, cu
         }, {'_id': 0}).to_list(100)
         
         return {'void_transactions': void_transactions}
-    except Exception as e:
+    except Exception:
         return {'void_transactions': []}
 
 @router.post("/pos/mobile/quick-order")
@@ -1491,7 +1491,6 @@ async def get_pickup_graph_mobile(
     
     # Generate pickup data points
     pickup_points = []
-    cumulative_rooms = 0
     
     # Group by days before arrival
     today = datetime.now(timezone.utc).date()

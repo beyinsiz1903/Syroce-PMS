@@ -3,7 +3,7 @@ Guest Journey Mapping Models
 Touchpoint tracking, satisfaction measurement
 """
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime, timezone
 from enum import Enum
 import uuid

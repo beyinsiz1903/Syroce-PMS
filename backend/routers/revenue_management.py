@@ -3,7 +3,6 @@ Revenue Management Engine Router - Dynamic pricing, demand analysis, yield rules
 All endpoints under /api/revenue-engine/
 """
 from datetime import date as date_cls
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel

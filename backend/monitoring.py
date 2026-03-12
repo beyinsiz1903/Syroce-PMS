@@ -4,7 +4,7 @@ Performance tracking, metrics, and system health
 """
 
 from fastapi import APIRouter
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Dict, Any, List
 import psutil
 import os

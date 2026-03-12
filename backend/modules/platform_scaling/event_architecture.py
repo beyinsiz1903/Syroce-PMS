@@ -4,8 +4,6 @@ event persistence, and operational notification system.
 Extends existing EventBus with enterprise-grade features.
 """
 import uuid
-import asyncio
-import json
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List, Optional, Set
 from collections import defaultdict

@@ -4,7 +4,6 @@ Data Pipeline Router - API endpoints for ML data pipeline management.
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 
-from core.security import get_current_user
 from shared_kernel.tenancy_context import get_current_tenant, TenantContext
 
 from modules.data_pipeline.feature_store import feature_store

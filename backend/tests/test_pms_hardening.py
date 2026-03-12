@@ -2,8 +2,7 @@
 Comprehensive PMS Hardening Test Suite - Tests all 8 hardening areas.
 """
 import pytest
-import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch, MagicMock
 
 import sys

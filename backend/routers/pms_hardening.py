@@ -3,10 +3,10 @@ PMS Hardening Router - Production-grade API endpoints for all PMS core operation
 Covers: Reservation lifecycle, Front desk, Folio/Billing, Housekeeping, Night Audit, Dashboard.
 """
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
+from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user

@@ -4,8 +4,6 @@ Runs on startup and periodically refreshes cache
 """
 import asyncio
 from datetime import datetime, timezone, timedelta
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
 
 class CacheWarmer:
     """Pre-warm cache for instant response"""
@@ -56,7 +54,7 @@ class CacheWarmer:
                     }
                     print(f"  ✅ Rooms cache warmed for tenant {t_id[:8]}: {len(tenant_rooms)} rooms")
             else:
-                print(f"  ⚠️ No rooms found in database")
+                print("  ⚠️ No rooms found in database")
         except Exception as e:
             print(f"  ❌ Rooms cache warming failed: {e}")
     
@@ -68,8 +66,8 @@ class CacheWarmer:
             print(f"  🔍 Total bookings in DB: {total_bookings}")
             
             today = datetime.now(timezone.utc)
-            start = (today - timedelta(days=30)).isoformat()  # Wider range
-            end = (today + timedelta(days=30)).isoformat()
+            (today - timedelta(days=30)).isoformat()  # Wider range
+            (today + timedelta(days=30)).isoformat()
             
             projection = {
                 '_id': 0, 'id': 1, 'guest_id': 1, 'room_id': 1,
@@ -92,7 +90,7 @@ class CacheWarmer:
                     }
                     print(f"  ✅ Bookings cache warmed for tenant {t_id[:8]}: {len(tenant_bookings)} bookings")
             else:
-                print(f"  ⚠️ No bookings found in database")
+                print("  ⚠️ No bookings found in database")
         except Exception as e:
             print(f"  ❌ Bookings cache warming failed: {e}")
     
@@ -134,7 +132,7 @@ class CacheWarmer:
                 'data': dashboard_data,
                 'expires_at': datetime.utcnow() + timedelta(seconds=20)  # Aggressive refresh
             }
-            print(f"  ✅ Dashboard cache warmed")
+            print("  ✅ Dashboard cache warmed")
         except Exception as e:
             print(f"  ❌ Dashboard cache warming failed: {e}")
     
@@ -163,7 +161,7 @@ class CacheWarmer:
                 'data': kpi_data,
                 'expires_at': datetime.utcnow() + timedelta(seconds=20)  # Aggressive refresh
             }
-            print(f"  ✅ KPI cache warmed")
+            print("  ✅ KPI cache warmed")
         except Exception as e:
             print(f"  ❌ KPI cache warming failed: {e}")
     

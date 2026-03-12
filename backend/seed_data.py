@@ -133,7 +133,7 @@ class HotelSeeder:
                 'nationality': 'TR',
                 'passport_number': f'TR{random.randint(100000, 999999)}',
                 'date_of_birth': (datetime.now() - timedelta(days=random.randint(8000, 20000))).date().isoformat(),
-                'address': f'İstanbul, Türkiye',
+                'address': 'İstanbul, Türkiye',
                 'total_stays': random.randint(1, 10),
                 'total_spend': round(random.uniform(500, 5000), 2),
                 'vip_status': random.choice([True, False]),
@@ -390,13 +390,13 @@ class HotelSeeder:
         
         # Özet yazdır
         print(f"\n✓ TOPLAM {len(bookings)} REZERVASYON OLUŞTURULDU:")
-        print(f"  📥 Bugün giriş: 6 adet")
-        print(f"  📤 Bugün çıkış: 5 adet")
-        print(f"  📅 Yarın giriş: 4 adet")
-        print(f"  📅 2-3 gün sonra: 5 adet")
-        print(f"  📆 Gelecek (1 hafta - 1 ay): 8 adet")
-        print(f"  🏨 Şu an konaklayan: 3 adet")
-        print(f"  ✅ Geçmiş: 5 adet")
+        print("  📥 Bugün giriş: 6 adet")
+        print("  📤 Bugün çıkış: 5 adet")
+        print("  📅 Yarın giriş: 4 adet")
+        print("  📅 2-3 gün sonra: 5 adet")
+        print("  📆 Gelecek (1 hafta - 1 ay): 8 adet")
+        print("  🏨 Şu an konaklayan: 3 adet")
+        print("  ✅ Geçmiş: 5 adet")
         
         return bookings
     
@@ -622,7 +622,7 @@ class HotelSeeder:
             
             print("=" * 50)
             print("✅ Database seeding completed successfully!")
-            print(f"\n📊 Summary:")
+            print("\n📊 Summary:")
             print(f"  - Users: {len(users)}")
             print(f"  - Rooms: {len(rooms)}")
             print(f"  - Guests: {len(guests)}")
@@ -631,11 +631,11 @@ class HotelSeeder:
             print(f"  - Housekeeping Tasks: {len(tasks)}")
             print(f"  - Menu Items: {len(menu_items)}")
             print(f"  - Feedback: {len(feedback)}")
-            print(f"\n🔐 Login Credentials:")
-            print(f"  Admin: admin@hotel.com / admin123")
-            print(f"  Front Desk: frontdesk@hotel.com / frontdesk123")
-            print(f"  Housekeeping: housekeeping@hotel.com / housekeeping123")
-            print(f"  Finance: finance@hotel.com / finance123")
+            print("\n🔐 Login Credentials:")
+            print("  Admin: admin@hotel.com / admin123")
+            print("  Front Desk: frontdesk@hotel.com / frontdesk123")
+            print("  Housekeeping: housekeeping@hotel.com / housekeeping123")
+            print("  Finance: finance@hotel.com / finance123")
             print("\n")
             
         except Exception as e:

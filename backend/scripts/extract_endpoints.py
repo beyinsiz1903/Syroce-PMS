@@ -4,7 +4,6 @@ Extracts endpoint groups from legacy_routes.py into domain router files.
 """
 import re
 import sys
-import os
 
 INPUT = "/app/backend/legacy_routes.py"
 
@@ -31,7 +30,7 @@ def find_function_end(start_idx):
         stripped = lines[i].strip()
         if stripped.startswith('@api_router.'):
             return i - 1
-        if stripped and not stripped.startswith('#') and not lines[i][0] in ' \t\n':
+        if stripped and not stripped.startswith('#') and lines[i][0] not in ' \t\n':
             if (stripped.startswith('def ') or stripped.startswith('async def ') or 
                 stripped.startswith('class ') or stripped.startswith('# ===')):
                 return i - 1

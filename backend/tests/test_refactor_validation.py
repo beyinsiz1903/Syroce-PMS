@@ -155,7 +155,7 @@ class TestPMSEndpoints:
             required_fields = ["id", "tenant_id", "room_number", "room_type", "floor", "status"]
             for field in required_fields:
                 assert field in room, f"Missing field: {field}"
-            print(f"✅ Room data has all required fields")
+            print("✅ Room data has all required fields")
         else:
             print("⚠️ No rooms in database to verify fields")
 
@@ -245,8 +245,8 @@ class TestDashboardEndpoints:
         )
         # Accept both 200 and any valid response
         if response.status_code == 200:
-            data = response.json()
-            print(f"✅ Dashboard stats endpoint working")
+            response.json()
+            print("✅ Dashboard stats endpoint working")
         else:
             print(f"⚠️ Dashboard stats returned {response.status_code}")
     
@@ -289,8 +289,8 @@ class TestDomainModules:
             params={"limit": 3}
         )
         if response.status_code == 200:
-            data = response.json()
-            print(f"✅ Guests endpoint working")
+            response.json()
+            print("✅ Guests endpoint working")
         else:
             print(f"⚠️ Guests endpoint returned {response.status_code}")
     
@@ -322,7 +322,7 @@ class TestSecurityModules:
     
     def test_rate_limiting_headers(self):
         """Check if rate limiting is active"""
-        response = requests.get(f"{BASE_URL}/health")
+        requests.get(f"{BASE_URL}/health")
         # Rate limit headers may not be on health endpoint
         print("✅ Rate limiting middleware loaded (checked via backend logs)")
     

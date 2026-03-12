@@ -5,7 +5,7 @@ connecting different hotel system modules.
 """
 import uuid
 from datetime import datetime, timezone, timedelta, date
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 from core.database import db
 import logging
 

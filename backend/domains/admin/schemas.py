@@ -3,7 +3,7 @@ Admin Domain — Schemas
 Request/response models extracted from admin/router.py.
 """
 from pydantic import BaseModel, Field, EmailStr, conint
-from typing import List, Optional, Dict, Any
+from typing import Optional, Dict
 from enum import Enum
 
 

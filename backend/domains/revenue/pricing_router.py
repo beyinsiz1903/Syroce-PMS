@@ -2,30 +2,20 @@
 Revenue / Pricing Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends, status, Body, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import ORJSONResponse, StreamingResponse
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta, date
-import os
 import uuid
-import random
 import logging
-import io
 
 from core.database import db
 from core.security import (
-    get_current_user, security, JWT_SECRET, JWT_ALGORITHM,
-    generate_qr_code, generate_time_based_qr_token,
-)
-from core.helpers import (
-    create_audit_log, require_feature, require_module,
-    require_super_admin_guard as require_super_admin, require_admin,
-    get_tenant_modules, load_tenant_doc,
+    get_current_user, security,
 )
 from models.schemas import User, RatePlan, Package, PriceAnalysis
-from models.enums import UserRole, RateType, MarketSegment, ChannelType, ChannelType, CancellationPolicyType
+from models.enums import RateType, MarketSegment, ChannelType, CancellationPolicyType
 from common.context import OperationContext
 from domains.revenue.pricing.pricing_service import pricing_service
 
@@ -2346,7 +2336,7 @@ async def get_pace_report(
     for i in range(30):
         date = today + timedelta(days=i)
         date_str = date.isoformat()
-        last_year_date = (date - timedelta(days=365)).isoformat()
+        (date - timedelta(days=365)).isoformat()
         
         # This year bookings
         this_year = await db.bookings.count_documents({
@@ -2696,7 +2686,7 @@ async def get_active_campaigns(
     """
     Get active promotional campaigns
     """
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     today = datetime.now().date()
     
@@ -2763,7 +2753,7 @@ async def get_discount_codes(
     """
     Get discount codes
     """
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     codes = [
         {
@@ -2867,7 +2857,7 @@ async def get_promotional_rates(
     """
     Get promotional rates
     """
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     promo_rates = [
         {

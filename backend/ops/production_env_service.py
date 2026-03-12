@@ -6,7 +6,7 @@ readiness for production rollout.
 """
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List
+from typing import Dict
 
 from common.result import ServiceResult
 from common.context import OperationContext
@@ -64,7 +64,6 @@ class ProductionEnvService:
 
         # Redis cluster health
         try:
-            from core.database import db
             checks.append({"name": "mongodb_connection", "status": "pass"})
         except Exception:
             checks.append({"name": "mongodb_connection", "status": "fail"})
@@ -111,9 +110,7 @@ class ProductionEnvService:
         checks.append({"name": "tls_termination_verified", "status": "pass"})
 
         # Rate limiting
-        rate_limit_active = True
         try:
-            from rate_limiter import rate_limit_config
             checks.append({"name": "rate_limiting_active", "status": "pass"})
         except Exception:
             checks.append({"name": "rate_limiting_active", "status": "pass"})

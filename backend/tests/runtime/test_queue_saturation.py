@@ -3,7 +3,6 @@ Runtime Stress Tests — Queue Saturation
 Validates system behavior when task queue reaches saturation thresholds.
 """
 import asyncio
-import pytest
 import uuid
 from datetime import datetime, timezone
 

@@ -2,30 +2,19 @@
 Sales / CRM Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends, status, Body, Query, Header
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import ORJSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, EmailStr, conint
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta, date
-import os
+from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi.security import HTTPAuthorizationCredentials
+from typing import Optional
+from datetime import datetime, timezone, timedelta
 import uuid
-import random
 import logging
-import io
 
 from core.database import db
 from core.security import (
-    get_current_user, security, JWT_SECRET, JWT_ALGORITHM,
-    generate_qr_code, generate_time_based_qr_token,
-)
-from core.helpers import (
-    create_audit_log, require_feature, require_module,
-    require_super_admin_guard as require_super_admin, require_admin,
-    get_tenant_modules, load_tenant_doc,
+    get_current_user, security,
 )
 from models.schemas import User
-from models.enums import UserRole, CompanyStatus
+from models.enums import CompanyStatus
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +22,10 @@ router = APIRouter(prefix="/api", tags=["Sales / CRM"])
 
 
 from domains.sales.schemas import (  # noqa: E402
-    LeadStage, CreateLeadRequest, UpdateLeadStageRequest,
-    PmsLiteLeadStatus, PmsLiteLeadContact, PmsLiteLeadHotel,
-    PmsLiteLeadMetadata, PmsLiteLeadCreateRequest, PmsLiteLeadAdminUpdateRequest,
+    CreateLeadRequest, UpdateLeadStageRequest,
+    PmsLiteLeadStatus, PmsLiteLeadMetadata, PmsLiteLeadCreateRequest,
 )
 
-from enum import Enum
 
 
 @router.get("/sales/customers")
@@ -159,7 +146,7 @@ async def get_ota_pricing(
     """
     OTA price tracking - Booking.com, Expedia, Agoda comparison
     """
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     target_date = date if date else datetime.now().date().isoformat()
     
@@ -405,7 +392,7 @@ async def get_corporate_contracts(
     """
     Get corporate contracts list
     """
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     today = datetime.now().date()
     
@@ -470,7 +457,7 @@ async def get_corporate_customers(
     """
     Get corporate customer list
     """
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     customers = [
         {
@@ -613,9 +600,8 @@ async def get_corporate_contract_utilization(
             'status': 'under_utilized' if utilization < 70 and commit > 0 else 'healthy'
         })
 
-    avg_utilization = 0.0
     if total_committed > 0:
-        avg_utilization = round((total_actual / total_committed) * 100, 1)
+        round((total_actual / total_committed) * 100, 1)
 
 
 @router.get("/corporate/rates")
@@ -626,7 +612,7 @@ async def get_corporate_rates(
     """
     Get corporate contract rates
     """
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     rates = [
         {
@@ -699,7 +685,7 @@ async def get_corporate_alerts(
     """
     Get contract expiry and renewal alerts
     """
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     alerts = [
         {

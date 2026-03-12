@@ -6,7 +6,7 @@ slow endpoint detection, and correlation_id propagation.
 import logging
 import time
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional, Dict, List
 from collections import defaultdict
 

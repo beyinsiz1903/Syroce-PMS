@@ -5,9 +5,8 @@ maintenance conflict check, floor attendant workload balancing,
 room readiness ETA, task assignment suggestion engine, manual override.
 """
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 import uuid
-import math
 
 from core.database import db
 

@@ -6,8 +6,8 @@ PCI DSS audit checklist, güvenlik taraması ve uyumluluk skorlama.
 
 PCI DSS v4.0 gereksinimlerine göre yapılandırılmıştır.
 """
-from fastapi import APIRouter, HTTPException, Depends, Request, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone, timedelta
 import uuid
@@ -712,7 +712,7 @@ async def _run_auto_checks(db, tenant_id: str) -> Dict[str, str]:
     results["3.3"] = "compliant"
     
     # Req 3.4 - Tokenizasyon aktif mi?
-    token_count = await db.card_tokens.count_documents({"tenant_id": tenant_id})
+    await db.card_tokens.count_documents({"tenant_id": tenant_id})
     results["3.4"] = "compliant"  # Tokenizasyon modülü aktif
     
     # Req 7.2 - RBAC aktif mi?

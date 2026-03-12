@@ -4,16 +4,15 @@ Domain Router: Mobile
 Extracted from legacy_routes.py — Mobile dashboard, GM mobile, department mobile endpoints.
 """
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
+from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 import uuid
 
 from core.database import db
-from core.security import get_current_user, security, JWT_SECRET, JWT_ALGORITHM
+from core.security import get_current_user, security
 from core.cache import cached
-from models.schemas import User
 
 router = APIRouter(prefix="/api", tags=["mobile"])
 
@@ -765,7 +764,7 @@ async def get_inspection_checklist_template(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get inspection checklist template"""
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     # Default checklist template
     checklist = [

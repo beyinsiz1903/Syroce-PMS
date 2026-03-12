@@ -3,18 +3,15 @@ Domain Router: Guest Experience
 
 Guest CRM, upsell AI, messaging, feedback/reviews, guest mobile app.
 """
-from fastapi import APIRouter, HTTPException, Depends, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, HTTPException, Depends
+from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 import uuid
 import logging
 
 from core.database import db
-from core.security import get_current_user, security, JWT_SECRET, JWT_ALGORITHM
+from core.security import get_current_user
 from core.cache import cached
-from core.helpers import require_module, require_feature
 from models.schemas import (
     User, ExternalReviewWebhookRequest, CreateDepartmentFeedbackRequest,
     CreateSurveyRequest, SubmitSurveyResponseRequest,
@@ -1260,7 +1257,7 @@ async def get_guest_bookings(
                 active_bookings.append(b)
             elif b['status'] == 'checked_out' or (checkout_dt < now and b['status'] not in ['checked_in', 'confirmed', 'guaranteed']):
                 past_bookings.append(b)
-        except Exception as e:
+        except Exception:
             # If date parsing fails, default to past booking
             if b['status'] == 'checked_out':
                 past_bookings.append(b)
@@ -1308,12 +1305,6 @@ async def get_guest_loyalty(
         })
         
         # Calculate points to next tier
-        tier_thresholds = {
-            'bronze': 0,
-            'silver': 1000,
-            'gold': 5000,
-            'platinum': 10000
-        }
         
         next_tier = None
         points_to_next = 0

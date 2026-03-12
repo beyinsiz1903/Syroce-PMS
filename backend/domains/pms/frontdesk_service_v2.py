@@ -5,15 +5,13 @@ Adds: room_move, late_checkout, no_show, walk_in, concurrent operation guard,
 folio mutation safety, idempotency, supervisor override, housekeeping interaction.
 """
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any, List
+from typing import Optional
 import uuid
-import asyncio
 import logging
 
 from common.context import OperationContext
 from common.result import ServiceResult
-from common.errors import NotFoundError, ValidationError, ConflictError
-from common.audit_hook import audited, SEVERITY_INFO, SEVERITY_WARNING, SEVERITY_CRITICAL
+from common.audit_hook import audited, SEVERITY_INFO, SEVERITY_WARNING
 
 logger = logging.getLogger(__name__)
 

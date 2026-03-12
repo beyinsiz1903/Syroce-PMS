@@ -8,7 +8,6 @@ Platform Hardening API Tests - Tests for all 4 new modules via HTTP endpoints:
 import pytest
 import requests
 import os
-from datetime import datetime
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
@@ -56,7 +55,7 @@ class TestDataPipelineAPI(TestAuth):
         data = response.json()
         # Should return feature store info
         assert isinstance(data, dict)
-        print(f"Feature store summary retrieved")
+        print("Feature store summary retrieved")
     
     def test_list_models(self, headers):
         """GET /api/data-pipeline/models - List registered models"""
@@ -99,7 +98,7 @@ class TestDataPipelineAPI(TestAuth):
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, dict)
-        print(f"Predictions confidence retrieved")
+        print("Predictions confidence retrieved")
     
     def test_make_prediction_revenue_ml(self, headers):
         """POST /api/data-pipeline/predict - Make prediction"""
@@ -184,7 +183,7 @@ class TestObservabilityAPI(TestAuth):
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, dict)
-        print(f"Dashboard metrics retrieved")
+        print("Dashboard metrics retrieved")
     
     def test_errors_summary(self, headers):
         """GET /api/observability/errors/summary - Error summary for 24 hours"""
@@ -225,7 +224,7 @@ class TestSecurityHardeningAPI(TestAuth):
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, dict)
-        print(f"Property permissions retrieved")
+        print("Property permissions retrieved")
     
     def test_property_permissions_roles(self, headers):
         """GET /api/security-hardening/property-permissions/roles - Role permissions"""

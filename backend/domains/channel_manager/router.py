@@ -4,7 +4,7 @@ Domain Router: Channel Manager
 Extracted from legacy_routes.py — CM ARI endpoints + Admin API key management.
 """
 from fastapi import APIRouter, HTTPException, Depends, status, Body, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta, date
@@ -17,7 +17,7 @@ import jwt
 
 from core.database import db
 from core.security import (
-    get_current_user, security, JWT_SECRET, JWT_ALGORITHM,
+    security, JWT_SECRET, JWT_ALGORITHM,
 )
 from core.audit import log_audit_event
 from models.schemas import User

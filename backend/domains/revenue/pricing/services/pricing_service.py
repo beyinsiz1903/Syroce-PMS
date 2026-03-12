@@ -4,7 +4,7 @@ Business logic for rate management and pricing. No FastAPI dependencies.
 """
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import List, Dict, Any
 
 from domains.revenue.pricing.repositories.pricing_repository import PricingRepository
 

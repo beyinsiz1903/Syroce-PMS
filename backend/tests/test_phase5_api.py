@@ -4,8 +4,6 @@ Uses curl-style HTTP requests to test all new endpoints.
 """
 import pytest
 import httpx
-import uuid
-import os
 import sys
 from pathlib import Path
 

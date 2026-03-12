@@ -1,9 +1,8 @@
 """Connector CRUD, connection test, credential management endpoints."""
 import logging
 from typing import Optional
-from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from core.security import get_current_user

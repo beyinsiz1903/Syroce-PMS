@@ -82,28 +82,28 @@ def test_mobile_ops_service_import():
 # ── Schema Import Tests ──
 
 def test_pos_fnb_schemas_import():
-    from domains.pms.pos_fnb.schemas import POSMenuItem, POSOrder, POSOrderItem, TableLayout, KitchenOrderItem, Alert
+    from domains.pms.pos_fnb.schemas import POSMenuItem, POSOrder
     assert POSMenuItem is not None
     assert POSOrder is not None
 
 
 def test_mobile_schemas_import():
-    from domains.pms.mobile.schemas import ProcessNoShowRequest, ChangeRoomRequest, QuickTaskRequest, QuickOrderRequest
+    from domains.pms.mobile.schemas import ProcessNoShowRequest
     assert ProcessNoShowRequest is not None
 
 
 def test_pricing_schemas_import():
-    from domains.revenue.pricing.schemas import RatePlanFilter, RatePlanCreate, PackageCreate, CompetitorRate, RateOverrideRequest
+    from domains.revenue.pricing.schemas import RatePlanFilter
     assert RatePlanFilter is not None
 
 
 def test_rms_schemas_import():
-    from domains.revenue.rms.schemas import GroupBookingCreate, CorporateContractCreate, OTAPromotionCreate, InventoryItemCreate
+    from domains.revenue.rms.schemas import GroupBookingCreate
     assert GroupBookingCreate is not None
 
 
 def test_messaging_schemas_import():
-    from domains.guest.messaging.schemas import MessageType, SendMessageRequest, SentMessage, MessageTemplate, InternalMessage
+    from domains.guest.messaging.schemas import MessageType, SendMessageRequest
     assert MessageType is not None
     assert SendMessageRequest is not None
 
@@ -164,7 +164,7 @@ def test_service_result():
 
 
 def test_domain_errors():
-    from common.errors import DomainError, NotFoundError, ValidationError, ForbiddenError, TenantViolationError
+    from common.errors import DomainError, NotFoundError, ForbiddenError, TenantViolationError
     assert issubclass(NotFoundError, DomainError)
     assert issubclass(ForbiddenError, DomainError)
     assert issubclass(TenantViolationError, DomainError)

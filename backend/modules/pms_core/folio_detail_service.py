@@ -3,9 +3,7 @@ Folio Detail Service - Timeline view, running balance, split folio visibility,
 tax breakdown per line, city ledger history, invoice association, audit trail,
 supervisor override and void reason visibility.
 """
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-import uuid
+from typing import Dict, List
 
 from core.database import db
 

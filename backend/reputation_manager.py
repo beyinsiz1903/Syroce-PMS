@@ -2,9 +2,8 @@
 Reputation Management System
 Review aggregation, sentiment analysis, auto-response
 """
-import random
 from datetime import datetime, timezone, timedelta
-from typing import List, Dict
+from typing import List
 
 class ReputationManager:
     """Online reputation yönetimi"""
@@ -70,14 +69,14 @@ class ReputationManager:
         sentiment = await self.analyze_sentiment(review_text)
         
         if sentiment['sentiment'] == 'positive':
-            return f"""Değerli misafirimiz,
+            return """Değerli misafirimiz,
 
 Güzel sözleriniz için çok teşekkür ederiz! Sizi ağırlamaktan büyük mutluluk duyduk.
 
 Tekrar görüşmek üzere,
 Syroce Ekibi"""
         else:
-            return f"""Değerli misafirimiz,
+            return """Değerli misafirimiz,
 
 Geri bildiriminiz için teşekkür ederiz. Yaşadığınız olumsuz deneyim için özür dileriz.
 

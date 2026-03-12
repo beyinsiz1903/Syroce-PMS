@@ -10,8 +10,6 @@ Covers:
   - Contract test scenarios
 """
 import pytest
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
 
 # ══════════════════════════════════════════════════════════════════
 # 1. XML Parser Contract Hardening Tests

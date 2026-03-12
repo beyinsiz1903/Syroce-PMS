@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 2026-03-12 — CI/CD Lint Fix: Backend F401/F541/F841
+
+### Lint Cleanup
+- Fixed 1402 F401 (unused imports) via ruff auto-fix
+- Fixed 112 F841 (unused variables) via ruff unsafe-fix
+- Fixed 187 mixed lint errors in initial pass
+- Added `noqa: F401` for intentional availability-check imports (try/except pattern)
+- Converted `core/__init__.py` re-exports to explicit `as` aliases
+- All F401, F541, F841 checks now pass
+
+---
+
 ## 2026-03-12 — Operational Phase: Staging Soak Test Infrastructure
 
 ### Soak Test Framework

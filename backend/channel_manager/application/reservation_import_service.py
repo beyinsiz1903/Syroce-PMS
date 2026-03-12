@@ -29,7 +29,7 @@ from ..infrastructure.repository import ChannelManagerRepository
 from ..connectors.hotelrunner.client import HotelRunnerClient
 from ..connectors.hotelrunner.auth import HotelRunnerAuth
 from ..connectors.hotelrunner.mapper import HotelRunnerMapper
-from ..connectors.hotelrunner.errors import ConnectorError, AcknowledgementError
+from ..connectors.hotelrunner.errors import ConnectorError
 
 from core.database import db
 

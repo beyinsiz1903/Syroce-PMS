@@ -5,11 +5,9 @@ missed event replay, session presence tracking, and delivery metrics.
 Falls back to in-memory pub/sub when Redis is not available.
 """
 import logging
-import asyncio
 import uuid
-import json
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, List, Set
+from typing import Optional, Dict, List
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)

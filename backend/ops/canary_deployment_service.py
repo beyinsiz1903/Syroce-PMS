@@ -7,7 +7,6 @@ Feature flags, rollback triggers, canary monitoring.
 import uuid
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
 
 from common.result import ServiceResult
 from common.context import OperationContext

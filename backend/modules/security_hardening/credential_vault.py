@@ -7,7 +7,7 @@ import hashlib
 import base64
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 from core.database import db
 

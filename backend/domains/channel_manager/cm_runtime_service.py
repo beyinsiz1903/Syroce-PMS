@@ -5,7 +5,6 @@ provider health, circuit breaker states, and credential status from live data so
 """
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional
 
 from common.context import OperationContext
 from common.result import ServiceResult

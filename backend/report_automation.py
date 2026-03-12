@@ -2,8 +2,6 @@
 Report Automation Service
 Otomatik rapor email gönderimi, PDF generation, scheduling
 """
-from datetime import datetime, time, timezone
-import asyncio
 
 class ReportAutomation:
     """Otomatik rapor gönderimi"""

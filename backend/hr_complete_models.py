@@ -3,9 +3,8 @@ HR Management - Complete Suite
 Time & Attendance, Payroll, Leave Management, Performance, Recruitment
 """
 from pydantic import BaseModel, Field
-from typing import Optional, List
-from datetime import datetime, timezone, time, date
-from enum import Enum
+from typing import Optional
+from datetime import datetime, timezone, date
 import uuid
 
 class AttendanceRecord(BaseModel):

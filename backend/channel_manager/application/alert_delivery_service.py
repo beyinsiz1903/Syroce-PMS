@@ -25,7 +25,6 @@ from typing import Dict, Any, Optional, List
 import httpx
 
 from core.database import db
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
 from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.alert_delivery")

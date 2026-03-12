@@ -4,10 +4,8 @@ Pilot Hotel Readiness — Checklist & Validation
 Pre-pilot validation, feature toggles, onboarding runbook,
 rollback plan, tenant monitoring pack, success metrics.
 """
-import uuid
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional
 
 from common.context import OperationContext
 from common.result import ServiceResult

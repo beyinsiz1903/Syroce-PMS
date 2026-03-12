@@ -4,7 +4,7 @@ XSS, NoSQL injection, ve path traversal koruması
 """
 import re
 import html
-from typing import Any, Optional
+from typing import Any
 
 
 # NoSQL injection patterns

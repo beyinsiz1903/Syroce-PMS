@@ -2,30 +2,17 @@
 PMS / Maintenance Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends, status, Body, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import ORJSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta, date
-import os
+from fastapi import APIRouter, HTTPException, Depends
+from typing import List, Optional, Dict
+from datetime import datetime, timezone, timedelta
 import uuid
-import random
 import logging
-import io
 
 from core.database import db
 from core.security import (
-    get_current_user, security, JWT_SECRET, JWT_ALGORITHM,
-    generate_qr_code, generate_time_based_qr_token,
-)
-from core.helpers import (
-    create_audit_log, require_feature, require_module,
-    require_super_admin_guard as require_super_admin, require_admin,
-    get_tenant_modules, load_tenant_doc,
+    get_current_user,
 )
 from models.schemas import User, MaintenanceWorkOrder, SensorAlert, MaintenanceAsset, PreventiveMaintenancePlan
-from models.enums import UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -538,7 +525,7 @@ async def run_preventive_maintenance_scheduler(
     """
     tenant_id = current_user.tenant_id
     now = datetime.now(timezone.utc)
-    today = now.date()
+    now.date()
 
     due_plans_cursor = db.maintenance_plans.find({
         'tenant_id': tenant_id,

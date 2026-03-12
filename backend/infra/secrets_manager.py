@@ -207,7 +207,7 @@ class SecretsManager:
         self._log_access(key, requester)
         try:
             return await self._provider.get_secret_json(key)
-        except Exception as e:
+        except Exception:
             self._metrics["errors"] += 1
             return None
 

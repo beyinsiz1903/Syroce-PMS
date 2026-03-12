@@ -25,7 +25,7 @@ Domain Routers:
 import pytest
 import requests
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://hotelrunner-sandbox.preview.emergentagent.com')
 if BASE_URL.endswith('/'):
@@ -46,7 +46,7 @@ class TestAuth:
         assert "access_token" in data, f"No access_token in response: {data}"
         assert "user" in data
         assert data["user"]["email"] == "demo@hotel.com"
-        print(f"✅ Login successful, token received")
+        print("✅ Login successful, token received")
         return data["access_token"]
 
 
@@ -84,7 +84,7 @@ class TestAIDomainRouter:
             assert "response" in data
             print(f"✅ AI Chat response: {data.get('response', '')[:100]}...")
         else:
-            print(f"⚠️ AI service unavailable (503), this is expected without AI integration")
+            print("⚠️ AI service unavailable (503), this is expected without AI integration")
     
     def test_ai_sentiment_endpoint(self, auth_headers):
         """GET /api/ai/sentiment/{guest_id} should return 200"""
@@ -143,7 +143,7 @@ class TestAdminRouter:
             data = response.json()
             print(f"✅ Admin Tenants: {len(data.get('tenants', []))} tenants")
         elif response.status_code == 403:
-            print(f"⚠️ Admin tenants requires super_admin role (403 expected)")
+            print("⚠️ Admin tenants requires super_admin role (403 expected)")
         else:
             print(f"⚠️ Admin tenants returned {response.status_code}")
     
@@ -356,7 +356,7 @@ class TestOpenAPIDocs:
         """GET /api/docs should be accessible"""
         response = requests.get(f"{BASE_URL}/api/docs")
         assert response.status_code == 200, f"API docs failed: {response.status_code}"
-        print(f"✅ API Docs accessible")
+        print("✅ API Docs accessible")
     
     def test_openapi_json(self, auth_headers):
         """GET /api/openapi.json should return OpenAPI spec"""

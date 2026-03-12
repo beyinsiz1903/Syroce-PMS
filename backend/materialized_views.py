@@ -3,7 +3,6 @@ Materialized Views System
 Pre-computed dashboard metrics for ultra-fast loading
 """
 from datetime import datetime, timedelta
-from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ASCENDING, DESCENDING
 import logging
 from typing import Dict, Any, Optional
@@ -36,8 +35,8 @@ class MaterializedViewsManager:
             
             # Calculate all metrics in parallel
             today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-            yesterday = today - timedelta(days=1)
-            week_ago = today - timedelta(days=7)
+            today - timedelta(days=1)
+            today - timedelta(days=7)
             month_ago = today - timedelta(days=30)
             
             # Occupancy metrics

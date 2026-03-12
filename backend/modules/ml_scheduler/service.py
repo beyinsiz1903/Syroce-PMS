@@ -5,8 +5,8 @@ Manages periodic execution of Revenue ML, Operational AI, Guest Intelligence mod
 import logging
 import asyncio
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, List
+from datetime import datetime, timezone
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 

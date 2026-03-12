@@ -12,26 +12,19 @@ Tests cover:
   8. Multi-room reservation handling
 """
 import pytest
-import hashlib
-import json
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch, MagicMock
 
 from channel_manager.connectors.hotelrunner.mapper import HotelRunnerMapper
 from channel_manager.connectors.hotelrunner.client import (
-    HotelRunnerClient, _mask_params, _truncate,
-    MAX_PAGINATION_PAGES, DEFAULT_PER_PAGE,
+    _mask_params, _truncate,
 )
-from channel_manager.connectors.hotelrunner.auth import HotelRunnerAuth
 from channel_manager.connectors.hotelrunner.errors import (
     ResponseParseError, PaginationExhaustedError, AcknowledgementError,
-    AuthenticationError, ConnectorError,
 )
 from channel_manager.domain.models.canonical import (
     CanonicalReservation, ReservationStatus, MealPlan,
 )
 from channel_manager.domain.models.reservation_import import (
-    ImportedReservation, ImportStatus, AckStatus,
+    ImportedReservation,
 )
 
 

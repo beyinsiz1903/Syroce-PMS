@@ -3,7 +3,7 @@ Sales CRM & Pipeline Models
 Lead management, sales funnel, activity tracking
 """
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime, timezone
 from enum import Enum
 import uuid

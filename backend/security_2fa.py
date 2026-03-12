@@ -9,7 +9,7 @@ Gelişmiş 2FA modülü:
 - Yedek kod (backup code) yönetimi
 - Cihaz güvenilirlik yönetimi (trusted devices)
 """
-from fastapi import APIRouter, HTTPException, Depends, Request, status
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime, timezone, timedelta

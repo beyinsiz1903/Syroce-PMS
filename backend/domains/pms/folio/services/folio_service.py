@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 from domains.pms.folio.repositories.folio_repository import (
-    FolioRepository, ChargeRepository, PaymentRepository,
+    FolioRepository,
 )
 
 

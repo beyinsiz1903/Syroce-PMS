@@ -239,7 +239,7 @@ class TestMainServerEndpoints(TestSetup):
         
         data = response.json()
         assert "total_rooms" in data or "rooms" in data
-        print(f"✅ PMS dashboard works")
+        print("✅ PMS dashboard works")
 
 
 class TestRoomBlocks(TestSetup):

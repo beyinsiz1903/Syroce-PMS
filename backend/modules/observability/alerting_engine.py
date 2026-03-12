@@ -4,9 +4,8 @@ Threshold-based operational alerts with dedup, cooldown, severity mapping,
 and integration with observability metrics.
 """
 import logging
-import asyncio
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 from collections import defaultdict
 
 from core.database import db

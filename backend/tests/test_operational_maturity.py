@@ -9,8 +9,6 @@ Comprehensive test suite for Phase 1-5 operational maturity modules:
 import pytest
 import httpx
 import os
-import json
-from datetime import datetime
 
 BASE = os.environ.get("TEST_BASE_URL", "https://hotelrunner-sandbox.preview.emergentagent.com")
 API = f"{BASE}/api/channel-manager/v2"

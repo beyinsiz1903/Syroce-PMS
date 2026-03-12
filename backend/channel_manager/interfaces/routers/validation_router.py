@@ -4,8 +4,7 @@ Health Trend Analytics + WebSocket endpoints.
 """
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
-from typing import Optional
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, Query
 
 from core.security import get_current_user
 from models.schemas import User

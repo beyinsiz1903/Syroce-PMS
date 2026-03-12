@@ -2,8 +2,6 @@
 WhatsApp Business Integration
 Simplified version - requires WhatsApp Business API credentials
 """
-import random
-from datetime import datetime
 
 class WhatsAppService:
     """WhatsApp Business service"""

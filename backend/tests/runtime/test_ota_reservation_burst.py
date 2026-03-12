@@ -3,7 +3,6 @@ Runtime Stress Tests — OTA Reservation Burst
 Simulates burst of OTA reservation requests to validate queue/service stability.
 """
 import asyncio
-import pytest
 import uuid
 from datetime import datetime, timezone, timedelta
 

@@ -11,7 +11,6 @@ import pytest
 import requests
 import os
 import uuid
-from datetime import datetime
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://hotelrunner-sandbox.preview.emergentagent.com')
 CONNECTOR_ID = "c79fd9cb-d240-4344-8b2d-7d8b71d6a681"
@@ -136,7 +135,7 @@ class TestChannelManagerV2Phase6:
         )
         assert status_resp.status_code == 200, f"Status update failed: {status_resp.text}"
         assert status_resp.json()["status"] == "investigating"
-        print(f"Status updated to investigating")
+        print("Status updated to investigating")
         
         # Resolve the issue
         resolve_resp = requests.post(
@@ -146,7 +145,7 @@ class TestChannelManagerV2Phase6:
         )
         assert resolve_resp.status_code == 200, f"Resolve failed: {resolve_resp.text}"
         assert resolve_resp.json()["status"] == "resolved"
-        print(f"Issue resolved")
+        print("Issue resolved")
     
     def test_reconciliation_dismiss_issue(self, headers):
         """POST /api/channel-manager/v2/reconciliation/issues/{issue_id}/dismiss"""

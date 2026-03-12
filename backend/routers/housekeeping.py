@@ -3,12 +3,11 @@ Housekeeping Router - Room status, tasks, assignments, reports
 Extracted from server.py for modularity.
 """
 import uuid
-import random
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any, List
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.security import HTTPBearer
 
 from core.database import db
 from core.security import get_current_user

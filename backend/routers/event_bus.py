@@ -53,7 +53,6 @@ async def replay_events(
 
 @router.get("/replay/summary")
 async def replay_summary(current_user: User = Depends(get_current_user)):
-    from modules.event_bus.abstraction import event_bus
     from datetime import datetime, timezone, timedelta
     from core.database import db
 

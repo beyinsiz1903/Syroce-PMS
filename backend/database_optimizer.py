@@ -2,7 +2,6 @@
 Database Optimization & Index Management
 Ensures all collections have proper indexes for performance
 """
-from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ASCENDING, DESCENDING, TEXT
 import logging
 from datetime import datetime

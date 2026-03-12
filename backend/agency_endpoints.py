@@ -20,22 +20,18 @@ Endpoints:
 6. POST /api/hotel/booking-requests/{id}/reject - Reject with reason
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Header, Request
-from typing import Optional, List
-from datetime import datetime, timedelta, timezone
+from fastapi import APIRouter, HTTPException, Header, Request
+from typing import Optional
+from datetime import datetime, timedelta
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from agency_models import (
     CreateAgencyBookingRequestIn,
     RejectBookingRequestIn,
     AgencyBookingRequest,
-    RestrictionsSnapshot,
-    AvailabilitySnapshot,
-    AuditEvent,
     now_utc,
     iso,
     new_uuid,
-    FINAL_STATUSES,
     PENDING_STATUSES,
     is_final_status,
     is_pending_status
@@ -321,7 +317,6 @@ async def create_agency_booking_request(
     else:
         # Auth enabled - get current user
         try:
-            from server import security
             from fastapi.security import HTTPAuthorizationCredentials
             credentials = HTTPAuthorizationCredentials(scheme="bearer", credentials=auth_header.split(" ")[1])
             current_user = await get_current_user(credentials)
@@ -458,7 +453,7 @@ async def create_agency_booking_request(
             existing2.pop("_id", None)
             existing2 = await expire_if_needed(db, existing2)
             if is_final_status(existing2["status"]):
-                raise HTTPException(409, f"Request already finalized")
+                raise HTTPException(409, "Request already finalized")
             return AgencyBookingRequest(**existing2)
         raise HTTPException(500, f"Database error: {str(e)}")
     

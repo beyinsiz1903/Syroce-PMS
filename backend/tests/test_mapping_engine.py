@@ -15,11 +15,6 @@ from datetime import datetime, timezone
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 from channel_manager.application.mapping_service import MappingService
-from channel_manager.domain.models.mapping import (
-    MappingRule, MappingStatus, MappingEntityType, ValidationStatus,
-    REQUIRED_MAPPING_TYPES, SUPPORTED_MAPPING_TYPES,
-)
-from channel_manager.infrastructure.repository import ChannelManagerRepository
 from core.database import db
 
 

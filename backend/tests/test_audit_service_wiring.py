@@ -7,15 +7,13 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import asyncio
 import pytest
 import uuid
-from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from common.context import OperationContext
 from common.result import ServiceResult
-from common.audit_hook import audited, SEVERITY_INFO, SEVERITY_WARNING, SEVERITY_CRITICAL
+from common.audit_hook import audited, SEVERITY_INFO, SEVERITY_CRITICAL
 from common.response import api_response, from_service_result
 
 

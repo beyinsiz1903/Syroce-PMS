@@ -11,13 +11,11 @@ Flow:
   Failure -> audit log + optional reconciliation issue
 """
 import logging
-from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, List
 
 from ..domain.models.sync import SyncType
 from ..domain.models.audit import IntegrationAuditLog, AuditAction
 from ..infrastructure.repository import ChannelManagerRepository
-from core.database import db
 
 logger = logging.getLogger("channel_manager.application.event_sync_service")
 

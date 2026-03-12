@@ -12,9 +12,8 @@ Tests:
   - Credential encryption/decryption
 """
 import pytest
-import uuid
 from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from channel_manager.domain.models.reconciliation import (
     ReconciliationIssue, ReconciliationSeverity, IssueType, IssueStatus, SuggestedAction,

@@ -142,7 +142,7 @@ class WebhookService:
             from ..application.event_sync_service import EventSyncService
             svc = EventSyncService(self._repo)
             try:
-                result = await svc.handle_event(tenant_id, "room_unblocked", {
+                await svc.handle_event(tenant_id, "room_unblocked", {
                     "property_id": property_id,
                     "date_start": webhook_data.get("date_start", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
                     "date_end": webhook_data.get("date_end", (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")),

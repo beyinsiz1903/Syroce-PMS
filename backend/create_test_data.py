@@ -18,7 +18,7 @@ async def create_test_data():
     print("🏨 Creating Test Hotel Data...")
     
     # 1. Create Test Hotel
-    hotel = {
+    {
         'id': tenant_id,
         'name': 'Grand Emerald Hotel',
         'address': '123 Luxury Avenue',
@@ -396,9 +396,9 @@ async def create_test_data():
         print("\n" + "="*60)
         print("🎉 TEST HOTEL READY!")
         print("="*60)
-        print(f"\n🏨 Hotel: Grand Emerald Hotel")
+        print("\n🏨 Hotel: Grand Emerald Hotel")
         print(f"📍 Tenant ID: {tenant_id}")
-        print(f"\n📊 Data Summary:")
+        print("\n📊 Data Summary:")
         print(f"   • Rooms: {len(rooms)} (Standard, Deluxe, Suite, Presidential)")
         print(f"   • Guests: {len(guests)} (VIP, Platinum, Gold, Silver, Standard)")
         print(f"   • Bookings: {len(bookings)} (Past, Current, Future, Group)")
@@ -406,13 +406,13 @@ async def create_test_data():
         print(f"   • Housekeeping Tasks: {len(tasks)}")
         print(f"   • Room Blocks: {len(room_blocks)}")
         
-        print(f"\n👥 Test Guests (for 360° Profile & Loyalty Testing):")
+        print("\n👥 Test Guests (for 360° Profile & Loyalty Testing):")
         for guest in guests:
             print(f"   • {guest['name']} - {guest['loyalty_tier'].upper()} - {guest['email']}")
         
-        print(f"\n🔑 Login Credentials:")
+        print("\n🔑 Login Credentials:")
         print(f"   Create a user with tenant_id: {tenant_id}")
-        print(f"   Or use existing admin account")
+        print("   Or use existing admin account")
         
         print("\n🧪 Test Features:")
         print("   ✅ Guest 360° Profile (check LTV, booking history)")

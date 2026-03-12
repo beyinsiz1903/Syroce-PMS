@@ -2,7 +2,7 @@
 Revenue Autopilot Router - Policy, approval queue, apply, rollback, dashboard.
 """
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from core.security import get_current_user
 from models.schemas import User

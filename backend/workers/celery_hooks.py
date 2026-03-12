@@ -10,7 +10,6 @@ from typing import Dict, Any, Optional
 from core.database import db
 from workers.task_guard import task_guard
 from workers.failure_archive import failure_archive
-from workers.retry_strategy import gentle_retry
 
 logger = logging.getLogger(__name__)
 

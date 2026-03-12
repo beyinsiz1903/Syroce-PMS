@@ -3,8 +3,6 @@ Redis-based Ultra-Fast Cache System
 %100 Performance with Distributed Caching
 """
 import redis
-import json
-import hashlib
 from typing import Any, Optional, Callable
 from functools import wraps
 import orjson

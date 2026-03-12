@@ -18,7 +18,7 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List, Callable, Awaitable
+from typing import Dict, Any, Optional, List
 
 from core.database import db
 from ..domain.models.audit import IntegrationAuditLog, AuditAction

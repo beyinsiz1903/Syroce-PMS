@@ -7,9 +7,9 @@ Extracted from server.py for modularity.
 import uuid
 import random
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from core.database import db
@@ -20,7 +20,7 @@ from models.schemas import User
 
 try:
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side  # noqa: F401
 except ImportError:
     Workbook = None
 
@@ -542,7 +542,7 @@ async def get_ai_activity_feed(
             'type': 'vip_insight',
             'priority': 'high',
             'title': f'⭐ {len(vip_arrivals)} VIP Arrivals Today',
-            'message': f'Special attention required. Ensure welcome amenities and room preferences are prepared.',
+            'message': 'Special attention required. Ensure welcome amenities and room preferences are prepared.',
             'action': 'review_vip_list',
             'vip_count': len(vip_arrivals),
             'vips': vip_arrivals[:3],
@@ -1953,7 +1953,6 @@ async def export_revenue_detail_excel(
     ).to_list(10000)
 
     # Aggregate per stay-date
-    daily_stats: Dict[tuple, Dict[str, Any]] = {}
 
     for b in bookings:
         try:
@@ -1967,7 +1966,7 @@ async def export_revenue_detail_excel(
         co_date = min(co.date(), end.date())
 
         days = (co_date - ci_date).days or 1
-        daily_amount = (b.get('total_amount') or 0) / days
+        (b.get('total_amount') or 0) / days
 
 
 
@@ -2531,7 +2530,7 @@ async def get_cost_summary(current_user: User = Depends(get_current_user)):
     today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
     
     # 1. Get all Purchase Orders from Marketplace for this month (approved/received status)
-    purchase_orders = await db.purchase_orders.find({
+    await db.purchase_orders.find({
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['approved', 'received', 'completed']},
         'created_at': {

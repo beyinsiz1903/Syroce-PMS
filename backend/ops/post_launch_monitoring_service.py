@@ -7,7 +7,7 @@ and long-term health tracking after production launch.
 import uuid
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List
+from typing import Dict
 
 from common.result import ServiceResult
 from common.context import OperationContext

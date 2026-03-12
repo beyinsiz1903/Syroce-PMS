@@ -5,7 +5,7 @@ Tests system behavior under simultaneous booking attempts for the same room.
 import asyncio
 import uuid
 from datetime import datetime, timezone, timedelta, date
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from core.database import db
 

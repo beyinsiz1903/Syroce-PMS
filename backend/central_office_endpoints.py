@@ -8,10 +8,10 @@ Gelişmiş merkez ofis dashboard:
 - Departman bazlı karşılaştırma
 - Chain-wide alert sistemi
 """
-from fastapi import APIRouter, HTTPException, Depends, status
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
-from datetime import datetime, timezone, timedelta, date
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
+from typing import Optional, List
+from datetime import datetime, timezone, timedelta
 import uuid
 import asyncio
 import statistics

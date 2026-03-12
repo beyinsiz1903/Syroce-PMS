@@ -4,7 +4,7 @@ multi-property dashboard, and global alert system.
 """
 import uuid
 from datetime import datetime, timezone, timedelta, date
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from core.database import db
 
 

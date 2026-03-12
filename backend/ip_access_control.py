@@ -1,7 +1,7 @@
 """IP-Based Access Control Module - Whitelist/Blacklist IP Management"""
-from fastapi import APIRouter, HTTPException, Depends, Request, status
-from pydantic import BaseModel, Field
-from typing import Optional, List
+from fastapi import APIRouter, HTTPException, Depends, Request
+from pydantic import BaseModel
+from typing import Optional
 from datetime import datetime, timezone
 import uuid
 import ipaddress

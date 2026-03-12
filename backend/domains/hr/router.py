@@ -4,15 +4,12 @@ Domain Router: HR Operations
 HR complete suite, F&B complete suite for department managers.
 """
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 import uuid
 
 from core.database import db
-from core.security import get_current_user, security
-from core.audit import log_audit_event
+from core.security import get_current_user
 from models.schemas import User
 
 router = APIRouter(prefix="/api", tags=["hr-operations"])

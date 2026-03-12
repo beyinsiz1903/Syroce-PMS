@@ -13,7 +13,6 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, List
 
 from core.database import db
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
 from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.historical_metrics")

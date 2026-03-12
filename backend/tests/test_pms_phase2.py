@@ -9,10 +9,6 @@ Phase 2 PMS Hardening Tests:
 - VIP room priority assignment
 - Readiness ETA calculation
 """
-import pytest
-import uuid
-from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import sys
 sys.path.insert(0, "/app/backend")

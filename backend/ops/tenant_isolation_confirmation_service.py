@@ -8,7 +8,7 @@ websocket room isolation, noisy tenant simulation.
 import uuid
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, List
+from typing import Dict
 
 from common.result import ServiceResult
 from common.context import OperationContext
@@ -87,7 +87,7 @@ class TenantIsolationConfirmationService:
 
         if test_id == "queue_scope":
             # Verify queue tasks are scoped to tenant
-            tasks = await self._db.task_queue.find(
+            await self._db.task_queue.find(
                 {"tenant_id": {"$ne": ctx.tenant_id}}, {"_id": 0, "tenant_id": 1}
             ).limit(1).to_list(1)
             return {**base, "passed": True, "details": "Queue tasks are tenant-scoped"}

@@ -7,11 +7,8 @@ and route-level performance stats.
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
 
 logger = logging.getLogger("observability.middleware")
 

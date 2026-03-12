@@ -2,7 +2,7 @@
 Dynamic Staffing AI - Optimal Personel Yönetimi
 Talep bazlı otomatik personel planlama
 """
-from datetime import datetime, timezone, date, timedelta
+from datetime import datetime
 from typing import Dict, List
 
 class DynamicStaffingAI:
@@ -20,7 +20,7 @@ class DynamicStaffingAI:
     
     async def calculate_optimal_staffing(self, tenant_id: str, target_date: str) -> Dict:
         """Optimal personel ihtiyacı hesapla"""
-        target = datetime.fromisoformat(target_date).date()
+        datetime.fromisoformat(target_date).date()
         
         # Get demand data
         arrivals = await self.db.bookings.count_documents({

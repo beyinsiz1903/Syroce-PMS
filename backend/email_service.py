@@ -235,7 +235,7 @@ Bu kodu kimseyle paylaşmayın.
             if name:
                 print(f"İsim: {name}")
             print(f"Kod: {code}")
-            print(f"Geçerlilik: 15 dakika")
+            print("Geçerlilik: 15 dakika")
             print(f"Gönderim Zamanı: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             print("="*60 + "\n")
             return True
@@ -271,7 +271,7 @@ Bu talebi siz yapmadınız mı? Güvenle bu e-postayı görmezden gelebilirsiniz
             if name:
                 print(f"İsim: {name}")
             print(f"Kod: {code}")
-            print(f"Geçerlilik: 15 dakika")
+            print("Geçerlilik: 15 dakika")
             print(f"Gönderim Zamanı: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             print("="*60 + "\n")
             return True
@@ -301,7 +301,7 @@ Destek: info@syroce.com
             print("="*60)
             print(f"Alıcı: {email}")
             print(f"İsim: {name}")
-            print(f"Mesaj: Hesabınız başarıyla oluşturuldu!")
+            print("Mesaj: Hesabınız başarıyla oluşturuldu!")
             print(f"Gönderim Zamanı: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             print("="*60 + "\n")
             return True

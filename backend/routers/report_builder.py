@@ -4,9 +4,9 @@ Kullanıcıların dinamik rapor oluşturmasını, filtrelemesini ve dışa aktar
 """
 import io
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
@@ -260,7 +260,7 @@ async def fetch_report_data(config: ReportConfig, tenant_id: str) -> list:
 @router.get("/config")
 async def get_builder_config(credentials=Depends(HTTPBearer())):
     """Rapor oluşturucu için mevcut veri kaynaklarını ve sütun tanımlarını döndürür."""
-    current_user = await _get_current_user(credentials)
+    await _get_current_user(credentials)
 
     sources = {}
     for key, src in DATA_SOURCES.items():
@@ -464,7 +464,7 @@ async def export_report_pdf(config: ReportConfig, credentials=Depends(HTTPBearer
 
     # Build HTML table for PDF
     col_count = len(headers)
-    col_width = max(100 // col_count, 8)
+    max(100 // col_count, 8)
 
     rows_html = ""
     for i, row in enumerate(data):

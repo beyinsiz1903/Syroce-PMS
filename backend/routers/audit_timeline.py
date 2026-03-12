@@ -4,7 +4,7 @@ Provides timeline-friendly audit log queries, entity audit trails,
 and summary endpoints for the upcoming Audit Timeline Panel.
 """
 from fastapi import APIRouter, Depends, Query
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime, timezone, timedelta
 import logging
 

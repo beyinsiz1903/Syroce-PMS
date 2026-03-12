@@ -3,7 +3,6 @@ ML Data Generators for Hotel PMS
 Generates synthetic training data for all ML models
 """
 
-import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 import random
@@ -45,7 +44,6 @@ class RMSDataGenerator:
         # Define seasons
         high_season_months = [6, 7, 8, 12]  # Summer + December
         mid_season_months = [4, 5, 9, 10]   # Spring + Fall
-        low_season_months = [1, 2, 3, 11]   # Winter (except Dec)
         
         # Define holidays
         holidays = [

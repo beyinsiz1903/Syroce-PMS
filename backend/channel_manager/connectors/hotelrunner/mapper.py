@@ -6,12 +6,12 @@ Supports:
   - REST/JSON reservation payloads → CanonicalReservation
   - Canonical inventory/rates → HotelRunner push format
 """
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 
 from ...domain.models.canonical import (
     CanonicalReservation, CanonicalGuest, ReservationStatus,
     MealPlan, PriceBreakdown, TaxBreakdown,
-    CanonicalRoomType, CanonicalRatePlan, InventorySlice, RestrictionSet,
+    InventorySlice, RestrictionSet,
 )
 
 

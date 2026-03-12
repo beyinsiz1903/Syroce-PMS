@@ -6,7 +6,7 @@ classification, and readiness validator integration.
 import os
 import re
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from datetime import datetime, timezone
 
 logger = logging.getLogger("infra.config_activation")

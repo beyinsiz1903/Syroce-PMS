@@ -33,8 +33,8 @@ async def create_indexes():
     db = client[db_name]
     
     print("🚀 Starting Database Optimization...")
-    print(f"📊 Target: 550 rooms, 300+ daily transactions")
-    print(f"🎯 Optimizing for 1+ year continuous operation\n")
+    print("📊 Target: 550 rooms, 300+ daily transactions")
+    print("🎯 Optimizing for 1+ year continuous operation\n")
     
     # ============= BOOKINGS COLLECTION =============
     print("📌 Creating indexes for BOOKINGS collection...")
@@ -288,10 +288,10 @@ async def create_indexes():
     print("\n" + "="*60)
     print("✨ Database Optimization Complete!")
     print("="*60)
-    print(f"✅ All indexes created successfully")
-    print(f"✅ Connection pool optimized (maxPoolSize: 200, minPoolSize: 20)")
-    print(f"✅ TTL indexes set for auto-cleanup (audit logs: 2 years, notifications: 90 days)")
-    print(f"🚀 System ready for high-load operation (550 rooms, 300+ daily transactions)")
+    print("✅ All indexes created successfully")
+    print("✅ Connection pool optimized (maxPoolSize: 200, minPoolSize: 20)")
+    print("✅ TTL indexes set for auto-cleanup (audit logs: 2 years, notifications: 90 days)")
+    print("🚀 System ready for high-load operation (550 rooms, 300+ daily transactions)")
     print("="*60)
     
     # List all indexes for verification

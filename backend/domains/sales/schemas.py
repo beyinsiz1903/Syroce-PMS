@@ -2,8 +2,8 @@
 Sales Domain — Schemas
 Request/response models extracted from sales routers.
 """
-from pydantic import BaseModel, Field, EmailStr, conint
-from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, EmailStr, conint
+from typing import Optional
 from enum import Enum
 
 

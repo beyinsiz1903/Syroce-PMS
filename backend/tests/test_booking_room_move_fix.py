@@ -175,7 +175,7 @@ class TestBookingRoomMoveFix:
         assert updated_booking.get('room_number') == expected_new_room_number, \
             f"room_number not synced! Expected '{expected_new_room_number}', got '{updated_booking.get('room_number')}'"
         
-        print(f"✅ Room move successful!")
+        print("✅ Room move successful!")
         print(f"   Updated booking room_number: {updated_booking.get('room_number')}")
         
         # Verify via GET that the change persisted
@@ -298,7 +298,7 @@ class TestBookingRoomMoveFix:
             **movable_booking,
             'room_id': current_room_id
         })
-        print(f"✅ Booking restored to original room")
+        print("✅ Booking restored to original room")
 
 
 class TestSpecificTestData:
@@ -375,7 +375,7 @@ class TestSpecificTestData:
                 found_rooms[room_id] = room.get('room_number')
         
         if not found_rooms:
-            print(f"⚠️ Specific test rooms not found in current dataset")
+            print("⚠️ Specific test rooms not found in current dataset")
             print(f"   Available rooms: {len(rooms)}")
             if rooms:
                 print(f"   Sample rooms: {[(r.get('room_number'), r.get('id', 'N/A')[:8]) for r in rooms[:3]]}")

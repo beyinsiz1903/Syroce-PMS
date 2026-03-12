@@ -3,11 +3,10 @@ Syroce PMS - Shared Utility Functions
 Used across multiple routers. Extracted from server.py to avoid circular imports.
 """
 import io
-import uuid
 import base64
 import secrets
 from datetime import datetime, timezone, timedelta
-from typing import List, Any, Optional
+from typing import List, Any
 
 from core.database import db
 

@@ -3,8 +3,7 @@ AI Dynamic Pricing Engine
 Competitor rate tracking, ML-powered pricing recommendations
 """
 import random
-from datetime import datetime, timedelta, timezone
-from typing import Optional, List
+from datetime import datetime, timezone
 
 class DynamicPricingEngine:
     """AI-powered dynamic pricing"""

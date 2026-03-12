@@ -6,8 +6,7 @@ Analyzes and reports on slow queries, index usage, and optimization opportunitie
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
-from datetime import datetime, timedelta, timezone
-from collections import defaultdict
+from datetime import datetime
 import json
 
 class QueryAnalyzer:
@@ -55,7 +54,7 @@ class QueryAnalyzer:
                 if 'planSummary' in query:
                     print(f"  Plan: {query['planSummary']}")
                     if 'COLLSCAN' in query['planSummary']:
-                        print(f"  ⚠️  WARNING: Collection scan detected!")
+                        print("  ⚠️  WARNING: Collection scan detected!")
             
             return queries
             
@@ -70,7 +69,7 @@ class QueryAnalyzer:
             'payments', 'housekeeping_tasks', 'users'
         ]
         
-        print(f"\n📊 INDEX USAGE ANALYSIS")
+        print("\n📊 INDEX USAGE ANALYSIS")
         print("=" * 80)
         
         index_stats = {}
@@ -103,7 +102,7 @@ class QueryAnalyzer:
                         print(f"  • {name}: {ops} operations")
                         
                         if ops == 0:
-                            print(f"    ⚠️  WARNING: Unused index!")
+                            print("    ⚠️  WARNING: Unused index!")
                             
             except Exception as e:
                 print(f"  ⚠️  Could not get index stats for {coll_name}: {e}")
@@ -117,7 +116,7 @@ class QueryAnalyzer:
             'payments', 'housekeeping_tasks', 'audit_logs'
         ]
         
-        print(f"\n📦 COLLECTION STATISTICS")
+        print("\n📦 COLLECTION STATISTICS")
         print("=" * 80)
         
         stats = {}
@@ -151,10 +150,10 @@ class QueryAnalyzer:
                 
                 # Recommendations
                 if count > 100000:
-                    print(f"  💡 Large collection - consider archival strategy")
+                    print("  💡 Large collection - consider archival strategy")
                 
                 if total_index_size > size:
-                    print(f"  ⚠️  Index size exceeds data size - review indexes")
+                    print("  ⚠️  Index size exceeds data size - review indexes")
                     
             except Exception as e:
                 print(f"  ⚠️  Could not get stats for {coll_name}: {e}")
@@ -163,13 +162,13 @@ class QueryAnalyzer:
     
     async def find_missing_indexes(self):
         """Identify potential missing indexes based on common query patterns"""
-        print(f"\n🔍 MISSING INDEX ANALYSIS")
+        print("\n🔍 MISSING INDEX ANALYSIS")
         print("=" * 80)
         
         recommendations = []
         
         # Analyze bookings
-        print(f"\n📁 Analyzing bookings collection...")
+        print("\n📁 Analyzing bookings collection...")
         
         # Check for queries without indexes
         explain = await self.db.bookings.find({
@@ -182,7 +181,7 @@ class QueryAnalyzer:
                 'field': 'status',
                 'reason': 'Collection scan detected for status queries'
             })
-            print(f"  ⚠️  Recommendation: Add index on 'status'")
+            print("  ⚠️  Recommendation: Add index on 'status'")
         
         # Check compound queries
         explain = await self.db.bookings.find({
@@ -196,7 +195,7 @@ class QueryAnalyzer:
                 'field': 'tenant_id + check_in',
                 'reason': 'Collection scan for date range queries'
             })
-            print(f"  ⚠️  Recommendation: Add compound index on tenant_id + check_in")
+            print("  ⚠️  Recommendation: Add compound index on tenant_id + check_in")
         
         return recommendations
     
@@ -217,14 +216,14 @@ class QueryAnalyzer:
         missing_indexes = await self.find_missing_indexes()
         
         # Summary
-        print(f"\n📋 SUMMARY")
+        print("\n📋 SUMMARY")
         print("=" * 80)
         print(f"  Slow Queries (>100ms): {len(slow_queries)}")
         print(f"  Collections Analyzed: {len(collection_stats)}")
         print(f"  Index Recommendations: {len(missing_indexes)}")
         
         # Top recommendations
-        print(f"\n💡 TOP RECOMMENDATIONS")
+        print("\n💡 TOP RECOMMENDATIONS")
         print("=" * 80)
         
         if len(slow_queries) > 0:

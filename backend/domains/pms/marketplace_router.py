@@ -3,17 +3,15 @@ Domain Router: POS Marketplace
 
 POS enhancements, warehouse procurement, marketplace extensions.
 """
-from fastapi import APIRouter, HTTPException, Depends, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import HTTPAuthorizationCredentials
+from typing import Optional
+from datetime import datetime, timezone
 import uuid
 
 from core.database import db
-from core.security import get_current_user, security, JWT_SECRET, JWT_ALGORITHM
-from core.cache import cached
-from core.helpers import require_module, require_feature
+from core.security import get_current_user, security
+from core.helpers import require_feature
 from models.schemas import (
     User, CreateOutletRequest, CreateMenuItemRequest, CreateSupplierRequest,
     CreateWarehouseRequest, CreateMarketplaceProductRequest, CreatePurchaseOrderRequest,
@@ -993,10 +991,7 @@ async def adjust_inventory(
         'product_id': request.product_id,
         'location': request.location
     })
-    product_id = request.product_id
-    location = request.location
     quantity_change = request.quantity_change
-    reason = request.reason
     
     if not inventory:
         # Create new inventory record

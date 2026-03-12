@@ -7,7 +7,6 @@ cross-tenant leak tests, resource fairness metrics.
 import uuid
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -150,7 +149,7 @@ class TenantIsolationService:
     ) -> ServiceResult:
         """Get resource usage fairness metrics across tenants."""
         now = datetime.now(timezone.utc)
-        since_1h = (now - timedelta(hours=1)).isoformat()
+        (now - timedelta(hours=1)).isoformat()
 
         # DB storage per tenant
         collections = ["bookings", "rooms", "guests", "folios", "audit_logs"]

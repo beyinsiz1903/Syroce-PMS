@@ -4,10 +4,10 @@ Includes: Night Audit, Corporate Rates, GDPR, E-Fatura, Event Calendar,
 Linen Management, Asset Management, POS Enhancements, Multi-property
 """
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 import uuid

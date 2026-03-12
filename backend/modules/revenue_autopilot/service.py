@@ -4,8 +4,8 @@ Converts ML recommendations into auto-applied or queued pricing decisions.
 """
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, List
+from datetime import datetime, timezone
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -274,7 +274,7 @@ class RevenueAutopilotService:
         if not item:
             return {"success": False, "error": "Item not found or not applied"}
 
-        result = await self._apply_price(
+        await self._apply_price(
             tenant_id, item["room_type"], item["target_date"],
             item["recommended_price"], item["current_price"],
         )

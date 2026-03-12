@@ -118,7 +118,7 @@ class TestSyncJobLifecycle(TestInventorySyncEngine):
             status = job.get("status")
             assert status in valid_statuses, f"Invalid status: {status}"
         
-        print(f"✅ All job statuses are valid enum values")
+        print("✅ All job statuses are valid enum values")
 
 
 class TestSyncJobDetail(TestInventorySyncEngine):
@@ -237,7 +237,7 @@ class TestManualReviewQueue(TestInventorySyncEngine):
         )
         # Should return 400 (invalid job) or 404 (not found), not 405 (method not allowed)
         assert response.status_code in [400, 404], f"Expected 400/404, got {response.status_code}: {response.text}"
-        print(f"✅ Retry endpoint exists and returns proper error for invalid job")
+        print("✅ Retry endpoint exists and returns proper error for invalid job")
 
     def test_dismiss_endpoint_exists(self, auth_headers):
         """POST /sync/manual-review/{job_id}/dismiss endpoint exists."""
@@ -246,7 +246,7 @@ class TestManualReviewQueue(TestInventorySyncEngine):
             headers=auth_headers
         )
         assert response.status_code in [400, 404], f"Expected 400/404, got {response.status_code}: {response.text}"
-        print(f"✅ Dismiss endpoint exists and returns proper error for invalid job")
+        print("✅ Dismiss endpoint exists and returns proper error for invalid job")
 
 
 class TestChangeTypes(TestInventorySyncEngine):
@@ -270,7 +270,7 @@ class TestChangeTypes(TestInventorySyncEngine):
                 for ct in job["change_types"]:
                     assert ct in valid_change_types, f"Invalid change_type: {ct}"
         
-        print(f"✅ All change_types in jobs are valid enum values")
+        print("✅ All change_types in jobs are valid enum values")
 
 
 class TestCoalescing(TestInventorySyncEngine):
@@ -300,7 +300,7 @@ class TestCoalescing(TestInventorySyncEngine):
             if detected > 0:
                 assert coalesced <= detected, f"Coalesced ({coalesced}) > detected ({detected})"
         
-        print(f"✅ Jobs properly track detected and coalesced change counts")
+        print("✅ Jobs properly track detected and coalesced change counts")
 
     def test_event_includes_coalesced_count(self, auth_headers):
         """Verify events include coalesced_count field."""
@@ -313,9 +313,9 @@ class TestCoalescing(TestInventorySyncEngine):
                 events = detail.json().get("events", [])
                 for event in events:
                     assert "coalesced_count" in event, "Event missing coalesced_count"
-                    assert event["coalesced_count"] >= 1, f"coalesced_count should be >= 1"
+                    assert event["coalesced_count"] >= 1, "coalesced_count should be >= 1"
         
-        print(f"✅ Events include coalesced_count field")
+        print("✅ Events include coalesced_count field")
 
 
 class TestAuditLogging(TestInventorySyncEngine):
@@ -331,11 +331,6 @@ class TestAuditLogging(TestInventorySyncEngine):
         audit_actions = [log.get("action") for log in data.get("logs", [])]
         
         # Expected audit actions for sync operations
-        expected_actions = [
-            "sync_job_started", "sync_job_batched", "sync_job_dispatched",
-            "sync_event_succeeded", "sync_event_failed",
-            "sync_job_completed", "sync_job_failed"
-        ]
         
         found_sync_actions = [a for a in audit_actions if a and "sync_" in a]
         print(f"✅ Found sync audit actions: {list(set(found_sync_actions))}")
@@ -354,7 +349,7 @@ class TestLatencyTracking(TestInventorySyncEngine):
         for job in jobs:
             assert "duration_ms" in job, "Job missing duration_ms field"
         
-        print(f"✅ Jobs include duration_ms field")
+        print("✅ Jobs include duration_ms field")
 
     def test_event_includes_latency_ms(self, auth_headers):
         """Verify events include latency_ms field for new format events."""
@@ -420,7 +415,7 @@ class TestJobTimestamps(TestInventorySyncEngine):
             for job in new_jobs:
                 for field in timestamp_fields:
                     assert field in job, f"Job missing timestamp field: {field}"
-            print(f"✅ New format jobs include all lifecycle timestamp fields")
+            print("✅ New format jobs include all lifecycle timestamp fields")
         else:
             # Old jobs just have started_at and completed_at
             for job in jobs:

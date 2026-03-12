@@ -16,7 +16,6 @@ import os
 import pytest
 import requests
 import uuid
-from datetime import datetime, timezone
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 if not BASE_URL:
@@ -103,7 +102,7 @@ class TestConnectionTestDetailed:
             if step["status"] in ["fail", "warn"]:
                 assert "error_code" in step, f"{field} should have 'error_code' when status is {step['status']}"
         
-        print(f"✅ Connection test response structure valid")
+        print("✅ Connection test response structure valid")
         print(f"   - success: {data['success']}")
         print(f"   - total_latency_ms: {data['total_latency_ms']}")
         print(f"   - summary: {data['summary']}")
@@ -128,7 +127,7 @@ class TestConnectionTestDetailed:
         
         # For HotelRunner sandbox, we expect 404s which result in fail status
         # This is expected behavior per the problem statement
-        print(f"✅ Connection test for existing connector:")
+        print("✅ Connection test for existing connector:")
         print(f"   - connector_id: {data.get('connector_id', 'N/A')}")
         print(f"   - provider: {data.get('provider', 'N/A')}")
         print(f"   - display_name: {data.get('display_name', 'N/A')}")
@@ -226,7 +225,7 @@ class TestConnectionTestDetailed:
         status_fields = ["auth_status", "property_access_status", "inventory_read_status",
                         "rate_read_status", "xml_connectivity_status"]
         
-        print(f"✅ Error codes found:")
+        print("✅ Error codes found:")
         for field in status_fields:
             step = data.get(field, {})
             error_code = step.get("error_code")
@@ -257,7 +256,7 @@ class TestConnectionTestDetailed:
             print(f"✅ Non-existent connector: success=false, message={data.get('message')}")
         else:
             assert response.status_code == 404, f"Expected 404 for non-existent connector, got {response.status_code}"
-            print(f"✅ Non-existent connector: 404 Not Found")
+            print("✅ Non-existent connector: 404 Not Found")
 
     def test_connection_test_audit_log_entry(self, auth_headers):
         """Verify connection test creates audit log entry with action=connection_tested."""
@@ -289,7 +288,7 @@ class TestConnectionTestDetailed:
                 found_audit = True
                 metadata = log.get("metadata", {})
                 assert "success" in metadata, "Audit metadata missing 'success'"
-                print(f"✅ Audit log entry found:")
+                print("✅ Audit log entry found:")
                 print(f"   - action: {log['action']}")
                 print(f"   - connector_id: {log.get('connector_id', 'N/A')}")
                 print(f"   - metadata.success: {metadata.get('success')}")
@@ -363,7 +362,7 @@ class TestConnectionTestResponseModel:
                 if "error_code" in step and step["error_code"] is not None:
                     assert isinstance(step["error_code"], str)
         
-        print(f"✅ Response matches ConnectionTestResponse model")
+        print("✅ Response matches ConnectionTestResponse model")
 
 
 if __name__ == "__main__":

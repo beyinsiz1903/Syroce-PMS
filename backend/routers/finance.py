@@ -3,54 +3,42 @@ FINANCE Router - Extracted from server.py
 """
 import asyncio
 import uuid
-import io
-import csv
-from datetime import datetime, timezone, timedelta, date
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict, Any
 from enum import Enum
 
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 
 try:
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.utils import get_column_letter
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side  # noqa: F401
+    from openpyxl.utils import get_column_letter  # noqa: F401
 except ImportError:
     Workbook = None
 
 from core.database import db
 from core.security import get_current_user
 from core.helpers import (
-    require_module, create_audit_log, load_tenant_doc,
-    require_admin, require_feature, get_tenant_modules,
+    require_module, create_audit_log,
 )
 from models.enums import (
-    UserRole, RoomStatus, BookingStatus, PaymentStatus,
-    PaymentMethod, ChargeType, InvoiceStatus, FolioType,
-    FolioStatus, ChargeCategory, FolioOperationType, PaymentType,
+    PaymentStatus,
+    ChargeCategory, FolioOperationType,
 )
 from models.schemas import (
-    User, Room, RoomCreate, Guest, GuestCreate,
-    Booking, BookingCreate, BookingExtended,
-    Folio, FolioCreate, FolioCharge, ChargeCreate,
+    User, Folio, FolioCreate, FolioCharge, ChargeCreate,
     Payment, PaymentCreate, FolioOperation, FolioOperationCreate,
-    Invoice, InvoiceCreate, InvoiceItem,
-    RateOverrideLog, RoomMoveHistory, RoomServiceCreate, RoomService,
-    RatePlan, Package, AuditLog, RateOverride,
-    CityTaxRule, Expense, CashFlow, BankAccount,
-    CreditLimit, CityLedgerTransaction,
-    Company, CompanyCreate,
+    Invoice, InvoiceCreate, Expense, CashFlow, BankAccount,
+    CityLedgerTransaction,
     GenerateInvoiceFromFolioRequest, ConvertCurrencyRequest,
     CreateCurrencyRateRequest, CreateMultiCurrencyInvoiceRequest,
-    _ensure_hotel_context,
 )
 
 from core.utils import (
-    generate_folio_number, calculate_folio_balance,
-    create_excel_workbook, excel_response,
+    calculate_folio_balance,
+    excel_response,
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
@@ -2571,7 +2559,7 @@ async def get_profit_loss_report(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get Profit & Loss (P&L) report"""
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     if not start_date:
         # Default to current month
@@ -2590,21 +2578,6 @@ async def get_profit_loss_report(
     
     # REVENUE
     # Room Revenue
-    room_revenue_pipeline = [
-        {
-            '$match': {
-                'tenant_id': current_user.tenant_id,
-                'check_in': {'$gte': start_date, '$lte': end_date},
-                'status': {'$in': ['checked_in', 'checked_out']}
-            }
-        },
-        {
-            '$group': {
-                '_id': None,
-                'total': {'$sum': '$room_revenue'}
-            }
-        }
-    ]
 
 
 

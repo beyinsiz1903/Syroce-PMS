@@ -4,14 +4,10 @@
 - Upsell Propensity Scoring
 - NLP Sentiment Analysis
 """
-from fastapi import APIRouter, HTTPException, Depends, status
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
-from datetime import datetime, timezone, timedelta
-import uuid
+from fastapi import APIRouter, HTTPException, Depends
+from typing import Optional, List
+from datetime import datetime, timezone
 import numpy as np
-import json
-import os
 
 router = APIRouter(prefix="/api/ml", tags=["ML/AI Models"])
 
@@ -36,7 +32,7 @@ class PricingModel:
         
         le_room = LabelEncoder()
         le_channel = LabelEncoder()
-        le_status = LabelEncoder()
+        LabelEncoder()
         
         features = []
         targets = []

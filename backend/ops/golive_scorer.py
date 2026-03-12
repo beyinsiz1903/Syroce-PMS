@@ -9,7 +9,7 @@ Produces final go-live score with breakdown.
 import uuid
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List
+from typing import Dict
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -222,7 +222,7 @@ class GoLiveReadinessScorer:
         return {"score": min(score, 100), "issues": issues}
 
     async def _score_pilot_checklist(self, ctx: OperationContext) -> Dict:
-        from ops.pilot_readiness import PILOT_CHECKLIST, PilotReadinessService
+        from ops.pilot_readiness import PilotReadinessService
         svc = PilotReadinessService()
         result = await svc.run_readiness_check(ctx)
         if not result.ok:

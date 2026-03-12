@@ -2,8 +2,7 @@
 Security — Sensitive Output Masking
 Masks PII and sensitive fields in API responses.
 """
-import re
-from typing import Dict, Any, List
+from typing import Any
 
 # Fields that should always be masked in output
 _MASK_FIELDS = {

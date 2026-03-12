@@ -256,7 +256,6 @@ async def get_demand_heatmap(
 ):
     """Get historical demand heatmap"""
     # Generate sample heatmap data
-    dates = []
     current = datetime.fromisoformat(start_date)
     end = datetime.fromisoformat(end_date)
     

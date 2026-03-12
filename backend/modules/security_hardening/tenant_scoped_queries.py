@@ -4,7 +4,7 @@ Every database query must pass through tenant context validation.
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 from core.database import db
 
@@ -55,7 +55,7 @@ class TenantQueryGuard:
             elif query.get("tenant_id") != tenant_id:
                 result["valid"] = False
                 result["warnings"].append(
-                    f"Cross-tenant access attempt: query tenant_id does not match context"
+                    "Cross-tenant access attempt: query tenant_id does not match context"
                 )
                 self._violations_blocked += 1
 

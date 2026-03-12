@@ -144,7 +144,7 @@ class TestCreateMapping:
         }
         response2 = api_client.post(f"{BASE_URL}/api/channel-manager/v2/mappings", json=payload2)
         assert response2.status_code == 409, f"Expected 409, got {response2.status_code}: {response2.text}"
-        print(f"✓ Duplicate PMS entity detection: Got expected 409 Conflict")
+        print("✓ Duplicate PMS entity detection: Got expected 409 Conflict")
         
         # Cleanup
         api_client.delete(f"{BASE_URL}/api/channel-manager/v2/mappings/{mapping1['id']}")
@@ -177,7 +177,7 @@ class TestCreateMapping:
         }
         response2 = api_client.post(f"{BASE_URL}/api/channel-manager/v2/mappings", json=payload2)
         assert response2.status_code == 409, f"Expected 409, got {response2.status_code}: {response2.text}"
-        print(f"✓ Duplicate external entity detection: Got expected 409 Conflict")
+        print("✓ Duplicate external entity detection: Got expected 409 Conflict")
         
         # Cleanup
         api_client.delete(f"{BASE_URL}/api/channel-manager/v2/mappings/{mapping1['id']}")
@@ -239,14 +239,14 @@ class TestDeleteMapping:
         # Verify it's deleted by trying to delete again
         response2 = api_client.delete(f"{BASE_URL}/api/channel-manager/v2/mappings/{mapping_id}")
         assert response2.status_code == 404
-        print(f"✓ Verify delete: Second delete returns 404")
+        print("✓ Verify delete: Second delete returns 404")
 
     def test_delete_nonexistent_mapping_returns_404(self, api_client):
         """Delete non-existent mapping returns 404."""
         fake_id = str(uuid.uuid4())
         response = api_client.delete(f"{BASE_URL}/api/channel-manager/v2/mappings/{fake_id}")
         assert response.status_code == 404, f"Expected 404, got {response.status_code}: {response.text}"
-        print(f"✓ Delete non-existent: Got expected 404")
+        print("✓ Delete non-existent: Got expected 404")
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -318,7 +318,7 @@ class TestValidateSingleMapping:
             f"{BASE_URL}/api/channel-manager/v2/mappings/{CONNECTOR_ID}/validate/{fake_id}"
         )
         assert response.status_code == 404, f"Expected 404, got {response.status_code}: {response.text}"
-        print(f"✓ Validate non-existent: Got expected 404")
+        print("✓ Validate non-existent: Got expected 404")
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -364,7 +364,7 @@ class TestSyncReadiness:
         assert data["ready"] == False
         assert data["score"] == 0
         assert "Connector not found" in str(data["blocked_reasons"])
-        print(f"✓ Sync readiness non-existent: returns ready=False with 'Connector not found'")
+        print("✓ Sync readiness non-existent: returns ready=False with 'Connector not found'")
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -502,4 +502,4 @@ class TestConnectorValidation:
         
         response = api_client.post(f"{BASE_URL}/api/channel-manager/v2/mappings", json=payload)
         assert response.status_code == 404, f"Expected 404, got {response.status_code}: {response.text}"
-        print(f"✓ Non-existent connector: Got expected 404 on create mapping")
+        print("✓ Non-existent connector: Got expected 404 on create mapping")

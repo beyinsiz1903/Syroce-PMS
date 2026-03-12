@@ -4,10 +4,9 @@ Centralized logging for production monitoring
 """
 
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, List
 from enum import Enum
 import traceback
-import json
 
 
 class LogLevel(str, Enum):

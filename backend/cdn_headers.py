@@ -3,7 +3,6 @@ CDN Cache Headers Middleware
 Optimizes browser and CDN caching with proper headers
 """
 from fastapi import Request, Response
-from fastapi.responses import FileResponse
 import os
 from datetime import datetime, timedelta
 

@@ -5,7 +5,7 @@ failure archive stats, retry pressure, worker heartbeat, and dead-letter trends.
 """
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List
+from typing import Dict, Optional
 
 from common.context import OperationContext
 from common.result import ServiceResult

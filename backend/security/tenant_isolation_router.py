@@ -3,7 +3,6 @@ Tenant Isolation — Validation API Router
 =========================================
 """
 from fastapi import APIRouter, Depends, Query
-from typing import Optional
 
 from core.security import get_current_user
 from common.context import OperationContext

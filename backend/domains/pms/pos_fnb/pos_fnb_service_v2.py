@@ -5,8 +5,8 @@ Adds: duplicate posting prevention, folio posting consistency,
 order lifecycle management, table reservation contention,
 void/refund safety, stock race protection.
 """
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any, List
+from datetime import datetime, timezone
+from typing import Optional, Dict, List
 import uuid
 import logging
 

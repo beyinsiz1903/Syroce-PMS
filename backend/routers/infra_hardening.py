@@ -4,7 +4,6 @@ hardening components: containers, Redis cluster, workers, secrets,
 backups, observability, scaling, and unified dashboard data.
 """
 from fastapi import APIRouter, Depends, Query, BackgroundTasks
-from typing import Optional
 from core.security import get_current_user
 from models.schemas import User
 

@@ -4,9 +4,8 @@ Routes for enhanced POS operations:
 create_order, close_order, void_order, stock_adjust, table_reserve.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
-from datetime import datetime, timezone
+from pydantic import BaseModel
+from typing import Optional, List
 
 from core.security import get_current_user
 from common.context import OperationContext

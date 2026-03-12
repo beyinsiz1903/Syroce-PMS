@@ -2,7 +2,7 @@
 Cached Endpoints Wrapper
 Adds caching to frequently accessed endpoints
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from typing import Optional
 from datetime import datetime, timedelta
 import redis
@@ -225,7 +225,6 @@ async def get_monthly_summary_cached(db, year: int, month: int):
     cache_key = f"reports:monthly:{year}:{month}"
     
     async def fetch():
-        from datetime import date
         import calendar
         
         # Calculate date range

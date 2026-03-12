@@ -3,8 +3,7 @@ Housekeeping Intelligence - AI-Powered
 Oda dağılımı optimizasyonu, tahminli temizlik süreleri
 """
 import random
-from datetime import datetime, timezone, timedelta
-from typing import List, Dict
+from typing import List
 
 class HousekeepingAI:
     """AI-powered housekeeping optimization"""

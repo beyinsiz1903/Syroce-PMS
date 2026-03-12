@@ -15,7 +15,6 @@ Wires up inter-module events:
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, Dict
 
 logger = logging.getLogger(__name__)
 

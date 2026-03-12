@@ -9,7 +9,6 @@ Tests new endpoints added to production-golive router:
 import pytest
 import requests
 import os
-import time
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
@@ -228,7 +227,7 @@ class TestConfigActivationWorkflow:
         data = response.json()
         
         assert "category" in data, f"Missing 'category' for {category}"
-        assert data["category"] == category, f"Category mismatch"
+        assert data["category"] == category, "Category mismatch"
         assert "variables" in data, f"Missing 'variables' for {category}"
         assert isinstance(data["variables"], list), "variables should be a list"
         
@@ -488,7 +487,7 @@ class TestGoLiveSummary:
         alerts_sum = data["alerts_summary"]
         assert "total_alerts" in alerts_sum, "Missing 'total_alerts' in alerts_summary"
         
-        print(f"Summary includes all 13 subsystems: readiness, configuration, redis, mongodb, workers, providers, backup, observability, security + provider_tests, config_activation, prelaunch_latest, alerts_summary")
+        print("Summary includes all 13 subsystems: readiness, configuration, redis, mongodb, workers, providers, backup, observability, security + provider_tests, config_activation, prelaunch_latest, alerts_summary")
 
 
 # =============================================================================

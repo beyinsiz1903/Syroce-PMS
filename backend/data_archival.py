@@ -3,9 +3,7 @@ Data Archival System
 Archives old bookings (>1 year) to separate collection for performance
 """
 from datetime import datetime, timedelta
-from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ASCENDING, DESCENDING
-import os
 from typing import Dict, Any
 import logging
 

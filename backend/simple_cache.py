@@ -4,7 +4,6 @@ Ultra-fast caching without Redis dependency
 """
 from datetime import datetime, timedelta
 from typing import Any, Optional, Dict
-import json
 from functools import wraps
 
 class SimpleCache:

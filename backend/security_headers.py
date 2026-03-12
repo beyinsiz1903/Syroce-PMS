@@ -3,7 +3,6 @@ Comprehensive Security Headers Middleware
 Implements OWASP security best practices
 """
 from fastapi import Request
-from typing import Callable
 
 class SecurityHeadersMiddleware:
     """
@@ -193,13 +192,6 @@ async def security_audit(request: Request):
         })
     
     # Check security headers
-    required_headers = [
-        'Strict-Transport-Security',
-        'X-Frame-Options',
-        'X-Content-Type-Options',
-        'X-XSS-Protection',
-        'Content-Security-Policy',
-    ]
     
     # Note: These would be checked on the response, 
     # but we're checking configuration here

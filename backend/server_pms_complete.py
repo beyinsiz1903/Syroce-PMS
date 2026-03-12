@@ -1,9 +1,7 @@
 # PMS Complete Endpoints - Part 2 to append to server.py
 
-from fastapi import APIRouter
-from datetime import datetime, timezone, timedelta, date
-from typing import List, Dict, Any, Optional
-import uuid
+from datetime import datetime, timezone, timedelta
+from typing import Dict, Optional
 
 # This continues from the previous server.py
 # ============= FRONT DESK ENDPOINTS =============

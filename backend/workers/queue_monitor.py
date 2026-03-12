@@ -2,10 +2,9 @@
 Workers — Queue Monitor
 Monitors queue backlog, saturation, and stuck tasks. Emits alerts to observability.
 """
-import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 from core.database import db
 

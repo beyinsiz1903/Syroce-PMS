@@ -4,13 +4,13 @@ Orchestrates mobile check-in, quick tasks, no-show processing,
 room changes, and active order management. No FastAPI dependencies.
 """
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+from typing import Optional
 import uuid
 import logging
 
 from common.context import OperationContext
 from common.result import ServiceResult
-from common.audit_hook import audited, SEVERITY_INFO, SEVERITY_WARNING, SEVERITY_CRITICAL
+from common.audit_hook import audited, SEVERITY_INFO, SEVERITY_WARNING
 
 logger = logging.getLogger(__name__)
 

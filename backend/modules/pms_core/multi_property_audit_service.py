@@ -4,8 +4,7 @@ Property-level audit status board, exception summary, unresolved blocker list,
 escalation flow, and multi-property readiness score.
 """
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional
-import uuid
+from typing import Dict
 
 from core.database import db
 

@@ -2,7 +2,7 @@
 ML Scheduler Router - Schedule policies, execution triggers, status monitoring.
 """
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from core.security import get_current_user
 from models.schemas import User

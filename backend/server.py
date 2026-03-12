@@ -43,29 +43,19 @@ from core.security import (  # noqa: E402
     create_token,
     hash_password,
     verify_password,
-    _is_super_admin,
     security,
     JWT_SECRET,
     JWT_ALGORITHM,
     JWT_EXPIRATION_HOURS,
-    pwd_context,
-    generate_qr_code,
-    generate_time_based_qr_token,
 )
 from core.helpers import (  # noqa: E402
-    FEATURES_BY_PLAN,
-    resolve_tenant_features,
-    load_tenant_doc,
-    create_audit_log,
-    MODULE_DEFAULTS,
-    get_tenant_modules,
     require_feature,
     require_super_admin_guard,
     require_module,
     require_admin,
 )
 from models.schemas import User  # noqa: E402
-from models.enums import UserRole, ChannelType  # noqa: E402
+from models.enums import ChannelType  # noqa: E402
 
 # Backward compat alias
 require_super_admin = require_super_admin_guard

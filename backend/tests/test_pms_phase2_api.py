@@ -134,7 +134,7 @@ class TestDashboardTrendsEndpoint:
             assert "date" in point
             assert "rate" in point
         
-        print(f"✓ Dashboard trends endpoint returns all 7 categories for 7-day range")
+        print("✓ Dashboard trends endpoint returns all 7 categories for 7-day range")
 
     def test_trends_single_day(self, auth_headers):
         """Test trends endpoint for single day (today)."""
@@ -343,7 +343,7 @@ class TestAutoHousekeepingEndpoints:
         )
         if dash.status_code == 200:
             # Try to find a room ID from the data
-            room_status = dash.json().get("room_status", {})
+            dash.json().get("room_status", {})
             # We need to query rooms collection directly, for now test with a known pattern
             pass
         

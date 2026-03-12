@@ -2,30 +2,22 @@
 AI / ML Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends, status, Body, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import ORJSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta, date
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import HTTPAuthorizationCredentials
+from typing import Optional
+from datetime import datetime, timezone, timedelta
 import os
 import uuid
-import random
 import logging
-import io
 
 from core.database import db
 from core.security import (
-    get_current_user, security, JWT_SECRET, JWT_ALGORITHM,
-    generate_qr_code, generate_time_based_qr_token,
+    get_current_user, security,
 )
 from core.helpers import (
-    create_audit_log, require_feature, require_module,
-    require_super_admin_guard as require_super_admin, require_admin,
-    get_tenant_modules, load_tenant_doc,
+    require_module,
 )
 from models.schemas import User
-from models.enums import UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +91,6 @@ async def ai_chat(
             folios_found = []
             if guest_name_hint:
                 # Search guests by name - try multiple fields
-                import re
                 guests = await db.guests.find({
                     "tenant_id": current_user.tenant_id,
                     "$or": [
@@ -160,7 +151,7 @@ async def ai_chat(
                             f"  Giriş: {fmt_date(booking.get('check_in'))}\n"
                             f"  Çıkış: {fmt_date(booking.get('check_out'))}\n"
                         )
-                    folio_info += f"  Harcamalar:\n" + "\n".join(charge_lines) if charge_lines else "  Harcama yok"
+                    folio_info += "  Harcamalar:\n" + "\n".join(charge_lines) if charge_lines else "  Harcama yok"
                     folio_info += f"\n  TOPLAM: {total:.2f} TL"
                     folios_found.append(folio_info)
             
@@ -193,7 +184,7 @@ async def ai_chat(
 
         # ── RESERVATION INTENT ──
         elif any(w in msg_lower for w in ['rezervasyon', 'booking', 'geçmiş', 'gelecek', 'bugün', 'yarın', 'misafir listesi', 'kimler var', 'kimler gelecek']):
-            today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+            datetime.now(timezone.utc).strftime('%Y-%m-%d')
             
             if any(w in msg_lower for w in ['geçmiş', 'önceki', 'eski', 'tamamlanan']):
                 # Past reservations
@@ -289,7 +280,7 @@ async def ai_chat(
                             f"  Uyruk: {g.get('nationality','-')} | Sadakat: {g.get('loyalty_tier','-')} | "
                             f"Toplam konaklama: {g.get('total_stays',0)} | Harcama: {g.get('total_spend',0):.0f} TL"
                         )
-                    data_context = f"\n\n## MİSAFİR BİLGİLERİ:\n" + "\n".join(lines)
+                    data_context = "\n\n## MİSAFİR BİLGİLERİ:\n" + "\n".join(lines)
                 else:
                     data_context = f"\n'{guest_name_hint}' adında misafir bulunamadı."
             else:
@@ -464,7 +455,7 @@ async def get_ai_pricing_recommendation(
             target_date
         )
         return recommendation
-    except Exception as e:
+    except Exception:
         # Fallback pricing recommendation
         rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}).to_list(None)
         bookings = await db.bookings.find({
@@ -1811,7 +1802,6 @@ async def analyze_predictive_maintenance(
         hvac_issues = [i for i in issues if 'ac' in i.get('description', '').lower() or 'hvac' in i.get('description', '').lower()]
         if len(hvac_issues) >= 2:
             # Recurring AC issues detected
-            days_between = 30  # Simulated
             alert = MaintenanceAlert(
                 tenant_id=current_user.tenant_id,
                 room_id=room_id,
@@ -1924,7 +1914,7 @@ async def ai_housekeeping_smart_scheduler(
     - Intelligent task distribution
     - Workload balancing
     """
-    target_date = datetime.fromisoformat(date)
+    datetime.fromisoformat(date)
     
     # 1. Get occupancy forecast
     occupied_rooms = []
@@ -2475,7 +2465,6 @@ async def get_ml_models_status(
     - Check if models are trained and available
     - Return training metrics if available
     """
-    import os
     import json
     
     model_dir = 'ml_models'
@@ -2538,7 +2527,6 @@ async def get_ml_models_status(
 
 # ============= MONITORING & LOGGING ENDPOINTS =============
 
-from logging_service import get_logging_service, LogLevel
 
 
 
@@ -2556,7 +2544,7 @@ async def get_occupancy_prediction(
     
     # Get bookings for next N days
     start_date = datetime.now(timezone.utc)
-    end_date = start_date + timedelta(days=days)
+    start_date + timedelta(days=days)
     
     predictions = []
     for day_offset in range(days):

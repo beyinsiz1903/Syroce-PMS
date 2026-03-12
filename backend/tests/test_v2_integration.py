@@ -22,8 +22,6 @@ Test scenarios covered:
   - Realtime event emission
 """
 import pytest
-import asyncio
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
@@ -434,7 +432,7 @@ class TestProductionReadinessEnhanced:
             {"check": "inventory", "status": "passed"},
             {"check": "rate_push", "status": "passed"},
         ]
-        passed = [c for c in checks if c["status"] == "passed"]
+        [c for c in checks if c["status"] == "passed"]
         failed = [c for c in checks if c["status"] == "failed"]
         blockers = [c for c in failed if c.get("blocker", False)]
         if not blockers and len(failed) == 0:

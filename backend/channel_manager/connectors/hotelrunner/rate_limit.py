@@ -4,7 +4,6 @@ Prevents hitting HotelRunner's API rate limits by throttling outgoing requests.
 """
 import asyncio
 import time
-from typing import Optional
 
 
 class RateLimiter:

@@ -3,9 +3,8 @@ Department-Specific Dashboard Endpoints
 Comprehensive endpoints for all hotel departments
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter
 from datetime import datetime, timezone, timedelta
-from typing import List, Optional, Dict
 import random
 
 # These will be imported from main server.py

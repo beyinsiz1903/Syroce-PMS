@@ -8,11 +8,10 @@ provider circuit breaker live behaviour monitoring.
 import uuid
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Dict, List
 
 from common.context import OperationContext
 from common.result import ServiceResult
-from common.audit_hook import audited, SEVERITY_INFO, SEVERITY_WARNING
 
 logger = logging.getLogger(__name__)
 

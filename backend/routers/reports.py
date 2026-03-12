@@ -2,41 +2,23 @@
 REPORTS Router - Extracted from server.py
 """
 import uuid
-import io
-import csv
 import asyncio
-from datetime import datetime, timezone, timedelta, date
-from typing import List, Optional, Dict, Any
-from enum import Enum
+from datetime import datetime, timezone, timedelta
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form, Request
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
 
 from core.database import db
 from core.security import get_current_user
 from core.helpers import (
-    require_module, create_audit_log, load_tenant_doc,
-    require_admin, require_feature, get_tenant_modules,
+    require_module,
 )
 from models.enums import (
-    UserRole, RoomStatus, BookingStatus, PaymentStatus,
-    PaymentMethod, ChargeType, InvoiceStatus, FolioType,
-    FolioStatus, ChargeCategory, FolioOperationType, PaymentType,
+    ChargeCategory,
 )
 from models.schemas import (
-    User, Room, RoomCreate, Guest, GuestCreate,
-    Booking, BookingCreate, BookingExtended,
-    Folio, FolioCreate, FolioCharge, ChargeCreate,
-    Payment, PaymentCreate, FolioOperation, FolioOperationCreate,
-    Invoice, InvoiceCreate, InvoiceItem,
-    RateOverrideLog, RoomMoveHistory, RoomServiceCreate, RoomService,
-    RatePlan, Package, AuditLog, RateOverride,
-    CityTaxRule, Expense, CashFlow, BankAccount,
-    CreditLimit, CityLedgerTransaction,
-    Company, CompanyCreate,
-    _ensure_hotel_context,
+    User, FolioCharge,
 )
 
 try:
@@ -124,10 +106,10 @@ async def get_flash_report(
         'check_out': {'$gte': today_start.isoformat()}
     })
     
-    occupancy_pct = (occupied_today / total_rooms * 100) if total_rooms > 0 else 0
+    (occupied_today / total_rooms * 100) if total_rooms > 0 else 0
     
     # Arrivals today
-    arrivals_today = await db.bookings.count_documents({
+    await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_in': {
             '$gte': today_start.isoformat(),
@@ -137,7 +119,7 @@ async def get_flash_report(
     })
     
     # Departures today
-    departures_today = await db.bookings.count_documents({
+    await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_out': {
             '$gte': today_start.isoformat(),
@@ -146,7 +128,7 @@ async def get_flash_report(
     })
     
     # In-house guests
-    in_house = await db.bookings.count_documents({
+    await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'checked_in'
     })
@@ -163,13 +145,13 @@ async def get_flash_report(
     total_revenue = sum([b.get('total_amount', 0) for b in today_bookings])
     
     # Calculate ADR (Average Daily Rate)
-    adr = total_revenue / occupied_today if occupied_today > 0 else 0
+    total_revenue / occupied_today if occupied_today > 0 else 0
     
     # Calculate RevPAR (Revenue Per Available Room)
-    revpar = total_revenue / total_rooms if total_rooms > 0 else 0
+    total_revenue / total_rooms if total_rooms > 0 else 0
     
     # No-shows today
-    no_shows = await db.bookings.count_documents({
+    await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_in': {
             '$gte': today_start.isoformat(),
@@ -179,7 +161,7 @@ async def get_flash_report(
     })
     
     # Cancellations today
-    cancellations = await db.bookings.count_documents({
+    await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'cancelled',
         'created_at': {
@@ -189,7 +171,6 @@ async def get_flash_report(
     })
     
     # F&B Revenue (from POS)
-    fnb_revenue = 0.0
     try:
         fnb_orders = await db.pos_orders.find({
             'tenant_id': current_user.tenant_id,
@@ -198,7 +179,7 @@ async def get_flash_report(
                 '$lte': today_end.isoformat()
             }
         }, {'_id': 0, 'total_amount': 1}).to_list(1000)
-        fnb_revenue = sum([o.get('total_amount', 0) for o in fnb_orders])
+        sum([o.get('total_amount', 0) for o in fnb_orders])
     except:
         pass
 
@@ -502,7 +483,6 @@ async def get_basic_reports_dashboard(
     """
     Temel Raporlar Dashboard - OPTIMIZED: Batch queries
     """
-    import asyncio
     today = datetime.now(timezone.utc)
     today_start = today.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today.replace(hour=23, minute=59, second=59)
@@ -1075,7 +1055,7 @@ async def run_night_audit(
     - OTA reconciliation
     """
     audit_date_str = audit_date or datetime.now().date().isoformat()
-    audit_datetime = datetime.fromisoformat(audit_date_str)
+    datetime.fromisoformat(audit_date_str)
     
     audit_results = {
         'audit_id': str(uuid.uuid4()),
@@ -1242,7 +1222,7 @@ async def get_weekly_management_summary(
         total_revenue += booking.get('total_amount', 0)
     
     # Calculate average occupancy
-    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+    await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     occupied_avg = 0
     
     # Get maintenance tasks completed
@@ -1298,7 +1278,7 @@ async def start_night_audit(
     # Calculate statistics
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     
-    audit_date_obj = datetime.fromisoformat(audit_date).replace(tzinfo=timezone.utc)
+    datetime.fromisoformat(audit_date).replace(tzinfo=timezone.utc)
     occupied_rooms = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'checked_in',
@@ -1473,7 +1453,7 @@ async def automatic_posting(
             posted_count += 1
             total_posted += room_charge['amount'] + tax_amount
             
-        except Exception as e:
+        except Exception:
             failed_count += 1
     
     return {

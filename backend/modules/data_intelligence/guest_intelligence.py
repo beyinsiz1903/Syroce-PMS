@@ -3,8 +3,7 @@ Guest Intelligence - Guest analytics, segmentation, churn prediction, and upsell
 Uses existing guest journey, reservations, messaging, and review data.
 """
 import uuid
-import math
-from datetime import datetime, timezone, timedelta, date
+from datetime import datetime, timezone, date
 from typing import Dict, Any, List, Optional
 from core.database import db
 import logging
@@ -390,7 +389,7 @@ class GuestIntelligenceDashboard:
             {"tenant_id": tenant_id, "guest_id": guest_id},
             {"_id": 0, "status": 1},
         ).to_list(500)
-        completed = sum(1 for b in bookings if b.get("status") in ("checked_out", "checked_in"))
+        sum(1 for b in bookings if b.get("status") in ("checked_out", "checked_in"))
         cancelled = sum(1 for b in bookings if b.get("status") == "cancelled")
 
         # Recent sentiment from reviews

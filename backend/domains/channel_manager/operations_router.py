@@ -2,30 +2,20 @@
 Channel Manager / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends, status, Body, Query, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import ORJSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, EmailStr
+from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta, date
-import os
+from datetime import datetime, timezone, timedelta
 import uuid
-import random
 import logging
-import io
 
 from core.database import db
 from core.security import (
-    get_current_user, security, JWT_SECRET, JWT_ALGORITHM,
-    generate_qr_code, generate_time_based_qr_token,
-)
-from core.helpers import (
-    create_audit_log, require_feature, require_module,
-    require_super_admin_guard as require_super_admin, require_admin,
-    get_tenant_modules, load_tenant_doc,
+    get_current_user, security,
 )
 from models.schemas import User, RoomMappingCreate
-from models.enums import UserRole, ChannelType, ChannelStatus, ParityStatus
+from models.enums import ChannelType, ChannelStatus, ParityStatus
 
 logger = logging.getLogger(__name__)
 
@@ -246,7 +236,6 @@ async def import_ota_reservation(
     
     if not guest:
         # Create new guest
-        from pydantic import EmailStr
         guest_create = GuestCreate(
             name=ota_res['guest_name'],
             email=ota_res.get('guest_email') or 'noemail@example.com',
@@ -797,7 +786,7 @@ async def get_channel_status(
     """
     Get OTA channel connection status
     """
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     channels = [
         {
@@ -857,7 +846,7 @@ async def get_rate_parity(
     """
     Check rate parity across channels
     """
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     parity_data = [
         {
@@ -948,7 +937,7 @@ async def get_channel_performance(
     """
     Get channel performance metrics
     """
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     performance = [
         {
@@ -1008,7 +997,7 @@ async def push_rates_to_channels(
     """
     Push rates to selected OTA channels
     """
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     results = []
     for channel in channels:

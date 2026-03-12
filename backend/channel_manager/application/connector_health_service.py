@@ -20,7 +20,7 @@ Classifications:
   - CRITICAL (score < 60)
 """
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 
 from core.database import db
@@ -47,7 +47,7 @@ class ConnectorHealthService:
         sync_jobs = await self._repo.get_sync_jobs(tenant_id, connector_id, limit=200)
         total_syncs = len(sync_jobs)
         succeeded_syncs = [j for j in sync_jobs if j.get("status") == "succeeded"]
-        failed_syncs = [j for j in sync_jobs if j.get("status") == "failed"]
+        [j for j in sync_jobs if j.get("status") == "failed"]
         sync_success_rate = round(len(succeeded_syncs) / max(total_syncs, 1) * 100, 1)
 
         # Last successful sync

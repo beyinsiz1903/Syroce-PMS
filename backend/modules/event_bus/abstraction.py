@@ -5,10 +5,8 @@ Environment-based mode selection: REDIS_URL → redis, else in_memory.
 Production mode + fallback mode coexist.
 """
 import logging
-import asyncio
 import uuid
 import os
-import json
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List, Callable, Any
 from collections import defaultdict

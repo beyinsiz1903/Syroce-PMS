@@ -2,9 +2,6 @@
 Platform Hardening Tests - Tests for Data Pipeline, Event Bus, Observability, and Security Hardening.
 """
 import pytest
-import asyncio
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, AsyncMock, patch
 
 import sys
 sys.path.insert(0, "/app/backend")
@@ -222,7 +219,6 @@ class TestDistributedTracing:
 
     def test_slow_trace_detection(self):
         from modules.observability.distributed_tracing import TracingService
-        import time
         ts = TracingService()
         trace_id = ts.start_trace("/api/slow", "GET")
         # Simulate slow by modifying start_time

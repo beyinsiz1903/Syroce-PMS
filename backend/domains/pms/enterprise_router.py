@@ -3,17 +3,16 @@ Domain Router: Enterprise Features
 
 Critical features, task management, RBAC, enterprise audit logging.
 """
-from fastapi import APIRouter, HTTPException, Depends, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import HTTPAuthorizationCredentials
+from typing import Optional
 from datetime import datetime, timezone, timedelta
 import uuid
 
 from core.database import db
-from core.security import get_current_user, security, JWT_SECRET, JWT_ALGORITHM
+from core.security import get_current_user, security
 from core.cache import cached
-from core.helpers import require_module, require_feature
+from core.helpers import require_feature
 from models.schemas import (
     User, CreateTaskRequest, AssignTaskRequest, UpdateTaskStatusRequest,
     AssignRoleRequest, CreateRoleRequest, CreateBackupRequest,

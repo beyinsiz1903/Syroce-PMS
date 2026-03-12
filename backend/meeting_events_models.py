@@ -3,7 +3,7 @@ Meeting & Events Management Models
 Meeting room booking, event coordination, BEO
 """
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import List
 from datetime import datetime, timezone
 from enum import Enum
 import uuid

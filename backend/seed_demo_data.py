@@ -262,7 +262,7 @@ async def create_bookings_and_folios(rooms, guests, companies, users):
     """Create comprehensive bookings with folios, charges, and payments"""
     print("📅 Creating bookings with folios...")
     
-    admin_user = users[0]
+    users[0]
     bookings_created = 0
     
     # 1. Historical bookings (2024) - checked out
@@ -756,7 +756,7 @@ async def main():
         await clear_demo_data()
         
         # Step 2: Create tenant
-        tenant = await create_demo_tenant()
+        await create_demo_tenant()
         
         # Step 3: Create users
         users = await create_demo_users()

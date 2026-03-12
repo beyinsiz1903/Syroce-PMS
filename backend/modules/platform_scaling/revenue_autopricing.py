@@ -4,8 +4,8 @@ with approval workflows, rollback support, blackout rules, audit trail,
 and channel push status tracking.
 """
 import uuid
-from datetime import datetime, timezone, timedelta, date
-from typing import Dict, Any, List, Optional
+from datetime import datetime, timezone, date
+from typing import Dict, Any, Optional
 from core.database import db
 import logging
 

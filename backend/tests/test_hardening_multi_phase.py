@@ -10,7 +10,6 @@ Plus core endpoints (auth, PMS rooms/bookings, housekeeping)
 import pytest
 import requests
 import os
-import time
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
@@ -60,7 +59,7 @@ class TestPMSCore:
         assert response.status_code == 200, f"Get bookings failed: {response.text}"
         data = response.json()
         assert isinstance(data, (list, dict)), f"Unexpected response type: {type(data)}"
-        print(f"✅ Get bookings successful")
+        print("✅ Get bookings successful")
 
 
 class TestHousekeeping:
@@ -73,7 +72,7 @@ class TestHousekeeping:
         assert response.status_code == 200, f"Get housekeeping tasks failed: {response.text}"
         data = response.json()
         assert isinstance(data, (list, dict)), f"Unexpected response type: {type(data)}"
-        print(f"✅ Get housekeeping tasks successful")
+        print("✅ Get housekeeping tasks successful")
 
 
 class TestChannelManagerHardening:
@@ -223,7 +222,7 @@ class TestSecurityHardening:
             data = response.json()
             print(f"✅ Credentials check: {list(data.keys())}")
         else:
-            print(f"✅ Credentials check: 403 (admin required, expected for demo user)")
+            print("✅ Credentials check: 403 (admin required, expected for demo user)")
     
     def test_tenant_guard_status(self, auth_token):
         """GET /api/security/tenant-guard/status - returns enforcement active, total_violations"""

@@ -3,11 +3,11 @@ Front Desk Workflow Service - Production-grade check-in, checkout, room move, wa
 Enforces room readiness, folio dependencies, and audit trail.
 """
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Dict, List
 import uuid
 
 from core.database import db
-from modules.pms_core.reservation_state_machine import ReservationStateMachine, ACTIVE_BOOKING_STATES
+from modules.pms_core.reservation_state_machine import ReservationStateMachine
 
 rsm = ReservationStateMachine()
 

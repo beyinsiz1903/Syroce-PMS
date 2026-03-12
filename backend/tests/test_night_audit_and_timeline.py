@@ -5,7 +5,6 @@ Operational Metrics, and Module Boundary Imports.
 import sys
 from pathlib import Path
 import pytest
-import asyncio
 import os
 from datetime import datetime, timezone, timedelta
 
@@ -183,7 +182,6 @@ def test_operational_metrics_router_importable():
 def test_common_contracts_importable():
     from common.result import ServiceResult
     from common.context import OperationContext
-    from common.errors import DomainError
     assert ServiceResult is not None
     assert OperationContext is not None
 

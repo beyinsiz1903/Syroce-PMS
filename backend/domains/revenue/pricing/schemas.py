@@ -4,7 +4,6 @@ Extracted from pricing_router.py inline models.
 """
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-from datetime import date
 
 
 class RatePlanFilter(BaseModel):

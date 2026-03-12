@@ -7,7 +7,6 @@ import csv
 import uuid
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +134,7 @@ class AnalyticsExportService:
         """Fetch data for the given report type."""
         date_from = filters.get("date_from", (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d"))
         date_to = filters.get("date_to", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
-        property_id = filters.get("property_id")
+        filters.get("property_id")
 
         if report_type == "revenue_ml_outputs":
             return await self._revenue_ml_data(tenant_id, date_from, date_to)

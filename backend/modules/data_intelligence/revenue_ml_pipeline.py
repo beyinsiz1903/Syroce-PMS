@@ -9,8 +9,7 @@ Integrates with:
 - modules/platform_scaling/revenue_autopricing.py (existing auto-pricing workflow)
 """
 import uuid
-import math
-from datetime import datetime, timezone, timedelta, date
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from core.database import db
 from modules.platform_scaling.revenue_ml import (

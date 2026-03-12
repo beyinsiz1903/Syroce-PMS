@@ -4,7 +4,6 @@ Simulates concurrent mobile operations: no-show processing, room changes,
 quick tasks, and quick issues hitting the database at the same time.
 """
 import asyncio
-import pytest
 import uuid
 from datetime import datetime, timezone, timedelta
 

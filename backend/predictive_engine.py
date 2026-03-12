@@ -3,8 +3,8 @@ Predictive Analytics Engine - AI Oracle
 Geleceği tahmin et: No-show, demand, complaints, inventory
 """
 import random
-from datetime import datetime, timezone, timedelta, date
-from typing import List, Dict, Optional
+from datetime import timedelta, date
+from typing import List, Dict
 
 class PredictiveEngine:
     """AI prediction engine"""

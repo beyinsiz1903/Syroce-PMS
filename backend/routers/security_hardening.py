@@ -4,7 +4,6 @@ Security Hardening Router - API endpoints for multi-tenant security.
 from fastapi import APIRouter, Depends, Query, Body
 from typing import Optional, Dict, Any
 
-from core.security import get_current_user
 from shared_kernel.tenancy_context import get_current_tenant, TenantContext
 
 from modules.security_hardening.tenant_scoped_queries import tenant_query_guard

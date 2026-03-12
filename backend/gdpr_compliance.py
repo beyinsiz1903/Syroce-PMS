@@ -1,8 +1,8 @@
 """KVKK/GDPR Compliance Module - Data Processing, Consent, Export, Delete, Anonymize"""
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
+from pydantic import BaseModel
+from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
 import json

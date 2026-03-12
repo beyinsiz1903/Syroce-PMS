@@ -6,7 +6,7 @@ and daily/weekly reports for pilot hotels.
 """
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List
+from typing import Dict, List
 
 from common.result import ServiceResult
 from common.context import OperationContext

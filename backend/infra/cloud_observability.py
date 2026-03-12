@@ -9,10 +9,8 @@ Environment:
     SENTRY_ENVIRONMENT     — Sentry environment tag
 """
 import os
-import time
 import logging
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timezone
 from collections import defaultdict
 
 logger = logging.getLogger("infra.observability")

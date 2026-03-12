@@ -3,7 +3,6 @@ Phase 6 — Runtime Validation & Go-Live API Integration Tests
 """
 import pytest
 import httpx
-import uuid
 
 API_BASE = "http://localhost:8001"
 

@@ -7,7 +7,6 @@ import hashlib
 import logging
 import os
 import secrets
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 

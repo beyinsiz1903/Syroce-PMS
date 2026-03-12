@@ -12,8 +12,8 @@ import json
 import hashlib
 import hmac
 import time
-from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
 
 # Test imports
 import sys
@@ -115,7 +115,7 @@ class TestAdminReconciliationIssues:
     async def test_get_issues_returns_list(self, mock_repo):
         from channel_manager.application.reconciliation_service import ReconciliationService
         svc = ReconciliationService(mock_repo)
-        issues = await svc.get_issues("t1", "conn-1", "open", 100)
+        await svc.get_issues("t1", "conn-1", "open", 100)
         mock_repo.get_reconciliation_issues.assert_called_once()
 
     @pytest.mark.asyncio

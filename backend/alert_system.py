@@ -5,7 +5,6 @@ Sistem hatası olduğunda otomatik email/SMS gönderir
 from datetime import datetime, timezone
 import os
 from typing import Dict, Any
-import asyncio
 
 class AlertManager:
     """Otomatik alert sistemi"""

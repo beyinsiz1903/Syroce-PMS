@@ -2,30 +2,20 @@
 PMS / Dashboard Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends, status, Body, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import ORJSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta, date
-import os
+from fastapi import APIRouter, Depends
+from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import BaseModel
+from typing import List, Optional
+from datetime import datetime, timezone, timedelta
 import uuid
 import random
 import logging
-import io
 
 from core.database import db
 from core.security import (
-    get_current_user, security, JWT_SECRET, JWT_ALGORITHM,
-    generate_qr_code, generate_time_based_qr_token,
-)
-from core.helpers import (
-    create_audit_log, require_feature, require_module,
-    require_super_admin_guard as require_super_admin, require_admin,
-    get_tenant_modules, load_tenant_doc,
+    get_current_user, security,
 )
 from models.schemas import User
-from models.enums import UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -434,7 +424,7 @@ async def get_guest_satisfaction_trends(
     start_dt = end_dt - timedelta(days=days)
     
     # Get all feedback/reviews in the period
-    feedback_pipeline = [
+    [
         {
             '$match': {
                 'tenant_id': current_user.tenant_id,
@@ -1370,7 +1360,7 @@ async def get_executive_kpi_snapshot(
         cash_balance = total_revenue * 10  # Rough estimate
     
     # Calculate trends (compare with yesterday)
-    yesterday_date = (today - timedelta(days=1)).isoformat()
+    (today - timedelta(days=1)).isoformat()
     
     yesterday_revenue = 0
     async for payment in db.payments.find({

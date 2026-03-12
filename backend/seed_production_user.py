@@ -65,8 +65,8 @@ async def seed_user():
     }
     await db.users.insert_one(user)
     print(f'✅ User created: {user["email"]} (id: {user_id})')
-    print(f'   Password: demo123')
-    print(f'   Role: admin')
+    print('   Password: demo123')
+    print('   Role: admin')
     print(f'   Tenant ID: {user["tenant_id"]}')
     
     # Update tenant with correct id in user's tenant_id

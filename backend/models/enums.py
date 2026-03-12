@@ -4,7 +4,6 @@ All enum types used across the application.
 Extracted from server.py for modularity.
 """
 from enum import Enum
-from typing import Dict, List
 
 # ============= ENUMS =============
 

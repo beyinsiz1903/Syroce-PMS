@@ -3,7 +3,7 @@ Audit Completeness - Validates that all critical operations have proper audit tr
 """
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 from core.database import db
 

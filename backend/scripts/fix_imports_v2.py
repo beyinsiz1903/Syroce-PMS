@@ -1,7 +1,6 @@
 """
 Fix all remaining import errors in extracted router files.
 """
-import re
 import os
 
 BASE = "/app/backend"

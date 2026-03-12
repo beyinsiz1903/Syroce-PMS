@@ -26,7 +26,7 @@ class TestAuthentication:
         assert response.status_code == 200
         data = response.json()
         assert "access_token" in data
-        print(f"✓ Login successful, got access_token")
+        print("✓ Login successful, got access_token")
 
     def test_connectors_requires_auth(self):
         """Verify /connectors returns 401/403 without token."""
@@ -112,7 +112,7 @@ class TestEnvironmentEndpoints:
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "mock"
-        print(f"✓ GET /environments/mock - mock config")
+        print("✓ GET /environments/mock - mock config")
 
     def test_get_production_environment(self, headers):
         """GET /environments/production - production config details."""
@@ -124,7 +124,7 @@ class TestEnvironmentEndpoints:
         data = response.json()
         assert data["name"] == "production"
         assert data["sandbox"] is False
-        print(f"✓ GET /environments/production - production config")
+        print("✓ GET /environments/production - production config")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -187,7 +187,7 @@ class TestImportJobEndpoints:
             print(f"✓ POST /import-jobs/run-all - status: {response.status_code}")
         except requests.exceptions.ReadTimeout:
             # Timeout is acceptable - endpoint is doing real work calling HotelRunner APIs
-            print(f"✓ POST /import-jobs/run-all - timed out (expected - processing connectors)")
+            print("✓ POST /import-jobs/run-all - timed out (expected - processing connectors)")
 
     def test_safety_net_inventory_sync(self, headers):
         """POST /safety-net/inventory-sync - safety net sync."""

@@ -7,7 +7,6 @@ Supports: Twilio SMS, SendGrid Email, WhatsApp, Redis, Sentry, OTel Exporter.
 import os
 import time
 import logging
-import asyncio
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 
@@ -181,7 +180,7 @@ class ProviderTestConnectionService:
     async def _test_twilio(self, result: ConnectionTestResult):
         sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
         token = os.environ.get("TWILIO_AUTH_TOKEN", "")
-        from_num = os.environ.get("TWILIO_FROM_NUMBER", "")
+        os.environ.get("TWILIO_FROM_NUMBER", "")
         is_sandbox = os.environ.get("TWILIO_SANDBOX", "false").lower() == "true"
         result.mode = "sandbox" if is_sandbox else ("live" if sid else "not_configured")
 
@@ -234,7 +233,7 @@ class ProviderTestConnectionService:
 
     async def _test_sendgrid(self, result: ConnectionTestResult):
         api_key = os.environ.get("SENDGRID_API_KEY", "")
-        from_email = os.environ.get("SENDGRID_FROM_EMAIL", "")
+        os.environ.get("SENDGRID_FROM_EMAIL", "")
         is_sandbox = os.environ.get("SENDGRID_SANDBOX", "false").lower() == "true"
         result.mode = "sandbox" if is_sandbox else ("live" if api_key else "not_configured")
 

@@ -4,9 +4,8 @@ Routes for enhanced front desk operations:
 room_move, late_checkout, no_show, walk_in, post_charge, void_charge.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime, timezone
 
 from core.security import get_current_user
 from common.context import OperationContext

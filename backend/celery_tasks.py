@@ -9,8 +9,7 @@ import os
 from datetime import datetime, timedelta, timezone
 import asyncio
 import logging
-from typing import List, Dict, Any, Optional
-import uuid
+from typing import Dict, Any, Optional
 from integrations.booking import (
     BookingIntegrationLogger,
     BookingCredentialManager,

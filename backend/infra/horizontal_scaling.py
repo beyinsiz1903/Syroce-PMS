@@ -7,7 +7,6 @@ Environment:
     SCALING_MODE    — single | multi (default: single)
 """
 import os
-import time
 import asyncio
 import uuid
 import logging

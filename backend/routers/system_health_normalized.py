@@ -3,9 +3,8 @@ System Health — Normalized API Contract (Enriched)
 Real runtime data from services; standard response envelope with data freshness,
 evidence summary, degraded reason, critical blockers, and trend delta.
 """
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any
 
 from core.database import db
 from core.security import get_current_user

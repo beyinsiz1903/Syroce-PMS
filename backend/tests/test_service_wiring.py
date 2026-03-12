@@ -27,22 +27,22 @@ def headers(auth_token):
 
 class TestSchemaOrganization:
     def test_admin_schemas_importable(self):
-        from domains.admin.schemas import PermissionCheckRequest, SLAConfig, DemoRequest
+        from domains.admin.schemas import PermissionCheckRequest, SLAConfig
         assert PermissionCheckRequest(permission="test")
         assert SLAConfig(category="maintenance", response_time_minutes=30, resolution_time_minutes=120)
 
     def test_channel_manager_schemas_importable(self):
-        from domains.channel_manager.schemas import APIKeyModel, CMRestrictions, CMARIResponse
+        from domains.channel_manager.schemas import CMRestrictions
         r = CMRestrictions()
         assert r.stop_sell is False
 
     def test_guest_schemas_importable(self):
-        from domains.guest.schemas import GuestPreference, SendMessageRequest
+        from domains.guest.schemas import SendMessageRequest
         msg = SendMessageRequest(guest_id="g1", message="Hello")
         assert msg.channel == "sms"
 
     def test_revenue_schemas_importable(self):
-        from domains.revenue.schemas import RatePlanCreate, CompetitorRate
+        from domains.revenue.schemas import RatePlanCreate
         rp = RatePlanCreate(name="BAR", code="BAR", base_price=100.0)
         assert rp.currency == "EUR"
 
@@ -52,7 +52,7 @@ class TestSchemaOrganization:
         assert lead.stage == LeadStage.COLD
 
     def test_pms_schemas_importable(self):
-        from domains.pms.schemas import WalkInBookingRequest, POSMenuItem, BudgetConfig
+        from domains.pms.schemas import WalkInBookingRequest
         walk = WalkInBookingRequest(guest_name="Walk", guest_phone="555", room_id="r1")
         assert walk.nights == 1
 
@@ -88,7 +88,7 @@ class TestCommonContracts:
         assert ctx.actor_role == "admin"
 
     def test_domain_errors(self):
-        from common.errors import NotFoundError, ValidationError, ForbiddenError
+        from common.errors import NotFoundError
         e = NotFoundError("Room", "r123")
         assert "r123" in str(e)
         assert e.code == "NOT_FOUND"

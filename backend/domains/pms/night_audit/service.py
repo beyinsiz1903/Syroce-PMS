@@ -3,7 +3,6 @@ Night Audit — Core Service (Production-Grade)
 Orchestrates the nightly audit process: business date roll, room charge posting,
 no-show handling, folio balancing, tax validation, and exception management.
 """
-import asyncio
 import time
 import uuid
 import logging
@@ -12,7 +11,7 @@ from typing import Optional, Dict, Any, List, Tuple
 
 from common.context import OperationContext
 from common.result import ServiceResult
-from common.audit_hook import audited, SEVERITY_INFO, SEVERITY_WARNING, SEVERITY_CRITICAL
+from common.audit_hook import audited, SEVERITY_CRITICAL
 from domains.pms.night_audit.validations import validate_pre_audit
 
 logger = logging.getLogger(__name__)

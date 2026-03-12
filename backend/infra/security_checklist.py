@@ -5,7 +5,7 @@ rate limiting readiness, admin endpoint protection, and log filtering.
 """
 import os
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any
 from datetime import datetime, timezone
 
 logger = logging.getLogger("infra.security_checklist")
@@ -132,7 +132,7 @@ class SecurityChecklistValidator:
     def check_rate_limiting(self) -> Dict[str, Any]:
         """Check if rate limiting middleware is configured."""
         try:
-            from rate_limiter import RateLimiter
+            from rate_limiter import RateLimiter  # noqa: F401
             return {
                 "check": "rate_limiting",
                 "module_available": True,
@@ -156,14 +156,14 @@ class SecurityChecklistValidator:
             "cors_configured": bool(cors_origins),
             "jwt_configured": bool(jwt_secret),
             "cors_wildcard": "*" in cors_origins,
-            "pass": bool(jwt_secret) and not ("*" in cors_origins),
+            "pass": bool(jwt_secret) and "*" not in cors_origins,
             "tested_at": datetime.now(timezone.utc).isoformat(),
         }
 
     def check_sensitive_log_filtering(self) -> Dict[str, Any]:
         """Check if sensitive data is filtered from logs."""
         try:
-            from modules.security_hardening.data_masking import mask_sensitive_data
+            from modules.security_hardening.data_masking import mask_sensitive_data  # noqa: F401
             return {
                 "check": "log_filtering",
                 "masking_module_available": True,

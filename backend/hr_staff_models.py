@@ -3,8 +3,8 @@ HR & Staff Management Models
 Personel, vardiya, performans yönetimi
 """
 from pydantic import BaseModel, Field
-from typing import Optional, List
-from datetime import datetime, timezone, time
+from typing import Optional
+from datetime import datetime, timezone
 from enum import Enum
 import uuid
 

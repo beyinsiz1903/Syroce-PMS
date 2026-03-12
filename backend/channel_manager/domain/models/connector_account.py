@@ -10,7 +10,7 @@ Indexes:
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 
 from pydantic import BaseModel, Field
 

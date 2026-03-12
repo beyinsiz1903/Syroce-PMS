@@ -2,16 +2,15 @@
 Performance Optimization Endpoints
 Enterprise-level optimizations for 550+ room properties
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Optional, Dict, Any
+from fastapi import APIRouter, HTTPException, Query
+from typing import Optional
 from datetime import datetime
 import logging
 from pydantic import BaseModel
 
 from data_archival import DataArchivalManager
 from materialized_views import MaterializedViewsManager
-from advanced_cache import AdvancedCacheManager, CacheLayer, CacheWarmer
-import redis
+from advanced_cache import AdvancedCacheManager, CacheWarmer
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +187,6 @@ async def warm_cache(
     
     if target in ["pms", "all"]:
         # Get db from FastAPI app state
-        from fastapi import Request
         # This would need to be injected properly
         results["pms"] = {"message": "PMS cache warming requires db injection"}
     

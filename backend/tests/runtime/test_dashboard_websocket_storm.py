@@ -4,7 +4,6 @@ Simulates high-frequency system health events via MongoDB
 and validates event persistence under burst conditions.
 """
 import asyncio
-import pytest
 import uuid
 from datetime import datetime, timezone
 
@@ -88,7 +87,7 @@ async def test_alert_aggregation_under_load(db):
         return alert
 
     tasks = [create_alert(i) for i in range(100)]
-    results = await asyncio.gather(*tasks)
+    await asyncio.gather(*tasks)
 
     total = await db.runtime_alerts.count_documents({"tenant_id": tid})
     assert total == 100

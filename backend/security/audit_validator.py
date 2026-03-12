@@ -4,7 +4,7 @@ Validates audit trail completeness and detects gaps.
 """
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from core.database import db
 

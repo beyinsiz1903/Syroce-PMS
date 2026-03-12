@@ -4,7 +4,7 @@ Orchestrates guest messaging, internal messaging, and templates.
 No FastAPI dependencies.
 """
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 import uuid
 import logging
 

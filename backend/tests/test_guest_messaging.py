@@ -52,7 +52,7 @@ class TestGuestMessaging:
         assert response.status_code == 200, f"Login failed: {response.text}"
         data = response.json()
         assert "access_token" in data, "Response missing access_token"
-        print(f"✅ Login successful, token received")
+        print("✅ Login successful, token received")
     
     def test_get_messages_list(self):
         """Test GET /api/guest/messages - list messages"""
@@ -121,7 +121,7 @@ class TestGuestMessaging:
         data = response.json()
         
         assert data["message_type"] == "request", "message_type should be 'request'"
-        print(f"✅ POST message with type 'request' successful")
+        print("✅ POST message with type 'request' successful")
     
     def test_send_message_with_type_complaint(self):
         """Test POST /api/guest/messages with message_type='complaint'"""
@@ -139,7 +139,7 @@ class TestGuestMessaging:
         data = response.json()
         
         assert data["message_type"] == "complaint", "message_type should be 'complaint'"
-        print(f"✅ POST message with type 'complaint' successful")
+        print("✅ POST message with type 'complaint' successful")
     
     def test_send_message_with_type_feedback(self):
         """Test POST /api/guest/messages with message_type='feedback'"""
@@ -157,7 +157,7 @@ class TestGuestMessaging:
         data = response.json()
         
         assert data["message_type"] == "feedback", "message_type should be 'feedback'"
-        print(f"✅ POST message with type 'feedback' successful")
+        print("✅ POST message with type 'feedback' successful")
     
     def test_mark_all_read(self):
         """Test PUT /api/guest/messages/mark-all-read - mark all messages as read"""
@@ -185,7 +185,7 @@ class TestGuestMessaging:
         
         # Should fail with 422 Unprocessable Entity
         assert response.status_code == 422, f"Expected 422, got {response.status_code}"
-        print(f"✅ POST without message field returns 422 validation error")
+        print("✅ POST without message field returns 422 validation error")
     
     def test_unauthorized_access(self):
         """Test endpoints without authorization"""
@@ -228,7 +228,7 @@ class TestGuestMessaging:
                     break
         
         assert found, f"Sent message '{unique_msg}' not found in message list"
-        print(f"✅ Message persistence verified - sent message appears in list")
+        print("✅ Message persistence verified - sent message appears in list")
 
 
 class TestReportBuilderAfterI18n:
@@ -334,7 +334,7 @@ class TestBasicEndpoints:
         """Test dashboard endpoint works"""
         response = self.session.get(f"{BASE_URL}/api/pms/dashboard")
         assert response.status_code == 200, f"Dashboard failed: {response.text}"
-        print(f"✅ Dashboard endpoint works")
+        print("✅ Dashboard endpoint works")
     
     def test_auth_me_endpoint(self):
         """Test auth/me endpoint returns user info"""
@@ -345,7 +345,7 @@ class TestBasicEndpoints:
         if response.status_code == 200:
             data = response.json()
             assert "email" in data or "user" in data, "Response should contain user info"
-            print(f"✅ Auth me endpoint works")
+            print("✅ Auth me endpoint works")
         else:
             # Token may have been invalidated, check it was auth related
             assert response.status_code in [401, 403], f"Unexpected status: {response.status_code}"

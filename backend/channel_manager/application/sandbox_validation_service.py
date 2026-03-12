@@ -18,16 +18,14 @@ Checks:
 """
 import logging
 import time
-import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 
 from ..connectors.hotelrunner.client import HotelRunnerClient
 from ..connectors.hotelrunner.auth import HotelRunnerAuth
-from ..connectors.hotelrunner import xml_builder, xml_parser
+from ..connectors.hotelrunner import xml_parser
 from ..connectors.hotelrunner.errors import (
-    ConnectorError, AuthenticationError, RateLimitError,
-    ProviderUnavailableError, XmlParseError, ResponseParseError,
+    AuthenticationError, ProviderUnavailableError,
 )
 from ..connectors.hotelrunner.retry_policy import RetryPolicy
 from ..domain.models.audit import IntegrationAuditLog, AuditAction
@@ -201,7 +199,7 @@ class SandboxValidationService:
                 latency_ms=latency,
                 request_summary="Parse reservation payload fields",
                 response_summary=f"Parsed {parsed}, errors {errors}",
-                canonical_mapping=f"Fields: external_id, guest, dates, amounts",
+                canonical_mapping="Fields: external_id, guest, dates, amounts",
             )
         except Exception as e:
             return self._check_result(

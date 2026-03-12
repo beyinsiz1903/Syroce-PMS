@@ -5,7 +5,6 @@ In-memory caching without Redis dependency
 from functools import wraps
 from typing import Any, Dict, Optional
 import time
-import json
 import hashlib
 
 class UltraCache:

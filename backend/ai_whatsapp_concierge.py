@@ -2,9 +2,7 @@
 AI WhatsApp Concierge - GPT-4 Powered Guest Assistant
 24/7 Otomatik misafir hizmeti WhatsApp üzerinden
 """
-import json
 from datetime import datetime, timezone
-from typing import Optional, Dict, List
 
 class AIWhatsAppConcierge:
     """AI-powered WhatsApp concierge service"""
@@ -192,7 +190,7 @@ Afiyet olsun! 🥂''',
                 await self.db.folio_charges.insert_one(charge)
             
             return {
-                'response': f'''✅ Late checkout onaylandı!
+                'response': '''✅ Late checkout onaylandı!
 
 ⏰ Yeni check-out saatiniz: 16:00
 💰 Ücret: €35 (folio'nuza eklendi)
@@ -227,7 +225,7 @@ Afiyet olsun! 🥂''',
         await self.db.spa_appointments.insert_one(appointment)
         
         return {
-            'response': f'''✅ Spa randevunuz oluşturuldu!
+            'response': '''✅ Spa randevunuz oluşturuldu!
 
 💆 Treatment: Swedish Massage (60 dk)
 💰 Fiyat: €75 (oda hesabınıza eklenecek)

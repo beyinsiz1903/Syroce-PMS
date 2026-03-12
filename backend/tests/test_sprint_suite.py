@@ -6,11 +6,7 @@ Comprehensive test suite for the 4 implementation sprints:
 - Sprint 4: Credential Security
 - Provider contract errors
 """
-import asyncio
-import pytest
 import uuid
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
 
 
 # ─── Test Helpers ─────────────────────────────────────────────────

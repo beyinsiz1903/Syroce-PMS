@@ -6,40 +6,27 @@ import uuid
 import io
 import csv
 from pathlib import Path
-from datetime import datetime, timezone, timedelta, date
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any, Literal
 from enum import Enum
 
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form, Request
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, ConfigDict
 
 from core.database import db
 from core.security import get_current_user
 from core.helpers import (
-    require_module, create_audit_log, load_tenant_doc,
-    require_admin, require_feature, get_tenant_modules,
+    require_module, create_audit_log,
 )
 from models.enums import (
-    UserRole, RoomStatus, BookingStatus, PaymentStatus,
-    PaymentMethod, ChargeType, InvoiceStatus, FolioType,
-    FolioStatus, ChargeCategory, FolioOperationType, PaymentType,
+    UserRole, BookingStatus, FolioType,
     CompanyStatus, ChannelType, ContractedRateType, RateType,
     MarketSegment, CancellationPolicyType,
 )
 from models.schemas import (
     User, Room, RoomCreate, Guest, GuestCreate,
-    Booking, BookingCreate, BookingExtended,
-    Folio, FolioCreate, FolioCharge, ChargeCreate,
-    Payment, PaymentCreate, FolioOperation, FolioOperationCreate,
-    Invoice, InvoiceCreate, InvoiceItem,
-    RateOverrideLog, RoomMoveHistory, RoomServiceCreate, RoomService,
-    RatePlan, Package, AuditLog, RateOverride,
-    CityTaxRule, Expense, CashFlow, BankAccount,
-    CreditLimit, CityLedgerTransaction,
-    Company, CompanyCreate,
-    _ensure_hotel_context,
+    Booking, BookingCreate, Folio, RateOverrideLog, RoomMoveHistory, _ensure_hotel_context,
 )
 
 try:
@@ -50,8 +37,7 @@ except ImportError:
     QueueRoom = None
 
 from core.utils import (
-    generate_folio_number, calculate_folio_balance,
-    generate_qr_code, generate_time_based_qr_token,
+    generate_folio_number, generate_qr_code, generate_time_based_qr_token,
     get_cancellation_policy_details,
 )
 from modules.inventory.services.availability_read_service import AvailabilityReadService
@@ -532,8 +518,6 @@ async def import_rooms_csv(
     if len(content) > 2 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="CSV dosyası çok büyük (max 2MB)")
 
-    import csv
-    import io
 
     decoded = content.decode('utf-8-sig', errors='replace')
     reader = csv.DictReader(io.StringIO(decoded))
@@ -1321,7 +1305,7 @@ async def create_staff_task(
         if room:
             task['room_number'] = room['room_number']
     
-    result = await db.staff_tasks.insert_one(task)
+    await db.staff_tasks.insert_one(task)
     
     # Return the task without MongoDB ObjectId
     return {
@@ -1579,9 +1563,9 @@ async def get_room_details_enhanced(
         'next_maintenance': maintenance_info,
         'alerts': [
             f"⚠️ {len(notes)} unresolved room notes" if notes else "✅ No outstanding room issues",
-            f"🍷 Mini-bar needs restock" if minibar_info and minibar_info.get('needs_restock') else None,
+            "🍷 Mini-bar needs restock" if minibar_info and minibar_info.get('needs_restock') else None,
             f"🔧 Maintenance due in {maintenance_info['days_until']} days" if maintenance_info and maintenance_info['days_until'] <= 7 else None,
-            f"🚨 Maintenance OVERDUE!" if maintenance_info and maintenance_info.get('is_overdue') else None
+            "🚨 Maintenance OVERDUE!" if maintenance_info and maintenance_info.get('is_overdue') else None
         ]
     }
 
@@ -2433,7 +2417,7 @@ async def notify_guest_room_ready(
         raise HTTPException(status_code=404, detail="Queue entry not found")
     
     # Get booking
-    booking = await db.bookings.find_one({'id': queue_entry['booking_id']})
+    await db.bookings.find_one({'id': queue_entry['booking_id']})
     
     # Update queue status
     await db.room_queue.update_one(

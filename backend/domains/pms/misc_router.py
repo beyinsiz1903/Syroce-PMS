@@ -2,29 +2,22 @@
 PMS / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends, status, Body, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import ORJSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta, date
-import os
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime, timezone, timedelta
 import uuid
-import random
 import logging
-import io
 
 from core.database import db
 from core.security import (
-    get_current_user, security, JWT_SECRET, JWT_ALGORITHM,
-    generate_qr_code, generate_time_based_qr_token,
+    get_current_user, security,
 )
 from core.helpers import (
-    create_audit_log, require_feature, require_module,
-    require_super_admin_guard as require_super_admin, require_admin,
-    get_tenant_modules, load_tenant_doc,
+    require_module,
 )
-from models.schemas import User, BookingCreate, BookingExtended, Company, CompanyCreate, CreatePropertyRequest
+from models.schemas import User, Company, CompanyCreate, CreatePropertyRequest
 from models.enums import UserRole, RoomStatus, BookingStatus, CompanyStatus
 
 logger = logging.getLogger(__name__)
@@ -255,7 +248,7 @@ async def installment_calculator(amount: float, installments: int, current_user:
     rates = {1: 0.0, 2: 0.02, 3: 0.03, 6: 0.05, 9: 0.07, 12: 0.09}
     rate = rates.get(installments, 0.1)
     total = amount * (1 + rate)
-    monthly = total / installments
+    total / installments
 
 
 @router.post("/companies", response_model=Company)
@@ -1066,7 +1059,7 @@ async def network_ping_test(
                 if i < request.count - 1:
                     time.sleep(0.5)
                     
-            except Exception as e:
+            except Exception:
                 # Connection failed for this attempt
                 pass
         

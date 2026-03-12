@@ -4,7 +4,7 @@ Orchestrates POS transactions, kitchen orders, table management,
 F&B dashboards, stock management. No FastAPI dependencies.
 """
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 import uuid
 import logging
 

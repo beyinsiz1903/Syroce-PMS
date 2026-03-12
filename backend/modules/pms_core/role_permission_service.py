@@ -1,7 +1,7 @@
 """
 Role & Permission Enforcement Service - Validates user permissions for PMS operations.
 """
-from typing import Dict, List, Optional
+from typing import List
 
 from fastapi import HTTPException, status
 

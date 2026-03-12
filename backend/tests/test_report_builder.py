@@ -436,7 +436,7 @@ class TestReportTemplates:
         found = any(t["id"] == saved_template["id"] for t in templates)
         assert found, "Saved template not found in list"
         
-        print(f"✓ Template saved and verified in list")
+        print("✓ Template saved and verified in list")
     
     def test_delete_template(self):
         """Test deleting a template"""
@@ -476,7 +476,7 @@ class TestReportTemplates:
         found = any(t["id"] == template_id for t in templates)
         assert not found, "Deleted template still appears in list"
         
-        print(f"✓ Template deleted and verified removal")
+        print("✓ Template deleted and verified removal")
     
     def test_delete_nonexistent_template(self):
         """Test deleting a non-existent template returns 404"""
@@ -487,7 +487,7 @@ class TestReportTemplates:
             headers=self.headers
         )
         assert response.status_code == 404
-        print(f"✓ Delete non-existent template returns 404")
+        print("✓ Delete non-existent template returns 404")
 
 
 class TestReportBuilderAuth:

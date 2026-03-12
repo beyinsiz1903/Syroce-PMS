@@ -6,7 +6,6 @@ from functools import wraps
 from typing import Any, Optional, Callable
 import time
 import hashlib
-import asyncio
 
 class GlobalCache:
     """Ultra-fast global cache with persistence"""

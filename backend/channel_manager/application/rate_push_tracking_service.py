@@ -22,7 +22,7 @@ Response parsing + failure classification:
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 from core.database import db
 from ..infrastructure.repository import ChannelManagerRepository
@@ -75,7 +75,7 @@ class RatePushTrackingService:
         self, tenant_id: str, connector_id: str, days: int = 7,
     ) -> Dict[str, Any]:
         """Get aggregated rate push metrics for a connector."""
-        cutoff = datetime.now(timezone.utc).isoformat()[:10]  # today
+        datetime.now(timezone.utc).isoformat()[:10]  # today
         query = {"tenant_id": tenant_id, "connector_id": connector_id}
 
         total = await db[RATE_PUSH_METRICS].count_documents(query)

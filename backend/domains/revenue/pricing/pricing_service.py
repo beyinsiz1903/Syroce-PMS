@@ -3,10 +3,9 @@ Revenue / Pricing — Service Layer
 Orchestrates rate plan management, demand forecasting, competitor analysis,
 dynamic pricing, and rate overrides. No FastAPI dependencies.
 """
-from datetime import datetime, timezone, timedelta, date
-from typing import Optional, Dict, Any, List
+from datetime import datetime, timezone, timedelta
+from typing import Optional, Dict, Any
 import uuid
-import random
 import logging
 
 from common.context import OperationContext

@@ -14,7 +14,7 @@ import logging
 import json
 import asyncio
 from datetime import datetime, timezone
-from typing import Dict, Any, Set, Optional
+from typing import Dict, Any, Set
 from fastapi import WebSocket
 
 logger = logging.getLogger("channel_manager.application.ws_realtime")

@@ -3,9 +3,8 @@ Runtime Stress Tests — POS/F&B Mutation Burst
 Simulates concurrent POS transactions, kitchen orders, and stock adjustments.
 """
 import asyncio
-import pytest
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 
 async def test_pos_transaction_burst(db):
@@ -88,7 +87,7 @@ async def test_stock_adjustment_race(db):
         return False
 
     tasks = [decrease_stock() for _ in range(15)]
-    results = await asyncio.gather(*tasks)
+    await asyncio.gather(*tasks)
 
     product = await db.fnb_products.find_one({"id": product_id}, {"_id": 0})
     assert product["stock_quantity"] >= 0

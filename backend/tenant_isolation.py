@@ -6,12 +6,11 @@ tenant-bazlı veritabanı sorgu sarmalayıcı (wrapper) ve audit logging.
 
 Bu modül, her tenant'ın sadece kendi verilerine erişebilmesini garanti eder.
 """
-from fastapi import APIRouter, HTTPException, Depends, Request, status
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Set
 from datetime import datetime, timezone, timedelta
 import uuid
-import hashlib
 import logging
 
 logger = logging.getLogger("tenant_isolation")

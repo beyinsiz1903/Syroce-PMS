@@ -260,7 +260,7 @@ class PreLaunchValidator:
     async def _check_websocket(self) -> Dict[str, Any]:
         async def _run(step):
             try:
-                from websocket_server import broadcast_kitchen_orders
+                from websocket_server import broadcast_kitchen_orders  # noqa: F401
                 step.status = "pass"
                 step.message = "WebSocket broadcast module loaded"
             except ImportError:
@@ -298,7 +298,7 @@ class PreLaunchValidator:
     async def _check_alert_engine(self) -> Dict[str, Any]:
         async def _run(step):
             try:
-                from modules.observability.alerting_engine import alerting_engine
+                from modules.observability.alerting_engine import alerting_engine  # noqa: F401
                 step.status = "pass"
                 step.message = "Alert engine available"
             except ImportError:

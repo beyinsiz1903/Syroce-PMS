@@ -1,6 +1,6 @@
 """Reservation import, review queue, batch, ACK, audit-trail endpoints."""
 import logging
-from typing import Optional, List
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from pydantic import BaseModel

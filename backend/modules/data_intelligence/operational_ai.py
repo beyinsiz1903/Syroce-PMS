@@ -116,7 +116,7 @@ class HousekeepingWorkloadPredictor:
     async def predict(self, tenant_id: str, target_date: Optional[str] = None) -> Dict[str, Any]:
         target = date.fromisoformat(target_date) if target_date else date.today()
         target_s = target.isoformat()
-        next_s = (target + timedelta(days=1)).isoformat()
+        (target + timedelta(days=1)).isoformat()
 
         # Departures (rooms needing deep clean)
         departures = await db.bookings.count_documents({
@@ -137,7 +137,7 @@ class HousekeepingWorkloadPredictor:
             "status": {"$in": ["confirmed", "guaranteed"]},
         })
 
-        total_rooms = await db.rooms.count_documents({"tenant_id": tenant_id})
+        await db.rooms.count_documents({"tenant_id": tenant_id})
 
         # Workload calculation (minutes)
         departure_time = 45  # minutes per departure clean

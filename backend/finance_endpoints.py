@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
 from datetime import datetime
-from typing import Dict, Any
 from server import get_current_user, User, db
 
 finance_router = APIRouter()

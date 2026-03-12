@@ -3,7 +3,7 @@ PMS Dashboard Service - Aggregates operational data for the PMS dashboard.
 Arrivals, departures, in-house, room status, folio issues, audit exceptions.
 """
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List
+from typing import Dict
 
 from core.database import db
 
@@ -14,7 +14,7 @@ class PMSDashboardService:
     async def get_operational_snapshot(self, tenant_id: str) -> Dict:
         """Get comprehensive operational snapshot for today."""
         today = datetime.now(timezone.utc).date().isoformat()
-        tomorrow = (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
+        (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
 
         # Parallel data collection
         arrivals = await self._get_arrivals_today(tenant_id, today)

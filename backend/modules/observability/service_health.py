@@ -4,7 +4,7 @@ Service Health Monitor — checks all critical services and dependencies.
 import logging
 import time
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List
+from typing import List
 
 logger = logging.getLogger("observability.health")
 

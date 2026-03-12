@@ -2,7 +2,7 @@
 Enterprise Live Router - WebSocket push, messaging, auto-pricing, cross-module integration.
 Production-grade endpoints for enterprise hotel operations.
 """
-from typing import Optional, List, Dict
+from typing import Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel
 from core.security import get_current_user

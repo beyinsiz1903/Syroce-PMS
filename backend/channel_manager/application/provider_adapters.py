@@ -20,7 +20,7 @@ from ..connectors.hotelrunner.auth import HotelRunnerAuth
 from ..connectors.hotelrunner.errors import (
     AuthenticationError, RateLimitError, ProviderUnavailableError,
     XmlParseError, ProviderValidationError, SchemaMismatchError,
-    UnknownResponseFormatError, ConnectorError,
+    UnknownResponseFormatError,
 )
 from ..domain.models.audit import IntegrationAuditLog, AuditAction
 from ..infrastructure.repository import ChannelManagerRepository

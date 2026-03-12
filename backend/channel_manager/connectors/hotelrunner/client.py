@@ -17,7 +17,7 @@ from .rate_limit import RateLimiter
 from .retry_policy import RetryPolicy
 from .errors import (
     ConnectorError, AuthenticationError, RateLimitError,
-    ProviderUnavailableError, XmlParseError, ResponseParseError,
+    ProviderUnavailableError, ResponseParseError,
     PaginationExhaustedError, AcknowledgementError,
 )
 from . import xml_builder, xml_parser

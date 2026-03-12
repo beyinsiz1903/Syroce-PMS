@@ -3,9 +3,7 @@ AI Intelligence API Endpoints
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from typing import List, Dict, Any
 from datetime import datetime
-import asyncio
 
 from ai_service import get_ai_service
 from server import get_current_user, User
@@ -122,7 +120,7 @@ async def get_daily_briefing(
                 "confirmed_bookings": confirmed_bookings
             }
         }
-    except Exception as e:
+    except Exception:
         # Even on failure, return a basic response so frontend doesn't break
         return {
             "summary": "AI brifing şu an yüklenemiyor. Lütfen daha sonra tekrar deneyin.",
@@ -300,7 +298,7 @@ async def segment_guests(
         }).to_list(None)
         
         # Get loyalty data
-        loyalty_programs = await db.loyalty_programs.find({
+        await db.loyalty_programs.find({
             "tenant_id": current_user.tenant_id
         }).to_list(None)
         

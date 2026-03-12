@@ -4,7 +4,7 @@ Production runtime APIs for drift detection, reconciliation,
 sync scheduling, provider health, and credential management.
 Thin router: delegates all business logic to CMRuntimeService.
 """
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, Depends, Query
 
 from core.security import get_current_user
 from models.schemas import User

@@ -3,23 +3,22 @@ Syroce PMS - Pydantic Schema Definitions
 All request/response models used across the application.
 Extracted from server.py for modularity.
 """
-from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator, conint
-from typing import List, Optional, Dict, Any, Literal
-from datetime import datetime, timezone, timedelta, date
+from pydantic import BaseModel, Field, ConfigDict, EmailStr
+from typing import List, Optional, Dict, Any
+from datetime import datetime, timezone, date
 import uuid
 from fastapi import HTTPException
 
 from models.enums import (
     UserRole, RoomStatus, BookingStatus, PaymentStatus, PaymentMethod,
-    ChargeType, InvoiceStatus, LoyaltyTier, ChannelType, ChannelStatus,
+    InvoiceStatus, LoyaltyTier, ChannelType, ChannelStatus,
     FolioType, FolioStatus, ChargeCategory, FolioOperationType, PaymentType,
     DepartmentType, RiskLevel, MaintenanceTaskStatus, MaintenancePriority,
     ContractedRateType, RateType, MarketSegment, CancellationPolicyType,
     CompanyStatus, OTAChannel, MappingStatus, PricingStrategy, OrderStatus,
     OutletType, GuestRequestType, GuestRequestStatus, CheckInStatus,
     InspectionStatus, LostFoundStatus, WarehouseLocation, MaintenanceType,
-    MeasurementUnit, RoomServiceStatus, OTAPaymentModel, ParityStatus,
-    ChannelHealth,
+    MeasurementUnit, RoomServiceStatus, OTAPaymentModel,
 )
 
 # ============= MODELS =============

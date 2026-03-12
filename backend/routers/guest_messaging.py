@@ -4,7 +4,7 @@ Misafirlerin otel ile mesajlaşmasını sağlar.
 """
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
@@ -39,7 +39,6 @@ async def get_guest_messages(
     """Misafirin mesajlarını listele."""
     current_user = await _get_current_user(credentials)
     
-    query = {"tenant_id": current_user.tenant_id, "_id": 0}
     
     if current_user.role == "guest":
         query_filter = {

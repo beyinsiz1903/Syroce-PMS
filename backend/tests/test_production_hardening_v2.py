@@ -11,7 +11,6 @@ Tests all new functionality:
 - Phase 7: Event-Driven Sync Hardening
 - Phase 8: Test Suite Stability
 """
-import asyncio
 import os
 import sys
 import uuid

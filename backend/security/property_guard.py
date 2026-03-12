@@ -3,8 +3,7 @@ Security — Property Guard
 Enforces property-level access within multi-property tenants.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 from core.database import db
 

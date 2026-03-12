@@ -16,8 +16,7 @@ from xml.etree import ElementTree as ET
 
 from .errors import XmlParseError
 from .contract_errors import (
-    InvalidXmlError, MissingRequiredFieldError, SchemaMismatchError,
-    ProviderErrorResponseError, UnknownResponseFormatError,
+    InvalidXmlError, ProviderErrorResponseError,
 )
 
 logger = logging.getLogger("channel_manager.hotelrunner.xml_parser")
@@ -82,7 +81,7 @@ def mask_sensitive_xml(xml_str: str) -> str:
         import re
         masked = re.sub(
             rf'(<{pattern}[^>]*>)([^<]+)(</{pattern}>)',
-            rf'\1****\3',
+            r'\1****\3',
             masked,
         )
         masked = re.sub(

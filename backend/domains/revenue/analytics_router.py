@@ -4,18 +4,16 @@ Domain Router: Analytics
 Extracted from legacy_routes.py — GM Dashboard, pickup analysis, anomaly detection, revenue analytics.
 """
 from fastapi import APIRouter, HTTPException, Depends, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from fastapi.security import HTTPAuthorizationCredentials
+from typing import Optional
 from datetime import datetime, timezone, timedelta
 import uuid
 
 from core.database import db
-from core.security import get_current_user, security, JWT_SECRET, JWT_ALGORITHM
+from core.security import get_current_user, security
 from core.helpers import require_module
 from core.cache import cached
-from models.enums import UserRole, ChannelType
-from models.schemas import User
+from models.enums import ChannelType
 
 router = APIRouter(prefix="/api", tags=["analytics"])
 
@@ -90,8 +88,8 @@ async def get_pickup_analysis(
         })
     
     # Calculate pickup velocity
-    total_rooms = sum(d['rooms'] for d in pickup_data)
-    total_revenue = sum(d['revenue'] for d in pickup_data)
+    sum(d['rooms'] for d in pickup_data)
+    sum(d['revenue'] for d in pickup_data)
     
     # Group by days_before_arrival for trend analysis
     pickup_trends = {}
@@ -179,7 +177,7 @@ async def get_channel_manager_overview(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get channel manager overview with all connected channels"""
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     # Mock channel data (in production, get from actual channel manager API)
     channels = {
@@ -245,7 +243,7 @@ async def get_channel_rate_comparison(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Compare rates across all channels"""
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     if not date:
         date = datetime.now(timezone.utc).date().isoformat()
@@ -504,7 +502,6 @@ async def push_channel_availability(
 
 
 from booking_adapter import BookingAdapter
-from booking_availability import normalize_availability_response
 
 
 @router.post("/channel-manager/update-rates")
@@ -1006,14 +1003,11 @@ async def get_maintenance_calendar(
         month = datetime.now(timezone.utc).strftime('%Y-%m')
     
     # Get scheduled maintenance tasks
-    start_date = f"{month}-01"
     year, m = month.split('-')
     next_month = int(m) + 1
-    next_year = year
     if next_month > 12:
         next_month = 1
-        next_year = str(int(year) + 1)
-    end_date = f"{next_year}-{next_month:02d}-01"
+        str(int(year) + 1)
     
     calendar_items = []
     
@@ -1454,7 +1448,7 @@ async def get_checklist_template(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get standard cleaning checklist template"""
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     standard_template = [
         {'id': '1', 'category': 'bedroom', 'item': 'Yatak takımları değiştirildi', 'required': True},
@@ -1716,7 +1710,7 @@ async def get_team_performance(
     _: None = Depends(require_module("gm_dashboards")),
 ):
     """Get team performance metrics"""
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     # Mock team performance data
     team_data = {
@@ -2246,7 +2240,7 @@ async def get_alert_thresholds(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get configured alert thresholds"""
-    current_user = await get_current_user(credentials)
+    await get_current_user(credentials)
     
     thresholds = {
         'api_response_time': {

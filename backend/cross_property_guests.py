@@ -1,10 +1,9 @@
 """Cross-Property Guest Profiles - Single guest record across all hotels"""
-from fastapi import APIRouter, HTTPException, Depends, status
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
+from typing import List
 from datetime import datetime, timezone
 import uuid
-import asyncio
 
 router = APIRouter(prefix="/api/cross-property/guests", tags=["Cross-Property Guest Profiles"])
 

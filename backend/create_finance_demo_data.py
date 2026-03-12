@@ -5,7 +5,6 @@ Creates sample data for testing Turkish finance management features
 """
 
 import asyncio
-import sys
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timezone, timedelta
 import uuid

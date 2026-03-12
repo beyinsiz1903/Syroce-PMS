@@ -3,7 +3,6 @@ Night Audit — API Router (Production-Grade)
 Exposes night audit execution, history, exceptions, and business date.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from typing import Optional
 import logging
 
 from core.security import get_current_user

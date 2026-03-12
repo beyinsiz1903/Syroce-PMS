@@ -3,7 +3,6 @@ Runtime Test — Night Audit Concurrency
 Tests simultaneous night audit operations for data consistency.
 """
 import asyncio
-import uuid
 from datetime import datetime, timezone, date
 from typing import Dict, Any
 

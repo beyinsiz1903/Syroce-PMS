@@ -37,7 +37,7 @@ class TestAuth:
         assert "access_token" in data, "Missing access_token in response"
         assert "user" in data, "Missing user in response"
         assert data["user"]["email"] == TEST_EMAIL
-        print(f"✓ Login successful, token received")
+        print("✓ Login successful, token received")
     
     def test_login_invalid_credentials(self):
         """Test login with invalid credentials returns 401"""
@@ -46,7 +46,7 @@ class TestAuth:
             json={"email": "invalid@test.com", "password": "wrongpass"}
         )
         assert response.status_code == 401, f"Expected 401, got {response.status_code}"
-        print(f"✓ Invalid login correctly rejected")
+        print("✓ Invalid login correctly rejected")
 
 
 @pytest.fixture(scope="module")
@@ -299,12 +299,12 @@ class TestPMSCoreRegression:
         data = response.json()
         # Bookings endpoint may return list or dict with bookings key
         if isinstance(data, list):
-            bookings = data
+            pass
         elif isinstance(data, dict) and "bookings" in data:
-            bookings = data["bookings"]
+            data["bookings"]
         else:
-            bookings = data
-        print(f"✓ GET /api/pms/bookings - returned bookings data")
+            pass
+        print("✓ GET /api/pms/bookings - returned bookings data")
     
     def test_dashboard_role_based(self, auth_headers):
         """GET /api/dashboard/role-based should return dashboard data"""
@@ -313,7 +313,7 @@ class TestPMSCoreRegression:
         data = response.json()
         # Dashboard should have some stats or metrics
         assert isinstance(data, dict), "Dashboard should return a dict"
-        print(f"✓ GET /api/dashboard/role-based - returned dashboard data")
+        print("✓ GET /api/dashboard/role-based - returned dashboard data")
 
 
 class TestOnlineCheckin:
@@ -343,13 +343,13 @@ class TestHealthAndDocs:
         assert response.status_code == 200
         data = response.json()
         assert data.get("status") == "healthy"
-        print(f"✓ GET /health - status: healthy")
+        print("✓ GET /health - status: healthy")
     
     def test_api_docs(self):
         """GET /api/docs should be accessible"""
         response = requests.get(f"{BASE_URL}/api/docs")
         assert response.status_code == 200
-        print(f"✓ GET /api/docs - accessible")
+        print("✓ GET /api/docs - accessible")
 
 
 if __name__ == "__main__":

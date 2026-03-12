@@ -17,7 +17,7 @@ from typing import Dict, Any, Optional, List
 
 from ..domain.models.mapping import (
     MappingRule, MappingStatus, MappingEntityType, ValidationStatus,
-    REQUIRED_MAPPING_TYPES, SUPPORTED_MAPPING_TYPES,
+    SUPPORTED_MAPPING_TYPES,
 )
 from ..domain.models.audit import IntegrationAuditLog, AuditAction
 from ..infrastructure.repository import ChannelManagerRepository

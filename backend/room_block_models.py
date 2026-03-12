@@ -3,7 +3,6 @@ Room Block Models - Out of Order / Out of Service / Maintenance
 """
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime
 from enum import Enum
 
 class BlockType(str, Enum):

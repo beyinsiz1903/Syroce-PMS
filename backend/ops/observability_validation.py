@@ -5,10 +5,8 @@ Verifies that the observability stack actually works:
 metrics collection, log correlation, audit completeness,
 alert firing & routing, tracing continuity.
 """
-import uuid
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List
 
 from common.context import OperationContext
 from common.result import ServiceResult

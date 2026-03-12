@@ -3,7 +3,7 @@ Advanced Loyalty Program Models
 Gamification, tiers, perks, referrals
 """
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime, timezone
 from enum import Enum
 import uuid

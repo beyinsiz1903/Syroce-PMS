@@ -2,19 +2,17 @@
 Auth Router - Authentication, Registration, Email Verification, Password Reset
 Extracted from server.py for modularity.
 """
-import uuid
-import hashlib
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPBearer
 from pydantic import BaseModel, EmailStr
 
 from core.database import db
 from core.security import (
     get_current_user, hash_password, verify_password,
-    create_token, _is_super_admin, JWT_EXPIRATION_HOURS,
+    create_token, JWT_EXPIRATION_HOURS,
 )
 from core.helpers import load_tenant_doc, resolve_tenant_features
 from models.enums import UserRole

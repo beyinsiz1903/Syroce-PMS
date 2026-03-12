@@ -6,7 +6,7 @@ Metrics: uptime, MTTR, MTBF, sync success rate, ack success rate, retry rate,
 Analysis: failure pattern detection, unstable/degraded classification, outage windows.
 """
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 
 from core.database import db
@@ -151,7 +151,6 @@ class ReliabilityService:
             return 0.0, 0.0
 
         sorted_jobs = sorted(jobs, key=lambda j: j.get("created_at", ""))
-        failure_times = []
         recovery_times = []
         last_failure = None
 

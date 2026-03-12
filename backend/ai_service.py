@@ -4,9 +4,8 @@ Provides AI-powered insights, predictions, and recommendations
 """
 
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict, Any, Optional
-import asyncio
 from dotenv import load_dotenv
 try:
     from emergentintegrations.llm.chat import LlmChat, UserMessage

@@ -8,7 +8,6 @@ import redis
 import json
 import logging
 from typing import Any, Optional, Callable
-from datetime import timedelta
 from functools import wraps
 import hashlib
 

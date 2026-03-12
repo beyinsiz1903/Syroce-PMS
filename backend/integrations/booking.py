@@ -2,9 +2,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
-from fastapi import BackgroundTasks
-from typing import List, Dict, Any, Optional
+from pydantic import BaseModel
 from server import db, get_current_user, User, OTAReservation, ChannelType, BookingCreate, Booking, GuestCreate, Guest
 from celery_app import celery_app
 import httpx

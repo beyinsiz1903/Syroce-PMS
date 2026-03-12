@@ -347,7 +347,7 @@ class TestFinanceRouter:
             assert isinstance(data, list), f"Expected list, got {type(data)}"
             print(f"✅ GET /api/invoices works - {len(data)} invoices")
         elif response.status_code == 403:
-            print(f"⚠️ GET /api/invoices - requires invoices module permission (403)")
+            print("⚠️ GET /api/invoices - requires invoices module permission (403)")
         else:
             assert False, f"/invoices failed: {response.status_code} - {response.text}"
     
@@ -359,7 +359,7 @@ class TestFinanceRouter:
             assert "total_invoices" in data, "Response missing total_invoices"
             print(f"✅ GET /api/invoices/stats works - {data.get('total_invoices')} invoices")
         elif response.status_code == 403:
-            print(f"⚠️ GET /api/invoices/stats - requires permission (403)")
+            print("⚠️ GET /api/invoices/stats - requires permission (403)")
         else:
             assert False, f"/invoices/stats failed: {response.status_code}"
 
@@ -381,8 +381,8 @@ class TestCashieringRouter:
             print(f"✅ GET /api/cashiering/city-ledger works - {len(data)} entries (list)")
         else:
             # Could have entries or transactions key
-            entries = data.get('entries', data.get('transactions', data.get('ledger', [])))
-            print(f"✅ GET /api/cashiering/city-ledger works - data returned")
+            data.get('entries', data.get('transactions', data.get('ledger', [])))
+            print("✅ GET /api/cashiering/city-ledger works - data returned")
 
 
 # ============================================
@@ -453,9 +453,9 @@ class TestReportsRouter:
         if response.status_code == 200:
             data = response.json()
             assert "summary" in data or "date" in data, "Response missing summary/date"
-            print(f"✅ GET /api/reports/basic-dashboard works")
+            print("✅ GET /api/reports/basic-dashboard works")
         elif response.status_code == 403:
-            print(f"⚠️ GET /api/reports/basic-dashboard - requires basic_reporting module (403)")
+            print("⚠️ GET /api/reports/basic-dashboard - requires basic_reporting module (403)")
         else:
             assert False, f"/reports/basic-dashboard failed: {response.status_code}"
     
@@ -464,10 +464,10 @@ class TestReportsRouter:
         response = requests.get(f"{BASE_URL}/api/reports/flash-report", headers=auth_headers)
         # May require reports module
         if response.status_code == 200:
-            data = response.json()
-            print(f"✅ GET /api/reports/flash-report works")
+            response.json()
+            print("✅ GET /api/reports/flash-report works")
         elif response.status_code == 403:
-            print(f"⚠️ GET /api/reports/flash-report - requires reports module (403)")
+            print("⚠️ GET /api/reports/flash-report - requires reports module (403)")
         else:
             assert False, f"/reports/flash-report failed: {response.status_code}"
 
@@ -483,11 +483,11 @@ class TestNightAuditRouter:
         response = requests.get(f"{BASE_URL}/api/night-audit/status", headers=auth_headers)
         # This endpoint may not exist - check for 404 vs actual response
         if response.status_code == 200:
-            data = response.json()
-            print(f"✅ GET /api/night-audit/status works - data returned")
+            response.json()
+            print("✅ GET /api/night-audit/status works - data returned")
         elif response.status_code == 404:
             # Endpoint may not be implemented yet - try alternative
-            print(f"⚠️ GET /api/night-audit/status - 404 Not Found (may not be implemented)")
+            print("⚠️ GET /api/night-audit/status - 404 Not Found (may not be implemented)")
         else:
             print(f"⚠️ GET /api/night-audit/status - returned {response.status_code}")
     
@@ -496,11 +496,11 @@ class TestNightAuditRouter:
         params = {"audit_date": "2025-01-27"}
         response = requests.get(f"{BASE_URL}/api/night-audit/audit-report", headers=auth_headers, params=params)
         if response.status_code == 200:
-            data = response.json()
-            print(f"✅ GET /api/night-audit/audit-report works")
+            response.json()
+            print("✅ GET /api/night-audit/audit-report works")
         elif response.status_code == 404:
             # Audit may not exist for this date
-            print(f"⚠️ GET /api/night-audit/audit-report - 404 (no audit for date)")
+            print("⚠️ GET /api/night-audit/audit-report - 404 (no audit for date)")
         else:
             print(f"⚠️ GET /api/night-audit/audit-report - returned {response.status_code}")
 
@@ -519,7 +519,7 @@ class TestExistingRoutersRegression:
             response = requests.get(f"{BASE_URL}/api/housekeeping/room-status", headers=auth_headers)
         
         assert response.status_code == 200, f"/housekeeping/rooms failed: {response.text}"
-        print(f"✅ Housekeeping router still works")
+        print("✅ Housekeeping router still works")
     
     def test_departments_endpoint(self, auth_headers):
         """GET /api/departments/ - existing departments router still works"""
@@ -529,9 +529,9 @@ class TestExistingRoutersRegression:
             response = requests.get(f"{BASE_URL}/api/department/front-office/dashboard", headers=auth_headers)
         
         if response.status_code == 200:
-            print(f"✅ Departments router still works")
+            print("✅ Departments router still works")
         elif response.status_code == 404:
-            print(f"⚠️ Departments endpoint returns 404 - check route path")
+            print("⚠️ Departments endpoint returns 404 - check route path")
         else:
             print(f"⚠️ Departments returned {response.status_code}")
 
@@ -560,7 +560,7 @@ class TestFinanceIntegration:
         data = response.json()
         assert "budget" in data, "Response missing budget"
         assert "actual" in data, "Response missing actual"
-        print(f"✅ GET /api/finance/budget-vs-actual works")
+        print("✅ GET /api/finance/budget-vs-actual works")
 
 
 if __name__ == "__main__":

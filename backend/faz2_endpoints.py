@@ -2,10 +2,10 @@
 FAZ 2 Endpoints - Advanced Features
 Sales CRM, Marketing Automation, Service Recovery
 """
-from fastapi import APIRouter, HTTPException, Depends
-from datetime import datetime, timezone, timedelta, date
+from fastapi import APIRouter, HTTPException
+from datetime import datetime, timezone, timedelta
 import uuid
-from typing import Optional, List
+from typing import Optional
 
 # This file contains FAZ 2 endpoints that will be included in main server
 # Import this in server.py: from faz2_endpoints import faz2_router
@@ -169,7 +169,7 @@ async def get_customer_segments(db, current_user):
     })
     
     # Inactive (no booking in last 6 months)
-    six_months_ago = (datetime.now(timezone.utc) - timedelta(days=180)).isoformat()
+    (datetime.now(timezone.utc) - timedelta(days=180)).isoformat()
     
     total_guests = await db.guests.count_documents({'tenant_id': current_user.tenant_id})
     

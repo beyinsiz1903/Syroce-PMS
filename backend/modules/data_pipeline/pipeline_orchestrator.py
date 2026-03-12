@@ -115,7 +115,7 @@ class PipelineOrchestrator:
 
             # Step 4: Model Deployment
             step_start = datetime.now(timezone.utc).isoformat()
-            deploy_result = await model_registry.deploy_model(model["id"])
+            await model_registry.deploy_model(model["id"])
             run_record["steps"]["model_deployment"] = {
                 "status": "completed",
                 "started_at": step_start,

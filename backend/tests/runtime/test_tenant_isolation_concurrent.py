@@ -2,7 +2,6 @@
 Runtime Stress Tests — Tenant Isolation Under Concurrent Load
 """
 import asyncio
-import pytest
 import uuid
 from datetime import datetime, timezone
 

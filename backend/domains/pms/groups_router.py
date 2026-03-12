@@ -2,30 +2,17 @@
 PMS / Groups Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends, status, Body, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import ORJSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta, date
-import os
+from fastapi import APIRouter, HTTPException, Depends
+from typing import List, Optional
+from datetime import datetime, timezone, timedelta
 import uuid
-import random
 import logging
-import io
 
 from core.database import db
 from core.security import (
-    get_current_user, security, JWT_SECRET, JWT_ALGORITHM,
-    generate_qr_code, generate_time_based_qr_token,
-)
-from core.helpers import (
-    create_audit_log, require_feature, require_module,
-    require_super_admin_guard as require_super_admin, require_admin,
-    get_tenant_modules, load_tenant_doc,
+    get_current_user,
 )
 from models.schemas import User, CreateGroupReservationRequest, AssignGroupRoomsRequest, CreateBlockReservationRequest, UseBlockRoomRequest
-from models.enums import UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +24,6 @@ async def create_group_block(
     current_user: User = Depends(get_current_user)
 ):
     """Grup bloğu oluştur"""
-    from group_sales_models import BillingType, GroupBlockStatus
     
     # Flexible field mapping
     group_name = block_data.get('group_name') or block_data.get('block_name')

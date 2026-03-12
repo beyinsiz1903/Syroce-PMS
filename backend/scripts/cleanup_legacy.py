@@ -3,7 +3,6 @@ Cleanup Script: Remove duplicate endpoints and auth shadows from legacy_routes.p
 Run from /app/backend: python3 scripts/cleanup_legacy.py
 """
 import re
-import sys
 
 INPUT = "legacy_routes.py"
 OUTPUT = "legacy_routes.py"  # overwrite in place
@@ -32,7 +31,7 @@ def find_function_end(start_idx):
         stripped = lines[i].strip()
         if stripped.startswith('@api_router.'):
             return i - 1
-        if stripped and not stripped.startswith('#') and not lines[i][0] in ' \t\n':
+        if stripped and not stripped.startswith('#') and lines[i][0] not in ' \t\n':
             if (stripped.startswith('def ') or stripped.startswith('async def ') or 
                 stripped.startswith('class ') or stripped.startswith('# ===')): 
                 return i - 1
@@ -85,7 +84,7 @@ def find_function_block(start_0idx):
     while i < total:
         stripped = lines[i].strip()
         # Another top-level definition
-        if stripped and not lines[i][0] in ' \t\n':
+        if stripped and lines[i][0] not in ' \t\n':
             if (stripped.startswith('def ') or stripped.startswith('async def ') or 
                 stripped.startswith('class ') or stripped.startswith('@') or
                 stripped.startswith('# ===') or stripped.startswith('MODULE_DEFAULTS') or
@@ -178,7 +177,7 @@ with open(OUTPUT, 'w') as f:
 # ── 4. Report ──
 removed = total - len(final_lines)
 print(f"\n{'='*60}")
-print(f"CLEANUP COMPLETE")
+print("CLEANUP COMPLETE")
 print(f"  Original: {total} lines")
 print(f"  Removed:  {removed} lines")
 print(f"  Result:   {len(final_lines)} lines")
@@ -205,6 +204,6 @@ if remaining_dupes:
     for k, v in remaining_dupes.items():
         print(f"    {k}: lines {v}")
 else:
-    print(f"\n  No intra-file duplicates remain.")
+    print("\n  No intra-file duplicates remain.")
 
 print(f"  Total endpoints remaining: {len(new_endpoints)}")

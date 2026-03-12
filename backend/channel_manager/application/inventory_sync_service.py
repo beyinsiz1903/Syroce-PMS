@@ -16,14 +16,13 @@ Supported change types:
 """
 import logging
 import time
-import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, List, Tuple
 from collections import defaultdict
 
 from ..domain.models.sync import (
     SyncJob, SyncEvent, PushReceipt,
-    SyncJobStatus, SyncDirection, SyncType, ChangeType, ChangeRecord,
+    SyncJobStatus, SyncDirection, SyncType, ChangeType,
 )
 from ..domain.models.audit import IntegrationAuditLog, AuditAction
 from ..domain.models.connector_account import ConnectorAccount, ConnectorProvider

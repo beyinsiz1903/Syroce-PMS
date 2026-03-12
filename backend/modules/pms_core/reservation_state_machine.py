@@ -2,8 +2,8 @@
 Reservation State Machine - Enforces valid state transitions for the reservation lifecycle.
 Hospitality-standard states: pending, confirmed, guaranteed, checked_in, checked_out, no_show, cancelled
 """
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, Optional, List, Tuple
+from datetime import datetime, timezone
+from typing import Dict, Optional, List, Tuple
 
 from core.database import db
 

@@ -6,7 +6,7 @@ Supports: Twilio SMS, SendGrid Email, WhatsApp.
 """
 import os
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 from datetime import datetime, timezone
 from collections import defaultdict
 

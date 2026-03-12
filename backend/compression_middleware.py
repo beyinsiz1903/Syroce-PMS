@@ -3,11 +3,9 @@ API Response Compression Middleware
 Gzip compression for API responses to reduce bandwidth
 """
 from fastapi import Request, Response
-from fastapi.responses import StreamingResponse
 import gzip
 import io
 import json
-from typing import Callable
 
 # Minimum size to compress (bytes)
 MIN_COMPRESSION_SIZE = 1024  # 1KB

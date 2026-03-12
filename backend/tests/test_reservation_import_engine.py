@@ -19,11 +19,6 @@ Covers:
   - Idempotency fingerprint
   - Operational maturity integration (alert rules, reliability metrics)
 """
-import pytest
-import uuid
-import hashlib
-import json
-from datetime import datetime, timezone
 
 from channel_manager.domain.models.reservation_import import (
     ImportedReservation, ReservationImportBatch, ImportStatus,
@@ -277,7 +272,6 @@ class TestServiceLogic:
     def test_modification_after_cancel_is_conflict(self):
         """When existing status is cancelled and new is confirmed → conflict."""
         existing_status = ImportStatus.CANCELLED.value
-        new_status = ReservationStatus.CONFIRMED
         if existing_status in (ImportStatus.CANCELLED.value, ImportStatus.DUPLICATE_CANCEL.value):
             result = "conflict"
         else:

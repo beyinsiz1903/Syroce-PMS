@@ -2,9 +2,9 @@
 WORLD-CLASS PMS FEATURES - AŞAMA 1, 2, 3
 Syroce'yi dünyanın en kapsamlı PMS'i yapan özellikler
 """
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, ConfigDict
+from fastapi import APIRouter, Depends
+from fastapi.security import HTTPBearer
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from enum import Enum
