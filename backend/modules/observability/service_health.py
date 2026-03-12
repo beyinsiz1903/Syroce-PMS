@@ -1,153 +1,130 @@
 """
-Service Health - Aggregated service health monitoring.
-Checks health of all platform services and provides a unified status.
+Service Health Monitor — checks all critical services and dependencies.
 """
 import logging
+import time
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional
-
-from core.database import db
+from typing import Dict, List
 
 logger = logging.getLogger("observability.health")
 
 
-class HealthStatus:
-    HEALTHY = "healthy"
-    DEGRADED = "degraded"
-    UNHEALTHY = "unhealthy"
-    UNKNOWN = "unknown"
-
-
 class ServiceHealthMonitor:
-    """Monitors health of all platform services."""
+    """Monitors health of all platform dependencies."""
 
     def __init__(self):
-        self._service_status: Dict[str, dict] = {}
-        self._thresholds = {
-            "error_rate": 0.05,       # 5% error rate = degraded
-            "response_time_ms": 2000,  # >2s = degraded
-            "stale_hours": 24,         # no data for 24h = stale
-        }
+        self._history: List[dict] = []
+        self._max_history = 100
 
-    def update_service_health(self, service_name: str, status: str,
-                              latency_ms: float = 0, metadata: Optional[dict] = None):
-        """Update a service's health status."""
-        self._service_status[service_name] = {
-            "service": service_name,
-            "status": status,
-            "latency_ms": latency_ms,
-            "metadata": metadata or {},
-            "last_check": datetime.now(timezone.utc).isoformat(),
-        }
-
-    async def check_all_services(self) -> Dict[str, Any]:
-        """Run health checks on all platform services."""
-        checks = {}
+    async def check_all_services(self) -> dict:
+        results = {}
 
         # MongoDB
-        try:
-            await db.command("ping")
-            checks["mongodb"] = {"status": HealthStatus.HEALTHY, "latency_ms": 0}
-        except Exception as e:
-            checks["mongodb"] = {"status": HealthStatus.UNHEALTHY, "error": str(e)}
+        results["mongodb"] = await self._check_mongodb()
 
         # Event Bus
-        try:
-            from modules.event_bus.abstraction import event_bus
-            bus_status = await event_bus.get_status()
-            checks["event_bus"] = {
-                "status": HealthStatus.HEALTHY,
-                "mode": bus_status.get("mode", "unknown"),
-                "sessions": bus_status.get("total_sessions", 0),
-            }
-        except Exception as e:
-            checks["event_bus"] = {"status": HealthStatus.DEGRADED, "error": str(e)}
-
-        # ML Pipeline
-        try:
-            recent_runs = await db.pipeline_runs.count_documents({
-                "started_at": {"$gte": (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()}
-            })
-            failed_runs = await db.pipeline_runs.count_documents({
-                "status": "failed",
-                "started_at": {"$gte": (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()},
-            })
-            checks["ml_pipeline"] = {
-                "status": HealthStatus.HEALTHY if failed_runs == 0 else HealthStatus.DEGRADED,
-                "runs_24h": recent_runs,
-                "failed_24h": failed_runs,
-            }
-        except Exception as e:
-            checks["ml_pipeline"] = {"status": HealthStatus.UNKNOWN, "error": str(e)}
+        results["event_bus"] = await self._check_event_bus()
 
         # Messaging
-        try:
-            msg_failures = await db.messaging_delivery_logs.count_documents({
-                "status": "failed",
-                "created_at": {"$gte": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()},
-            })
-            checks["messaging"] = {
-                "status": HealthStatus.HEALTHY if msg_failures < 5 else HealthStatus.DEGRADED,
-                "failures_1h": msg_failures,
-            }
-        except Exception:
-            checks["messaging"] = {"status": HealthStatus.HEALTHY, "failures_1h": 0}
+        results["messaging"] = await self._check_messaging()
 
-        # Revenue Autopilot
-        try:
-            pending = await db.revenue_approval_queue.count_documents({"status": "pending"})
-            checks["revenue_autopilot"] = {
-                "status": HealthStatus.HEALTHY if pending < 50 else HealthStatus.DEGRADED,
-                "pending_approvals": pending,
-            }
-        except Exception:
-            checks["revenue_autopilot"] = {"status": HealthStatus.HEALTHY, "pending_approvals": 0}
+        # Data Pipeline
+        results["data_pipeline"] = await self._check_data_pipeline()
 
-        # Error rate
-        try:
-            error_count = await db.observability_errors.count_documents({
-                "timestamp": {"$gte": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()},
-                "severity": {"$in": ["critical", "high"]},
-            })
-            checks["error_rate"] = {
-                "status": HealthStatus.HEALTHY if error_count < 10 else HealthStatus.DEGRADED,
-                "critical_errors_1h": error_count,
-            }
-        except Exception:
-            checks["error_rate"] = {"status": HealthStatus.HEALTHY, "critical_errors_1h": 0}
+        # ML Models
+        results["ml_models"] = await self._check_ml_models()
 
-        # Compute overall health
-        statuses = [c.get("status", HealthStatus.UNKNOWN) for c in checks.values()]
-        if any(s == HealthStatus.UNHEALTHY for s in statuses):
-            overall = HealthStatus.UNHEALTHY
-        elif any(s == HealthStatus.DEGRADED for s in statuses):
-            overall = HealthStatus.DEGRADED
+        # Determine overall
+        statuses = [v.get("status", "unknown") for v in results.values()]
+        if all(s == "healthy" for s in statuses):
+            overall = "healthy"
+        elif any(s == "unhealthy" for s in statuses):
+            overall = "degraded"
         else:
-            overall = HealthStatus.HEALTHY
+            overall = "degraded"
 
-        result = {
+        snapshot = {
             "overall_status": overall,
+            "services": results,
             "checked_at": datetime.now(timezone.utc).isoformat(),
-            "services": checks,
-            "service_count": len(checks),
-            "healthy_count": sum(1 for s in statuses if s == HealthStatus.HEALTHY),
-            "degraded_count": sum(1 for s in statuses if s == HealthStatus.DEGRADED),
-            "unhealthy_count": sum(1 for s in statuses if s == HealthStatus.UNHEALTHY),
         }
 
-        # Persist health snapshot
-        await db.observability_health.insert_one({
-            "timestamp": result["checked_at"],
-            **{k: v for k, v in result.items()},
-        })
+        # Persist
+        self._history.append(snapshot)
+        if len(self._history) > self._max_history:
+            self._history = self._history[-50:]
 
-        return result
+        try:
+            from core.database import db
+            await db.health_check_history.insert_one({**snapshot})
+        except Exception:
+            pass
+
+        return snapshot
+
+    async def _check_mongodb(self) -> dict:
+        start = time.time()
+        try:
+            from core.database import db
+            await db.command("ping")
+            return {"status": "healthy", "latency_ms": round((time.time() - start) * 1000, 2)}
+        except Exception as e:
+            return {"status": "unhealthy", "error": str(e)[:200], "latency_ms": round((time.time() - start) * 1000, 2)}
+
+    async def _check_event_bus(self) -> dict:
+        try:
+            from modules.event_bus.abstraction import event_bus
+            status = await event_bus.get_status()
+            return {
+                "status": "healthy" if status.get("backend_status") == "healthy" else "degraded",
+                "mode": status.get("mode"),
+                "active_sessions": status.get("total_sessions", 0),
+            }
+        except Exception as e:
+            return {"status": "unhealthy", "error": str(e)[:200]}
+
+    async def _check_messaging(self) -> dict:
+        try:
+            from core.database import db
+            one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+            failures = await db.messaging_delivery_logs.count_documents({
+                "status": "failed",
+                "created_at": {"$gte": one_hour_ago},
+            })
+            return {"status": "healthy" if failures < 10 else "degraded", "failures_1h": failures}
+        except Exception:
+            return {"status": "unknown"}
+
+    async def _check_data_pipeline(self) -> dict:
+        try:
+            from core.database import db
+            recent = await db.pipeline_runs.find_one(
+                {}, {"_id": 0, "status": 1, "started_at": 1},
+                sort=[("started_at", -1)],
+            )
+            if recent:
+                return {"status": "healthy", "last_run_status": recent.get("status")}
+            return {"status": "healthy", "last_run_status": "no_runs"}
+        except Exception:
+            return {"status": "unknown"}
+
+    async def _check_ml_models(self) -> dict:
+        try:
+            from core.database import db
+            model_count = await db.model_versions.estimated_document_count()
+            return {"status": "healthy", "registered_models": model_count}
+        except Exception:
+            return {"status": "unknown"}
 
     async def get_health_history(self, hours: int = 24, limit: int = 50) -> List[dict]:
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-        return await db.observability_health.find(
-            {"timestamp": {"$gte": cutoff}}, {"_id": 0}
-        ).sort("timestamp", -1).to_list(limit)
+        try:
+            from core.database import db
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+            return await db.health_check_history.find(
+                {"checked_at": {"$gte": cutoff}}, {"_id": 0}
+            ).sort("checked_at", -1).to_list(limit)
+        except Exception:
+            return self._history[-limit:]
 
 
 service_health = ServiceHealthMonitor()

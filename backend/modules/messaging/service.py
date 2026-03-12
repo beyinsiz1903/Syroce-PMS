@@ -1,14 +1,16 @@
 """
 Messaging service – orchestrates sending, retry, consent, rate limiting, fallback.
+Production runtime with credential vault integration, delivery metrics,
+provider latency tracking, cost/usage summary, and per-tenant policy.
 """
 import logging
-import asyncio
+import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List
 from .models import (
     DeliveryStatus, MessageChannel, new_delivery_log, ConsentStatus,
 )
-from .providers import PROVIDER_MAP, CHANNEL_PROVIDER_MAP, FALLBACK_CHAIN
+from .providers import PROVIDER_MAP, CHANNEL_PROVIDER_MAP, FALLBACK_CHAIN, ProviderMode
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,11 @@ class MessagingService:
     def __init__(self, db):
         self.db = db
         self._rate_counters: Dict[str, int] = {}
+        self._provider_latencies: Dict[str, List[float]] = {}
+        self._provider_errors: Dict[str, int] = {}
+        self._provider_successes: Dict[str, int] = {}
+        self._fallback_usage: Dict[str, int] = {}
+        self._consent_rejections = 0
 
     # ── helpers ──
 
@@ -28,15 +35,36 @@ class MessagingService:
             {"_id": 0},
         )
 
+    def _resolve_mode(self, config: dict) -> str:
+        if config.get("is_sandbox"):
+            return ProviderMode.SANDBOX
+        if config.get("mode") == "test":
+            return ProviderMode.TEST
+        return ProviderMode.LIVE
+
+    async def _load_credentials(self, tenant_id: str, config: dict) -> dict:
+        """Load credentials, trying credential vault first then config."""
+        try:
+            from modules.security_hardening.credential_vault import credential_vault
+            vault_key = f"messaging_{config.get('provider_type')}_{tenant_id}"
+            creds = credential_vault.get_credential(vault_key)
+            if creds:
+                return creds
+        except Exception:
+            pass
+        return config.get("credentials_encrypted", {})
+
     async def _check_consent(self, tenant_id: str, recipient: str, channel: str) -> bool:
-        """Check if the recipient has opted-in for this channel."""
         doc = await self.db.messaging_consents.find_one(
             {"tenant_id": tenant_id, "recipient": recipient, "channel": channel},
             {"_id": 0},
         )
         if not doc:
-            return True  # no explicit opt-out => allow
-        return doc.get("status") != ConsentStatus.OPT_OUT.value
+            return True
+        if doc.get("status") == ConsentStatus.OPT_OUT.value:
+            self._consent_rejections += 1
+            return False
+        return True
 
     async def _check_rate_limit(self, tenant_id: str, provider_type: str, limit: int = 60) -> bool:
         key = f"{tenant_id}:{provider_type}"
@@ -51,6 +79,13 @@ class MessagingService:
         for k, v in variables.items():
             result = result.replace(f"{{{{{k}}}}}", str(v))
         return result
+
+    def _track_latency(self, provider_type: str, latency_ms: float):
+        if provider_type not in self._provider_latencies:
+            self._provider_latencies[provider_type] = []
+        self._provider_latencies[provider_type].append(latency_ms)
+        if len(self._provider_latencies[provider_type]) > 500:
+            self._provider_latencies[provider_type] = self._provider_latencies[provider_type][-250:]
 
     # ── main send ──
 
@@ -114,7 +149,6 @@ class MessagingService:
             log_doc["status"] = DeliveryStatus.FAILED.value
             log_doc["error_message"] = f"No active provider config for {provider_type}"
             await self.db.messaging_delivery_logs.insert_one(log_doc)
-            # attempt fallback
             return await self._try_fallback(
                 tenant_id, channel, recipient, body, subject, log_doc, booking_id, guest_id, property_id, use_case
             )
@@ -135,15 +169,28 @@ class MessagingService:
             await self.db.messaging_delivery_logs.insert_one(log_doc)
             return {"success": False, "error": "Provider not implemented", "delivery_id": log_doc["id"]}
 
-        credentials = config.get("credentials_encrypted", {})
-        is_sandbox = config.get("is_sandbox", False)
+        credentials = await self._load_credentials(tenant_id, config)
+        mode = self._resolve_mode(config)
 
         log_doc["status"] = DeliveryStatus.SENDING.value
         await self.db.messaging_delivery_logs.insert_one(log_doc)
 
-        result = await provider.send(recipient, body, subject, credentials, is_sandbox)
+        result = await provider.send(recipient, body, subject, credentials, mode)
+
+        # Track metrics
+        latency = result.get("latency_ms", 0)
+        if latency:
+            self._track_latency(provider_type, latency)
+
+        # Observability hook
+        try:
+            from modules.observability.metrics_collector import metrics as obs_metrics
+            obs_metrics.record_messaging_delivery(provider_type, result.get("success", False))
+        except Exception:
+            pass
 
         if result.get("success"):
+            self._provider_successes[provider_type] = self._provider_successes.get(provider_type, 0) + 1
             await self.db.messaging_delivery_logs.update_one(
                 {"id": log_doc["id"]},
                 {"$set": {
@@ -153,17 +200,20 @@ class MessagingService:
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 }},
             )
-            return {"success": True, "delivery_id": log_doc["id"], "provider_message_id": result.get("provider_message_id")}
+            return {"success": True, "delivery_id": log_doc["id"],
+                    "provider_message_id": result.get("provider_message_id")}
         else:
+            self._provider_errors[provider_type] = self._provider_errors.get(provider_type, 0) + 1
+            error_class = result.get("error_class", "unknown_error")
             await self.db.messaging_delivery_logs.update_one(
                 {"id": log_doc["id"]},
                 {"$set": {
                     "status": DeliveryStatus.FAILED.value,
                     "error_message": result.get("error"),
+                    "error_class": error_class,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 }},
             )
-            # attempt fallback
             return await self._try_fallback(
                 tenant_id, channel, recipient, body, subject, log_doc, booking_id, guest_id, property_id, use_case
             )
@@ -179,10 +229,11 @@ class MessagingService:
             provider = PROVIDER_MAP.get(fb_provider_type)
             if not provider:
                 continue
-            creds = fb_config.get("credentials_encrypted", {})
-            sandbox = fb_config.get("is_sandbox", False)
-            result = await provider.send(recipient, body, subject, creds, sandbox)
+            creds = await self._load_credentials(tenant_id, fb_config)
+            mode = self._resolve_mode(fb_config)
+            result = await provider.send(recipient, body, subject, creds, mode)
             if result.get("success"):
+                self._fallback_usage[fb_channel] = self._fallback_usage.get(fb_channel, 0) + 1
                 fb_log = new_delivery_log(
                     tenant_id=tenant_id, property_id=property_id, channel=fb_channel,
                     provider_type=fb_provider_type, recipient=recipient, template_id=None,
@@ -214,10 +265,10 @@ class MessagingService:
             return {"success": False, "error": "Provider not configured"}
 
         provider = PROVIDER_MAP.get(provider_type)
-        creds = config.get("credentials_encrypted", {})
-        sandbox = config.get("is_sandbox", False)
+        creds = await self._load_credentials(tenant_id, config)
+        mode = self._resolve_mode(config)
 
-        result = await provider.send(doc["recipient"], doc["body"], doc.get("subject"), creds, sandbox)
+        result = await provider.send(doc["recipient"], doc["body"], doc.get("subject"), creds, mode)
         new_count = doc.get("retry_count", 0) + 1
 
         if result.get("success"):
@@ -269,7 +320,7 @@ class MessagingService:
             total += r["count"]
         return {"metrics_by_channel": metrics, "total_messages": total, "period_days": days}
 
-    # ── provider health ──
+    # ── provider runtime status ──
 
     async def check_all_providers(self, tenant_id: str) -> list:
         configs = await self.db.messaging_provider_configs.find(
@@ -282,10 +333,43 @@ class MessagingService:
             if not provider:
                 results.append({"provider_type": pt, "status": "not_implemented"})
                 continue
-            health = await provider.check_health(cfg.get("credentials_encrypted", {}), cfg.get("is_sandbox", False))
+            mode = self._resolve_mode(cfg)
+            health = await provider.check_health(cfg.get("credentials_encrypted", {}), mode)
             await self.db.messaging_provider_configs.update_one(
                 {"id": cfg["id"]},
                 {"$set": {"health_status": health.get("status"), "last_health_check": health.get("checked_at")}},
             )
-            results.append({"provider_type": pt, "config_id": cfg["id"], **health})
+            results.append({"provider_type": pt, "config_id": cfg["id"], "mode": mode, **health})
         return results
+
+    # ── admin runtime status ──
+
+    def get_runtime_status(self) -> dict:
+        """Get comprehensive messaging runtime status for admin dashboard."""
+        provider_latency_summary = {}
+        for pt, lats in self._provider_latencies.items():
+            if lats:
+                sorted_l = sorted(lats)
+                n = len(sorted_l)
+                provider_latency_summary[pt] = {
+                    "count": n,
+                    "avg_ms": round(sum(sorted_l) / n, 2),
+                    "p95_ms": round(sorted_l[min(int(n * 0.95), n - 1)], 2),
+                    "max_ms": round(sorted_l[-1], 2),
+                }
+
+        return {
+            "provider_successes": dict(self._provider_successes),
+            "provider_errors": dict(self._provider_errors),
+            "provider_latency": provider_latency_summary,
+            "fallback_usage": dict(self._fallback_usage),
+            "consent_rejections": self._consent_rejections,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    async def get_retry_queue_size(self, tenant_id: str) -> int:
+        return await self.db.messaging_delivery_logs.count_documents({
+            "tenant_id": tenant_id,
+            "status": DeliveryStatus.FAILED.value,
+            "retry_count": {"$lt": 3},
+        })

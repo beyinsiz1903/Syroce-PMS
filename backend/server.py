@@ -6073,6 +6073,14 @@ except Exception as _mw_err:
     apm_store = _FallbackStore()
     def get_rate_limit_stats(): return {}
 
+# ── Request Tracing Middleware (Observability) ────────────────
+try:
+    from modules.observability.request_tracing_middleware import RequestTracingMiddleware
+    app.add_middleware(RequestTracingMiddleware)
+    print("✅ Request Tracing middleware activated (correlation_id, latency, slow detection)")
+except Exception as _rtm_err:
+    print(f"⚠️ Request Tracing middleware init error: {_rtm_err}")
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # ============= FRONT DESK OPERATIONS =============
@@ -9427,6 +9435,23 @@ async def startup_db_seed():
         print("✅ Channel Manager v2 indexes created")
     except Exception as e:
         print(f"⚠️ Channel Manager v2 indexes warning: {str(e)}")
+
+    # ── Production Runtime Initialization ──
+    # Initialize Event Bus (auto-detect Redis or fallback to in-memory)
+    try:
+        from modules.event_bus.abstraction import event_bus
+        await event_bus.initialize()
+        print(f"✅ Event Bus initialized in {event_bus.mode.upper()} mode")
+    except Exception as e:
+        print(f"⚠️ Event Bus initialization warning: {str(e)}")
+
+    # Ensure MongoDB persistence indexes for all production repositories
+    try:
+        from modules.persistence_repositories import ensure_all_indexes
+        await ensure_all_indexes()
+        print("✅ Persistence repository indexes ensured")
+    except Exception as e:
+        print(f"⚠️ Persistence indexes warning: {str(e)}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
@@ -41361,6 +41386,15 @@ try:
     print("Security Hardening router included")
 except Exception as e:
     print(f"Security Hardening router not available: {e}")
+    import traceback; traceback.print_exc()
+
+# Runtime Infrastructure Router (Event Bus, Messaging, Persistence, Alerts)
+try:
+    from routers.runtime_infrastructure import router as runtime_infra_router
+    app.include_router(runtime_infra_router, tags=["runtime-infrastructure"])
+    print("Runtime Infrastructure router included")
+except Exception as e:
+    print(f"Runtime Infrastructure router not available: {e}")
     import traceback; traceback.print_exc()
 
 

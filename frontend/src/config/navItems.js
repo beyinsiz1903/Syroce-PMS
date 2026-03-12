@@ -256,6 +256,14 @@ export const NAV_ITEMS = [
     group: "enterprise",
   },
   {
+    key: "runtime_infrastructure",
+    label: "Runtime Infrastructure",
+    path: "/runtime-infrastructure",
+    moduleKey: "advanced_analytics",
+    tier: "enterprise",
+    group: "enterprise",
+  },
+  {
     key: "marketplace",
     label: "Marketplace",
     path: "/app/marketplace",

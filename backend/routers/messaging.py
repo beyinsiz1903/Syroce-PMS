@@ -228,3 +228,18 @@ async def update_consent(req: ConsentReq, current_user: User = Depends(get_curre
         upsert=True,
     )
     return {"success": True}
+
+
+# ── Runtime Status ──
+
+@router.get("/runtime-status")
+async def get_runtime_status(current_user: User = Depends(get_current_user)):
+    svc = _get_service()
+    return svc.get_runtime_status()
+
+
+@router.get("/retry-queue")
+async def get_retry_queue_size(current_user: User = Depends(get_current_user)):
+    svc = _get_service()
+    size = await svc.get_retry_queue_size(current_user.tenant_id)
+    return {"retry_queue_size": size}

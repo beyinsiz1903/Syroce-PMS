@@ -13,7 +13,7 @@ import os
 import uuid
 from datetime import datetime
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://enterprise-hub-257.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://hotel-hardening.preview.emergentagent.com')
 CONNECTOR_ID = "c79fd9cb-d240-4344-8b2d-7d8b71d6a681"
 
 class TestChannelManagerV2Phase6:

@@ -151,6 +151,9 @@ const EventBusDashboard = lazy(() => import("@/pages/EventBusDashboard"));
 const ObservabilityDashboard = lazy(() => import("@/pages/ObservabilityDashboard"));
 const SecurityHardeningDashboard = lazy(() => import("@/pages/SecurityHardeningDashboard"));
 
+// Runtime Infrastructure
+const RuntimeInfrastructureDashboard = lazy(() => import("@/pages/RuntimeInfrastructureDashboard"));
+
 import { Toaster } from "@/components/ui/sonner";
 
 // Loading component
@@ -1292,6 +1295,16 @@ function App() {
             element={
               isAuthenticated ? (
                 <SecurityHardeningDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/runtime-infrastructure"
+            element={
+              isAuthenticated ? (
+                <RuntimeInfrastructureDashboard user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )

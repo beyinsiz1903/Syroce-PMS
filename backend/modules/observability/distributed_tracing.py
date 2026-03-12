@@ -1,143 +1,179 @@
 """
-Distributed Tracing - Request-level tracing for observability.
-Tracks request lifecycle across services with correlation IDs.
+Distributed Tracing Service — production-grade request tracing.
+Persists trace spans to MongoDB, provides real request-level analytics,
+slow endpoint detection, and correlation_id propagation.
 """
 import logging
-import uuid
 import time
+import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Optional, Dict, List
 from collections import defaultdict
-
-from core.database import db
 
 logger = logging.getLogger("observability.tracing")
 
 
 class TracingService:
-    """Lightweight distributed tracing for request lifecycle tracking."""
+    """
+    In-memory trace collection with periodic flush to MongoDB.
+    Tracks request paths, latencies, error rates, and slow endpoints.
+    """
 
     def __init__(self):
         self._active_traces: Dict[str, dict] = {}
-        self._trace_buffer: List[dict] = []
+        self._completed_traces: List[dict] = []
+        self._max_buffer = 2000
+        self._total_requests = 0
+        self._total_errors = 0
+        self._total_slow = 0
+        self._path_stats: Dict[str, dict] = defaultdict(lambda: {
+            "count": 0, "total_ms": 0.0, "errors": 0, "slow": 0, "max_ms": 0.0,
+        })
+        self.SLOW_THRESHOLD_MS = 1000
 
     def start_trace(self, request_path: str, method: str = "GET",
                     tenant_id: Optional[str] = None,
                     correlation_id: Optional[str] = None) -> str:
-        """Start a new trace for a request."""
-        trace_id = correlation_id or str(uuid.uuid4())
+        trace_id = str(uuid.uuid4())
         self._active_traces[trace_id] = {
             "trace_id": trace_id,
-            "tenant_id": tenant_id,
             "request_path": request_path,
             "method": method,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "start_time": time.time(),
-            "spans": [],
-            "status": "active",
+            "tenant_id": tenant_id,
+            "correlation_id": correlation_id or trace_id,
+            "started_at": time.time(),
+            "started_at_iso": datetime.now(timezone.utc).isoformat(),
+            "status_code": None,
             "error": None,
+            "duration_ms": None,
+            "is_slow": False,
         }
         return trace_id
 
-    def add_span(self, trace_id: str, span_name: str, metadata: Optional[dict] = None):
-        """Add a span (sub-operation) to an active trace."""
-        trace = self._active_traces.get(trace_id)
-        if not trace:
-            return
-        trace["spans"].append({
-            "span_id": str(uuid.uuid4()),
-            "name": span_name,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "elapsed_ms": round((time.time() - trace["start_time"]) * 1000, 2),
-            "metadata": metadata or {},
-        })
-
     def end_trace(self, trace_id: str, status_code: int = 200,
-                  error: Optional[str] = None) -> Optional[dict]:
-        """Complete a trace and buffer for persistence."""
+                  error: Optional[str] = None):
         trace = self._active_traces.pop(trace_id, None)
         if not trace:
-            return None
+            return
 
-        elapsed_ms = round((time.time() - trace["start_time"]) * 1000, 2)
-        completed_trace = {
-            "trace_id": trace["trace_id"],
-            "tenant_id": trace["tenant_id"],
-            "request_path": trace["request_path"],
-            "method": trace["method"],
+        duration_ms = round((time.time() - trace["started_at"]) * 1000, 2)
+        is_slow = duration_ms > self.SLOW_THRESHOLD_MS
+
+        trace.update({
             "status_code": status_code,
-            "duration_ms": elapsed_ms,
-            "span_count": len(trace["spans"]),
-            "spans": trace["spans"],
-            "started_at": trace["started_at"],
+            "error": error[:500] if error else None,
+            "duration_ms": duration_ms,
+            "is_slow": is_slow,
             "completed_at": datetime.now(timezone.utc).isoformat(),
-            "error": error,
-            "is_slow": elapsed_ms > 1000,
-        }
-        self._trace_buffer.append(completed_trace)
+        })
+        del trace["started_at"]  # Remove raw timestamp
 
-        if len(self._trace_buffer) > 100:
-            self._trace_buffer = self._trace_buffer[-50:]
+        # Update path stats
+        path = trace["request_path"]
+        ps = self._path_stats[path]
+        ps["count"] += 1
+        ps["total_ms"] += duration_ms
+        ps["max_ms"] = max(ps["max_ms"], duration_ms)
+        if status_code >= 400:
+            ps["errors"] += 1
+        if is_slow:
+            ps["slow"] += 1
 
-        return completed_trace
+        self._total_requests += 1
+        if status_code >= 400:
+            self._total_errors += 1
+        if is_slow:
+            self._total_slow += 1
 
-    async def flush_traces(self):
-        """Persist buffered traces to MongoDB."""
-        if not self._trace_buffer:
-            return {"flushed": 0}
-        to_flush = self._trace_buffer[:]
-        self._trace_buffer.clear()
-        if to_flush:
-            await db.observability_traces.insert_many(to_flush)
-        return {"flushed": len(to_flush)}
+        # Buffer completed trace
+        self._completed_traces.append(trace)
+        if len(self._completed_traces) > self._max_buffer:
+            self._completed_traces = self._completed_traces[-1000:]
 
-    async def get_recent_traces(self, tenant_id: Optional[str] = None,
-                                limit: int = 50, slow_only: bool = False) -> List[dict]:
-        q: Dict[str, Any] = {}
-        if tenant_id:
-            q["tenant_id"] = tenant_id
-        if slow_only:
-            q["is_slow"] = True
-        return await db.observability_traces.find(
-            q, {"_id": 0}
-        ).sort("started_at", -1).to_list(limit)
+    async def flush_to_db(self) -> int:
+        """Flush completed traces to MongoDB."""
+        if not self._completed_traces:
+            return 0
+        to_flush = self._completed_traces[:]
+        self._completed_traces.clear()
+        try:
+            from core.database import db
+            # Insert without _id issues
+            docs = [{k: v for k, v in t.items()} for t in to_flush]
+            await db.observability_traces.insert_many(docs)
+            logger.info(f"Flushed {len(docs)} traces to MongoDB")
+            return len(docs)
+        except Exception as e:
+            logger.error(f"Trace flush failed: {e}")
+            self._completed_traces.extend(to_flush)
+            return 0
 
-    async def get_trace_summary(self, hours: int = 1) -> Dict[str, Any]:
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-        pipeline = [
-            {"$match": {"started_at": {"$gte": cutoff}}},
-            {"$group": {
-                "_id": "$request_path",
-                "count": {"$sum": 1},
-                "avg_duration_ms": {"$avg": "$duration_ms"},
-                "max_duration_ms": {"$max": "$duration_ms"},
-                "error_count": {"$sum": {"$cond": [{"$ne": ["$error", None]}, 1, 0]}},
-                "slow_count": {"$sum": {"$cond": ["$is_slow", 1, 0]}},
-            }},
-            {"$sort": {"count": -1}},
-            {"$limit": 30},
-        ]
-        results = await db.observability_traces.aggregate(pipeline).to_list(30)
-        total = sum(r["count"] for r in results)
-        errors = sum(r["error_count"] for r in results)
+    async def get_trace_summary(self, hours: int = 1) -> dict:
+        """Get trace summary from both in-memory stats and persisted data."""
+        # Aggregate endpoint stats
+        endpoints = []
+        for path, stats in sorted(self._path_stats.items(), key=lambda x: -x[1]["count"]):
+            avg_ms = round(stats["total_ms"] / max(stats["count"], 1), 2)
+            endpoints.append({
+                "path": path,
+                "count": stats["count"],
+                "avg_ms": avg_ms,
+                "max_ms": round(stats["max_ms"], 2),
+                "errors": stats["errors"],
+                "slow": stats["slow"],
+            })
+
+        error_rate = self._total_errors / max(self._total_requests, 1)
+
         return {
-            "period_hours": hours,
-            "total_requests": total,
-            "total_errors": errors,
-            "error_rate": round(errors / max(total, 1), 4),
-            "endpoints": [
-                {
-                    "path": r["_id"],
-                    "count": r["count"],
-                    "avg_ms": round(r["avg_duration_ms"], 2),
-                    "max_ms": round(r["max_duration_ms"], 2),
-                    "errors": r["error_count"],
-                    "slow": r["slow_count"],
-                }
-                for r in results
-            ],
+            "total_requests": self._total_requests,
+            "total_errors": self._total_errors,
+            "total_slow": self._total_slow,
+            "error_rate": round(error_rate, 4),
             "active_traces": len(self._active_traces),
+            "buffered_traces": len(self._completed_traces),
+            "endpoints": endpoints[:30],
         }
+
+    async def get_recent_traces(self, limit: int = 20, slow_only: bool = False) -> List[dict]:
+        """Get recent traces from MongoDB."""
+        try:
+            from core.database import db
+            q = {"is_slow": True} if slow_only else {}
+            traces = await db.observability_traces.find(
+                q, {"_id": 0}
+            ).sort("started_at_iso", -1).to_list(limit)
+            return traces
+        except Exception:
+            # Fallback to in-memory buffer
+            result = self._completed_traces[:]
+            if slow_only:
+                result = [t for t in result if t.get("is_slow")]
+            return sorted(result, key=lambda x: x.get("started_at_iso", ""), reverse=True)[:limit]
+
+    async def get_slow_endpoints(self, threshold_ms: float = 1000, min_count: int = 3) -> List[dict]:
+        """Get endpoints exceeding latency thresholds."""
+        slow = []
+        for path, stats in self._path_stats.items():
+            avg = stats["total_ms"] / max(stats["count"], 1)
+            if avg > threshold_ms and stats["count"] >= min_count:
+                slow.append({
+                    "path": path,
+                    "avg_ms": round(avg, 2),
+                    "count": stats["count"],
+                    "slow_count": stats["slow"],
+                })
+        return sorted(slow, key=lambda x: -x["avg_ms"])
+
+    async def get_hot_paths(self, top_n: int = 10) -> List[dict]:
+        """Get most frequently accessed paths."""
+        return sorted(
+            [{"path": p, **s} for p, s in self._path_stats.items()],
+            key=lambda x: -x["count"],
+        )[:top_n]
+
+    def get_path_stats(self) -> dict:
+        return dict(self._path_stats)
 
 
 tracing = TracingService()

@@ -3,37 +3,22 @@ import axios from "axios";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { Activity, RefreshCw, AlertCircle, Clock, Gauge, BarChart3 } from "lucide-react";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
-function HealthIcon({ status }) {
-  if (status === "healthy") return <span className="inline-block w-3 h-3 rounded-full bg-emerald-500" />;
-  if (status === "degraded") return <span className="inline-block w-3 h-3 rounded-full bg-amber-500" />;
-  return <span className="inline-block w-3 h-3 rounded-full bg-red-500" />;
-}
-
-function MetricBar({ label, value, max, unit, color }) {
-  const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-slate-400">{label}</span>
-        <span className="text-xs text-white font-medium">{typeof value === "number" ? value.toFixed(2) : value} {unit}</span>
-      </div>
-      <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${color || "bg-teal-500"}`} style={{ width: `${pct}%` }} />
-      </div>
-    </div>
-  );
+function HealthDot({ status }) {
+  const color = status === "healthy" ? "bg-emerald-500" : status === "degraded" ? "bg-amber-500" : "bg-red-500";
+  return <span className={`inline-block w-2 h-2 rounded-full ${color}`} />;
 }
 
 export default function ObservabilityDashboard() {
-  const [health, setHealth] = useState(null);
   const [dashMetrics, setDashMetrics] = useState(null);
-  const [errors, setErrors] = useState(null);
   const [traces, setTraces] = useState(null);
+  const [errorSummary, setErrorSummary] = useState(null);
+  const [health, setHealth] = useState(null);
+  const [recentTraces, setRecentTraces] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const token = localStorage.getItem("token") || sessionStorage.getItem("token");
@@ -41,16 +26,18 @@ export default function ObservabilityDashboard() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [healthRes, metricsRes, errorsRes, tracesRes] = await Promise.all([
-        axios.get(`${API}/api/observability/health`, { headers }),
+      const [metricsRes, traceRes, errorRes, healthRes, recentRes] = await Promise.all([
         axios.get(`${API}/api/observability/metrics`, { headers }),
-        axios.get(`${API}/api/observability/errors/summary?hours=24`, { headers }),
         axios.get(`${API}/api/observability/traces/summary?hours=1`, { headers }),
+        axios.get(`${API}/api/observability/errors/summary?hours=24`, { headers }),
+        axios.get(`${API}/api/observability/health`, { headers }),
+        axios.get(`${API}/api/observability/traces?limit=20&slow_only=false`, { headers }),
       ]);
-      setHealth(healthRes.data);
       setDashMetrics(metricsRes.data);
-      setErrors(errorsRes.data);
-      setTraces(tracesRes.data);
+      setTraces(traceRes.data);
+      setErrorSummary(errorRes.data);
+      setHealth(healthRes.data);
+      setRecentTraces(Array.isArray(recentRes.data) ? recentRes.data : []);
     } catch (err) {
       console.error("Observability data fetch failed:", err);
     } finally {
@@ -58,174 +45,224 @@ export default function ObservabilityDashboard() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchData(); const iv = setInterval(fetchData, 20000); return () => clearInterval(iv); }, [fetchData]);
 
   const flushMetrics = async () => {
     try {
       await axios.post(`${API}/api/observability/metrics/flush`, {}, { headers });
-      toast.success("Metrikler kaydedildi");
-    } catch { toast.error("Flush hatasi"); }
+      toast.success("Metrikler flush edildi");
+    } catch { toast.error("Flush basarisiz"); }
   };
 
-  if (loading) return <div className="flex items-center justify-center h-96"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500" /></div>;
+  const flushTraces = async () => {
+    try {
+      await axios.post(`${API}/api/observability/traces/flush`, {}, { headers });
+      toast.success("Trace'ler flush edildi");
+      fetchData();
+    } catch { toast.error("Flush basarisiz"); }
+  };
 
-  const services = health?.services || {};
-  const dm = dashMetrics || {};
+  if (loading) return <div className="flex justify-center p-12" data-testid="obs-loading"><RefreshCw className="w-8 h-8 animate-spin text-zinc-400" /></div>;
 
   return (
-    <div data-testid="observability-dashboard" className="space-y-6 p-6 bg-slate-950 min-h-screen">
+    <div className="space-y-6 p-6 max-w-7xl mx-auto" data-testid="observability-dashboard">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Observability</h1>
-          <p className="text-sm text-slate-400 mt-1">Platform performans ve saglik izleme</p>
+          <h1 className="text-2xl font-bold text-zinc-100">Observability</h1>
+          <p className="text-sm text-zinc-400 mt-1">Request tracing, metrics, errors & service health</p>
         </div>
         <div className="flex gap-2">
-          <Button data-testid="flush-metrics-btn" onClick={flushMetrics} size="sm" variant="outline" className="border-teal-500/50 text-teal-400 hover:bg-teal-600/20">
-            Metrikleri Kaydet
+          <Button variant="outline" size="sm" onClick={fetchData} data-testid="refresh-btn">
+            <RefreshCw className="w-4 h-4 mr-1" /> Yenile
           </Button>
-          <Button data-testid="refresh-btn" onClick={fetchData} size="sm" className="bg-teal-600 hover:bg-teal-700 text-white">Yenile</Button>
+          <Button variant="outline" size="sm" onClick={flushTraces} data-testid="flush-traces-btn">Trace Flush</Button>
+          <Button variant="outline" size="sm" onClick={flushMetrics} data-testid="flush-metrics-btn">Metric Flush</Button>
         </div>
       </div>
 
-      {/* Overall Health Banner */}
-      <Card data-testid="health-banner" className={`border ${health?.overall_status === "healthy" ? "bg-emerald-900/20 border-emerald-700/30" : health?.overall_status === "degraded" ? "bg-amber-900/20 border-amber-700/30" : "bg-red-900/20 border-red-700/30"}`}>
-        <CardContent className="p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <HealthIcon status={health?.overall_status} />
-            <span className="text-lg font-semibold text-white capitalize">{health?.overall_status || "unknown"}</span>
-            <span className="text-sm text-slate-400">| {health?.healthy_count || 0} saglikli / {health?.service_count || 0} servis</span>
-          </div>
-          <span className="text-xs text-slate-500">{health?.checked_at ? new Date(health.checked_at).toLocaleString("tr-TR") : ""}</span>
+      {/* Service Health */}
+      {health && (
+        <Card className={`border ${health.overall_status === "healthy" ? "bg-emerald-950/20 border-emerald-900/30" : health.overall_status === "degraded" ? "bg-amber-950/20 border-amber-900/30" : "bg-red-950/20 border-red-900/30"}`} data-testid="service-health">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2 text-zinc-200">
+              <Activity className="w-4 h-4" /> Servis Sagligi
+              <Badge variant={health.overall_status === "healthy" ? "default" : "destructive"}>{health.overall_status}</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+              {health.services && Object.entries(health.services).map(([name, info]) => (
+                <div key={name} className="p-3 bg-zinc-800/60 rounded-lg">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <HealthDot status={info.status} />
+                    <span className="text-xs font-medium text-zinc-300 capitalize">{name.replace(/_/g, " ")}</span>
+                  </div>
+                  {info.latency_ms != null && <span className="text-xs text-zinc-500">{info.latency_ms}ms</span>}
+                  {info.mode && <span className="text-xs text-zinc-500 block">{info.mode}</span>}
+                  {info.failures_1h != null && <span className="text-xs text-zinc-500 block">fail: {info.failures_1h}</span>}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Metrics Overview */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-testid="metrics-overview">
+        <Card className="bg-zinc-900/60 border-zinc-800">
+          <CardContent className="p-4">
+            <div className="text-xs text-zinc-400 uppercase flex items-center gap-1"><Gauge className="w-3 h-3" /> Istek (1h)</div>
+            <div className="text-2xl font-bold text-zinc-100 mt-1">{traces?.total_requests || 0}</div>
+            <div className="text-xs text-zinc-500">Aktif trace: {traces?.active_traces || 0}</div>
+          </CardContent>
+        </Card>
+        <Card className={`border ${(traces?.error_rate || 0) > 0.05 ? "bg-red-950/30 border-red-900/40" : "bg-zinc-900/60 border-zinc-800"}`}>
+          <CardContent className="p-4">
+            <div className="text-xs text-zinc-400 uppercase flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Hata Orani</div>
+            <div className="text-2xl font-bold text-zinc-100 mt-1">{((traces?.error_rate || 0) * 100).toFixed(2)}%</div>
+            <div className="text-xs text-zinc-500">Toplam hata: {traces?.total_errors || 0}</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-zinc-900/60 border-zinc-800">
+          <CardContent className="p-4">
+            <div className="text-xs text-zinc-400 uppercase flex items-center gap-1"><BarChart3 className="w-3 h-3" /> Event Throughput</div>
+            <div className="text-2xl font-bold text-zinc-100 mt-1">{dashMetrics?.event_throughput || 0}</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-zinc-900/60 border-zinc-800">
+          <CardContent className="p-4">
+            <div className="text-xs text-zinc-400 uppercase flex items-center gap-1"><Clock className="w-3 h-3" /> Messaging DR</div>
+            <div className="text-2xl font-bold text-zinc-100 mt-1">{((dashMetrics?.messaging_delivery?.delivery_rate || 0) * 100).toFixed(1)}%</div>
+            <div className="text-xs text-zinc-500">
+              S: {dashMetrics?.messaging_delivery?.success_count || 0} / F: {dashMetrics?.messaging_delivery?.failure_count || 0}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Endpoint Performance (from real traces) */}
+        <Card className="bg-zinc-900/60 border-zinc-800" data-testid="endpoint-performance">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base text-zinc-200 flex items-center gap-2">
+              <Clock className="w-4 h-4" /> Endpoint Performansi (1h)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1 max-h-80 overflow-y-auto">
+            {traces?.endpoints?.length > 0 ? (
+              traces.endpoints.map((ep, i) => (
+                <div key={i} className="flex items-center justify-between py-1.5 border-b border-zinc-800 last:border-0">
+                  <span className="text-xs font-mono text-zinc-300 truncate flex-1">{ep.path}</span>
+                  <div className="flex gap-3 ml-2 shrink-0">
+                    <span className="text-xs text-zinc-400">{ep.count}x</span>
+                    <span className={`text-xs ${ep.avg_ms > 1000 ? "text-red-400" : "text-zinc-400"}`}>{ep.avg_ms}ms</span>
+                    {ep.slow > 0 && <Badge variant="destructive" className="text-xs">{ep.slow} slow</Badge>}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-zinc-500">Henuz trace verisi yok. Flush yaparak veri toplayin.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Error Summary */}
+        <Card className="bg-zinc-900/60 border-zinc-800" data-testid="error-summary">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base text-zinc-200 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" /> Hata Ozeti (24h)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div className="p-2 bg-zinc-800/60 rounded-lg">
+                <div className="text-xs text-zinc-400">Toplam</div>
+                <div className="text-lg font-bold text-zinc-100">{errorSummary?.total_errors || 0}</div>
+              </div>
+              <div className="p-2 bg-zinc-800/60 rounded-lg">
+                <div className="text-xs text-zinc-400">Ciddiyet</div>
+                <div className="flex gap-1 mt-1 flex-wrap">
+                  {errorSummary?.by_severity && Object.entries(errorSummary.by_severity).map(([sev, cnt]) => (
+                    <Badge key={sev} variant={sev === "critical" ? "destructive" : "secondary"} className="text-xs">
+                      {sev}: {cnt}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {errorSummary?.top_errors?.length > 0 && (
+              <div className="space-y-1">
+                {errorSummary.top_errors.slice(0, 8).map((e, i) => (
+                  <div key={i} className="flex justify-between py-1 border-b border-zinc-800 last:border-0">
+                    <span className="text-xs text-zinc-300">{e.error_type}</span>
+                    <div className="flex gap-2">
+                      <Badge variant={e.severity === "critical" ? "destructive" : "outline"} className="text-xs">{e.severity}</Badge>
+                      <span className="text-xs text-zinc-400">{e.count}x</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Recent Traces */}
+      <Card className="bg-zinc-900/60 border-zinc-800" data-testid="recent-traces">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base text-zinc-200">Son Trace'ler</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {recentTraces.length > 0 ? (
+            <div className="space-y-1 max-h-72 overflow-y-auto">
+              {recentTraces.map((t, i) => (
+                <div key={i} className={`flex items-center justify-between py-1.5 border-b border-zinc-800 last:border-0 ${t.is_slow ? "bg-amber-950/10" : ""}`}>
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <Badge variant="outline" className="text-xs shrink-0">{t.method}</Badge>
+                    <span className="text-xs font-mono text-zinc-300 truncate">{t.request_path}</span>
+                  </div>
+                  <div className="flex gap-2 ml-2 shrink-0 items-center">
+                    <Badge variant={t.status_code >= 400 ? "destructive" : "secondary"} className="text-xs">{t.status_code}</Badge>
+                    <span className={`text-xs ${t.duration_ms > 1000 ? "text-red-400 font-bold" : "text-zinc-400"}`}>{t.duration_ms}ms</span>
+                    {t.is_slow && <Badge variant="destructive" className="text-xs">SLOW</Badge>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-zinc-500">Henuz trace verisi yok. Trace flush yaparak veritabanina kaydedin.</p>
+          )}
         </CardContent>
       </Card>
 
-      {/* Service Health Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        {Object.entries(services).map(([name, svc]) => (
-          <Card key={name} data-testid={`service-${name}`} className="bg-slate-900/60 border-slate-700/50">
-            <CardContent className="p-3">
-              <div className="flex items-center gap-2 mb-1">
-                <HealthIcon status={svc.status} />
-                <p className="text-xs font-medium text-white truncate">{name.replace(/_/g, " ")}</p>
+      {/* Application Metrics */}
+      {dashMetrics && (
+        <Card className="bg-zinc-900/60 border-zinc-800" data-testid="app-metrics">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base text-zinc-200">Uygulama Metrikleri</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="p-3 bg-zinc-800/60 rounded-lg">
+                <div className="text-xs text-zinc-400">WS Latency (avg)</div>
+                <div className="text-lg font-bold text-zinc-100">{dashMetrics.websocket_latency?.avg || 0}ms</div>
               </div>
-              {Object.entries(svc).filter(([k]) => k !== "status").map(([k, v]) => (
-                <p key={k} className="text-xs text-slate-400">{k}: <span className="text-slate-300">{String(v)}</span></p>
-              ))}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <Tabs defaultValue="metrics" className="space-y-4">
-        <TabsList className="bg-slate-800/80 border-slate-700">
-          <TabsTrigger value="metrics" data-testid="tab-metrics" className="data-[state=active]:bg-teal-600">Metrikler</TabsTrigger>
-          <TabsTrigger value="errors" data-testid="tab-errors" className="data-[state=active]:bg-teal-600">Hatalar</TabsTrigger>
-          <TabsTrigger value="traces" data-testid="tab-traces" className="data-[state=active]:bg-teal-600">Traces</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="metrics">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card className="bg-slate-900/60 border-slate-700/50">
-              <CardHeader><CardTitle className="text-white text-base">Performans Metrikleri</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                <MetricBar label="WebSocket Latency (avg)" value={dm.websocket_latency?.avg || 0} max={1000} unit="ms" color="bg-violet-500" />
-                <MetricBar label="ML Execution Time (avg)" value={dm.ml_execution_time?.avg || 0} max={60} unit="sec" color="bg-cyan-500" />
-                <MetricBar label="Reservation Sync Lag (avg)" value={dm.reservation_sync_lag?.avg || 0} max={5000} unit="ms" color="bg-amber-500" />
-                <MetricBar label="Event Throughput" value={dm.event_throughput || 0} max={10000} unit="events" color="bg-emerald-500" />
-              </CardContent>
-            </Card>
-            <Card className="bg-slate-900/60 border-slate-700/50">
-              <CardHeader><CardTitle className="text-white text-base">Is Metrikleri</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/40">
-                  <p className="text-xs text-slate-400">AutoPricing Basari Orani</p>
-                  <p className="text-xl font-bold text-white">{((dm.autopricing?.success_rate || 0) * 100).toFixed(1)}%</p>
-                  <p className="text-xs text-slate-500">{dm.autopricing?.success_count || 0} basarili / {dm.autopricing?.failure_count || 0} basarisiz</p>
-                </div>
-                <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/40">
-                  <p className="text-xs text-slate-400">Messaging Iletim Orani</p>
-                  <p className="text-xl font-bold text-white">{((dm.messaging_delivery?.delivery_rate || 0) * 100).toFixed(1)}%</p>
-                  <p className="text-xs text-slate-500">{dm.messaging_delivery?.success_count || 0} basarili / {dm.messaging_delivery?.failure_count || 0} basarisiz</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="errors">
-          <Card className="bg-slate-900/60 border-slate-700/50">
-            <CardHeader><CardTitle className="text-white text-base">Hata Ozeti (24 Saat)</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-4 mb-4">
-                <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/40 text-center">
-                  <p className="text-xs text-slate-400">Toplam</p>
-                  <p className="text-2xl font-bold text-white">{errors?.total_errors || 0}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-red-900/20 border border-red-700/30 text-center">
-                  <p className="text-xs text-red-400">Critical/High</p>
-                  <p className="text-2xl font-bold text-red-400">{(errors?.by_severity?.critical || 0) + (errors?.by_severity?.high || 0)}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-amber-900/20 border border-amber-700/30 text-center">
-                  <p className="text-xs text-amber-400">Medium/Low</p>
-                  <p className="text-2xl font-bold text-amber-400">{(errors?.by_severity?.medium || 0) + (errors?.by_severity?.low || 0)}</p>
-                </div>
+              <div className="p-3 bg-zinc-800/60 rounded-lg">
+                <div className="text-xs text-zinc-400">ML Exec (avg)</div>
+                <div className="text-lg font-bold text-zinc-100">{dashMetrics.ml_execution_time?.avg || 0}s</div>
               </div>
-              {(errors?.top_errors || []).length > 0 && (
-                <div className="space-y-2">
-                  {errors.top_errors.slice(0, 8).map((e, i) => (
-                    <div key={i} data-testid={`error-${i}`} className="flex items-center justify-between p-2 rounded bg-slate-800/50">
-                      <div>
-                        <span className="text-sm text-white">{e.error_type}</span>
-                        <span className="text-xs text-slate-500 ml-2">{e.module}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className={e.severity === "critical" ? "text-red-400 border-red-500/30" : "text-amber-400 border-amber-500/30"}>{e.severity}</Badge>
-                        <span className="text-xs text-slate-400">x{e.count}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="traces">
-          <Card className="bg-slate-900/60 border-slate-700/50">
-            <CardHeader><CardTitle className="text-white text-base">Request Traces (Son 1 Saat)</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-4 mb-4">
-                <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/40 text-center">
-                  <p className="text-xs text-slate-400">Requests</p>
-                  <p className="text-2xl font-bold text-white">{traces?.total_requests || 0}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/40 text-center">
-                  <p className="text-xs text-slate-400">Errors</p>
-                  <p className="text-2xl font-bold text-red-400">{traces?.total_errors || 0}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/40 text-center">
-                  <p className="text-xs text-slate-400">Error Rate</p>
-                  <p className="text-2xl font-bold text-white">{((traces?.error_rate || 0) * 100).toFixed(2)}%</p>
-                </div>
+              <div className="p-3 bg-zinc-800/60 rounded-lg">
+                <div className="text-xs text-zinc-400">Autopricing SR</div>
+                <div className="text-lg font-bold text-zinc-100">{((dashMetrics.autopricing?.success_rate || 0) * 100).toFixed(1)}%</div>
               </div>
-              {(traces?.endpoints || []).length > 0 && (
-                <div className="space-y-2">
-                  {traces.endpoints.slice(0, 10).map((ep, i) => (
-                    <div key={i} data-testid={`trace-${i}`} className="flex items-center justify-between p-2 rounded bg-slate-800/50">
-                      <span className="text-sm text-slate-300 truncate max-w-[200px]">{ep.path}</span>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-slate-400">{ep.avg_ms?.toFixed(0)}ms avg</span>
-                        <span className="text-xs text-slate-500">x{ep.count}</span>
-                        {ep.slow > 0 && <Badge variant="outline" className="text-amber-400 border-amber-500/30">{ep.slow} slow</Badge>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+              <div className="p-3 bg-zinc-800/60 rounded-lg">
+                <div className="text-xs text-zinc-400">Sync Lag (avg)</div>
+                <div className="text-lg font-bold text-zinc-100">{dashMetrics.reservation_sync_lag?.avg || 0}ms</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

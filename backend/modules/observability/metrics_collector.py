@@ -1,172 +1,147 @@
 """
-Metrics Collector - Centralized application metrics collection.
-Collects: websocket latency, ML execution time, autopricing success rate,
-messaging delivery rate, reservation sync lag, event throughput, etc.
+Metrics Collector — production-grade application metrics with histogram support.
+Collects counters, gauges, histograms. Supports flush to MongoDB.
 """
 import logging
 import time
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
 from collections import defaultdict
-
-from core.database import db
 
 logger = logging.getLogger("observability.metrics")
 
 
-class MetricType:
-    COUNTER = "counter"
-    GAUGE = "gauge"
-    HISTOGRAM = "histogram"
-    TIMER = "timer"
-
-
 class MetricsCollector:
-    """In-process metrics collection with MongoDB persistence."""
+    """Application-level metrics collector with persistent flush support."""
 
     def __init__(self):
         self._counters: Dict[str, float] = defaultdict(float)
         self._gauges: Dict[str, float] = {}
         self._histograms: Dict[str, List[float]] = defaultdict(list)
-        self._timers: Dict[str, List[float]] = defaultdict(list)
-        self._last_flush = datetime.now(timezone.utc)
+        self._max_histogram_size = 1000
 
-    # -- Recording --
+        # Specific business metrics
+        self._event_throughput = 0
+        self._websocket_latencies: List[float] = []
+        self._ml_execution_times: List[float] = []
+        self._autopricing_results = {"success": 0, "failure": 0}
+        self._messaging_delivery = {"success": 0, "failure": 0}
+        self._reservation_sync_lags: List[float] = []
 
-    def increment(self, name: str, value: float = 1.0, tags: Optional[Dict[str, str]] = None):
-        key = self._key(name, tags)
+    def increment(self, name: str, value: float = 1, tags: dict = None):
+        key = self._make_key(name, tags)
         self._counters[key] += value
 
-    def gauge(self, name: str, value: float, tags: Optional[Dict[str, str]] = None):
-        key = self._key(name, tags)
+    def gauge(self, name: str, value: float, tags: dict = None):
+        key = self._make_key(name, tags)
         self._gauges[key] = value
 
-    def histogram(self, name: str, value: float, tags: Optional[Dict[str, str]] = None):
-        key = self._key(name, tags)
+    def histogram(self, name: str, value: float, tags: dict = None):
+        key = self._make_key(name, tags)
         self._histograms[key].append(value)
-        if len(self._histograms[key]) > 1000:
+        if len(self._histograms[key]) > self._max_histogram_size:
             self._histograms[key] = self._histograms[key][-500:]
 
-    def timer_start(self, name: str) -> float:
-        return time.time()
-
-    def timer_end(self, name: str, start: float, tags: Optional[Dict[str, str]] = None):
-        elapsed_ms = (time.time() - start) * 1000
-        key = self._key(name, tags)
-        self._timers[key].append(elapsed_ms)
-        if len(self._timers[key]) > 1000:
-            self._timers[key] = self._timers[key][-500:]
-
-    # -- Predefined Metrics --
-
-    def record_websocket_latency(self, latency_ms: float, tenant_id: str = ""):
-        self.histogram("websocket_latency_ms", latency_ms, {"tenant": tenant_id})
-
-    def record_ml_execution(self, model_type: str, duration_sec: float, success: bool):
-        self.histogram("ml_execution_time_sec", duration_sec, {"model": model_type})
-        self.increment(f"ml_execution_{'success' if success else 'failure'}", tags={"model": model_type})
-
-    def record_autopricing(self, success: bool, confidence: float = 0.0):
-        self.increment(f"autopricing_{'success' if success else 'failure'}")
-        if success:
-            self.histogram("autopricing_confidence", confidence)
-
-    def record_messaging_delivery(self, provider: str, success: bool):
-        self.increment(f"messaging_delivery_{'success' if success else 'failure'}", tags={"provider": provider})
-
-    def record_reservation_sync(self, lag_ms: float, channel: str = ""):
-        self.histogram("reservation_sync_lag_ms", lag_ms, {"channel": channel})
-
-    def record_event_throughput(self, count: int = 1):
-        self.increment("event_throughput", count)
-
-    # -- Query --
-
-    def get_all_metrics(self) -> Dict[str, Any]:
-        now = datetime.now(timezone.utc).isoformat()
-        return {
-            "collected_at": now,
-            "counters": dict(self._counters),
-            "gauges": dict(self._gauges),
-            "histograms": {
-                k: self._summarize_histogram(v)
-                for k, v in self._histograms.items()
-            },
-            "timers": {
-                k: self._summarize_histogram(v)
-                for k, v in self._timers.items()
-            },
-        }
-
-    def get_dashboard_metrics(self) -> Dict[str, Any]:
-        """Get metrics formatted for the observability dashboard."""
-        ws_lat = self._histograms.get("websocket_latency_ms", [])
-        ml_time = self._histograms.get("ml_execution_time_sec", [])
-        ap_conf = self._histograms.get("autopricing_confidence", [])
-        sync_lag = self._histograms.get("reservation_sync_lag_ms", [])
-
-        ap_success = sum(v for k, v in self._counters.items() if "autopricing_success" in k)
-        ap_failure = sum(v for k, v in self._counters.items() if "autopricing_failure" in k)
-        msg_success = sum(v for k, v in self._counters.items() if "messaging_delivery_success" in k)
-        msg_failure = sum(v for k, v in self._counters.items() if "messaging_delivery_failure" in k)
-
-        return {
-            "websocket_latency": self._summarize_histogram(ws_lat),
-            "ml_execution_time": self._summarize_histogram(ml_time),
-            "autopricing": {
-                "success_count": int(ap_success),
-                "failure_count": int(ap_failure),
-                "success_rate": round(ap_success / max(ap_success + ap_failure, 1), 4),
-                "avg_confidence": self._summarize_histogram(ap_conf).get("avg", 0),
-            },
-            "messaging_delivery": {
-                "success_count": int(msg_success),
-                "failure_count": int(msg_failure),
-                "delivery_rate": round(msg_success / max(msg_success + msg_failure, 1), 4),
-            },
-            "reservation_sync_lag": self._summarize_histogram(sync_lag),
-            "event_throughput": int(self._counters.get("event_throughput", 0)),
-        }
-
-    async def flush_to_db(self):
-        """Persist current metrics snapshot to MongoDB."""
-        snapshot = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "metrics": self.get_all_metrics(),
-            "dashboard": self.get_dashboard_metrics(),
-        }
-        await db.observability_metrics.insert_one(snapshot)
-        self._last_flush = datetime.now(timezone.utc)
-        return {"flushed_at": snapshot["timestamp"]}
-
-    async def get_historical_metrics(self, hours: int = 24, limit: int = 100) -> List[dict]:
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-        return await db.observability_metrics.find(
-            {"timestamp": {"$gte": cutoff}}, {"_id": 0}
-        ).sort("timestamp", -1).to_list(limit)
-
-    # -- Helpers --
-
-    def _key(self, name: str, tags: Optional[Dict[str, str]] = None) -> str:
+    def _make_key(self, name: str, tags: dict = None) -> str:
         if not tags:
             return name
         tag_str = ",".join(f"{k}={v}" for k, v in sorted(tags.items()))
-        return f"{name}{{{tag_str}}}"
+        return f"{name}|{tag_str}"
 
-    def _summarize_histogram(self, values: List[float]) -> dict:
+    # ── Business metric recorders ──
+
+    def record_event_throughput(self, count: int = 1):
+        self._event_throughput += count
+
+    def record_websocket_latency(self, latency_ms: float):
+        self._websocket_latencies.append(latency_ms)
+        if len(self._websocket_latencies) > 500:
+            self._websocket_latencies = self._websocket_latencies[-250:]
+
+    def record_ml_execution(self, duration_sec: float):
+        self._ml_execution_times.append(duration_sec)
+        if len(self._ml_execution_times) > 100:
+            self._ml_execution_times = self._ml_execution_times[-50:]
+
+    def record_autopricing_result(self, success: bool):
+        key = "success" if success else "failure"
+        self._autopricing_results[key] += 1
+
+    def record_messaging_delivery(self, provider_type: str, success: bool):
+        key = "success" if success else "failure"
+        self._messaging_delivery[key] += 1
+        self.increment("messaging_delivery_total", tags={"provider": provider_type, "result": key})
+
+    def record_reservation_sync_lag(self, lag_ms: float):
+        self._reservation_sync_lags.append(lag_ms)
+        if len(self._reservation_sync_lags) > 500:
+            self._reservation_sync_lags = self._reservation_sync_lags[-250:]
+
+    # ── Stat helpers ──
+
+    def _summarize_list(self, values: List[float]) -> dict:
         if not values:
-            return {"count": 0, "avg": 0, "min": 0, "max": 0, "p50": 0, "p95": 0, "p99": 0}
+            return {"count": 0, "avg": 0, "p95": 0, "max": 0}
         sorted_v = sorted(values)
         n = len(sorted_v)
         return {
             "count": n,
-            "avg": round(sum(sorted_v) / n, 4),
-            "min": round(sorted_v[0], 4),
-            "max": round(sorted_v[-1], 4),
-            "p50": round(sorted_v[int(n * 0.5)], 4),
-            "p95": round(sorted_v[min(int(n * 0.95), n - 1)], 4),
-            "p99": round(sorted_v[min(int(n * 0.99), n - 1)], 4),
+            "avg": round(sum(sorted_v) / n, 2),
+            "p95": round(sorted_v[min(int(n * 0.95), n - 1)], 2),
+            "max": round(sorted_v[-1], 2),
         }
+
+    # ── Dashboard metrics ──
+
+    def get_dashboard_metrics(self) -> dict:
+        msg_total = self._messaging_delivery["success"] + self._messaging_delivery["failure"]
+        return {
+            "event_throughput": self._event_throughput,
+            "websocket_latency": self._summarize_list(self._websocket_latencies),
+            "ml_execution_time": self._summarize_list(self._ml_execution_times),
+            "autopricing": {
+                **self._autopricing_results,
+                "success_rate": (
+                    self._autopricing_results["success"] /
+                    max(self._autopricing_results["success"] + self._autopricing_results["failure"], 1)
+                ),
+            },
+            "messaging_delivery": {
+                **self._messaging_delivery,
+                "delivery_rate": (
+                    self._messaging_delivery["success"] / max(msg_total, 1)
+                ),
+                "success_count": self._messaging_delivery["success"],
+                "failure_count": self._messaging_delivery["failure"],
+            },
+            "reservation_sync_lag": self._summarize_list(self._reservation_sync_lags),
+        }
+
+    def get_all_metrics(self) -> dict:
+        hist_summaries = {}
+        for key, values in self._histograms.items():
+            hist_summaries[key] = self._summarize_list(values)
+        return {
+            "counters": dict(self._counters),
+            "gauges": dict(self._gauges),
+            "histograms": hist_summaries,
+        }
+
+    async def flush_to_db(self) -> int:
+        """Flush current metrics snapshot to MongoDB."""
+        try:
+            from core.database import db
+            snapshot = {
+                "counters": dict(self._counters),
+                "gauges": dict(self._gauges),
+                "dashboard": self.get_dashboard_metrics(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.observability_metrics.insert_one(snapshot)
+            return 1
+        except Exception as e:
+            logger.error(f"Metrics flush failed: {e}")
+            return 0
 
 
 # Singleton

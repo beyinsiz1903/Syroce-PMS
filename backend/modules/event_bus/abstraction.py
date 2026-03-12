@@ -1,11 +1,13 @@
 """
 Event Bus Abstraction Layer.
 Provides a unified interface for event publishing/subscribing.
-Transparently switches between Redis Pub/Sub and in-memory fallback.
+Environment-based mode selection: REDIS_URL → redis, else in_memory.
+Production mode + fallback mode coexist.
 """
 import logging
 import asyncio
 import uuid
+import os
 import json
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List, Callable, Any
@@ -57,7 +59,7 @@ class EventEnvelope:
         self.priority = priority
         self.correlation_id = correlation_id or str(uuid.uuid4())
         self.timestamp = datetime.now(timezone.utc).isoformat()
-        self.sequence = 0  # set by the bus
+        self.sequence = 0
 
     def to_dict(self) -> dict:
         return {
@@ -113,6 +115,7 @@ class InMemoryBackend(EventBusBackend):
         self._subscribers: Dict[str, Dict[str, Callable]] = defaultdict(dict)
         self._published = 0
         self._delivered = 0
+        self._dropped = 0
 
     async def publish(self, channel: str, event: EventEnvelope) -> bool:
         self._published += 1
@@ -122,6 +125,7 @@ class InMemoryBackend(EventBusBackend):
                 await callback(event)
                 self._delivered += 1
             except Exception as e:
+                self._dropped += 1
                 logger.warning(f"InMemory delivery failed sub={sub_id}: {e}")
         return True
 
@@ -146,36 +150,69 @@ class InMemoryBackend(EventBusBackend):
             "subscribers": total_subs,
             "published": self._published,
             "delivered": self._delivered,
+            "dropped": self._dropped,
         }
 
 
 class EventBus:
     """
     Main Event Bus orchestrator.
+    - Environment-based mode selection (REDIS_URL → redis, else in_memory)
     - Tenant-aware channel routing
     - Property-scoped event routing
     - Role-based filtering
     - Event ordering (monotonic sequence per tenant)
     - Persistence for replay
     - Graceful fallback to in-memory when Redis unavailable
+    - Observability hooks
     """
 
     def __init__(self):
         self._backend: EventBusBackend = InMemoryBackend()
+        self._fallback_backend: InMemoryBackend = self._backend
         self._sequence_counters: Dict[str, int] = defaultdict(int)
         self._sessions: Dict[str, Dict[str, dict]] = defaultdict(dict)
         self._metrics = {
             "total_published": 0,
             "total_delivered": 0,
             "total_errors": 0,
+            "total_dropped": 0,
+            "total_fallback_used": 0,
             "by_type": defaultdict(int),
             "by_tenant": defaultdict(int),
         }
         self._mode = "in_memory"
+        self._redis_backend = None
+        self._initialized = False
+
+    async def initialize(self):
+        """Initialize event bus with environment-based mode selection."""
+        if self._initialized:
+            return
+
+        redis_url = os.environ.get("REDIS_URL")
+        if redis_url:
+            from modules.event_bus.redis_pubsub import RedisPubSubBackend
+            redis_backend = RedisPubSubBackend(redis_url)
+            if await redis_backend.connect():
+                self._redis_backend = redis_backend
+                self._backend = redis_backend
+                self._mode = "redis"
+                logger.info("Event bus initialized in REDIS mode")
+            else:
+                logger.warning("Redis unavailable at startup, using in-memory fallback")
+                self._mode = "in_memory"
+        else:
+            logger.info("Event bus initialized in IN_MEMORY mode (no REDIS_URL)")
+            self._mode = "in_memory"
+
+        self._initialized = True
 
     def set_backend(self, backend: EventBusBackend, mode: str = "redis"):
         self._backend = backend
         self._mode = mode
+        if mode == "redis":
+            self._redis_backend = backend
         logger.info(f"Event bus backend switched to: {mode}")
 
     @property
@@ -215,7 +252,10 @@ class EventBus:
                       property_id: Optional[str] = None, source: str = "system",
                       priority: str = EventPriority.NORMAL,
                       correlation_id: Optional[str] = None) -> dict:
-        """Publish an event through the bus."""
+        """Publish an event through the bus with automatic fallback."""
+        if not self._initialized:
+            await self.initialize()
+
         self._sequence_counters[tenant_id] += 1
 
         envelope = EventEnvelope(
@@ -230,15 +270,29 @@ class EventBus:
         envelope.sequence = self._sequence_counters[tenant_id]
 
         # Persist for replay
-        await db.event_bus_log.insert_one({**envelope.to_dict()})
+        event_doc = envelope.to_dict()
+        await db.event_bus_log.insert_one({**event_doc})
 
-        # Publish to backend
+        # Publish to backend with fallback
         channel = self._tenant_channel(tenant_id, property_id)
+        used_fallback = False
         try:
-            await self._backend.publish(channel, envelope)
+            success = await self._backend.publish(channel, envelope)
+            if not success and self._mode == "redis":
+                # Redis publish failed, use in-memory fallback
+                await self._fallback_backend.publish(channel, envelope)
+                used_fallback = True
+                self._metrics["total_fallback_used"] += 1
         except Exception as e:
             logger.error(f"Backend publish failed: {e}")
             self._metrics["total_errors"] += 1
+            if self._mode == "redis":
+                try:
+                    await self._fallback_backend.publish(channel, envelope)
+                    used_fallback = True
+                    self._metrics["total_fallback_used"] += 1
+                except Exception:
+                    self._metrics["total_dropped"] += 1
 
         # Deliver to registered sessions
         delivered_count = 0
@@ -257,17 +311,24 @@ class EventBus:
         self._metrics["by_type"][event_type] += 1
         self._metrics["by_tenant"][tenant_id] += 1
 
+        # Observability hook
+        try:
+            from modules.observability.metrics_collector import metrics as obs_metrics
+            obs_metrics.record_event_throughput(1)
+        except Exception:
+            pass
+
         return {
             "event_id": envelope.id,
             "sequence": envelope.sequence,
             "delivered_to": delivered_count,
             "mode": self._mode,
+            "used_fallback": used_fallback,
         }
 
     async def replay(self, tenant_id: str, since: Optional[str] = None,
                      event_types: Optional[List[str]] = None,
                      limit: int = 100) -> List[dict]:
-        """Replay events for a tenant since a timestamp."""
         q: Dict[str, Any] = {"tenant_id": tenant_id}
         if since:
             q["timestamp"] = {"$gte": since}
@@ -306,18 +367,26 @@ class EventBus:
             {"timestamp": {"$gte": one_hour_ago}}
         )
         total_sessions = sum(len(s) for s in self._sessions.values())
+
+        redis_delivery_metrics = None
+        if self._redis_backend:
+            redis_delivery_metrics = self._redis_backend.get_delivery_metrics()
+
         return {
             "mode": self._mode,
             "backend": backend_health,
             "total_published": self._metrics["total_published"],
             "total_delivered": self._metrics["total_delivered"],
             "total_errors": self._metrics["total_errors"],
+            "total_dropped": self._metrics["total_dropped"],
+            "total_fallback_used": self._metrics["total_fallback_used"],
             "events_last_hour": recent_count,
             "active_sessions": total_sessions,
             "active_tenants": len(self._sessions),
             "top_event_types": dict(
                 sorted(self._metrics["by_type"].items(), key=lambda x: -x[1])[:10]
             ),
+            "redis_delivery_metrics": redis_delivery_metrics,
         }
 
     async def get_status(self) -> dict:
@@ -328,6 +397,8 @@ class EventBus:
             "backend_details": backend_health,
             "active_tenants": len(self._sessions),
             "total_sessions": sum(len(s) for s in self._sessions.values()),
+            "redis_configured": bool(os.environ.get("REDIS_URL")),
+            "fallback_available": True,
         }
 
 
