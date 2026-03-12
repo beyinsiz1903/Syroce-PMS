@@ -41228,6 +41228,35 @@ except Exception as e:
     import traceback; traceback.print_exc()
 
 
+# Revenue Management Engine Router
+try:
+    from routers.revenue_management import router as revenue_engine_router
+    app.include_router(revenue_engine_router, tags=["revenue-engine"])
+    print("Revenue Management Engine router included")
+except Exception as e:
+    print(f"Revenue Management Engine router not available: {e}")
+    import traceback; traceback.print_exc()
+
+# Real-Time Operational Event System Router
+try:
+    from routers.event_system import router as event_system_router
+    app.include_router(event_system_router, tags=["event-system"])
+    print("Event System router included")
+except Exception as e:
+    print(f"Event System router not available: {e}")
+    import traceback; traceback.print_exc()
+
+# Guest Journey Layer Router
+try:
+    from routers.guest_journey import router as guest_journey_router
+    app.include_router(guest_journey_router, tags=["guest-journey"])
+    print("Guest Journey router included")
+except Exception as e:
+    print(f"Guest Journey router not available: {e}")
+    import traceback; traceback.print_exc()
+
+
+
 # ============================================================================
 # OPERA CLOUD PARITY FEATURES - CRITICAL ENTERPRISE FUNCTIONALITY
 # ============================================================================

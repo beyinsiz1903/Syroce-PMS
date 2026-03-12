@@ -116,6 +116,9 @@ const KitchenDisplay = lazy(() => import("@/pages/KitchenDisplay"));
 const NightAuditLogs = lazy(() => import("@/pages/NightAuditLogs"));
 const PMSOperationalDashboard = lazy(() => import("@/pages/PMSOperationalDashboard"));
 const FolioDetailView = lazy(() => import("@/pages/FolioDetailView"));
+const RevenueEngineDashboard = lazy(() => import("@/pages/RevenueEngineDashboard"));
+const OperationalEventDashboard = lazy(() => import("@/pages/OperationalEventDashboard"));
+const GuestJourneyDashboard = lazy(() => import("@/pages/GuestJourneyDashboard"));
 const FrontdeskAuditChecklist = lazy(() => import("@/pages/FrontdeskAuditChecklist"));
 const CorporateContractsDashboard = lazy(() => import("@/pages/CorporateContractsDashboard"));
 const MaintenanceWorkOrders = lazy(() => import("@/pages/MaintenanceWorkOrders"));
@@ -1136,6 +1139,36 @@ function App() {
             element={
               isAuthenticated ? (
                 <FolioDetailView />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/revenue-engine"
+            element={
+              isAuthenticated ? (
+                <RevenueEngineDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/operational-events"
+            element={
+              isAuthenticated ? (
+                <OperationalEventDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/guest-journey"
+            element={
+              isAuthenticated ? (
+                <GuestJourneyDashboard user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )

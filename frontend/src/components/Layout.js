@@ -39,6 +39,9 @@ const ICON_BY_KEY = {
   admin_tenants: Shield,
   admin_module_report: FileText,
   admin_leads: Users,
+  revenue_engine: TrendingUp,
+  operational_events: Zap,
+  guest_journey: Award,
 };
 
 // ─── Tier badge in header ─────────────────────────────
