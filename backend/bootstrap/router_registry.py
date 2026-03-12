@@ -52,6 +52,11 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("routers.production_golive", "router", ["production-golive"], None, None),
     ("routers.report_builder", "router", ["report-builder"], None, None),
     ("routers.guest_messaging", "router", ["guest-messaging"], None, None),
+    # Domain routers (Phase B extraction)
+    ("domains.channel_manager.router", "router", ["channel-manager-domain"], None, None),
+    ("domains.guest.router", "router", ["guest-profile-domain"], None, None),
+    ("domains.guest.checkin_router", "router", ["checkin-domain"], None, None),
+    ("domains.sales.router", "router", ["sales-crm-domain"], None, None),
 ]
 
 # Optional routers with special import paths
