@@ -280,6 +280,61 @@ Enterprise hotel operating system platform requiring production-hardening across
     - 5 incident drill buttons
     - Validation report (72h) and drill history
 
+### Phase 7 — Production Rollout & Pilot Readiness (Current Session — Completed)
+
+36. **Production Environment Preparation Service**:
+    - 4-category validation: infrastructure, security, data_safety, observability
+    - 19 total checks across all categories
+    - MongoDB connection, worker readiness, load balancer, Redis, replication health
+    - JWT secret strength, TLS termination, WAF, rate limiting
+    - Backup schedule, restore test, audit log persistence, data retention
+    - Metrics collection, log aggregation, tracing pipeline, alert routing
+
+37. **Canary Deployment Strategy Service**:
+    - 4 deployment stages: Internal → Pilot (1 hotel) → 5-10% traffic → Full rollout
+    - 7 rollback triggers: latency spike, error rate, provider sync failure, queue backlog, reservation ingest, reconciliation delay, websocket latency
+    - 6 canary monitoring metrics with target thresholds
+    - Stage advancement with skip protection
+    - Rollback with reason tracking
+    - Metric evaluation against trigger thresholds
+
+38. **Pilot Hotel Onboarding Service**:
+    - 15 onboarding steps across 3 categories (setup, provider, operational)
+    - Auto-validation for 10 steps, manual completion for 5
+    - 6 pilot success criteria: reservation accuracy, ARI sync, night audit, queue stability, drift, incident response
+    - Onboarding progress tracking with per-step status
+
+39. **Pilot Monitoring Pack Service**:
+    - Tenant-specific dashboard: reservation, sync, queue, incident, night audit, POS metrics
+    - 8 operational alert definitions with severity and thresholds
+    - Daily operations report generation with section breakdown
+    - Report history tracking
+
+40. **Production Load Validation Service**:
+    - 5 scenarios: OTA reservation burst, ARI update storm, queue backlog, night audit concurrency, websocket event stream
+    - Per-scenario metric thresholds and evaluation
+    - Load validation report with pass rate
+
+41. **Tenant Isolation Confirmation Service**:
+    - 8 isolation tests: cross-tenant access, cache, queue, websocket, noisy tenant, throttling, resource fairness, no data leakage
+    - 5 critical tests (cross-tenant, cache, queue, websocket, no-leakage)
+    - Production-grade data leakage check across 6 collections
+
+42. **Post-Launch Monitoring Service**:
+    - 6 continuous monitors (system health, incident, audit, tenant, provider sync, queue)
+    - 3 scheduled drills: weekly incident, monthly chaos, quarterly DR
+    - Drill execution recording and compliance tracking
+    - Platform maturity report with uptime, incidents, resolution rate
+
+43. **Production Rollout Dashboard Frontend**:
+    - 8 tabs: Overview, Environment, Canary Deploy, Pilot Onboarding, Monitoring, Load Validation, Tenant Isolation, Post-Launch
+    - Maturity score ring (91.8% Elite) with GO-LIVE READY badge
+    - Canary pipeline visualization with stage advancement/rollback
+    - Onboarding progress bar with auto-validation
+    - Monitoring dashboard with real-time metrics
+    - Tenant isolation score with critical test results
+    - Post-launch continuous monitor and scheduled drill status
+
 ## Remaining Backlog
 
 ### P1
@@ -290,8 +345,6 @@ Enterprise hotel operating system platform requiring production-hardening across
 ### P2
 - Populate frontend module pages (frontdesk/, housekeeping/, finance/) with operational UIs
 - Full GM training view for pilot onboarding
-- Canary rollout support with traffic splitting
-- Tenant-specific monitoring pack per pilot hotel
 - Advanced compliance export from audit timeline
 - CRA → Vite migration assessment
 
@@ -367,6 +420,29 @@ Enterprise hotel operating system platform requiring production-hardening across
 | /api/validation/observability/audit-timeline | GET | Audit timeline validation |
 | /api/validation/golive-score | GET | Go-live readiness score (7 categories, maturity) |
 | /api/validation/golive-score/history | GET | Historical go-live scores |
+| /api/production/env/validate | GET | Production environment readiness (4 categories, 19 checks) |
+| /api/production/canary/plan | GET | Canary deployment plan (4 stages, 7 triggers) |
+| /api/production/canary/status | GET | Current canary deployment state |
+| /api/production/canary/advance | POST | Advance canary to next stage |
+| /api/production/canary/rollback | POST | Rollback canary deployment |
+| /api/production/canary/triggers | GET | Evaluate rollback trigger thresholds |
+| /api/production/pilot/onboarding | POST/GET | Create/get pilot hotel onboarding |
+| /api/production/pilot/onboarding/complete-step | POST | Complete onboarding step |
+| /api/production/pilot/onboarding/run-auto | POST | Auto-validate onboarding steps |
+| /api/production/pilot/success-criteria | GET | Pilot success criteria evaluation |
+| /api/production/monitoring/dashboard | GET | Pilot tenant monitoring dashboard |
+| /api/production/monitoring/alerts-config | GET | Operational alert definitions |
+| /api/production/monitoring/daily-report | POST | Generate daily operations report |
+| /api/production/monitoring/reports | GET | Report history |
+| /api/production/load/scenarios | GET | 5 production load scenarios |
+| /api/production/load/run | POST | Execute load validation scenario |
+| /api/production/load/report | GET | Load validation report |
+| /api/production/isolation/validate | GET | Tenant isolation confirmation (8 tests) |
+| /api/production/post-launch/status | GET | Post-launch monitoring status |
+| /api/production/post-launch/record-drill | POST | Record scheduled drill execution |
+| /api/production/post-launch/maturity-report | GET | Platform maturity report |
+| /api/production/maturity/score | GET | Final platform maturity score |
+| /api/production/maturity/history | GET | Maturity score history |
 
 ## Test Credentials
 | User | Email | Password |
