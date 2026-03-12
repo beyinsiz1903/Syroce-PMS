@@ -154,6 +154,7 @@ const SecurityHardeningDashboard = lazy(() => import("@/pages/SecurityHardeningD
 // Runtime Infrastructure
 const RuntimeInfrastructureDashboard = lazy(() => import("@/pages/RuntimeInfrastructureDashboard"));
 const InfraHardeningDashboard = lazy(() => import("@/pages/InfraHardeningDashboard"));
+const ProductionGoLiveDashboard = lazy(() => import("@/pages/ProductionGoLiveDashboard"));
 
 import { Toaster } from "@/components/ui/sonner";
 
@@ -1316,6 +1317,16 @@ function App() {
             element={
               isAuthenticated ? (
                 <InfraHardeningDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/production-golive"
+            element={
+              isAuthenticated ? (
+                <ProductionGoLiveDashboard user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )

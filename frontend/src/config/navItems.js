@@ -272,6 +272,14 @@ export const NAV_ITEMS = [
     group: "enterprise",
   },
   {
+    key: "production_golive",
+    label: "Production Go-Live",
+    path: "/production-golive",
+    moduleKey: "advanced_analytics",
+    tier: "enterprise",
+    group: "enterprise",
+  },
+  {
     key: "marketplace",
     label: "Marketplace",
     path: "/app/marketplace",

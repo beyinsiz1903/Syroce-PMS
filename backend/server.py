@@ -9482,6 +9482,20 @@ async def startup_db_seed():
     except Exception as e:
         print(f"⚠️ Cloud observability init warning: {str(e)}")
 
+    # ── Production Go-Live Validators Initialization ──
+    try:
+        from infra.mongo_production import mongo_validator
+        mongo_validator.set_db(db, client)
+        from infra.security_checklist import security_checklist
+        security_checklist.set_db(db)
+        from infra.readiness_validator import readiness_validator
+        readiness_validator.set_db(db)
+        from infra.production_config import production_config
+        startup_result = production_config.startup_check()
+        print(f"✅ Production Go-Live validators initialized (config: {startup_result['status']})")
+    except Exception as e:
+        print(f"⚠️ Production Go-Live validators init warning: {str(e)}")
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
     # Infrastructure cleanup
@@ -41444,6 +41458,15 @@ try:
     print("Infrastructure Hardening router included")
 except Exception as e:
     print(f"Infrastructure Hardening router not available: {e}")
+    import traceback; traceback.print_exc()
+
+# Production Go-Live Router (Config, MongoDB, Providers, Security, Readiness)
+try:
+    from routers.production_golive import router as production_golive_router
+    app.include_router(production_golive_router, tags=["production-golive"])
+    print("Production Go-Live router included")
+except Exception as e:
+    print(f"Production Go-Live router not available: {e}")
     import traceback; traceback.print_exc()
 
 
