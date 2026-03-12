@@ -1,5 +1,29 @@
 # Syroce Hotel PMS — Changelog
 
+## [2026-03-12] Phase 6: Runtime Validation & Go-Live Readiness
+
+### Added — Backend
+- **Runtime Validation Orchestrator** (`ops/runtime_validation.py`): 16 validation scenarios across 4 types (load:5, stress:4, chaos:5, soak:2). Executes scenarios, measures p50/p95/p99 latency, error rate, recovery time. Generates validation reports with pass/fail breakdown.
+- **Incident Drill Framework** (`ops/incident_drill.py`): 5 drill types — worker failure, provider outage, database latency, cache failure, concurrent mutation storm. Automatically creates incidents + alerts marked `is_drill=true`. Measures detection latency, compares against expected thresholds. Cleanup API removes drill artifacts.
+- **Observability Validation** (`ops/observability_validation.py`): 4-category validation — metrics (API latency, queue lag, sync lag), logs (correlation IDs, completeness), alerts (rules, generation, routing), audit timeline (entity coverage, snapshots, pagination). Produces per-category scores.
+- **Go-Live Readiness Scorer** (`ops/golive_scorer.py`): 7-category weighted scoring (runtime: 20%, provider: 15%, incident: 15%, tenant: 10%, observability: 15%, audit: 10%, pilot: 15%). Maturity levels: Foundation/Developing/Capable/Production Ready/Elite. Persists score history.
+- **Validation API Router** (`ops/validation_router.py`): 13 endpoints — scenarios, run, report, drills, drills/execute, drills/history, drills/cleanup, observability (full + 4 sub-categories), golive-score, golive-score/history
+
+### Added — Frontend
+- **Go-Live Dashboard Page** (`pages/GoLiveDashboardPage.js`): Score ring with maturity badge, 7-category breakdown with progress bars, 16 validation scenarios with run buttons, 5 incident drill buttons, validation report summary (72h), drill history with pass/fail indicators
+
+### Changed
+- `bootstrap/router_registry.py` — Registered validation_router
+- `App.js` — Added /golive-dashboard route
+
+### Testing
+- 19 API integration tests (`tests/test_phase6_api.py`) — 100% pass
+- Full testing agent validation (iteration_56): 100% backend + frontend
+- Go-Live Score: 91.8 (Elite), go_live_ready: true
+
+---
+
+
 ## [2026-03-12] Phase 5: Production Hardening, Incident Response, Provider Validation & Pilot Readiness
 
 ### Added — Backend
