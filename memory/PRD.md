@@ -1,16 +1,19 @@
 # Hotel Operating System — Enterprise SaaS Platform
 
 ## Original Problem Statement
-Enterprise hotel operating system platform with PMS core, channel management, revenue ML, operational AI, guest intelligence, messaging, analytics, multi-property support, and production hardening. Goal: Evolve from mock/fallback development mode to production-grade SaaS.
+Enterprise hotel operating system platform with PMS core, channel management, revenue ML, operational AI, guest intelligence, messaging, analytics, multi-property support, production hardening, and infrastructure hardening for global SaaS production architecture.
 
 ## Architecture
 - **Backend**: FastAPI (Python 3.11) on port 8001
 - **Frontend**: React 18 with Shadcn UI
 - **Database**: MongoDB
 - **Event Bus**: Redis Pub/Sub with in-memory fallback
+- **Worker**: Celery with Redis broker (6 named queues)
 - **Auth**: JWT-based authentication
+- **Containerization**: Docker multi-stage builds, docker-compose dev/prod
 
 ## Core Modules
+
 ### Application Layer (Complete)
 - PMS Core (bookings, rooms, guests, folios, invoices)
 - Channel Manager (OTA integration, rate distribution)
@@ -27,74 +30,74 @@ Enterprise hotel operating system platform with PMS core, channel management, re
 - Multi-Tenant Security Hardening (tenant scoping, RBAC, vault, masking)
 
 ### Production Runtime Phase 2 (Complete — 2026-03-12)
-- **Redis Runtime Activation**: Connection manager, health check, reconnect with backoff, env-based mode selection (REDIS_URL), delivery metrics, channel cardinality, backpressure safety
-- **Real Messaging Providers**: Twilio SMS, SendGrid Email, WhatsApp with sandbox/test/live modes, credential vault integration, error classification, fallback chain, retry policy, consent enforcement
-- **MongoDB Persistence Migration**: All in-memory stores migrated to MongoDB repositories with TTL indexes, retention policies, tenant isolation indexes. 8 repositories: EventReplay, MessagingDelivery, AnalyticsExport, ObservabilityTrace, ObservabilityMetrics, ObservabilityError, AlertHistory, PipelineRun
-- **Request Tracing Middleware**: Real FastAPI middleware with correlation_id propagation, latency measurement, slow endpoint detection (>1000ms), error capture, route-level performance stats
-- **Production Alerting Engine**: Threshold-based alerts (Redis disconnect, event drops, messaging failures, slow endpoints, model timeouts, stale datasets, high error rate, DB issues), alert dedup with 15-min cooldown, severity mapping, runbook hints
-- **Runtime Infrastructure Dashboard**: New frontend page showing event bus status, messaging provider health, persistence health (10 collections), observability summary, alert engine status
-- **Updated Event Bus Dashboard**: Mode display, Redis delivery metrics, channel monitoring, replay summary
-- **Updated Observability Dashboard**: Service health, endpoint performance, error summary, recent traces, trace/metric flush
+- Redis Runtime Activation with connection manager, health, reconnect
+- Real Messaging Providers with sandbox/live modes
+- MongoDB Persistence Migration for all runtime stores
+- Request Tracing Middleware with correlation IDs
+- Production Alerting Engine
+- Runtime Infrastructure Dashboard + Updated Dashboards
 
-## Test Coverage
-- **42 unit tests** (test_production_runtime.py): Event bus, Redis, messaging providers, tracing, metrics, alerting, persistence, middleware
-- **24 API integration tests** (test_production_runtime_api.py): All new endpoints validated
-- **Frontend E2E**: All 3 new/updated dashboards verified with data rendering
+### Infrastructure Hardening Phase 3 (Complete — 2026-03-12)
+- **Containerization**: backend/frontend/worker Dockerfiles, docker-compose.yml (dev), docker-compose.prod.yml (production), .dockerignore, nginx configs, Makefile
+- **Redis Cluster Support**: Cluster-aware connection manager (standalone/sentinel/cluster modes), connection pooling, distributed locks (Lua-based atomic ops with fallback), WebSocket Redis adapter for multi-instance broadcast
+- **Background Workers Hardening**: 6 named queues (default, ml, analytics, messaging, pipeline, backup), task routing, failure archive, stuck task detection, queue metrics
+- **CI/CD Pipeline**: GitHub Actions workflows (ci.yml, deploy.yml), staging/production deploy, container build, security scan
+- **Secrets Management**: AWS Secrets Manager + HashiCorp Vault + env fallback abstraction, secret caching, access audit logging
+- **Backup & Disaster Recovery**: Automated MongoDB backup (mongodump), snapshot retention, restore testing, DR runbook, RPO 24h/RTO 4h
+- **Cloud Observability Stack**: OpenTelemetry tracing integration, Sentry error tracking, enhanced Prometheus metrics, Grafana dashboard configs
+- **Horizontal Scaling**: Instance registry via Redis, heartbeat mechanism, stateless validation checks, load balancer readiness probes
+- **Infrastructure Hardening Dashboard**: Full-page dashboard showing all 8 infrastructure areas with status badges, metrics, queue details
 
 ## API Endpoints
-### Runtime Infrastructure
-- `GET /api/runtime/overview` — Full infrastructure status
-- `GET /api/runtime/event-bus/status` — Event bus mode & health
-- `GET /api/runtime/event-bus/delivery-metrics` — Delivery statistics
-- `GET /api/runtime/messaging/status` — Provider health & retry queue
-- `GET /api/runtime/messaging/delivery-summary` — Delivery metrics by channel
-- `GET /api/runtime/persistence/health` — MongoDB collection health
-- `GET /api/runtime/alerts/evaluate` — Run threshold checks
-- `GET /api/runtime/alerts/candidates` — Unacknowledged alerts
-- `GET /api/runtime/alerts/history` — Alert history
-- `POST /api/runtime/alerts/{id}/acknowledge` — Acknowledge alert
-- `GET /api/runtime/alerts/engine-status` — Engine config
-- `GET /api/runtime/observability/summary` — Full observability snapshot
 
-### Event Bus
-- `GET /api/event-bus/status` — Mode, backend status, Redis config
-- `GET /api/event-bus/metrics` — Published, delivered, dropped, fallback usage
-- `POST /api/event-bus/publish` — Publish event
-- `GET /api/event-bus/replay` — Replay events from MongoDB
-- `GET /api/event-bus/replay/summary` — 24h replay summary
-- `GET /api/event-bus/channels` — Active channels
-- `GET /api/event-bus/sessions` — Active sessions
+### Infrastructure Hardening (22 endpoints)
+- `GET /api/infra/summary` — Complete infrastructure dashboard data
+- `GET /api/infra/redis/health` — Redis cluster health
+- `GET /api/infra/redis/metrics` — Redis connection metrics
+- `GET /api/infra/redis/locks` — Distributed lock status
+- `GET /api/infra/workers/summary` — Worker queue summary
+- `GET /api/infra/workers/queues` — Individual queue status
+- `GET /api/infra/workers/failures` — Failure archive
+- `GET /api/infra/workers/stuck` — Stuck task candidates
+- `GET /api/infra/secrets/health` — Secrets provider health
+- `GET /api/infra/secrets/audit` — Secret access audit log
+- `GET /api/infra/backup/status` — Backup system status
+- `GET /api/infra/backup/history` — Backup history
+- `POST /api/infra/backup/trigger` — Manual backup trigger
+- `POST /api/infra/backup/test-restore/{id}` — Test restore
+- `POST /api/infra/backup/cleanup` — Old backup cleanup
+- `GET /api/infra/observability/status` — OTel + Sentry status
+- `GET /api/infra/observability/metrics` — Cloud metrics
+- `GET /api/infra/scaling/summary` — Scaling summary
+- `GET /api/infra/scaling/instances` — Active instances
+- `GET /api/infra/scaling/stateless-check` — Stateless validation
+- `GET /api/infra/scaling/readiness` — LB readiness (no auth)
+- `GET /api/infra/container/info` — Container runtime info
 
-### Observability
-- `GET /api/observability/metrics` — Dashboard metrics
-- `GET /api/observability/metrics/all` — All counters, gauges, histograms
-- `POST /api/observability/metrics/flush` — Flush to MongoDB
-- `GET /api/observability/traces/summary` — Request tracing summary
-- `GET /api/observability/traces` — Recent traces
-- `GET /api/observability/traces/slow` — Slow endpoints
-- `GET /api/observability/traces/hot-paths` — Hot paths
-- `POST /api/observability/traces/flush` — Flush traces to MongoDB
-- `GET /api/observability/errors/summary` — Error summary by severity
-- `GET /api/observability/errors` — Recent errors
-- `POST /api/observability/errors/{id}/resolve` — Resolve error
-- `GET /api/observability/health` — Service health check
-- `GET /api/observability/health/history` — Health history
+## Test Coverage
+- **33 unit tests** (test_infra_hardening.py): All 8 infrastructure components
+- **33 API tests** (test_infra_hardening_external.py): All endpoints validated
+- **Frontend E2E**: Dashboard renders with all sections, interactive elements work
+- **Testing agent validation**: 100% success rate (iteration_41)
 
-## What's Still Mocked
-- **Redis Pub/Sub**: In-memory fallback active (no REDIS_URL configured)
-- **Messaging Providers**: Sandbox/test mode (no real Twilio/SendGrid API keys)
-- **Credential Vault**: Mock implementation (no HashiCorp Vault/AWS SM)
+## Environment Variables
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `REDIS_URL` | Redis connection | (disabled) |
+| `REDIS_MODE` | standalone/sentinel/cluster | standalone |
+| `REDIS_MAX_CONNECTIONS` | Pool size | 100 |
+| `SECRETS_PROVIDER` | aws/vault/env | env |
+| `BACKUP_ENABLED` | Enable backups | false |
+| `BACKUP_RETENTION_DAYS` | Keep days | 30 |
+| `OTEL_EXPORTER_ENDPOINT` | OTel collector | (disabled) |
+| `SENTRY_DSN` | Sentry tracking | (disabled) |
+| `INSTANCE_ID` | Instance identifier | auto |
+| `SCALING_MODE` | single/multi | single |
 
-## Remaining Backlog
-- P1: Connect real Redis instance (set REDIS_URL env var)
-- P1: Configure real Twilio/SendGrid/WhatsApp credentials
-- P2: Integrate external monitoring (Prometheus/Grafana/Sentry)
-- P2: Implement real credential vault (HashiCorp Vault)
-- P3: Data pipeline scheduling integration with ml_scheduler
-- P3: WebSocket broadcast via Redis for multi-instance support
-- P4: Automated alert notification (email/SMS on critical alerts)
-
-## Credentials
-| Role | Email | Password |
-|------|-------|----------|
-| Demo Admin | demo@hotel.com | demo123 |
+## Backlog
+- **(P1)** Deploy with real Redis, configure production env vars
+- **(P1)** Set up Sentry DSN and OTEL endpoint for production monitoring
+- **(P2)** Integrate alerting with PagerDuty/Slack
+- **(P2)** Set up real backup schedule with cloud storage
+- **(P3)** Kubernetes deployment manifests (Helm charts)
+- **(P3)** Multi-region deployment support
