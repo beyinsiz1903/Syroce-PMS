@@ -63,6 +63,18 @@ Enterprise hotel operating system platformunun production ortamına güvenli dep
 - en.json ve tr.json locale dosyalarina pmsOperations bolumu eklendi
 - navItems.js'de etiket Turkceye cevrildi
 
+### Phase 6: Tum Uygulama i18n Turkce Dil Destegi (Complete — Mar 2026)
+- tr.json'da 44+ cevrilmemis Ingilizce giris tamamen Turkceye cevrildi
+- Navigasyon etiketleri (Layout.js) i18n destekli hale getirildi: t('navKeys.${item.key}')
+- navKeys bolumu her iki locale dosyasina eklendi (37 navigasyon ogesi)
+- FolioDetailView.js: Layout sarmalama + i18n + acik tema donusumu tamamlandi
+- AdminControlPanel.js: Layout sarmalama + i18n (19 sekme etiketi) tamamlandi
+- 16 teknik dashboard sayfasina useTranslation eklendi ve basliklari cevrildi
+- GuestJourneyDashboard, RevenueEngineDashboard, OperationalEventDashboard: Basliklar i18n ile cevrildi
+- adminPanel2 ve techDashboards ceviri bolumleri eklendi
+- folio bolumune 50+ yeni ceviri anahtari eklendi
+- Testing Agent: %100 basari orani ile dogrulandi
+
 ## Key API Endpoints (Production Go-Live)
 - `GET /api/production-golive/summary` — Full dashboard data
 - `GET /api/production-golive/deployment/risk-assessment` — Safety/risk scores
