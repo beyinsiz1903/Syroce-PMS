@@ -1,21 +1,28 @@
 # ROADMAP
 
-## P0 — Domain Service Wiring
-- [ ] Extract business logic from router files into service layer
-- [ ] Create: RoomService, ReservationService, FolioService, HousekeepingService
-- [ ] Create: InventorySyncService, ReservationImportService, PricingService, MessagingService
-- [ ] Establish router → service → repository pattern
-- [ ] Ensure FastAPI dependency does not leak into service layer
+## P0 — Remaining Service Wiring
+- [ ] Extract business logic from frontdesk_router.py to FrontDeskService
+- [ ] Extract business logic from night_audit_router.py to NightAuditService
+- [ ] Extract business logic from pricing_router.py to PricingService
+- [ ] Extract business logic from mobile_router.py to MobileService
+- [ ] Create MessagingService from guest/messaging/router.py
+- [ ] Establish router → service → repository pattern for remaining routers
 
-## P1 — Schema Organization
-- [ ] Create `backend/schemas/` directory with domain-organized files
-- [ ] Extract inline Pydantic models from domain routers to schemas
-- [ ] Establish clear schema ownership per domain
+## P1 — Schema Completion
+- [ ] Extract remaining inline models from pos_fnb_router.py, rms_router.py
+- [ ] Create shared schemas for cross-domain models (pagination, audit context)
+- [ ] Add response model type annotations to all endpoints
+
+## P1 — Frontend Role-Based Views
+- [ ] GM: property-level summary in SystemHealthDashboard
+- [ ] Admin: tenant/property scoped operational summary
+- [ ] Superadmin: cross-property/global summary
+- [ ] Live refresh support (polling/WebSocket)
 
 ## P2 — Frontend Stabilization
 - [ ] Audit frontend dependencies
 - [ ] Implement route-based code splitting
-- [ ] Frontend rendering of new hardening status dashboards
+- [ ] Error boundary components for runtime panels
 
 ## P3 — Operational Reliability Tests
 - [ ] Runtime stress tests: OTA reservation burst
