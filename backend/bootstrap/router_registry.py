@@ -109,6 +109,8 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("ops.pilot_router", "router", ["Pilot Readiness"], None, None),
     # Phase 6 — Runtime Validation & Go-Live
     ("ops.validation_router", "router", ["Runtime Validation & Go-Live"], None, None),
+    # Phase 7 — Production Rollout & Pilot Readiness
+    ("ops.production_rollout_router", "router", ["Production Rollout"], None, None),
 ]
 
 # Optional routers with special import paths
