@@ -1,71 +1,89 @@
-# Syroce PMS - Product Requirements Document
+# Syroce PMS - Cloud PMS + Channel Manager + Operational Platform
 
 ## Original Problem Statement
-Enterprise-grade cloud PMS (Property Management System) for hospitality operations. Multi-tenant, AI-powered hotel management platform built with React + FastAPI + MongoDB.
-
-## Core Requirements
-- Full PMS lifecycle: reservations, front desk, billing, housekeeping, night audit
-- Multi-property management
-- Channel manager integration
-- Role-based access control (RBAC)
-- Comprehensive audit trails
-- Real-time operational dashboard
-
----
-
-## What's Been Implemented
-
-### Phase 1: PMS Core Hardening (Completed)
-1. Reservation State Machine - Robust state transitions, duplicate protection, availability recalculation
-2. Front Desk Workflow - Check-in/out, room moves, walk-ins, payment/folio dependencies
-3. Folio/Billing Core - Charge/payment posting, refunds, split folios, tax calculations, transaction auditing
-4. Housekeeping State Machine - Room status model (Clean, Dirty, Inspected, OOO/OOS)
-5. Night Audit Engine - Business date roll, charge posting, exception handling
-6. Role/Permission RBAC - Front Desk, Housekeeping, Finance permissions with supervisor overrides
-7. PMS Operational Dashboard - KPI cards, room status, arrivals/departures
-8. Tests: 53 unit tests + 25 API tests (100% pass)
-
-### Phase 2: Operational Enhancement (Completed - March 2026)
-1. **Folio Detail View** - Timeline with running balance, charge/payment/refund/void lines, tax breakdown per line, split folio visibility, city ledger transfer history, invoice association, audit trail, supervisor override & void reason visibility
-2. **Dashboard Trend Graphs + Date Range Filters** - 7 trend graphs (arrivals, departures, occupancy, HK readiness, folio issues, audit exceptions, blocked check-ins) with date range filters (today/7d/30d/custom)
-3. **Multi-Property Night Audit Coordination** - Property-based audit status board, completed/running/blocked/failed states, exception summary, unresolved blocker list, escalation flow, readiness score
-4. **Auto Housekeeping Task Assignment** - Post-checkout auto task creation, VIP/early check-in priority, maintenance conflict check, floor attendant workload balancing, room readiness ETA, suggestion engine, manual override with reason
-5. **Tests**: 26 unit tests + 22 API tests (100% pass)
-
----
+Enterprise-grade Hotel Operating System. Cloud PMS + Channel Manager + Operational Platform with full-stack implementation. Turkish language interface required for all communications.
 
 ## Architecture
+- **Backend**: FastAPI + MongoDB (Motor async driver)
+- **Frontend**: React + TailwindCSS + shadcn/ui + Recharts
+- **Auth**: JWT-based with RBAC permission model
+- **DB**: MongoDB via MONGO_URL env variable
 
-### Backend Services (modules/pms_core/)
-- `reservation_state_machine.py` - Reservation lifecycle
-- `front_desk_service.py` - Front desk operations
-- `folio_hardening_service.py` - Billing/folio operations
-- `housekeeping_state_service.py` - Housekeeping state management
-- `night_audit_engine.py` - Night audit process
-- `role_permission_service.py` - RBAC
-- `pms_dashboard_service.py` - Dashboard data
-- `folio_detail_service.py` - Folio detail view (Phase 2)
-- `dashboard_trends_service.py` - Trend graphs data (Phase 2)
-- `multi_property_audit_service.py` - Multi-property audit (Phase 2)
-- `auto_housekeeping_service.py` - Auto HK assignment (Phase 2)
+## Core Modules Implemented
 
-### API Router
-- `routers/pms_hardening.py` - All PMS endpoints under /api/pms-core/
+### PMS CORE (Phase 1 + Phase 2)
+- Reservation state machine
+- Front desk workflow
+- Folio / billing engine + Folio detail view
+- Housekeeping state machine + Auto assignment
+- Night audit engine + Multi-property coordination
+- RBAC permission model
+- PMS operations dashboard + Trend graphs & date filters
 
-### Frontend Pages
-- `PMSOperationalDashboard.js` - Main dashboard with 6 tabs
-- `FolioDetailView.js` - Folio detail page
+### CHANNEL MANAGER
+- Connector-first architecture
+- Inventory delta sync engine
+- Reservation import engine
+- Provider contract hardening
+- Mapping readiness validation
+- Rate push tracking
 
----
+### OPERATIONAL MATURITY
+- Historical metrics storage
+- Alerting engine
+- Reliability monitoring
+- Connector health dashboard
+- Production readiness checklist
+- Background scheduler worker
+- Audit trail
 
-## Prioritized Backlog
+### ENTERPRISE MODULES (NEW - March 2026)
 
-### P1 - Next
-- UI/UX Polish: Interactive charts, advanced filtering
-- Revenue Management: Rate optimization, yield management
+#### 1. Revenue Management Engine
+- **Demand Analysis**: Booking pace, pickup trends, occupancy forecast, lead time analysis
+- **Rate Optimization**: Ideal ADR calculation, occupancy-based pricing, rate elasticity
+- **Yield Rules**: Min stay, stop sell, CTA/CTD recommendations
+- **Channel Strategy**: OTA rate parity, channel mix, direct booking incentives
+- **Automation**: Rate override application with audit trail
+- **Dashboard**: ADR/RevPAR trends, daily revenue charts, opportunity panel
+- **API**: /api/revenue-engine/* (10 endpoints)
 
-### P2 - Future
-- Expand Audit Trails: More granular action logging
-- Guest Communication: Email/SMS integration
-- Mobile front desk workflow
-- Advanced reporting and analytics
+#### 2. Real-Time Operational Event System
+- **Event Bus**: 12 event types with priority-based routing
+- **Live Feed**: Real-time activity stream with filtering
+- **Notifications**: Role-targeted alerts (VIP, HK overdue, audit exceptions)
+- **Front Desk Queue**: Pending arrivals/departures live view
+- **Housekeeping Board**: Room status summary + overdue alerts
+- **Statistics**: Event type/priority distribution analytics
+- **API**: /api/event-system/* (9 endpoints)
+
+#### 3. Guest Journey Layer
+- **Pre-Arrival**: Online check-in, arrival time, room preferences
+- **Stay Management**: Guest requests (HK, maintenance, concierge, room service)
+- **Messaging**: Email/SMS/WhatsApp/in-app templates with auto-triggers
+- **Review Capture**: Post-checkout review requests + reputation tracking
+- **Guest Dashboard**: Satisfaction signals, resolution times, request queue
+- **API**: /api/guest-journey/* (13 endpoints)
+
+## Testing Coverage
+- **100+ backend tests** across all modules
+- **27 API tests** for enterprise modules (all passing)
+- **Frontend playwright tests** for all 3 new dashboards
+- **Test file**: /app/backend/tests/test_enterprise_modules.py
+
+## Credentials
+| User | Email | Password |
+|---|---|---|
+| Demo Admin | demo@hotel.com | demo123 |
+
+## Key File References
+- Backend Services: /app/backend/modules/revenue_management/, event_system/, guest_journey/
+- API Routers: /app/backend/routers/revenue_management.py, event_system.py, guest_journey.py
+- Frontend Pages: /app/frontend/src/pages/RevenueEngineDashboard.js, OperationalEventDashboard.js, GuestJourneyDashboard.js
+- Test Reports: /app/test_reports/iteration_34.json
+
+## Backlog (P1-P3)
+- P1: WebSocket real-time push for event system
+- P2: Multi-property expansion beyond night audit
+- P3: Advanced housekeeping with staff skills/zones
+- P3: Revenue engine ML-based forecasting
