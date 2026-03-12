@@ -41255,6 +41255,16 @@ except Exception as e:
     print(f"Guest Journey router not available: {e}")
     import traceback; traceback.print_exc()
 
+# Platform Scaling Enterprise Modules Router
+try:
+    from routers.platform_scaling import router as platform_scaling_router
+    app.include_router(platform_scaling_router, tags=["platform-scaling"])
+    print("Platform Scaling router included")
+except Exception as e:
+    print(f"Platform Scaling router not available: {e}")
+    import traceback; traceback.print_exc()
+
+
 
 
 # ============================================================================

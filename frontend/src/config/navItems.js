@@ -76,6 +76,14 @@ export const NAV_ITEMS = [
     group: "professional",
   },
   {
+    key: "platform_scaling",
+    label: "Platform Scaling",
+    path: "/platform-scaling",
+    moduleKey: "pms",
+    tier: "enterprise",
+    group: "enterprise",
+  },
+  {
     key: "reports_basic",
     label: "Raporlar",
     path: "/app/raporlar",
