@@ -1,163 +1,155 @@
-# Hotel Operating System - Enterprise SaaS Platform PRD
+# Hotel Operating System - PRD
 
 ## Original Problem Statement
-Build an enterprise-grade hotel operating system (PMS) as a true SaaS platform with modular architecture supporting multi-property management, real-time operations, revenue intelligence, and third-party integrations.
+Enterprise-grade Hotel Operating System - transition from system of record to data-driven automated decision support system. The platform covers PMS Core, Channel/Distribution, Operations, Intelligence, Guest Experience, and Platform Scale.
 
-## User Persona
-- **Primary**: Principal Hospitality Software Architect overseeing enterprise hotel operations
-- **Language**: Turkish
-- **Auth**: demo@hotel.com / demo123
-
----
+## Core Architecture
+- **Backend**: FastAPI + MongoDB (motor async) + Python 3.11
+- **Frontend**: React + Shadcn/UI + Tailwind CSS
+- **Auth**: JWT-based, RBAC, tenant isolation
+- **Language**: Turkish UI
 
 ## Implemented Modules
 
-### PHASE 1 - PMS Core (DONE)
-- Reservation state machine, front desk workflow, folio/billing
-- Housekeeping, night audit, RBAC, PMS dashboard
+### Phase 1-4 (Previous)
+- PMS Core (reservations, front desk, folio/billing, housekeeping, night audit, RBAC)
+- Channel/Distribution (connector-first, inventory sync, reservation import, rate push)
+- Operations (real-time events, alerting, reliability monitoring, scheduler, audit trail)
+- Intelligence (revenue management, revenue ML pipeline, competitive set, operational AI, guest intelligence)
+- Guest Experience (journey layer, online check-in, requests, messaging gateway, review capture)
+- Platform Scale (multi-property, central revenue, global alerts, cross-module orchestration)
 
-### PHASE 2 - Channel Distribution (DONE)
-- Connector-first architecture, inventory sync, reservation import
-- Provider contract hardening, mapping readiness, rate push tracking
+### Phase 5: Data Intelligence (Previous Fork)
+- Revenue ML Pipeline (mock data)
+- Operational AI (mock data)
+- Guest Intelligence (mock data)
+- DataIntelligenceDashboard (3-tab UI)
 
-### PHASE 3 - Operations (DONE)
-- Real-time event architecture, alerting engine, reliability monitoring
-- Connector health dashboard, readiness checklist, scheduler worker, audit trail
+### Phase 6: Platform Intelligence & Automation (Current Fork - March 12, 2026)
 
-### PHASE 4 - Intelligence (DONE)
-- Revenue management engine, Revenue ML, comp set analysis
+#### 6A. Real Messaging Activation
+- **Module**: `/backend/modules/messaging/` (providers.py, service.py, models.py)
+- **Router**: `/backend/routers/messaging.py` (prefix: `/api/messaging-center`)
+- **Frontend**: `/frontend/src/pages/MessagingDashboard.js`
+- Twilio SMS, SendGrid Email, WhatsApp provider implementations (real HTTP clients)
+- Tenant-specific provider credentials
+- Template-based sending with variable rendering
+- Delivery status tracking with retry support
+- Consent/opt-in enforcement
+- Rate limiting per provider
+- Provider health monitoring
+- Fallback strategy (WhatsApp → SMS → Email)
+- Message audit trail + delivery metrics
 
-### PHASE 5 - Guest Experience (DONE)
-- Guest journey layer, online check-in, guest requests, review capture
+#### 6B. ML Model Scheduled Execution
+- **Module**: `/backend/modules/ml_scheduler/service.py`
+- **Router**: `/backend/routers/ml_scheduler.py` (prefix: `/api/data-intelligence/schedules`)
+- **Frontend**: `/frontend/src/pages/MLSchedulerDashboard.js`
+- Cron-based execution scheduling per model type
+- Revenue ML: 6h, Operational AI: 1h, Guest Intelligence: 24h
+- Duplicate run prevention
+- Execution status lifecycle (pending → running → completed/failed)
+- Failure retry with backoff
+- Stale model output detection
+- Model version tracking + snapshot retention
+- Alert integration for failed/low-confidence runs
 
-### PHASE 6 - Platform Scale (DONE)
-- Multi-property platform, central revenue management, global alerts
+#### 6C. Revenue Autopilot Mode
+- **Module**: `/backend/modules/revenue_autopilot/service.py`
+- **Router**: `/backend/routers/revenue_autopilot_v2.py` (prefix: `/api/revenue-autopilot`)
+- **Frontend**: `/frontend/src/pages/RevenueAutopilotDashboard.js`
+- Three modes: Full Auto, Supervised, Advisory
+- Confidence threshold rules (auto-apply ≥85%, queue ≥50%)
+- Max price change percentage limits
+- Blackout date and protected room type handling
+- Approval queue with approve/reject/rollback
+- Channel push confirmation tracking
+- Daily autopilot summary
+- Human override logging + complete audit trail
 
-### PHASE 7 - Enterprise Live Operations (DONE - 2026-03-12)
-- Real WebSocket Push, Messaging Gateway, Auto-Pricing Workflow, Cross-Module Bus
+#### 6D. WebSocket/PubSub Event Broadcast
+- **Module**: `/backend/modules/event_broadcast/service.py`
+- **Router**: `/backend/routers/websocket_health.py` (prefix: `/api/websocket`)
+- Tenant-aware channel routing
+- Role-based event filtering (admin=all, front_desk, housekeeping, etc.)
+- Session presence tracking
+- Missed event replay support
+- Event throughput monitoring
 
-### PHASE 8 - Data-Driven Intelligence (DONE - 2026-03-12)
+#### 6E. Advanced Reporting & Analytics Export
+- **Module**: `/backend/modules/analytics_export/service.py`
+- **Router**: `/backend/routers/analytics_export.py` (prefix: `/api/reports/export`)
+- **Frontend**: `/frontend/src/pages/AnalyticsExportDashboard.js`
+- 8 report types: revenue ML, operational AI, guest intelligence, messaging, autopilot, audit, property comparison, management summary
+- CSV and JSON export formats
+- Date range and property filters
+- Export job history
 
-#### 8.1 Revenue ML Pipeline
-- Full ML pipeline: demand forecast → rate elasticity → booking probability → cancellation prediction → ADR recommendation
-- Confidence scoring (0.1-0.95 range) with high/medium/low bands
-- Human override threshold at 0.60 (below requires manual approval)
-- Explainability: demand_signal, pace_signal, cancellation_risk, price_sensitivity, recommendation_reason
-- Auto-apply eligibility based on confidence + change percentage
-- Integration with existing revenue_autopricing workflow
-- Pipeline execution with persistent snapshots in revenue_ml_snapshots
-- Model execution logging in model_execution_logs
-- Files: `modules/data_intelligence/revenue_ml_pipeline.py`
+#### 6F. Cross-Module Enrichment
+- **Module**: `/backend/modules/cross_enrichment/service.py`
+- Revenue apply → rate push tracking
+- Revenue failure → operations alert
+- Guest churn → messaging campaign
+- VIP arrival → room readiness priority
+- Sentiment drop → service recovery alert
+- Operational density → staffing recommendation
+- Messaging failure → fallback tracking
+- Stale snapshot → admin warning
+- Multi-property summary → autopilot + AI health
 
-#### 8.2 Operational AI
-- Check-in load prediction (hourly forecast, peak hour, arrival pressure score)
-- Housekeeping workload prediction (departures, stayovers, arrivals, total hours)
-- Room readiness ETA prediction (per-room ETA with priority for arrival rooms)
-- Maintenance failure risk scoring (frequency, recency, priority escalation factors)
-- Staffing recommendations (front desk + housekeeping, combined pressure score)
-- Workload heatmap (floor-based HK, hourly check-in distribution)
-- Persistent snapshots in operational_ai_snapshots
-- Files: `modules/data_intelligence/operational_ai.py`
+## Data Models (MongoDB Collections)
+- `messaging_provider_configs` - Provider credentials and health
+- `messaging_delivery_logs` - Delivery tracking
+- `messaging_templates` - Message templates
+- `messaging_consents` - Opt-in/out tracking
+- `ml_schedule_policies` - Scheduler configuration
+- `ml_execution_jobs` - Execution history
+- `ml_snapshots` - Model output snapshots
+- `revenue_autopilot_policies` - Autopilot configuration
+- `revenue_approval_queue` - Price change approvals
+- `revenue_apply_results` - Applied price changes
+- `analytics_export_jobs` - Export job tracking
+- `event_broadcast_log` - Event history
+- `system_alerts` - Cross-module alerts
+- `cross_enrichment_log` - Enrichment event tracking
+- `rate_push_tracking` - Channel rate push tracking
+- `messaging_campaign_candidates` - Campaign targets
+- `room_readiness_priority` - VIP room priority
 
-#### 8.3 Guest Intelligence
-- Guest lifetime value (revenue, ancillary, frequency, projected annual, value score 0-100)
-- Guest segmentation (6 types: loyal_high_value, business_regular, leisure_regular, high_spender, first_timer, occasional)
-- Churn prediction (recency, cancellation ratio, declining frequency, complaints)
-- Upsell recommendations (room upgrade, F&B, spa, late checkout, early checkin)
-- Value distribution (platinum/gold/silver/bronze tiers)
-- Explainability: stay_frequency, average_spend, recent_sentiment, request_volume, cancellation_history
-- Persistent snapshots in guest_intelligence_snapshots
-- Files: `modules/data_intelligence/guest_intelligence.py`
-
-#### 8.4 Data Intelligence Dashboard (Frontend)
-- 3-tab layout: Revenue Intelligence, Operational AI, Guest Intelligence
-- Revenue: forecast chart, summary cards, pipeline runner, recommendation cards with explainability
-- Operational: check-in hourly chart, HK workload breakdown, staffing recommendations, maintenance risk table
-- Guest: value distribution, segment breakdown, churn risk table, upsell opportunities
-- Files: `frontend/src/pages/DataIntelligenceDashboard.js`
-
----
-
-## Architecture
-
-```
-/app
-├── backend/
-│   ├── modules/
-│   │   ├── data_intelligence/               # (PHASE 8 - NEW)
-│   │   │   ├── revenue_ml_pipeline.py       # ML → Auto-pricing orchestration
-│   │   │   ├── operational_ai.py            # Operational prediction models
-│   │   │   └── guest_intelligence.py        # Guest analytics models
-│   │   └── platform_scaling/
-│   │       ├── websocket_hub.py
-│   │       ├── messaging_gateway.py
-│   │       ├── revenue_autopricing.py
-│   │       ├── cross_module_bus.py
-│   │       ├── revenue_ml.py               # Base ML models (Phase 4)
-│   │       └── ...
-│   ├── routers/
-│   │   ├── data_intelligence.py             # (PHASE 8 - NEW, 15 endpoints)
-│   │   ├── enterprise_live.py
-│   │   └── platform_scaling.py
-│   ├── tests/
-│   │   ├── test_data_intelligence.py        # (PHASE 8 - NEW, 25 tests)
-│   │   └── test_enterprise_features.py
-│   └── server.py
-├── frontend/src/
-│   ├── pages/
-│   │   ├── DataIntelligenceDashboard.js     # (PHASE 8 - NEW)
-│   │   ├── EnterpriseLiveDashboard.js
-│   │   └── PlatformScalingDashboard.js
-│   ├── config/navItems.js
-│   └── App.js
-└── memory/PRD.md
-```
+## Testing
+- `/backend/tests/test_platform_v2.py` - 33 tests (100% pass)
+- `/backend/tests/test_data_intelligence.py` - 25 tests (previous)
+- E2E testing via testing_agent (iteration_38.json - 100% success)
 
 ## API Endpoints
 
-### Data Intelligence APIs (Phase 8)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/data-intelligence/revenue/run-pipeline` | Execute full ML pipeline |
-| GET | `/api/data-intelligence/revenue/forecast-dashboard` | Revenue forecast dashboard |
-| GET | `/api/data-intelligence/revenue/recommendations` | ML pricing recommendations |
-| GET | `/api/data-intelligence/operations/dashboard` | Operational AI dashboard |
-| GET | `/api/data-intelligence/operations/staffing` | Staffing recommendations |
-| GET | `/api/data-intelligence/operations/workload-heatmap` | Workload heatmap |
-| GET | `/api/data-intelligence/operations/room-readiness` | Room readiness ETA |
-| GET | `/api/data-intelligence/operations/maintenance-risk` | Maintenance failure risk |
-| GET | `/api/data-intelligence/guests/dashboard` | Guest intelligence dashboard |
-| GET | `/api/data-intelligence/guests/{id}/summary` | Single guest intelligence |
-| GET | `/api/data-intelligence/guests/{id}/churn-risk` | Guest churn prediction |
-| GET | `/api/data-intelligence/guests/{id}/upsell` | Guest upsell recommendations |
-| GET | `/api/data-intelligence/guests/segments` | Segment distribution |
-| GET | `/api/data-intelligence/guests/churn-summary` | Churn risk summary |
-| GET | `/api/data-intelligence/guests/upsell-opportunities` | Upsell opportunities |
+### Messaging Center (/api/messaging-center)
+- GET/POST /providers, PUT /providers/{id}, POST /providers/health-check
+- GET/POST /templates, PUT /templates/{id}
+- POST /send, POST /retry/{id}
+- GET /delivery-logs, GET /metrics, POST /consent
 
-## Data Collections (Phase 8)
-- `revenue_ml_snapshots` - Pipeline execution results
-- `operational_ai_snapshots` - Operational AI predictions
-- `guest_intelligence_snapshots` - Guest analytics results
-- `model_execution_logs` - Model run audit logs
+### ML Scheduler (/api/data-intelligence/schedules)
+- GET /dashboard, GET /policies, PUT /policies/{model_type}
+- POST /trigger, GET /history, GET /stale
 
-## Testing
-- Backend: 25 pytest tests (100% pass) at `tests/test_data_intelligence.py`
-- E2E: Testing agent validation (100% backend + frontend) - iteration_37
-- Test reports: `/app/test_reports/iteration_37.json`
+### Revenue Autopilot (/api/revenue-autopilot)
+- GET /dashboard, GET/PUT /policy
+- GET /queue, POST /process
+- POST /queue/{id}/approve, POST /queue/{id}/reject, POST /queue/{id}/rollback
+- GET /summary
 
-## Mocked Components
-- Twilio SMS provider (mock mode)
-- SendGrid Email provider (mock mode)
-- WhatsApp provider (mock mode)
+### WebSocket Health (/api/websocket)
+- GET /health, POST /sessions/register, DELETE /sessions/{id}
+- POST /publish, GET /replay
 
-## Upcoming Tasks (P1)
-- Activate live Twilio/SendGrid/WhatsApp with real API keys
-- Training pipelines for ML models with scheduled execution
-- Real-time WebSocket push for data intelligence events
+### Analytics Export (/api/reports/export)
+- GET /available, POST /generate, POST /download, GET /history
 
-## Backlog (P2-P3)
-- Redis Pub/Sub for WebSocket scaling
-- Granular user permissions for multi-property
-- Advanced reporting and analytics
-- Mobile app for staff notifications
-- Production monitoring and alerting
+## Backlog (P1-P3)
+- P1: Replace mock ML models with real data pipelines
+- P1: Real Redis Pub/Sub integration (currently in-memory)
+- P2: Scheduled report generation (cron-based)
+- P2: PDF export format
+- P3: Multi-property comparison analytics
+- P3: Real-time WebSocket push to frontend
