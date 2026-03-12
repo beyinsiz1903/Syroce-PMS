@@ -57,6 +57,14 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("domains.guest.router", "router", ["guest-profile-domain"], None, None),
     ("domains.guest.checkin_router", "router", ["checkin-domain"], None, None),
     ("domains.sales.router", "router", ["sales-crm-domain"], None, None),
+    ("domains.pms.pos_router", "router", ["pos-fnb-domain"], None, None),
+    ("domains.pms.mobile_router", "router", ["mobile-domain"], None, None),
+    ("domains.revenue.analytics_router", "router", ["analytics-domain"], None, None),
+    ("domains.pms.enterprise_router", "router", ["enterprise-features"], None, None),
+    ("domains.pms.marketplace_router", "router", ["pos-marketplace"], None, None),
+    ("domains.revenue.rms_router", "router", ["rms-revenue"], None, None),
+    ("domains.guest.experience_router", "router", ["guest-experience"], None, None),
+    ("domains.hr.router", "router", ["hr-operations"], None, None),
 ]
 
 # Optional routers with special import paths
