@@ -133,8 +133,20 @@ try:
 except Exception:
     pass
 
-# ── Legacy routes (all inline endpoints on api_router) ──────────────
-from legacy_routes import api_router  # noqa: E402
+# ── Legacy routes (shared api_router for backward compatibility) ─────
+from fastapi import APIRouter
+api_router = APIRouter(prefix="/api")
+
+# AI endpoints (was previously mounted via legacy_routes.py)
+try:
+    from ai_endpoints import api_router as ai_ai_router
+    api_router.include_router(ai_ai_router, tags=["AI Intelligence"])
+    logger.info("  ✅ AI Intelligence endpoints loaded")
+except Exception:
+    pass
+
+# Mount the main API router
+app.include_router(api_router)
 
 # ── Health check router ─────────────────────────────────────────────
 try:
@@ -142,9 +154,6 @@ try:
     app.include_router(health_router)
 except ImportError:
     pass
-
-# Mount the main API router (all legacy endpoints)
-app.include_router(api_router)
 
 # ── External routers (via bootstrap registry) ───────────────────────
 from bootstrap.router_registry import register_routers  # noqa: E402
@@ -230,10 +239,9 @@ async def _shutdown():
 
 # ── Backward-compatibility re-exports ───────────────────────────────
 # Many external modules do `from server import db, get_current_user, ...`
-# These re-exports keep them working until Phase B migrates them.
 cm_push_event = None
 try:
-    from legacy_routes import cm_push_event  # noqa: F811
+    from domains.channel_manager.router import cm_push_event  # noqa: F811
 except ImportError:
     async def cm_push_event(event):
         pass

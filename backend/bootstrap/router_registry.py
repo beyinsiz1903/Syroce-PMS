@@ -84,6 +84,11 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("domains.pms.calendar_router", "router", ["PMS / Calendar"], None, None),
     ("domains.pms.approvals_router", "router", ["PMS / Approvals"], None, None),
     ("domains.pms.misc_router", "router", ["PMS / Operations"], None, None),
+    # Phase C/D/E — Hardening routers
+    ("domains.channel_manager.hardening_router", "router", ["Channel Manager / Hardening"], None, None),
+    ("workers.hardening_router", "router", ["Workers / Hardening"], None, None),
+    ("security.hardening_router", "router", ["Security / Hardening"], None, None),
+    ("modules.observability.hardening_router", "router", ["Observability / Runtime"], None, None),
 ]
 
 # Optional routers with special import paths

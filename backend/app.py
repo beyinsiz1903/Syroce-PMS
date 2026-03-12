@@ -59,6 +59,10 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
             {"name": "Channel Manager / Operations", "description": "OTA baglantilari, oda eslestirme, envanter senkronizasyonu"},
             {"name": "Sales / CRM", "description": "Satis, kurumsal musteri, lead yonetimi"},
             {"name": "Admin / Operations", "description": "Tenant yonetimi, abonelik, RBAC, sistem ayarlari"},
+            {"name": "Channel Manager / Hardening", "description": "CM runtime status, drift detection, reconciliation, provider health"},
+            {"name": "Workers / Hardening", "description": "Queue health, stuck tasks, failure archive, retry summary"},
+            {"name": "Security / Hardening", "description": "Audit status, rate limiting, credential check, tenant guard"},
+            {"name": "Observability / Runtime", "description": "Runtime metrics, alerts, system health aggregation"},
         ],
     )
 

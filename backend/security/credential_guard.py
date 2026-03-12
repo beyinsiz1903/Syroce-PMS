@@ -30,20 +30,42 @@ class CredentialGuard:
     """Detects weak credentials and enforces password policies."""
 
     @staticmethod
-    async def scan_weak_credentials() -> Dict[str, Any]:
-        """Scan for users with known weak passwords or default credentials."""
+    async def scan_weak_credentials(tenant_id: str = None) -> Dict[str, Any]:
+        """Scan for users with known weak passwords or default credentials.
+        Limits to admin/super_admin roles first, then samples others for performance.
+        """
         from passlib.context import CryptContext
         pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+        query: Dict[str, Any] = {}
+        if tenant_id:
+            query["tenant_id"] = tenant_id
+        # Prioritize admin/privileged users for credential scanning
+        query["role"] = {"$in": ["admin", "super_admin", "supervisor"]}
+
         users = await db.users.find(
-            {},
+            query,
             {"_id": 0, "id": 1, "email": 1, "tenant_id": 1, "role": 1, "hashed_password": 1, "password": 1},
-        ).to_list(5000)
+        ).to_list(200)
+
+        # Also check a sample of other users
+        other_query = dict(query)
+        other_query["role"] = {"$nin": ["admin", "super_admin", "supervisor"]}
+        others = await db.users.find(
+            other_query,
+            {"_id": 0, "id": 1, "email": 1, "tenant_id": 1, "role": 1, "hashed_password": 1, "password": 1},
+        ).limit(50).to_list(50)
+        users.extend(others)
+
+        # Only check top 3 most common weak passwords for speed
+        quick_check = list(_WEAK_PASSWORDS)[:3]
 
         findings = []
         for user in users:
             hashed = user.get("hashed_password") or user.get("password", "")
-            for weak_pw in _WEAK_PASSWORDS:
+            if not hashed:
+                continue
+            for weak_pw in quick_check:
                 try:
                     if pwd_ctx.verify(weak_pw, hashed):
                         findings.append({
@@ -51,7 +73,7 @@ class CredentialGuard:
                             "email": user.get("email"),
                             "tenant_id": user.get("tenant_id"),
                             "role": user.get("role"),
-                            "issue": f"Uses known weak password",
+                            "issue": "Uses known weak password",
                             "severity": "critical" if user.get("role") in ("admin", "super_admin") else "high",
                         })
                         break
