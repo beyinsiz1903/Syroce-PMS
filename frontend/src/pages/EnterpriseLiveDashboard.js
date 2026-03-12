@@ -513,7 +513,7 @@ function CrossModulePanel() {
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-white truncate">{meta.label}</p>
                     <p className="text-xs text-slate-500 truncate">
-                      {isOk ? Object.entries(val).filter(([k]) => k !== "status").map(([k, v]) => `${k}: ${v}`).join(" | ") : val?.error || "Hata"}
+                      {isOk ? Object.entries(val).filter(([k]) => k !== "status").map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v).slice(0, 30) : v}`).join(" | ") : val?.error || "Hata"}
                     </p>
                   </div>
                   <StatusBadge status={isOk ? "active" : "failed"} />

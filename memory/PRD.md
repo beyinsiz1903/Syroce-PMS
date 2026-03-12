@@ -1,124 +1,160 @@
-# Syroce PMS - Cloud PMS + Channel Manager + Operational Platform
+# Hotel Operating System - Enterprise SaaS Platform PRD
 
 ## Original Problem Statement
-Enterprise-grade Hotel Operating System. Cloud PMS + Channel Manager + Operational Platform with full-stack implementation. Turkish language interface required for all communications.
+Build an enterprise-grade hotel operating system (PMS) as a true SaaS platform with modular architecture supporting multi-property management, real-time operations, revenue intelligence, and third-party integrations.
+
+## User Persona
+- **Primary**: Principal Hospitality Software Architect overseeing enterprise hotel operations
+- **Language**: Turkish
+- **Auth**: demo@hotel.com / demo123
+
+---
+
+## Implemented Modules
+
+### PHASE 1 - PMS Core (DONE)
+- Reservation state machine, front desk workflow, folio/billing
+- Housekeeping, night audit, RBAC, PMS dashboard
+
+### PHASE 2 - Channel Distribution (DONE)
+- Connector-first architecture, inventory sync, reservation import
+- Provider contract hardening, mapping readiness, rate push tracking
+
+### PHASE 3 - Operations (DONE)
+- Real-time event architecture, alerting engine, reliability monitoring
+- Connector health dashboard, readiness checklist, scheduler worker, audit trail
+
+### PHASE 4 - Intelligence (DONE)
+- Revenue management engine, Revenue ML, comp set analysis
+
+### PHASE 5 - Guest Experience (DONE)
+- Guest journey layer, online check-in, guest requests, review capture
+
+### PHASE 6 - Platform Scale (DONE)
+- Multi-property platform, central revenue management, global alerts
+
+### PHASE 7 - Enterprise Live Operations (DONE - 2026-03-12)
+#### 7.1 Real WebSocket Push Connections
+- Authenticated WebSocket sessions with JWT validation
+- Tenant-aware channel subscription and role-based event filtering
+- Heartbeat/keepalive mechanism (30s interval)
+- Event replay buffer for missed messages on reconnect
+- Live front desk queue, housekeeping board, audit exception feed
+- VIP arrival alerts, overbooking risk detection
+- Files: `websocket_hub.py`, router at `/api/enterprise/ws/*`
+
+#### 7.2 Third-Party Messaging Gateway
+- Provider abstraction: Twilio (SMS), SendGrid (Email), WhatsApp
+- All providers in MOCK mode (activate with API keys)
+- Template-based messaging with variable rendering
+- Delivery tracking with full lifecycle (pending → delivered/failed)
+- Failed delivery retry with exponential backoff (3 retries)
+- Consent/opt-in model per guest per channel
+- Per-tenant per-channel rate limiting (60/min, 500/hr)
+- Provider health monitoring
+- Messaging analytics (delivery rates by channel)
+- Files: `messaging_gateway.py`, router at `/api/enterprise/messaging/*`
+
+#### 7.3 Revenue Auto-Pricing Workflow
+- Recommendation creation (manual or ML-sourced)
+- Approval workflow: approve → apply → push to channels
+- Rejection workflow with reason tracking
+- Full rollback support (restores original room prices)
+- Protected dates / blackout rules (no auto-pricing)
+- Automation policy: full_auto / supervised / manual
+- Max auto-change percentage thresholds
+- Channel push status tracking
+- Pricing audit trail for all actions
+- Files: `revenue_autopricing.py`, router at `/api/enterprise/autopricing/*`
+
+#### 7.4 Cross-Module Deep Integration Bus
+10 operational intelligence pathways:
+1. Cancellation prediction → overbooking strategy
+2. Booking probability → revenue recommendation confidence
+3. Comp set price gap → ADR recommendation
+4. Guest request volume → housekeeping priority
+5. VIP arrival → room readiness priority
+6. Night audit exception → escalation queue
+7. Failed messaging → guest journey fallback
+8. Sync failure → operations alert
+9. Revenue auto-apply result → dashboard metrics
+10. Reservation risk signals → front desk warning badges
+- Files: `cross_module_bus.py`, router at `/api/enterprise/integration/*`
+
+---
 
 ## Architecture
-- **Backend**: FastAPI + MongoDB (Motor async driver)
-- **Frontend**: React + TailwindCSS + shadcn/ui + Recharts
-- **Auth**: JWT-based with RBAC permission model
-- **DB**: MongoDB via MONGO_URL env variable
 
-## Core Modules Implemented
+```
+/app
+├── backend/
+│   ├── modules/platform_scaling/
+│   │   ├── websocket_hub.py          # WebSocket connection manager
+│   │   ├── messaging_gateway.py       # Twilio/SendGrid/WhatsApp abstraction
+│   │   ├── revenue_autopricing.py     # Auto-pricing workflow
+│   │   ├── cross_module_bus.py        # Cross-module integration bus
+│   │   ├── event_architecture.py      # Event architecture (Phase 6)
+│   │   ├── multi_property_platform.py # Multi-property (Phase 6)
+│   │   ├── revenue_ml.py             # Revenue ML (Phase 6)
+│   │   └── competitive_analysis.py    # Comp set analysis (Phase 6)
+│   ├── routers/
+│   │   ├── enterprise_live.py         # Enterprise Live router
+│   │   └── platform_scaling.py        # Platform Scaling router
+│   ├── tests/
+│   │   ├── test_enterprise_features.py # 38 tests
+│   │   └── test_platform_scaling.py    # 28 tests
+│   └── server.py
+├── frontend/src/
+│   ├── pages/
+│   │   ├── EnterpriseLiveDashboard.js # Enterprise Live Dashboard
+│   │   └── PlatformScalingDashboard.js
+│   ├── config/navItems.js
+│   └── App.js
+└── memory/PRD.md
+```
 
-### PMS CORE (Phase 1 + Phase 2)
-- Reservation state machine
-- Front desk workflow
-- Folio / billing engine + Folio detail view
-- Housekeeping state machine + Auto assignment
-- Night audit engine + Multi-property coordination
-- RBAC permission model
-- PMS operations dashboard + Trend graphs & date filters
+## API Endpoints
 
-### CHANNEL MANAGER
-- Connector-first architecture
-- Inventory delta sync engine
-- Reservation import engine
-- Provider contract hardening
-- Mapping readiness validation
-- Rate push tracking
+### Enterprise Live APIs
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| WS | `/api/enterprise/ws/live` | Authenticated WebSocket |
+| GET | `/api/enterprise/ws/stats` | Connection stats |
+| GET | `/api/enterprise/ws/live-data` | Live operational data |
+| POST | `/api/enterprise/messaging/send` | Send message |
+| POST | `/api/enterprise/messaging/templates` | Create template |
+| GET | `/api/enterprise/messaging/templates` | List templates |
+| GET | `/api/enterprise/messaging/history` | Delivery history |
+| POST | `/api/enterprise/messaging/consent` | Update consent |
+| GET | `/api/enterprise/messaging/provider-health` | Provider status |
+| GET | `/api/enterprise/messaging/analytics` | Analytics |
+| POST | `/api/enterprise/autopricing/recommendation` | Create recommendation |
+| POST | `/api/enterprise/autopricing/approve` | Approve & apply |
+| POST | `/api/enterprise/autopricing/reject` | Reject |
+| POST | `/api/enterprise/autopricing/rollback` | Rollback |
+| GET | `/api/enterprise/autopricing/dashboard` | Dashboard |
+| POST | `/api/enterprise/autopricing/policy` | Set automation policy |
+| POST | `/api/enterprise/autopricing/protected-dates` | Add blackout dates |
+| POST | `/api/enterprise/integration/run-all` | Run all integrations |
 
-### OPERATIONAL MATURITY
-- Historical metrics storage
-- Alerting engine
-- Reliability monitoring
-- Connector health dashboard
-- Production readiness checklist
-- Background scheduler worker
-- Audit trail
+## Testing
+- Backend: 38 pytest tests (100% pass) at `tests/test_enterprise_features.py`
+- E2E: Testing agent validation (100% backend + frontend)
+- Test reports: `/app/test_reports/iteration_36.json`
 
-### ENTERPRISE MODULES (NEW - March 2026)
+## Mocked Components
+- Twilio SMS provider (mock mode - no TWILIO_ACCOUNT_SID)
+- SendGrid Email provider (mock mode - no SENDGRID_API_KEY)
+- WhatsApp provider (mock mode - no WHATSAPP_API_KEY)
 
-#### 1. Revenue Management Engine
-- **Demand Analysis**: Booking pace, pickup trends, occupancy forecast, lead time analysis
-- **Rate Optimization**: Ideal ADR calculation, occupancy-based pricing, rate elasticity
-- **Yield Rules**: Min stay, stop sell, CTA/CTD recommendations
-- **Channel Strategy**: OTA rate parity, channel mix, direct booking incentives
-- **Automation**: Rate override application with audit trail
-- **Dashboard**: ADR/RevPAR trends, daily revenue charts, opportunity panel
-- **API**: /api/revenue-engine/* (10 endpoints)
+## Upcoming Tasks (P1)
+- Activate live Twilio/SendGrid/WhatsApp with real API keys
+- Connect Revenue ML models to auto-pricing pipeline
+- Real-time WebSocket push for cross-module events
+- Training pipelines for ML models
 
-#### 2. Real-Time Operational Event System
-- **Event Bus**: 12 event types with priority-based routing
-- **Live Feed**: Real-time activity stream with filtering
-- **Notifications**: Role-targeted alerts (VIP, HK overdue, audit exceptions)
-- **Front Desk Queue**: Pending arrivals/departures live view
-- **Housekeeping Board**: Room status summary + overdue alerts
-- **Statistics**: Event type/priority distribution analytics
-- **API**: /api/event-system/* (9 endpoints)
-
-#### 3. Guest Journey Layer
-- **Pre-Arrival**: Online check-in, arrival time, room preferences
-- **Stay Management**: Guest requests (HK, maintenance, concierge, room service)
-- **Messaging**: Email/SMS/WhatsApp/in-app templates with auto-triggers
-- **Review Capture**: Post-checkout review requests + reputation tracking
-- **Guest Dashboard**: Satisfaction signals, resolution times, request queue
-- **API**: /api/guest-journey/* (13 endpoints)
-
-### PLATFORM SCALING MODULES (NEW - March 2026)
-
-#### 4. Real-Time Event Architecture
-- **Enhanced Event Bus**: 24 platform event types with auto-priority routing
-- **WebSocket Gateway**: In-memory gateway with broadcast, connection tracking
-- **Event Persistence**: All events persisted to MongoDB with filtering
-- **Notification System**: Role-based notifications (admin, revenue, front_desk, housekeeping, etc.)
-- **Escalation Queue**: Auto-escalation for unacknowledged critical events
-- **Analytics**: Event type/priority/property distribution, gateway stats
-- **API**: /api/platform/events/* (8 endpoints)
-
-#### 5. Multi-Property Platform
-- **Central Reservation Service**: Portfolio-wide overview, cross-property availability search, reservation transfers
-- **Central Revenue Management**: Portfolio revenue aggregation, global rate adjustments
-- **Multi-Property Dashboard**: Combined portfolio, revenue, and alerts view
-- **Global Alert System**: Cross-property occupancy, complaint, and HK alerts with priority sorting
-- **API**: /api/platform/multi-property/* (7 endpoints)
-
-#### 6. Revenue ML
-- **Demand Forecasting**: Weighted historical day-of-week model, OTB blending, confidence scoring
-- **Rate Elasticity Model**: Price sensitivity analysis, optimal price point calculation
-- **Booking Probability Model**: Conversion prediction by lead time and source
-- **Cancellation Prediction**: Multi-factor risk scoring (lead time, source, payment, history)
-- **ML Dashboard**: Unified insights with at-risk revenue, demand outlook, optimization opportunities
-- **API**: /api/platform/ml/* (8 endpoints)
-
-#### 7. Competitive Set Analysis
-- **Competitor Price Tracking**: Add/manage comp set, record/bulk-import rates
-- **Market Positioning**: Position index vs market average, parity checking
-- **ADR Adjustment Engine**: Intelligent suggestions based on market position with revenue impact estimation
-- **Competitive Dashboard**: Combined comp set, parity, and suggestions view
-- **API**: /api/platform/competitive/* (10 endpoints)
-
-## Testing Coverage
-- **100+ backend tests** across all modules
-- **27 API tests** for enterprise modules (all passing)
-- **28 API tests** for platform scaling modules (all passing)
-- **Frontend playwright tests** for all 4 new dashboards (including platform scaling 5 tabs)
-- **Test files**: /app/backend/tests/test_enterprise_modules.py, /app/backend/tests/test_platform_scaling.py
-
-## Credentials
-| User | Email | Password |
-|---|---|---|
-| Demo Admin | demo@hotel.com | demo123 |
-
-## Key File References
-- Backend Services: /app/backend/modules/revenue_management/, event_system/, guest_journey/, platform_scaling/
-- API Routers: /app/backend/routers/revenue_management.py, event_system.py, guest_journey.py, platform_scaling.py
-- Frontend Pages: /app/frontend/src/pages/RevenueEngineDashboard.js, OperationalEventDashboard.js, GuestJourneyDashboard.js, PlatformScalingDashboard.js
-- Test Reports: /app/test_reports/iteration_35.json
-
-## Backlog (P1-P3)
-- P1: WebSocket real-time push for event system (actual WS connections)
-- P1: Third-party messaging integrations (Twilio, SendGrid) for Guest Journey
-- P2: Revenue engine auto-apply pricing automation
-- P2: Advanced housekeeping with staff skills/zones
-- P3: Deeper cross-module integrations
+## Backlog (P2-P3)
+- Granular user permissions for multi-property
+- Advanced reporting and analytics
+- Mobile app for staff notifications
+- Production monitoring and alerting
