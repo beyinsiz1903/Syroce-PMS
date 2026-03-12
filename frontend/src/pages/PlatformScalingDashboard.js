@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import {
@@ -19,6 +20,7 @@ const API = process.env.REACT_APP_BACKEND_URL;
 const COLORS = ['#0f766e', '#0ea5e9', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981', '#6366f1', '#ec4899'];
 
 export default function PlatformScalingDashboard({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [activeModule, setActiveModule] = useState('overview');
   const [loading, setLoading] = useState(true);
   const [eventData, setEventData] = useState(null);
@@ -79,9 +81,9 @@ export default function PlatformScalingDashboard({ user, tenant, onLogout }) {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900" data-testid="dashboard-title">
-              Platform Scaling
+              {t("techDashboards.platformScaling")}
             </h1>
-            <p className="text-sm text-slate-500 mt-1">Enterprise SaaS Yonetim Merkezi</p>
+            <p className="text-sm text-slate-500 mt-1">{t("techDashboards.platformScalingDesc")}</p>
           </div>
           <div className="flex items-center gap-3">
             <NotificationBadge notifications={notifications} />

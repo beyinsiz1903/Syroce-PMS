@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
@@ -553,6 +554,7 @@ function CrossModulePanel() {
 // ── Main Dashboard ──
 
 export default function EnterpriseLiveDashboard({ user }) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("live");
   const [liveData, setLiveData] = useState(null);
   const [wsConnected, setWsConnected] = useState(false);
@@ -627,7 +629,7 @@ export default function EnterpriseLiveDashboard({ user }) {
               <Activity className="h-5 w-5 text-indigo-400" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-white">Enterprise Live Operations</h1>
+              <h1 className="text-lg font-bold text-white">{t("techDashboards.enterpriseLive")}</h1>
               <p className="text-xs text-slate-400">Gercek zamanli operasyonel zeka merkezi</p>
             </div>
           </div>

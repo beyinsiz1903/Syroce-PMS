@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -92,6 +93,7 @@ const AckBadge = ({ ackStatus }) => {
 };
 
 const IntegrationHub = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [dashboard, setDashboard] = useState(null);
   const [connectors, setConnectors] = useState([]);
@@ -414,7 +416,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
       <div data-testid="integration-hub" className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Integration Hub</h1>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{t("techDashboards.integrationHub")}</h1>
             <p className="text-sm text-slate-400 mt-1">Channel Manager &middot; Connector Architecture</p>
           </div>
           <div className="flex items-center gap-3">

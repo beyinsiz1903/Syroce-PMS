@@ -1,4 +1,6 @@
 import { useState, Suspense, lazy } from 'react';
+import { useTranslation } from 'react-i18next';
+import Layout from '../components/Layout';
 import { Loader2, Activity, AlertTriangle, Clock, Key, AlertOctagon, BarChart3, Shield, Bell, TrendingUp, Boxes, Building2, FileText, PlayCircle, Heart, Send, Zap, Map, LineChart, Gauge, Wifi } from 'lucide-react';
 import { useAdminWebSocket } from '../hooks/useAdminWebSocket';
 
@@ -22,26 +24,26 @@ const HealthTrendTab = lazy(() => import('./admin/tabs/HealthTrendTab'));
 const MappingCompletenessTab = lazy(() => import('./admin/tabs/MappingCompletenessTab'));
 const RatePushMetricsTab = lazy(() => import('./admin/tabs/RatePushMetricsTab'));
 
-const TABS = [
-  { id: 'sync-health', label: 'Sync Health', icon: Activity },
-  { id: 'connector-health', label: 'Health Dashboard', icon: Heart },
-  { id: 'health-trend', label: 'Health Trends', icon: LineChart },
-  { id: 'mapping-completeness', label: 'Mapping Readiness', icon: Map },
-  { id: 'rate-push-metrics', label: 'Rate Push', icon: Gauge },
-  { id: 'reservations', label: 'Reservations', icon: FileText },
-  { id: 'alerts', label: 'Alerts', icon: Bell },
-  { id: 'alert-delivery', label: 'Alert Delivery', icon: Send },
-  { id: 'reliability', label: 'Reliability', icon: TrendingUp },
-  { id: 'reconciliation', label: 'Reconciliation', icon: AlertTriangle },
-  { id: 'scheduler', label: 'Scheduler', icon: Clock },
-  { id: 'import-jobs', label: 'Import Jobs', icon: PlayCircle },
-  { id: 'background-worker', label: 'Background Worker', icon: Zap },
-  { id: 'credentials', label: 'Credentials', icon: Key },
-  { id: 'error-queue', label: 'Error Queue', icon: AlertOctagon },
-  { id: 'observability', label: 'Observability', icon: BarChart3 },
-  { id: 'readiness', label: 'Readiness', icon: Shield },
-  { id: 'sandbox-validation', label: 'Sandbox Validation', icon: Boxes },
-  { id: 'multi-property', label: 'Multi-Property', icon: Building2 },
+const TAB_KEYS = [
+  { id: 'sync-health', labelKey: 'adminPanel2.syncHealth', icon: Activity },
+  { id: 'connector-health', labelKey: 'adminPanel2.healthDashboard', icon: Heart },
+  { id: 'health-trend', labelKey: 'adminPanel2.healthTrends', icon: LineChart },
+  { id: 'mapping-completeness', labelKey: 'adminPanel2.mappingReadiness', icon: Map },
+  { id: 'rate-push-metrics', labelKey: 'adminPanel2.ratePush', icon: Gauge },
+  { id: 'reservations', labelKey: 'adminPanel2.reservations', icon: FileText },
+  { id: 'alerts', labelKey: 'adminPanel2.alerts', icon: Bell },
+  { id: 'alert-delivery', labelKey: 'adminPanel2.alertDelivery', icon: Send },
+  { id: 'reliability', labelKey: 'adminPanel2.reliability', icon: TrendingUp },
+  { id: 'reconciliation', labelKey: 'adminPanel2.reconciliation', icon: AlertTriangle },
+  { id: 'scheduler', labelKey: 'adminPanel2.scheduler', icon: Clock },
+  { id: 'import-jobs', labelKey: 'adminPanel2.importJobs', icon: PlayCircle },
+  { id: 'background-worker', labelKey: 'adminPanel2.backgroundWorker', icon: Zap },
+  { id: 'credentials', labelKey: 'adminPanel2.credentials', icon: Key },
+  { id: 'error-queue', labelKey: 'adminPanel2.errorQueue', icon: AlertOctagon },
+  { id: 'observability', labelKey: 'adminPanel2.observability', icon: BarChart3 },
+  { id: 'readiness', labelKey: 'adminPanel2.readiness', icon: Shield },
+  { id: 'sandbox-validation', labelKey: 'adminPanel2.sandboxValidation', icon: Boxes },
+  { id: 'multi-property', labelKey: 'adminPanel2.multiProperty', icon: Building2 },
 ];
 
 const TabContent = ({ tabId }) => {
@@ -69,40 +71,39 @@ const TabContent = ({ tabId }) => {
   return map[tabId] || null;
 };
 
-const AdminControlPanel = () => {
+const AdminControlPanel = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('sync-health');
   const { connected, lastEvent } = useAdminWebSocket('default');
 
   return (
-    <div data-testid="admin-control-panel" className="min-h-screen bg-slate-950 text-white">
-      <div className="max-w-7xl mx-auto px-4 py-6">
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="admin_control_panel">
+      <div data-testid="admin-control-panel" className="max-w-7xl mx-auto px-4 py-6">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">Admin Control Panel</h1>
-            <p className="text-sm text-slate-400 mt-1">Hotel Integration Platform — Operasyonel Yonetim</p>
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">{t("adminPanel2.title")}</h1>
+            <p className="text-sm text-gray-500 mt-1">{t("techDashboards.integrationHubDesc")}</p>
           </div>
           <div data-testid="ws-status" className="flex items-center gap-2 text-xs">
-            <Wifi className={`w-3.5 h-3.5 ${connected ? 'text-emerald-400' : 'text-slate-600'}`} />
-            <span className={connected ? 'text-emerald-400' : 'text-slate-500'}>
-              {connected ? 'Live' : 'Offline'}
+            <Wifi className={`w-3.5 h-3.5 ${connected ? 'text-emerald-500' : 'text-gray-400'}`} />
+            <span className={connected ? 'text-emerald-600' : 'text-gray-400'}>
+              {connected ? t("adminPanel2.wsConnected") : t("adminPanel2.wsDisconnected")}
             </span>
           </div>
         </div>
 
-        {/* Real-time Event Banner */}
         {lastEvent && (
-          <div data-testid="realtime-event-banner" className="mb-4 px-3 py-2 bg-blue-950/50 border border-blue-800/30 rounded-lg flex items-center gap-2 text-xs animate-pulse">
-            <Activity className="w-3.5 h-3.5 text-blue-400" />
-            <span className="text-blue-300">
+          <div data-testid="realtime-event-banner" className="mb-4 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2 text-xs">
+            <Activity className="w-3.5 h-3.5 text-blue-500" />
+            <span className="text-blue-700">
               {lastEvent.type?.replace(/_/g, ' ')} — {lastEvent.data?.connector_id || lastEvent.data?.alert_id || ''}
             </span>
-            <span className="text-slate-500 ml-auto">{lastEvent.timestamp ? new Date(lastEvent.timestamp).toLocaleTimeString('tr-TR') : ''}</span>
+            <span className="text-gray-400 ml-auto">{lastEvent.timestamp ? new Date(lastEvent.timestamp).toLocaleTimeString('tr-TR') : ''}</span>
           </div>
         )}
 
-        {/* Tab Navigation */}
-        <div className="flex gap-1 overflow-x-auto pb-2 mb-6 scrollbar-thin scrollbar-track-slate-900 scrollbar-thumb-slate-700">
-          {TABS.map(tab => {
+        <div className="flex gap-1 overflow-x-auto pb-2 mb-6">
+          {TAB_KEYS.map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
@@ -113,22 +114,21 @@ const AdminControlPanel = () => {
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all duration-200 ${
                   isActive
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                    : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
-                {tab.label}
+                {t(tab.labelKey)}
               </button>
             );
           })}
         </div>
 
-        {/* Tab Content */}
-        <Suspense fallback={<div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>}>
+        <Suspense fallback={<div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>}>
           <TabContent tabId={activeTab} />
         </Suspense>
       </div>
-    </div>
+    </Layout>
   );
 };
 

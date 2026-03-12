@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { Activity, AlertTriangle, Clock3, RefreshCw, ShieldAlert, Waves } from 'lucide-react';
@@ -56,6 +57,7 @@ const StatCard = ({ icon: Icon, label, value, helper, tone, testId }) => (
 
 
 export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -131,7 +133,7 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
           <section className="overflow-hidden rounded-[28px] border border-slate-200/70 bg-slate-950 text-white shadow-2xl shadow-slate-200/60" data-testid="migration-observability-hero">
             <div className="grid gap-6 px-6 py-8 md:grid-cols-[1.2fr_0.8fr] md:px-8">
               <div className="space-y-4">
-                <Badge className="bg-white/10 text-teal-100 hover:bg-white/10" data-testid="migration-observability-badge">Migration Control Surface</Badge>
+                <Badge className="bg-white/10 text-teal-100 hover:bg-white/10" data-testid="migration-observability-badge">{t("techDashboards.migration")}</Badge>
                 <div className="space-y-3">
                   <h1 className="text-4xl font-semibold tracking-tight md:text-5xl" style={{ fontFamily: 'Space Grotesk' }} data-testid="migration-observability-title">
                     Semantic cutover akışlarını canlı izleyin.

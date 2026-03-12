@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
@@ -18,6 +19,7 @@ const API = process.env.REACT_APP_BACKEND_URL;
 const COLORS = ['#0f766e', '#0ea5e9', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981'];
 
 export default function RevenueEngineDashboard({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [dashboard, setDashboard] = useState(null);
   const [forecast, setForecast] = useState(null);
   const [suggestions, setSuggestions] = useState(null);
@@ -92,8 +94,8 @@ export default function RevenueEngineDashboard({ user, tenant, onLogout }) {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Revenue Management Engine</h1>
-            <p className="text-sm text-slate-500 mt-1">Dinamik fiyatlandirma ve gelir optimizasyonu</p>
+            <h1 className="text-2xl font-bold text-slate-900">{t("techDashboards.revenueEngine")}</h1>
+            <p className="text-sm text-slate-500 mt-1">{t("techDashboards.revenueEngineDesc")}</p>
           </div>
           <Button variant="outline" size="sm" onClick={fetchAll} data-testid="revenue-refresh-btn">
             <RefreshCw className="w-4 h-4 mr-2" /> Yenile

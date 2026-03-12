@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +15,7 @@ function StatusDot({ status }) {
 }
 
 export default function EventBusDashboard() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState(null);
   const [metrics, setMetrics] = useState(null);
   const [channels, setChannels] = useState([]);
@@ -63,7 +65,7 @@ export default function EventBusDashboard() {
     <div className="space-y-6 p-6 max-w-7xl mx-auto" data-testid="event-bus-dashboard">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-100">Event Bus</h1>
+          <h1 className="text-2xl font-bold text-zinc-100">{t("techDashboards.eventBus")}</h1>
           <p className="text-sm text-zinc-400 mt-1">Real-time event routing & Pub/Sub monitoring</p>
         </div>
         <div className="flex gap-2">

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useCallback } from "react";
 import Layout from "../components/Layout";
 
@@ -63,6 +64,7 @@ const QueueRow = ({ name, data }) => (
 );
 
 export default function InfraHardeningDashboard({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -140,7 +142,7 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout }) {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-zinc-100">Infrastructure Hardening</h1>
+            <h1 className="text-2xl font-bold text-zinc-100">{t("techDashboards.infraHardening")}</h1>
             <p className="text-sm text-zinc-500 mt-1">
               Production-grade SaaS altyapi durumu ve izleme
             </p>

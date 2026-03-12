@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -24,6 +25,7 @@ const STATUS_BADGE = {
 };
 
 export default function MLSchedulerDashboard() {
+  const { t } = useTranslation();
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState({});
@@ -56,7 +58,7 @@ export default function MLSchedulerDashboard() {
     <div data-testid="ml-scheduler-dashboard" className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">ML Model Scheduler</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("techDashboards.mlScheduler")}</h1>
           <p className="text-sm text-muted-foreground">Model çalıştırma zamanlaması, durum izleme ve snapshot yönetimi</p>
         </div>
         <Button data-testid="refresh-scheduler" variant="outline" size="sm" onClick={load}>

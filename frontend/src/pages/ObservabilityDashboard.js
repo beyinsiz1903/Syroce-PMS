@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +15,7 @@ function HealthDot({ status }) {
 }
 
 export default function ObservabilityDashboard() {
+  const { t } = useTranslation();
   const [dashMetrics, setDashMetrics] = useState(null);
   const [traces, setTraces] = useState(null);
   const [errorSummary, setErrorSummary] = useState(null);
@@ -68,7 +70,7 @@ export default function ObservabilityDashboard() {
     <div className="space-y-6 p-6 max-w-7xl mx-auto" data-testid="observability-dashboard">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-100">Observability</h1>
+          <h1 className="text-2xl font-bold text-zinc-100">{t("techDashboards.observability")}</h1>
           <p className="text-sm text-zinc-400 mt-1">Request tracing, metrics, errors & service health</p>
         </div>
         <div className="flex gap-2">

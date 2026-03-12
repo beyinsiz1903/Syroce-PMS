@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +17,7 @@ function ScoreBadge({ score, label }) {
 }
 
 export default function SecurityHardeningDashboard() {
+  const { t } = useTranslation();
   const [isolation, setIsolation] = useState(null);
   const [permissions, setPermissions] = useState(null);
   const [vault, setVault] = useState(null);
@@ -57,7 +59,7 @@ export default function SecurityHardeningDashboard() {
     <div data-testid="security-hardening-dashboard" className="space-y-6 p-6 bg-slate-950 min-h-screen">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Security Hardening</h1>
+          <h1 className="text-2xl font-bold text-white">{t("techDashboards.securityHardening")}</h1>
           <p className="text-sm text-slate-400 mt-1">Multi-tenant guvenlik ve izolasyon</p>
         </div>
         <Button data-testid="refresh-security-btn" onClick={fetchData} size="sm" className="bg-rose-600 hover:bg-rose-700 text-white">Yenile</Button>

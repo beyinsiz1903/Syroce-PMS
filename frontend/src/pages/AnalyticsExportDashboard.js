@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -24,6 +25,7 @@ const REPORT_ICONS = {
 };
 
 export default function AnalyticsExportDashboard() {
+  const { t } = useTranslation();
   const [reports, setReports] = useState([]);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -71,7 +73,7 @@ export default function AnalyticsExportDashboard() {
     <div data-testid="analytics-export-dashboard" className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Analitik Export Merkezi</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("techDashboards.analyticsExport")}</h1>
           <p className="text-sm text-muted-foreground">Gelir, operasyon, misafir ve mesajlaşma raporlarını dışa aktarın</p>
         </div>
         <Button data-testid="refresh-exports" variant="outline" size="sm" onClick={load}><RefreshCw className="h-4 w-4 mr-1" /> Yenile</Button>

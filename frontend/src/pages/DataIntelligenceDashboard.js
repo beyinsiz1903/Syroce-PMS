@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -647,15 +648,16 @@ function GuestTab() {
 // ═══════════════════════════════════════════════════════════
 
 export default function DataIntelligenceDashboard() {
+  const { t } = useTranslation();
   return (
     <div data-testid="data-intelligence-dashboard" className="p-6 max-w-[1400px] mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Brain className="h-6 w-6" />
-          Data Intelligence
+          {t("techDashboards.dataIntelligence")}
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Veri odakli karar destek ve otomasyon platformu
+          {t("techDashboards.dataIntelligenceDesc")}
         </p>
       </div>
 

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -25,6 +26,7 @@ const STATUS_MAP = {
 };
 
 export default function RevenueAutopilotDashboard() {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('queue');
@@ -50,7 +52,7 @@ export default function RevenueAutopilotDashboard() {
     <div data-testid="revenue-autopilot-dashboard" className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Revenue Autopilot</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("techDashboards.revenueAutopilot")}</h1>
           <p className="text-sm text-muted-foreground">ML bazlı fiyat önerileri, otomatik uygulama ve onay kuyruğu</p>
         </div>
         <Button data-testid="refresh-autopilot" variant="outline" size="sm" onClick={load}><RefreshCw className="h-4 w-4 mr-1" /> Yenile</Button>

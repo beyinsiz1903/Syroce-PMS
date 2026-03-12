@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +41,7 @@ function MetricCard({ title, value, subtitle, testId }) {
 }
 
 export default function DataPipelineDashboard() {
+  const { t } = useTranslation();
   const [health, setHealth] = useState(null);
   const [runs, setRuns] = useState([]);
   const [predictions, setPredictions] = useState([]);
@@ -93,7 +95,7 @@ export default function DataPipelineDashboard() {
     <div data-testid="data-pipeline-dashboard" className="space-y-6 p-6 bg-slate-950 min-h-screen">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Data Pipeline</h1>
+          <h1 className="text-2xl font-bold text-white">{t("techDashboards.dataPipeline")}</h1>
           <p className="text-sm text-slate-400 mt-1">ML model veri hatti yonetimi</p>
         </div>
         <div className="flex gap-2">

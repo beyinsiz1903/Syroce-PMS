@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -215,10 +216,11 @@ function MetricsTab() {
 }
 
 export default function MessagingDashboard() {
+  const { t } = useTranslation();
   return (
     <div data-testid="messaging-dashboard" className="p-6 space-y-6 max-w-7xl mx-auto">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Mesajlaşma Merkezi</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t("techDashboards.messagingDashboard")}</h1>
         <p className="text-sm text-muted-foreground">SMS, Email ve WhatsApp provider yönetimi, teslimat logları ve metrikler</p>
       </div>
       <Tabs defaultValue="logs">

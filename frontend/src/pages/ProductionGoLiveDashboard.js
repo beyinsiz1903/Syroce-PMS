@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useCallback } from "react";
 import Layout from "../components/Layout";
 import { Shield, Activity, Server, Database, Radio, Bell, Rocket, RefreshCw, ChevronRight, AlertTriangle, CheckCircle2, XCircle, Clock, Zap, Settings, FileText, Play, Box, GitBranch, HardDrive, Lock, BarChart3, Download } from "lucide-react";
@@ -100,6 +101,7 @@ const ProviderTestRow = ({ name, data, onTest, testing }) => (
 );
 
 export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -225,7 +227,7 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
         <div className={`bg-gradient-to-r ${rColors.gradient} ${rColors.border} border rounded-2xl p-6 ring-1 ${rColors.ring}`}>
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
-              <h1 data-testid="golive-title" className="text-2xl font-bold text-zinc-100 tracking-tight">Production Go-Live</h1>
+              <h1 data-testid="golive-title" className="text-2xl font-bold text-zinc-100 tracking-tight">{t("techDashboards.productionGoLive")}</h1>
               <p className="text-sm text-zinc-400 mt-1">Sistem hazirlik durumu ve production dogrulama</p>
             </div>
             <div className="flex items-center gap-5">

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,6 +46,7 @@ function MetricCard({ title, value, subtitle, icon: Icon, variant = "default" })
 }
 
 export default function RuntimeInfrastructureDashboard() {
+  const { t } = useTranslation();
   const [overview, setOverview] = useState(null);
   const [persistence, setPersistence] = useState(null);
   const [alerts, setAlerts] = useState([]);
@@ -117,7 +119,7 @@ export default function RuntimeInfrastructureDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-100">Runtime Infrastructure</h1>
+          <h1 className="text-2xl font-bold text-zinc-100">{t("techDashboards.runtimeInfra")}</h1>
           <p className="text-sm text-zinc-400 mt-1">Production runtime monitoring & alerts</p>
         </div>
         <div className="flex gap-2">

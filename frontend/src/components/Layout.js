@@ -170,7 +170,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
         data-testid={`nav-${item.key}-button`}
       >
         <Icon className={isMobile ? "w-4 h-4" : "w-3.5 h-3.5"} />
-        <span className="font-medium">{item.label}</span>
+        <span className="font-medium">{t(`navKeys.${item.key}`, item.label)}</span>
       </Button>
     );
   };

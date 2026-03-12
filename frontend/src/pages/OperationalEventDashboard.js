@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 import {
   Activity, Bell, Radio, Users, Home, Wrench, AlertTriangle, CheckCircle,
   Clock, Eye, EyeOff, RefreshCw, ChevronDown, Shield
@@ -34,6 +35,7 @@ const EVENT_ICONS = {
 };
 
 export default function OperationalEventDashboard({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [liveFeed, setLiveFeed] = useState(null);
   const [stats, setStats] = useState(null);
   const [unread, setUnread] = useState(null);
@@ -114,8 +116,8 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Operasyonel Olay Merkezi</h1>
-            <p className="text-sm text-slate-500 mt-1">Gercek zamanli otel operasyon izleme</p>
+            <h1 className="text-2xl font-bold text-slate-900">{t("techDashboards.operationalEvents")}</h1>
+            <p className="text-sm text-slate-500 mt-1">{t("techDashboards.operationalEventsDesc")}</p>
           </div>
           <div className="flex items-center gap-3">
             {unread?.total_unread > 0 && (

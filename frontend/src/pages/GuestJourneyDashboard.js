@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 import {
   User, MessageSquare, Star, Clock, CheckCircle, AlertCircle, Send,
   Mail, Phone, Globe, RefreshCw, FileText, PlusCircle, ArrowRight
@@ -31,6 +32,7 @@ const TYPE_ICONS = {
 };
 
 export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [dashboard, setDashboard] = useState(null);
   const [requests, setRequests] = useState(null);
   const [templates, setTemplates] = useState(null);
@@ -101,8 +103,8 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Guest Journey</h1>
-            <p className="text-sm text-slate-500 mt-1">Misafir deneyimi yonetimi</p>
+            <h1 className="text-2xl font-bold text-slate-900">{t("techDashboards.guestJourney")}</h1>
+            <p className="text-sm text-slate-500 mt-1">{t("techDashboards.guestJourneyDesc")}</p>
           </div>
           <Button variant="outline" size="sm" onClick={fetchAll} data-testid="journey-refresh-btn">
             <RefreshCw className="w-4 h-4 mr-2" /> Yenile
