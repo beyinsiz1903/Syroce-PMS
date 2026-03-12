@@ -26,16 +26,40 @@ def create_app() -> FastAPI:
 - **Housekeeping**: Temizlik ve Oda Bakim Yonetimi
 - **Finance**: Fatura, Folio, Muhasebe
 - **Reports**: Raporlama ve Analitik
+- **AI / ML**: Yapay Zeka ve Makine Ogrenmesi
+- **Revenue**: Gelir Yonetimi ve Fiyatlandirma
+- **Channel Manager**: OTA Kanal Yonetimi
+- **Sales / CRM**: Satis ve Musteri Iliskileri
 
 ### API Kimlik Dogrulama
 Tum API istekleri `Authorization: Bearer <token>` header'i gerektirir.
 Token almak icin `/api/auth/login` endpoint'ini kullanin.
         """,
-        version="3.1.0",
+        version="3.2.0",
         docs_url="/api/docs",
         redoc_url="/api/redoc",
         openapi_url="/api/openapi.json",
         default_response_class=ORJSONResponse,
+        openapi_tags=[
+            {"name": "PMS / Dashboard", "description": "Dashboard, KPI ve Executive raporlari"},
+            {"name": "PMS / Front Desk", "description": "Check-in, Check-out, Walk-in, Folio islemleri"},
+            {"name": "PMS / Housekeeping", "description": "Temizlik gorevleri, oda durumu, personel performansi"},
+            {"name": "PMS / Night Audit", "description": "Gece auditi, log kayitlari, OTA sync loglari"},
+            {"name": "PMS / Notifications", "description": "Bildirimler, inbox, sistem uyarilari"},
+            {"name": "PMS / Groups", "description": "Grup ve blok rezervasyonlari"},
+            {"name": "PMS / Calendar", "description": "Takvim, rate code yonetimi, kanal miks"},
+            {"name": "PMS / Approvals", "description": "Onay surecleri, butce yonetimi"},
+            {"name": "PMS / POS & F&B", "description": "POS islemleri, mutfak siparisleri, F&B yonetimi"},
+            {"name": "PMS / Maintenance", "description": "Bakim, onarim, IoT sensor yonetimi"},
+            {"name": "PMS / Operations", "description": "Coklu tesis, HR, odeme, envanter islemleri"},
+            {"name": "AI / ML", "description": "Yapay zeka chat, tahminleme, ML modelleri, sosyal medya analizi"},
+            {"name": "Revenue / Pricing", "description": "Fiyatlandirma, rate planlari, gelir yonetimi, RMS"},
+            {"name": "Guest / Messaging", "description": "WhatsApp, SMS, e-posta mesajlasma"},
+            {"name": "Guest / Operations", "description": "Misafir profili, sadakat programi, NPS, tercihler"},
+            {"name": "Channel Manager / Operations", "description": "OTA baglantilari, oda eslestirme, envanter senkronizasyonu"},
+            {"name": "Sales / CRM", "description": "Satis, kurumsal musteri, lead yonetimi"},
+            {"name": "Admin / Operations", "description": "Tenant yonetimi, abonelik, RBAC, sistem ayarlari"},
+        ],
     )
 
     # ── Deployment health check (lightweight, no DB/Redis) ──────────

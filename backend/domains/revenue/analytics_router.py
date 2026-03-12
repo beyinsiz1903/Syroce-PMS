@@ -14,6 +14,7 @@ from core.database import db
 from core.security import get_current_user, security, JWT_SECRET, JWT_ALGORITHM
 from core.helpers import require_module
 from core.cache import cached
+from models.enums import UserRole, ChannelType
 from models.schemas import User
 
 router = APIRouter(prefix="/api", tags=["analytics"])

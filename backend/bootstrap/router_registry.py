@@ -65,6 +65,25 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("domains.revenue.rms_router", "router", ["rms-revenue"], None, None),
     ("domains.guest.experience_router", "router", ["guest-experience"], None, None),
     ("domains.hr.router", "router", ["hr-operations"], None, None),
+    # Phase B - Wave 2 domain routers
+    ("domains.ai.router", "router", ["AI / ML"], None, None),
+    ("domains.pms.night_audit_router", "router", ["PMS / Night Audit"], None, None),
+    ("domains.guest.messaging.router", "router", ["Guest / Messaging"], None, None),
+    ("domains.revenue.pricing_router", "router", ["Revenue / Pricing"], None, None),
+    ("domains.admin.router", "router", ["Admin / Operations"], None, None),
+    ("domains.pms.notification_router", "router", ["PMS / Notifications"], None, None),
+    ("domains.pms.dashboard_router", "router", ["PMS / Dashboard"], None, None),
+    ("domains.pms.frontdesk_router", "router", ["PMS / Front Desk"], None, None),
+    ("domains.pms.pos_fnb_router", "router", ["PMS / POS & F&B"], None, None),
+    ("domains.pms.housekeeping_router", "router", ["PMS / Housekeeping"], None, None),
+    ("domains.pms.maintenance_router", "router", ["PMS / Maintenance"], None, None),
+    ("domains.guest.operations_router", "router", ["Guest / Operations"], None, None),
+    ("domains.pms.groups_router", "router", ["PMS / Groups"], None, None),
+    ("domains.channel_manager.operations_router", "router", ["Channel Manager / Operations"], None, None),
+    ("domains.sales.crm_router", "router", ["Sales / CRM"], None, None),
+    ("domains.pms.calendar_router", "router", ["PMS / Calendar"], None, None),
+    ("domains.pms.approvals_router", "router", ["PMS / Approvals"], None, None),
+    ("domains.pms.misc_router", "router", ["PMS / Operations"], None, None),
 ]
 
 # Optional routers with special import paths

@@ -107,6 +107,31 @@ def excel_response(workbook, filename: str):
     )
 
 
+def apply_row_colors(ws, start_row=2):
+    """Apply alternating colors to Excel worksheet rows and auto-adjust column widths."""
+    from openpyxl.styles import PatternFill
+
+    for row_num, row in enumerate(ws.iter_rows(min_row=start_row), start=start_row):
+        for cell in row:
+            if row_num % 2 == 0:
+                cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    for col in ws.columns:
+        max_length = 0
+        try:
+            column = col[0].column_letter
+        except AttributeError:
+            continue
+        for cell in col:
+            try:
+                if hasattr(cell, 'value') and len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except Exception:
+                pass
+        adjusted_width = min(max_length + 2, 50)
+        ws.column_dimensions[column].width = adjusted_width
+    return ws
+
+
 # ── QR Code Helpers ──
 
 def generate_qr_code(data: str) -> str:
