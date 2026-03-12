@@ -89,6 +89,12 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("workers.hardening_router", "router", ["Workers / Hardening"], None, None),
     ("security.hardening_router", "router", ["Security / Hardening"], None, None),
     ("modules.observability.hardening_router", "router", ["Observability / Runtime"], None, None),
+    # Night Audit Core (production-grade)
+    ("domains.pms.night_audit.router", "router", ["Night Audit Core"], None, None),
+    # Audit Timeline API
+    ("routers.audit_timeline", "router", ["Audit Timeline"], None, None),
+    # Operational Metrics
+    ("routers.operational_metrics", "router", ["Operational Metrics"], None, None),
     # System Health Dashboard — role-based
     ("routers.system_health_dashboard", "router", ["System Health"], None, None),
     ("routers.system_health_normalized", "router", ["System Health Normalized"], None, None),

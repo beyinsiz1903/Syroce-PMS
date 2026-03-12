@@ -1,37 +1,45 @@
 /**
- * Load Test — Night Audit Load
- * k6 script: Simulates concurrent night audit operations across tenants.
- * Run: k6 run --vus 10 --duration 30s load_tests/night_audit_load.js
+ * k6 Load Test — Night Audit Load (Production-Grade)
+ * Simulates concurrent night audit reads + business date checks + exception queries
+ * Measures: audit duration, exception count, room charge posting throughput
+ * Run: k6 run load_tests/night_audit_load.js
  */
 import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { check, sleep, group } from 'k6';
+import { Rate, Trend } from 'k6/metrics';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8001';
-const EMAIL = __ENV.EMAIL || 'demo@hotel.com';
-const PASSWORD = __ENV.PASSWORD || 'demo123';
+
+const auditErrors = new Rate('audit_errors');
+const auditLatency = new Trend('audit_query_latency_ms');
 
 export const options = {
     scenarios: {
-        night_audit: {
+        pre_audit_reads: {
+            executor: 'constant-vus',
+            vus: 15,
+            duration: '40s',
+        },
+        night_audit_overlap: {
             executor: 'per-vu-iterations',
-            vus: 10,
-            iterations: 3,
-            maxDuration: '2m',
+            vus: 5,
+            iterations: 2,
+            maxDuration: '60s',
+            startTime: '10s',
         },
     },
     thresholds: {
-        http_req_failed: ['rate<0.3'],
-        http_req_duration: ['p(95)<10000'],
+        http_req_duration: ['p(95)<5000'],
+        audit_errors: ['rate<0.20'],
     },
 };
 
 export function setup() {
     const loginRes = http.post(`${BASE_URL}/api/auth/login`, JSON.stringify({
-        email: EMAIL, password: PASSWORD,
+        email: 'demo@hotel.com',
+        password: 'demo123',
     }), { headers: { 'Content-Type': 'application/json' } });
-
-    const body = JSON.parse(loginRes.body);
-    return { token: body.access_token };
+    return { token: JSON.parse(loginRes.body).access_token };
 }
 
 export default function (data) {
@@ -40,18 +48,35 @@ export default function (data) {
         'Authorization': `Bearer ${data.token}`,
     };
 
-    // Step 1: Get dashboard KPIs (read-heavy)
-    const dashRes = http.get(`${BASE_URL}/api/pms/rooms?limit=100`, { headers });
-    check(dashRes, { 'rooms loaded': (r) => r.status === 200 });
+    group('Business Date Check', () => {
+        const res = http.get(`${BASE_URL}/api/night-audit/business-date`, { headers });
+        check(res, { 'business date OK': (r) => r.status === 200 });
+        auditErrors.add(res.status !== 200);
+        auditLatency.add(res.timings.duration);
+    });
 
-    // Step 2: Get today's arrivals
-    const today = new Date().toISOString().split('T')[0];
-    const arrivalsRes = http.get(`${BASE_URL}/api/frontdesk/arrivals/${today}`, { headers });
-    check(arrivalsRes, { 'arrivals loaded': (r) => r.status === 200 || r.status === 404 });
+    group('Audit History', () => {
+        const res = http.get(`${BASE_URL}/api/night-audit/history?limit=10`, { headers });
+        check(res, { 'history OK': (r) => r.status === 200 });
+        auditLatency.add(res.timings.duration);
+    });
 
-    // Step 3: Get housekeeping status
-    const hkRes = http.get(`${BASE_URL}/api/housekeeping/tasks?limit=50`, { headers });
-    check(hkRes, { 'housekeeping loaded': (r) => r.status === 200 });
+    group('Night Audit Metrics', () => {
+        const res = http.get(`${BASE_URL}/api/metrics/night-audit`, { headers });
+        check(res, { 'metrics OK': (r) => r.status === 200 });
+        auditLatency.add(res.timings.duration);
+    });
 
-    sleep(1);
+    group('Audit Timeline Summary', () => {
+        const res = http.get(`${BASE_URL}/api/audit/summary?period=24h`, { headers });
+        check(res, { 'summary OK': (r) => r.status === 200 });
+        auditLatency.add(res.timings.duration);
+    });
+
+    group('Dashboard KPIs', () => {
+        const res = http.get(`${BASE_URL}/api/pms/rooms?limit=100`, { headers });
+        check(res, { 'rooms loaded': (r) => r.status === 200 });
+    });
+
+    sleep(0.5 + Math.random());
 }

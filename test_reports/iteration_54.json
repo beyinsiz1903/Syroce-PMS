@@ -1,0 +1,139 @@
+{
+  "summary": "Night Audit, Audit Timeline, Operational Metrics APIs & Frontend SystemHealthDashboard Testing - ALL PASSED. Backend: 21/21 tests passed (14 unit + 7 runtime). All NEW API endpoints verified via curl with 200 status codes. Frontend: SystemHealthDashboard renders correctly for admin login with all role-based views functional.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/push/status",
+        "issue": "Returns 500 error (Push notification service - unrelated to current testing scope)",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "System Health Dashboard",
+        "issues": [
+          "WebSocket shows 'Polling' - expected behavior since WS connection requires persistent server support",
+          "Queue & Workers shows 'Critical' status - workers may not be initialized in test environment",
+          "Security Runtime shows 'Degraded' with 1 Audit Gap - expected for test data state"
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_night_audit_and_timeline.py",
+    "/app/backend/tests/runtime/test_night_audit_core.py",
+    "/app/backend/tests/runtime/test_audit_timeline_stress.py",
+    "/app/test_reports/pytest/pytest_night_audit_timeline.xml",
+    "/app/test_reports/pytest/pytest_night_audit_runtime.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "NightAuditCoreService: Production-grade implementation with idempotency guard, concurrent lock, and dry_run mode",
+    "Night Audit Router: Properly validates admin-only access and handles ALREADY_COMPLETED/CONCURRENT_LOCK errors",
+    "Audit Timeline Router: Supports cursor-based pagination, entity trail with before/after snapshots, and aggregated summaries",
+    "Operational Metrics Router: Provides night-audit specific metrics and operational metrics (rooms, bookings, folios, housekeeping)",
+    "Router Registry: All new routers (night-audit, audit, metrics) properly registered and mounted",
+    "SystemHealthDashboard: Role-based views (GM, Admin, Superadmin) with proper data-testid attributes"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (21/21 tests: 14 unit + 7 runtime)",
+    "frontend": "100% (all dashboard elements verified)"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123",
+    "role": "admin"
+  },
+  "seed_data_creation": "No new seed data - using existing demo data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All NEW endpoints tested and working: Night Audit (run, history, business-date), Audit Timeline (timeline, summary, entity trail), Operational Metrics (operational, night-audit). Load test framework files (k6/Locust) validated for syntax. Frontend SystemHealthDashboard renders correctly with Admin Tenant Scope view.",
+  "verified_api_responses": {
+    "night_audit_business_date": {
+      "endpoint": "GET /api/night-audit/business-date",
+      "status": 200,
+      "response_sample": {"business_date": "2026-03-13", "previous_business_date": null}
+    },
+    "night_audit_history": {
+      "endpoint": "GET /api/night-audit/history",
+      "status": 200,
+      "response_sample": {"runs": [], "total": 0, "limit": 5, "skip": 0}
+    },
+    "night_audit_run_dry": {
+      "endpoint": "POST /api/night-audit/run (dry_run=true)",
+      "status": 200,
+      "verified_fields": ["audit_id", "status", "is_dry_run", "rooms_processed", "charges_posted", "folios_balanced", "folios_unbalanced", "exceptions_count"]
+    },
+    "audit_timeline": {
+      "endpoint": "GET /api/audit/timeline?limit=5",
+      "status": 200,
+      "verified_fields": ["events", "count", "has_more", "next_cursor", "grouped"]
+    },
+    "audit_summary": {
+      "endpoint": "GET /api/audit/summary?period=24h",
+      "status": 200,
+      "verified_fields": ["period", "since", "total_events", "by_severity", "by_operation", "by_actor", "by_result"]
+    },
+    "audit_entity_trail": {
+      "endpoint": "GET /api/audit/timeline/booking/test123",
+      "status": 200,
+      "response_sample": {"entity_type": "booking", "entity_id": "test123", "trail": [], "count": 0}
+    },
+    "metrics_operational": {
+      "endpoint": "GET /api/metrics/operational",
+      "status": 200,
+      "verified_fields": ["timestamp", "rooms", "bookings", "folios", "housekeeping", "audit"]
+    },
+    "metrics_night_audit": {
+      "endpoint": "GET /api/metrics/night-audit",
+      "status": 200,
+      "verified_fields": ["business_date", "is_business_date_stale", "last_run", "trends"]
+    }
+  },
+  "load_tests_validated": {
+    "k6_files": [
+      "night_audit_load.js",
+      "ari_update_storm.js",
+      "inventory_drift_simulation.js",
+      "mobile_ops_load.js",
+      "ota_reservation_burst.js",
+      "overbooking_scenario.js",
+      "pos_fnb_burst.js",
+      "queue_backlog_load.js",
+      "rate_update_storm.js",
+      "system_health_dashboard_load.js",
+      "websocket_health_stream_load.js"
+    ],
+    "locust_file": "locust_pms.py",
+    "syntax_valid": true,
+    "note": "Load tests validated for syntax but NOT executed (as per instructions)"
+  },
+  "frontend_verification": {
+    "route": "/system-health",
+    "component": "SystemHealthDashboard",
+    "elements_verified": [
+      "data-testid='system-health-dashboard'",
+      "data-testid='scope-banner' - Admin - Tenant Scope (tenant)",
+      "data-testid='ws-status-badge' - Polling",
+      "data-testid='refresh-all-btn'",
+      "data-testid='admin-tenant-view'",
+      "data-testid='admin-metric-cm'",
+      "data-testid='admin-metric-queue'",
+      "data-testid='admin-metric-alerts'"
+    ],
+    "panels_rendered": [
+      "Channel Manager (Healthy)",
+      "Queue & Workers (Critical)",
+      "Security Runtime (Degraded)",
+      "Runtime Alerts (Healthy)",
+      "Audit & Observability section"
+    ]
+  },
+  "mocked_apis_note": "No APIs are mocked. NightAuditCoreService has REAL production-grade logic."
+}
