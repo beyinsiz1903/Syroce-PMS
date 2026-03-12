@@ -215,6 +215,15 @@ class AlertingService:
             metadata={"trigger": rule["trigger"], "severity": rule["severity"], "alert_id": alert["id"]},
         )
         await self._repo.create_audit_log(log.to_doc())
+
+        # Deliver alert to configured channels
+        try:
+            from .alert_delivery_service import AlertDeliveryService
+            delivery_svc = AlertDeliveryService(repo=self._repo)
+            await delivery_svc.deliver_alert(tenant_id, alert)
+        except Exception as e:
+            logger.warning("Alert delivery failed for alert %s: %s", alert["id"], e)
+
         return alert
 
     @staticmethod
@@ -361,5 +370,13 @@ class AlertingService:
             metadata={"trigger": trigger, "alert_id": alert["id"]},
         )
         await self._repo.create_audit_log(log.to_doc())
+
+        # Deliver alert to configured channels
+        try:
+            from .alert_delivery_service import AlertDeliveryService
+            delivery_svc = AlertDeliveryService(repo=self._repo)
+            await delivery_svc.deliver_alert(tenant_id, alert)
+        except Exception as e:
+            logger.warning("Alert delivery failed for alert %s: %s", alert["id"], e)
 
         return alert

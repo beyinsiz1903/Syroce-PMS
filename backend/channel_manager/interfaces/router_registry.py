@@ -13,6 +13,9 @@ from .routers.audit_router import router as audit_router
 from .routers.metrics_router import router as metrics_router
 from .routers.alert_router import router as alert_router
 from .routers.scheduler_router import router as scheduler_router
+from .routers.health_router import router as health_router
+from .routers.delivery_router import router as delivery_router
+from .routers.worker_router import router as worker_router
 
 router = APIRouter(prefix="/api/channel-manager/v2", tags=["Channel Manager v2"])
 
@@ -23,3 +26,6 @@ router.include_router(audit_router)
 router.include_router(metrics_router)
 router.include_router(alert_router)
 router.include_router(scheduler_router)
+router.include_router(health_router)
+router.include_router(delivery_router)
+router.include_router(worker_router)
