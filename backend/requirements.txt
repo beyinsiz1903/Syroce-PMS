@@ -155,7 +155,7 @@ tinycss2==1.5.1
 tinyhtml5==2.0.0
 tokenizers==0.22.2
 tqdm==4.67.3
-typer==0.20.0
+typer==0.24.0
 typer-slim==0.24.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
