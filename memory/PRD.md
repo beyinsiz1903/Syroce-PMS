@@ -1,145 +1,139 @@
-# Syroce PMS — Product Requirements Document
+# Syroce PMS — Production Hardening PRD
 
 ## Original Problem Statement
-Cloud PMS + Channel Manager integration platform. User acts as principal SaaS architect building a production-grade HotelRunner integration engine with operational maturity features.
+Cloud PMS + Channel Manager Integration Platform. A comprehensive hotel management system with HotelRunner channel manager integration supporting inventory sync, reservation import, and operational maturity features.
 
-## Architecture
-- Backend: FastAPI + MongoDB (async)
-- Frontend: React + Tailwind + Shadcn/UI
-- Pattern: Connector-first, domain-driven design
-- Encryption: AES-256-GCM for credential security
+## Core Architecture
+- **Backend**: FastAPI + MongoDB (connector-first architecture)
+- **Frontend**: React with Shadcn/UI components
+- **Channel Manager**: HotelRunner OTA-standard XML integration
 
-## Code Structure
-```
-backend/channel_manager/
-├── application/          # Business logic services
-│   ├── alerting_service.py
-│   ├── connector_service.py
-│   ├── error_queue_service.py
-│   ├── event_sync_service.py
-│   ├── historical_metrics_service.py
-│   ├── inventory_sync_service.py
-│   ├── mapping_service.py
-│   ├── multi_property_service.py
-│   ├── observability_service.py
-│   ├── production_readiness_service.py
-│   ├── provider_adapters.py
-│   ├── reconciliation_service.py
-│   ├── reliability_service.py
-│   ├── reservation_import_service.py
-│   ├── sandbox_validation_service.py
-│   ├── scheduled_import_service.py     # NEW: Sprint 3
-│   ├── scheduler_service.py
-│   └── webhook_service.py
-├── connectors/hotelrunner/
-│   ├── auth.py
-│   ├── client.py
-│   ├── contract_errors.py              # NEW: Sprint 1
-│   ├── environment_config.py           # NEW: Sprint 1
-│   ├── errors.py
-│   ├── rate_limit.py
-│   ├── retry_policy.py
-│   ├── xml_builder.py
-│   └── xml_parser.py
-├── domain/models/
-│   ├── audit.py
-│   ├── canonical.py
-│   ├── connector_account.py
-│   ├── credential_security.py          # NEW: Sprint 4
-│   ├── reservation_import.py
-│   └── sync.py
-├── infrastructure/
-│   ├── credential_vault.py
-│   ├── encryption_service.py
-│   ├── indexes.py
-│   ├── rbac.py
-│   └── repository.py
-└── interfaces/
-    ├── router_registry.py              # NEW: Sprint 2
-    ├── router.py                       # LEGACY (preserved)
-    └── routers/                        # NEW: Sprint 2
-        ├── alert_router.py
-        ├── audit_router.py
-        ├── connector_router.py
-        ├── metrics_router.py
-        ├── reservation_router.py
-        ├── scheduler_router.py
-        └── sync_router.py
-```
+## What Has Been Implemented
 
-## Completed Features
-
-### Core Platform (Phase 1-3)
+### Phase 1-3: Foundation (Previous Sessions)
 - Channel Manager v2 connector-first architecture
-- HotelRunner client with rate limiting, retry, audit
 - Inventory Sync Engine (delta sync, coalescing, batching)
-- Reservation Import Engine (idempotency, duplicate protection)
-- Entity mapping service with validation
+- Reservation Import Engine (idempotency, duplicate protection, manual review)
+- Operational maturity layer (metrics, alerting, reliability, sandbox validation, multi-property dashboard)
+- Admin panel with 13 tabs
+- Router decomposition (7 modular routers)
+- Scheduled reservation import jobs (APScheduler)
+- Credential security (AES-256-GCM encryption at rest)
+- RBAC enforced credential management
+- Full audit trail system
 
-### Operational Maturity (Phase 4-6)
-- Historical metrics storage with retention
-- Alerting engine with rules and severity levels
-- Connector reliability monitoring (uptime, MTTR, MTBF)
-- Sandbox validation (10-check suite)
-- Multi-property dashboard
-- Integration audit log
-- Error queue with bulk operations
-- Webhook ingestion
-- Production readiness checker
-- RBAC for credential access
+### Phase 4: Production Hardening (Current Session - 2026-03-12)
 
-### Sprint Implementation (2026-03-11)
+#### 1. Provider Contract Hardening (DONE)
+- Enhanced XML parser with typed error classes (InvalidXml, MissingRequiredField, SchemaMismatch, ProviderErrorResponse, UnknownResponseFormat)
+- Unknown fields silently ignored
+- Missing optional fields tolerated with defaults
+- Unexpected enum values handled with fallback
+- Safe numeric parsing (_safe_float, _safe_int)
+- Raw payload audit with sensitive data masking (CardNumber, CVV, etc.)
+- Payload truncation for storage
+- Correlation ID support
+- Source channel extraction from POS element
 
-#### Sprint 1: HotelRunner Sandbox Validation Enhancement
-- Environment config: mock/sandbox/production with per-env settings
-- Enhanced readiness report with warnings, contract mismatches
-- Ops integration: validation results -> metrics, alerting, reliability
-- Typed provider contract errors (InvalidXml, MissingField, SchemaMismatch, ProviderError, UnknownFormat)
+#### 2. Alert Delivery Channels (DONE)
+- Email delivery (SMTP + SendGrid API)
+- Webhook delivery (generic HTTP POST with HMAC signature)
+- Slack incoming webhook
+- Microsoft Teams incoming webhook
+- Severity-based filtering per channel
+- Alert deduplication (SHA-256 fingerprint)
+- Throttling (configurable per-channel rate limit)
+- Delivery retry with exponential backoff (3 attempts)
+- Delivery audit log
+- Tenant + connector-scoped channel configuration
+- Auto-delivery hooked into alerting engine
 
-#### Sprint 2: Router Refactoring
-- Broke 1800+ line router.py into 7 feature-based routers
-- Central router_registry.py for registration
-- All endpoint URLs preserved (zero breaking changes)
-- 26 API tests verify no regression
+#### 3. Background Scheduler Worker (DONE)
+- 4 job types: reservation_import, inventory_safety_sync, connector_health_check, metrics_aggregation
+- Default intervals: 5min, 30min, 15min, 30min
+- DB-based distributed lock
+- Duplicate job prevention
+- Retry with exponential backoff
+- Job lifecycle audit log
+- Job failure alerting (auto-triggers alert engine)
+- Manual trigger via API
 
-#### Sprint 3: Scheduled Reservation Import Jobs
-- Background import job system with lifecycle: pending -> running -> completed/retrying/failed
-- Duplicate job prevention via in-memory lock
-- Retry with exponential backoff (max 3)
-- Import failure spike -> alerting engine
-- Cron safety-net inventory sync
-- Per-connector configurable polling interval
-- New Import Jobs tab in Admin Panel
+#### 4. Connector Health Dashboard (DONE)
+- Per-connector health metrics: uptime, sync/import rates, alerts, retries
+- Health score formula: sync(30%) + import(30%) + uptime(20%) + alert_penalty(10%) + retry_penalty(10%)
+- Classification: HEALTHY (>=85), DEGRADED (>=60), CRITICAL (<60)
+- Multi-property aggregation
+- Average health score
+- Real-time refresh
 
-#### Sprint 4: Credential Security Hardening
-- ConnectorCredential, EncryptedSecret, SecretRotationLog models
-- AES-256-GCM encryption at rest
-- Masked credential viewing (UI + API)
-- RBAC-enforced credential operations
-- Secure rotation with audit trail
-- Post-rotation auto-validation
+#### 5. Enhanced Production Readiness Validation (DONE)
+- 10-item checklist: auth, inventory push, reservation import/modify/cancel, ACK lifecycle, alerts, metrics, scheduler, credential security
+- Three-tier recommendation: NOT_READY, CONDITIONALLY_READY, PRODUCTION_READY
+- Integrated with audit log
 
-### Frontend
-- 13-tab Admin Control Panel (Sync Health, Reservations, Alerts, Reliability, Reconciliation, Scheduler, Import Jobs, Credentials, Error Queue, Observability, Readiness, Sandbox Validation, Multi-Property)
+#### 6. Frontend (DONE)
+- ConnectorHealthTab: Health score bars, classification badges, metric grids
+- AlertDeliveryTab: Channel CRUD, config editor, test delivery, delivery log
+- BackgroundWorkerTab: Job type cards, manual trigger, job history table
+- All tabs integrated into AdminControlPanel (now 16 tabs total)
 
-## Test Coverage
-- 40 unit tests (test_sprint_suite.py) — 100% pass
-- 26 API integration tests (test_sprint_features_api.py) — 100% pass
-- 21 reservation engine tests — 100% pass
-- 19 reservation API tests — 100% pass
+#### 7. Testing (DONE)
+- 42 unit tests covering: XML parser resilience, contract errors, alert delivery, worker service, health scoring, contract scenarios, environment config, XML builder
+- 18 API integration tests (created by testing agent)
+- 100% pass rate
 
-## Remaining Work
+## Prioritized Backlog
 
-### P1 - Next
-- Alert delivery channels (email via SendGrid, SMS via Twilio, webhooks)
-- Real HotelRunner sandbox credentials for E2E validation
+### P0 (Critical)
+- None — all critical features implemented and tested
 
-### P2 - Enhancement
-- UI/UX polish for all admin tabs
-- Advanced data visualizations
-- Background scheduler worker (cron/APScheduler)
+### P1 (High)
+- HotelRunner sandbox credential verification against real sandbox API
+- Rate push success tracking in production readiness
+- Full mapping completeness check
 
-### P3 - Future
-- Multi-language support (i18n)
+### P2 (Medium)
+- Reconciliation issue tracking in readiness check
+- Real-time WebSocket health updates
+- Alert delivery metrics dashboard
+- Scheduled auto-readiness checks
+- i18n (internationalization)
+
+### P3 (Low)
 - Performance optimization
 - Report builder
+- Mobile-responsive health dashboard
+- Advanced data visualizations
+- Email template customization for alerts
+
+## Key API Endpoints
+
+### Health Dashboard
+- `GET /api/channel-manager/v2/health-dashboard/connectors`
+- `GET /api/channel-manager/v2/health-dashboard/connectors/{id}`
+- `GET /api/channel-manager/v2/health-dashboard/properties/{id}`
+
+### Alert Delivery
+- `GET /api/channel-manager/v2/delivery/channels`
+- `POST /api/channel-manager/v2/delivery/channels`
+- `DELETE /api/channel-manager/v2/delivery/channels/{id}`
+- `POST /api/channel-manager/v2/delivery/test/{id}`
+- `GET /api/channel-manager/v2/delivery/log`
+
+### Background Worker
+- `POST /api/channel-manager/v2/worker/jobs/run?job_type=...`
+- `POST /api/channel-manager/v2/worker/jobs/run-all`
+- `GET /api/channel-manager/v2/worker/jobs`
+- `GET /api/channel-manager/v2/worker/stats`
+
+## Data Models
+- `cm_alert_delivery_channels`: Channel configurations
+- `cm_alert_delivery_log`: Delivery audit trail
+- `cm_alert_fingerprints`: Deduplication fingerprints
+- `cm_worker_jobs`: Background worker job records
+- `cm_worker_locks`: Distributed lock records
+
+## Test Reports
+- `/app/backend/tests/test_production_hardening.py` (42 unit tests)
+- `/app/backend/tests/test_production_hardening_api.py` (18 API tests)
+- `/app/test_reports/iteration_30.json` (latest test run)
