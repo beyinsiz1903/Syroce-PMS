@@ -150,6 +150,14 @@ export const NAV_ITEMS = [
     group: "professional",
   },
   {
+    key: "ari_push",
+    label: "ARI Push Engine",
+    path: "/ari-push",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+  },
+  {
     key: "integration_hub",
     label: "Integration Hub",
     path: "/app/integration-hub",

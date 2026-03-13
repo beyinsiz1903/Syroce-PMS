@@ -182,6 +182,24 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Production Go-Live validators init warning: {e}")
 
+    # ── ARI Push Engine ──────────────────────────────────────────────
+    try:
+        from domains.channel_manager.ari.outbound_service import register_provider_adapter
+        from domains.channel_manager.ari.adapters.hotelrunner_ari_adapter import HotelRunnerARIAdapter
+        from domains.channel_manager.ari.adapters.exely_ari_adapter import ExelyARIAdapter
+        register_provider_adapter("hotelrunner", HotelRunnerARIAdapter())
+        register_provider_adapter("exely", ExelyARIAdapter())
+        # Create MongoDB indexes for ARI collections
+        await db["ari_events"].create_index([("tenant_id", 1), ("property_id", 1), ("created_at", -1)])
+        await db["ari_change_sets"].create_index([("tenant_id", 1), ("status", 1), ("created_at", 1)])
+        await db["ari_change_sets"].create_index([("coalescing_key", 1), ("status", 1)])
+        await db["ari_change_sets"].create_index([("provider", 1), ("property_id", 1), ("provider_delta_hash", 1)])
+        await db["ari_outbound_logs"].create_index([("tenant_id", 1), ("property_id", 1), ("pushed_at", -1)])
+        await db["ari_drift_state"].create_index([("tenant_id", 1), ("property_id", 1), ("provider", 1)])
+        print("✅ ARI Push Engine initialized (HotelRunner + Exely adapters)")
+    except Exception as e:
+        logger.warning(f"ARI Push Engine init warning: {e}")
+
     # ── Cache re-warm ───────────────────────────────────────────────
     try:
         from cache_warmer import initialize_cache_warmer
