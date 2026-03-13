@@ -1102,11 +1102,11 @@ async def get_price_recommendation_with_range(
     # Get historical occupancy - handle date parsing
     try:
         check_in = datetime.fromisoformat(check_in_date.replace('Z', '+00:00'))
-    except:
+    except Exception:
         # Try alternative formats
         try:
             check_in = datetime.strptime(check_in_date, '%Y-%m-%d')
-        except:
+        except Exception:
             check_in = datetime.now(timezone.utc)
     
     # Calculate occupancy for same date last year

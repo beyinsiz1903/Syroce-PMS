@@ -1238,7 +1238,7 @@ async def get_complete_guest_profile(
                     check_in_dt = datetime.fromisoformat(check_in.replace('Z', '+00:00'))
                     check_out_dt = datetime.fromisoformat(check_out.replace('Z', '+00:00'))
                     nights = (check_out_dt - check_in_dt).days
-                except:
+                except Exception:
                     nights = 0
             
             stay_history.append({

@@ -2507,7 +2507,7 @@ async def get_ml_models_status(
             try:
                 with open(os.path.join(model_dir, metrics_file[0]), 'r') as f:
                     info['metrics'] = json.load(f)
-            except:
+            except Exception:
                 info['metrics'] = None
     
     # Overall summary

@@ -223,7 +223,7 @@ async def get_room_status_report(current_user: User = Depends(get_current_user))
             try:
                 dnd_time = datetime.fromisoformat(dnd_since.replace('Z', '+00:00'))
                 duration_hours = int((datetime.now(timezone.utc) - dnd_time).total_seconds() / 3600)
-            except:
+            except Exception:
                 duration_hours = 0
                 
             dnd_rooms.append({
@@ -246,7 +246,7 @@ async def get_room_status_report(current_user: User = Depends(get_current_user))
                         'last_activity': last_activity[:16] if isinstance(last_activity, str) else last_activity.strftime('%Y-%m-%d %H:%M'),
                         'status': 'suspected'
                     })
-            except:
+            except Exception:
                 pass
     
     # Get Out of Order rooms
@@ -302,7 +302,7 @@ async def get_staff_performance_detailed(current_user: User = Depends(get_curren
                 completed = datetime.fromisoformat(task['completed_at'].replace('Z', '+00:00'))
                 duration = (completed - started).total_seconds() / 60
                 staff_stats[staff]['durations'].append(duration)
-            except:
+            except Exception:
                 pass
         
         # Quality score (from inspections or ratings)

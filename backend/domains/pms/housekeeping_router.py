@@ -453,7 +453,7 @@ async def get_task_timing_analysis(
                 started = datetime.fromisoformat(task['started_at'])
                 completed = datetime.fromisoformat(task['completed_at'])
                 duration_minutes = (completed - started).total_seconds() / 60
-            except:
+            except Exception:
                 duration_minutes = None
         else:
             duration_minutes = None
@@ -594,7 +594,7 @@ async def get_staff_performance_table(
                 completed = datetime.fromisoformat(task['completed_at'])
                 duration = (completed - started).total_seconds() / 60
                 staff_data[staff]['durations'].append(duration)
-            except:
+            except Exception:
                 pass
     
     # Get inspection results for quality score

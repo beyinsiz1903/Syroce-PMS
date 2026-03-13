@@ -12,7 +12,7 @@ import requests
 import os
 import uuid
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://hotelrunner-sandbox.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://pipeline-validation-3.preview.emergentagent.com')
 CONNECTOR_ID = "c79fd9cb-d240-4344-8b2d-7d8b71d6a681"
 
 class TestChannelManagerV2Phase6:

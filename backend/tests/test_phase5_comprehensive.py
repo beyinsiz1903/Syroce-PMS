@@ -7,7 +7,7 @@ import requests
 import os
 
 # Use public URL from frontend env
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://hotelrunner-sandbox.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://pipeline-validation-3.preview.emergentagent.com').rstrip('/')
 
 
 @pytest.fixture(scope="session")

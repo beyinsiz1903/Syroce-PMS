@@ -322,7 +322,7 @@ async def get_corporate_accounts(
             nights = (datetime.fromisoformat(booking.get('check_out')) - 
                      datetime.fromisoformat(booking.get('check_in'))).days
             companies[company]['total_nights'] += nights
-        except:
+        except Exception:
             pass
     
     # Calculate ADR and create list

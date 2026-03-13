@@ -351,7 +351,7 @@ class TestReportTemplates:
                     f"{BASE_URL}/api/reports/builder/templates/{template_id}",
                     headers=self.headers
                 )
-            except:
+            except Exception:
                 pass
     
     def test_list_templates(self):

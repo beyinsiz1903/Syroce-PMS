@@ -382,7 +382,7 @@ async def generate_demand_forecast(
             month = checkin.month
             historical_occupancy_by_dow[dow].append(1)
             historical_occupancy_by_month[month].append(1)
-        except:
+        except Exception:
             pass
     
     # Get total rooms

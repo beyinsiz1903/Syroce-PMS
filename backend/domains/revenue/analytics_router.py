@@ -2211,7 +2211,7 @@ async def get_system_health_detailed(
         await db.command('ping')
         db_status = 'operational'
         db_response_time = 5  # Mock
-    except:
+    except Exception:
         db_status = 'error'
         db_response_time = 0
     

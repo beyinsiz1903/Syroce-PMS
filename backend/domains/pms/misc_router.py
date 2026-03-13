@@ -1042,7 +1042,7 @@ async def network_ping_test(
                             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                             sock.settimeout(3)
                             port = 80
-                    except:
+                    except Exception:
                         port = 80
                 
                 result = sock.connect_ex((request.target, port))

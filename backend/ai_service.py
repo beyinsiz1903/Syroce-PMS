@@ -271,7 +271,7 @@ Format: Category: [category], Confidence: [level]"""
                 category = parts[0].split(':')[1].strip()
                 if len(parts) > 1:
                     confidence = parts[1].split(':')[1].strip().lower()
-            except:
+            except Exception:
                 pass
         
         return {

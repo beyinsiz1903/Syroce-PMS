@@ -88,7 +88,7 @@ class RedisCache:
         try:
             info = self.redis_client.info('memory')
             memory_used = info.get('used_memory_human', 'N/A')
-        except:
+        except Exception:
             memory_used = 'N/A'
         
         return {

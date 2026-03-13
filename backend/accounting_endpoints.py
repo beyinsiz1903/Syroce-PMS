@@ -1,7 +1,14 @@
 # Accounting Endpoints to be integrated into server.py
-from fastapi import Depends
-from datetime import datetime, timezone
+from fastapi import APIRouter, HTTPException, Depends
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
+import uuid
+
+from core.database import db
+from core.security import get_current_user
+from models.schemas import User
+
+api_router = APIRouter(prefix="/api")
 
 # These endpoints will be added to server.py
 

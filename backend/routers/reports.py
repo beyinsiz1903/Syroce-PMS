@@ -180,7 +180,7 @@ async def get_flash_report(
             }
         }, {'_id': 0, 'total_amount': 1}).to_list(1000)
         sum([o.get('total_amount', 0) for o in fnb_orders])
-    except:
+    except Exception:
         pass
 
 
@@ -301,7 +301,7 @@ async def get_official_guest_list(
             'charge_category': {'$in': ['spa', 'laundry', 'minibar', 'telephone', 'upsell']}
         }, {'_id': 0, 'amount': 1}).to_list(1000)
         other_revenue = sum([c.get('amount', 0) for c in other_charges])
-    except:
+    except Exception:
         pass
     
     # Total Revenue

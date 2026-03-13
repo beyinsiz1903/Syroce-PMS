@@ -6,7 +6,7 @@ import pytest
 import httpx
 import os
 
-API_URL = os.environ.get("API_URL", "https://hotelrunner-sandbox.preview.emergentagent.com")
+API_URL = os.environ.get("API_URL", "https://pipeline-validation-3.preview.emergentagent.com")
 EMAIL = "demo@hotel.com"
 PASSWORD = "demo123"
 

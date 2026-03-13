@@ -200,7 +200,7 @@ async def detailed_health_check(db=None, redis_client=None):
             "materialized_views": materialized_views_manager is not None,
             "cache_manager": cache_manager is not None
         }
-    except:
+    except Exception:
         checks["optimization"] = {"status": "not_available"}
     
     response = {

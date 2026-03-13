@@ -295,7 +295,7 @@ class IPBlocker:
             self.client = redis.from_url(self.redis_url, decode_responses=True)
             self.client.ping()
             self.enabled = True
-        except:
+        except Exception:
             self.enabled = False
             self.blocked_ips = set()
     

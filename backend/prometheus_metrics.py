@@ -199,7 +199,7 @@ async def collect_system_metrics(db):
                 total_keys = cache_stats.get('total_keys', 0)
                 if total_keys > 0:
                     cache_hit_rate.labels(cache_type='redis').set(80.0)  # From our tests
-        except:
+        except Exception:
             pass
         
     except Exception as e:

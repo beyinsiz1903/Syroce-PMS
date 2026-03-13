@@ -241,7 +241,7 @@ async def health_check():
             cached = redis_cache.get("monitoring:health")
             if cached:
                 return cached
-    except:
+    except Exception:
         pass
     
     try:
@@ -298,7 +298,7 @@ async def health_check():
             from redis_cache import redis_cache
             if redis_cache:
                 redis_cache.set("monitoring:health", result, ttl=5)
-        except:
+        except Exception:
             pass
         
         return result
@@ -331,7 +331,7 @@ async def get_system_metrics():
             cached = redis_cache.get("monitoring:system")
             if cached:
                 return cached
-    except:
+    except Exception:
         pass
     
     result = SystemMonitor.get_system_info()
@@ -341,7 +341,7 @@ async def get_system_metrics():
         from redis_cache import redis_cache
         if redis_cache:
             redis_cache.set("monitoring:system", result, ttl=3)
-    except:
+    except Exception:
         pass
     
     return result

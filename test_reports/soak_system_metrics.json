@@ -1,82 +1,468 @@
 {
   "monitor_type": "soak_system_monitor",
-  "total_snapshots": 1,
+  "total_snapshots": 11,
   "latest_snapshot": {
-    "timestamp": "2026-03-12T20:10:08.837970",
-    "backend_memory_mb": 563.9,
-    "mongo_memory_mb": 287.3,
+    "timestamp": "2026-03-13T02:11:12.595704",
+    "backend_memory_mb": 585.3,
+    "mongo_memory_mb": 94.0,
     "endpoint_probes": [
       {
         "endpoint": "/api/pms/rooms?limit=5",
-        "status": 200,
-        "latency_ms": 4.7,
-        "ok": true
+        "status": 403,
+        "latency_ms": 2.4,
+        "ok": false
       },
       {
         "endpoint": "/api/arrivals/today",
-        "status": 200,
-        "latency_ms": 5.9,
-        "ok": true
+        "status": 403,
+        "latency_ms": 3.5,
+        "ok": false
       },
       {
         "endpoint": "/api/metrics/operational",
-        "status": 200,
-        "latency_ms": 9.3,
-        "ok": true
+        "status": 403,
+        "latency_ms": 3.5,
+        "ok": false
       },
       {
         "endpoint": "/api/audit/timeline?limit=5",
-        "status": 200,
-        "latency_ms": 6.4,
-        "ok": true
+        "status": 403,
+        "latency_ms": 3.2,
+        "ok": false
       },
       {
         "endpoint": "/api/production/maturity/score",
-        "status": 200,
-        "latency_ms": 13.5,
-        "ok": true
+        "status": 403,
+        "latency_ms": 3.3,
+        "ok": false
       }
     ]
   },
   "analysis": {
-    "status": "PASS",
-    "issues": []
+    "status": "FAIL",
+    "issues": [
+      {
+        "type": "memory_leak_suspected",
+        "severity": "HIGH",
+        "detail": "Backend memory grew 90.4% (462MB -> 880MB)"
+      },
+      {
+        "type": "high_error_rate",
+        "severity": "HIGH",
+        "detail": "Probe error rate: 100.0% (55/55)"
+      }
+    ]
   },
   "snapshots": [
     {
-      "timestamp": "2026-03-12T20:10:08.837970",
-      "backend_memory_mb": 563.9,
-      "mongo_memory_mb": 287.3,
+      "timestamp": "2026-03-13T02:06:12.201406",
+      "backend_memory_mb": 342.8,
+      "mongo_memory_mb": 135.1,
       "endpoint_probes": [
         {
           "endpoint": "/api/pms/rooms?limit=5",
-          "status": 200,
-          "latency_ms": 4.7,
-          "ok": true
+          "status": 0,
+          "latency_ms": 0,
+          "ok": false,
+          "error": "HTTPConnectionPool(host='localhost', port=8001): Max retries exceeded with url: /api/pms/rooms?limit=5 (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0xfa115db77710>: Failed to establish a new connection: [Errno 111] Connection refused'))"
         },
         {
           "endpoint": "/api/arrivals/today",
-          "status": 200,
-          "latency_ms": 5.9,
-          "ok": true
+          "status": 0,
+          "latency_ms": 0,
+          "ok": false,
+          "error": "HTTPConnectionPool(host='localhost', port=8001): Max retries exceeded with url: /api/arrivals/today (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0xfa115db818d0>: Failed to establish a new connection: [Errno 111] Connection refused'))"
         },
         {
           "endpoint": "/api/metrics/operational",
-          "status": 200,
-          "latency_ms": 9.3,
-          "ok": true
+          "status": 0,
+          "latency_ms": 0,
+          "ok": false,
+          "error": "HTTPConnectionPool(host='localhost', port=8001): Max retries exceeded with url: /api/metrics/operational (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0xfa115db83a50>: Failed to establish a new connection: [Errno 111] Connection refused'))"
         },
         {
           "endpoint": "/api/audit/timeline?limit=5",
-          "status": 200,
-          "latency_ms": 6.4,
-          "ok": true
+          "status": 0,
+          "latency_ms": 0,
+          "ok": false,
+          "error": "HTTPConnectionPool(host='localhost', port=8001): Max retries exceeded with url: /api/audit/timeline?limit=5 (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0xfa115db91cd0>: Failed to establish a new connection: [Errno 111] Connection refused'))"
         },
         {
           "endpoint": "/api/production/maturity/score",
-          "status": 200,
-          "latency_ms": 13.5,
-          "ok": true
+          "status": 0,
+          "latency_ms": 0,
+          "ok": false,
+          "error": "HTTPConnectionPool(host='localhost', port=8001): Max retries exceeded with url: /api/production/maturity/score (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0xfa115db824d0>: Failed to establish a new connection: [Errno 111] Connection refused'))"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-03-13T02:06:42.249112",
+      "backend_memory_mb": 581.7,
+      "mongo_memory_mb": 94.0,
+      "endpoint_probes": [
+        {
+          "endpoint": "/api/pms/rooms?limit=5",
+          "status": 403,
+          "latency_ms": 2.6,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/arrivals/today",
+          "status": 403,
+          "latency_ms": 4.4,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/metrics/operational",
+          "status": 403,
+          "latency_ms": 4.6,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/audit/timeline?limit=5",
+          "status": 403,
+          "latency_ms": 4.6,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/production/maturity/score",
+          "status": 403,
+          "latency_ms": 4.2,
+          "ok": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-03-13T02:07:12.289115",
+      "backend_memory_mb": 582.7,
+      "mongo_memory_mb": 94.0,
+      "endpoint_probes": [
+        {
+          "endpoint": "/api/pms/rooms?limit=5",
+          "status": 403,
+          "latency_ms": 2.5,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/arrivals/today",
+          "status": 403,
+          "latency_ms": 3.9,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/metrics/operational",
+          "status": 403,
+          "latency_ms": 4.8,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/audit/timeline?limit=5",
+          "status": 403,
+          "latency_ms": 4.1,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/production/maturity/score",
+          "status": 403,
+          "latency_ms": 4.1,
+          "ok": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-03-13T02:07:42.328653",
+      "backend_memory_mb": 583.3,
+      "mongo_memory_mb": 94.0,
+      "endpoint_probes": [
+        {
+          "endpoint": "/api/pms/rooms?limit=5",
+          "status": 403,
+          "latency_ms": 2.5,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/arrivals/today",
+          "status": 403,
+          "latency_ms": 3.9,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/metrics/operational",
+          "status": 403,
+          "latency_ms": 4.0,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/audit/timeline?limit=5",
+          "status": 403,
+          "latency_ms": 4.8,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/production/maturity/score",
+          "status": 403,
+          "latency_ms": 4.5,
+          "ok": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-03-13T02:08:12.366293",
+      "backend_memory_mb": 584.5,
+      "mongo_memory_mb": 94.0,
+      "endpoint_probes": [
+        {
+          "endpoint": "/api/pms/rooms?limit=5",
+          "status": 403,
+          "latency_ms": 2.7,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/arrivals/today",
+          "status": 403,
+          "latency_ms": 4.2,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/metrics/operational",
+          "status": 403,
+          "latency_ms": 4.2,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/audit/timeline?limit=5",
+          "status": 403,
+          "latency_ms": 3.8,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/production/maturity/score",
+          "status": 403,
+          "latency_ms": 3.9,
+          "ok": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-03-13T02:08:42.405915",
+      "backend_memory_mb": 585.6,
+      "mongo_memory_mb": 94.0,
+      "endpoint_probes": [
+        {
+          "endpoint": "/api/pms/rooms?limit=5",
+          "status": 403,
+          "latency_ms": 2.5,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/arrivals/today",
+          "status": 403,
+          "latency_ms": 4.0,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/metrics/operational",
+          "status": 403,
+          "latency_ms": 4.6,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/audit/timeline?limit=5",
+          "status": 403,
+          "latency_ms": 6.3,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/production/maturity/score",
+          "status": 403,
+          "latency_ms": 4.4,
+          "ok": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-03-13T02:09:12.445276",
+      "backend_memory_mb": 586.0,
+      "mongo_memory_mb": 94.0,
+      "endpoint_probes": [
+        {
+          "endpoint": "/api/pms/rooms?limit=5",
+          "status": 403,
+          "latency_ms": 2.6,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/arrivals/today",
+          "status": 403,
+          "latency_ms": 4.3,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/metrics/operational",
+          "status": 403,
+          "latency_ms": 4.3,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/audit/timeline?limit=5",
+          "status": 403,
+          "latency_ms": 3.8,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/production/maturity/score",
+          "status": 403,
+          "latency_ms": 4.6,
+          "ok": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-03-13T02:09:42.485119",
+      "backend_memory_mb": 586.6,
+      "mongo_memory_mb": 94.0,
+      "endpoint_probes": [
+        {
+          "endpoint": "/api/pms/rooms?limit=5",
+          "status": 403,
+          "latency_ms": 2.6,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/arrivals/today",
+          "status": 403,
+          "latency_ms": 4.0,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/metrics/operational",
+          "status": 403,
+          "latency_ms": 4.5,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/audit/timeline?limit=5",
+          "status": 403,
+          "latency_ms": 3.9,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/production/maturity/score",
+          "status": 403,
+          "latency_ms": 3.8,
+          "ok": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-03-13T02:10:12.522873",
+      "backend_memory_mb": 587.2,
+      "mongo_memory_mb": 94.0,
+      "endpoint_probes": [
+        {
+          "endpoint": "/api/pms/rooms?limit=5",
+          "status": 403,
+          "latency_ms": 2.4,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/arrivals/today",
+          "status": 403,
+          "latency_ms": 3.8,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/metrics/operational",
+          "status": 403,
+          "latency_ms": 3.7,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/audit/timeline?limit=5",
+          "status": 403,
+          "latency_ms": 3.6,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/production/maturity/score",
+          "status": 403,
+          "latency_ms": 3.6,
+          "ok": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-03-13T02:10:42.560526",
+      "backend_memory_mb": 588.0,
+      "mongo_memory_mb": 94.0,
+      "endpoint_probes": [
+        {
+          "endpoint": "/api/pms/rooms?limit=5",
+          "status": 403,
+          "latency_ms": 2.4,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/arrivals/today",
+          "status": 403,
+          "latency_ms": 3.9,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/metrics/operational",
+          "status": 403,
+          "latency_ms": 3.8,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/audit/timeline?limit=5",
+          "status": 403,
+          "latency_ms": 4.1,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/production/maturity/score",
+          "status": 403,
+          "latency_ms": 4.0,
+          "ok": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-03-13T02:11:12.595704",
+      "backend_memory_mb": 585.3,
+      "mongo_memory_mb": 94.0,
+      "endpoint_probes": [
+        {
+          "endpoint": "/api/pms/rooms?limit=5",
+          "status": 403,
+          "latency_ms": 2.4,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/arrivals/today",
+          "status": 403,
+          "latency_ms": 3.5,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/metrics/operational",
+          "status": 403,
+          "latency_ms": 3.5,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/audit/timeline?limit=5",
+          "status": 403,
+          "latency_ms": 3.2,
+          "ok": false
+        },
+        {
+          "endpoint": "/api/production/maturity/score",
+          "status": 403,
+          "latency_ms": 3.3,
+          "ok": false
         }
       ]
     }

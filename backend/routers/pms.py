@@ -115,7 +115,7 @@ async def get_rooms(
                 cached = redis_cache.get(cache_key)
                 if cached:
                     return cached
-        except:
+        except Exception:
             pass
         
         # Check pre-warmed cache second
@@ -133,7 +133,7 @@ async def get_rooms(
                     if 'floor' in room and isinstance(room['floor'], str):
                         try:
                             room['floor'] = int(room['floor'])
-                        except:
+                        except Exception:
                             room['floor'] = 1
                     elif 'floor' not in room:
                         room['floor'] = 1
@@ -172,7 +172,7 @@ async def get_rooms(
         if 'floor' in room and isinstance(room['floor'], str):
             try:
                 room['floor'] = int(room['floor'])
-            except:
+            except Exception:
                 room['floor'] = 1
         elif 'floor' not in room:
             room['floor'] = 1
@@ -192,7 +192,7 @@ async def get_rooms(
             if redis_cache:
                 cache_key = f"rooms:{current_user.tenant_id}:limit{limit}"
                 redis_cache.set(cache_key, rooms, ttl=30)
-        except:
+        except Exception:
             pass
 
     return rooms
@@ -995,7 +995,7 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
             cached = redis_cache.get(cache_key)
             if cached:
                 return cached
-    except:
+    except Exception:
         pass
     
     # Check pre-warmed cache second
@@ -1035,7 +1035,7 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
         if redis_cache:
             cache_key = f"dashboard:{current_user.tenant_id}"
             redis_cache.set(cache_key, result, ttl=5)
-    except:
+    except Exception:
         pass
     
     return result

@@ -1,3 +1,23 @@
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 200
+exclude = [
+    "accounting_endpoints.py",
+    "server_pms_complete.py",
+    "create_*.py",
+    "seed_*.py",
+    "fix_*.py",
+    "ml_data_generators.py",
+    "demo_data_generator.py",
+    "scripts/",
+    "load_tests/",
+    "tests/",
+]
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]
+ignore = ["F821"]

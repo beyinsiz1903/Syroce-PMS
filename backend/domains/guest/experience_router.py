@@ -1203,7 +1203,7 @@ async def get_guest_bookings(
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
                 return dt
-            except:
+            except Exception:
                 return None
         
         check_in_dt = make_aware(booking.get('check_in'))

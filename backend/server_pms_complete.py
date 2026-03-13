@@ -1,7 +1,15 @@
 # PMS Complete Endpoints - Part 2 to append to server.py
 
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Optional
+from fastapi import APIRouter, HTTPException, Depends
+from datetime import datetime, timezone, timedelta, date
+from typing import List, Dict, Any, Optional
+import uuid
+
+from core.database import db
+from core.security import get_current_user
+from models.schemas import User, FolioCharge, Payment, HousekeepingTask, ChannelRate
+
+api_router = APIRouter(prefix="/api")
 
 # This continues from the previous server.py
 # ============= FRONT DESK ENDPOINTS =============

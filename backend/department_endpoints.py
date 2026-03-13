@@ -216,7 +216,7 @@ async def get_corporate_accounts_ranking(tenant_id: str, db):
             check_out = datetime.fromisoformat(booking.get('check_out'))
             nights = (check_out - check_in).days
             companies[company]['total_nights'] += nights
-        except:
+        except Exception:
             pass
         
         # Update last booking

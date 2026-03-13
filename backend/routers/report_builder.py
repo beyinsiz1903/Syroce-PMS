@@ -429,7 +429,7 @@ async def export_report_excel(config: ReportConfig, credentials=Depends(HTTPBear
             try:
                 if cell.value and len(str(cell.value)) > max_length:
                     max_length = len(str(cell.value))
-            except:
+            except Exception:
                 pass
         ws.column_dimensions[column_letter].width = min(max_length + 3, 50)
 
