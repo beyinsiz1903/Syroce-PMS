@@ -2,10 +2,14 @@
 Runtime Stress Test — Night Audit Business Rules
 Tests idempotency, concurrent guard, exception tracking, and tenant isolation.
 """
-import asyncio
-import pytest
-import uuid
 import os
+import pytest
+
+if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
+
+import asyncio
+import uuid
 from datetime import datetime, timezone, timedelta
 
 
@@ -27,16 +31,10 @@ async def svc(db):
     backend = Path(__file__).resolve().parent.parent.parent
     if str(backend) not in sys.path:
         sys.path.insert(0, str(backend))
-    import os
-import pytest
-if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
-    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
-
-from domains.pms.night_audit.service import NightAuditCoreService
+    from domains.pms.night_audit.service import NightAuditCoreService
     s = NightAuditCoreService()
     s._db = db
     return s
-
 
 async def test_night_audit_concurrent_guard(svc, db):
     """Two concurrent runs — only one should succeed; neither should crash."""
