@@ -6,7 +6,9 @@ import pytest
 import httpx
 import os
 
-API_URL = os.environ.get("API_URL", "https://pipeline-validation-3.preview.emergentagent.com")
+API_URL = os.environ.get("API_URL", os.environ.get("REACT_APP_BACKEND_URL", ""))
+
+pytestmark = pytest.mark.skipif(not API_URL, reason="API_URL/REACT_APP_BACKEND_URL not set")
 EMAIL = "demo@hotel.com"
 PASSWORD = "demo123"
 
