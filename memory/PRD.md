@@ -1,128 +1,91 @@
 # RoomOps PMS - Product Requirements Document
 
 ## Original Problem Statement
-Full-stack Hotel Property Management System (PMS) SaaS platform. Development phase declared complete. Current phase: operational validation and real-world integration testing.
+Full-stack Hotel Property Management System (PMS) SaaS platform with multi-provider Channel Manager integration. Development phase declared complete. Current phase: operational validation, real-world integration testing, and multi-provider expansion.
 
-## Current Phase: HotelRunner Integration
+## Current Phase: Multi-Provider Channel Manager
 
 ### Architecture
 ```
 OTA (Booking.com / Expedia / Agoda)
     |
     v
-HotelRunner (Channel Manager)
-    |
-    v
-[Webhook Receiver] ─── Primary path
+Channel Manager Providers:
+  ├── HotelRunner (REST API) ─── [Webhook + Scheduled Pull]
+  └── Exely (SOAP/OTA)     ─── [Scheduled Pull via OTA_ReadRQ]
     |
     v
 [Raw Event Store] ─── Audit + Replay
     |
     v
-[Idempotency Guard] ─── Dedup by hr_number + channel
-    |
-    v
-[Schema Normalizer] ─── HR format → Canonical PMS format
-    |
-    v
-[Decision Engine] ─── create / update / cancel / skip / pending_mapping
+[Common Ingest Pipeline] ─── Provider-agnostic
+    ├── Idempotency Guard ─── Dedup by external_id
+    ├── Schema Normalizer ─── Provider format → Canonical PMS format
+    ├── Room Mapping Check
+    └── Decision Engine ─── create / update / cancel / skip / pending_mapping
     |
     v
 [PMS ReservationService]
-
-Fallback path:
-[Scheduled Pull Job] → Cursor-based fetch → Same ingest pipeline
 ```
 
-### What's Been Implemented (March 2026)
+### What's Been Implemented
 
-#### CI/CD Pipeline Fix
+#### CI/CD Pipeline Fix (March 2026)
 - Ruff lint configuration in pyproject.toml → 0 errors
 - E722 bare except fixes across 21 files
-- Dependency conflict resolution (locust/python-engineio/python-socketio)
+- Dependency conflict resolution
+- pytest CI stability patches
 
-#### HotelRunner REST API Provider
+#### Provider-Agnostic Common Ingest Pipeline
+- `common_ingest.py` - Shared by HotelRunner and Exely
+- Raw Event Store → Idempotency Guard → Decision Engine → PMS Import
+- Provider collection mapping for MongoDB
+
+#### HotelRunner REST API Provider (DONE)
 - Full API client with rate limiting (5 req/min, 250 req/day)
-- Connection test, rooms fetch, ARI push, reservation pull
-- Delivery confirmation, channel listing, transaction tracking
+- Webhook Receiver: 3 endpoints (reservations, modifications, cancellations)
+- Scheduled Pull: Cursor-based with safety window
+- Room/Rate mapping, ARI push, delivery confirmation
+- Frontend dashboard at /hotelrunner
 
-#### Enterprise Reservation Ingest Pipeline
-- **Webhook Receiver**: 3 endpoints (reservations, modifications, cancellations)
-  - Lightweight: receive → ack → background process
-  - Tenant resolution via X-Tenant-ID header or hr_id lookup
-- **Raw Event Store**: Every event persisted for replay and audit
-- **Idempotency Guard**: Two-layer (reservation identity + event identity)
-- **Schema Normalizer**: HotelRunner → canonical PMS format
-- **Decision Engine**: create/update/cancel/skip/pending_mapping
-- **Loop Prevention**: source_system + external_write_protected flags
-- **Mapping Guard**: No auto-import without room mapping
-
-#### Scheduled Pull Job
-- Cursor-based with safety window (fetch last N+5 minutes)
-- Auto-runs for all active connections
-- Manual trigger endpoint
-
-#### Frontend Dashboard
-- HotelRunner Integration page at `/hotelrunner`
-- 5 tabs: Baglanti, Odalar, Rezervasyonlar, Eslemeler, Loglar
-- Connection form, room list, reservation table, mapping CRUD, sync logs
-
-### Key API Endpoints
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/channel-manager/hotelrunner/connect` | POST | Setup connection |
-| `/api/channel-manager/hotelrunner/connection` | GET | Connection status |
-| `/api/channel-manager/hotelrunner/test` | POST | Test connection |
-| `/api/channel-manager/hotelrunner/rooms` | GET | Fetch rooms |
-| `/api/channel-manager/hotelrunner/rooms/update` | PUT | ARI push |
-| `/api/channel-manager/hotelrunner/rooms/bulk-update` | POST | Bulk ARI |
-| `/api/channel-manager/hotelrunner/reservations` | GET | Fetch from HR |
-| `/api/channel-manager/hotelrunner/reservations/sync` | POST | Sync all |
-| `/api/channel-manager/hotelrunner/reservations/local` | GET | Local stored |
-| `/api/channel-manager/hotelrunner/webhooks/reservations` | POST | Webhook: new |
-| `/api/channel-manager/hotelrunner/webhooks/modifications` | POST | Webhook: modify |
-| `/api/channel-manager/hotelrunner/webhooks/cancellations` | POST | Webhook: cancel |
-| `/api/channel-manager/hotelrunner/sync/reservations/pull` | POST | Manual pull |
-| `/api/channel-manager/hotelrunner/sync/status` | GET | Sync status |
-| `/api/channel-manager/hotelrunner/sync/scheduler/start` | POST | Start scheduler |
-| `/api/channel-manager/hotelrunner/sync/scheduler/stop` | POST | Stop scheduler |
-| `/api/channel-manager/hotelrunner/logs/events` | GET | Raw events |
-| `/api/channel-manager/hotelrunner/logs/errors` | GET | Error events |
-| `/api/channel-manager/hotelrunner/room-mappings` | GET/POST/DELETE | Room mappings |
-| `/api/channel-manager/hotelrunner/channels` | GET | HR channels |
-
-### Key Files
-- `/app/backend/domains/channel_manager/providers/hotelrunner.py` - API client
-- `/app/backend/domains/channel_manager/providers/hotelrunner_router.py` - Connection/rooms/mappings
-- `/app/backend/domains/channel_manager/providers/hotelrunner_ingest.py` - Ingest pipeline
-- `/app/backend/domains/channel_manager/providers/hotelrunner_webhook.py` - Webhooks + scheduler
-- `/app/frontend/src/pages/HotelRunnerIntegration.jsx` - Dashboard
-
-### Testing Status
-- iteration_58: Backend 5/5 (100%), Frontend 100% - basic endpoints
-- iteration_59: Backend 16/16 (100%), Frontend 100% - webhook/ingest pipeline
+#### Exely SOAP Provider (DONE - March 2026)
+- **SOAP Client**: `exely_client.py` with WSSE Security Header auth
+- **XML Builder**: `soap_builder.py` for OTA_ReadRQ, OTA_HotelAvailRQ, OTA_NotifReportRQ, OTA_HotelAvailNotifRQ
+- **Response Parser**: `response_parser.py` with defusedxml for safe XML parsing
+- **Normalizer**: `normalizer.py` converts Exely format to canonical PMS format
+- **Pull Worker**: `exely_pull_worker.py` - cursor-based scheduled pull
+- **API Router**: 15 endpoints for full lifecycle:
+  - Connection: connect, test, disconnect, status
+  - Room Discovery: OTA_HotelAvailRQ
+  - Room Mapping: CRUD
+  - ARI Push: single + bulk delta push
+  - Reservation: manual pull, local list, delivery confirm
+  - Sync: scheduler start/stop, status, logs
+- **Frontend**: Full dashboard at /exely with 5 tabs
+- **Testing**: 14/14 backend tests pass, frontend verified
 
 ## Prioritized Backlog
 
-### P0 - Blocked on User
-- HotelRunner sandbox credentials (TOKEN + HR_ID) from partner portal
+### P0 (Critical)
+- None currently - all P0 items completed
 
-### P0 - Next (when credentials arrive)
-- Real connection test
-- Room list fetch + room mapping
-- Reservation pull test
-- ARI push test
-
-### P1
-- ARI drift detection worker (2min interval)
-- Webhook URL registration in HotelRunner panel
+### P1 (High)
+- HotelRunner Sandbox Real Test (requires live credentials)
 - Pilot Hotel Onboarding
-- Canary Rollout Plan
 
-### P2
-- Advanced reconciliation UI
-- Provider-specific anomaly alerts
-- Weekly Incident Drills
+### P2 (Medium)
+- Enhanced mapping UI with drag-drop
+- ARI push scheduling (auto-push based on PMS changes)
+- Cross-provider reconciliation dashboard
+
+### P3 (Low/Future)
+- Additional provider integrations (SiteMinder, Channex)
+- Multi-property channel manager aggregation
+- Revenue-based auto-pricing for ARI pushes
+
+## Key DB Collections
+- `hotelrunner_connections`, `hotelrunner_reservations`, `hotelrunner_raw_events`, `hotelrunner_room_mappings`, `hotelrunner_sync_logs`, `hotelrunner_pull_cursors`
+- `exely_connections`, `exely_reservations`, `exely_raw_events`, `exely_room_mappings`, `exely_sync_logs`, `exely_pull_cursors`
 
 ## Test Credentials
 | User | Email | Password |
@@ -130,4 +93,3 @@ Fallback path:
 | Demo Admin | demo@hotel.com | demo123 |
 | GM User | gm@hotel.com | gm123 |
 | Superadmin | super@hotel.com | super123 |
-| Test Tenant ID | 044f122b-87b5-480a-88b4-b9534b0c8c90 | - |
