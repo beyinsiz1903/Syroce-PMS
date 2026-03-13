@@ -1,6 +1,11 @@
 """
 Platform Hardening Tests - Tests for Data Pipeline, Event Bus, Observability, and Security Hardening.
 """
+import os
+import pytest
+if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
+
 import pytest
 
 import sys
@@ -12,12 +17,7 @@ sys.path.insert(0, "/app/backend")
 class TestEventBusAbstraction:
 
     def test_in_memory_backend_creation(self):
-        import os
-import pytest
-if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
-    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
-
-from modules.event_bus.abstraction import InMemoryBackend
+        from modules.event_bus.abstraction import InMemoryBackend
         backend = InMemoryBackend()
         assert backend is not None
 

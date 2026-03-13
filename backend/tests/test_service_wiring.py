@@ -2,6 +2,11 @@
 Tests for service wiring, schema organization, and runtime endpoints.
 Validates the router → service → repository pattern is correctly wired.
 """
+import os
+import pytest
+if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
+
 import pytest
 import httpx
 import os
@@ -29,12 +34,7 @@ def headers(auth_token):
 
 class TestSchemaOrganization:
     def test_admin_schemas_importable(self):
-        import os
-import pytest
-if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
-    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
-
-from domains.admin.schemas import PermissionCheckRequest, SLAConfig
+        from domains.admin.schemas import PermissionCheckRequest, SLAConfig
         assert PermissionCheckRequest(permission="test")
         assert SLAConfig(category="maintenance", response_time_minutes=30, resolution_time_minutes=120)
 

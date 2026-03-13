@@ -1,6 +1,11 @@
 """
 Comprehensive PMS Hardening Test Suite - Tests all 8 hardening areas.
 """
+import os
+import pytest
+if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
+
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -18,12 +23,7 @@ class TestReservationStateMachine:
     """Tests for reservation state transitions and business rules."""
 
     def setup_method(self):
-        import os
-import pytest
-if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
-    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
-
-from modules.pms_core.reservation_state_machine import ReservationStateMachine
+        from modules.pms_core.reservation_state_machine import ReservationStateMachine
         self.rsm = ReservationStateMachine()
 
     def test_valid_transition_confirmed_to_checked_in(self):

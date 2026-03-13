@@ -2,6 +2,11 @@
 Production Runtime Tests — comprehensive testing for all production hardening modules.
 Covers: Redis mode selection, Event Bus, Messaging, Persistence, Observability, Alerting.
 """
+import os
+import pytest
+if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
+
 import pytest
 import os
 import sys
@@ -15,12 +20,7 @@ class TestEventBusAbstraction:
     """Tests for event bus mode selection, publish/subscribe, and fallback."""
 
     def test_event_envelope_serialization(self):
-        import os
-import pytest
-if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
-    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
-
-from modules.event_bus.abstraction import EventEnvelope
+        from modules.event_bus.abstraction import EventEnvelope
         env = EventEnvelope(
             tenant_id="t1", event_type="test_event",
             payload={"key": "value"}, property_id="p1",

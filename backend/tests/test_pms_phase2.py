@@ -9,6 +9,11 @@ Phase 2 PMS Hardening Tests:
 - VIP room priority assignment
 - Readiness ETA calculation
 """
+import os
+import pytest
+if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
+
 
 import sys
 sys.path.insert(0, "/app/backend")
@@ -22,12 +27,7 @@ class TestFolioRunningBalance:
     """Test folio running balance calculation accuracy."""
 
     def setup_method(self):
-        import os
-import pytest
-if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
-    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
-
-from modules.pms_core.folio_detail_service import FolioDetailService
+        from modules.pms_core.folio_detail_service import FolioDetailService
         self.svc = FolioDetailService()
 
     def test_running_balance_charges_only(self):

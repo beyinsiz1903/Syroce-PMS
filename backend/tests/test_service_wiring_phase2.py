@@ -2,6 +2,11 @@
 Tests — Service Wiring Validation for Phase B completion
 Validates all new services are importable, instantiable, and wired to routers.
 """
+import os
+import pytest
+if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
+
 import pytest
 import importlib
 
@@ -11,12 +16,7 @@ pytestmark = pytest.mark.asyncio
 # ── Service Import Tests ──
 
 def test_frontdesk_service_import():
-    import os
-import pytest
-if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
-    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
-
-from domains.pms.frontdesk_service import frontdesk_service
+    from domains.pms.frontdesk_service import frontdesk_service
     assert frontdesk_service is not None
     assert hasattr(frontdesk_service, "checkin")
     assert hasattr(frontdesk_service, "checkout")

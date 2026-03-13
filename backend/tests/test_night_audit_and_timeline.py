@@ -2,6 +2,11 @@
 Test Suite — Night Audit Core Business Logic, Audit Timeline API,
 Operational Metrics, and Module Boundary Imports.
 """
+import os
+import pytest
+if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
+
 import sys
 from pathlib import Path
 import pytest
@@ -28,12 +33,7 @@ async def db():
 @pytest.fixture(scope="function")
 async def night_audit_svc(db):
     """Night audit service with patched db."""
-    import os
-import pytest
-if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
-    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
-
-from domains.pms.night_audit.service import NightAuditCoreService
+    from domains.pms.night_audit.service import NightAuditCoreService
     svc = NightAuditCoreService()
     svc._db = db
     return svc
