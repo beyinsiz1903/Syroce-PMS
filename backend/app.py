@@ -87,7 +87,10 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
 
     # ── Static file serving (uploads) ───────────────────────────────
     upload_dir = Path(os.environ.get("UPLOAD_DIR", "/app/backend/uploads"))
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    application.mount("/api/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
+    try:
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        application.mount("/api/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
+    except PermissionError:
+        pass
 
     return application
