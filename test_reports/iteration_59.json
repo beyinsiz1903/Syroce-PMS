@@ -1,0 +1,125 @@
+{
+  "summary": "HotelRunner Webhook & Ingest Pipeline - All 16 backend pytest tests pass (100%). Frontend /hotelrunner page renders correctly with all 5 tabs (Baglanti, Odalar, Rezervasyonlar, Eslemeler, Loglar). Connection form displays Token, HR_ID, Property Name, Sync Interval fields and 'Baglan' (Connect) button. All webhook/ingest pipeline endpoints tested successfully.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_hotelrunner_webhook_ingest.py",
+    "/app/test_reports/pytest/pytest_hotelrunner_webhook_ingest.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "hotelrunner_ingest.py: Well-structured ingest pipeline with normalize_reservation, check_idempotency, process_reservation, store_raw_event functions",
+    "hotelrunner_webhook.py: Lightweight webhook receiver with async background processing (_process_webhook_batch)",
+    "Idempotency guard properly handles duplicate reservations/cancellations",
+    "Raw event store enables replay capability via /sync/reservations/replay/{event_id}",
+    "ReservationPullScheduler implements cursor-based scheduled pulls with safety window"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_hotelrunner_webhook_ingest.py"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 tests pass)",
+    "frontend": "100% (All elements verified)"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123",
+    "token_field": "access_token",
+    "test_tenant_id": "044f122b-87b5-480a-88b4-b9534b0c8c90"
+  },
+  "seed_data_creation": "Created multiple test reservations via webhook endpoints with HR-PYTEST-xxx prefix",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "HotelRunner webhook/ingest pipeline fully tested. All webhook endpoints (reservations, modifications, cancellations) work without auth (tenant_id via query param). Authenticated endpoints (logs/events, logs/errors, sync/status, replay) require Bearer token. Manual pull requires active HotelRunner connection (404 if not connected). Test data created with HR-PYTEST- prefix for easy identification.",
+  "verified_api_responses": {
+    "webhook_reservations": {
+      "endpoint": "POST /api/channel-manager/hotelrunner/webhooks/reservations?tenant_id=xxx",
+      "status": 200,
+      "response": {"status": "accepted", "count": 1}
+    },
+    "webhook_modifications": {
+      "endpoint": "POST /api/channel-manager/hotelrunner/webhooks/modifications?tenant_id=xxx",
+      "status": 200,
+      "response": {"status": "accepted", "count": 1}
+    },
+    "webhook_cancellations": {
+      "endpoint": "POST /api/channel-manager/hotelrunner/webhooks/cancellations?tenant_id=xxx",
+      "status": 200,
+      "response": {"status": "accepted", "count": 1}
+    },
+    "logs_events": {
+      "endpoint": "GET /api/channel-manager/hotelrunner/logs/events",
+      "status": 200,
+      "response": {"events": [], "count": 0}
+    },
+    "logs_errors": {
+      "endpoint": "GET /api/channel-manager/hotelrunner/logs/errors",
+      "status": 200,
+      "response": {"events": [], "count": 0}
+    },
+    "sync_status": {
+      "endpoint": "GET /api/channel-manager/hotelrunner/sync/status",
+      "status": 200,
+      "response": {"scheduler_running": false, "pending_events": 0, "error_events": 0, "total_reservations": 0}
+    },
+    "manual_pull": {
+      "endpoint": "POST /api/channel-manager/hotelrunner/sync/reservations/pull",
+      "status": 404,
+      "note": "Returns 404 when HotelRunner not connected (expected)"
+    },
+    "event_replay": {
+      "endpoint": "POST /api/channel-manager/hotelrunner/sync/reservations/replay/{event_id}",
+      "status": 200,
+      "note": "Successfully replays existing events through ingest pipeline"
+    },
+    "connection_status": {
+      "endpoint": "GET /api/channel-manager/hotelrunner/connection",
+      "status": 200,
+      "response": {"connected": false}
+    }
+  },
+  "frontend_verification": {
+    "hotelrunner_page": {
+      "route": "/hotelrunner",
+      "elements_verified": [
+        "data-testid='hotelrunner-integration' - main container",
+        "data-testid='hr-connection-badge' - shows 'Bagli Degil' (Not Connected)",
+        "data-testid='hr-token-input' - API Token field",
+        "data-testid='hr-id-input' - HR_ID (Property ID) field",
+        "data-testid='hr-name-input' - Property Name field",
+        "data-testid='hr-connect-btn' - Baglan (Connect) button",
+        "data-testid='tab-connection' - Baglanti tab (active)",
+        "data-testid='tab-rooms' - Odalar tab",
+        "data-testid='tab-reservations' - Rezervasyonlar tab",
+        "data-testid='tab-mappings' - Eslemeler tab",
+        "data-testid='tab-logs' - Loglar tab"
+      ]
+    }
+  },
+  "tests_executed": [
+    "test_webhook_reservation_accepts_single - PASSED",
+    "test_webhook_reservation_accepts_batch - PASSED",
+    "test_webhook_reservation_requires_tenant_id - PASSED",
+    "test_webhook_modification_accepts - PASSED",
+    "test_webhook_cancellation_accepts - PASSED",
+    "test_duplicate_reservation_idempotent - PASSED",
+    "test_duplicate_cancellation_idempotent - PASSED",
+    "test_get_raw_events - PASSED",
+    "test_get_raw_events_by_status - PASSED",
+    "test_get_error_events - PASSED",
+    "test_get_sync_status - PASSED",
+    "test_manual_pull_requires_connection - PASSED",
+    "test_replay_nonexistent_event_returns_404 - PASSED",
+    "test_replay_existing_event - PASSED",
+    "test_connection_returns_disconnected - PASSED",
+    "test_webhook_reservation_invalid_json - PASSED"
+  ],
+  "mocked_apis_note": "HotelRunner external API is NOT mocked. Internal webhook/ingest endpoints tested only."
+}
