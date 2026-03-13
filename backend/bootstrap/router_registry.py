@@ -105,6 +105,7 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("modules.observability.alert_router", "router", ["Alert Enrichment"], None, None),
     ("modules.incident.incident_router", "router", ["Incident Response"], None, None),
     ("domains.channel_manager.validation_router", "router", ["CM Provider Validation"], None, None),
+    ("domains.channel_manager.providers.hotelrunner_router", "router", ["HotelRunner Integration"], None, None),
     ("security.tenant_isolation_router", "router", ["Tenant Isolation v2"], None, None),
     ("ops.pilot_router", "router", ["Pilot Readiness"], None, None),
     # Phase 6 — Runtime Validation & Go-Live

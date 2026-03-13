@@ -166,6 +166,7 @@ const GoLiveDashboardPage = lazy(() => import("@/pages/GoLiveDashboardPage"));
 // Phase 7 — Production Rollout
 const ProductionRolloutPage = lazy(() => import("@/pages/ProductionRolloutPage"));
 const SoakTestDashboard = lazy(() => import("@/pages/SoakTestDashboard"));
+const HotelRunnerIntegration = lazy(() => import("@/pages/HotelRunnerIntegration"));
 
 import { Toaster } from "@/components/ui/sonner";
 
@@ -1409,6 +1410,16 @@ function App() {
             element={
               isAuthenticated ? (
                 <SoakTestDashboard user={user} tenant={tenant} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/hotelrunner"
+            element={
+              isAuthenticated ? (
+                <HotelRunnerIntegration user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )

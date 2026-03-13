@@ -134,6 +134,14 @@ export const NAV_ITEMS = [
     group: "professional",
   },
   {
+    key: "hotelrunner",
+    label: "HotelRunner",
+    path: "/hotelrunner",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+  },
+  {
     key: "integration_hub",
     label: "Integration Hub",
     path: "/app/integration-hub",
