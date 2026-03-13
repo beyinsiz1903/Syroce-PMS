@@ -1,10 +1,13 @@
 """
 Phase 6 — Runtime Validation & Go-Live API Integration Tests
 """
+import os
 import pytest
 import httpx
 
-API_BASE = "http://localhost:8001"
+API_BASE = os.environ.get("REACT_APP_BACKEND_URL", "")
+
+pytestmark = pytest.mark.skipif(not API_BASE, reason="REACT_APP_BACKEND_URL not set")
 
 
 @pytest.fixture(scope="session")
