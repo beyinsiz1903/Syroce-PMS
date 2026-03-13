@@ -38,7 +38,7 @@
   "seed_data_creation": "Test events created with TEST_ prefix room_type_codes (TEST_STD, TEST_DLX, TEST_COALESCE, TEST_IDEMPOTENT, TEST_DRYRUN)",
   "retest_needed": false,
   "should_main_agent_self_test": false,
-  "context_for_next_testing_agent": "ARI Push Engine fully tested. tenant_id=044f122b-87b5-480a-88b4-b9534b0c8c90, property_id=prop-001. Buffer is in-memory with debounce windows. Both HotelRunner and Exely adapters registered and in DRY-RUN mode. All 12 API endpoints working. Frontend dashboard at /ari-push has 6 metrics, 4 tabs (Queue Monitor, Outbound Logs, Drift, Events), Push Pending and Refresh buttons.",
+  "context_for_next_testing_agent": "ARI Push Engine fully tested. tenant_id=channel-events-hub, property_id=prop-001. Buffer is in-memory with debounce windows. Both HotelRunner and Exely adapters registered and in DRY-RUN mode. All 12 API endpoints working. Frontend dashboard at /ari-push has 6 metrics, 4 tabs (Queue Monitor, Outbound Logs, Drift, Events), Push Pending and Refresh buttons.",
   "tests_executed": {
     "backend_api_tests": [
       "TestEngineStats: engine_stats_endpoint_accessible, hotelrunner_adapter_registered, exely_adapter_registered, buffer_state_visible - ALL PASSED",
