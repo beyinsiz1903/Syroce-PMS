@@ -197,37 +197,50 @@ class RawEventSource(str, Enum):
     MANUAL = "manual"
 
 
+class ProcessingStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSED = "processed"
+    FAILED = "failed"
+    DUPLICATE = "duplicate"
+    STALE = "stale"
+
+
 class RawChannelEvent(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     property_id: str
     provider: ConnectorProvider
+    connection_id: str = ""
 
-    source: RawEventSource = RawEventSource.WEBHOOK
-    event_type: str = ""  # reservation_create, reservation_modify, etc.
+    event_type: str = ""  # reservation_create, reservation_modify, reservation_cancel
+
+    # Provider identity
+    provider_event_id: str = ""
+    external_reservation_id: str = ""
+    provider_version: str = ""
+    provider_last_modified_at: Optional[str] = None
 
     # Raw data from provider
     raw_payload: Dict[str, Any] = Field(default_factory=dict)
     payload_hash: str = ""
 
     # Processing state
-    processed: bool = False
+    processing_status: ProcessingStatus = ProcessingStatus.PENDING
+    processing_error: Optional[str] = None
     processed_at: Optional[str] = None
-    processing_result: Optional[str] = None  # success | error | skipped
-    error_message: Optional[str] = None
 
-    # Idempotency
-    external_event_id: str = ""
-    deduplicated: bool = False
+    # Ingest tracking
+    received_via: RawEventSource = RawEventSource.WEBHOOK
+    correlation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
     # Timestamps
     received_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    provider_timestamp: Optional[str] = None
 
     def to_doc(self) -> Dict[str, Any]:
         d = self.model_dump()
         d["provider"] = self.provider.value
-        d["source"] = self.source.value
+        d["received_via"] = self.received_via.value
+        d["processing_status"] = self.processing_status.value
         return d
 
     @classmethod
@@ -256,7 +269,8 @@ class ReservationLineage(BaseModel):
     # Core identity
     reservation_id: Optional[str] = None  # PMS reservation ID (linked after import)
     external_reservation_id: str
-    provider_event_id: str = ""  # Event that created/updated this record
+    provider_event_id: str = ""
+    provider_version: str = ""
     provider_last_modified: Optional[str] = None
 
     # Idempotency & versioning
@@ -268,7 +282,7 @@ class ReservationLineage(BaseModel):
     source_system: str = ""  # e.g. "booking.com", "expedia", "direct"
     ingested_via: str = ""  # "webhook" | "pull" | "replay"
 
-    # Protection flag
+    # Loop prevention
     external_write_protected: bool = False
 
     # Guest summary
@@ -290,11 +304,18 @@ class ReservationLineage(BaseModel):
     status: str = "pending"  # pending | confirmed | modified | cancelled | imported
     cancellation_reason: Optional[str] = None
 
+    # Decision tracking
+    last_decision: str = ""  # create | update | cancel | skip | pending_mapping | manual_review
+    decision_reason: str = ""
+
     # Reconciliation
     reconciled: bool = False
     reconciled_at: Optional[str] = None
 
     # Timestamps
+    first_seen_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    last_seen_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    last_synced_at: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: Optional[str] = None
 
@@ -354,6 +375,13 @@ class CaseType(str, Enum):
     DUPLICATE_RESERVATION = "duplicate_reservation"
     STALE_SYNC = "stale_sync"
     ACK_FAILURE = "ack_failure"
+    MISSING_MAPPING = "missing_mapping"
+    AMOUNT_MISMATCH = "amount_mismatch"
+    DATE_CONFLICT = "date_conflict"
+    RESERVATION_CONFLICT = "reservation_conflict"
+    CANCELLATION_WITHOUT_RESERVATION = "cancellation_without_reservation"
+    DUPLICATE_EVENT = "duplicate_event"
+    STALE_EVENT = "stale_event"
 
 
 class CaseStatus(str, Enum):
@@ -379,6 +407,8 @@ class ReconciliationCase(BaseModel):
 
     # Evidence
     description: str = ""
+    details: Optional[Dict[str, Any]] = None
+    suggested_action: str = ""
     pms_value: Optional[Dict[str, Any]] = None
     provider_value: Optional[Dict[str, Any]] = None
 

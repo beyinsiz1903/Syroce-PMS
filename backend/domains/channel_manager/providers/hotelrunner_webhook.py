@@ -1,8 +1,10 @@
 """
 HotelRunner Webhook Receiver & Scheduled Pull Job
 
-Webhook: Lightweight receiver → raw store → async process
+Webhook: Lightweight receiver → raw_channel_events → async process via ingest pipeline
 Pull Job: Cursor-based fetch every N minutes → diff check → ingest
+
+UPDATED: Now feeds into the unified 9-collection ingest pipeline.
 """
 import asyncio
 import logging
@@ -15,9 +17,12 @@ from fastapi import APIRouter, Request, HTTPException, Depends, BackgroundTasks
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
-from domains.channel_manager.providers.hotelrunner_ingest import (
-    ingest_reservation,
+from domains.channel_manager import unified_repository as repo
+from domains.channel_manager.data_model import (
+    ConnectorProvider, RawChannelEvent, RawEventSource, ProcessingStatus,
 )
+from domains.channel_manager.ingest.normalizer import extract_hotelrunner_identity
+from domains.channel_manager.ingest.pipeline import process_event
 
 logger = logging.getLogger(__name__)
 
@@ -27,52 +32,82 @@ router = APIRouter(
 )
 
 
-# ── Webhook Receiver ─────────────────────────────────────────────────
-# Lightweight: receive, store raw, ack fast, process in background
+# ── Webhook Raw Event Persistence ─────────────────────────────────────
 
-async def _process_webhook_batch(tenant_id: str, reservations: list, event_type: str):
+async def _persist_and_process(
+    tenant_id: str, property_id: str, payload: Dict[str, Any], event_type: str,
+):
+    """Persist raw event and process through the unified ingest pipeline."""
+    identity = extract_hotelrunner_identity(payload)
+    hr_number = identity.get("external_reservation_id", "")
+    last_mod = identity.get("provider_last_modified_at", "")
+    identity["provider_event_id"] = f"{hr_number}_{event_type}_{last_mod}"
+
+    payload_hash = RawChannelEvent.compute_payload_hash(payload)
+
+    event = RawChannelEvent(
+        tenant_id=tenant_id,
+        property_id=property_id,
+        provider=ConnectorProvider.HOTELRUNNER,
+        event_type=event_type,
+        provider_event_id=identity["provider_event_id"],
+        external_reservation_id=identity["external_reservation_id"],
+        provider_version=identity["provider_version"],
+        provider_last_modified_at=identity["provider_last_modified_at"],
+        raw_payload=payload,
+        payload_hash=payload_hash,
+        received_via=RawEventSource.WEBHOOK,
+        processing_status=ProcessingStatus.PENDING,
+    )
+    event_doc = event.to_doc()
+    event_id = await repo.insert_raw_event(event_doc)
+    event_doc["id"] = event_id
+
+    # Process through pipeline
+    result = await process_event(event_doc)
+    logger.info(f"[WEBHOOK] {event_type}: {event_id} → {result.decision} ({result.reason})")
+    return result
+
+
+async def _process_webhook_batch(
+    tenant_id: str, property_id: str, reservations: list, event_type: str,
+):
     """Background task: process webhook reservations through ingest pipeline."""
-    results = []
     for res in reservations:
-        result = await ingest_reservation(
-            tenant_id=tenant_id,
-            raw_payload=res,
-            event_type=event_type,
-            source="webhook",
-        )
-        results.append(result)
-    logger.info(f"[WEBHOOK] Processed {len(results)} reservations for tenant {tenant_id}")
+        try:
+            await _persist_and_process(tenant_id, property_id, res, event_type)
+        except Exception as e:
+            logger.error(f"[WEBHOOK] Error processing {event_type}: {e}")
+
+
+def _resolve_property_id(body: Dict[str, Any]) -> str:
+    """Extract property_id from payload."""
+    return body.get("property_id", "prop-001")
 
 
 @router.post("/webhooks/reservations")
 async def webhook_reservations(request: Request, background_tasks: BackgroundTasks):
     """
     Webhook endpoint for new reservations from HotelRunner.
-    Stores raw payload immediately and processes asynchronously.
+    Persists as raw_channel_event and processes via unified ingest pipeline.
     """
     try:
         body = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    # Extract tenant from header or query param
     tenant_id = request.headers.get("X-Tenant-ID") or request.query_params.get("tenant_id")
     if not tenant_id:
-        # Try to find tenant from hr_id in payload
-        hr_id = body.get("hr_id") or request.query_params.get("hr_id")
-        if hr_id:
-            conn = await db.hotelrunner_connections.find_one({"hr_id": hr_id}, {"_id": 0, "tenant_id": 1})
-            if conn:
-                tenant_id = conn["tenant_id"]
-
+        tenant_id = body.get("tenant_id", "")
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id required (header X-Tenant-ID or query param)")
 
-    # Handle both single reservation and batch
+    property_id = _resolve_property_id(body)
     reservations = body.get("reservations", [body] if "hr_number" in body else [])
 
-    # Process in background (don't block the ack)
-    background_tasks.add_task(_process_webhook_batch, tenant_id, reservations, "reservation")
+    background_tasks.add_task(
+        _process_webhook_batch, tenant_id, property_id, reservations, "reservation_create",
+    )
 
     return {
         "status": "accepted",
@@ -83,49 +118,52 @@ async def webhook_reservations(request: Request, background_tasks: BackgroundTas
 
 @router.post("/webhooks/modifications")
 async def webhook_modifications(request: Request, background_tasks: BackgroundTasks):
-    """Webhook for reservation modifications."""
+    """Webhook for reservation modifications → unified ingest pipeline."""
     try:
         body = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
     tenant_id = request.headers.get("X-Tenant-ID") or request.query_params.get("tenant_id")
-    hr_id = body.get("hr_id") or request.query_params.get("hr_id")
-    if not tenant_id and hr_id:
-        conn = await db.hotelrunner_connections.find_one({"hr_id": hr_id}, {"_id": 0, "tenant_id": 1})
-        if conn:
-            tenant_id = conn["tenant_id"]
-
+    if not tenant_id:
+        tenant_id = body.get("tenant_id", "")
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id required")
 
+    property_id = _resolve_property_id(body)
     reservations = body.get("reservations", [body] if "hr_number" in body else [])
 
-    background_tasks.add_task(_process_webhook_batch, tenant_id, reservations, "modification")
+    background_tasks.add_task(
+        _process_webhook_batch, tenant_id, property_id, reservations, "reservation_modify",
+    )
     return {"status": "accepted", "count": len(reservations)}
 
 
 @router.post("/webhooks/cancellations")
 async def webhook_cancellations(request: Request, background_tasks: BackgroundTasks):
-    """Webhook for reservation cancellations."""
+    """Webhook for reservation cancellations → unified ingest pipeline."""
     try:
         body = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
     tenant_id = request.headers.get("X-Tenant-ID") or request.query_params.get("tenant_id")
-    hr_id = body.get("hr_id") or request.query_params.get("hr_id")
-    if not tenant_id and hr_id:
-        conn = await db.hotelrunner_connections.find_one({"hr_id": hr_id}, {"_id": 0, "tenant_id": 1})
-        if conn:
-            tenant_id = conn["tenant_id"]
-
+    if not tenant_id:
+        tenant_id = body.get("tenant_id", "")
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id required")
 
+    property_id = _resolve_property_id(body)
     reservations = body.get("reservations", [body] if "hr_number" in body else [])
 
-    background_tasks.add_task(_process_webhook_batch, tenant_id, reservations, "cancellation")
+    # Set status to cancelled for the decision engine
+    for res in reservations:
+        if "status" not in res:
+            res["status"] = "cancelled"
+
+    background_tasks.add_task(
+        _process_webhook_batch, tenant_id, property_id, reservations, "reservation_cancel",
+    )
     return {"status": "accepted", "count": len(reservations)}
 
 
@@ -301,17 +339,17 @@ class ReservationPullScheduler:
             if page_result["success"]:
                 all_reservations.extend(page_result["data"].get("reservations", []))
 
-        # Process through ingest pipeline
+        # Process through unified ingest pipeline
         processed = 0
         for res in all_reservations:
-            ingest_result = await ingest_reservation(
-                tenant_id=tenant_id,
-                raw_payload=res,
-                event_type="reservation",
-                source="scheduled_pull",
-            )
-            if ingest_result.get("success"):
+            try:
+                await _persist_and_process(
+                    tenant_id, _resolve_property_id(res),
+                    res, "reservation_pull",
+                )
                 processed += 1
+            except Exception as e:
+                logger.error(f"[PULL] Error processing reservation: {e}")
 
         # Update cursor
         await db.hotelrunner_pull_cursors.update_one(

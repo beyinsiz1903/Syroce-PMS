@@ -195,8 +195,23 @@ async def find_rate_plan_mapping_by_pms(
     )
 
 
+async def find_rate_plan_mapping_by_provider(
+    tenant_id: str, property_id: str, provider: str, provider_rate_code: str,
+) -> Optional[Dict]:
+    return await db[COLL_RATE_PLAN_MAPPINGS].find_one(
+        {
+            "tenant_id": tenant_id,
+            "property_id": property_id,
+            "provider": provider,
+            "provider_rate_code": provider_rate_code,
+            "is_active": True,
+        },
+        _NO_ID,
+    )
+
+
 # ══════════════════════════════════════════════════════════════════════
-# 4. RAW CHANNEL EVENTS
+# 4. RAW CHANNEL EVENTS (Ingest Pipeline)
 # ══════════════════════════════════════════════════════════════════════
 
 async def insert_raw_event(doc: Dict) -> str:
@@ -209,41 +224,99 @@ async def insert_raw_event(doc: Dict) -> str:
 async def get_raw_events(
     tenant_id: str, property_id: str,
     provider: Optional[str] = None,
-    processed: Optional[bool] = None,
+    status: Optional[str] = None,
     limit: int = 50,
 ) -> List[Dict]:
     q: Dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
     if provider:
         q["provider"] = provider
-    if processed is not None:
-        q["processed"] = processed
+    if status:
+        q["processing_status"] = status
     return await db[COLL_RAW_CHANNEL_EVENTS].find(
         q, _NO_ID,
     ).sort("received_at", -1).limit(limit).to_list(limit)
 
 
-async def mark_raw_event_processed(
-    event_id: str, result: str, error: Optional[str] = None,
+async def get_pending_raw_events(limit: int = 100) -> List[Dict]:
+    """Get all pending events across all tenants for the ingest processor."""
+    return await db[COLL_RAW_CHANNEL_EVENTS].find(
+        {"processing_status": "pending"},
+        _NO_ID,
+    ).sort("received_at", 1).limit(limit).to_list(limit)
+
+
+async def update_raw_event_status(
+    event_id: str, status: str, error: Optional[str] = None,
 ) -> None:
-    update = {
-        "processed": True,
+    update: Dict[str, Any] = {
+        "processing_status": status,
         "processed_at": _now(),
-        "processing_result": result,
     }
     if error:
-        update["error_message"] = error
+        update["processing_error"] = error
     await db[COLL_RAW_CHANNEL_EVENTS].update_one(
         {"id": event_id}, {"$set": update},
     )
 
 
-async def check_raw_event_duplicate(
-    tenant_id: str, provider: str, payload_hash: str,
+async def check_provider_event_exists(
+    tenant_id: str, provider: str, provider_event_id: str,
 ) -> bool:
+    """Duplicate detection: check if this provider_event_id already processed."""
     existing = await db[COLL_RAW_CHANNEL_EVENTS].find_one(
-        {"tenant_id": tenant_id, "provider": provider, "payload_hash": payload_hash},
+        {
+            "tenant_id": tenant_id,
+            "provider": provider,
+            "provider_event_id": provider_event_id,
+            "processing_status": {"$in": ["processed", "duplicate"]},
+        },
     )
     return existing is not None
+
+
+async def check_payload_hash_exists(
+    tenant_id: str, provider: str, external_reservation_id: str, payload_hash: str,
+) -> bool:
+    """Check if we already have a processed event with same hash for same reservation."""
+    existing = await db[COLL_RAW_CHANNEL_EVENTS].find_one(
+        {
+            "tenant_id": tenant_id,
+            "provider": provider,
+            "external_reservation_id": external_reservation_id,
+            "payload_hash": payload_hash,
+            "processing_status": "processed",
+        },
+    )
+    return existing is not None
+
+
+async def get_failed_events(tenant_id: Optional[str] = None, limit: int = 50) -> List[Dict]:
+    """Get failed events for replay."""
+    q: Dict[str, Any] = {"processing_status": "failed"}
+    if tenant_id:
+        q["tenant_id"] = tenant_id
+    return await db[COLL_RAW_CHANNEL_EVENTS].find(
+        q, _NO_ID,
+    ).sort("received_at", 1).limit(limit).to_list(limit)
+
+
+async def get_raw_event_stats(tenant_id: str, property_id: str) -> Dict[str, Any]:
+    """Get event processing statistics."""
+    pipeline = [
+        {"$match": {"tenant_id": tenant_id, "property_id": property_id}},
+        {"$group": {"_id": "$processing_status", "count": {"$sum": 1}}},
+    ]
+    stats: Dict[str, int] = {}
+    async for doc in db[COLL_RAW_CHANNEL_EVENTS].aggregate(pipeline):
+        stats[doc["_id"]] = doc["count"]
+    return {
+        "total": sum(stats.values()),
+        "pending": stats.get("pending", 0),
+        "processed": stats.get("processed", 0),
+        "failed": stats.get("failed", 0),
+        "duplicate": stats.get("duplicate", 0),
+        "stale": stats.get("stale", 0),
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -443,9 +516,15 @@ async def ensure_indexes() -> None:
         unique=True,
     )
 
-    # Raw channel events
+    # Raw channel events (ingest pipeline)
     await db[COLL_RAW_CHANNEL_EVENTS].create_index(
-        [("tenant_id", 1), ("provider", 1), ("payload_hash", 1)],
+        [("tenant_id", 1), ("provider", 1), ("provider_event_id", 1)],
+    )
+    await db[COLL_RAW_CHANNEL_EVENTS].create_index(
+        [("processing_status", 1), ("received_at", 1)],
+    )
+    await db[COLL_RAW_CHANNEL_EVENTS].create_index(
+        [("tenant_id", 1), ("provider", 1), ("external_reservation_id", 1), ("payload_hash", 1)],
     )
     await db[COLL_RAW_CHANNEL_EVENTS].create_index(
         [("tenant_id", 1), ("property_id", 1), ("received_at", -1)],
