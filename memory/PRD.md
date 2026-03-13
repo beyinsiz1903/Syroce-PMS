@@ -1,7 +1,7 @@
 # RoomOps PMS - Product Requirements Document
 
 ## Original Problem Statement
-Full-stack Hotel Property Management System (PMS) SaaS platform with multi-provider Channel Manager integration. Current phase: event-driven ARI push pipeline and provider validation.
+Full-stack Hotel Property Management System (PMS) SaaS platform with multi-provider Channel Manager integration. Current phase: event-driven ARI push pipeline refinement and provider validation preparation.
 
 ## Architecture
 ```
@@ -35,7 +35,7 @@ Channel Manager Providers:
     ├── provider_payload_hash   (duplicate detection)
     └── confidence_score        (future: ML scoring)
 
-=== ARI PUSH ENGINE (P1 — NEW) ===
+=== ARI PUSH ENGINE (P1 — COMPLETE) ===
 PMS Service (FrontDesk, Pricing, Housekeeping...)
     ↓
 ARI Domain Event (availability | rate | restriction)
@@ -46,13 +46,13 @@ Coalescer (same-key merge, date-range merge, last-write-wins, restriction preced
     ↓
 Delta Compiler (provider-specific: HR→REST params, Exely→SOAP periods)
     ↓
-Outbound Push Queue (idempotent, rate-limited)
+Outbound Push Queue (idempotent with enriched 7-field delta hash, rate-limited)
     ↓
 Provider Adapter (HotelRunner | Exely)
     ↓
 Ack / Retry / Error → Sync Log + Drift State
     ↓
-Drift Worker (snapshot compare → corrective delta → push queue)
+Drift Worker (dual-mode: normal 2min/changed, recovery 30s/full)
 ```
 
 ## What's Been Implemented
@@ -75,12 +75,23 @@ Drift Worker (snapshot compare → corrective delta → push queue)
 - **Ack Service**: Success/retry/dead-letter classification with outbound logging
 - **Drift Worker**: Snapshot comparison + corrective delta generation + alert system
 - **Provider Adapters**: HotelRunner + Exely (currently DRY-RUN mode)
-- **API**: 12 endpoints under /api/channel-manager/ari/*
-- **Frontend**: ARIPushDashboard with Queue Monitor, Outbound Logs, Drift, Events tabs
+- **API**: 12+ endpoints under /api/channel-manager/ari/*
+- **Frontend**: ARIPushDashboard with Queue Monitor, Outbound Logs, Drift, Events, Test Harness tabs
 - **Data Model**: 4 collections (ari_events, ari_change_sets, ari_outbound_logs, ari_drift_state)
-- **Testing**: 30/30 backend tests pass, all frontend elements verified
+- **Testing**: 30/30 backend + 17/17 v2 tests pass
+
+### P1.1: ARI Engine Hardening (March 2026) - DONE
+- **Enriched Delta Hash**: 7-field composite hash (provider, property_id, room_type, rate_plan, date_from, date_to, payload) for outbound idempotency, retry dedup, and drift comparison
+- **Provider Test Harness**: Validation checklists for HotelRunner (9 steps) and Exely (6 steps) with DRY-RUN and live mode
+- **Drift Worker Dual-Mode**: Normal (2min interval, changed rooms) and Recovery (30s interval, full property) with API toggle
+- **Operational Metrics**: Provider health (ack_rate, error_rate, retry_rate), latency percentiles (p50/p95/p99), queue stats (depth, retry backlog, dead letters)
+- **Dashboard Enhancement**: All metrics visualized in operational cards, Test Harness tab, drift mode toggle badge
+- **Testing**: 17/17 backend tests pass, frontend fully verified
 
 ## Prioritized Backlog
+
+### P0 (User decision needed)
+- Channel Manager data model refinement (user to share "world's most robust CM data model")
 
 ### P1 (Next)
 - HotelRunner Sandbox real test (with live credentials)
@@ -88,12 +99,13 @@ Drift Worker (snapshot compare → corrective delta → push queue)
 
 ### P2
 - Channex REST provider (next provider)
-- Reconciliation dashboard UI
+- Mapping UI improvement
+- Reconciliation engine
 
 ### P3
 - SiteMinder XML/OTA provider
 - Multi-property channel manager aggregation
-- ARI push with real provider credentials (post-sandbox validation)
+- Advanced ARI UI (Change Set Viewer, manual resync controls)
 
 ## Test Credentials
 | User | Email | Password |
@@ -101,3 +113,17 @@ Drift Worker (snapshot compare → corrective delta → push queue)
 | Demo Admin | demo@hotel.com | demo123 |
 | GM User | gm@hotel.com | gm123 |
 | Superadmin | super@hotel.com | super123 |
+
+## Key API Endpoints (ARI)
+- `POST /api/channel-manager/ari/events/publish` - Publish ARI change event
+- `GET /api/channel-manager/ari/change-sets` - View change sets
+- `POST /api/channel-manager/ari/push` - Push pending changes
+- `GET /api/channel-manager/ari/outbound-logs` - Audit provider communication
+- `GET /api/channel-manager/ari/drift` - View drift states
+- `GET /api/channel-manager/ari/drift/mode` - Get drift mode
+- `POST /api/channel-manager/ari/drift/mode/{mode}` - Toggle drift mode
+- `GET /api/channel-manager/ari/test-harness/checklist/{provider}` - Get validation checklist
+- `POST /api/channel-manager/ari/test-harness/run/{provider}` - Run provider tests
+- `GET /api/channel-manager/ari/test-harness/metrics` - Operational metrics
+- `GET /api/channel-manager/ari/stats` - Aggregate stats
+- `GET /api/channel-manager/ari/engine-stats` - Runtime engine stats
