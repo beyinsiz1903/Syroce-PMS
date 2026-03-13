@@ -2,8 +2,10 @@
 Provider-agnostic Reservation Ingest Pipeline.
 Shared by HotelRunner, Exely, and any future provider.
 
-Raw Event Store → Idempotency Guard → Decision Engine → PMS Import
+Raw Event Store → Idempotency Guard → Versioned Decision Engine → PMS Import
 """
+import hashlib
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -12,6 +14,12 @@ from typing import Dict, Any, Optional
 from core.database import db
 
 logger = logging.getLogger(__name__)
+
+
+def _compute_payload_hash(payload: Dict[str, Any]) -> str:
+    """Deterministic hash of payload for change detection."""
+    canonical = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 PROVIDER_COLLECTIONS = {
     "hotelrunner": {
@@ -48,6 +56,7 @@ async def store_raw_event(
         "channel": channel,
         "source": source,
         "payload": payload,
+        "payload_hash": _compute_payload_hash(payload),
         "received_at": datetime.now(timezone.utc).isoformat(),
         "processed_at": None,
         "status": "pending",
@@ -64,23 +73,51 @@ async def mark_event_processed(provider: str, event_id: str, status: str = "proc
     )
 
 
-async def check_idempotency(provider: str, tenant_id: str, external_id: str, event_type: str) -> Dict[str, Any]:
+async def check_idempotency(
+    provider: str, tenant_id: str, external_id: str,
+    event_type: str, provider_last_modified: str = "", payload_hash: str = "",
+) -> Dict[str, Any]:
+    """
+    Versioned idempotency guard:
+      same UniqueID + newer LastModifyDateTime → update
+      same UniqueID + same LastModifyDateTime + same hash → ignore (stale duplicate)
+      same UniqueID + cancelled status → cancel
+      older LastModifyDateTime → discard as stale
+    """
     existing = await _col(provider, "reservations").find_one(
         {"tenant_id": tenant_id, "external_id": external_id},
-        {"_id": 0, "state": 1, "pms_status": 1, "delivery_confirmed": 1},
+        {"_id": 0, "state": 1, "pms_status": 1, "delivery_confirmed": 1,
+         "provider_last_modified_at": 1, "provider_payload_hash": 1},
     )
+
     if not existing:
         return {"action": "create", "existing": None}
+
+    # Cancellation always wins regardless of timestamp
     if event_type == "cancellation":
         if existing.get("state") == "cancelled":
             return {"action": "skip", "reason": "already_cancelled", "existing": existing}
         return {"action": "cancel", "existing": existing}
+
+    # Timestamp-based version comparison
+    existing_modified = existing.get("provider_last_modified_at", "")
+    if provider_last_modified and existing_modified:
+        if provider_last_modified < existing_modified:
+            return {"action": "skip", "reason": "stale_event", "existing": existing}
+        if provider_last_modified == existing_modified:
+            # Same timestamp — check payload hash for actual data change
+            existing_hash = existing.get("provider_payload_hash", "")
+            if payload_hash and existing_hash and payload_hash == existing_hash:
+                return {"action": "skip", "reason": "duplicate_payload", "existing": existing}
+
     if event_type == "modification":
         return {"action": "update", "existing": existing}
+
     if event_type in ("new", "reservation"):
         if existing.get("pms_status") in ("imported", "confirmed"):
             return {"action": "skip", "reason": "already_imported", "existing": existing}
         return {"action": "update", "existing": existing}
+
     return {"action": "update", "existing": existing}
 
 
@@ -100,11 +137,17 @@ async def check_room_mapping(provider: str, tenant_id: str, rooms: list) -> bool
 
 async def process_reservation(
     provider: str, tenant_id: str, canonical: Dict[str, Any],
-    event_type: str, event_id: str,
+    event_type: str, event_id: str, payload_hash: str = "",
 ) -> Dict[str, Any]:
     external_id = canonical["external_id"]
     channel = canonical["channel"]
-    idem = await check_idempotency(provider, tenant_id, external_id, event_type)
+    provider_last_modified = canonical.get("provider_last_modified_at", "")
+
+    idem = await check_idempotency(
+        provider, tenant_id, external_id, event_type,
+        provider_last_modified=provider_last_modified,
+        payload_hash=payload_hash,
+    )
     action = idem["action"]
 
     if action == "skip":
@@ -118,7 +161,12 @@ async def process_reservation(
         "tenant_id": tenant_id,
         "external_id": external_id,
         "provider": provider,
+        "source_provider": provider,
         "provider_reservation_id": canonical["provider_reservation_id"],
+        "provider_event_id": event_id,
+        "provider_version": canonical.get("provider_version", 1),
+        "provider_last_modified_at": provider_last_modified,
+        "provider_payload_hash": payload_hash,
         "channel": channel,
         "channel_display": canonical["channel_display"],
         "state": canonical["status"],
@@ -144,6 +192,7 @@ async def process_reservation(
         "external_write_protected": True,
         "synced_at": now,
         "raw_event_id": event_id,
+        "confidence_score": None,
     }
 
     col = _col(provider, "reservations")
@@ -161,7 +210,10 @@ async def process_reservation(
 
     elif action == "update":
         res_doc["pms_status"] = "updated" if has_mapping else "pending_mapping"
-        await col.update_one({"tenant_id": tenant_id, "external_id": external_id}, {"$set": res_doc})
+        await col.update_one({"tenant_id": tenant_id, "external_id": external_id}, {
+            "$set": res_doc,
+            "$inc": {"provider_version": 1},
+        })
         await mark_event_processed(provider, event_id, "processed")
         logger.info(f"[{provider.upper()}] Updated {external_id} from {channel}")
         return {"action": "updated", "external_id": external_id}
@@ -169,7 +221,13 @@ async def process_reservation(
     elif action == "cancel":
         await col.update_one(
             {"tenant_id": tenant_id, "external_id": external_id},
-            {"$set": {"state": "cancelled", "pms_status": "cancellation_pending", "cancelled_at": now, "synced_at": now, "raw_event_id": event_id}},
+            {"$set": {
+                "state": "cancelled", "pms_status": "cancellation_pending",
+                "cancelled_at": now, "synced_at": now, "raw_event_id": event_id,
+                "provider_event_id": event_id,
+                "provider_last_modified_at": provider_last_modified,
+                "provider_payload_hash": payload_hash,
+            }},
         )
         await mark_event_processed(provider, event_id, "processed")
         logger.info(f"[{provider.upper()}] Cancelled {external_id} from {channel}")
@@ -189,11 +247,12 @@ async def ingest_reservation(
     """
     external_id = raw_payload.get("external_id") or raw_payload.get("hr_number") or raw_payload.get("reservation_id", "unknown")
     channel = raw_payload.get("channel", "direct")
+    payload_hash = _compute_payload_hash(raw_payload)
 
     event_id = await store_raw_event(provider, tenant_id, event_type, external_id, channel, raw_payload, source)
     try:
         canonical = normalizer(raw_payload, source)
-        result = await process_reservation(provider, tenant_id, canonical, event_type, event_id)
+        result = await process_reservation(provider, tenant_id, canonical, event_type, event_id, payload_hash)
         return {"success": True, "event_id": event_id, **result}
     except Exception as e:
         await mark_event_processed(provider, event_id, "error", str(e))

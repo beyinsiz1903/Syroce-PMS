@@ -46,6 +46,9 @@ def normalize_reservation(raw: Dict[str, Any], source: str = "pull") -> Dict[str
         "provider_reservation_id": raw.get("reservation_id", ""),
         "channel": raw.get("channel", "exely"),
         "channel_display": raw.get("channel", "Exely"),
+        "provider_last_modified_at": raw.get("last_modify", ""),
+        "provider_created_at": raw.get("create_date", ""),
+        "provider_version": 1,
         "guest": {
             "name": raw.get("guest_name", ""),
             "first_name": raw.get("guest_firstname", ""),

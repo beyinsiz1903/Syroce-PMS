@@ -90,6 +90,9 @@ def normalize_reservation(raw: Dict[str, Any], source: str = "webhook") -> Dict[
         "source_system": "HOTELRUNNER",
         "ingested_via": source,
         "message_uid": raw.get("message_uid", ""),
+        "provider_last_modified_at": raw.get("updated_at", raw.get("modified_at", "")),
+        "provider_created_at": raw.get("created_at", ""),
+        "provider_version": 1,
     }
 
 

@@ -1,0 +1,97 @@
+{
+  "summary": "Exely Channel Manager Versioning, WSSE Hardening & Provider Lineage Tests - All 37 backend tests pass (23 new + 14 existing). Frontend /exely page verified with all 5 tabs, connection form, and 'Bagli Degil' badge. Unit tests validate: 1) SOAP XML builder with wsu:Timestamp + wsse:Nonce + PasswordText type + mustUnderstand=1, 2) Payload hash determinism (same payload = same hash, key order independent), 3) Exely normalizer outputs provider_last_modified_at, provider_created_at, provider_version, 4) HotelRunner normalizer outputs same lineage fields with updated_at/modified_at fallback.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_exely_versioning_wsse.py",
+    "/app/backend/tests/test_exely_api.py",
+    "/app/test_reports/pytest/pytest_exely_versioning_wsse.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "soap_builder.py: WSSE Security header correctly implements wsu:Timestamp (Created + Expires 5min TTL), wsse:Nonce with 16-byte random Base64Binary, Password with PasswordText type, mustUnderstand=1 on Security element",
+    "common_ingest.py: _compute_payload_hash uses json.dumps(sort_keys=True) for deterministic hashing, truncates SHA256 to 16 chars. check_idempotency compares provider_last_modified_at timestamps for stale/newer detection and payload_hash for duplicate detection",
+    "exely/normalizer.py: Outputs provider_last_modified_at from 'last_modify', provider_created_at from 'create_date', provider_version=1",
+    "hotelrunner_ingest.py: Outputs provider_last_modified_at from 'updated_at' with 'modified_at' fallback, provider_created_at from 'created_at', provider_version=1",
+    "common_ingest.py process_reservation: Stores source_provider, provider_event_id, provider_version, provider_last_modified_at, provider_payload_hash, confidence_score fields for cross-provider reconciliation readiness"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_exely_versioning_wsse.py"
+  ],
+  "success_rate": {
+    "backend": "100% (37/37 tests pass)",
+    "frontend": "100% (All elements verified)"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123",
+    "token_field": "access_token"
+  },
+  "seed_data_creation": "Created test room mappings via POST /api/channel-manager/exely/room-mappings with TEST_ prefix (cleaned up after tests)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 61 adds versioning and WSSE hardening. All unit tests verify: 1) SOAP XML structure with Timestamp/Nonce/Password elements, 2) payload hash determinism, 3) provider lineage fields in both Exely and HotelRunner normalizers. External SOAP calls to Exely will fail (no real server - expected). All API endpoints continue working after common_ingest.py changes.",
+  "tests_executed": {
+    "unit_tests_wsse_soap": [
+      "test_soap_envelope_contains_timestamp_element - PASSED (wsu:Created, wsu:Expires)",
+      "test_soap_envelope_contains_nonce_with_base64 - PASSED (16 bytes, Base64Binary encoding)",
+      "test_soap_envelope_password_type_passwordtext - PASSED (PasswordText type attribute)",
+      "test_soap_envelope_must_understand_attribute - PASSED (mustUnderstand=1)",
+      "test_soap_envelope_all_wsse_elements_present - PASSED (full structure validation)"
+    ],
+    "unit_tests_payload_hash": [
+      "test_same_payload_produces_same_hash - PASSED (deterministic)",
+      "test_different_payload_produces_different_hash - PASSED",
+      "test_payload_hash_order_independent - PASSED (json sort_keys=True)",
+      "test_payload_hash_length - PASSED (16 characters)"
+    ],
+    "unit_tests_exely_normalizer": [
+      "test_exely_normalizer_outputs_provider_last_modified_at - PASSED (from last_modify field)",
+      "test_exely_normalizer_outputs_provider_created_at - PASSED (from create_date field)",
+      "test_exely_normalizer_outputs_provider_version - PASSED (default 1)"
+    ],
+    "unit_tests_hotelrunner_normalizer": [
+      "test_hotelrunner_normalizer_outputs_provider_last_modified_at - PASSED (from updated_at)",
+      "test_hotelrunner_normalizer_outputs_provider_created_at - PASSED (from created_at)",
+      "test_hotelrunner_normalizer_outputs_provider_version - PASSED (default 1)",
+      "test_hotelrunner_normalizer_fallback_modified_at - PASSED (fallback to modified_at)"
+    ],
+    "api_tests": [
+      "test_get_connection_returns_correct_shape - PASSED",
+      "test_get_sync_status_returns_correct_fields - PASSED",
+      "test_create_mapping_returns_correct_response - PASSED",
+      "test_get_mappings_returns_list - PASSED",
+      "test_delete_mapping_works - PASSED",
+      "test_get_sync_logs_returns_logs - PASSED",
+      "test_get_local_reservations_returns_list - PASSED"
+    ],
+    "existing_api_tests": "All 14 tests from test_exely_api.py continue to pass"
+  },
+  "frontend_verification": {
+    "exely_page": {
+      "route": "/exely",
+      "elements_verified": [
+        "data-testid='exely-integration' - main container ✅",
+        "data-testid='exely-page-title' - 'Exely Entegrasyonu' ✅",
+        "data-testid='exely-connection-badge' - shows 'Bagli Degil' ✅",
+        "data-testid='exely-tab-connection' - Baglanti tab ✅",
+        "data-testid='exely-tab-rooms' - Odalar tab ✅",
+        "data-testid='exely-tab-reservations' - Rezervasyonlar tab ✅",
+        "data-testid='exely-tab-mappings' - Eslemeler tab ✅",
+        "data-testid='exely-tab-logs' - Loglar tab ✅",
+        "data-testid='exely-username-input' - Username field ✅",
+        "data-testid='exely-password-input' - Password field ✅",
+        "data-testid='exely-hotel-code-input' - Hotel Code field ✅",
+        "data-testid='exely-connect-btn' - Baglan button ✅"
+      ]
+    }
+  },
+  "mocked_apis_note": "Exely external SOAP API is NOT mocked. Real calls to https://www.exely.com/ota/OTA will fail (expected - no real server). Internal unit tests and MongoDB operations are fully tested."
+}

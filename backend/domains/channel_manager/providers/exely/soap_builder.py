@@ -2,34 +2,65 @@
 Exely SOAP XML Builder
 Constructs OTA-standard SOAP envelopes with WSSE Security headers.
 
+Security: WSSE UsernameToken with Timestamp (wsu:Created, wsu:Expires) + Nonce.
+
 Supported messages:
   - OTA_ReadRQ       (pull reservations)
   - OTA_HotelAvailRQ (discover rooms/rates)
   - OTA_NotifReportRQ(ARI push)
 """
-from datetime import datetime, timezone
+import base64
+import os
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from lxml import etree
 
 SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/"
 WSSE_NS = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
+WSU_NS = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"
 OTA_NS = "http://www.opentravel.org/OTA/2003/05"
 
-NSMAP_SOAP = {"soapenv": SOAP_NS, "wsse": WSSE_NS, "ota": OTA_NS}
+NSMAP_SOAP = {"soapenv": SOAP_NS, "wsse": WSSE_NS, "wsu": WSU_NS, "ota": OTA_NS}
 
 
 def _soap_envelope(username: str, password: str, hotel_code: str, body_element: etree._Element) -> str:
-    """Wrap an OTA body element in a full SOAP envelope with WSSE auth."""
+    """Wrap an OTA body element in a full SOAP envelope with WSSE auth + Timestamp + Nonce."""
     env = etree.Element(f"{{{SOAP_NS}}}Envelope", nsmap=NSMAP_SOAP)
 
     # Header with WSSE Security
     header = etree.SubElement(env, f"{{{SOAP_NS}}}Header")
-    security = etree.SubElement(header, f"{{{WSSE_NS}}}Security")
+    security = etree.SubElement(header, f"{{{WSSE_NS}}}Security", attrib={
+        f"{{{SOAP_NS}}}mustUnderstand": "1",
+    })
+
+    # wsu:Timestamp — Created + Expires (5 min TTL)
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(minutes=5)
+    timestamp = etree.SubElement(security, f"{{{WSU_NS}}}Timestamp")
+    created_el = etree.SubElement(timestamp, f"{{{WSU_NS}}}Created")
+    created_el.text = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    expires_el = etree.SubElement(timestamp, f"{{{WSU_NS}}}Expires")
+    expires_el.text = expires.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # UsernameToken with Nonce
     username_token = etree.SubElement(security, f"{{{WSSE_NS}}}UsernameToken")
     un_el = etree.SubElement(username_token, f"{{{WSSE_NS}}}Username")
     un_el.text = username
-    pw_el = etree.SubElement(username_token, f"{{{WSSE_NS}}}Password")
+    pw_el = etree.SubElement(username_token, f"{{{WSSE_NS}}}Password", attrib={
+        "Type": "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText",
+    })
     pw_el.text = password
+
+    # Nonce (16 random bytes, base64-encoded) — replay attack protection
+    nonce_bytes = os.urandom(16)
+    nonce_el = etree.SubElement(username_token, f"{{{WSSE_NS}}}Nonce", attrib={
+        "EncodingType": "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary",
+    })
+    nonce_el.text = base64.b64encode(nonce_bytes).decode("ascii")
+
+    # wsu:Created inside UsernameToken
+    token_created = etree.SubElement(username_token, f"{{{WSU_NS}}}Created")
+    token_created.text = now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # HotelCode in security context
     hotel_el = etree.SubElement(security, "HotelCode")
@@ -63,7 +94,7 @@ def build_read_rq(
     })
 
     if reservation_id:
-        unique_id = etree.SubElement(read_request, f"{{{OTA_NS}}}UniqueID", attrib={
+        etree.SubElement(read_request, f"{{{OTA_NS}}}UniqueID", attrib={
             "Type": "14",
             "ID": reservation_id,
         })
@@ -92,14 +123,14 @@ def build_hotel_avail_rq(
     avail_request = etree.SubElement(rq, f"{{{OTA_NS}}}AvailRequestSegments")
     segment = etree.SubElement(avail_request, f"{{{OTA_NS}}}AvailRequestSegment")
 
-    stay_range = etree.SubElement(segment, f"{{{OTA_NS}}}StayDateRange", attrib={
+    etree.SubElement(segment, f"{{{OTA_NS}}}StayDateRange", attrib={
         "Start": checkin,
         "End": checkout,
     })
 
     hotel_criteria = etree.SubElement(segment, f"{{{OTA_NS}}}HotelSearchCriteria")
     criterion = etree.SubElement(hotel_criteria, f"{{{OTA_NS}}}Criterion")
-    hotel_ref = etree.SubElement(criterion, f"{{{OTA_NS}}}HotelRef", attrib={
+    etree.SubElement(criterion, f"{{{OTA_NS}}}HotelRef", attrib={
         "HotelCode": hotel_code,
     })
 
@@ -124,7 +155,7 @@ def build_notif_report_rq(
     notif_item = etree.SubElement(hotel_notif, f"{{{OTA_NS}}}HotelReservations")
     hotel_res = etree.SubElement(notif_item, f"{{{OTA_NS}}}HotelReservation")
 
-    unique_id = etree.SubElement(hotel_res, f"{{{OTA_NS}}}UniqueID", attrib={
+    unique_id = etree.SubElement(hotel_res, f"{{{OTA_NS}}}UniqueID", attrib={  # noqa: F841
         "Type": "14",
         "ID": reservation_id,
     })
@@ -160,7 +191,7 @@ def build_ari_update_rq(
 
     msg = etree.SubElement(avail_status, f"{{{OTA_NS}}}AvailStatusMessage")
 
-    status_app = etree.SubElement(msg, f"{{{OTA_NS}}}StatusApplicationControl", attrib={
+    status_app = etree.SubElement(msg, f"{{{OTA_NS}}}StatusApplicationControl", attrib={  # noqa: F841
         "Start": start_date,
         "End": end_date,
         "InvTypeCode": room_type_code,
@@ -168,7 +199,7 @@ def build_ari_update_rq(
     })
 
     if availability is not None:
-        lengths = etree.SubElement(msg, f"{{{OTA_NS}}}LengthsOfStay")
+        lengths = etree.SubElement(msg, f"{{{OTA_NS}}}LengthsOfStay")  # noqa: F841
         etree.SubElement(msg, f"{{{OTA_NS}}}BookingLimit").text = str(availability)
 
     if rate_amount is not None:
@@ -181,7 +212,7 @@ def build_ari_update_rq(
         })
 
     if stop_sell is not None:
-        restriction = etree.SubElement(msg, f"{{{OTA_NS}}}RestrictionStatus", attrib={
+        restriction = etree.SubElement(msg, f"{{{OTA_NS}}}RestrictionStatus", attrib={  # noqa: F841
             "Status": "Close" if stop_sell else "Open",
             "Restriction": "Arrival",
         })
