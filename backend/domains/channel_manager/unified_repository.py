@@ -549,5 +549,11 @@ async def ensure_indexes() -> None:
     await db[COLL_RECONCILIATION_CASES].create_index(
         [("tenant_id", 1), ("severity", 1), ("created_at", -1)],
     )
+    await db[COLL_RECONCILIATION_CASES].create_index(
+        [("tenant_id", 1), ("provider", 1), ("external_reservation_id", 1), ("case_type", 1), ("status", 1)],
+    )
+    await db[COLL_RECONCILIATION_CASES].create_index(
+        [("tenant_id", 1), ("case_type", 1), ("status", 1)],
+    )
 
     logger.info("9-collection indexes created successfully")

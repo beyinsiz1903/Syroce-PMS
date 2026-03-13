@@ -114,6 +114,8 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("domains.channel_manager.model_router", "router", ["Channel Manager — Data Model"], None, None),
     # Reservation Ingest Pipeline
     ("domains.channel_manager.ingest.ingest_router", "router", ["Reservation Ingest"], None, None),
+    # Cross-Provider Reconciliation Engine
+    ("domains.channel_manager.reconciliation_engine.reconciliation_router", "router", ["Cross-Provider Reconciliation"], None, None),
     ("security.tenant_isolation_router", "router", ["Tenant Isolation v2"], None, None),
     ("ops.pilot_router", "router", ["Pilot Readiness"], None, None),
     # Phase 6 — Runtime Validation & Go-Live

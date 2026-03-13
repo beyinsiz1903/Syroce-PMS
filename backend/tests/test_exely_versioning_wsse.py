@@ -18,7 +18,7 @@ from datetime import datetime, timezone, timedelta
 # Add backend to path for unit tests
 sys.path.insert(0, '/app/backend')
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://data-model-hub-1.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://hotel-runner-exely.preview.emergentagent.com')
 if BASE_URL.endswith('/'):
     BASE_URL = BASE_URL[:-1]
 

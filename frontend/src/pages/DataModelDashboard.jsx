@@ -10,7 +10,8 @@ import {
   Database, Link2, Grid3X3, FileText, GitBranch,
   AlertTriangle, RefreshCw, Trash2, CheckCircle,
   Loader2, Server, Layers, ArrowRightLeft, Clock,
-  Play, Repeat, Download, Activity
+  Play, Repeat, Download, Activity, Shield, Eye,
+  XCircle, Search, BarChart3
 } from 'lucide-react';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -72,6 +73,10 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
   const [lineages, setLineages] = useState([]);
   const [reconCases, setReconCases] = useState([]);
   const [reconSummary, setReconSummary] = useState(null);
+  const [reconDashboard, setReconDashboard] = useState(null);
+  const [reconMetrics, setReconMetrics] = useState(null);
+  const [reconFilter, setReconFilter] = useState({ status: '', severity: '', case_type: '', provider: '' });
+  const [reconRunning, setReconRunning] = useState(false);
   const [ingestStatus, setIngestStatus] = useState(null);
   const [workerAction, setWorkerAction] = useState(null);
 
@@ -86,16 +91,18 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
     setLoading(true);
     try {
       const h = headers();
-      const [schemaRes, connRes, roomRes, rateRes, eventsRes, lineageRes, casesRes, summaryRes, ingestRes] = await Promise.all([
+      const [schemaRes, connRes, roomRes, rateRes, eventsRes, lineageRes, casesRes, summaryRes, ingestRes, reconDashRes, reconMetricsRes] = await Promise.all([
         axios.get(`${API}/api/channel-manager/model/schema`, { headers: h }).catch(() => ({ data: null })),
         axios.get(`${API}/api/channel-manager/model/connections`, { headers: h }).catch(() => ({ data: { connections: [] } })),
         axios.get(`${API}/api/channel-manager/model/room-mappings?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { mappings: [] } })),
         axios.get(`${API}/api/channel-manager/model/rate-plan-mappings?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { mappings: [] } })),
         axios.get(`${API}/api/channel-manager/ingest/events?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { events: [] } })),
         axios.get(`${API}/api/channel-manager/model/lineage?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { lineages: [] } })),
-        axios.get(`${API}/api/channel-manager/model/reconciliation/cases`, { headers: h }).catch(() => ({ data: { cases: [] } })),
+        axios.get(`${API}/api/channel-manager/reconciliation/cases`, { headers: h }).catch(() => ({ data: { cases: [] } })),
         axios.get(`${API}/api/channel-manager/model/reconciliation/summary`, { headers: h }).catch(() => ({ data: null })),
         axios.get(`${API}/api/channel-manager/ingest/status?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: null })),
+        axios.get(`${API}/api/channel-manager/reconciliation/dashboard`, { headers: h }).catch(() => ({ data: null })),
+        axios.get(`${API}/api/channel-manager/reconciliation/metrics`, { headers: h }).catch(() => ({ data: null })),
       ]);
       setSchema(schemaRes.data);
       setConnections(connRes.data.connections || []);
@@ -106,6 +113,8 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
       setReconCases(casesRes.data.cases || []);
       setReconSummary(summaryRes.data);
       setIngestStatus(ingestRes.data);
+      setReconDashboard(reconDashRes.data);
+      setReconMetrics(reconMetricsRes.data);
     } catch (e) { console.error(e); }
     setLoading(false);
   }, [propertyId, headers]);
@@ -130,10 +139,50 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
 
   const resolveCase = async (caseId) => {
     try {
-      await axios.post(`${API}/api/channel-manager/model/reconciliation/cases/${caseId}/resolve`, { resolution: 'Manually resolved' }, { headers: headers() });
+      await axios.post(`${API}/api/channel-manager/reconciliation/cases/${caseId}/resolve`, { resolution: 'Manually resolved' }, { headers: headers() });
       toast.success('Case resolved');
       fetchAll();
     } catch { toast.error('Resolve failed'); }
+  };
+
+  const ignoreCase = async (caseId) => {
+    try {
+      await axios.post(`${API}/api/channel-manager/reconciliation/cases/${caseId}/ignore`, { reason: 'Manually ignored' }, { headers: headers() });
+      toast.success('Case ignored');
+      fetchAll();
+    } catch { toast.error('Ignore failed'); }
+  };
+
+  const acknowledgeCase = async (caseId) => {
+    try {
+      await axios.post(`${API}/api/channel-manager/reconciliation/cases/${caseId}/acknowledge`, { note: 'Under review' }, { headers: headers() });
+      toast.success('Case acknowledged');
+      fetchAll();
+    } catch { toast.error('Acknowledge failed'); }
+  };
+
+  const triggerReconciliation = async () => {
+    setReconRunning(true);
+    try {
+      const { data } = await axios.post(`${API}/api/channel-manager/reconciliation/run`, {}, { headers: headers() });
+      const r = data.result || {};
+      toast.success(`Reconciliation done: ${r.mismatches_found || 0} mismatches, ${r.cases_created || 0} cases created`);
+      fetchAll();
+    } catch { toast.error('Reconciliation failed'); }
+    setReconRunning(false);
+  };
+
+  const fetchFilteredCases = async () => {
+    const h = headers();
+    const params = new URLSearchParams();
+    if (reconFilter.status) params.set('status', reconFilter.status);
+    if (reconFilter.severity) params.set('severity', reconFilter.severity);
+    if (reconFilter.case_type) params.set('case_type', reconFilter.case_type);
+    if (reconFilter.provider) params.set('provider', reconFilter.provider);
+    try {
+      const { data } = await axios.get(`${API}/api/channel-manager/reconciliation/cases?${params.toString()}`, { headers: h });
+      setReconCases(data.cases || []);
+    } catch { toast.error('Filter failed'); }
   };
 
   const triggerWorker = async (action) => {
@@ -509,24 +558,145 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
           {/* Reconciliation Tab */}
           <TabsContent value="reconciliation">
             <div className="space-y-4">
-              {reconSummary && (
-                <div data-testid="recon-summary" className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <Card className="bg-zinc-900/60 border-zinc-800">
-                    <CardContent className="p-3 text-center">
-                      <p className="text-2xl font-bold text-red-400">{reconSummary.total_open}</p>
-                      <p className="text-xs text-zinc-500">Open Cases</p>
-                    </CardContent>
-                  </Card>
-                  {Object.entries(reconSummary.by_severity || {}).map(([sev, count]) => (
-                    <Card key={sev} className="bg-zinc-900/60 border-zinc-800">
-                      <CardContent className="p-3 text-center">
-                        <p className="text-2xl font-bold text-zinc-200">{count}</p>
-                        <p className="text-xs text-zinc-500 capitalize">{sev}</p>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
+              {/* Reconciliation Worker & Controls */}
+              <Card className="bg-zinc-900/60 border-zinc-800">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <CardTitle className="text-base text-zinc-200 flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-cyan-400" />
+                      Reconciliation Engine
+                    </CardTitle>
+                    <div className="flex gap-2">
+                      <Button data-testid="trigger-reconciliation" size="sm" variant="outline"
+                        className="h-7 text-xs border-cyan-600 text-cyan-400 hover:bg-cyan-500/10"
+                        onClick={triggerReconciliation} disabled={reconRunning}>
+                        {reconRunning ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Play className="w-3 h-3 mr-1" />}
+                        Run Reconciliation
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    {reconDashboard && (
+                      <>
+                        <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50 text-center">
+                          <p className="text-2xl font-bold text-red-400">{reconDashboard.open_cases}</p>
+                          <p className="text-xs text-zinc-500">Open Cases</p>
+                        </div>
+                        {Object.entries(reconDashboard.severity_counts || {}).map(([sev, count]) => (
+                          <div key={sev} className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50 text-center">
+                            <p className={`text-2xl font-bold ${sev === 'critical' ? 'text-red-400' : sev === 'high' ? 'text-orange-400' : sev === 'medium' ? 'text-amber-400' : 'text-zinc-400'}`}>{count}</p>
+                            <p className="text-xs text-zinc-500 capitalize">{sev}</p>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                    {reconDashboard?.worker && (
+                      <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50 text-center">
+                        <p className="text-2xl font-bold text-cyan-400">{reconDashboard.worker.runs_total}</p>
+                        <p className="text-xs text-zinc-500">Total Runs</p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Metrics */}
+              {reconMetrics && (
+                <Card data-testid="recon-metrics" className="bg-zinc-900/60 border-zinc-800">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base text-zinc-200 flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-violet-400" /> Mismatch Metrics
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                      {[
+                        { label: 'Missing Res.', value: reconMetrics.missing_reservations, color: 'text-orange-400' },
+                        { label: 'Ghost Res.', value: reconMetrics.ghost_reservations, color: 'text-amber-400' },
+                        { label: 'Status Conflict', value: reconMetrics.status_conflicts, color: 'text-red-400' },
+                        { label: 'Amount Mismatch', value: reconMetrics.amount_mismatches, color: 'text-yellow-400' },
+                        { label: 'Date Conflict', value: reconMetrics.date_conflicts, color: 'text-orange-400' },
+                        { label: 'Duplicates', value: reconMetrics.duplicate_reservations, color: 'text-zinc-400' },
+                      ].map(m => (
+                        <div key={m.label} className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50 text-center">
+                          <p className={`text-xl font-bold ${m.color}`}>{m.value || 0}</p>
+                          <p className="text-xs text-zinc-500">{m.label}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
               )}
+
+              {/* Provider Breakdown */}
+              {reconDashboard?.provider_breakdown && Object.keys(reconDashboard.provider_breakdown).length > 0 && (
+                <Card className="bg-zinc-900/60 border-zinc-800">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm text-zinc-200">Provider Breakdown</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex gap-4 flex-wrap">
+                      {Object.entries(reconDashboard.provider_breakdown).map(([prov, count]) => (
+                        <div key={prov} className="flex items-center gap-2">
+                          <ProviderBadge provider={prov} />
+                          <span className="text-zinc-200 font-bold">{count}</span>
+                          <span className="text-zinc-500 text-xs">open cases</span>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Filters */}
+              <Card className="bg-zinc-900/60 border-zinc-800">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Search className="w-4 h-4 text-zinc-500" />
+                    <select data-testid="filter-status" className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-300"
+                      value={reconFilter.status} onChange={e => setReconFilter(f => ({ ...f, status: e.target.value }))}>
+                      <option value="">All Status</option>
+                      <option value="open">Open</option>
+                      <option value="acknowledged">Acknowledged</option>
+                      <option value="resolved">Resolved</option>
+                      <option value="ignored">Ignored</option>
+                    </select>
+                    <select data-testid="filter-severity" className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-300"
+                      value={reconFilter.severity} onChange={e => setReconFilter(f => ({ ...f, severity: e.target.value }))}>
+                      <option value="">All Severity</option>
+                      <option value="critical">Critical</option>
+                      <option value="high">High</option>
+                      <option value="medium">Medium</option>
+                      <option value="low">Low</option>
+                    </select>
+                    <select data-testid="filter-type" className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-300"
+                      value={reconFilter.case_type} onChange={e => setReconFilter(f => ({ ...f, case_type: e.target.value }))}>
+                      <option value="">All Types</option>
+                      <option value="missing_reservation">Missing Reservation</option>
+                      <option value="ghost_reservation">Ghost Reservation</option>
+                      <option value="amount_mismatch">Amount Mismatch</option>
+                      <option value="date_conflict">Date Conflict</option>
+                      <option value="status_conflict">Status Conflict</option>
+                      <option value="duplicate_reservation">Duplicate Reservation</option>
+                      <option value="missing_mapping">Missing Mapping</option>
+                    </select>
+                    <select data-testid="filter-provider" className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-300"
+                      value={reconFilter.provider} onChange={e => setReconFilter(f => ({ ...f, provider: e.target.value }))}>
+                      <option value="">All Providers</option>
+                      <option value="hotelrunner">HotelRunner</option>
+                      <option value="exely">Exely</option>
+                    </select>
+                    <Button data-testid="apply-filters" size="sm" variant="outline" className="h-7 text-xs border-zinc-700 text-zinc-300"
+                      onClick={fetchFilteredCases}>
+                      Apply
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Cases List */}
               <Card className="bg-zinc-900/60 border-zinc-800">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base text-zinc-200 flex items-center gap-2">
@@ -536,34 +706,63 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
                 </CardHeader>
                 <CardContent>
                   {reconCases.length === 0 ? (
-                    <p data-testid="no-recon-cases" className="text-zinc-500 text-sm text-center py-6">No open cases</p>
+                    <p data-testid="no-recon-cases" className="text-zinc-500 text-sm text-center py-6">No cases found</p>
                   ) : (
                     <div className="space-y-2">
                       {reconCases.map(c => (
-                        <div key={c.id} data-testid={`recon-case-${c.id}`} className="flex items-center justify-between p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <StatusDot status={c.status} />
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                        <div key={c.id} data-testid={`recon-case-${c.id}`} className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <StatusDot status={c.status} />
                                 <ProviderBadge provider={c.provider} />
-                                <Badge className="bg-zinc-700/50 text-zinc-300 text-xs">{c.case_type}</Badge>
-                                <Badge className={`text-xs ${
-                                  c.severity === 'critical' ? 'bg-red-500/15 text-red-400' :
-                                  c.severity === 'high' ? 'bg-orange-500/15 text-orange-400' :
-                                  c.severity === 'medium' ? 'bg-amber-500/15 text-amber-400' :
-                                  'bg-zinc-500/15 text-zinc-400'
-                                } border`}>{c.severity}</Badge>
+                                <Badge className="bg-zinc-700/50 text-zinc-300 text-xs">{c.case_type?.replace(/_/g, ' ')}</Badge>
+                                <Badge className={`text-xs border ${
+                                  c.severity === 'critical' ? 'bg-red-500/15 text-red-400 border-red-500/30' :
+                                  c.severity === 'high' ? 'bg-orange-500/15 text-orange-400 border-orange-500/30' :
+                                  c.severity === 'medium' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' :
+                                  'bg-zinc-500/15 text-zinc-400 border-zinc-500/30'
+                                }`}>{c.severity}</Badge>
+                                <Badge className={`text-xs border ${
+                                  c.status === 'open' ? 'bg-red-500/15 text-red-400 border-red-500/30' :
+                                  c.status === 'acknowledged' ? 'bg-blue-500/15 text-blue-400 border-blue-500/30' :
+                                  c.status === 'resolved' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' :
+                                  'bg-zinc-500/15 text-zinc-400 border-zinc-500/30'
+                                }`}>{c.status}</Badge>
                               </div>
                               <p className="text-xs text-zinc-400 truncate">{c.description}</p>
+                              {c.external_reservation_id && (
+                                <p className="text-xs text-zinc-600 font-mono mt-0.5">ext: {c.external_reservation_id}</p>
+                              )}
+                              {c.suggested_action && (
+                                <p className="text-xs text-cyan-400/70 mt-0.5">{c.suggested_action}</p>
+                              )}
+                              {c.resolution && (
+                                <p className="text-xs text-emerald-400/70 mt-0.5">Resolution: {c.resolution}</p>
+                              )}
                             </div>
+                            {(c.status === 'open' || c.status === 'acknowledged') && (
+                              <div className="flex gap-1 shrink-0">
+                                {c.status === 'open' && (
+                                  <Button data-testid={`ack-case-${c.id}`} size="sm" variant="outline"
+                                    className="h-7 text-xs border-blue-600 text-blue-400 hover:bg-blue-500/10"
+                                    onClick={() => acknowledgeCase(c.id)}>
+                                    <Eye className="w-3 h-3 mr-1" /> Ack
+                                  </Button>
+                                )}
+                                <Button data-testid={`resolve-case-${c.id}`} size="sm" variant="outline"
+                                  className="h-7 text-xs border-emerald-600 text-emerald-400 hover:bg-emerald-500/10"
+                                  onClick={() => resolveCase(c.id)}>
+                                  <CheckCircle className="w-3 h-3 mr-1" /> Resolve
+                                </Button>
+                                <Button data-testid={`ignore-case-${c.id}`} size="sm" variant="outline"
+                                  className="h-7 text-xs border-zinc-600 text-zinc-400 hover:bg-zinc-500/10"
+                                  onClick={() => ignoreCase(c.id)}>
+                                  <XCircle className="w-3 h-3 mr-1" /> Ignore
+                                </Button>
+                              </div>
+                            )}
                           </div>
-                          {c.status === 'open' && (
-                            <Button data-testid={`resolve-case-${c.id}`} size="sm" variant="outline"
-                              className="h-7 text-xs border-emerald-600 text-emerald-400 hover:bg-emerald-500/10 ml-2 shrink-0"
-                              onClick={() => resolveCase(c.id)}>
-                              <CheckCircle className="w-3 h-3 mr-1" /> Resolve
-                            </Button>
-                          )}
                         </div>
                       ))}
                     </div>

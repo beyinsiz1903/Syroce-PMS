@@ -372,12 +372,14 @@ class CaseType(str, Enum):
     INVENTORY_MISMATCH = "inventory_mismatch"
     RATE_MISMATCH = "rate_mismatch"
     MISSING_RESERVATION = "missing_reservation"
+    GHOST_RESERVATION = "ghost_reservation"
     DUPLICATE_RESERVATION = "duplicate_reservation"
     STALE_SYNC = "stale_sync"
     ACK_FAILURE = "ack_failure"
     MISSING_MAPPING = "missing_mapping"
     AMOUNT_MISMATCH = "amount_mismatch"
     DATE_CONFLICT = "date_conflict"
+    STATUS_CONFLICT = "status_conflict"
     RESERVATION_CONFLICT = "reservation_conflict"
     CANCELLATION_WITHOUT_RESERVATION = "cancellation_without_reservation"
     DUPLICATE_EVENT = "duplicate_event"
@@ -386,8 +388,10 @@ class CaseType(str, Enum):
 
 class CaseStatus(str, Enum):
     OPEN = "open"
+    ACKNOWLEDGED = "acknowledged"
     INVESTIGATING = "investigating"
     RESOLVED = "resolved"
+    IGNORED = "ignored"
     DISMISSED = "dismissed"
 
 
