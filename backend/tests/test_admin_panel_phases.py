@@ -379,7 +379,7 @@ class TestProductionReadinessService:
         assert report["total_checks"] >= 9
         assert report["connector_id"] == "conn-1"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_readiness_all_pass(self, mock_repo):
         from channel_manager.application.production_readiness_service import ProductionReadinessService
         svc = ProductionReadinessService(mock_repo)
