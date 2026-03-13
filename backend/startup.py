@@ -79,6 +79,14 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Optimization system initialization error: {e}")
 
+    # ── Channel Manager 9-collection indexes ───────────────────────
+    try:
+        from domains.channel_manager.unified_repository import ensure_indexes
+        await ensure_indexes()
+        print("✅ Channel Manager 9-collection indexes created")
+    except Exception as e:
+        logger.warning(f"CM 9-collection indexes error: {e}")
+
     # ── Database optimization ───────────────────────────────────────
     try:
         print("🚀 Running comprehensive database optimization...")

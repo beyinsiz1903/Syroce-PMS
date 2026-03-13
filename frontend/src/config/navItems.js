@@ -158,6 +158,14 @@ export const NAV_ITEMS = [
     group: "professional",
   },
   {
+    key: "data_model",
+    label: "Data Model",
+    path: "/data-model",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+  },
+  {
     key: "integration_hub",
     label: "Integration Hub",
     path: "/app/integration-hub",
