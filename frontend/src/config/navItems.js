@@ -142,6 +142,14 @@ export const NAV_ITEMS = [
     group: "professional",
   },
   {
+    key: "exely",
+    label: "Exely",
+    path: "/exely",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+  },
+  {
     key: "integration_hub",
     label: "Integration Hub",
     path: "/app/integration-hub",

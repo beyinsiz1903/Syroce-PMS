@@ -167,6 +167,7 @@ const GoLiveDashboardPage = lazy(() => import("@/pages/GoLiveDashboardPage"));
 const ProductionRolloutPage = lazy(() => import("@/pages/ProductionRolloutPage"));
 const SoakTestDashboard = lazy(() => import("@/pages/SoakTestDashboard"));
 const HotelRunnerIntegration = lazy(() => import("@/pages/HotelRunnerIntegration"));
+const ExelyIntegration = lazy(() => import("@/pages/ExelyIntegration"));
 
 import { Toaster } from "@/components/ui/sonner";
 
@@ -1420,6 +1421,16 @@ function App() {
             element={
               isAuthenticated ? (
                 <HotelRunnerIntegration user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/exely"
+            element={
+              isAuthenticated ? (
+                <ExelyIntegration user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )

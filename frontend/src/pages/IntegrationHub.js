@@ -1217,6 +1217,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                   data-testid="new-connector-provider"
                 >
                   <option value="hotelrunner">HotelRunner</option>
+                  <option value="exely">Exely (SOAP)</option>
                   <option value="siteminder">SiteMinder</option>
                   <option value="channex">Channex</option>
                 </select>
