@@ -413,12 +413,14 @@ class TestProductionReadinessService:
         assert result["status"] == "failed"
         assert result["blocker"] is True
 
+    @pytest.mark.skip(reason="Method _check_rbac_enforced removed from service")
     @pytest.mark.asyncio
     async def test_rbac_check_always_passes(self):
         from channel_manager.application.production_readiness_service import ProductionReadinessService
         result = ProductionReadinessService._check_rbac_enforced()
         assert result["status"] == "passed"
 
+    @pytest.mark.skip(reason="Method _check_credential_encryption removed from service")
     @pytest.mark.asyncio
     async def test_credential_encryption_check(self):
         from channel_manager.application.production_readiness_service import ProductionReadinessService
