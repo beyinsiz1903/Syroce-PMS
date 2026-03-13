@@ -26,6 +26,10 @@ from .schemas import (
 from . import outbound_service
 from . import repositories as repo
 from . import drift_worker
+from .provider_test_harness import (
+    get_checklist, HotelRunnerTestRunner, ExelyTestRunner
+)
+from workers.ari_drift_worker import get_drift_mode, set_drift_mode, DRIFT_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +153,23 @@ async def reconcile(req: DriftCheckRequest):
     return result
 
 
+@router.get("/drift/mode")
+async def get_drift_worker_mode():
+    """Get current drift worker mode (normal/recovery)."""
+    mode = get_drift_mode()
+    config = DRIFT_CONFIG[mode]
+    return {"mode": mode, "interval": config["interval"], "scope": config["scope"]}
+
+
+@router.post("/drift/mode/{mode}")
+async def set_drift_worker_mode(mode: str):
+    """Set drift worker mode: 'normal' (2min, changed) or 'recovery' (30s, full)."""
+    result = set_drift_mode(mode)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
 @router.get("/stats")
 async def get_stats(tenant_id: str, property_id: str):
     """Get aggregate ARI push statistics."""
@@ -160,3 +181,51 @@ async def get_stats(tenant_id: str, property_id: str):
 async def get_engine_stats():
     """Get ARI push engine runtime statistics."""
     return outbound_service.get_engine_stats()
+
+
+# ── Provider Test Harness ────────────────────────────────────────────
+
+@router.get("/test-harness/checklist/{provider}")
+async def get_provider_checklist(provider: str):
+    """Get the validation checklist for a provider."""
+    checklist = get_checklist(provider)
+    if not checklist:
+        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
+    return {"provider": provider, "steps": checklist, "total": len(checklist)}
+
+
+@router.post("/test-harness/run/{provider}")
+async def run_provider_test(provider: str, step: Optional[str] = None):
+    """
+    Run provider validation test(s).
+    If step is provided, runs only that step; otherwise runs all steps.
+    """
+    if provider == "hotelrunner":
+        runner = HotelRunnerTestRunner()
+    elif provider == "exely":
+        runner = ExelyTestRunner()
+    else:
+        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
+
+    if step:
+        result = await runner.run_step(step)
+        return {"provider": provider, "results": [result]}
+    else:
+        results = await runner.run_all()
+        passed = sum(1 for r in results if r["success"])
+        return {
+            "provider": provider,
+            "results": results,
+            "summary": {
+                "total": len(results),
+                "passed": passed,
+                "failed": len(results) - passed,
+            },
+        }
+
+
+@router.get("/test-harness/metrics")
+async def get_provider_metrics(tenant_id: str, property_id: str):
+    """Get operational metrics: provider health, latency percentiles, queue stats."""
+    metrics = await repo.get_operational_metrics(tenant_id, property_id)
+    return metrics

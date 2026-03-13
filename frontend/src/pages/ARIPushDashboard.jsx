@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Activity, ArrowUpDown, CheckCircle, XCircle, Clock,
   RefreshCw, AlertTriangle, Loader2, Zap, BarChart3,
-  ArrowRightLeft, Shield
+  ArrowRightLeft, Shield, Gauge, Timer, Inbox,
+  TestTube, Play, ChevronRight
 } from 'lucide-react';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -63,6 +64,10 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
   const [events, setEvents] = useState([]);
   const [statusFilter, setStatusFilter] = useState('all');
   const [providerFilter, setProviderFilter] = useState('all');
+  const [opMetrics, setOpMetrics] = useState(null);
+  const [driftMode, setDriftMode] = useState(null);
+  const [testResults, setTestResults] = useState({});
+  const [testRunning, setTestRunning] = useState(null);
 
   const tenantId = tenant?.id || '044f122b-87b5-480a-88b4-b9534b0c8c90';
   const propertyId = tenant?.property_id || 'prop-001';
@@ -71,13 +76,15 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
     setLoading(true);
     try {
       const params = `tenant_id=${tenantId}&property_id=${propertyId}`;
-      const [statsRes, engineRes, csRes, logsRes, driftRes, evRes] = await Promise.all([
+      const [statsRes, engineRes, csRes, logsRes, driftRes, evRes, metricsRes, modeRes] = await Promise.all([
         axios.get(`${API}/api/channel-manager/ari/stats?${params}`).catch(() => ({ data: {} })),
         axios.get(`${API}/api/channel-manager/ari/engine-stats`).catch(() => ({ data: {} })),
         axios.get(`${API}/api/channel-manager/ari/change-sets?${params}&limit=100`).catch(() => ({ data: { change_sets: [] } })),
         axios.get(`${API}/api/channel-manager/ari/outbound-logs?${params}&limit=50`).catch(() => ({ data: { logs: [] } })),
         axios.get(`${API}/api/channel-manager/ari/drift?${params}&limit=50`).catch(() => ({ data: { drift_states: [] } })),
         axios.get(`${API}/api/channel-manager/ari/events?${params}&limit=50`).catch(() => ({ data: { events: [] } })),
+        axios.get(`${API}/api/channel-manager/ari/test-harness/metrics?${params}`).catch(() => ({ data: {} })),
+        axios.get(`${API}/api/channel-manager/ari/drift/mode`).catch(() => ({ data: null })),
       ]);
       setStats(statsRes.data);
       setEngineStats(engineRes.data);
@@ -85,6 +92,8 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
       setOutboundLogs(logsRes.data.logs || []);
       setDriftStates(driftRes.data.drift_states || []);
       setEvents(evRes.data.events || []);
+      setOpMetrics(metricsRes.data);
+      setDriftMode(modeRes.data);
     } catch (e) { console.error(e); }
     setLoading(false);
   }, [tenantId, propertyId]);
@@ -99,6 +108,31 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
       toast.success(`Pushed: ${data.pushed}, Skipped: ${data.skipped}, Failed: ${data.failed}`);
       fetchAll();
     } catch { toast.error('Push failed'); }
+  };
+
+  const toggleDriftMode = async () => {
+    const newMode = driftMode?.mode === 'normal' ? 'recovery' : 'normal';
+    try {
+      const { data } = await axios.post(`${API}/api/channel-manager/ari/drift/mode/${newMode}`);
+      // Map current_mode to mode for consistent state shape
+      setDriftMode({ mode: data.current_mode, interval: data.interval, scope: data.scope });
+      toast.success(`Drift mode: ${data.current_mode} (${data.interval}s interval)`);
+    } catch { toast.error('Mode switch failed'); }
+  };
+
+  const runProviderTest = async (provider) => {
+    setTestRunning(provider);
+    try {
+      const { data } = await axios.post(`${API}/api/channel-manager/ari/test-harness/run/${provider}`);
+      setTestResults(prev => ({ ...prev, [provider]: data }));
+      const s = data.summary;
+      if (s.failed === 0) {
+        toast.success(`${provider}: All ${s.total} tests passed`);
+      } else {
+        toast.warning(`${provider}: ${s.passed}/${s.total} passed, ${s.failed} failed`);
+      }
+    } catch { toast.error(`${provider} test failed`); }
+    setTestRunning(null);
   };
 
   const filteredCS = changeSets.filter(cs => {
@@ -136,7 +170,7 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
           <MetricCard testId="metric-outbound" title="Outbound" value={stats?.total_outbound_pushes ?? 0} icon={ArrowUpDown} color="bg-violet-500/15 text-violet-400" />
         </div>
 
-        {/* Engine Status */}
+        {/* Engine Status + Drift Mode */}
         {engineStats && (
           <Card className="bg-zinc-900/60 border-zinc-800">
             <CardContent className="p-4">
@@ -153,9 +187,112 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
                     <Badge key={a} className="bg-zinc-800 text-zinc-300 border-zinc-700 text-xs">{a}</Badge>
                   ))}
                 </div>
+                {driftMode && (
+                  <div className="flex items-center gap-2">
+                    <Timer className="w-3.5 h-3.5 text-zinc-500" />
+                    <span className="text-zinc-400">Drift:</span>
+                    <Badge
+                      data-testid="drift-mode-badge"
+                      className={`text-xs cursor-pointer transition-colors ${
+                        driftMode.mode === 'recovery'
+                          ? 'bg-orange-500/15 text-orange-400 border-orange-500/30 hover:bg-orange-500/25'
+                          : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25'
+                      }`}
+                      onClick={toggleDriftMode}
+                    >
+                      {driftMode.mode} ({driftMode.interval}s)
+                    </Badge>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* Operational Metrics Cards */}
+        {opMetrics && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Provider Health */}
+            {Object.entries(opMetrics.provider_health || {}).map(([prov, h]) => (
+              <Card key={prov} data-testid={`health-card-${prov}`} className="bg-zinc-900/60 border-zinc-800">
+                <CardHeader className="pb-2 pt-3 px-4">
+                  <CardTitle className="text-xs text-zinc-500 flex items-center gap-1.5">
+                    <Gauge className="w-3.5 h-3.5" /> {prov} Health
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-4 pb-3">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div>
+                      <p className="text-lg font-bold text-emerald-400">{h.ack_rate}%</p>
+                      <p className="text-[10px] text-zinc-600">ACK Rate</p>
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold text-red-400">{h.error_rate}%</p>
+                      <p className="text-[10px] text-zinc-600">Error Rate</p>
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold text-orange-400">{h.retry_rate}%</p>
+                      <p className="text-[10px] text-zinc-600">Retry Rate</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+
+            {/* Latency Percentiles */}
+            {Object.entries(opMetrics.performance || {}).map(([prov, p]) => (
+              <Card key={`perf-${prov}`} data-testid={`perf-card-${prov}`} className="bg-zinc-900/60 border-zinc-800">
+                <CardHeader className="pb-2 pt-3 px-4">
+                  <CardTitle className="text-xs text-zinc-500 flex items-center gap-1.5">
+                    <BarChart3 className="w-3.5 h-3.5" /> {prov} Latency
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-4 pb-3">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div>
+                      <p className="text-lg font-bold text-cyan-400">{p.p50}ms</p>
+                      <p className="text-[10px] text-zinc-600">P50</p>
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold text-amber-400">{p.p95}ms</p>
+                      <p className="text-[10px] text-zinc-600">P95</p>
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold text-rose-400">{p.p99}ms</p>
+                      <p className="text-[10px] text-zinc-600">P99</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+
+            {/* Queue Stats */}
+            {opMetrics.queue && (
+              <Card data-testid="queue-stats-card" className="bg-zinc-900/60 border-zinc-800">
+                <CardHeader className="pb-2 pt-3 px-4">
+                  <CardTitle className="text-xs text-zinc-500 flex items-center gap-1.5">
+                    <Inbox className="w-3.5 h-3.5" /> Queue
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-4 pb-3">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div>
+                      <p className="text-lg font-bold text-blue-400">{opMetrics.queue.queue_depth}</p>
+                      <p className="text-[10px] text-zinc-600">Queue Depth</p>
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold text-orange-400">{opMetrics.queue.retry_backlog}</p>
+                      <p className="text-[10px] text-zinc-600">Retry Backlog</p>
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold text-red-400">{opMetrics.queue.dead_letter_count}</p>
+                      <p className="text-[10px] text-zinc-600">Dead Letters</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         )}
 
         {/* Tabs */}
@@ -165,6 +302,7 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
             <TabsTrigger data-testid="tab-outbound" value="outbound" className="data-[state=active]:bg-zinc-800 text-xs sm:text-sm">Outbound Logs</TabsTrigger>
             <TabsTrigger data-testid="tab-drift" value="drift" className="data-[state=active]:bg-zinc-800 text-xs sm:text-sm">Drift</TabsTrigger>
             <TabsTrigger data-testid="tab-events" value="events" className="data-[state=active]:bg-zinc-800 text-xs sm:text-sm">Events</TabsTrigger>
+            <TabsTrigger data-testid="tab-harness" value="harness" className="data-[state=active]:bg-zinc-800 text-xs sm:text-sm">Test Harness</TabsTrigger>
           </TabsList>
 
           {/* Queue Monitor Tab */}
@@ -366,6 +504,62 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Test Harness Tab */}
+          <TabsContent value="harness" className="space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {['hotelrunner', 'exely'].map(provider => (
+                <Card key={provider} data-testid={`test-harness-${provider}`} className="bg-zinc-900/60 border-zinc-800">
+                  <CardHeader className="pb-2 pt-4 px-4 flex flex-row items-center justify-between">
+                    <div>
+                      <CardTitle className="text-sm text-zinc-300 capitalize">{provider} Validation</CardTitle>
+                      <CardDescription className="text-xs text-zinc-600">Sandbox / Live test checklist</CardDescription>
+                    </div>
+                    <Button
+                      data-testid={`run-test-${provider}`}
+                      size="sm"
+                      onClick={() => runProviderTest(provider)}
+                      disabled={testRunning === provider}
+                      className="bg-violet-600 hover:bg-violet-700 text-xs"
+                    >
+                      {testRunning === provider
+                        ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Running...</>
+                        : <><Play className="w-3 h-3 mr-1" /> Run All</>}
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4">
+                    {testResults[provider]?.results ? (
+                      <div className="space-y-1.5">
+                        {testResults[provider].results.map((r, i) => (
+                          <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded bg-zinc-800/40 text-xs">
+                            <div className="flex items-center gap-2">
+                              {r.success
+                                ? <CheckCircle className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                                : <XCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />}
+                              <span className="text-zinc-300">{r.step}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-zinc-600 max-w-[200px] truncate">{r.detail}</span>
+                              <span className="text-zinc-700">{r.duration_ms}ms</span>
+                            </div>
+                          </div>
+                        ))}
+                        {testResults[provider].summary && (
+                          <div className="mt-2 pt-2 border-t border-zinc-800 flex gap-3 text-xs">
+                            <span className="text-emerald-400">{testResults[provider].summary.passed} passed</span>
+                            <span className="text-red-400">{testResults[provider].summary.failed} failed</span>
+                            <span className="text-zinc-600">/ {testResults[provider].summary.total} total</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-zinc-600 py-4 text-center">Click "Run All" to execute the validation checklist</p>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </TabsContent>
         </Tabs>
       </div>

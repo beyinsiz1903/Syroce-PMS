@@ -20,7 +20,34 @@ def _now_iso() -> str:
 
 
 def compute_delta_hash(payload: dict) -> str:
+    """Hash payload only — used for internal coalescing/date-range merge."""
     canonical = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode()).hexdigest()[:16]
+
+
+def compute_outbound_delta_hash(
+    provider: str,
+    property_id: str,
+    room_type_code: str,
+    rate_plan_code: str,
+    date_from: str,
+    date_to: str,
+    payload: dict,
+) -> str:
+    """
+    Enriched hash for outbound idempotency, retry dedup, and drift comparison.
+    Includes: provider, property_id, room_type, rate_plan, date_from, date_to, payload.
+    """
+    composite = {
+        "provider": provider,
+        "property_id": property_id,
+        "room_type_code": room_type_code,
+        "rate_plan_code": rate_plan_code or "",
+        "date_from": str(date_from),
+        "date_to": str(date_to),
+        "payload": payload,
+    }
+    canonical = json.dumps(composite, sort_keys=True, default=str)
     return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
@@ -273,4 +300,85 @@ async def get_ari_stats(tenant_id: str, property_id: str) -> dict:
         "failed_changes": failed[0]["count"] if failed else 0,
         "drift_count": drift[0]["count"] if drift else 0,
         "total_outbound_pushes": total_outbound,
+    }
+
+
+async def get_operational_metrics(tenant_id: str, property_id: str) -> dict:
+    """
+    Get operational metrics for the dashboard:
+    - Provider health: ack_rate, error_rate, retry_rate
+    - Performance: p50, p95, p99 push latency
+    - Queue: queue depth, retry backlog, dead letter count
+    """
+    # Provider health metrics per provider
+    provider_health = {}
+    providers = await db[COLL_ARI_OUTBOUND_LOGS].distinct(
+        "provider", {"tenant_id": tenant_id, "property_id": property_id}
+    )
+
+    for prov in providers:
+        base_query = {"tenant_id": tenant_id, "property_id": property_id, "provider": prov}
+        total = await db[COLL_ARI_OUTBOUND_LOGS].count_documents(base_query)
+        success = await db[COLL_ARI_OUTBOUND_LOGS].count_documents({**base_query, "success": True})
+        failed = total - success
+
+        # Retry count from change sets
+        retry_count = await db[COLL_ARI_CHANGE_SETS].count_documents({
+            "tenant_id": tenant_id, "property_id": property_id,
+            "provider": prov, "status": "failed_retryable",
+        })
+
+        provider_health[prov] = {
+            "total_pushes": total,
+            "ack_rate": round(success / total * 100, 1) if total > 0 else 0,
+            "error_rate": round(failed / total * 100, 1) if total > 0 else 0,
+            "retry_rate": round(retry_count / max(total, 1) * 100, 1),
+        }
+
+    # Performance metrics: latency percentiles
+    latency_pipeline = [
+        {"$match": {"tenant_id": tenant_id, "property_id": property_id, "duration_ms": {"$gt": 0}}},
+        {"$sort": {"duration_ms": 1}},
+        {"$group": {
+            "_id": "$provider",
+            "durations": {"$push": "$duration_ms"},
+            "count": {"$sum": 1},
+        }},
+    ]
+    latency_data = await db[COLL_ARI_OUTBOUND_LOGS].aggregate(latency_pipeline).to_list(10)
+
+    performance = {}
+    for ld in latency_data:
+        prov = ld["_id"]
+        durations = ld["durations"]
+        count = ld["count"]
+        performance[prov] = {
+            "p50": durations[int(count * 0.5)] if count > 0 else 0,
+            "p95": durations[int(count * 0.95)] if count > 1 else (durations[-1] if durations else 0),
+            "p99": durations[int(count * 0.99)] if count > 1 else (durations[-1] if durations else 0),
+            "sample_count": count,
+        }
+
+    # Queue stats
+    queue_depth = await db[COLL_ARI_CHANGE_SETS].count_documents({
+        "tenant_id": tenant_id, "property_id": property_id,
+        "status": {"$in": ["pending", "queued"]},
+    })
+    retry_backlog = await db[COLL_ARI_CHANGE_SETS].count_documents({
+        "tenant_id": tenant_id, "property_id": property_id,
+        "status": "failed_retryable",
+    })
+    dead_letter_count = await db[COLL_ARI_CHANGE_SETS].count_documents({
+        "tenant_id": tenant_id, "property_id": property_id,
+        "status": "manual_review",
+    })
+
+    return {
+        "provider_health": provider_health,
+        "performance": performance,
+        "queue": {
+            "queue_depth": queue_depth,
+            "retry_backlog": retry_backlog,
+            "dead_letter_count": dead_letter_count,
+        },
     }

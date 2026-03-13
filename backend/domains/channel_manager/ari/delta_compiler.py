@@ -8,7 +8,7 @@ import logging
 from typing import Dict, List
 
 from .events import ARIDelta
-from .repositories import compute_delta_hash
+from .repositories import compute_outbound_delta_hash
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,15 @@ def compile_delta_hotelrunner(change_set: dict) -> ARIDelta:
         date_from=change_set["date_from"],
         date_to=change_set["date_to"],
         payload=hr_payload,
-        provider_delta_hash=compute_delta_hash(hr_payload),
+        provider_delta_hash=compute_outbound_delta_hash(
+            provider="hotelrunner",
+            property_id=change_set["property_id"],
+            room_type_code=change_set["room_type_code"],
+            rate_plan_code=change_set.get("rate_plan_code", ""),
+            date_from=change_set["date_from"],
+            date_to=change_set["date_to"],
+            payload=hr_payload,
+        ),
     )
 
 
@@ -87,7 +95,15 @@ def compile_delta_exely(change_set: dict) -> ARIDelta:
         date_from=change_set["date_from"],
         date_to=change_set["date_to"],
         payload=exely_payload,
-        provider_delta_hash=compute_delta_hash(exely_payload),
+        provider_delta_hash=compute_outbound_delta_hash(
+            provider="exely",
+            property_id=change_set["property_id"],
+            room_type_code=change_set["room_type_code"],
+            rate_plan_code=change_set.get("rate_plan_code", ""),
+            date_from=change_set["date_from"],
+            date_to=change_set["date_to"],
+            payload=exely_payload,
+        ),
     )
 
 

@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from . import repositories as repo
-from .repositories import compute_delta_hash
+from .repositories import compute_delta_hash, compute_outbound_delta_hash
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +64,24 @@ async def check_drift(
             })
             continue
 
-        pms_hash = compute_delta_hash(pms_item)
-        provider_hash = compute_delta_hash(provider_item)
+        pms_hash = compute_outbound_delta_hash(
+            provider=provider,
+            property_id=property_id,
+            room_type_code=pms_item.get("room_type_code", ""),
+            rate_plan_code=pms_item.get("rate_plan_code", ""),
+            date_from=pms_item.get("date", ""),
+            date_to=pms_item.get("date", ""),
+            payload=pms_item,
+        )
+        provider_hash = compute_outbound_delta_hash(
+            provider=provider,
+            property_id=property_id,
+            room_type_code=provider_item.get("room_type_code", ""),
+            rate_plan_code=provider_item.get("rate_plan_code", ""),
+            date_from=provider_item.get("date", ""),
+            date_to=provider_item.get("date", ""),
+            payload=provider_item,
+        )
 
         if pms_hash != provider_hash:
             parts = key.split("|")
@@ -103,6 +119,8 @@ async def check_drift(
     drift_keys = {d["key"] for d in drifts}
     for key in all_keys - drift_keys:
         parts = key.split("|")
+        pms_item = pms_index.get(key, {})
+        provider_item = provider_index.get(key, {})
         await repo.upsert_drift_state({
             "tenant_id": tenant_id,
             "property_id": property_id,
@@ -111,8 +129,22 @@ async def check_drift(
             "rate_plan_code": parts[1] if len(parts) > 1 else "",
             "date_from": parts[2] if len(parts) > 2 else "",
             "date_to": parts[2] if len(parts) > 2 else "",
-            "pms_hash": compute_delta_hash(pms_index.get(key, {})),
-            "provider_hash": compute_delta_hash(provider_index.get(key, {})),
+            "pms_hash": compute_outbound_delta_hash(
+                provider=provider, property_id=property_id,
+                room_type_code=parts[0],
+                rate_plan_code=parts[1] if len(parts) > 1 else "",
+                date_from=parts[2] if len(parts) > 2 else "",
+                date_to=parts[2] if len(parts) > 2 else "",
+                payload=pms_item,
+            ),
+            "provider_hash": compute_outbound_delta_hash(
+                provider=provider, property_id=property_id,
+                room_type_code=parts[0],
+                rate_plan_code=parts[1] if len(parts) > 1 else "",
+                date_from=parts[2] if len(parts) > 2 else "",
+                date_to=parts[2] if len(parts) > 2 else "",
+                payload=provider_item,
+            ),
             "drift_detected": False,
             "last_reconciled_at": datetime.now(timezone.utc).isoformat(),
         })

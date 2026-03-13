@@ -15,7 +15,7 @@ from datetime import date, timedelta
 from typing import Dict, List, Optional
 
 from .events import ARIChangeEvent
-from .repositories import compute_delta_hash
+from .repositories import compute_delta_hash, compute_outbound_delta_hash
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,6 @@ def coalesce_events(
     for provider in providers:
         for mr in merged_ranges:
             payload = mr["payload"]
-            delta_hash = compute_delta_hash(payload)
             provider_key = coalescing_key.replace(
                 f"{ref.tenant_id}|{ref.property_id}|",
                 f"{ref.tenant_id}|{ref.property_id}|{provider}|",
@@ -125,7 +124,15 @@ def coalesce_events(
                 "date_to": str(mr["date_to"]),
                 "change_scope": event_type,
                 "compacted_payload": payload,
-                "provider_delta_hash": delta_hash,
+                "provider_delta_hash": compute_outbound_delta_hash(
+                    provider=provider,
+                    property_id=ref.property_id,
+                    room_type_code=ref.room_type_code,
+                    rate_plan_code=ref.rate_plan_code or "",
+                    date_from=str(mr["date_from"]),
+                    date_to=str(mr["date_to"]),
+                    payload=payload,
+                ),
             }
             change_sets.append(cs)
 
