@@ -10,6 +10,8 @@ import os
 # Use public URL for testing
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://pipeline-validation-3.preview.emergentagent.com')
 
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+
 
 @pytest.fixture(scope="module")
 def auth_token():

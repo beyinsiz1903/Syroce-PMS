@@ -13,6 +13,8 @@ import os
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://pipeline-validation-3.preview.emergentagent.com').rstrip('/')
 
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"

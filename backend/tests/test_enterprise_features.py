@@ -7,7 +7,9 @@ import httpx
 import os
 import asyncio
 
-API_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://pipeline-validation-3.preview.emergentagent.com")
+API_URL = os.environ.get("REACT_APP_BACKEND_URL", "")
+
+pytestmark = pytest.mark.skipif(not API_URL, reason="REACT_APP_BACKEND_URL not set")
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 

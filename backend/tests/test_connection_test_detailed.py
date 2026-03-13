@@ -18,6 +18,8 @@ import requests
 import uuid
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
 if not BASE_URL:
     BASE_URL = "https://pipeline-validation-3.preview.emergentagent.com"
 BASE_URL = BASE_URL.rstrip('/') + "/api"

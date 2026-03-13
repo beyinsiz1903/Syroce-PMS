@@ -14,6 +14,8 @@ from tests.harnesses.tenant_isolation import TenantIsolationHarness
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+
 
 @pytest.fixture(scope="module")
 def harness():
