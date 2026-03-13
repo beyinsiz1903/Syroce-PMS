@@ -14,13 +14,13 @@ from server import app
 
 # ── Session-scoped fixtures ──
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="module")
 async def client():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="module")
 async def auth_headers(client):
     resp = await client.post("/api/auth/login", json={"email": "demo@hotel.com", "password": "demo123"})
     token = resp.json().get("access_token", "")
@@ -29,7 +29,7 @@ async def auth_headers(client):
 
 # ── CMRuntimeService ──
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_cm_runtime_status_real_fields(client, auth_headers):
     resp = await client.get("/api/channel-manager/runtime/status", headers=auth_headers)
     assert resp.status_code == 200
@@ -39,7 +39,7 @@ async def test_cm_runtime_status_real_fields(client, auth_headers):
     assert d["health"] in ("healthy", "degraded", "critical", "unknown")
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_cm_sync_stats_structure(client, auth_headers):
     resp = await client.get("/api/channel-manager/runtime/status", headers=auth_headers)
     ss = resp.json().get("sync_stats", {})
@@ -47,7 +47,7 @@ async def test_cm_sync_stats_structure(client, auth_headers):
         assert key in ss, f"Missing sync_stats field: {key}"
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_cm_drift_data(client, auth_headers):
     resp = await client.get("/api/channel-manager/runtime/status", headers=auth_headers)
     drift = resp.json().get("drift", {})
@@ -55,7 +55,7 @@ async def test_cm_drift_data(client, auth_headers):
     assert "critical_drifts" in drift
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_cm_providers_data(client, auth_headers):
     resp = await client.get("/api/channel-manager/runtime/status", headers=auth_headers)
     providers = resp.json().get("providers", {})
@@ -65,7 +65,7 @@ async def test_cm_providers_data(client, auth_headers):
 
 # ── WorkerRuntimeService ──
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_queue_health_real_fields(client, auth_headers):
     resp = await client.get("/api/workers/queues/health", headers=auth_headers)
     assert resp.status_code == 200
@@ -74,7 +74,7 @@ async def test_queue_health_real_fields(client, auth_headers):
         assert key in d, f"Missing queue health field: {key}"
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_worker_per_queue_breakdown(client, auth_headers):
     resp = await client.get("/api/workers/queues/health", headers=auth_headers)
     per_queue = resp.json().get("per_queue", [])
@@ -84,7 +84,7 @@ async def test_worker_per_queue_breakdown(client, auth_headers):
             assert key in q
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_dead_letter_structure(client, auth_headers):
     resp = await client.get("/api/workers/queues/health", headers=auth_headers)
     dl = resp.json().get("dead_letter", {})
@@ -92,7 +92,7 @@ async def test_dead_letter_structure(client, auth_headers):
         assert key in dl
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_stuck_tasks_grouping(client, auth_headers):
     resp = await client.get("/api/workers/tasks/stuck", headers=auth_headers)
     assert resp.status_code == 200
@@ -101,7 +101,7 @@ async def test_stuck_tasks_grouping(client, auth_headers):
         assert key in d
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_worker_severity_on_no_activity(client, auth_headers):
     resp = await client.get("/api/workers/queues/health", headers=auth_headers)
     d = resp.json()
@@ -111,7 +111,7 @@ async def test_worker_severity_on_no_activity(client, auth_headers):
 
 # ── SecurityRuntimeService ──
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_audit_status_real_fields(client, auth_headers):
     resp = await client.get("/api/security/audit/status", headers=auth_headers)
     assert resp.status_code == 200
@@ -120,7 +120,7 @@ async def test_audit_status_real_fields(client, auth_headers):
         assert key in d
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_rate_limit_real_fields(client, auth_headers):
     resp = await client.get("/api/security/rate-limit/status", headers=auth_headers)
     assert resp.status_code == 200
@@ -129,7 +129,7 @@ async def test_rate_limit_real_fields(client, auth_headers):
         assert key in d
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_tenant_guard_status(client, auth_headers):
     resp = await client.get("/api/security/tenant-guard/status", headers=auth_headers)
     assert resp.status_code == 200
@@ -138,7 +138,7 @@ async def test_tenant_guard_status(client, auth_headers):
     assert "enforcement" in d
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_log_sanitization_coverage(client, auth_headers):
     resp = await client.get("/api/security/log-sanitization/status", headers=auth_headers)
     assert resp.status_code == 200
@@ -147,7 +147,7 @@ async def test_log_sanitization_coverage(client, auth_headers):
     assert "all_patterns_working" in d
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_security_severity_no_violations(client, auth_headers):
     resp = await client.get("/api/security/tenant-guard/status", headers=auth_headers)
     d = resp.json()
@@ -157,7 +157,7 @@ async def test_security_severity_no_violations(client, auth_headers):
 
 # ── Normalized Health Contract ──
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_normalized_cm_enriched_contract(client, auth_headers):
     resp = await client.get("/api/system-health/normalized/channel-manager", headers=auth_headers)
     assert resp.status_code == 200
@@ -169,7 +169,7 @@ async def test_normalized_cm_enriched_contract(client, auth_headers):
     assert d["data_freshness"] == "real-time"
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_normalized_workers_contract(client, auth_headers):
     resp = await client.get("/api/system-health/normalized/workers", headers=auth_headers)
     assert resp.status_code == 200
@@ -178,7 +178,7 @@ async def test_normalized_workers_contract(client, auth_headers):
     assert "worker_responding" in d["detail"]
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_normalized_security_contract(client, auth_headers):
     resp = await client.get("/api/system-health/normalized/security", headers=auth_headers)
     assert resp.status_code == 200
@@ -187,7 +187,7 @@ async def test_normalized_security_contract(client, auth_headers):
     assert "audit_completeness_score" in d["detail"]
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_normalized_overview_all_subsystems(client, auth_headers):
     resp = await client.get("/api/system-health/normalized/overview", headers=auth_headers)
     assert resp.status_code == 200
@@ -198,7 +198,7 @@ async def test_normalized_overview_all_subsystems(client, auth_headers):
     assert d["data_freshness"] == "real-time"
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_normalized_alerts(client, auth_headers):
     resp = await client.get("/api/system-health/normalized/alerts", headers=auth_headers)
     assert resp.status_code == 200
@@ -207,7 +207,7 @@ async def test_normalized_alerts(client, auth_headers):
     assert "total_active" in d["detail"]
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_normalized_observability(client, auth_headers):
     resp = await client.get("/api/system-health/normalized/observability", headers=auth_headers)
     assert resp.status_code == 200
@@ -218,7 +218,7 @@ async def test_normalized_observability(client, auth_headers):
 
 # ── Role-Based Dashboard ──
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_role_dashboard_admin_panels(client, auth_headers):
     resp = await client.get("/api/system-health/role-dashboard", headers=auth_headers)
     assert resp.status_code == 200
@@ -230,7 +230,7 @@ async def test_role_dashboard_admin_panels(client, auth_headers):
         assert panel in panels, f"Missing admin panel: {panel}"
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_role_dashboard_drift_data(client, auth_headers):
     resp = await client.get("/api/system-health/role-dashboard", headers=auth_headers)
     drift = resp.json()["panels"]["drift_summary"]
@@ -238,7 +238,7 @@ async def test_role_dashboard_drift_data(client, auth_headers):
         assert key in drift
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_role_dashboard_queue_health(client, auth_headers):
     resp = await client.get("/api/system-health/role-dashboard", headers=auth_headers)
     qh = resp.json()["panels"]["queue_health"]
@@ -248,7 +248,7 @@ async def test_role_dashboard_queue_health(client, auth_headers):
 
 # ── Audit Metrics ──
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_audit_metrics_endpoint(client, auth_headers):
     resp = await client.get("/api/system-health/audit/metrics", headers=auth_headers)
     assert resp.status_code == 200
@@ -257,7 +257,7 @@ async def test_audit_metrics_endpoint(client, auth_headers):
         assert key in d, f"Missing audit metric: {key}"
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_audit_metrics_recon(client, auth_headers):
     resp = await client.get("/api/system-health/audit/metrics", headers=auth_headers)
     recon = resp.json()["reconciliation"]
@@ -267,7 +267,7 @@ async def test_audit_metrics_recon(client, auth_headers):
 
 # ── Live Events ──
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_live_status(client, auth_headers):
     resp = await client.get("/api/system-health/live/status", headers=auth_headers)
     assert resp.status_code == 200
@@ -276,7 +276,7 @@ async def test_live_status(client, auth_headers):
     assert "ws_connected_clients" in d
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_live_events(client, auth_headers):
     resp = await client.get("/api/system-health/live/events", headers=auth_headers)
     assert resp.status_code == 200
@@ -292,13 +292,13 @@ def test_connected_clients_has_health_room():
     assert "system-health" in connected_clients
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_broadcast_system_health_event():
     from websocket_server import broadcast_system_health_event
     await broadcast_system_health_event("test_event", {"test": True}, tenant_id="t", severity="info")
 
 
-@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.asyncio(loop_scope="module")
 async def test_broadcast_health_metric_update():
     from websocket_server import broadcast_health_metric_update
     await broadcast_health_metric_update("queue_depth", {"pending": 5}, tenant_id="t")
