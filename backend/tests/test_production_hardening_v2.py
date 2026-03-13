@@ -28,6 +28,9 @@ if not BASE_URL:
             if line.startswith("REACT_APP_BACKEND_URL="):
                 BASE_URL = line.strip().split("=", 1)[1]
 
+if not BASE_URL:
+    pytest.skip("No API URL available", allow_module_level=True)
+
 CONNECTOR_ID = ""
 PROPERTY_ID = "prop-test-hardening"
 TENANT_ID = ""
