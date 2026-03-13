@@ -4,10 +4,15 @@ SecurityRuntime services, normalized health API, role-based dashboard, audit met
 and WebSocket event publishing.
 
 All API tests use a shared HTTPX AsyncClient fixture to avoid Motor event-loop issues.
+Requires running MongoDB instance - skip in CI.
 """
+import os
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
+
+if not os.environ.get("MONGO_URL"):
+    pytest.skip("Requires MONGO_URL (skipped in CI)", allow_module_level=True)
 
 from server import app
 
