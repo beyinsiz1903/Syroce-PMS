@@ -44,6 +44,50 @@ HotelRunner webhook / Exely pull
 3. **Ingest Processor** (10s interval) — processes pending raw events
 4. **Replay Worker** (5min interval) — retries failed events
 
+## Cross-Provider Reconciliation Engine (IMPLEMENTED — 2026-03-13)
+
+### Architecture
+```
+Provider Snapshot Collection (HotelRunner REST / Exely SOAP)
+        ↓
+PMS Reservations (reservation_lineage)
+        ↓
+Comparison Engine (6 mismatch types)
+        ↓
+Case Creation + Auto-Resolution
+        ↓
+Dashboard + Operational APIs
+```
+
+### Mismatch Types
+| Type | Severity | Auto-Resolve? |
+|---|---|---|
+| `missing_reservation` | high | YES — auto-import |
+| `ghost_reservation` | medium | NO — manual review |
+| `amount_mismatch` | medium | NO — manual review |
+| `date_conflict` | high | NO — manual review |
+| `status_conflict` | critical | NO — manual review |
+| `duplicate_reservation` | medium | YES — auto-merge |
+
+### Reconciliation API (`/api/channel-manager/reconciliation/`)
+- `GET /cases` — List cases with filters (status, severity, case_type, provider)
+- `GET /cases/{id}` — Case detail
+- `POST /cases/{id}/resolve` — Resolve case
+- `POST /cases/{id}/ignore` — Ignore case
+- `POST /cases/{id}/acknowledge` — Acknowledge case (under review)
+- `POST /run` — Trigger manual reconciliation
+- `POST /run-with-snapshots` — Run with test provider snapshots
+- `GET /dashboard` — Dashboard summary (severity, provider, type breakdowns)
+- `GET /metrics` — Observability metrics
+- `GET /worker/status` — Worker status
+
+### Components
+- **comparison_engine.py** — Core mismatch detection logic
+- **snapshot_collectors.py** — Provider-specific snapshot fetchers (MOCKED)
+- **reconciliation_worker.py** — Periodic worker + run_with_snapshots
+- **auto_resolver.py** — Safe auto-resolution rules
+- **reconciliation_router.py** — FastAPI endpoints
+
 ## Key API Endpoints
 
 ### Ingest Pipeline (`/api/channel-manager/ingest/`)
@@ -64,32 +108,29 @@ HotelRunner webhook / Exely pull
 ### Data Model API (`/api/channel-manager/model/`)
 - Full CRUD for connections, room/rate mappings, lineage, reconciliation cases
 
-## Completed Features (P0 VERIFIED - 2026-03-13)
+## Completed Features
 - PMS Core (rooms, bookings, guests, folios, tasks)
 - ARI Push Engine (event -> buffer -> coalesce -> push pipeline)
 - 9-Collection Data Model with full CRUD API
-- **Reservation Ingest Pipeline** (8-stage, production-grade)
-  - HotelRunner webhook integration
-  - Exely SOAP pull integration (stub)
-  - Duplicate/stale/hash detection
-  - Decision engine (6 outcomes)
-  - Loop prevention (external_write_protected)
-  - Reconciliation case auto-creation
-  - Replay mechanism for failed events
+- **Reservation Ingest Pipeline** (8-stage, production-grade) — P0 VERIFIED
+- **Cross-Provider Reconciliation Engine** — P0 VERIFIED (2026-03-13)
+  - 6 mismatch type detection
+  - Auto-resolution for safe cases
+  - Case lifecycle (open → acknowledged → resolved/ignored)
+  - Dashboard with metrics, filters, provider breakdown
+  - 22/22 backend tests + 100% frontend tests pass
 - **Frontend DataModelDashboard** with 5 tabs:
   - Ingest Pipeline (workers, raw events, stats)
   - Lineage (reservation tracking)
   - Connections (provider config)
   - Mappings (room/rate plan mappings)
-  - Reconciliation (discrepancy cases)
+  - Reconciliation (engine controls, metrics, filters, cases with actions)
 
 ## Pending / Upcoming
-- **P0:** Cross-Provider Reconciliation Engine (awaiting user spec)
-- **P1:** HotelRunner Sandbox Real Test (real API credentials)
-- **P1:** Pull Workers — Real API Calls implementation
-- **P2:** Exely Live Connection Test (real SOAP credentials)
+- **P1:** Pull Workers — Real API Calls implementation (HotelRunner REST, Exely SOAP)
+- **P1:** Real Provider Snapshot Collection for reconciliation engine
+- **P2:** Legacy Collection Cleanup
 - **P3:** Mapping UI Enhancement
-- **P3:** Legacy Collection Cleanup
 
 ## Removed from Backlog
 - Channex & SiteMinder integrations (user confirmed not needed)
@@ -100,6 +141,5 @@ HotelRunner webhook / Exely pull
 | Demo Admin | demo@hotel.com | demo123 |
 
 ## Test Reports
-- `/app/test_reports/iteration_4.json` — Data Model refactor
-- `/app/test_reports/iteration_5.json` — Ingest Architecture
-- `/app/test_reports/iteration_66.json` — P0 Full Verification (37/37 backend, 5/5 frontend tabs)
+- `/app/test_reports/iteration_66.json` — P0 Ingest Pipeline Full Verification
+- `/app/test_reports/iteration_67.json` — P0 Reconciliation Engine Full Verification (22/22 backend, 100% frontend)
