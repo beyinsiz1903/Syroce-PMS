@@ -223,7 +223,7 @@ async def exely_pull_once() -> Dict[str, Any]:
     Pull reservations from Exely via OTA_ReadRQ SOAP for all active connections.
     Fetches updated reservations since last cursor, persists into raw_channel_events.
     """
-    from domains.channel_manager.providers.exely.exely_client import ExelyClient
+    from domains.channel_manager.providers.exely import ExelyProvider
     from domains.channel_manager.data_model import COLL_PROVIDER_CONNECTIONS
 
     state = _worker_state["exely_pull"]
@@ -268,12 +268,12 @@ async def exely_pull_once() -> Dict[str, Any]:
                 continue
 
             try:
-                client_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
+                provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
                 if endpoint_url:
-                    client_kwargs["endpoint_url"] = endpoint_url
-                client = ExelyClient(**client_kwargs)
+                    provider_kwargs["endpoint_url"] = endpoint_url
+                provider = ExelyProvider(**provider_kwargs)
 
-                api_result = await client.pull_reservations(
+                api_result = await provider.legacy_pull_reservations(
                     from_date=from_date, to_date=to_date,
                 )
 

@@ -100,9 +100,9 @@ async def collect_exely_snapshot(
     """
     Fetch Exely reservations via OTA_ReadRQ updated in the last N hours.
     Returns list of canonical reservation dicts.
-    Uses ExelyClient for real SOAP API calls.
+    Uses ExelyProvider for real SOAP API calls.
     """
-    from domains.channel_manager.providers.exely.exely_client import ExelyClient
+    from domains.channel_manager.providers.exely import ExelyProvider
 
     property_id = connection.get("property_id", "")
     credentials = connection.get("credentials", {})
@@ -117,10 +117,10 @@ async def collect_exely_snapshot(
         )
         return []
 
-    client_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
+    provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
     if endpoint_url:
-        client_kwargs["endpoint_url"] = endpoint_url
-    client = ExelyClient(**client_kwargs)
+        provider_kwargs["endpoint_url"] = endpoint_url
+    provider = ExelyProvider(**provider_kwargs)
 
     since = datetime.now(timezone.utc) - timedelta(hours=since_hours)
     from_date = since.strftime("%Y-%m-%d")
@@ -132,7 +132,7 @@ async def collect_exely_snapshot(
     )
 
     try:
-        result = await client.pull_reservations(from_date=from_date, to_date=to_date)
+        result = await provider.legacy_pull_reservations(from_date=from_date, to_date=to_date)
     except Exception as e:
         logger.error(f"Exely SOAP error: {e}")
         return []

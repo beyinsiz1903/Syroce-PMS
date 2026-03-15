@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional
 
 from core.database import db
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
-from domains.channel_manager.providers.exely.exely_client import ExelyClient
+from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
 
 logger = logging.getLogger(__name__)
@@ -84,10 +84,10 @@ class ExelyPullScheduler:
         endpoint_url: str = "",
         safety_window_minutes: int = 5,
     ) -> Dict[str, Any]:
-        client_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
+        provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
         if endpoint_url:
-            client_kwargs["endpoint_url"] = endpoint_url
-        client = ExelyClient(**client_kwargs)
+            provider_kwargs["endpoint_url"] = endpoint_url
+        provider = ExelyProvider(**provider_kwargs)
 
         # Cursor: last pull time - safety window
         cursor_doc = await db.exely_pull_cursors.find_one(
@@ -104,7 +104,7 @@ class ExelyPullScheduler:
         to_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         pull_start = datetime.now(timezone.utc)
 
-        result = await client.pull_reservations(from_date=from_date, to_date=to_date)
+        result = await provider.legacy_pull_reservations(from_date=from_date, to_date=to_date)
 
         if not result["success"]:
             await log_sync(PROVIDER, tenant_id, "scheduled_pull", "failed", error=result.get("error"))

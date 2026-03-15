@@ -14,7 +14,7 @@ from core.database import db
 from core.security import get_current_user
 from models.schemas import User
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
-from domains.channel_manager.providers.exely.exely_client import ExelyClient
+from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
 from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
 
@@ -74,7 +74,7 @@ async def _get_client(tenant_id: str) -> tuple:
     }
     if conn.get("endpoint_url"):
         kwargs["endpoint_url"] = conn["endpoint_url"]
-    return ExelyClient(**kwargs), conn
+    return ExelyProvider(**kwargs), conn
 
 
 # ── Connection Management ────────────────────────────────────────────
@@ -93,8 +93,8 @@ async def setup_connection(
     if payload.endpoint_url:
         kwargs["endpoint_url"] = payload.endpoint_url
 
-    client = ExelyClient(**kwargs)
-    test_result = await client.test_connection()
+    provider = ExelyProvider(**kwargs)
+    test_result = await provider.legacy_test_connection()
 
     if not test_result["connected"]:
         raise HTTPException(status_code=400, detail=f"Exely baglanti hatasi: {test_result['error']}")
@@ -149,7 +149,7 @@ async def get_connection_status(current_user: User = Depends(get_current_user)):
 @router.post("/test")
 async def test_connection(current_user: User = Depends(get_current_user)):
     client, conn = await _get_client(current_user.tenant_id)
-    result = await client.test_connection()
+    result = await client.legacy_test_connection()
     return result
 
 
@@ -177,7 +177,7 @@ async def discover_rooms(
     ci = checkin or datetime.now().strftime("%Y-%m-%d")
     co = checkout or (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    result = await client.discover_rooms(ci, co)
+    result = await client.legacy_discover_rooms(ci, co)
     if not result["success"]:
         raise HTTPException(status_code=502, detail=f"Exely oda kesfetme hatasi: {result['error']}")
 
@@ -252,7 +252,7 @@ async def push_ari(
 ):
     """Push a delta ARI update to Exely."""
     client, conn = await _get_client(current_user.tenant_id)
-    result = await client.push_ari(
+    result = await client.legacy_push_ari(
         room_type_code=payload.room_type_code,
         rate_plan_code=payload.rate_plan_code,
         start_date=payload.start_date,
@@ -363,7 +363,7 @@ async def confirm_reservation(
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
     pms_booking_id = res.get("pms_booking_id") or reservation_id
-    result = await client.confirm_delivery(reservation_id, pms_booking_id)
+    result = await client.legacy_confirm_delivery(reservation_id, pms_booking_id)
 
     if not result["success"]:
         raise HTTPException(status_code=502, detail=f"Teslimat onay hatasi: {result['error']}")

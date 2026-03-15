@@ -500,7 +500,7 @@ async def _validate_hotelrunner(creds: Dict[str, str], tenant_id: str) -> List[D
 # ── Exely Validation ──────────────────────────────────────────────────
 
 async def _test_exely_connection(creds: Dict[str, str]) -> Dict[str, Any]:
-    from .providers.exely.exely_client import ExelyClient
+    from .providers.exely import ExelyProvider
     username = creds.get("username", "")
     password = creds.get("password", "")
     hotel_code = creds.get("hotel_code") or creds.get("hotel_id", "")
@@ -510,13 +510,13 @@ async def _test_exely_connection(creds: Dict[str, str]) -> Dict[str, Any]:
     kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
     if endpoint_url:
         kwargs["endpoint_url"] = endpoint_url
-    client = ExelyClient(**kwargs)
-    return await client.test_connection()
+    provider = ExelyProvider(**kwargs)
+    return await provider.legacy_test_connection()
 
 
 async def _validate_exely(creds: Dict[str, str], tenant_id: str) -> List[Dict[str, Any]]:
     import time
-    from .providers.exely.exely_client import ExelyClient
+    from .providers.exely import ExelyProvider
 
     username = creds.get("username", "")
     password = creds.get("password", "")
@@ -530,12 +530,12 @@ async def _validate_exely(creds: Dict[str, str], tenant_id: str) -> List[Dict[st
     kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
     if endpoint_url:
         kwargs["endpoint_url"] = endpoint_url
-    client = ExelyClient(**kwargs)
+    provider = ExelyProvider(**kwargs)
 
     # 1. Connection + WSSE auth test
     t0 = time.time()
     try:
-        conn_result = await client.test_connection()
+        conn_result = await provider.legacy_test_connection()
         ms = int((time.time() - t0) * 1000)
         if conn_result.get("connected"):
             room_types = conn_result.get("room_types", [])
@@ -565,7 +565,7 @@ async def _validate_exely(creds: Dict[str, str], tenant_id: str) -> List[Dict[st
         from datetime import datetime as dt, timedelta
         checkin = dt.now().strftime("%Y-%m-%d")
         checkout = (dt.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-        discover_result = await client.discover_rooms(checkin, checkout)
+        discover_result = await provider.legacy_discover_rooms(checkin, checkout)
         ms = int((time.time() - t0) * 1000)
         if discover_result.get("success"):
             room_types = discover_result.get("room_types", [])
@@ -588,7 +588,7 @@ async def _validate_exely(creds: Dict[str, str], tenant_id: str) -> List[Dict[st
         from datetime import datetime as dt, timedelta
         from_date = (dt.now() - timedelta(days=7)).strftime("%Y-%m-%d")
         to_date = dt.now().strftime("%Y-%m-%d")
-        pull_result = await client.pull_reservations(from_date=from_date, to_date=to_date)
+        pull_result = await provider.legacy_pull_reservations(from_date=from_date, to_date=to_date)
         ms = int((time.time() - t0) * 1000)
         if pull_result.get("success"):
             reservations = pull_result.get("reservations", [])

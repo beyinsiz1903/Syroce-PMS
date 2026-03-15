@@ -1,0 +1,384 @@
+"""
+Exely Provider — Main Provider Facade
+=======================================
+
+THE single public API surface for all Exely SOAP operations.
+Every system component calls this class. No one touches internals directly.
+
+Public methods:
+- test_connection()
+- discover_rooms()
+- pull_reservations()
+- push_ari()
+- confirm_delivery()
+"""
+import logging
+import time
+from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, List, Optional
+
+from .client import ExelySoapTransport, EXELY_DEFAULT_URL
+from .soap_builder import (
+    build_read_rq,
+    build_hotel_avail_rq,
+    build_notif_report_rq,
+    build_ari_update_rq,
+)
+from .response_parser import (
+    parse_read_rs,
+    parse_hotel_avail_rs,
+    parse_notif_report_rs,
+    parse_ari_update_rs,
+)
+from .normalizer import normalize_reservation
+from .retry import ExelyRetryPolicy
+from .validators import validate_credentials, extract_credentials, validate_ari_payload, validate_date_range
+from .errors import (
+    ExelyError,
+    ExelyAuthError,
+    ExelySOAPFaultError,
+    ExelyParseError,
+)
+from . import observability as obs
+
+logger = logging.getLogger("exely.provider")
+
+# Reuse the same ProviderResult from hotelrunner for consistency
+from domains.channel_manager.providers.hotelrunner.schemas import ProviderResult
+
+
+class ExelyProvider:
+    """
+    Production-grade Exely SOAP adapter.
+
+    Usage:
+        provider = ExelyProvider(username="...", password="...", hotel_code="...")
+        result = await provider.test_connection()
+        rooms = await provider.discover_rooms()
+        reservations = await provider.pull_reservations()
+    """
+
+    def __init__(
+        self,
+        username: str = "",
+        password: str = "",
+        hotel_code: str = "",
+        *,
+        credentials: Optional[Dict[str, str]] = None,
+        endpoint_url: str = EXELY_DEFAULT_URL,
+        connection_id: str = "",
+        max_retries: int = 3,
+    ):
+        if credentials:
+            username, password, hotel_code = extract_credentials(credentials)
+        validate_credentials(username, password, hotel_code)
+
+        self._username = username
+        self._password = password
+        self._hotel_code = hotel_code
+        self._connection_id = connection_id
+        self._transport = ExelySoapTransport(endpoint_url)
+        self._retry = ExelyRetryPolicy(max_retries=max_retries)
+
+    # ── Connection Test ───────────────────────────────────────────────
+
+    async def test_connection(self) -> ProviderResult:
+        """
+        Smoke test: send OTA_HotelAvailRQ to verify WSSE credentials.
+        Returns ProviderResult with connected status + discovered rooms/rates.
+        """
+        start = time.time()
+        soap_action = "OTA_HotelAvailRQ"
+        try:
+            checkin = datetime.now().strftime("%Y-%m-%d")
+            checkout = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            xml = build_hotel_avail_rq(self._username, self._password, self._hotel_code, checkin, checkout)
+
+            async def _call():
+                return await self._transport.send_soap(xml, soap_action)
+
+            raw = await self._retry.execute(_call)
+            result = parse_hotel_avail_rs(raw)
+            duration_ms = int((time.time() - start) * 1000)
+
+            obs.record_provider_call(
+                soap_action=soap_action,
+                duration_ms=duration_ms,
+                success=result["success"],
+                connection_id=self._connection_id,
+            )
+
+            if result["success"]:
+                return ProviderResult(
+                    success=True,
+                    data={
+                        "connected": True,
+                        "room_types": result["room_types"],
+                        "rate_plans": result["rate_plans"],
+                    },
+                    duration_ms=duration_ms,
+                )
+            return ProviderResult(
+                success=False,
+                error=result.get("error", "Connection test failed"),
+                duration_ms=duration_ms,
+            )
+        except ExelyError as e:
+            return self._handle_error(e, start, soap_action)
+
+    # ── Room Discovery ────────────────────────────────────────────────
+
+    async def discover_rooms(
+        self, checkin: Optional[str] = None, checkout: Optional[str] = None,
+    ) -> ProviderResult:
+        """Discover room types and rate plans via OTA_HotelAvailRQ."""
+        start = time.time()
+        soap_action = "OTA_HotelAvailRQ"
+        try:
+            ci = checkin or datetime.now().strftime("%Y-%m-%d")
+            co = checkout or (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            xml = build_hotel_avail_rq(self._username, self._password, self._hotel_code, ci, co)
+
+            async def _call():
+                return await self._transport.send_soap(xml, soap_action)
+
+            raw = await self._retry.execute(_call)
+            result = parse_hotel_avail_rs(raw)
+            duration_ms = int((time.time() - start) * 1000)
+
+            obs.record_provider_call(
+                soap_action=soap_action,
+                duration_ms=duration_ms,
+                success=result["success"],
+                connection_id=self._connection_id,
+            )
+
+            if result["success"]:
+                return ProviderResult(
+                    success=True,
+                    data={
+                        "room_types": result["room_types"],
+                        "rate_plans": result["rate_plans"],
+                    },
+                    duration_ms=duration_ms,
+                )
+            return ProviderResult(success=False, error=result.get("error", "Discovery failed"), duration_ms=duration_ms)
+        except ExelyError as e:
+            return self._handle_error(e, start, soap_action)
+
+    # ── Reservation Pull ──────────────────────────────────────────────
+
+    async def pull_reservations(
+        self,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        reservation_id: Optional[str] = None,
+    ) -> ProviderResult:
+        """Pull reservations via OTA_ReadRQ."""
+        start = time.time()
+        soap_action = "OTA_ReadRQ"
+        try:
+            validate_date_range(from_date, to_date)
+            xml = build_read_rq(self._username, self._password, self._hotel_code, from_date, to_date, reservation_id)
+
+            async def _call():
+                return await self._transport.send_soap(xml, soap_action)
+
+            raw = await self._retry.execute(_call)
+            result = parse_read_rs(raw)
+            duration_ms = int((time.time() - start) * 1000)
+
+            obs.record_provider_call(
+                soap_action=soap_action,
+                duration_ms=duration_ms,
+                success=result["success"],
+                connection_id=self._connection_id,
+            )
+
+            if result["success"]:
+                return ProviderResult(
+                    success=True,
+                    data={
+                        "reservations": result.get("reservations", []),
+                        "count": result.get("count", 0),
+                    },
+                    duration_ms=duration_ms,
+                )
+            return ProviderResult(success=False, error=result.get("error", "Pull failed"), duration_ms=duration_ms)
+        except ExelyError as e:
+            return self._handle_error(e, start, soap_action)
+
+    # ── ARI Push ──────────────────────────────────────────────────────
+
+    async def push_ari(
+        self,
+        room_type_code: str,
+        rate_plan_code: str,
+        start_date: str,
+        end_date: str,
+        availability: Optional[int] = None,
+        rate_amount: Optional[float] = None,
+        currency: str = "TRY",
+        stop_sell: Optional[bool] = None,
+        min_stay: Optional[int] = None,
+    ) -> ProviderResult:
+        """Push ARI update via OTA_HotelAvailNotifRQ."""
+        start = time.time()
+        soap_action = "OTA_HotelAvailNotifRQ"
+        try:
+            validate_ari_payload(room_type_code, rate_plan_code, start_date, end_date)
+            xml = build_ari_update_rq(
+                self._username, self._password, self._hotel_code,
+                room_type_code, rate_plan_code, start_date, end_date,
+                availability, rate_amount, currency, stop_sell, min_stay,
+            )
+
+            async def _call():
+                return await self._transport.send_soap(xml, soap_action)
+
+            raw = await self._retry.execute(_call)
+            result = parse_ari_update_rs(raw)
+            duration_ms = int((time.time() - start) * 1000)
+
+            obs.record_provider_call(
+                soap_action=soap_action,
+                duration_ms=duration_ms,
+                success=result["success"],
+                connection_id=self._connection_id,
+            )
+
+            if result["success"]:
+                return ProviderResult(success=True, data=result, duration_ms=duration_ms)
+            return ProviderResult(success=False, error=result.get("error", "ARI push failed"), duration_ms=duration_ms)
+        except ExelyError as e:
+            return self._handle_error(e, start, soap_action)
+
+    # ── Reservation Delivery Confirmation ─────────────────────────────
+
+    async def confirm_delivery(
+        self,
+        reservation_id: str,
+        confirmation_number: str,
+    ) -> ProviderResult:
+        """Confirm reservation delivery via OTA_NotifReportRQ."""
+        start = time.time()
+        soap_action = "OTA_NotifReportRQ"
+        try:
+            xml = build_notif_report_rq(
+                self._username, self._password, self._hotel_code,
+                reservation_id, confirmation_number,
+            )
+
+            async def _call():
+                return await self._transport.send_soap(xml, soap_action)
+
+            raw = await self._retry.execute(_call)
+            result = parse_notif_report_rs(raw)
+            duration_ms = int((time.time() - start) * 1000)
+
+            obs.record_provider_call(
+                soap_action=soap_action,
+                duration_ms=duration_ms,
+                success=result["success"],
+                connection_id=self._connection_id,
+            )
+
+            if result["success"]:
+                return ProviderResult(success=True, data=result, duration_ms=duration_ms)
+            return ProviderResult(success=False, error=result.get("error", "Confirm failed"), duration_ms=duration_ms)
+        except ExelyError as e:
+            return self._handle_error(e, start, soap_action)
+
+    # ── Canonical helpers (for snapshot collectors & ingest) ───────────
+
+    def normalize_to_canonical(self, raw: Dict[str, Any], source: str = "pull") -> Dict[str, Any]:
+        """Normalize a raw Exely reservation to canonical format."""
+        return normalize_reservation(raw, source)
+
+    # ── Legacy compatibility methods ──────────────────────────────────
+    # These match the old ExelyClient interface so existing callers
+    # can migrate without breaking.
+
+    async def legacy_test_connection(self) -> Dict[str, Any]:
+        """Legacy: returns dict like the old ExelyClient."""
+        result = await self.test_connection()
+        if result.success:
+            data = result.data or {}
+            return {
+                "connected": True,
+                "room_types": data.get("room_types", []),
+                "rate_plans": data.get("rate_plans", []),
+                "duration_ms": result.duration_ms,
+            }
+        return {"connected": False, "error": result.error, "duration_ms": result.duration_ms}
+
+    async def legacy_pull_reservations(
+        self,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        reservation_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Legacy: returns dict like the old ExelyClient."""
+        result = await self.pull_reservations(from_date, to_date, reservation_id)
+        if result.success:
+            data = result.data or {}
+            return {
+                "success": True,
+                "reservations": data.get("reservations", []),
+                "count": data.get("count", 0),
+                "duration_ms": result.duration_ms,
+            }
+        return {"success": False, "error": result.error, "reservations": [], "duration_ms": result.duration_ms}
+
+    async def legacy_discover_rooms(self, checkin: str, checkout: str) -> Dict[str, Any]:
+        """Legacy: returns dict like the old ExelyClient."""
+        result = await self.discover_rooms(checkin, checkout)
+        if result.success:
+            data = result.data or {}
+            return {
+                "success": True,
+                "room_types": data.get("room_types", []),
+                "rate_plans": data.get("rate_plans", []),
+                "duration_ms": result.duration_ms,
+            }
+        return {"success": False, "error": result.error, "room_types": [], "rate_plans": [], "duration_ms": result.duration_ms}
+
+    async def legacy_push_ari(self, **kwargs) -> Dict[str, Any]:
+        """Legacy: returns dict like the old ExelyClient."""
+        result = await self.push_ari(**kwargs)
+        if result.success:
+            return {"success": True, **(result.data or {}), "duration_ms": result.duration_ms}
+        return {"success": False, "error": result.error, "duration_ms": result.duration_ms}
+
+    async def legacy_confirm_delivery(self, reservation_id: str, confirmation_number: str) -> Dict[str, Any]:
+        """Legacy: returns dict like the old ExelyClient."""
+        result = await self.confirm_delivery(reservation_id, confirmation_number)
+        if result.success:
+            return {"success": True, **(result.data or {}), "duration_ms": result.duration_ms}
+        return {"success": False, "error": result.error, "duration_ms": result.duration_ms}
+
+    def get_usage_stats(self) -> Dict[str, Any]:
+        """Get API usage statistics."""
+        health = obs.get_provider_health()
+        return {
+            "requests_today": health["call_count"],
+            "success_rate_pct": health["success_rate_pct"],
+            "avg_latency_ms": health["avg_latency_ms"],
+        }
+
+    # ── Internal helpers ──────────────────────────────────────────────
+
+    def _handle_error(self, error: ExelyError, start_time: float, soap_action: str) -> ProviderResult:
+        duration_ms = int((time.time() - start_time) * 1000)
+        obs.record_provider_failure(
+            error_type=type(error).__name__,
+            message=str(error),
+            connection_id=self._connection_id,
+            soap_action=soap_action,
+        )
+        return ProviderResult(
+            success=False,
+            error=str(error),
+            error_type=type(error).__name__,
+            duration_ms=duration_ms,
+        )

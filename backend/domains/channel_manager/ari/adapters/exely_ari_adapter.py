@@ -17,7 +17,7 @@ class ExelyARIAdapter:
     def __init__(self, exely_client=None):
         """
         Args:
-            exely_client: ExelyClient instance (optional, for live mode)
+            exely_client: ExelyProvider instance (optional, for live mode)
         """
         self._client = exely_client
 
