@@ -14,9 +14,8 @@ import pytest
 import requests
 import uuid
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://channel-exely-bridge.preview.emergentagent.com')
-if BASE_URL.endswith('/'):
-    BASE_URL = BASE_URL[:-1]
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"

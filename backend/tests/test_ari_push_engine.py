@@ -25,6 +25,9 @@ from datetime import date, timedelta
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
+# Skip all tests in this module if no backend URL is configured (e.g. CI without live server)
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
+
 # Test constants
 TENANT_ID = "044f122b-87b5-480a-88b4-b9534b0c8c90"
 PROPERTY_ID = "prop-001"

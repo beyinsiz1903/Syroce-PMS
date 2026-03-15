@@ -24,6 +24,7 @@ import uuid
 from datetime import datetime, timezone
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
 TENANT_ID = "044f122b-87b5-480a-88b4-b9534b0c8c90"  # demo tenant
 PROPERTY_ID = "prop-001"
 
