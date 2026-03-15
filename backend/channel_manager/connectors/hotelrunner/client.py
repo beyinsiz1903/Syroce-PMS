@@ -1,8 +1,12 @@
 """
-HotelRunner HTTP Client - Production-grade API client with rate limiting, retry, and structured error handling.
+[DEPRECATED] HotelRunner HTTP Client — Legacy advanced connector.
+
+This module is superseded by the production-grade adapter at:
+    domains.channel_manager.providers.hotelrunner/
+
+Removal target: Next major release.
 
 Supports both XML/OTA endpoints (inventory, rates) and REST/JSON endpoints (reservations).
-This is the ONLY module that makes HTTP calls to HotelRunner.
 """
 import logging
 import time

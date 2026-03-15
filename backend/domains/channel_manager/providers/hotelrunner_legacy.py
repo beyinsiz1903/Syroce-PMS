@@ -1,10 +1,13 @@
 """
-HotelRunner REST API Provider
-Implements the Channel Manager provider interface for HotelRunner.
+[DEPRECATED] HotelRunner REST API Provider — Legacy Implementation.
+
+This module is superseded by the production-grade adapter at:
+    domains.channel_manager.providers.hotelrunner/
+
+Removal target: Next major release.
+Use: from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
 
 API Docs: https://developers.hotelrunner.com/custom-apps/rest-api
-Auth: token + hr_id query parameters on every request
-Rate Limits: 250 req/day/property, 5 req/min/property
 """
 import asyncio
 import logging

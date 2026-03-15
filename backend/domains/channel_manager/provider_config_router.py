@@ -384,7 +384,10 @@ async def _test_hotelrunner_connection(creds: Dict[str, str]) -> Dict[str, Any]:
     if not token or not hr_id:
         return {"connected": False, "error": "Missing token or hr_id"}
     provider = HotelRunnerProvider(token=token, hr_id=hr_id)
-    return await provider.test_connection()
+    result = await provider.test_connection()
+    if result.success:
+        return {"connected": True, **(result.data or {})}
+    return {"connected": False, "error": result.error}
 
 
 async def _validate_hotelrunner(creds: Dict[str, str], tenant_id: str) -> List[Dict[str, Any]]:
@@ -405,19 +408,20 @@ async def _validate_hotelrunner(creds: Dict[str, str], tenant_id: str) -> List[D
     try:
         conn_result = await provider.test_connection()
         ms = int((time.time() - t0) * 1000)
-        if conn_result.get("connected"):
+        if conn_result.success:
+            data = conn_result.data or {}
             results.append({
                 "check": "connection_test",
                 "status": "passed",
                 "message": f"Connected successfully ({ms}ms latency)",
                 "duration_ms": ms,
-                "data": {"channels": len(conn_result.get("channels", []))},
+                "data": {"channels": data.get("channel_count", 0)},
             })
         else:
             results.append({
                 "check": "connection_test",
                 "status": "failed",
-                "message": conn_result.get("error", "Connection failed"),
+                "message": conn_result.error or "Connection failed",
                 "duration_ms": ms,
             })
             return results  # No point continuing if connection fails

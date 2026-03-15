@@ -103,9 +103,10 @@ async def setup_connection(
     provider = HotelRunnerProvider(token=payload.token, hr_id=payload.hr_id)
     test_result = await provider.test_connection()
 
-    if not test_result["connected"]:
-        raise HTTPException(status_code=400, detail=f"HotelRunner baglanti hatasi: {test_result['error']}")
+    if not test_result.success:
+        raise HTTPException(status_code=400, detail=f"HotelRunner baglanti hatasi: {test_result.error}")
 
+    result_data = test_result.data or {}
     connection = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
@@ -116,7 +117,7 @@ async def setup_connection(
         "auto_confirm_delivery": payload.auto_confirm_delivery,
         "sync_interval_minutes": payload.sync_interval_minutes,
         "is_active": True,
-        "channels": test_result["channels"],
+        "channels": result_data.get("channels", []),
         "connected_at": datetime.now(timezone.utc).isoformat(),
         "last_sync_at": None,
         "created_by": current_user.name,
