@@ -7,16 +7,20 @@ Background worker running every 60 seconds:
   2. Evaluate alert thresholds
   3. Create/resolve alert events
   4. Update dashboard metrics
+  5. Store metrics snapshot for trend analysis
 """
 import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+from core.database import db
 from .aggregator import collect_all_metrics
 from .alert_engine import evaluate_alerts, process_alerts
 
 logger = logging.getLogger("monitoring.worker")
+
+COLL_METRICS_HISTORY = "monitoring_metrics_history"
 
 _monitoring_state = {
     "running": False,
@@ -39,6 +43,33 @@ def get_last_metrics() -> Dict[str, Any]:
     return _monitoring_state.get("last_metrics") or {}
 
 
+async def _store_metrics_snapshot(metrics: Dict[str, Any]):
+    """Store a compact metrics snapshot for trend analysis."""
+    try:
+        ingest = metrics.get("ingest_pipeline", {})
+        ari = metrics.get("ari_push", {})
+        recon = metrics.get("reconciliation", {})
+        queue = metrics.get("queue_health", {})
+
+        snapshot = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "health": metrics.get("system_health", "unknown"),
+            "ingest_events_1h": ingest.get("events_last_1h", 0),
+            "ingest_failed": ingest.get("failed_events", 0),
+            "ingest_duplicates": ingest.get("duplicates_caught", 0),
+            "ari_success_rate": ari.get("success_rate", 0),
+            "ari_p95_latency": ari.get("p95_latency_ms", 0),
+            "ari_retry_count": ari.get("retry_count", 0),
+            "recon_open": recon.get("open_cases", 0),
+            "recon_critical": recon.get("critical_cases", 0),
+            "queue_depth": queue.get("queue_depth", 0),
+            "retry_backlog": queue.get("retry_backlog", 0),
+        }
+        await db[COLL_METRICS_HISTORY].insert_one(snapshot)
+    except Exception as e:
+        logger.warning(f"Failed to store metrics snapshot: {e}")
+
+
 async def monitoring_run_once() -> Dict[str, Any]:
     """Execute a single monitoring cycle."""
     state = _monitoring_state
@@ -50,6 +81,9 @@ async def monitoring_run_once() -> Dict[str, Any]:
         alerts = await evaluate_alerts(metrics)
         alert_result = await process_alerts(alerts)
         state["last_alert_result"] = alert_result
+
+        # Store snapshot for trends
+        await _store_metrics_snapshot(metrics)
 
         state["runs_total"] += 1
         state["last_run"] = datetime.now(timezone.utc).isoformat()

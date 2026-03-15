@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { TrendCharts } from '../components/TrendCharts';
 import Layout from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -63,6 +64,114 @@ const ProcessingBadge = ({ status }) => {
   return <Badge className={`${map[status] || 'bg-zinc-500/15 text-zinc-400'} border text-xs`}>{status}</Badge>;
 };
 
+const SlackConfigPanel = ({ headers }) => {
+  const [config, setConfig] = useState(null);
+  const [slackUrl, setSlackUrl] = useState('');
+  const [slackEnabled, setSlackEnabled] = useState(false);
+  const [slackSeverities, setSlackSeverities] = useState(['critical', 'high']);
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const { data } = await axios.get(`${API}/api/channel-manager/monitoring/dispatch-config`, { headers: headers() });
+        setConfig(data);
+        const s = data.slack || {};
+        setSlackEnabled(s.enabled || false);
+        setSlackUrl(s.webhook_url || '');
+        setSlackSeverities(s.severities || ['critical', 'high']);
+      } catch (e) { console.error(e); }
+    };
+    fetchConfig();
+  }, [headers]);
+
+  const saveSlack = async () => {
+    setSaving(true);
+    try {
+      await axios.post(`${API}/api/channel-manager/monitoring/dispatch-config/slack`, {
+        enabled: slackEnabled, webhook_url: slackUrl, severities: slackSeverities,
+      }, { headers: headers() });
+      toast.success('Slack configuration saved');
+    } catch { toast.error('Save failed'); }
+    setSaving(false);
+  };
+
+  const testSlack = async () => {
+    setTesting(true);
+    try {
+      const { data } = await axios.post(`${API}/api/channel-manager/monitoring/dispatch-config/slack/test`, {}, { headers: headers() });
+      if (data.success) toast.success('Test message sent to Slack!');
+      else toast.error(data.message || 'Test failed');
+    } catch (e) { toast.error(e.response?.data?.detail || 'Test failed'); }
+    setTesting(false);
+  };
+
+  const toggleSeverity = (sev) => {
+    setSlackSeverities(prev =>
+      prev.includes(sev) ? prev.filter(s => s !== sev) : [...prev, sev]
+    );
+  };
+
+  return (
+    <Card data-testid="slack-config-panel" className="bg-zinc-900/60 border-zinc-800">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
+          <Bell className="w-4 h-4 text-amber-400" /> Alert Dispatch — Slack
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-3">
+          <button data-testid="slack-toggle" onClick={() => setSlackEnabled(!slackEnabled)}
+            className={`relative w-10 h-5 rounded-full transition-colors ${slackEnabled ? 'bg-emerald-500' : 'bg-zinc-600'}`}>
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${slackEnabled ? 'translate-x-5' : ''}`} />
+          </button>
+          <span className="text-sm text-zinc-300">{slackEnabled ? 'Slack alerts enabled' : 'Slack alerts disabled'}</span>
+        </div>
+
+        <div>
+          <label className="block text-xs text-zinc-500 mb-1">Webhook URL</label>
+          <input data-testid="slack-webhook-url" type="text" placeholder="https://hooks.slack.com/services/..."
+            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:border-cyan-500 focus:outline-none"
+            value={slackUrl} onChange={(e) => setSlackUrl(e.target.value)} />
+        </div>
+
+        <div>
+          <label className="block text-xs text-zinc-500 mb-2">Alert Severities</label>
+          <div className="flex gap-2 flex-wrap">
+            {['critical', 'high', 'medium', 'info'].map(sev => (
+              <button key={sev} data-testid={`slack-severity-${sev}`} onClick={() => toggleSeverity(sev)}
+                className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${
+                  slackSeverities.includes(sev)
+                    ? sev === 'critical' ? 'bg-red-500/20 text-red-400 border-red-500/40'
+                    : sev === 'high' ? 'bg-orange-500/20 text-orange-400 border-orange-500/40'
+                    : sev === 'medium' ? 'bg-blue-500/20 text-blue-400 border-blue-500/40'
+                    : 'bg-zinc-500/20 text-zinc-400 border-zinc-500/40'
+                    : 'bg-zinc-900 text-zinc-600 border-zinc-700'
+                }`}>
+                {sev}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <Button data-testid="save-slack-config" size="sm" className="bg-cyan-600 hover:bg-cyan-700 text-white text-xs"
+            onClick={saveSlack} disabled={saving}>
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <CheckCircle className="w-3.5 h-3.5 mr-1" />}
+            Save Config
+          </Button>
+          <Button data-testid="test-slack" variant="outline" size="sm" className="border-zinc-700 text-zinc-300 hover:bg-zinc-800 text-xs"
+            onClick={testSlack} disabled={testing || !slackUrl || !slackEnabled}>
+            {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Zap className="w-3.5 h-3.5 mr-1" />}
+            Send Test
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
 const DataModelDashboard = ({ user, tenant, onLogout }) => {
   const [loading, setLoading] = useState(false);
   const [schema, setSchema] = useState(null);
@@ -82,6 +191,10 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
   const [monitoringOverview, setMonitoringOverview] = useState(null);
   const [monitoringAlerts, setMonitoringAlerts] = useState([]);
   const [monitoringMetrics, setMonitoringMetrics] = useState(null);
+  const [providerConfigs, setProviderConfigs] = useState([]);
+  const [validationRunning, setValidationRunning] = useState({});
+  const [validationResults, setValidationResults] = useState({});
+  const [credForms, setCredForms] = useState({});
 
   const propertyId = tenant?.property_id || 'prop-001';
 
@@ -232,6 +345,60 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
     } catch { toast.error('Metrics fetch failed'); }
   };
 
+  const fetchProviderConfigs = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/api/channel-manager/config/providers`, { headers: headers() });
+      setProviderConfigs(data.providers || []);
+    } catch (e) { console.error('Provider config fetch failed:', e); }
+  }, [headers]);
+
+  useEffect(() => { fetchProviderConfigs(); }, [fetchProviderConfigs]);
+
+  const saveCredentials = async (provider) => {
+    const form = credForms[provider] || {};
+    try {
+      await axios.post(`${API}/api/channel-manager/config/providers/${provider}/credentials`, {
+        credentials: form, property_id: 'default',
+      }, { headers: headers() });
+      toast.success('Credentials saved');
+      fetchProviderConfigs();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Save failed'); }
+  };
+
+  const deleteCredentials = async (provider) => {
+    try {
+      await axios.delete(`${API}/api/channel-manager/config/providers/${provider}/credentials`, { headers: headers() });
+      toast.success('Credentials deleted');
+      setCredForms(prev => ({ ...prev, [provider]: {} }));
+      fetchProviderConfigs();
+    } catch { toast.error('Delete failed'); }
+  };
+
+  const runValidation = async (provider) => {
+    setValidationRunning(prev => ({ ...prev, [provider]: true }));
+    try {
+      const { data } = await axios.post(`${API}/api/channel-manager/config/providers/${provider}/validate`, {}, { headers: headers() });
+      setValidationResults(prev => ({ ...prev, [provider]: data }));
+      if (data.overall_status === 'passed') toast.success(`${provider} validation passed!`);
+      else if (data.overall_status === 'partial') toast.info(`${provider}: ${data.passed}/${data.total} checks passed`);
+      else toast.error(`${provider} validation failed`);
+      fetchProviderConfigs();
+    } catch { toast.error('Validation failed'); }
+    setValidationRunning(prev => ({ ...prev, [provider]: false }));
+  };
+
+  const testConnection = async (provider) => {
+    setValidationRunning(prev => ({ ...prev, [`${provider}_conn`]: true }));
+    try {
+      const { data } = await axios.post(`${API}/api/channel-manager/config/providers/${provider}/test-connection`, {}, { headers: headers() });
+      if (data.connected) toast.success(`${provider} connected! (${data.duration_ms}ms)`);
+      else toast.error(`Connection failed: ${data.error}`);
+      setValidationResults(prev => ({ ...prev, [`${provider}_conn`]: data }));
+      fetchProviderConfigs();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Connection test failed'); }
+    setValidationRunning(prev => ({ ...prev, [`${provider}_conn`]: false }));
+  };
+
   const eventStats = ingestStatus?.pipeline?.raw_events || {};
   const lineageStats = ingestStatus?.pipeline?.lineage || {};
 
@@ -286,6 +453,9 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
             </TabsTrigger>
             <TabsTrigger value="monitoring" data-testid="monitoring-tab" className="data-[state=active]:bg-zinc-800 text-xs">
               <Radio className="w-3.5 h-3.5 mr-1" /> Monitoring
+            </TabsTrigger>
+            <TabsTrigger value="provider-config" data-testid="provider-config-tab" className="data-[state=active]:bg-zinc-800 text-xs">
+              <Shield className="w-3.5 h-3.5 mr-1" /> Provider Config
             </TabsTrigger>
           </TabsList>
 
@@ -1072,6 +1242,188 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
                   </CardContent>
                 </Card>
               )}
+
+              {/* Slack Alert Configuration */}
+              <SlackConfigPanel headers={headers} />
+
+              {/* 24h Trend Charts */}
+              <TrendCharts headers={headers} />
+            </div>
+          </TabsContent>
+          <TabsContent value="provider-config">
+            <div className="space-y-6">
+              {providerConfigs.map(p => (
+                <Card key={p.provider} data-testid={`provider-config-${p.provider}`} className="bg-zinc-900/60 border-zinc-800">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${p.provider === 'hotelrunner' ? 'bg-blue-500/15 text-blue-400' : 'bg-emerald-500/15 text-emerald-400'}`}>
+                          <Server className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base text-zinc-100">{p.display_name}</CardTitle>
+                          <div className="flex items-center gap-2 mt-1">
+                            <StatusDot status={p.connection.status} />
+                            <span className="text-xs text-zinc-500">{p.connection.status}</span>
+                            {p.has_credentials && <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-xs border">credentials saved</Badge>}
+                            {!p.has_credentials && <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30 text-xs border">no credentials</Badge>}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button data-testid={`test-conn-${p.provider}`} variant="outline" size="sm"
+                          className="border-zinc-700 text-zinc-300 hover:bg-zinc-800 text-xs"
+                          onClick={() => testConnection(p.provider)}
+                          disabled={validationRunning[`${p.provider}_conn`] || !p.has_credentials}>
+                          {validationRunning[`${p.provider}_conn`] ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Zap className="w-3.5 h-3.5 mr-1" />}
+                          Test Connection
+                        </Button>
+                        <Button data-testid={`validate-${p.provider}`} variant="outline" size="sm"
+                          className="border-cyan-700 text-cyan-300 hover:bg-cyan-900/30 text-xs"
+                          onClick={() => runValidation(p.provider)}
+                          disabled={validationRunning[p.provider]}>
+                          {validationRunning[p.provider] ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Play className="w-3.5 h-3.5 mr-1" />}
+                          Full Validation
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {/* Credential Form */}
+                    <div className="p-4 bg-zinc-950/50 rounded-lg border border-zinc-800/50">
+                      <h4 className="text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-amber-400" /> Credentials
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {p.fields.map(field => (
+                          <div key={field.key}>
+                            <label className="block text-xs text-zinc-500 mb-1">
+                              {field.label} {field.required && <span className="text-red-400">*</span>}
+                            </label>
+                            <input
+                              data-testid={`cred-${p.provider}-${field.key}`}
+                              type={field.type === 'password' ? 'password' : 'text'}
+                              placeholder={p.credentials?.fields?.[field.key] || `Enter ${field.label}`}
+                              className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:border-cyan-500 focus:outline-none"
+                              value={credForms[p.provider]?.[field.key] || ''}
+                              onChange={(e) => setCredForms(prev => ({
+                                ...prev,
+                                [p.provider]: { ...(prev[p.provider] || {}), [field.key]: e.target.value }
+                              }))}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        <Button data-testid={`save-creds-${p.provider}`} size="sm"
+                          className="bg-cyan-600 hover:bg-cyan-700 text-white text-xs"
+                          onClick={() => saveCredentials(p.provider)}
+                          disabled={!credForms[p.provider] || Object.values(credForms[p.provider] || {}).every(v => !v)}>
+                          <CheckCircle className="w-3.5 h-3.5 mr-1" /> Save Credentials
+                        </Button>
+                        {p.has_credentials && (
+                          <Button data-testid={`delete-creds-${p.provider}`} variant="outline" size="sm"
+                            className="border-red-700 text-red-400 hover:bg-red-900/30 text-xs"
+                            onClick={() => deleteCredentials(p.provider)}>
+                            <Trash2 className="w-3.5 h-3.5 mr-1" /> Remove
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Connection Info */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="p-3 bg-zinc-950/50 rounded-lg border border-zinc-800/50">
+                        <p className="text-xs text-zinc-500">Status</p>
+                        <p className="text-sm font-medium text-zinc-200 flex items-center gap-1.5 mt-1">
+                          <StatusDot status={p.connection.status} /> {p.connection.status}
+                        </p>
+                      </div>
+                      <div className="p-3 bg-zinc-950/50 rounded-lg border border-zinc-800/50">
+                        <p className="text-xs text-zinc-500">Room Mappings</p>
+                        <p className="text-sm font-medium text-zinc-200 mt-1">{p.mappings.rooms}</p>
+                      </div>
+                      <div className="p-3 bg-zinc-950/50 rounded-lg border border-zinc-800/50">
+                        <p className="text-xs text-zinc-500">Rate Plan Mappings</p>
+                        <p className="text-sm font-medium text-zinc-200 mt-1">{p.mappings.rate_plans}</p>
+                      </div>
+                      <div className="p-3 bg-zinc-950/50 rounded-lg border border-zinc-800/50">
+                        <p className="text-xs text-zinc-500">Last Sync</p>
+                        <p className="text-sm font-medium text-zinc-200 mt-1 truncate">
+                          {p.connection.last_successful_sync ? new Date(p.connection.last_successful_sync).toLocaleString('tr-TR') : 'Never'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Validation Results */}
+                    {validationResults[p.provider] && (
+                      <div className="p-4 bg-zinc-950/50 rounded-lg border border-zinc-800/50">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-medium text-zinc-300 flex items-center gap-2">
+                            <BarChart3 className="w-4 h-4 text-cyan-400" /> Validation Results
+                          </h4>
+                          <Badge className={`text-xs border ${
+                            validationResults[p.provider].overall_status === 'passed' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' :
+                            validationResults[p.provider].overall_status === 'partial' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' :
+                            'bg-red-500/15 text-red-400 border-red-500/30'
+                          }`}>
+                            {validationResults[p.provider].passed}/{validationResults[p.provider].total} passed
+                          </Badge>
+                        </div>
+                        <div className="space-y-2">
+                          {validationResults[p.provider].results?.map((r, i) => (
+                            <div key={i} data-testid={`validation-check-${r.check}`} className="flex items-center justify-between py-2 px-3 bg-zinc-900/50 rounded border border-zinc-800/30">
+                              <div className="flex items-center gap-2">
+                                {r.status === 'passed' ? <CheckCircle className="w-4 h-4 text-emerald-400" /> :
+                                 r.status === 'skipped' ? <Clock className="w-4 h-4 text-zinc-500" /> :
+                                 <XCircle className="w-4 h-4 text-red-400" />}
+                                <span className="text-sm text-zinc-300">{r.check.replace(/_/g, ' ')}</span>
+                              </div>
+                              <div className="flex items-center gap-3 text-xs">
+                                <span className="text-zinc-500">{r.message}</span>
+                                {r.duration_ms > 0 && <span className="text-zinc-600">{r.duration_ms}ms</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Readiness Score */}
+                        {validationResults[p.provider].readiness && (
+                          <div className="mt-4 p-3 bg-zinc-900/50 rounded-lg border border-zinc-800/30">
+                            <h5 className="text-xs font-medium text-zinc-400 mb-2">Readiness</h5>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                              <div className="text-center">
+                                <div className={`text-lg font-bold ${validationResults[p.provider].readiness.auth_ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {validationResults[p.provider].readiness.auth_ok ? 'OK' : 'FAIL'}
+                                </div>
+                                <p className="text-xs text-zinc-500">Auth</p>
+                              </div>
+                              <div className="text-center">
+                                <div className={`text-lg font-bold ${validationResults[p.provider].readiness.pull_ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {validationResults[p.provider].readiness.pull_ok ? 'OK' : 'FAIL'}
+                                </div>
+                                <p className="text-xs text-zinc-500">Pull</p>
+                              </div>
+                              <div className="text-center">
+                                <div className="text-lg font-bold text-cyan-400">
+                                  {validationResults[p.provider].readiness.mapping_readiness_pct}%
+                                </div>
+                                <p className="text-xs text-zinc-500">Mapping</p>
+                              </div>
+                              <div className="text-center">
+                                <div className={`text-lg font-bold ${validationResults[p.provider].readiness.reservation_import_ready ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                  {validationResults[p.provider].readiness.reservation_import_ready ? 'READY' : 'NOT READY'}
+                                </div>
+                                <p className="text-xs text-zinc-500">Import</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           </TabsContent>
         </Tabs>

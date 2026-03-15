@@ -228,6 +228,13 @@ async def process_alerts(new_alerts: List[Dict[str, Any]]) -> Dict[str, Any]:
         created += 1
         logger.info(f"Alert created: [{alert_data['severity']}] {alert_data['title']}")
 
+        # Dispatch to configured channels (Slack, etc.)
+        try:
+            from .alert_dispatch import dispatch_alert
+            await dispatch_alert(alert_data)
+        except Exception as e:
+            logger.warning(f"Alert dispatch failed: {e}")
+
     # Auto-resolve alerts whose conditions are no longer met
     active_alerts = await db[COLL_MONITORING_ALERTS].find(
         {"status": "active"}, _NO_ID,

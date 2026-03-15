@@ -118,6 +118,8 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("domains.channel_manager.reconciliation_engine.reconciliation_router", "router", ["Cross-Provider Reconciliation"], None, None),
     # Operational Monitoring & Alerting
     ("domains.channel_manager.monitoring.monitoring_router", "router", ["Operational Monitoring"], None, None),
+    # Provider Configuration & Validation
+    ("domains.channel_manager.provider_config_router", "router", ["Provider Config & Validation"], None, None),
     ("security.tenant_isolation_router", "router", ["Tenant Isolation v2"], None, None),
     ("ops.pilot_router", "router", ["Pilot Readiness"], None, None),
     # Phase 6 — Runtime Validation & Go-Live

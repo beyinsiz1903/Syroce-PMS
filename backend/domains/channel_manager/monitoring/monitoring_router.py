@@ -216,3 +216,135 @@ async def resolve_alert(
         }},
     )
     return {"message": "Alert resolved", "alert_id": alert_id}
+
+
+
+# ── Slack / Dispatch Configuration ────────────────────────────────────
+
+class SlackConfigRequest(BaseModel):
+    enabled: bool = False
+    webhook_url: str = ""
+    severities: list = ["critical", "high"]
+    channel_name: str = ""
+
+
+@router.get("/dispatch-config")
+async def get_dispatch_config_endpoint(
+    current_user: User = Depends(get_current_user),
+):
+    """Get alert dispatch configuration (Slack, Email, etc.)."""
+    from .alert_dispatch import get_dispatch_config
+    config = await get_dispatch_config(current_user.tenant_id)
+    # Mask webhook URL for security
+    slack = config.get("slack", {})
+    if slack.get("webhook_url"):
+        url = slack["webhook_url"]
+        slack["webhook_url_masked"] = url[:30] + "..." if len(url) > 30 else url
+    return config
+
+
+@router.post("/dispatch-config/slack")
+async def update_slack_config(
+    req: SlackConfigRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Update Slack webhook configuration."""
+    from .alert_dispatch import get_dispatch_config, update_dispatch_config
+
+    config = await get_dispatch_config(current_user.tenant_id)
+    config["slack"] = {
+        "enabled": req.enabled,
+        "webhook_url": req.webhook_url,
+        "severities": req.severities,
+        "channel_name": req.channel_name,
+    }
+    await update_dispatch_config(current_user.tenant_id, config)
+    return {"success": True, "message": "Slack configuration updated"}
+
+
+@router.post("/dispatch-config/slack/test")
+async def test_slack(
+    current_user: User = Depends(get_current_user),
+):
+    """Send a test message to the configured Slack webhook."""
+    from .alert_dispatch import get_dispatch_config, test_slack_webhook
+
+    config = await get_dispatch_config(current_user.tenant_id)
+    webhook_url = config.get("slack", {}).get("webhook_url", "")
+    if not webhook_url:
+        raise HTTPException(status_code=400, detail="No Slack webhook URL configured")
+
+    result = await test_slack_webhook(webhook_url)
+    return result
+
+
+
+# ── Trend Metrics (24h Time Series) ──────────────────────────────────
+
+@router.get("/trends")
+async def get_metrics_trends(
+    hours: int = Query(24, ge=1, le=168),
+    current_user: User = Depends(get_current_user),
+):
+    """Get time-series metrics for trend charts (last N hours)."""
+    from datetime import timedelta
+    from .monitoring_worker import COLL_METRICS_HISTORY
+
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+
+    cursor = db[COLL_METRICS_HISTORY].find(
+        {"ts": {"$gte": since}},
+        {"_id": 0},
+    ).sort("ts", 1)
+
+    snapshots = await cursor.to_list(2000)
+
+    if not snapshots:
+        return {
+            "hours": hours,
+            "data_points": 0,
+            "ingest": [],
+            "ari": [],
+            "reconciliation": [],
+            "queue": [],
+        }
+
+    # Aggregate into series
+    ingest_series = []
+    ari_series = []
+    recon_series = []
+    queue_series = []
+
+    for s in snapshots:
+        ts = s.get("ts", "")
+        ingest_series.append({
+            "ts": ts,
+            "events_1h": s.get("ingest_events_1h", 0),
+            "failed": s.get("ingest_failed", 0),
+            "duplicates": s.get("ingest_duplicates", 0),
+        })
+        ari_series.append({
+            "ts": ts,
+            "success_rate": s.get("ari_success_rate", 0),
+            "p95_latency": s.get("ari_p95_latency", 0),
+            "retry_count": s.get("ari_retry_count", 0),
+        })
+        recon_series.append({
+            "ts": ts,
+            "open_cases": s.get("recon_open", 0),
+            "critical": s.get("recon_critical", 0),
+        })
+        queue_series.append({
+            "ts": ts,
+            "depth": s.get("queue_depth", 0),
+            "retry_backlog": s.get("retry_backlog", 0),
+        })
+
+    return {
+        "hours": hours,
+        "data_points": len(snapshots),
+        "ingest": ingest_series,
+        "ari": ari_series,
+        "reconciliation": recon_series,
+        "queue": queue_series,
+    }
