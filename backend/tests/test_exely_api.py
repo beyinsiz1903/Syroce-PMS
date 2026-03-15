@@ -14,7 +14,7 @@ import pytest
 import requests
 import uuid
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://monitoring-with-data.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://hotelrunner-exely.preview.emergentagent.com')
 if BASE_URL.endswith('/'):
     BASE_URL = BASE_URL[:-1]
 
