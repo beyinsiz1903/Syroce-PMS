@@ -1,80 +1,146 @@
 # RoomOps PMS — Product Requirements Document
 
 ## Original Problem Statement
-Build a production-grade **Cross-Provider Reconciliation Engine** and **Operational Channel Monitoring & Alerting System** for a PMS + Channel Manager integration platform. The platform integrates with HotelRunner (REST) and Exely (SOAP) as external channel managers.
+Build a production-grade **Cross-Provider Reconciliation Engine** and **Operational Channel Monitoring & Alerting System** for a hotel PMS platform (Syroce PMS). The system detects and manages data inconsistencies between a local PMS and two external channel managers: HotelRunner (REST) and Exely (SOAP).
 
----
-
-## Core Architecture
-- **Backend:** FastAPI (Python) on port 8001
-- **Frontend:** React on port 3000
-- **Database:** MongoDB (9+ collections for channel manager)
-- **Providers:** HotelRunner (REST), Exely (SOAP)
-
-## Key Subsystems
-1. **Reservation Ingest Pipeline** — Pull & webhook-based event ingestion
-2. **ARI Push Engine** — Outbound availability/rate/inventory sync
-3. **Cross-Provider Reconciliation Engine** — Mismatch detection & case management
-4. **Operational Monitoring & Alerting System** — Real-time health monitoring & alerting
-5. **9-Collection Data Model** — Unified data schema
-
----
+## Architecture Overview
+```
+/app
+├── backend/
+│   ├── domains/
+│   │   ├── channel_manager/
+│   │   │   ├── credential_vault.py          # Encrypted secret storage
+│   │   │   ├── provider_config_router.py     # Provider config & validation API
+│   │   │   ├── providers/hotelrunner.py      # HotelRunner REST client
+│   │   │   ├── providers/exely/              # Exely SOAP client
+│   │   │   ├── ingest/                       # Reservation ingest pipeline
+│   │   │   ├── ari/                          # ARI push engine
+│   │   │   ├── reconciliation_engine/        # Reconciliation engine
+│   │   │   ├── monitoring/
+│   │   │   │   ├── monitoring_router.py      # Monitoring + Slack + Trends API
+│   │   │   │   ├── alert_dispatch.py         # Slack webhook dispatch
+│   │   │   │   ├── alert_engine.py           # Alert evaluation
+│   │   │   │   ├── aggregator.py             # Metrics aggregation
+│   │   │   │   └── monitoring_worker.py      # Background worker + metrics history
+│   │   │   └── ...
+│   ├── GO_LIVE_PLAYBOOK.md                   # Production go-live checklist
+│   └── ...
+├── frontend/src/
+│   ├── pages/DataModelDashboard.jsx          # Main dashboard with all tabs
+│   ├── components/TrendCharts.jsx            # 24h trend charts component
+│   └── ...
+```
 
 ## Completed Features
 
-### Cross-Provider Reconciliation Engine (Completed)
-- Snapshot collectors for HotelRunner & Exely (real API calls)
-- Comparison engine detecting 6 mismatch types
-- Case management (create, resolve, ignore)
-- Auto-resolution for safe cases
-- Reconciliation dashboard with metrics
-- **Test:** 22/22 backend tests pass (iteration_1)
+### PMS Core — Completed
+- Reservation core, Night audit, Frontdesk operations
 
-### Operational Monitoring & Alerting System (Completed — March 2026)
-- **5 Health Domains:** Provider, Ingest Pipeline, ARI Push, Reconciliation, Queue & Worker
-- **Monitoring Worker:** 60s interval, auto-collects metrics & evaluates thresholds
-- **Alert Engine:** 14 threshold types, auto-create/auto-resolve alerts
-- **6 API Endpoints:**
-  - `GET /api/channel-manager/monitoring/overview`
-  - `GET /api/channel-manager/monitoring/alerts`
-  - `GET /api/channel-manager/monitoring/metrics`
-  - `GET /api/channel-manager/monitoring/providers`
-  - `POST /api/channel-manager/monitoring/alerts/{id}/ack`
-  - `POST /api/channel-manager/monitoring/alerts/{id}/resolve`
-- **Frontend Dashboard:** Monitoring tab with health overview, domain cards, alert list, detailed metrics
-- **Test:** 31/31 backend tests pass (iteration_68)
+### Channel Manager Core — Completed
+- Provider integrations (HotelRunner REST + Exely SOAP)
+- Reservation ingest pipeline
+- ARI push engine
+- Drift detection
 
-### Real Provider API Integrations (Completed — March 2026)
-- Snapshot collectors upgraded from mocked stubs to real HotelRunnerProvider + ExelyClient
-- Ingest pull workers use real provider API clients with pagination
-- Graceful error handling when credentials not configured
+### Data Reliability — Completed
+- Raw event store, Reservation lineage
+- Versioning + payload hash, Replay mechanism
 
----
+### Reconciliation Engine — Completed
+- Cross-provider data comparison
+- Case management (open/resolved/acknowledged)
+- Snapshot collectors for both providers
 
-## Database Collections
-1. `provider_connections` — Provider credentials & status
-2. `raw_channel_events` — Ingest pipeline events
-3. `reservation_lineage` — Reservation tracking
-4. `ari_change_sets` — ARI change queue
-5. `ari_outbound_logs` — ARI push audit
-6. `ari_drift_state` — ARI parity tracking
-7. `channel_reconciliation_cases` — Reconciliation cases
-8. `monitoring_alerts` — Monitoring alerts (NEW)
+### Operational Monitoring & Alerting — Completed
+- 5 health domains: Provider, Ingest, ARI, Reconciliation, Queue
+- Alert engine with threshold evaluation
+- Dashboard with real-time metrics
 
----
+### Provider Credential Configuration + Validation — Completed (March 2026)
+- Encrypted secret storage (credential_vault.py)
+- provider_connections + credentials_ref pattern
+- Automated validation suite (connection, rooms, rates, reservations)
+- Readiness scoring (auth_ok, pull_ok, mapping %, import ready)
+- Provider Config tab in dashboard
 
-## Pending / Backlog Tasks
+### Slack Alert Integration — Completed (March 2026)
+- Alert Dispatch Service (Dashboard + Slack + future Email)
+- Severity-based filtering (critical, high, medium, info)
+- Webhook URL configuration via UI
+- Test message sending
+- Slack config panel in Monitoring tab
 
-### P1
-- Replace actual provider API credentials (HotelRunner token/hr_id, Exely username/password/hotel_code) for production use
+### Monitoring Trend Charts — Completed (March 2026)
+- Metrics snapshot storage (monitoring_metrics_history collection)
+- Time-series API endpoint (GET /trends?hours=N)
+- Mini bar charts with trend indicators
+- 4 metric panels: Ingest, ARI, Reconciliation, Queue
+- Selectable time ranges: 6h, 12h, 24h, 48h
 
-### P2
-- Legacy collection cleanup (archive/delete old unused collections)
-- Mapping UI improvement (PMS room/rate mapping interface)
-- Slack webhook integration for alert dispatch
-- Email notification for alert dispatch
+### Pilot Hotel Go-Live Playbook — Completed (March 2026)
+- 6-phase production checklist document
+- Phase 1: Pre-Go-Live Readiness (T-7)
+- Phase 2: Sandbox Validation (T-5)
+- Phase 3: Stress Testing (T-3) — 24h soak, burst, ARI storm
+- Phase 4: Go-Live Day (T-0) — Checklist + rollback plan
+- Phase 5: Post-Go-Live (T+1 → T+7)
+- Phase 6: Scaling plan
 
-### P3
-- Historical metrics storage for trend analysis
-- Alert notification preferences per user
-- Custom threshold configuration UI
+## Key API Endpoints
+
+### Provider Configuration
+- GET /api/channel-manager/config/providers
+- POST /api/channel-manager/config/providers/{provider}/credentials
+- GET /api/channel-manager/config/providers/{provider}/credentials
+- DELETE /api/channel-manager/config/providers/{provider}/credentials
+- POST /api/channel-manager/config/providers/{provider}/validate
+- POST /api/channel-manager/config/providers/{provider}/test-connection
+- GET /api/channel-manager/config/providers/{provider}/readiness
+
+### Monitoring
+- GET /api/channel-manager/monitoring/overview
+- GET /api/channel-manager/monitoring/alerts
+- GET /api/channel-manager/monitoring/metrics
+- GET /api/channel-manager/monitoring/providers
+- POST /api/channel-manager/monitoring/alerts/{alert_id}/ack
+- POST /api/channel-manager/monitoring/alerts/{alert_id}/resolve
+- GET /api/channel-manager/monitoring/dispatch-config
+- POST /api/channel-manager/monitoring/dispatch-config/slack
+- POST /api/channel-manager/monitoring/dispatch-config/slack/test
+- GET /api/channel-manager/monitoring/trends
+
+## DB Collections
+- provider_secrets: Encrypted credential storage
+- alert_dispatch_config: Slack/email dispatch configuration
+- monitoring_metrics_history: Time-series metrics snapshots
+- monitoring_alerts: Generated alerts
+- provider_connections, room_mappings, rate_plan_mappings, etc.
+
+## Pending Tasks
+
+### P0 — Production Credentials
+- [ ] Configure real HotelRunner token + hr_id
+- [ ] Configure real Exely username + password + hotel_code
+
+### P1 — Real Provider Validation
+- [ ] Run full validation with real credentials
+- [ ] Verify end-to-end data flow
+
+### P2 — Mapping UI Improvement
+- [ ] Enhanced PMS room/rate to provider mapping interface
+- [ ] Bulk mapping, auto-suggestions
+
+### P3 — Legacy Collection Cleanup
+- [ ] Archive old unused collections
+- [ ] Index optimization
+
+### Future
+- [ ] Email notification channel
+- [ ] Alert notification preferences per user
+- [ ] Custom threshold configuration UI
+- [ ] Historical metrics archive & long-term trends
+
+## Test Credentials
+| User | Email | Password |
+|------|-------|----------|
+| Demo Admin | demo@hotel.com | demo123 |
