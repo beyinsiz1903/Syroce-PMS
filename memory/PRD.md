@@ -1,90 +1,79 @@
 # RoomOps PMS — Product Requirements Document
 
 ## Original Problem Statement
-Build a production-grade hospitality platform. Initial phase: Cross-Provider Reconciliation Engine managing data inconsistencies between local PMS and two external channel managers (HotelRunner REST, Exely SOAP). Current phase: Operational Channel Monitoring, Alerting, and Production-Grade Provider Adapters.
+The user, a technical architect, aims to build a production-grade hospitality platform (PMS + Channel Manager). The current phase focuses on replacing all mocked data provider integrations with real, robust, and maintainable API adapters.
 
-## Architecture
-- **Frontend:** React + Shadcn UI
-- **Backend:** FastAPI + MongoDB
-- **Providers:** HotelRunner (REST), Exely (SOAP)
+## User Personas
+- **Hotel Technical Architect**: Manages the platform, configures provider integrations
+- **Hotel Operations Staff**: Uses dashboards for reservations, room management, ARI
+
+## Core Requirements
+1. **(P0) Real Provider Integrations** — Replace mocked code with production-grade adapters
+2. **(P1) Mapping UI Improvement** — Enhance PMS room/rate ↔ Provider room/rate mapping UI
+3. **(P2) Legacy Collection Cleanup** — Archive/delete unused database collections
 
 ## What's Been Implemented
 
-### Phase 1 — Core Reconciliation Engine (Complete)
-- Multi-provider data model (connections, room/rate mappings, lineage, ARI)
-- Reservation ingest pipeline with normalization
-- Reconciliation engine with snapshot comparison
-- Data Model Dashboard with 7 tabs
+### Phase 1: HotelRunner (REST) Adapter — COMPLETE ✅
+- 12-module production-grade adapter at `/app/backend/domains/channel_manager/providers/hotelrunner/`
+- Modules: auth, client, endpoints, errors, mapper, observability, paginator, parser, provider, retry, schemas, validators
+- 67 unit tests + 13 integration tests (80 total)
+- All call sites consolidated to use single provider facade
 
-### Phase 2 — Operational Monitoring & Alerting (Complete)
-- Real-time health dashboard
-- Alert engine with configurable thresholds
-- Background monitoring worker
+### Phase 2: Exely (SOAP) Adapter — COMPLETE ✅ (2026-03-15)
+- Production-grade adapter at `/app/backend/domains/channel_manager/providers/exely/`
+- New modules: errors.py, retry.py, observability.py, validators.py, client.py, provider.py, __init__.py
+- Existing modules preserved: soap_builder.py, response_parser.py, normalizer.py
+- 77 unit tests + 14 integration tests (91 total)
+- All call sites updated: exely_router.py, exely_pull_worker.py, provider_config_router.py, snapshot_collectors.py, ingest/workers.py
+- Old ExelyClient deprecated to exely_client_legacy.py
+- Full backward compatibility via legacy_* methods
 
-### Phase 3 — Production Readiness Tooling (Complete)
-- Credential Configuration & Validation UI
-- Pilot Go-Live Playbook (`/app/memory/PILOT_HOTEL_GO_LIVE_PLAYBOOK.md`)
-- Slack Alert Integration
-- Monitoring Trend Charts (24h)
+### Deployment Fix (2026-03-15)
+- Fixed `requirements.txt` to include `--extra-index-url` for `emergentintegrations` package
 
-### Phase 4 — HotelRunner Production-Grade Adapter (Complete — 2026-03-15)
-12-module modular adapter consolidating two legacy implementations:
-
-```
-providers/hotelrunner/
-  __init__.py          — Public API exports
-  provider.py          — Main facade (HotelRunnerProvider)
-  client.py            — HTTP client (timeout, logging, status mapping)
-  auth.py              — Centralized query param auth
-  endpoints.py         — API path constants
-  schemas.py           — Request/response data contracts
-  parser.py            — Safe response parsing with validation
-  mapper.py            — Bidirectional canonical ↔ HR mapping
-  paginator.py         — Pagination handler with safety guards
-  retry.py             — Exponential backoff, retryable/non-retryable separation
-  errors.py            — Typed error hierarchy (8 error classes)
-  validators.py        — Pre-flight validation
-  observability.py     — Metrics recording & health indicators
-```
-
-**Key Design Decisions:**
-- Single source of truth for all HotelRunner API operations
-- Legacy dict interface preserved for backward compatibility
-- New ProviderResult-based interface for updated callers
-- Error hierarchy maps to monitoring/alerting severity levels
-- Comprehensive test suite: 96 tests (67 unit + 13 integration + 16 API)
-
-**Wiring Points Updated:**
-- `provider_config_router.py` → uses ProviderResult
-- `hotelrunner_router.py` → uses ProviderResult
-- `ingest/workers.py` → uses legacy dict interface (compatible)
-- `snapshot_collectors.py` → uses legacy dict interface (compatible)
-- `hotelrunner_ari_adapter.py` → uses legacy update_room (compatible)
-
-**Deprecated:**
-- `providers/hotelrunner_legacy.py` (was hotelrunner.py) — removal target: next major release
-- `channel_manager/connectors/hotelrunner/` — removal target: next major release
+## Test Summary
+| Suite | Tests | Status |
+|-------|-------|--------|
+| Exely Unit Tests | 77 | ✅ PASS |
+| Exely Integration Tests | 14 | ✅ PASS |
+| HotelRunner Unit Tests | 67 | ✅ PASS |
+| Existing Exely API Tests | 37 | ✅ PASS |
+| **Total** | **195+** | **✅ ALL PASS** |
 
 ## Prioritized Backlog
 
-### P0 (Critical)
-- [x] HotelRunner production-grade adapter — DONE
-- [ ] Exely production-grade SOAP adapter (same 12-module pattern)
-- [ ] Real API credentials integration + sandbox testing
+### P1 — Mapping UI Improvement
+- Enhance the UI for mapping PMS rooms/rates to provider rooms/rates
 
-### P1 (High)
-- [ ] Mapping UI improvement (PMS rooms/rates ↔ provider rooms/rates)
+### P2 — Legacy Collection Cleanup
+- Archive or delete old, unused database collections
+- Remove deprecated HotelRunner files after stabilization
 
-### P2 (Medium)
-- [ ] Legacy collection cleanup (archive unused MongoDB collections)
-- [ ] Remove deprecated `hotelrunner_legacy.py` and `connectors/hotelrunner/`
+### P3 — Production Readiness
+- 24h soak test, reservation burst test, ARI storm test
+- ML library optimization for deployment (scikit-learn, xgboost)
 
-### P3 (Low)
-- [ ] 24h soak test
-- [ ] Reservation burst test
-- [ ] ARI storm test
+## Architecture
+```
+/app/backend/domains/channel_manager/providers/
+├── hotelrunner/          # Production REST Adapter (COMPLETE)
+│   ├── auth.py, client.py, endpoints.py, errors.py
+│   ├── mapper.py, observability.py, paginator.py
+│   ├── parser.py, provider.py, retry.py
+│   ├── schemas.py, validators.py
+│   └── __init__.py
+├── exely/                # Production SOAP Adapter (COMPLETE)
+│   ├── errors.py, retry.py, observability.py
+│   ├── validators.py, client.py, provider.py
+│   ├── soap_builder.py, response_parser.py
+│   ├── normalizer.py, exely_router.py
+│   ├── exely_pull_worker.py
+│   ├── exely_client_legacy.py (DEPRECATED)
+│   └── __init__.py
+```
 
-## Test Credentials
+## Credentials
 | User | Email | Password |
 |------|-------|----------|
 | Demo Admin | demo@hotel.com | demo123 |
