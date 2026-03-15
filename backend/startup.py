@@ -215,6 +215,14 @@ async def on_startup(app):
     except Exception:
         pass
 
+    # ── Monitoring Worker ─────────────────────────────────────────────
+    try:
+        from domains.channel_manager.monitoring.monitoring_worker import start_monitoring_worker
+        await start_monitoring_worker()
+        print("✅ Operational Monitoring worker started (60s interval)")
+    except Exception as e:
+        logger.warning(f"Monitoring worker init warning: {e}")
+
 
 async def on_shutdown(app):
     """Graceful shutdown: close connections and stop workers."""
@@ -237,6 +245,13 @@ async def on_shutdown(app):
             await worker.stop()
         except Exception as e:
             logger.warning(f"Outbox lifecycle worker shutdown warning: {e}")
+
+    # Monitoring worker
+    try:
+        from domains.channel_manager.monitoring.monitoring_worker import stop_monitoring_worker
+        await stop_monitoring_worker()
+    except Exception as e:
+        logger.warning(f"Monitoring worker shutdown warning: {e}")
 
     # Close MongoDB client
     client.close()

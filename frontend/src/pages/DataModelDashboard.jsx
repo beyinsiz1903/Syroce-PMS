@@ -11,7 +11,7 @@ import {
   AlertTriangle, RefreshCw, Trash2, CheckCircle,
   Loader2, Server, Layers, ArrowRightLeft, Clock,
   Play, Repeat, Download, Activity, Shield, Eye,
-  XCircle, Search, BarChart3
+  XCircle, Search, BarChart3, Bell, Radio, Zap, Heart
 } from 'lucide-react';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -79,6 +79,9 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
   const [reconRunning, setReconRunning] = useState(false);
   const [ingestStatus, setIngestStatus] = useState(null);
   const [workerAction, setWorkerAction] = useState(null);
+  const [monitoringOverview, setMonitoringOverview] = useState(null);
+  const [monitoringAlerts, setMonitoringAlerts] = useState([]);
+  const [monitoringMetrics, setMonitoringMetrics] = useState(null);
 
   const propertyId = tenant?.property_id || 'prop-001';
 
@@ -91,7 +94,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
     setLoading(true);
     try {
       const h = headers();
-      const [schemaRes, connRes, roomRes, rateRes, eventsRes, lineageRes, casesRes, summaryRes, ingestRes, reconDashRes, reconMetricsRes] = await Promise.all([
+      const [schemaRes, connRes, roomRes, rateRes, eventsRes, lineageRes, casesRes, summaryRes, ingestRes, reconDashRes, reconMetricsRes, monOverviewRes, monAlertsRes] = await Promise.all([
         axios.get(`${API}/api/channel-manager/model/schema`, { headers: h }).catch(() => ({ data: null })),
         axios.get(`${API}/api/channel-manager/model/connections`, { headers: h }).catch(() => ({ data: { connections: [] } })),
         axios.get(`${API}/api/channel-manager/model/room-mappings?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { mappings: [] } })),
@@ -103,6 +106,8 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
         axios.get(`${API}/api/channel-manager/ingest/status?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: null })),
         axios.get(`${API}/api/channel-manager/reconciliation/dashboard`, { headers: h }).catch(() => ({ data: null })),
         axios.get(`${API}/api/channel-manager/reconciliation/metrics`, { headers: h }).catch(() => ({ data: null })),
+        axios.get(`${API}/api/channel-manager/monitoring/overview`, { headers: h }).catch(() => ({ data: null })),
+        axios.get(`${API}/api/channel-manager/monitoring/alerts`, { headers: h }).catch(() => ({ data: { alerts: [] } })),
       ]);
       setSchema(schemaRes.data);
       setConnections(connRes.data.connections || []);
@@ -115,6 +120,8 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
       setIngestStatus(ingestRes.data);
       setReconDashboard(reconDashRes.data);
       setReconMetrics(reconMetricsRes.data);
+      setMonitoringOverview(monOverviewRes.data);
+      setMonitoringAlerts(monAlertsRes.data?.alerts || []);
     } catch (e) { console.error(e); }
     setLoading(false);
   }, [propertyId, headers]);
@@ -202,6 +209,29 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
     setWorkerAction(null);
   };
 
+  const ackAlert = async (alertId) => {
+    try {
+      await axios.post(`${API}/api/channel-manager/monitoring/alerts/${alertId}/ack`, { note: '' }, { headers: headers() });
+      toast.success('Alert acknowledged');
+      fetchAll();
+    } catch { toast.error('Acknowledge failed'); }
+  };
+
+  const resolveAlert = async (alertId) => {
+    try {
+      await axios.post(`${API}/api/channel-manager/monitoring/alerts/${alertId}/resolve`, { resolution: 'Manually resolved' }, { headers: headers() });
+      toast.success('Alert resolved');
+      fetchAll();
+    } catch { toast.error('Resolve failed'); }
+  };
+
+  const fetchMonitoringMetrics = async () => {
+    try {
+      const { data } = await axios.get(`${API}/api/channel-manager/monitoring/metrics`, { headers: headers() });
+      setMonitoringMetrics(data);
+    } catch { toast.error('Metrics fetch failed'); }
+  };
+
   const eventStats = ingestStatus?.pipeline?.raw_events || {};
   const lineageStats = ingestStatus?.pipeline?.lineage || {};
 
@@ -253,6 +283,9 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
             </TabsTrigger>
             <TabsTrigger value="reconciliation" className="data-[state=active]:bg-zinc-800 text-xs">
               <AlertTriangle className="w-3.5 h-3.5 mr-1" /> Reconciliation
+            </TabsTrigger>
+            <TabsTrigger value="monitoring" data-testid="monitoring-tab" className="data-[state=active]:bg-zinc-800 text-xs">
+              <Radio className="w-3.5 h-3.5 mr-1" /> Monitoring
             </TabsTrigger>
           </TabsList>
 
@@ -769,6 +802,276 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
                   )}
                 </CardContent>
               </Card>
+            </div>
+          </TabsContent>
+
+          {/* Monitoring Tab */}
+          <TabsContent value="monitoring">
+            <div data-testid="monitoring-panel" className="space-y-4">
+              {/* System Health Overview */}
+              <Card className="bg-zinc-900/60 border-zinc-800">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
+                    <Heart className="w-4 h-4 text-rose-400" /> System Health Overview
+                    <Button data-testid="monitoring-refresh-btn" variant="ghost" size="sm" onClick={fetchAll} className="ml-auto text-zinc-400 hover:text-zinc-200 h-7 px-2">
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </Button>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {monitoringOverview ? (
+                    <>
+                      {/* Health Score */}
+                      <div data-testid="system-health-score" className="flex items-center gap-4 p-4 rounded-lg bg-zinc-800/50">
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold ${
+                          monitoringOverview.system_health === 'healthy' ? 'bg-emerald-500/20 text-emerald-400 ring-2 ring-emerald-500/30' :
+                          monitoringOverview.system_health === 'degraded' ? 'bg-amber-500/20 text-amber-400 ring-2 ring-amber-500/30' :
+                          'bg-red-500/20 text-red-400 ring-2 ring-red-500/30'
+                        }`}>
+                          {monitoringOverview.system_health === 'healthy' ? <CheckCircle className="w-6 h-6" /> :
+                           monitoringOverview.system_health === 'degraded' ? <AlertTriangle className="w-6 h-6" /> :
+                           <XCircle className="w-6 h-6" />}
+                        </div>
+                        <div>
+                          <p className="text-lg font-bold text-zinc-100 capitalize">{monitoringOverview.system_health}</p>
+                          <p className="text-xs text-zinc-500">
+                            {monitoringOverview.providers} providers | {monitoringOverview.active_alerts} active alerts | {monitoringOverview.reconciliation_open_cases} open cases
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Domain Status Cards */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                        {[
+                          { label: 'Providers', status: Object.values(monitoringOverview.provider_statuses || {}).includes('critical') ? 'critical' : Object.values(monitoringOverview.provider_statuses || {}).every(s => s === 'healthy') ? 'healthy' : 'degraded', icon: Server },
+                          { label: 'Ingest', status: monitoringOverview.ingest_status, icon: Activity },
+                          { label: 'ARI Push', status: monitoringOverview.ari_status, icon: Zap },
+                          { label: 'Reconciliation', status: monitoringOverview.recon_status, icon: Shield },
+                          { label: 'Queue', status: monitoringOverview.queue_status, icon: Layers },
+                        ].map(d => (
+                          <div key={d.label} data-testid={`health-domain-${d.label.toLowerCase().replace(/ /g,'-')}`} className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <d.icon className="w-3.5 h-3.5 text-zinc-400" />
+                              <span className="text-xs font-medium text-zinc-400">{d.label}</span>
+                            </div>
+                            <Badge className={`text-xs border ${
+                              d.status === 'healthy' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' :
+                              d.status === 'degraded' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' :
+                              d.status === 'critical' ? 'bg-red-500/15 text-red-400 border-red-500/30' :
+                              'bg-zinc-500/15 text-zinc-400 border-zinc-500/30'
+                            }`}>{d.status || 'unknown'}</Badge>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Provider Health Detail */}
+                      {monitoringOverview.provider_statuses && Object.keys(monitoringOverview.provider_statuses).length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {Object.entries(monitoringOverview.provider_statuses).map(([name, status]) => (
+                            <div key={name} data-testid={`provider-health-${name}`} className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50 flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <ProviderBadge provider={name} />
+                                <Badge className={`text-xs border ${
+                                  status === 'healthy' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' :
+                                  status === 'inactive' ? 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30' :
+                                  'bg-red-500/15 text-red-400 border-red-500/30'
+                                }`}>{status}</Badge>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Quick Stats */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="p-3 rounded-lg bg-zinc-800/50 text-center">
+                          <p className="text-2xl font-bold text-zinc-100">{monitoringOverview.active_alerts}</p>
+                          <p className="text-xs text-zinc-500">Active Alerts</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-zinc-800/50 text-center">
+                          <p className="text-2xl font-bold text-red-400">{monitoringOverview.critical_alerts}</p>
+                          <p className="text-xs text-zinc-500">Critical Alerts</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-zinc-800/50 text-center">
+                          <p className="text-2xl font-bold text-zinc-100">{monitoringOverview.queue_depth}</p>
+                          <p className="text-xs text-zinc-500">Queue Depth</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-zinc-800/50 text-center">
+                          <p className="text-2xl font-bold text-amber-400">{monitoringOverview.reconciliation_open_cases}</p>
+                          <p className="text-xs text-zinc-500">Open Cases</p>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-sm text-zinc-500 text-center py-6">Loading monitoring data...</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Active Alerts */}
+              <Card className="bg-zinc-900/60 border-zinc-800">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
+                    <Bell className="w-4 h-4 text-amber-400" /> Active Alerts
+                    <Badge data-testid="alert-count-badge" className="ml-2 bg-zinc-800 text-zinc-300 border border-zinc-700 text-xs">
+                      {monitoringAlerts.filter(a => a.status !== 'resolved').length}
+                    </Badge>
+                    <Button data-testid="fetch-metrics-btn" variant="ghost" size="sm" onClick={fetchMonitoringMetrics} className="ml-auto text-zinc-400 hover:text-zinc-200 h-7 px-2">
+                      <BarChart3 className="w-3.5 h-3.5 mr-1" /> Metrics
+                    </Button>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {monitoringAlerts.length === 0 ? (
+                    <div data-testid="no-alerts-message" className="text-center py-8">
+                      <CheckCircle className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+                      <p className="text-sm text-zinc-400">No active alerts</p>
+                      <p className="text-xs text-zinc-600 mt-1">System is operating normally</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                      {monitoringAlerts.map((alert) => (
+                        <div key={alert.id} data-testid={`alert-item-${alert.id}`}
+                          className={`p-3 rounded-lg border ${
+                            alert.severity === 'critical' ? 'bg-red-950/30 border-red-800/50' :
+                            alert.severity === 'high' ? 'bg-amber-950/30 border-amber-800/50' :
+                            'bg-zinc-800/50 border-zinc-700/50'
+                          }`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Badge className={`text-xs border ${
+                                  alert.severity === 'critical' ? 'bg-red-500/15 text-red-400 border-red-500/30' :
+                                  alert.severity === 'high' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' :
+                                  alert.severity === 'medium' ? 'bg-blue-500/15 text-blue-400 border-blue-500/30' :
+                                  'bg-zinc-500/15 text-zinc-400 border-zinc-500/30'
+                                }`}>{alert.severity}</Badge>
+                                <Badge className={`text-xs border ${
+                                  alert.status === 'active' ? 'bg-red-500/15 text-red-400 border-red-500/30' :
+                                  alert.status === 'acknowledged' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' :
+                                  'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                                }`}>{alert.status}</Badge>
+                                {alert.provider && <ProviderBadge provider={alert.provider} />}
+                              </div>
+                              <p className="text-sm font-medium text-zinc-200">{alert.title}</p>
+                              <p className="text-xs text-zinc-500 mt-0.5">{alert.details}</p>
+                              <p className="text-xs text-zinc-600 mt-1 font-mono">
+                                {alert.alert_type} | {alert.created_at ? new Date(alert.created_at).toLocaleString('tr-TR') : ''}
+                              </p>
+                            </div>
+                            {alert.status !== 'resolved' && (
+                              <div className="flex gap-1.5 shrink-0">
+                                {alert.status === 'active' && (
+                                  <Button data-testid={`ack-alert-${alert.id}`} variant="outline" size="sm"
+                                    className="h-7 px-2 text-xs border-amber-700 text-amber-400 hover:bg-amber-900/30"
+                                    onClick={() => ackAlert(alert.id)}>
+                                    <Eye className="w-3 h-3 mr-1" /> Ack
+                                  </Button>
+                                )}
+                                <Button data-testid={`resolve-alert-${alert.id}`} variant="outline" size="sm"
+                                  className="h-7 px-2 text-xs border-emerald-700 text-emerald-400 hover:bg-emerald-900/30"
+                                  onClick={() => resolveAlert(alert.id)}>
+                                  <CheckCircle className="w-3 h-3 mr-1" /> Resolve
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Detailed Metrics Panel */}
+              {monitoringMetrics && (
+                <Card className="bg-zinc-900/60 border-zinc-800">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-cyan-400" /> Detailed Metrics
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {/* Ingest Metrics */}
+                      <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
+                        <h4 className="text-xs font-medium text-zinc-400 mb-2 flex items-center gap-1">
+                          <Activity className="w-3 h-3" /> Ingest Pipeline
+                        </h4>
+                        <div className="space-y-1.5 text-xs">
+                          <div className="flex justify-between"><span className="text-zinc-500">Total Events</span><span className="text-zinc-200 font-mono">{monitoringMetrics.ingest_health?.total_events || 0}</span></div>
+                          <div className="flex justify-between"><span className="text-zinc-500">Pending</span><span className="text-zinc-200 font-mono">{monitoringMetrics.ingest_health?.pending || 0}</span></div>
+                          <div className="flex justify-between"><span className="text-zinc-500">Failed (24h)</span><span className="text-red-400 font-mono">{monitoringMetrics.ingest_health?.failed_recent_24h || 0}</span></div>
+                          <div className="flex justify-between"><span className="text-zinc-500">Duplicate Rate</span><span className="text-zinc-200 font-mono">{monitoringMetrics.ingest_health?.duplicate_rate || 0}%</span></div>
+                        </div>
+                      </div>
+
+                      {/* ARI Metrics */}
+                      <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
+                        <h4 className="text-xs font-medium text-zinc-400 mb-2 flex items-center gap-1">
+                          <Zap className="w-3 h-3" /> ARI Push Engine
+                        </h4>
+                        <div className="space-y-1.5 text-xs">
+                          <div className="flex justify-between"><span className="text-zinc-500">Pushes (24h)</span><span className="text-zinc-200 font-mono">{monitoringMetrics.ari_health?.total_pushes_24h || 0}</span></div>
+                          <div className="flex justify-between"><span className="text-zinc-500">Success Rate</span><span className="text-emerald-400 font-mono">{monitoringMetrics.ari_health?.success_rate || 0}%</span></div>
+                          <div className="flex justify-between"><span className="text-zinc-500">p50 Latency</span><span className="text-zinc-200 font-mono">{monitoringMetrics.ari_health?.latency_p50 || 0}ms</span></div>
+                          <div className="flex justify-between"><span className="text-zinc-500">p95 Latency</span><span className="text-zinc-200 font-mono">{monitoringMetrics.ari_health?.latency_p95 || 0}ms</span></div>
+                          <div className="flex justify-between"><span className="text-zinc-500">Pending Sets</span><span className="text-zinc-200 font-mono">{monitoringMetrics.ari_health?.pending_changesets || 0}</span></div>
+                        </div>
+                      </div>
+
+                      {/* Reconciliation Metrics */}
+                      <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
+                        <h4 className="text-xs font-medium text-zinc-400 mb-2 flex items-center gap-1">
+                          <Shield className="w-3 h-3" /> Reconciliation
+                        </h4>
+                        <div className="space-y-1.5 text-xs">
+                          <div className="flex justify-between"><span className="text-zinc-500">Open Cases</span><span className="text-zinc-200 font-mono">{monitoringMetrics.reconciliation_health?.open_cases || 0}</span></div>
+                          <div className="flex justify-between"><span className="text-zinc-500">Critical</span><span className="text-red-400 font-mono">{monitoringMetrics.reconciliation_health?.critical_count || 0}</span></div>
+                          <div className="flex justify-between"><span className="text-zinc-500">New (24h)</span><span className="text-amber-400 font-mono">{monitoringMetrics.reconciliation_health?.case_growth_rate_24h || 0}</span></div>
+                          {monitoringMetrics.reconciliation_health?.cases_by_type && Object.entries(monitoringMetrics.reconciliation_health.cases_by_type).map(([t, c]) => (
+                            <div key={t} className="flex justify-between"><span className="text-zinc-600 truncate">{t}</span><span className="text-zinc-300 font-mono">{c}</span></div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Queue & Worker Details */}
+                    {monitoringMetrics.queue_health && (
+                      <div className="mt-4 p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
+                        <h4 className="text-xs font-medium text-zinc-400 mb-2 flex items-center gap-1">
+                          <Layers className="w-3 h-3" /> Queue & Workers
+                        </h4>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mb-3">
+                          <div><span className="text-zinc-500 block">Queue Depth</span><span className="text-zinc-200 font-mono text-sm">{monitoringMetrics.queue_health.queue_depth}</span></div>
+                          <div><span className="text-zinc-500 block">Retry Backlog</span><span className="text-zinc-200 font-mono text-sm">{monitoringMetrics.queue_health.retry_backlog}</span></div>
+                          <div><span className="text-zinc-500 block">Stalled Workers</span><span className="text-red-400 font-mono text-sm">{monitoringMetrics.queue_health.stalled_workers?.length || 0}</span></div>
+                          <div><span className="text-zinc-500 block">Status</span>
+                            <Badge className={`text-xs border ${
+                              monitoringMetrics.queue_health.status === 'healthy' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' :
+                              'bg-red-500/15 text-red-400 border-red-500/30'
+                            }`}>{monitoringMetrics.queue_health.status}</Badge>
+                          </div>
+                        </div>
+                        {monitoringMetrics.queue_health.workers && (
+                          <div className="space-y-1">
+                            {Object.entries(monitoringMetrics.queue_health.workers).map(([name, w]) => (
+                              <div key={name} className="flex items-center justify-between text-xs py-1 border-t border-zinc-700/30">
+                                <span className="text-zinc-400 font-mono">{name}</span>
+                                <div className="flex items-center gap-2">
+                                  {w.is_stalled && <Badge className="bg-red-500/15 text-red-400 border border-red-500/30 text-xs">STALLED</Badge>}
+                                  <span className="text-zinc-500">{w.last_run ? new Date(w.last_run).toLocaleTimeString('tr-TR') : 'never'}</span>
+                                  <span className={`w-2 h-2 rounded-full ${w.running ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </TabsContent>
         </Tabs>

@@ -75,34 +75,97 @@ def get_worker_states() -> Dict[str, Any]:
 
 async def hotelrunner_pull_once() -> Dict[str, Any]:
     """
-    Simulate a HotelRunner pull cycle.
-    In production, this calls HotelRunner's reservations API.
-    For now, it's a placeholder that demonstrates the flow.
+    Pull reservations from HotelRunner REST API for all active connections.
+    Fetches updated reservations since last cursor, persists into raw_channel_events.
     """
+    from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
+    from domains.channel_manager.data_model import COLL_PROVIDER_CONNECTIONS
+
     state = _worker_state["hotelrunner_pull"]
+    if state["running"]:
+        return {"fetched": 0, "errors": 0, "provider": "hotelrunner", "status": "already_running"}
     state["running"] = True
     now = datetime.now(timezone.utc)
     result = {"fetched": 0, "errors": 0, "provider": "hotelrunner"}
 
     try:
-        # Calculate pull window
         last_cursor = state["last_cursor"]
         if last_cursor:
             updated_since = last_cursor - timedelta(minutes=SAFETY_WINDOW_MINUTES)
         else:
-            updated_since = now - timedelta(hours=24)  # First pull: last 24h
+            updated_since = now - timedelta(hours=24)
 
-        # In production: call HotelRunner API here
-        # reservations = await hotelrunner_client.get_reservations(updated_since)
-        # For now, this is a no-op — events come via webhooks or test harness
-        logger.info(f"HotelRunner pull: window={updated_since.isoformat()} → {now.isoformat()}")
+        since_str = updated_since.strftime("%Y-%m-%d")
+
+        connections = await db[COLL_PROVIDER_CONNECTIONS].find(
+            {"provider": "hotelrunner", "status": "active", "sync_reservations": True},
+            {"_id": 0},
+        ).to_list(50)
+
+        if not connections:
+            connections = await db[COLL_PROVIDER_CONNECTIONS].find(
+                {"provider": "hotelrunner"}, {"_id": 0},
+            ).to_list(50)
+
+        for conn in connections:
+            credentials = conn.get("credentials", {})
+            token = credentials.get("token") or credentials.get("api_key", "")
+            hr_id = credentials.get("hr_id") or credentials.get("hotel_id", "")
+            tenant_id = conn.get("tenant_id", "")
+            property_id = conn.get("property_id", "")
+            connection_id = conn.get("id", "")
+
+            if not token or not hr_id:
+                logger.warning(f"HotelRunner pull: missing credentials for {property_id}")
+                continue
+
+            try:
+                provider = HotelRunnerProvider(token=token, hr_id=hr_id)
+                page = 1
+                fetched_events = []
+
+                while page <= 20:
+                    api_result = await provider.get_reservations(
+                        undelivered=True,
+                        from_last_update_date=since_str,
+                        per_page=50,
+                        page=page,
+                    )
+                    if not api_result.get("success"):
+                        logger.error(f"HotelRunner API error: {api_result.get('error')}")
+                        result["errors"] += 1
+                        break
+
+                    data = api_result.get("data", {})
+                    reservations = data.get("reservations", [])
+                    fetched_events.extend(reservations)
+
+                    if page >= data.get("pages", 1):
+                        break
+                    page += 1
+
+                if fetched_events:
+                    count = await _persist_pull_events(
+                        "hotelrunner", fetched_events,
+                        tenant_id, property_id, connection_id,
+                    )
+                    result["fetched"] += count
+                    state["events_fetched"] += count
+
+                logger.info(
+                    f"HotelRunner pull [{property_id}]: "
+                    f"fetched {len(fetched_events)} reservations"
+                )
+            except Exception as e:
+                result["errors"] += 1
+                logger.error(f"HotelRunner pull error for {property_id}: {e}")
 
         state["last_cursor"] = now
         state["last_run"] = now.isoformat()
 
     except Exception as e:
         state["errors"] += 1
-        result["errors"] = 1
+        result["errors"] += 1
         result["error_message"] = str(e)
         logger.error(f"HotelRunner pull error: {e}")
     finally:
@@ -157,10 +220,15 @@ async def _persist_pull_events(
 
 async def exely_pull_once() -> Dict[str, Any]:
     """
-    Simulate an Exely OTA_ReadRQ pull cycle.
-    In production, this makes a SOAP call to Exely.
+    Pull reservations from Exely via OTA_ReadRQ SOAP for all active connections.
+    Fetches updated reservations since last cursor, persists into raw_channel_events.
     """
+    from domains.channel_manager.providers.exely.exely_client import ExelyClient
+    from domains.channel_manager.data_model import COLL_PROVIDER_CONNECTIONS
+
     state = _worker_state["exely_pull"]
+    if state["running"]:
+        return {"fetched": 0, "errors": 0, "provider": "exely", "status": "already_running"}
     state["running"] = True
     now = datetime.now(timezone.utc)
     result = {"fetched": 0, "errors": 0, "provider": "exely"}
@@ -172,22 +240,121 @@ async def exely_pull_once() -> Dict[str, Any]:
         else:
             updated_since = now - timedelta(hours=24)
 
-        # In production: SOAP OTA_ReadRQ call here
-        # response = await exely_soap_client.read_reservations(updated_since)
-        logger.info(f"Exely pull: window={updated_since.isoformat()} → {now.isoformat()}")
+        from_date = updated_since.strftime("%Y-%m-%d")
+        to_date = now.strftime("%Y-%m-%d")
+
+        connections = await db[COLL_PROVIDER_CONNECTIONS].find(
+            {"provider": "exely", "status": "active", "sync_reservations": True},
+            {"_id": 0},
+        ).to_list(50)
+
+        if not connections:
+            connections = await db[COLL_PROVIDER_CONNECTIONS].find(
+                {"provider": "exely"}, {"_id": 0},
+            ).to_list(50)
+
+        for conn in connections:
+            credentials = conn.get("credentials", {})
+            username = credentials.get("username", "")
+            password = credentials.get("password", "")
+            hotel_code = credentials.get("hotel_code") or credentials.get("hotel_id", "")
+            endpoint_url = credentials.get("endpoint_url") or credentials.get("soap_url", "")
+            tenant_id = conn.get("tenant_id", "")
+            property_id = conn.get("property_id", "")
+            connection_id = conn.get("id", "")
+
+            if not username or not password or not hotel_code:
+                logger.warning(f"Exely pull: missing credentials for {property_id}")
+                continue
+
+            try:
+                client_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
+                if endpoint_url:
+                    client_kwargs["endpoint_url"] = endpoint_url
+                client = ExelyClient(**client_kwargs)
+
+                api_result = await client.pull_reservations(
+                    from_date=from_date, to_date=to_date,
+                )
+
+                if not api_result.get("success"):
+                    logger.error(f"Exely API error: {api_result.get('error')}")
+                    result["errors"] += 1
+                    continue
+
+                raw_reservations = api_result.get("reservations", [])
+
+                if raw_reservations:
+                    exely_events = _convert_exely_parsed_to_raw(raw_reservations)
+                    count = await _persist_pull_events(
+                        "exely", exely_events,
+                        tenant_id, property_id, connection_id,
+                    )
+                    result["fetched"] += count
+                    state["events_fetched"] += count
+
+                logger.info(
+                    f"Exely pull [{property_id}]: "
+                    f"fetched {len(raw_reservations)} reservations"
+                )
+            except Exception as e:
+                result["errors"] += 1
+                logger.error(f"Exely pull error for {property_id}: {e}")
 
         state["last_cursor"] = now
         state["last_run"] = now.isoformat()
 
     except Exception as e:
         state["errors"] += 1
-        result["errors"] = 1
+        result["errors"] += 1
         result["error_message"] = str(e)
         logger.error(f"Exely pull error: {e}")
     finally:
         state["running"] = False
 
     return result
+
+
+def _convert_exely_parsed_to_raw(parsed_reservations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Convert Exely response_parser output to the raw format expected
+    by extract_exely_identity (OTA-style dict with UniqueID, ResStatus, etc.).
+    """
+    events = []
+    for parsed in parsed_reservations:
+        rooms = parsed.get("rooms", [])
+        first_room = rooms[0] if rooms else {}
+        status_raw = (parsed.get("status") or "Commit")
+        status_map = {"confirmed": "Commit", "modified": "Modify", "cancelled": "Cancel"}
+        ota_status = status_map.get(status_raw.lower(), status_raw)
+
+        events.append({
+            "UniqueID": parsed.get("reservation_id", ""),
+            "ResStatus": ota_status,
+            "LastModifyDateTime": parsed.get("last_modify", ""),
+            "RoomStay": {
+                "RoomTypeCode": first_room.get("room_type_code", ""),
+                "RatePlanCode": first_room.get("rate_plan_code", ""),
+                "StartDate": parsed.get("checkin_date", ""),
+                "EndDate": parsed.get("checkout_date", ""),
+            },
+            "GuestCount": {
+                "adults": first_room.get("adults", 1),
+                "children": first_room.get("children", 0),
+            },
+            "ResGuest": {
+                "GivenName": parsed.get("guest_firstname", ""),
+                "Surname": parsed.get("guest_lastname", ""),
+                "Email": parsed.get("guest_email", ""),
+                "Phone": parsed.get("guest_phone", ""),
+            },
+            "Total": {
+                "Amount": float(parsed.get("total", 0)),
+                "CurrencyCode": parsed.get("currency", "TRY"),
+            },
+            "Source": parsed.get("channel", "exely"),
+        })
+    return events
 
 
 # ══════════════════════════════════════════════════════════════════════

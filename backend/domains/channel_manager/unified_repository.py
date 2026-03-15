@@ -556,4 +556,13 @@ async def ensure_indexes() -> None:
         [("tenant_id", 1), ("case_type", 1), ("status", 1)],
     )
 
+    # Monitoring alerts
+    from domains.channel_manager.monitoring.models import COLL_MONITORING_ALERTS
+    await db[COLL_MONITORING_ALERTS].create_index(
+        [("alert_type", 1), ("provider", 1), ("status", 1)],
+    )
+    await db[COLL_MONITORING_ALERTS].create_index(
+        [("status", 1), ("severity", 1), ("created_at", -1)],
+    )
+
     logger.info("9-collection indexes created successfully")

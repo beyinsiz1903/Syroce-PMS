@@ -1,0 +1,107 @@
+"""
+Operational Monitoring — Worker
+=================================
+
+Background worker running every 60 seconds:
+  1. Collect system metrics
+  2. Evaluate alert thresholds
+  3. Create/resolve alert events
+  4. Update dashboard metrics
+"""
+import asyncio
+import logging
+from datetime import datetime, timezone
+from typing import Any, Dict
+
+from .aggregator import collect_all_metrics
+from .alert_engine import evaluate_alerts, process_alerts
+
+logger = logging.getLogger("monitoring.worker")
+
+_monitoring_state = {
+    "running": False,
+    "last_run": None,
+    "interval_seconds": 60,
+    "runs_total": 0,
+    "last_metrics": None,
+    "last_alert_result": None,
+    "errors": 0,
+}
+
+_task = None
+
+
+def get_monitoring_worker_state() -> Dict[str, Any]:
+    return {**_monitoring_state}
+
+
+def get_last_metrics() -> Dict[str, Any]:
+    return _monitoring_state.get("last_metrics") or {}
+
+
+async def monitoring_run_once() -> Dict[str, Any]:
+    """Execute a single monitoring cycle."""
+    state = _monitoring_state
+
+    try:
+        metrics = await collect_all_metrics()
+        state["last_metrics"] = metrics
+
+        alerts = await evaluate_alerts(metrics)
+        alert_result = await process_alerts(alerts)
+        state["last_alert_result"] = alert_result
+
+        state["runs_total"] += 1
+        state["last_run"] = datetime.now(timezone.utc).isoformat()
+
+        logger.info(
+            f"Monitoring cycle #{state['runs_total']}: "
+            f"health={metrics.get('system_health')}, "
+            f"alerts_created={alert_result.get('created', 0)}, "
+            f"alerts_resolved={alert_result.get('resolved', 0)}"
+        )
+
+        return {
+            "status": "completed",
+            "system_health": metrics.get("system_health"),
+            "alerts": alert_result,
+            "collected_at": metrics.get("collected_at"),
+        }
+    except Exception as e:
+        state["errors"] += 1
+        logger.error(f"Monitoring worker error: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+async def _monitoring_loop():
+    """Continuous monitoring loop."""
+    state = _monitoring_state
+    while state["running"]:
+        try:
+            await monitoring_run_once()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Monitoring loop error: {e}")
+        await asyncio.sleep(state["interval_seconds"])
+
+
+async def start_monitoring_worker():
+    """Start the background monitoring worker."""
+    global _task
+    state = _monitoring_state
+    if state["running"]:
+        return
+    state["running"] = True
+    _task = asyncio.create_task(_monitoring_loop())
+    logger.info("Monitoring worker started (60s interval)")
+
+
+async def stop_monitoring_worker():
+    """Stop the background monitoring worker."""
+    global _task
+    _monitoring_state["running"] = False
+    if _task:
+        _task.cancel()
+        _task = None
+    logger.info("Monitoring worker stopped")
