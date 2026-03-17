@@ -1,19 +1,18 @@
 """
-Channel Manager — Optimized 9-Collection Data Model
-====================================================
+Channel Manager — Production-Grade Data Model
+==============================================
 
-Designed for 2-provider architecture (HotelRunner + Exely).
-No over-abstraction. Clean, debuggable, performant.
+Core Lockdown: Reservation Lifecycle + Mapping + Provider + Reconciliation
 
 Collections:
-  1. provider_connections    — Provider credentials & config
-  2. room_mappings           — PMS room → provider room mapping
-  3. rate_plan_mappings      — PMS rate plan → provider rate mapping
-  4. raw_channel_events      — Immutable event store (webhook, pull, replay)
-  5. reservation_lineage     — Gold table: reservation tracking & reconciliation
-  6. ari_change_sets         — ARI push pipeline state
-  7. ari_outbound_logs       — Provider communication audit log
-  8. ari_drift_state         — ARI parity / consistency tracking
+  1. provider_connections       — Provider credentials & config
+  2. room_mappings              — PMS room → provider room mapping
+  3. rate_plan_mappings         — PMS rate plan → provider rate mapping
+  4. raw_channel_events         — Immutable event store (webhook, pull, replay)
+  5. reservation_lineage        — Gold table: reservation tracking & reconciliation
+  6. ari_change_sets            — ARI push pipeline state
+  7. ari_outbound_logs          — Provider communication audit log
+  8. ari_drift_state            — ARI parity / consistency tracking
   9. channel_reconciliation_cases — Discrepancy tracking
 """
 import uuid
@@ -41,6 +40,119 @@ class ConnectionStatus(str, Enum):
     PAUSED = "paused"
     ERROR = "error"
     DISABLED = "disabled"
+
+
+# ══════════════════════════════════════════════════════════════════════
+# CANONICAL RESERVATION STATE MODEL
+# ══════════════════════════════════════════════════════════════════════
+
+class ReservationState(str, Enum):
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    MODIFIED = "modified"
+    CANCELLED = "cancelled"
+    CHECKED_IN = "checked_in"
+    CHECKED_OUT = "checked_out"
+    NO_SHOW = "no_show"
+
+
+class MutationType(str, Enum):
+    NEW_BOOKING = "new_booking"
+    PARTIAL_MODIFICATION = "partial_modification"
+    DATE_CHANGE = "date_change"
+    ROOM_TYPE_CHANGE = "room_type_change"
+    RATE_CHANGE = "rate_change"
+    GUEST_DETAIL_CHANGE = "guest_detail_change"
+    CANCELLATION = "cancellation"
+    REINSTATEMENT = "reinstatement"
+
+
+# Valid state transitions: {from_state: [allowed_to_states]}
+STATE_TRANSITIONS: Dict[str, List[str]] = {
+    ReservationState.PENDING: [
+        ReservationState.CONFIRMED, ReservationState.CANCELLED,
+    ],
+    ReservationState.CONFIRMED: [
+        ReservationState.MODIFIED, ReservationState.CANCELLED,
+        ReservationState.CHECKED_IN, ReservationState.NO_SHOW,
+    ],
+    ReservationState.MODIFIED: [
+        ReservationState.CONFIRMED, ReservationState.MODIFIED,
+        ReservationState.CANCELLED, ReservationState.CHECKED_IN,
+        ReservationState.NO_SHOW,
+    ],
+    ReservationState.CHECKED_IN: [
+        ReservationState.CHECKED_OUT,
+    ],
+    ReservationState.CANCELLED: [
+        ReservationState.CONFIRMED,  # reinstatement goes back to confirmed
+    ],
+    ReservationState.CHECKED_OUT: [],
+    ReservationState.NO_SHOW: [],
+}
+
+
+def is_valid_transition(from_state: str, to_state: str) -> bool:
+    if from_state == to_state:
+        return True  # same-state update is always valid
+    allowed = STATE_TRANSITIONS.get(from_state, [])
+    return to_state in allowed
+
+
+# ══════════════════════════════════════════════════════════════════════
+# DELIVERY CONFIRMATION MODEL
+# ══════════════════════════════════════════════════════════════════════
+
+class DeliveryState(str, Enum):
+    QUEUED = "queued"
+    SENT = "sent"
+    ACKNOWLEDGED = "acknowledged"
+    ACCEPTED = "accepted"
+    APPLIED = "applied"
+    VERIFIED = "verified"
+    FAILED = "failed"
+
+
+# ══════════════════════════════════════════════════════════════════════
+# ERROR CLASSIFICATION
+# ══════════════════════════════════════════════════════════════════════
+
+class ErrorClass(str, Enum):
+    RETRYABLE = "retryable"
+    CONFIGURATION = "configuration"
+    BUSINESS_REJECTION = "business_rejection"
+
+
+# ══════════════════════════════════════════════════════════════════════
+# DRIFT TAXONOMY
+# ══════════════════════════════════════════════════════════════════════
+
+class DriftType(str, Enum):
+    MISSING_LOCALLY = "missing_locally"
+    MISSING_REMOTELY = "missing_remotely"
+    STALE_LOCALLY = "stale_locally"
+    STALE_REMOTELY = "stale_remotely"
+    MAPPING_MISMATCH = "mapping_mismatch"
+    PAYLOAD_MISMATCH = "payload_mismatch"
+    FINANCIAL_MISMATCH = "financial_mismatch"
+    STATUS_MISMATCH = "status_mismatch"
+
+
+class DriftResolution(str, Enum):
+    SAFE_AUTO_HEAL = "safe_auto_heal"
+    RISKY_AUTO_HEAL = "risky_auto_heal"
+    MANUAL_REVIEW = "manual_review"
+
+
+# ══════════════════════════════════════════════════════════════════════
+# MAPPING VALIDATION STATUS
+# ══════════════════════════════════════════════════════════════════════
+
+class MappingFailure(str, Enum):
+    UNMAPPED = "unmapped"
+    INACTIVE = "inactive"
+    AMBIGUOUS = "ambiguous"
+    DELETED = "deleted"
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -223,18 +335,29 @@ class RawChannelEvent(BaseModel):
     # Raw data from provider
     raw_payload: Dict[str, Any] = Field(default_factory=dict)
     payload_hash: str = ""
+    raw_payload_hash: str = ""  # hash of raw payload before normalization
+    canonical_hash: str = ""    # hash of canonicalized payload (same meaning despite format diffs)
 
     # Processing state
     processing_status: ProcessingStatus = ProcessingStatus.PENDING
     processing_error: Optional[str] = None
     processed_at: Optional[str] = None
 
+    # Decision tracking (stored on raw event for traceability)
+    decision_result: Optional[str] = None    # create/update/cancel/skip etc
+    decision_reason: Optional[str] = None
+    decision_version: int = 0                # aggregate version at decision time
+    normalization_result: Optional[Dict[str, Any]] = None  # canonical form after normalization
+
     # Ingest tracking
     received_via: RawEventSource = RawEventSource.WEBHOOK
     correlation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    trace_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
-    # Timestamps
+    # Timestamps: provider_timestamp vs received_timestamp vs processed_at
+    provider_timestamp: Optional[str] = None  # when provider generated the event
     received_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    # processed_at already above
 
     def to_doc(self) -> Dict[str, Any]:
         d = self.model_dump()
@@ -276,6 +399,7 @@ class ReservationLineage(BaseModel):
     # Idempotency & versioning
     payload_hash: str = ""
     version: int = 1
+    decision_version: int = 1  # increments on each decision applied
     confidence_score: float = 1.0
 
     # Source tracking
@@ -300,17 +424,24 @@ class ReservationLineage(BaseModel):
     total_amount: float = 0.0
     currency: str = "TRY"
 
-    # Status
-    status: str = "pending"  # pending | confirmed | modified | cancelled | imported
+    # State (canonical)
+    status: str = "pending"  # uses ReservationState values
+    previous_status: Optional[str] = None  # for transition tracking
     cancellation_reason: Optional[str] = None
 
-    # Decision tracking
+    # Mutation tracking
+    mutation_type: Optional[str] = None  # uses MutationType values
     last_decision: str = ""  # create | update | cancel | skip | pending_mapping | manual_review
     decision_reason: str = ""
 
     # Reconciliation
     reconciled: bool = False
     reconciled_at: Optional[str] = None
+
+    # Concurrency control
+    lock_holder: Optional[str] = None  # worker ID holding lock
+    lock_acquired_at: Optional[str] = None
+    lock_expires_at: Optional[str] = None
 
     # Timestamps
     first_seen_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

@@ -1,6 +1,6 @@
 """
-Reservation Ingest — Decision Engine
-=====================================
+Reservation Ingest — Decision Engine (Production-Grade)
+=======================================================
 
 Determines what action to take for each incoming reservation event.
 
@@ -9,11 +9,23 @@ Decisions:
   update          — Existing lineage, newer version
   cancel          — Provider status = cancelled (always wins)
   skip            — Duplicate or same payload hash
-  pending_mapping — Room or rate plan mapping missing
+  pending_mapping — Room or rate plan mapping missing (HARD FAIL)
   manual_review   — Anomaly detected
+
+Mutation Detection:
+  Compares incoming vs existing to classify the mutation type:
+  new_booking, date_change, room_type_change, rate_change,
+  guest_detail_change, partial_modification, cancellation, reinstatement
 """
 import logging
 from typing import Any, Dict, Optional, Tuple
+
+from domains.channel_manager.data_model import (
+    MutationType, ReservationState, is_valid_transition,
+)
+from domains.channel_manager.mapping_validator import (
+    validate_room_mapping, validate_rate_plan_mapping,
+)
 
 logger = logging.getLogger("ingest.decision_engine")
 
@@ -54,16 +66,22 @@ def decide(
         else:
             return IngestDecision.CANCEL, f"Cancellation without existing reservation {ext_id}"
 
-    # ── Mapping check ─────────────────────────────────────────────
-    if not room_mapping:
+    # ── Mapping check (HARD FAIL — no silent fallback) ────────────
+    room_code = canonical.get("room_type_code", "")
+    rate_code = canonical.get("rate_plan_code", "")
+
+    room_error = validate_room_mapping(room_mapping, room_code)
+    if room_error:
         return (
             IngestDecision.PENDING_MAPPING,
-            f"Room mapping missing for code: {canonical.get('room_type_code', '')}"
+            f"[{room_error.failure_type.value}] {room_error.reason} | Action: {room_error.operator_action}",
         )
-    if not rate_mapping:
+
+    rate_error = validate_rate_plan_mapping(rate_mapping, rate_code)
+    if rate_error:
         return (
             IngestDecision.PENDING_MAPPING,
-            f"Rate plan mapping missing for code: {canonical.get('rate_plan_code', '')}"
+            f"[{rate_error.failure_type.value}] {rate_error.reason} | Action: {rate_error.operator_action}",
         )
 
     # ── No existing lineage → CREATE ──────────────────────────────
@@ -85,8 +103,91 @@ def decide(
     if anomaly:
         return IngestDecision.MANUAL_REVIEW, anomaly
 
+    # ── State transition validation ────────────────────────────────
+    existing_status = existing_lineage.get("status", "confirmed")
+    incoming_status = _map_to_canonical_state(status)
+    if not is_valid_transition(existing_status, incoming_status):
+        return (
+            IngestDecision.MANUAL_REVIEW,
+            f"Invalid state transition: {existing_status} → {incoming_status} for {ext_id}",
+        )
+
     # ── Normal update ─────────────────────────────────────────────
     return IngestDecision.UPDATE, f"Updated reservation {ext_id}"
+
+
+def detect_mutation_type(
+    canonical: Dict[str, Any],
+    existing_lineage: Optional[Dict[str, Any]],
+) -> str:
+    """
+    Compare incoming canonical data with existing lineage to determine
+    what kind of mutation occurred.
+    """
+    if not existing_lineage:
+        return MutationType.NEW_BOOKING
+
+    status = canonical.get("status", "")
+    if status == "cancelled":
+        return MutationType.CANCELLATION
+
+    existing_status = existing_lineage.get("status", "")
+    if existing_status == "cancelled" and status != "cancelled":
+        return MutationType.REINSTATEMENT
+
+    changes = []
+
+    # Date change
+    if (canonical.get("check_in") != existing_lineage.get("arrival_date") or
+            canonical.get("check_out") != existing_lineage.get("departure_date")):
+        changes.append("date")
+
+    # Room type change
+    if canonical.get("room_type_code") != existing_lineage.get("room_type_code"):
+        changes.append("room_type")
+
+    # Rate change
+    if canonical.get("rate_plan_code") != existing_lineage.get("rate_plan_code"):
+        changes.append("rate")
+
+    # Amount change
+    if abs(canonical.get("total_amount", 0) - existing_lineage.get("total_amount", 0)) > 0.01:
+        changes.append("amount")
+
+    # Guest detail change
+    if (canonical.get("guest_name") != existing_lineage.get("guest_name") or
+            canonical.get("guest_email") != existing_lineage.get("guest_email") or
+            canonical.get("guest_phone") != existing_lineage.get("guest_phone")):
+        changes.append("guest")
+
+    # Classify
+    if not changes:
+        return MutationType.PARTIAL_MODIFICATION
+
+    if "date" in changes and len(changes) == 1:
+        return MutationType.DATE_CHANGE
+    if "room_type" in changes and len(changes) <= 2:
+        return MutationType.ROOM_TYPE_CHANGE
+    if "rate" in changes and len(changes) <= 2:
+        return MutationType.RATE_CHANGE
+    if changes == ["guest"]:
+        return MutationType.GUEST_DETAIL_CHANGE
+
+    return MutationType.PARTIAL_MODIFICATION
+
+
+def _map_to_canonical_state(provider_status: str) -> str:
+    """Map a normalized status string to canonical ReservationState."""
+    mapping = {
+        "confirmed": ReservationState.CONFIRMED,
+        "modified": ReservationState.MODIFIED,
+        "cancelled": ReservationState.CANCELLED,
+        "pending": ReservationState.PENDING,
+        "checked_in": ReservationState.CHECKED_IN,
+        "checked_out": ReservationState.CHECKED_OUT,
+        "no_show": ReservationState.NO_SHOW,
+    }
+    return mapping.get(provider_status, ReservationState.CONFIRMED)
 
 
 def _check_anomalies(
@@ -99,22 +200,12 @@ def _check_anomalies(
             existing["currency"] != canonical["currency"]):
         return f"Currency mismatch: existing={existing['currency']}, incoming={canonical['currency']}"
 
-    # Amount anomaly (>50% change)
+    # Amount anomaly (>100% change)
     existing_amount = existing.get("total_amount", 0)
     incoming_amount = canonical.get("total_amount", 0)
     if existing_amount > 0 and incoming_amount > 0:
         ratio = incoming_amount / existing_amount
         if ratio > 2.0 or ratio < 0.5:
-            return f"Amount anomaly: {existing_amount} → {incoming_amount} (ratio={ratio:.2f})"
-
-    # Date conflict (check-in changed to past while check-out in future)
-    existing_checkin = existing.get("arrival_date", "")
-    incoming_checkin = canonical.get("check_in", "")
-    if existing_checkin and incoming_checkin and existing_checkin != incoming_checkin:
-        existing_checkout = existing.get("departure_date", "")
-        incoming_checkout = canonical.get("check_out", "")
-        if existing_checkout and incoming_checkout and existing_checkout != incoming_checkout:
-            # Both dates changed — flag for review if substantial
-            pass  # Not flagging date changes as anomaly by default
+            return f"Amount anomaly: {existing_amount} -> {incoming_amount} (ratio={ratio:.2f})"
 
     return None

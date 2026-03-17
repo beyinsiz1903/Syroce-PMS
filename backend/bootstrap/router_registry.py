@@ -128,6 +128,8 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("ops.validation_router", "router", ["Runtime Validation & Go-Live"], None, None),
     # Phase 7 — Production Rollout & Pilot Readiness
     ("ops.production_rollout_router", "router", ["Production Rollout"], None, None),
+    # Core Lockdown — Observability & Health
+    ("domains.channel_manager.lockdown_router", "router", ["Core Lockdown"], None, None),
 ]
 
 # Optional routers with special import paths

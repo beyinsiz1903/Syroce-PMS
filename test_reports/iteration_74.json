@@ -1,0 +1,137 @@
+{
+  "summary": "Core Lockdown Checklist API Testing Complete. All 34 API tests pass for lockdown endpoints. All 48 unit tests pass for decision engine, state transitions, provider capability, reconciliation truth table, and mapping validator.",
+
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+
+  "test_report_links": [
+    "/app/backend/tests/test_lockdown_api.py",
+    "/app/backend/tests/test_core_lockdown.py",
+    "/app/test_reports/pytest/pytest_lockdown_api.xml"
+  ],
+
+  "action_items": [],
+
+  "critical_code_review_comments": [
+    "All lockdown endpoints properly secured with Bearer token authentication",
+    "Provider capability matrix correctly returns exely (split_messages ARI) and hotelrunner (single_message ARI)",
+    "Truth table correctly defines 7+ drift types with resolution policies",
+    "Folio by booking endpoint at /api/folio/booking/{booking_id} returns array as expected (bug fix verified)",
+    "Mapping health endpoint correctly returns per-provider health scores",
+    "All metrics endpoints (ingest, lineage, reconciliation) return proper structures"
+  ],
+
+  "updated_files": [
+    "/app/backend/tests/test_lockdown_api.py"
+  ],
+
+  "success_rate": {
+    "backend": "100% (34/34 API tests + 48/48 unit tests)",
+    "frontend": "N/A (backend only testing)"
+  },
+
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123"
+  },
+
+  "seed_data_creation": "None - tests work with existing data or empty state",
+
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+
+  "context_for_next_testing_agent": "Lockdown router at /api/lockdown prefix. All endpoints require auth. Key endpoints: /api/lockdown/status (health check), /api/lockdown/providers/capabilities (provider matrix with exely/hotelrunner), /api/lockdown/reconciliation/truth-table (drift resolution policies), /api/lockdown/health/mapping (mapping health), /api/lockdown/metrics/ingest (pipeline metrics), /api/lockdown/metrics/lineage (reservation metrics), /api/lockdown/metrics/reconciliation (case metrics), /api/lockdown/trace/reservation/{id} (traceability). Folio endpoint at /api/folio/booking/{booking_id} returns array of folios.",
+
+  "features_tested": {
+    "Lockdown Status API": {
+      "GET /api/lockdown/status": {
+        "status": "PASS",
+        "notes": "Returns status (healthy/degraded), checks (ingest, mapping, reconciliation), timestamp"
+      }
+    },
+    "Provider Capabilities API": {
+      "GET /api/lockdown/providers/capabilities": {
+        "status": "PASS",
+        "notes": "Returns providers array with exely (split_messages) and hotelrunner (single_message)"
+      }
+    },
+    "Truth Table API": {
+      "GET /api/lockdown/reconciliation/truth-table": {
+        "status": "PASS",
+        "notes": "Returns truth_table array with 7+ drift types, resolutions, gold_sources"
+      }
+    },
+    "Mapping Health API": {
+      "GET /api/lockdown/health/mapping": {
+        "status": "PASS",
+        "notes": "Returns mapping_health array and overall_production_ready boolean"
+      }
+    },
+    "Ingest Metrics API": {
+      "GET /api/lockdown/metrics/ingest": {
+        "status": "PASS",
+        "notes": "Returns period_hours, since, totals, rates, decisions"
+      }
+    },
+    "Lineage Metrics API": {
+      "GET /api/lockdown/metrics/lineage": {
+        "status": "PASS",
+        "notes": "Returns total_lineages, by_status, by_provider, reconciled, unreconciled"
+      }
+    },
+    "Reconciliation Metrics API": {
+      "GET /api/lockdown/metrics/reconciliation": {
+        "status": "PASS",
+        "notes": "Returns case metrics with oldest_unresolved_age_hours"
+      }
+    },
+    "Reservation Trace API": {
+      "GET /api/lockdown/trace/reservation/{ext_id}": {
+        "status": "PASS",
+        "notes": "Returns external_reservation_id and trace object with raw_events, lineage, reconciliation_cases"
+      }
+    },
+    "Folio by Booking API (Bug Fix)": {
+      "GET /api/folio/booking/{booking_id}": {
+        "status": "PASS",
+        "notes": "Returns array of folios (empty array for non-existent booking) - bug fix verified"
+      }
+    },
+    "Unit Tests": {
+      "Decision Engine": {
+        "status": "PASS",
+        "notes": "10 tests - duplicate detection, stale rejection, cancellation wins, unmapped fail, etc."
+      },
+      "Mutation Detection": {
+        "status": "PASS",
+        "notes": "8 tests - new booking, cancellation, reinstatement, date/room/rate/guest changes"
+      },
+      "State Transitions": {
+        "status": "PASS",
+        "notes": "9 tests - valid/invalid state transitions"
+      },
+      "Provider Capability": {
+        "status": "PASS",
+        "notes": "9 tests - exely/hotelrunner capabilities, error classification, retry logic"
+      },
+      "Reconciliation Truth": {
+        "status": "PASS",
+        "notes": "6 tests - drift resolution policies, auto-heal detection"
+      },
+      "Mapping Validator": {
+        "status": "PASS",
+        "notes": "7 tests - unmapped/inactive/deleted mapping detection, health computation"
+      }
+    }
+  },
+
+  "mocked_api_note": "NO MOCKED APIs - All tests hit real backend via REACT_APP_BACKEND_URL"
+}

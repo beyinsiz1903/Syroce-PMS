@@ -425,17 +425,16 @@ const ReservationSidebar = ({
         {/* Action Buttons */}
         <div className="space-y-2 pb-6">
           <Button 
+            data-testid="view-folio-btn"
             className="w-full" 
             size="lg"
             onClick={() => {
               if (onViewFolio) {
                 onViewFolio(booking.id);
-              } else {
-                console.log('View folio for booking:', booking.id);
               }
             }}
           >
-            View Full Folio
+            Folyo'yu Görüntüle
           </Button>
           <Button 
             variant="outline" 

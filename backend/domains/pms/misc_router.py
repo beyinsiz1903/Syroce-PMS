@@ -382,7 +382,15 @@ async def void_payment(
     
     return {"message": "Payment voided successfully"}
 
-# Removed - will be added before parametric routes
+# ── Folio by Booking ID (used by ReservationCalendar sidebar) ──
+
+@router.get("/folio/booking/{booking_id}")
+async def get_folios_by_booking(booking_id: str, current_user: User = Depends(get_current_user)):
+    folios = await db.folios.find(
+        {"booking_id": booking_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0},
+    ).to_list(20)
+    return folios
 
 
 # ============= GUEST MANAGEMENT =============
