@@ -59,6 +59,19 @@ def parse_read_rs(xml_bytes: bytes) -> Dict[str, Any]:
         return envelope
 
     body = envelope["body"]
+
+    # Check for OTA-level Errors (not SOAP Fault, but OTA Error elements)
+    errors_el = body.find(_ns("Errors"))
+    if errors_el is not None:
+        error_msgs = []
+        for err in errors_el.findall(_ns("Error")):
+            code = _attr(err, "Code", "")
+            msg = _text(err, "Unknown error")
+            error_msgs.append(f"OTA Error [{code}]: {msg}")
+        if error_msgs:
+            logger.warning("OTA_ReadRS returned errors: %s", "; ".join(error_msgs))
+            return {"success": False, "error": "; ".join(error_msgs), "reservations": [], "count": 0}
+
     reservations = []
 
     # Look for HotelReservation elements

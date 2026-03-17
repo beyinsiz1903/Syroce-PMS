@@ -75,6 +75,12 @@ class ExelySoapTransport:
                     "[EXELY] SOAP %s -> %d (%dms) [%s]",
                     soap_action or "POST", resp.status_code, duration_ms, corr_id,
                 )
+                logger.debug(
+                    "[EXELY] RAW REQUEST [%s]:\n%s", corr_id, xml_body[:2000],
+                )
+                logger.debug(
+                    "[EXELY] RAW RESPONSE [%s]:\n%s", corr_id, resp.text[:3000],
+                )
 
                 self._raise_for_http_status(resp, duration_ms, corr_id)
                 return resp.content

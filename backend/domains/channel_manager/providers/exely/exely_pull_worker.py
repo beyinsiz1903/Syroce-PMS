@@ -12,6 +12,7 @@ from core.database import db
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
 from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
+from domains.channel_manager.credential_vault import get_decrypted_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,17 @@ class ExelyPullScheduler:
                 logger.error(f"[EXELY-PULL] Loop error: {e}")
             await asyncio.sleep(interval_minutes * 60)
 
+    async def _heartbeat(self, provider: ExelyProvider, tenant_id: str):
+        """Send a room discovery request to keep the connection alive in Exely."""
+        try:
+            from datetime import datetime, timedelta
+            tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")
+            week = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d")
+            result = await provider.discover_rooms(tomorrow, week)
+            logger.info(f"[EXELY-PULL] Heartbeat for {tenant_id}: success={result.success}")
+        except Exception as e:
+            logger.warning(f"[EXELY-PULL] Heartbeat failed for {tenant_id}: {e}")
+
     async def _pull_all_tenants(self, safety_window_minutes: int):
         connections = await db.exely_connections.find(
             {"is_active": True, "auto_sync_reservations": True},
@@ -64,16 +76,26 @@ class ExelyPullScheduler:
 
         for conn in connections:
             try:
+                tenant_id = conn["tenant_id"]
+                hotel_code = conn["hotel_code"]
+                endpoint_url = conn.get("endpoint_url", "")
+
+                # Get credentials from vault
+                creds = await get_decrypted_credentials(tenant_id, "exely", hotel_code)
+                if not creds:
+                    logger.error(f"[EXELY-PULL] No vault credentials for tenant {tenant_id}, hotel {hotel_code}")
+                    continue
+
                 await self.pull_for_tenant(
-                    tenant_id=conn["tenant_id"],
-                    username=conn["username"],
-                    password=conn["password"],
-                    hotel_code=conn["hotel_code"],
-                    endpoint_url=conn.get("endpoint_url", ""),
+                    tenant_id=tenant_id,
+                    username=creds["username"],
+                    password=creds["password"],
+                    hotel_code=hotel_code,
+                    endpoint_url=endpoint_url or creds.get("endpoint_url", ""),
                     safety_window_minutes=safety_window_minutes,
                 )
             except Exception as e:
-                logger.error(f"[EXELY-PULL] Error for tenant {conn['tenant_id']}: {e}")
+                logger.error(f"[EXELY-PULL] Error for tenant {conn.get('tenant_id', '?')}: {e}")
 
     async def pull_for_tenant(
         self,
@@ -88,6 +110,9 @@ class ExelyPullScheduler:
         if endpoint_url:
             provider_kwargs["endpoint_url"] = endpoint_url
         provider = ExelyProvider(**provider_kwargs)
+
+        # Heartbeat: keep connection alive in Exely
+        await self._heartbeat(provider, tenant_id)
 
         # Cursor: last pull time - safety window
         cursor_doc = await db.exely_pull_cursors.find_one(
