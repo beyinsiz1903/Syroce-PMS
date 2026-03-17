@@ -24,6 +24,7 @@ connected_clients: Dict[str, Set[str]] = {
     'notifications': set(),
     'kitchen': set(),
     'system-health': set(),
+    'cockpit': set(),
 }
 
 @sio.event
@@ -190,6 +191,34 @@ async def ping(sid):
     await sio.emit('pong', {
         'timestamp': datetime.utcnow().isoformat()
     }, to=sid)
+
+
+# ── Cockpit Snapshot Streaming ──
+_cockpit_last_snapshot: Dict[str, Any] = {}
+
+
+async def broadcast_cockpit_snapshot(snapshot: Dict[str, Any], tenant_id: str = None):
+    """
+    Broadcast cockpit state snapshot to cockpit room subscribers.
+    Uses diff-based approach: only sends if changed from last snapshot.
+    """
+    global _cockpit_last_snapshot
+    try:
+        # Diff check: only send if data changed
+        key = tenant_id or "default"
+        if _cockpit_last_snapshot.get(key) == snapshot:
+            return  # No change, skip
+
+        _cockpit_last_snapshot[key] = snapshot.copy()
+
+        await sio.emit('cockpit_snapshot', {
+            'tenant_id': tenant_id,
+            'snapshot': snapshot,
+            'timestamp': datetime.utcnow().isoformat(),
+        }, room='cockpit')
+        logger.debug(f"Cockpit snapshot broadcasted for tenant={tenant_id}")
+    except Exception as e:
+        logger.error(f"Failed to broadcast cockpit snapshot: {e}")
 
 # Create ASGI app
 socket_app = socketio.ASGIApp(

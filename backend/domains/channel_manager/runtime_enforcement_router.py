@@ -2,10 +2,13 @@
 Runtime Enforcement Router
 ==========================
 
-API endpoints for the three runtime enforcement layers:
+API endpoints for the runtime enforcement layers:
   1. Hard Fail Gate — mapping enforcement status & quarantine management
   2. Auto-Heal — conservative healing workflow
   3. Push Loop — delta push worker control & observability
+  4. Readiness Scorer — scored "Why NOT READY?" breakdown
+  5. Safe Actions — 1-click idempotent operator actions
+  6. Rollout Framework — controlled live deployment
 """
 import logging
 from typing import Optional
@@ -354,3 +357,152 @@ async def quarantine_safe_release(
         "released_count": released,
         "guard": guard,
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# 6. READINESS SCORER — "Why NOT READY?"
+# ══════════════════════════════════════════════════════════════
+
+@router.get("/readiness-score")
+async def readiness_score(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Scored readiness assessment with prioritized breakdown.
+    Returns: score (0-100), issues sorted by severity, fix order suggestion.
+    """
+    from domains.channel_manager.readiness_scorer import (
+        compute_readiness_score, log_ready_state_transition,
+    )
+    property_id = getattr(current_user, "property_id", "default")
+    result = await compute_readiness_score(current_user.tenant_id, property_id)
+
+    # Log state transition
+    state = "READY" if result["is_ready"] else "NOT_READY"
+    await log_ready_state_transition(
+        current_user.tenant_id, state, result["score"],
+        result["scores"], result["issues"],
+    )
+
+    return result
+
+
+# ══════════════════════════════════════════════════════════════
+# 7. SAFE ACTIONS — 1-Click Operator Actions
+# ══════════════════════════════════════════════════════════════
+
+class RetrySafeRequest(BaseModel):
+    pass
+
+class RevalidateMappingRequest(BaseModel):
+    provider: Optional[str] = None
+
+class SuppressNoiseRequest(BaseModel):
+    event_type: Optional[str] = None
+    duration_minutes: int = 30
+
+
+@router.post("/actions/retry-safe")
+async def action_retry_safe(
+    current_user: User = Depends(get_current_user),
+):
+    """1-click: Retry all retryable failed change sets."""
+    from domains.channel_manager.safe_actions_service import retry_safe
+    return await retry_safe(current_user.tenant_id, operator_id=current_user.email)
+
+
+@router.post("/actions/release-quarantine")
+async def action_release_quarantine(
+    request: SafeReleaseRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """1-click: Safe release from quarantine with full guard chain."""
+    from domains.channel_manager.safe_actions_service import safe_release_quarantine
+    return await safe_release_quarantine(
+        current_user.tenant_id,
+        request.room_type_code,
+        request.rate_plan_code,
+        request.provider,
+        operator_id=current_user.email,
+    )
+
+
+@router.post("/actions/revalidate-mapping")
+async def action_revalidate_mapping(
+    request: RevalidateMappingRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """1-click: Full mapping revalidation with diff output."""
+    from domains.channel_manager.safe_actions_service import revalidate_mapping
+    return await revalidate_mapping(
+        current_user.tenant_id,
+        provider=request.provider,
+        operator_id=current_user.email,
+    )
+
+
+@router.post("/actions/suppress-noise")
+async def action_suppress_noise(
+    request: SuppressNoiseRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """1-click: Suppress noisy notifications temporarily."""
+    from domains.channel_manager.safe_actions_service import suppress_noise
+    return await suppress_noise(
+        current_user.tenant_id,
+        event_type=request.event_type,
+        duration_minutes=request.duration_minutes,
+        operator_id=current_user.email,
+    )
+
+
+# ══════════════════════════════════════════════════════════════
+# 8. NARROW ROLLOUT FRAMEWORK
+# ══════════════════════════════════════════════════════════════
+
+@router.get("/rollout/state")
+async def rollout_state(
+    current_user: User = Depends(get_current_user),
+):
+    """Get current rollout state."""
+    from domains.channel_manager.rollout_framework import get_rollout_state
+    return await get_rollout_state(current_user.tenant_id)
+
+
+@router.post("/rollout/initialize")
+async def rollout_initialize(
+    current_user: User = Depends(get_current_user),
+):
+    """Initialize rollout at INTERNAL phase."""
+    from domains.channel_manager.rollout_framework import initialize_rollout
+    return await initialize_rollout(current_user.tenant_id, operator_id=current_user.email)
+
+
+@router.get("/rollout/gate-check")
+async def rollout_gate_check(
+    current_user: User = Depends(get_current_user),
+):
+    """Evaluate whether current phase gate conditions are met."""
+    from domains.channel_manager.rollout_framework import evaluate_phase_gate
+    return await evaluate_phase_gate(current_user.tenant_id)
+
+
+@router.post("/rollout/advance")
+async def rollout_advance(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Attempt phase transition. ONLY succeeds if all gate checks pass.
+    No manual override available.
+    """
+    from domains.channel_manager.rollout_framework import attempt_phase_transition
+    return await attempt_phase_transition(current_user.tenant_id, operator_id=current_user.email)
+
+
+@router.get("/rollout/dashboard")
+async def rollout_dashboard(
+    current_user: User = Depends(get_current_user),
+):
+    """Full rollout dashboard: phase, duration, gates, history."""
+    from domains.channel_manager.rollout_framework import get_rollout_dashboard
+    return await get_rollout_dashboard(current_user.tenant_id)

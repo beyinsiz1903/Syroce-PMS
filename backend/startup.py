@@ -238,6 +238,16 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Exely Pull Scheduler init warning: {e}")
 
+    # ── Cockpit Snapshot Worker ────────────────────────────────────────
+    try:
+        from domains.channel_manager.cockpit_snapshot_worker import start_cockpit_worker
+        tenant = await db.organizations.find_one({}, {"_id": 0, "id": 1})
+        if tenant:
+            start_cockpit_worker(tenant["id"], interval=3.0)
+            print("✅ Cockpit snapshot worker started (3s interval)")
+    except Exception as e:
+        logger.warning(f"Cockpit snapshot worker init warning: {e}")
+
 
 async def on_shutdown(app):
     """Graceful shutdown: close connections and stop workers."""
@@ -267,6 +277,13 @@ async def on_shutdown(app):
         await stop_monitoring_worker()
     except Exception as e:
         logger.warning(f"Monitoring worker shutdown warning: {e}")
+
+    # Cockpit snapshot worker
+    try:
+        from domains.channel_manager.cockpit_snapshot_worker import stop_cockpit_worker
+        stop_cockpit_worker()
+    except Exception as e:
+        logger.warning(f"Cockpit snapshot worker shutdown warning: {e}")
 
     # Exely Pull Scheduler
     scheduler = getattr(app.state, "exely_pull_scheduler", None)
