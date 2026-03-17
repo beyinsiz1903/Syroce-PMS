@@ -1,111 +1,93 @@
 # Syroce PMS — Product Requirements Document
 
 ## Original Problem Statement
-Full-stack PMS/channel manager production hardening. The system manages hotel reservations, room/rate mappings, ARI (Availability, Rates, Inventory) pushes to external providers (Exely, HotelRunner), and operational observability.
+Enterprise-grade PMS (Property Management System) for hotel operations with channel manager integration (Exely SOAP, HotelRunner REST), runtime enforcement, and operational observability.
 
-## Core Architecture
-- **Backend:** FastAPI + MongoDB
-- **Frontend:** React (Vite) + Shadcn/UI + Tailwind
+## Architecture
+- **Backend:** FastAPI + MongoDB (Motor async)
+- **Frontend:** React + Shadcn/UI + Tailwind
 - **Providers:** Exely (SOAP), HotelRunner (REST)
+- **Auth:** JWT-based (demo@hotel.com / demo123)
 
 ## Completed Phases
 
-### P1 — Domain Truth & Folio Fix (COMPLETED)
-- Canonical reservation lifecycle with strict state transitions
-- Navigation/Folio bug fix
-- Observability endpoints (`/api/lockdown/*`)
-- 48 regression tests
+### P1–P3: Foundation
+- Core PMS modules (rooms, reservations, folios, night audit)
+- Channel manager integration (Exely, HotelRunner)
+- Delta/Debounce coalescing engine
+- Provider simulation & resilience testing
+- 242 passing tests
 
-### P2 — Stress Testing & Observability (COMPLETED)
-- Replay safety test suite (24 tests)
-- Duplicate storm test suite (14 tests)
-- ARI stress test suite (43 tests)
-- Lockdown Dashboard frontend (`/lockdown`)
-- Total: 129 tests passing
+### P4: Runtime Enforcement (COMPLETED)
+- **Hard Fail Gate** — Blocks outbound pushes if critical mappings incomplete
+- **Auto-Heal Service** — Conservative auto-healing with whitelist, evidence, escalation
+- **Push Loop Worker** — Observable runtime delta-push loop with metrics
+- **API:** `/api/lockdown/runtime/` control/status endpoints
+- **Tests:** 47 new tests, all passing
 
-### P3 — Delta Correctness, Provider Resilience & Incident Panel (COMPLETED — 2026-03-17)
-- **Delta-Only Push + Debounce Correctness (50 tests)**
-- **Real Provider Simulation (63 tests)**
-- **Operator Incident Panel** (Backend API + Frontend dashboard)
-- **Total: 242 tests passing (zero regressions)**
+### P5: Dashboard Notifications, Runtime Cockpit & Quarantine (COMPLETED — 2026-03-17)
+- **Notification Events Service** — 10 event types with severity model:
+  - Severity: INFO / WARNING / CRITICAL / BLOCKER
+  - Cooldown/deduplication: state-change-only for READY transitions, 5–10min cooldown for spikes
+  - Events: tenant_ready/not_ready, mapping_complete/broken, hard_fail_cleared/spike, auto_heal_success/failure_spike, first_verify/verify_failure_spike
+  - Slack dispatch for CRITICAL/BLOCKER events
+- **Runtime Cockpit** — Unified operational dashboard at `/runtime-cockpit`:
+  - Health Summary: production readiness, incidents, quarantine count, verify %, push loop status
+  - Flow Metrics: queued, coalesced, emitted, dropped, hard_fail_blocked + push loop controls
+  - Reliability: verify ratio, verify counts, dead letters, ack latency, cycle duration
+  - Drift & Heal: active drifts, auto-heal stats, manual required
+  - Quarantine Visibility: total, classification breakdown, age buckets (< 5min, 5-30min, 30-120min, > 2h), provider breakdown
+  - Recent Events: severity counts + event list with timestamps
+  - Hard Fail Gate: active blocks, open incidents, 24h stats
+- **Quarantine Visibility Service:**
+  - Classification: unmapped, ambiguous, provider_error, validation_failed
+  - Age buckets: < 5 min, 5–30 min, 30–120 min, > 2 hours
+  - Safe Release Guard: validates mapping is fixed + staleness check before quarantine release
+- **API Endpoints:**
+  - `GET /api/lockdown/runtime/cockpit` — unified metrics
+  - `GET /api/lockdown/notifications/events|summary|config`
+  - `POST /api/lockdown/notifications/evaluate`
+  - `GET /api/lockdown/runtime/quarantine/overview`
+  - `POST /api/lockdown/runtime/quarantine/check-release|safe-release`
+- **Tests:** 26 new tests (mocked service tests + httpx API tests), all passing
+- **Total system tests: 73 (P4: 47 + P5: 26)**
 
-### P4 — Runtime Enforcement (COMPLETED — 2026-03-17)
-- **Hard Fail Gate (14 tests):**
-  - Runtime mapping enforcement before ANY ARI push
-  - Quarantines change sets with missing/broken mappings
-  - Creates incidents with operator action hints
-  - Duplicate incident prevention
-  - Quarantine release after mapping fix
-  - Integrated into outbound_service.py push pipeline
-- **Auto-Heal Service (16 tests):**
-  - Conservative auto-healing workflow based on Truth Table
-  - Safe whitelist: stale_locally, stale_remotely
-  - Risky whitelist (opt-in): payload_mismatch
-  - Evidence trail for every heal operation
-  - Failed heal escalation to manual review
-  - Rate-limited cycles (max N per cycle)
-- **Push Loop Worker (12 tests):**
-  - Background runtime push loop with start/stop/pause/resume
-  - Full observability: queued, coalesced, dropped, hard_fail_blocked, emitted, verify_success/fail
-  - Per-provider ack latency tracking
-  - Cycle count and timing metrics
-- **Runtime Enforcement Router:**
-  - `GET /api/lockdown/runtime/hard-fail/stats`
-  - `POST /api/lockdown/runtime/hard-fail/release`
-  - `GET /api/lockdown/runtime/auto-heal/stats`
-  - `POST /api/lockdown/runtime/auto-heal/run`
-  - `GET /api/lockdown/runtime/auto-heal/history`
-  - `GET /api/lockdown/runtime/push-loop/status`
-  - `POST /api/lockdown/runtime/push-loop/start`
-  - `POST /api/lockdown/runtime/push-loop/stop`
-  - `POST /api/lockdown/runtime/push-loop/pause`
-  - `POST /api/lockdown/runtime/push-loop/resume`
-  - `GET /api/lockdown/runtime/push-loop/metrics`
-- **Integration tests (5 tests):** Combined behavior across all three layers
-- **Total: 289 tests passing (zero regressions)**
+## Current Test Status
+| Suite | Tests | Status |
+|-------|-------|--------|
+| P4 Runtime Enforcement | 47 | PASS |
+| P5 Cockpit & Notifications | 26 | PASS |
+| **Total** | **73** | **ALL PASS** |
 
-## Key Technical Decisions
-- Hard Fail Gate blocks pushes at runtime, not just in tests
-- Auto-heal starts conservative (safe whitelist only), risky requires explicit opt-in
-- Every auto-heal produces evidence before modifying data
-- Failed auto-heals escalate (never infinite retry loop)
-- Push loop worker is controllable (start/stop/pause/resume) for safe rollout
-- Per-provider latency tracking for operational visibility
+## Prioritized Backlog
 
-## Test Coverage
-| Suite | Tests | File |
-|-------|-------|------|
-| P1 Core Lockdown | 48 | `test_core_lockdown.py` |
-| P2 Replay Safety | 24 | `test_p2_replay.py` |
-| P2 Duplicate Storm | 14 | `test_p2_duplicate_storm.py` |
-| P2 ARI Stress | 43 | `test_p2_ari_stress.py` |
-| P3 Delta-Debounce | 50 | `test_p3_delta_debounce.py` |
-| P3 Provider Simulation | 63 | `test_p3_provider_simulation.py` |
-| P4 Runtime Enforcement | 47 | `test_p4_runtime_enforcement.py` |
-| **Total** | **289** | |
+### P1 — Next
+- **Narrow Rollout Framework** — Controlled live simulation (1 tenant, 1 hotel, 2 providers, 7 days)
+- **Auto-Heal Intelligence** — Confidence score, provider-specific heal rules, historical success rate
 
-## Upcoming Tasks (Priority Order)
+### P2 — Soon
+- **Operator Panel Upgrade** — Severity (low/medium/high/blocking) + playbook suggestions per incident
+- **High-Signal Slack Notifications** — Refined strategy, key events only
 
-### P5 — Go-Live Acceleration
-1. **Dashboard Notifications** (Slack/webhook) for critical state transitions:
-   - `READY → NOT READY` (highest priority)
-   - `NOT READY → READY`
-   - mapping_completeness_reached_100
-   - hard_fail_count_reached_0
-   - first_successful_verify
-   - drift_backlog_above_threshold
-   - provider_auth_became_invalid
-2. **Narrow rollout with internal tenant** — observation window before expanding
+### P3 — Backlog
+- Deprecated file cleanup (hotelrunner.py, client.py, exely_client_legacy.py)
+- Core Lockdown Block B & C (ProviderCapabilityMatrix, Reconciliation Truth Table)
+- Financial Module Hardening (Folio, Night Audit)
+- Tenant Management (per-tenant rollout gates, feature flags)
 
-### P6 — Financial Hardening
-- Folio and Night Audit modules
-- Per-tenant rollout gates and feature flags
-
-### Backlog
-- PMS room/rate → provider mapping UI improvement
-- Archive old database collections
-- Remove deprecated files (`hotelrunner.py`, `client.py`, `exely_client_legacy.py`)
-- Runtime Enforcement frontend dashboard
+## Key Files
+| Area | File |
+|------|------|
+| Notification Events | `/app/backend/domains/channel_manager/notification_events_service.py` |
+| Notification Router | `/app/backend/domains/channel_manager/notification_events_router.py` |
+| Quarantine Service | `/app/backend/domains/channel_manager/quarantine_service.py` |
+| Runtime Router | `/app/backend/domains/channel_manager/runtime_enforcement_router.py` |
+| Hard Fail Gate | `/app/backend/domains/channel_manager/ari/hard_fail_gate.py` |
+| Auto-Heal Service | `/app/backend/domains/channel_manager/auto_heal_service.py` |
+| Push Loop Worker | `/app/backend/domains/channel_manager/ari/push_loop_worker.py` |
+| Runtime Cockpit UI | `/app/frontend/src/pages/RuntimeCockpitPage.jsx` |
+| P5 Tests | `/app/backend/tests/test_p5_cockpit_notifications.py` |
+| P4 Tests | `/app/backend/tests/test_p4_runtime_enforcement.py` |
 
 ## Credentials
 | User | Email | Password |
