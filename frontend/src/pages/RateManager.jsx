@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Layout from '@/components/Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -145,30 +145,30 @@ const RateManager = ({ user, tenant, onLogout }) => {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} activeRoute="/rate-manager">
-      <div className="space-y-4" data-testid="rate-manager-page">
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rate_manager">
+      <div className="p-6 space-y-6" data-testid="rate-manager-page">
         {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-zinc-100">Fiyat ve Müsaitlik Yönetimi</h1>
-            <p className="text-sm text-zinc-400 mt-1">
+            <h1 className="text-4xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk' }}>
+              Fiyat ve Müsaitlik Yönetimi
+            </h1>
+            <p className="text-gray-600">
               Oda fiyatlarını, müsaitliği ve konaklama kısıtlamalarını yönetin
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-emerald-400 border-emerald-500/30">
-              <ArrowUpRight className="w-3 h-3 mr-1" />
-              Exely Push Aktif
-            </Badge>
-          </div>
+          <Badge className="bg-green-500 text-white">
+            <ArrowUpRight className="w-3 h-3 mr-1" />
+            Exely Push Aktif
+          </Badge>
         </div>
 
         {/* Filters & Date Navigation */}
-        <Card className="bg-zinc-900/60 border-zinc-800">
+        <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3 flex-wrap">
               <Select value={selectedRoomType} onValueChange={setSelectedRoomType}>
-                <SelectTrigger data-testid="room-type-filter" className="w-[180px] bg-zinc-800 border-zinc-700">
+                <SelectTrigger data-testid="room-type-filter" className="w-[180px]">
                   <SelectValue placeholder="Oda Tipi" />
                 </SelectTrigger>
                 <SelectContent>
@@ -180,7 +180,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
               </Select>
 
               <Select value={selectedRatePlan} onValueChange={setSelectedRatePlan}>
-                <SelectTrigger data-testid="rate-plan-filter" className="w-[200px] bg-zinc-800 border-zinc-700">
+                <SelectTrigger data-testid="rate-plan-filter" className="w-[200px]">
                   <SelectValue placeholder="Fiyat Planı" />
                 </SelectTrigger>
                 <SelectContent>
@@ -195,7 +195,6 @@ const RateManager = ({ user, tenant, onLogout }) => {
                 <Button
                   variant="outline" size="icon"
                   onClick={() => shiftDates(-7)}
-                  className="bg-zinc-800 border-zinc-700 hover:bg-zinc-700"
                   data-testid="prev-week-btn"
                 >
                   <ChevronLeft className="w-4 h-4" />
@@ -209,7 +208,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
                     setStartDate(today);
                     setEndDate(end.toISOString().slice(0, 10));
                   }}
-                  className="bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-xs"
+                  className="text-xs"
                   data-testid="today-btn"
                 >
                   <Calendar className="w-3 h-3 mr-1" />
@@ -218,7 +217,6 @@ const RateManager = ({ user, tenant, onLogout }) => {
                 <Button
                   variant="outline" size="icon"
                   onClick={() => shiftDates(7)}
-                  className="bg-zinc-800 border-zinc-700 hover:bg-zinc-700"
                   data-testid="next-week-btn"
                 >
                   <ChevronRight className="w-4 h-4" />
@@ -231,15 +229,15 @@ const RateManager = ({ user, tenant, onLogout }) => {
         {/* Rate Grid */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-zinc-500" />
+            <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
           </div>
         ) : (
-          <Card className="bg-zinc-900/60 border-zinc-800 overflow-hidden">
+          <Card className="overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm" data-testid="rate-grid-table">
                 <thead>
-                  <tr className="border-b border-zinc-800">
-                    <th className="sticky left-0 z-10 bg-zinc-900 px-3 py-2 text-left text-xs text-zinc-400 font-medium min-w-[200px]">
+                  <tr className="border-b bg-gray-50">
+                    <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left text-xs text-gray-500 font-medium min-w-[200px]">
                       Oda / Plan
                     </th>
                     {dates.map(d => {
@@ -248,11 +246,11 @@ const RateManager = ({ user, tenant, onLogout }) => {
                         <th
                           key={d}
                           className={`px-2 py-2 text-center text-xs font-medium min-w-[80px] ${
-                            f.isWeekend ? 'bg-zinc-800/50 text-amber-400' : 'text-zinc-400'
+                            f.isWeekend ? 'bg-amber-50 text-amber-700' : 'text-gray-500'
                           }`}
                         >
                           <div>{f.weekday}</div>
-                          <div className="text-base font-bold">{f.day}</div>
+                          <div className="text-base font-bold text-gray-800">{f.day}</div>
                           <div className="text-[10px] opacity-70">{f.month}</div>
                         </th>
                       );
@@ -260,17 +258,17 @@ const RateManager = ({ user, tenant, onLogout }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredGrid.map((row, ri) => (
+                  {filteredGrid.map((row) => (
                     <tr
                       key={`${row.room_type_code}-${row.rate_plan_code}`}
-                      className="border-b border-zinc-800/50 hover:bg-zinc-800/30"
+                      className="border-b hover:bg-gray-50/50"
                     >
-                      <td className="sticky left-0 z-10 bg-zinc-900 px-3 py-2">
+                      <td className="sticky left-0 z-10 bg-white px-3 py-2 border-r">
                         <div className="flex items-center gap-2">
-                          <BedDouble className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+                          <BedDouble className="w-4 h-4 text-gray-400 flex-shrink-0" />
                           <div>
-                            <div className="font-medium text-zinc-200 text-xs">{row.room_type_name}</div>
-                            <div className="text-[10px] text-zinc-500 truncate max-w-[150px]">{row.rate_plan_name}</div>
+                            <div className="font-medium text-gray-800 text-xs">{row.room_type_name}</div>
+                            <div className="text-[10px] text-gray-400 truncate max-w-[150px]">{row.rate_plan_name}</div>
                           </div>
                         </div>
                       </td>
@@ -279,25 +277,25 @@ const RateManager = ({ user, tenant, onLogout }) => {
                         return (
                           <td
                             key={cell.date}
-                            className={`px-1 py-1 text-center cursor-pointer transition-colors hover:bg-zinc-700/50 ${
-                              f.isWeekend ? 'bg-zinc-800/30' : ''
-                            } ${cell.stop_sell ? 'bg-red-900/20' : ''}`}
+                            className={`px-1 py-1 text-center cursor-pointer transition-colors hover:bg-blue-50 ${
+                              f.isWeekend ? 'bg-amber-50/40' : ''
+                            } ${cell.stop_sell ? 'bg-red-50' : ''}`}
                             onClick={() => openEdit(row, di)}
                             data-testid={`cell-${row.room_type_code}-${row.rate_plan_code}-${cell.date}`}
                           >
                             <div className="space-y-0.5">
                               {cell.rate != null ? (
-                                <div className="text-xs font-semibold text-emerald-400">
+                                <div className="text-xs font-semibold text-blue-700">
                                   ${cell.rate}
                                 </div>
                               ) : (
-                                <div className="text-xs text-zinc-600">-</div>
+                                <div className="text-xs text-gray-300">-</div>
                               )}
-                              <div className="text-[10px] text-zinc-500">
+                              <div className="text-[10px] text-gray-400">
                                 {cell.availability != null ? `${cell.availability} oda` : ''}
                               </div>
                               {cell.min_stay > 1 && (
-                                <div className="text-[10px] text-amber-500">
+                                <div className="text-[10px] text-amber-600">
                                   min {cell.min_stay}g
                                 </div>
                               )}
@@ -312,7 +310,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
                   ))}
                   {filteredGrid.length === 0 && (
                     <tr>
-                      <td colSpan={dates.length + 1} className="py-12 text-center text-zinc-500">
+                      <td colSpan={dates.length + 1} className="py-12 text-center text-gray-400">
                         Veri bulunamadı
                       </td>
                     </tr>
@@ -325,24 +323,24 @@ const RateManager = ({ user, tenant, onLogout }) => {
 
         {/* Edit Dialog */}
         <Dialog open={!!editDialog} onOpenChange={(open) => !open && setEditDialog(null)}>
-          <DialogContent className="max-w-md bg-zinc-900 border-zinc-700" data-testid="edit-rate-dialog">
+          <DialogContent className="max-w-md" data-testid="edit-rate-dialog">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-zinc-100">
-                <DollarSign className="w-5 h-5 text-emerald-400" />
+              <DialogTitle className="flex items-center gap-2">
+                <DollarSign className="w-5 h-5 text-blue-600" />
                 Fiyat ve Müsaitlik Düzenle
               </DialogTitle>
-              <p className="text-xs text-zinc-500">Seçili hücrenin değerlerini güncelleyin</p>
+              <p className="text-xs text-gray-500">Seçili hücrenin değerlerini güncelleyin</p>
             </DialogHeader>
             {editDialog && (
               <div className="space-y-4">
-                <div className="flex items-center gap-2 p-2 rounded bg-zinc-800/60">
-                  <BedDouble className="w-4 h-4 text-zinc-400" />
-                  <span className="text-sm text-zinc-300">{editDialog.room_type_name}</span>
-                  <span className="text-xs text-zinc-500">/ {editDialog.rate_plan_name}</span>
+                <div className="flex items-center gap-2 p-2 rounded bg-gray-50 border">
+                  <BedDouble className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm text-gray-700 font-medium">{editDialog.room_type_name}</span>
+                  <span className="text-xs text-gray-400">/ {editDialog.rate_plan_name}</span>
                 </div>
 
-                <div className="text-sm text-zinc-400">
-                  Tarih: <span className="text-zinc-200 font-medium">{editDialog.date}</span>
+                <div className="text-sm text-gray-500">
+                  Tarih: <span className="text-gray-800 font-medium">{editDialog.date}</span>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -351,16 +349,15 @@ const RateManager = ({ user, tenant, onLogout }) => {
                     onCheckedChange={(v) => setEditDialog(prev => ({ ...prev, applyRange: v }))}
                     data-testid="apply-range-switch"
                   />
-                  <Label className="text-sm text-zinc-400">Tarih aralığına uygula</Label>
+                  <Label className="text-sm text-gray-600">Tarih aralığına uygula</Label>
                 </div>
                 {editDialog.applyRange && (
                   <div>
-                    <Label className="text-xs text-zinc-500">Bitiş Tarihi</Label>
+                    <Label className="text-xs text-gray-500">Bitiş Tarihi</Label>
                     <Input
                       type="date"
                       value={editDialog.rangeEnd}
                       onChange={(e) => setEditDialog(prev => ({ ...prev, rangeEnd: e.target.value }))}
-                      className="bg-zinc-800 border-zinc-700 text-zinc-200"
                       data-testid="range-end-input"
                     />
                   </div>
@@ -368,38 +365,35 @@ const RateManager = ({ user, tenant, onLogout }) => {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label className="text-xs text-zinc-500">Fiyat (USD)</Label>
+                    <Label className="text-xs text-gray-500">Fiyat (USD)</Label>
                     <Input
                       type="number"
                       step="0.01"
                       placeholder="Fiyat"
                       value={editDialog.rate}
                       onChange={(e) => setEditDialog(prev => ({ ...prev, rate: e.target.value }))}
-                      className="bg-zinc-800 border-zinc-700 text-zinc-200"
                       data-testid="rate-input"
                     />
                   </div>
                   <div>
-                    <Label className="text-xs text-zinc-500">Müsait Oda</Label>
+                    <Label className="text-xs text-gray-500">Müsait Oda</Label>
                     <Input
                       type="number"
                       min="0"
                       placeholder="Adet"
                       value={editDialog.availability}
                       onChange={(e) => setEditDialog(prev => ({ ...prev, availability: e.target.value }))}
-                      className="bg-zinc-800 border-zinc-700 text-zinc-200"
                       data-testid="availability-input"
                     />
                   </div>
                   <div>
-                    <Label className="text-xs text-zinc-500">Min. Konaklama (gece)</Label>
+                    <Label className="text-xs text-gray-500">Min. Konaklama (gece)</Label>
                     <Input
                       type="number"
                       min="1"
                       placeholder="1"
                       value={editDialog.min_stay}
                       onChange={(e) => setEditDialog(prev => ({ ...prev, min_stay: e.target.value }))}
-                      className="bg-zinc-800 border-zinc-700 text-zinc-200"
                       data-testid="min-stay-input"
                     />
                   </div>
@@ -410,8 +404,8 @@ const RateManager = ({ user, tenant, onLogout }) => {
                         onCheckedChange={(v) => setEditDialog(prev => ({ ...prev, stop_sell: v }))}
                         data-testid="stop-sell-switch"
                       />
-                      <Label className="text-sm text-zinc-400 flex items-center gap-1">
-                        {editDialog.stop_sell ? <Lock className="w-3 h-3 text-red-400" /> : <Unlock className="w-3 h-3 text-emerald-400" />}
+                      <Label className="text-sm text-gray-600 flex items-center gap-1">
+                        {editDialog.stop_sell ? <Lock className="w-3 h-3 text-red-500" /> : <Unlock className="w-3 h-3 text-green-500" />}
                         Satış Durdur
                       </Label>
                     </div>
@@ -423,7 +417,6 @@ const RateManager = ({ user, tenant, onLogout }) => {
               <Button
                 variant="outline"
                 onClick={() => setEditDialog(null)}
-                className="border-zinc-700"
                 data-testid="cancel-edit-btn"
               >
                 İptal
@@ -431,7 +424,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
               <Button
                 onClick={handleSave}
                 disabled={saving}
-                className="bg-emerald-600 hover:bg-emerald-700"
+                className="bg-blue-600 hover:bg-blue-700"
                 data-testid="save-rate-btn"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Save className="w-4 h-4 mr-1" />}
