@@ -12,6 +12,7 @@ from core.database import db
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
 from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
+from domains.channel_manager.providers.exely.auto_import import auto_import_pending
 from domains.channel_manager.credential_vault import get_decrypted_credentials
 
 logger = logging.getLogger(__name__)
@@ -174,6 +175,11 @@ class ExelyPullScheduler:
 
         duration_ms = int((datetime.now(timezone.utc) - pull_start).total_seconds() * 1000)
         await log_sync(PROVIDER, tenant_id, "scheduled_pull", "success", duration_ms, processed)
+
+        # Auto-import all pending reservations to PMS
+        if processed > 0:
+            import_result = await auto_import_pending(tenant_id)
+            logger.info(f"[EXELY-PULL] Auto-import: {import_result['imported']}/{import_result['total']} imported")
 
         logger.info(f"[EXELY-PULL] Tenant {tenant_id}: fetched {len(reservations)}, processed {processed}")
         return {

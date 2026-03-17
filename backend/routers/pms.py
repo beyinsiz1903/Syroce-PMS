@@ -756,6 +756,11 @@ async def get_bookings(
                 # Process and return immediately
                 bookings = []
                 for booking in cached_data[:limit]:
+                    # Enrich guest_name if missing
+                    if not booking.get('guest_name') and booking.get('guest_id'):
+                        guest = await db.guests.find_one({'id': booking['guest_id']}, {'name': 1, 'first_name': 1, 'last_name': 1, '_id': 0})
+                        if guest:
+                            booking['guest_name'] = guest.get('name') or f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip() or 'Unknown Guest'
                     # Always enrich room_number from room document (handles room moves)
                     if booking.get('room_id'):
                         room = await db.rooms.find_one({'id': booking['room_id']}, {'room_number': 1, '_id': 0})

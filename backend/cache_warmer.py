@@ -72,7 +72,10 @@ class CacheWarmer:
             projection = {
                 '_id': 0, 'id': 1, 'guest_id': 1, 'room_id': 1,
                 'check_in': 1, 'check_out': 1, 'status': 1, 'total_amount': 1,
-                'rate_type': 1, 'market_segment': 1, 'booking_source': 1, 'tenant_id': 1
+                'rate_type': 1, 'market_segment': 1, 'booking_source': 1, 'tenant_id': 1,
+                'guest_name': 1, 'room_number': 1, 'source_channel': 1, 'channel': 1,
+                'origin': 1, 'adults': 1, 'children': 1, 'ota_confirmation': 1,
+                'special_requests': 1, 'base_rate': 1, 'paid_amount': 1,
             }
             
             # Get all bookings without date filter if none found

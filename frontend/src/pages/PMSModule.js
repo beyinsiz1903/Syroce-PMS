@@ -488,14 +488,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     try {
       // PERFORMANCE OPTIMIZED: Load only essential data with limits for 550+ room properties
       const today = new Date().toISOString().split('T')[0];
-      const nextWeek = new Date();
-      nextWeek.setDate(nextWeek.getDate() + 7);
-      const nextWeekStr = nextWeek.toISOString().split('T')[0];
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 90);
+      const futureDateStr = futureDate.toISOString().split('T')[0];
       
       const results = await Promise.allSettled([
         axios.get('/pms/rooms?limit=100', { timeout: 15000 }), // Limit rooms for initial load
         axios.get('/pms/guests?limit=100', { timeout: 15000 }), // Limit guests to 100
-        axios.get(`/pms/bookings?start_date=${today}&end_date=${nextWeekStr}&limit=200`, { timeout: 15000 }), // Only next 7 days
+        axios.get(`/pms/bookings?start_date=${today}&end_date=${futureDateStr}&limit=200`, { timeout: 15000 }), // Next 90 days
         axios.get('/companies?limit=50', { timeout: 15000 }) // Limit companies to 50
       ]);
 

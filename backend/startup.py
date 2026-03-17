@@ -223,6 +223,21 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Monitoring worker init warning: {e}")
 
+    # ── Exely Pull Scheduler (auto-start) ────────────────────────────
+    try:
+        active_exely = await db.exely_connections.find_one(
+            {"is_active": True, "auto_sync_reservations": True}, {"_id": 1}
+        )
+        if active_exely:
+            from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
+            await exely_pull_scheduler.start(interval_minutes=10)
+            app.state.exely_pull_scheduler = exely_pull_scheduler
+            print("✅ Exely Pull Scheduler started (10min interval, auto-import enabled)")
+        else:
+            print("ℹ️ No active Exely connections; pull scheduler not started")
+    except Exception as e:
+        logger.warning(f"Exely Pull Scheduler init warning: {e}")
+
 
 async def on_shutdown(app):
     """Graceful shutdown: close connections and stop workers."""
@@ -252,6 +267,14 @@ async def on_shutdown(app):
         await stop_monitoring_worker()
     except Exception as e:
         logger.warning(f"Monitoring worker shutdown warning: {e}")
+
+    # Exely Pull Scheduler
+    scheduler = getattr(app.state, "exely_pull_scheduler", None)
+    if scheduler is not None:
+        try:
+            await scheduler.stop()
+        except Exception as e:
+            logger.warning(f"Exely Pull Scheduler shutdown warning: {e}")
 
     # Close MongoDB client
     client.close()
