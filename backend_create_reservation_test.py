@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 # Configuration
-BASE_URL = "https://safe-ops-hub.preview.emergentagent.com/api"
+BASE_URL = "https://ready-for-rollout.preview.emergentagent.com/api"
 TEST_CREDENTIALS = {
     "email": "demo@hotel.com", 
     "password": "demo123"

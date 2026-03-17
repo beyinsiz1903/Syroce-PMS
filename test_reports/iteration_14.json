@@ -63,7 +63,7 @@
   "context_for_next_testing_agent": "Folio-open semantic service migration tested and validated. All write-path tests pass including happy path with outbox event (folio.opened.v1) and audit log (folio_opened) creation. Idempotency correctly implemented with request hash comparison. Tenant/property isolation enforced. Frontend smoke confirmed working. Next iteration could test charge post/payment/refund/invoice flows when ready for migration.",
 
   "test_environment": {
-    "backend_url": "https://safe-ops-hub.preview.emergentagent.com",
+    "backend_url": "https://ready-for-rollout.preview.emergentagent.com",
     "mongodb": "Connected via MONGO_URL from backend/.env",
     "redis": "Not available (caching disabled)"
   }
