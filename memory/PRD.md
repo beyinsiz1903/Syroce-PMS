@@ -40,6 +40,11 @@ Build a production-grade hospitality platform (RoomOps PMS). Replace all mocked 
 | 4 | 10003869 | Non-ref rate USD |
 | 5 | 10003870 | Base rate USD |
 
+## Bug Fixes
+- **(DONE - 2026-03-17)** ReservationCalendar crash: `isBlockStart` TDZ error - renamed local variable to `blockIsStart` in `ReservationCalendar.js:1941`
+- **(DONE - prev session)** Global Axios error interceptor for Pydantic validation errors
+- **(DONE - prev session)** Backend 500 on `/api/notifications/push-status` and `/api/hotel/team`
+
 ## Credentials
 | User | Email | Password |
 |------|-------|----------|

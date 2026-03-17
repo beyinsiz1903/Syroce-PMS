@@ -1938,7 +1938,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                         }
                         
                         const roomBlock = getRoomBlockForDate(room.id, date);
-                        const isBlockStart = roomBlock && isBlockStart(roomBlock, date);
+                        const blockIsStart = roomBlock && isBlockStart(roomBlock, date);
                         const isDragOver = dragOverCell?.roomId === room.id && 
                                           new Date(dragOverCell.date).toDateString() === date.toDateString();
 
@@ -1957,7 +1957,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                             title={roomBlock ? `${roomBlock.type.toUpperCase()}: ${roomBlock.reason}` : ''}
                           >
                             {/* Room Block Indicator */}
-                            {isBlockStart && roomBlock && (
+                            {blockIsStart && roomBlock && (
                               <div 
                                 className={`absolute top-0 left-0 h-full opacity-60 border-2 ${
                                   roomBlock.type === 'out_of_order' ? 'bg-red-600 border-red-700' :
