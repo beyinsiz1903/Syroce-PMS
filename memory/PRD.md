@@ -1,7 +1,7 @@
 # Syroce PMS — Product Requirements Document
 
 ## Original Problem Statement
-Enterprise-grade Property Management System (PMS) for hotel operations. The current strategic direction shifted from "building a good product" to "proving a production-ready system." Focus is on live reliability via `observe → stress → verify → rollout → prove`.
+Enterprise-grade Property Management System (PMS) for hotel operations. The current strategic direction shifted from "building a good product" to "proving a production-ready system." Focus is on live reliability via `observe -> stress -> verify -> rollout -> prove`.
 
 ## Core System
 - Multi-tenant PMS with Room Management, Reservations, Front Desk, Folio/Billing, Housekeeping, Night Audit
@@ -9,6 +9,7 @@ Enterprise-grade Property Management System (PMS) for hotel operations. The curr
 - Rate Manager with dynamic availability
 - Runtime Cockpit with WebSocket state snapshot streaming
 - Production Readiness scoring, 1-Click Safe Actions, Narrow Rollout Framework
+- Unassigned reservation workflow with drag-and-drop room assignment
 
 ## What's Been Implemented
 
@@ -28,6 +29,34 @@ Enterprise-grade Property Management System (PMS) for hotel operations. The curr
    - Backend `rate_manager_router.py`: Grid now dynamically calculates availability = base - active bookings
    - Backend `routers/pms.py`: Allotment contracts endpoint dynamically calculates `used_rooms`
    - Frontend `RateManager.jsx`: Grid shows sold count with color coding for low availability
+
+### Bug Fixes & Features — 2026-03-17 Session 2 (COMPLETED & TESTED)
+1. **Exely Cancellation Sync (FIXED):**
+   - `auto_import.py`: Added `process_pending_cancellations()` that propagates Exely cancellations to PMS bookings
+   - `exely_pull_worker.py`: Now always runs auto_import (including cancellation processing) after every pull cycle
+   - `reservation_import_service.py`: `_cancel_pms_booking` now creates OTA cancellation notification
+2. **Cancelled Bookings Calendar Filter (FIXED):**
+   - `ReservationCalendar.js`: `getBookingForRoomOnDate` now excludes cancelled/checked_out/no_show bookings
+   - Also fixed: `isRoomOccupiedOnDay`, `detectConflicts`, `handleFindRoom` all filter cancelled bookings
+3. **Unassigned Reservation Row (NEW FEATURE):**
+   - OTA-imported bookings arrive with `room_id=null`, `room_type` set (no auto room assignment)
+   - Calendar shows "ATANMAMIS" (Unassigned) row under each room type header for unassigned bookings
+   - Amber-styled booking bars with dashed border, "Surukle -> Oda" instruction
+   - Room type header shows "X atanmamis" badge count
+4. **Drag-and-Drop Room Assignment (NEW FEATURE):**
+   - User drags booking from unassigned row to a specific room
+   - `handleAssignRoom` calls `PUT /api/pms/bookings/{id}` with new room_id
+   - Toast notification confirms assignment
+5. **OTA Sync Button (NEW FEATURE):**
+   - "OTA Sync" button in calendar header triggers manual reservation pull from all active connectors
+   - Shows loading state during sync, reports results (imported/cancelled counts)
+6. **Calendar Sidebar Cancel Button (NEW FEATURE):**
+   - Cancel button in ReservationSidebar for non-cancelled bookings
+   - Calls `POST /api/pms-core/cancel` with confirmation dialog
+   - Auto-refreshes calendar data after cancellation
+7. **Room Type Enrichment (FIX):**
+   - `reservation_read_service.py` now enriches `room_type` from rooms collection
+   - Both cached and non-cached booking query paths include room_type
 
 ## Prioritized Backlog
 
@@ -61,12 +90,14 @@ Enterprise-grade Property Management System (PMS) for hotel operations. The curr
 /app
 ├── backend/
 │   ├── domains/pms/ (core PMS, channel manager, revenue)
+│   ├── domains/channel_manager/providers/exely/ (auto_import, pull_worker, normalizer)
 │   ├── modules/pms_core/ (reservation state machine, front desk, folio)
+│   ├── modules/reservations/ (repository, read/create/update services)
 │   ├── routers/ (pms, pms_hardening, enterprise, housekeeping)
 │   └── tests/
 └── frontend/src/
     ├── pages/ (PMSModule, RateManager, ReservationCalendar, RuntimeCockpit)
-    └── components/pms/ (BookingDetailDialog, BookingsTab, etc.)
+    └── components/ (ReservationSidebar, pms/BookingDetailDialog, etc.)
 ```
 
 ## Credentials
