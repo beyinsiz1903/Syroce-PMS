@@ -161,7 +161,8 @@ def build_ari_update_rq(
     stop_sell: Optional[bool] = None,
     min_stay: Optional[int] = None,
 ) -> str:
-    """Build OTA_HotelAvailNotifRQ for ARI delta push (availability + restrictions)."""
+    """Build OTA_HotelAvailNotifRQ for availability + restrictions only.
+    Rate updates go via OTA_HotelRateAmountNotifRQ separately."""
     rq = etree.Element(f"{{{OTA_NS}}}OTA_HotelAvailNotifRQ", attrib={
         "Version": "1.0",
         "TimeStamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -183,15 +184,6 @@ def build_ari_update_rq(
 
     if availability is not None:
         msg.set("BookingLimit", str(availability))
-
-    if rate_amount is not None:
-        rates = etree.SubElement(msg, f"{{{OTA_NS}}}Rates")
-        rate_el = etree.SubElement(rates, f"{{{OTA_NS}}}Rate")
-        base_by_guest = etree.SubElement(rate_el, f"{{{OTA_NS}}}BaseByGuestAmts")
-        etree.SubElement(base_by_guest, f"{{{OTA_NS}}}BaseByGuestAmt", attrib={
-            "AmountAfterTax": f"{rate_amount:.2f}",
-            "CurrencyCode": currency,
-        })
 
     if stop_sell is not None:
         etree.SubElement(msg, f"{{{OTA_NS}}}RestrictionStatus", attrib={

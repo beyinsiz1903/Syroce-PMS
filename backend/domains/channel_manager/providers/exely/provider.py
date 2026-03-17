@@ -227,47 +227,74 @@ class ExelyProvider:
         stop_sell: Optional[bool] = None,
         min_stay: Optional[int] = None,
     ) -> ProviderResult:
-        """Push ARI update via OTA_HotelAvailNotifRQ (availability/restrictions) or OTA_HotelRateAmountNotifRQ (rates)."""
+        """Push ARI update. Splits into separate SOAP calls:
+        - OTA_HotelRateAmountNotifRQ for rate changes
+        - OTA_HotelAvailNotifRQ for availability/restrictions
+        Exely requires these as separate operations."""
         start = time.time()
-        # Use rate-specific message if only pushing rates
-        if rate_amount is not None and availability is None and stop_sell is None and min_stay is None:
-            operation = "OTA_HotelRateAmountNotifRQ"
-            soap_action = get_soap_action_uri(operation)
-            xml = build_rate_amount_notif_rq(
-                self._username, self._password, self._hotel_code,
-                room_type_code, rate_plan_code, start_date, end_date,
-                rate_amount, currency,
-            )
-        else:
-            operation = "OTA_HotelAvailNotifRQ"
-            soap_action = get_soap_action_uri(operation)
-            xml = build_ari_update_rq(
-                self._username, self._password, self._hotel_code,
-                room_type_code, rate_plan_code, start_date, end_date,
-                availability, rate_amount, currency, stop_sell, min_stay,
-            )
-        try:
-            validate_ari_payload(room_type_code, rate_plan_code, start_date, end_date)
+        validate_ari_payload(room_type_code, rate_plan_code, start_date, end_date)
 
-            async def _call():
-                return await self._transport.send_soap(xml, soap_action)
+        has_rate = rate_amount is not None
+        has_avail = availability is not None or stop_sell is not None or min_stay is not None
+        errors = []
 
-            raw = await self._retry.execute(_call)
-            result = parse_ari_update_rs(raw)
-            duration_ms = int((time.time() - start) * 1000)
+        # 1) Push rate via OTA_HotelRateAmountNotifRQ
+        if has_rate:
+            try:
+                rate_op = "OTA_HotelRateAmountNotifRQ"
+                rate_xml = build_rate_amount_notif_rq(
+                    self._username, self._password, self._hotel_code,
+                    room_type_code, rate_plan_code, start_date, end_date,
+                    rate_amount, currency,
+                )
+                rate_action = get_soap_action_uri(rate_op)
 
-            obs.record_provider_call(
-                soap_action=operation,
-                duration_ms=duration_ms,
-                success=result["success"],
-                connection_id=self._connection_id,
-            )
+                async def _rate_call():
+                    return await self._transport.send_soap(rate_xml, rate_action)
 
-            if result["success"]:
-                return ProviderResult(success=True, data=result, duration_ms=duration_ms)
-            return ProviderResult(success=False, error=result.get("error", "ARI push failed"), duration_ms=duration_ms)
-        except ExelyError as e:
-            return self._handle_error(e, start, operation)
+                raw = await self._retry.execute(_rate_call)
+                result = parse_ari_update_rs(raw)
+                dur = int((time.time() - start) * 1000)
+                obs.record_provider_call(soap_action=rate_op, duration_ms=dur, success=result["success"], connection_id=self._connection_id)
+                if not result["success"]:
+                    errors.append(f"Rate: {result.get('error', 'failed')}")
+                else:
+                    logger.info(f"[ARI-PUSH] Rate pushed OK: room={room_type_code} plan={rate_plan_code} rate={rate_amount} {start_date}-{end_date}")
+            except ExelyError as e:
+                errors.append(f"Rate: {e}")
+                logger.error(f"[ARI-PUSH] Rate push error: {e}")
+
+        # 2) Push availability/restrictions via OTA_HotelAvailNotifRQ
+        if has_avail:
+            try:
+                avail_op = "OTA_HotelAvailNotifRQ"
+                avail_xml = build_ari_update_rq(
+                    self._username, self._password, self._hotel_code,
+                    room_type_code, rate_plan_code, start_date, end_date,
+                    availability, None, currency, stop_sell, min_stay,
+                )
+                avail_action = get_soap_action_uri(avail_op)
+
+                async def _avail_call():
+                    return await self._transport.send_soap(avail_xml, avail_action)
+
+                raw = await self._retry.execute(_avail_call)
+                result = parse_ari_update_rs(raw)
+                dur = int((time.time() - start) * 1000)
+                obs.record_provider_call(soap_action=avail_op, duration_ms=dur, success=result["success"], connection_id=self._connection_id)
+                if not result["success"]:
+                    errors.append(f"Avail: {result.get('error', 'failed')}")
+                else:
+                    logger.info(f"[ARI-PUSH] Avail pushed OK: room={room_type_code} plan={rate_plan_code} avail={availability} stop={stop_sell} min_stay={min_stay} {start_date}-{end_date}")
+            except ExelyError as e:
+                errors.append(f"Avail: {e}")
+                logger.error(f"[ARI-PUSH] Avail push error: {e}")
+
+        duration_ms = int((time.time() - start) * 1000)
+
+        if errors:
+            return ProviderResult(success=False, error="; ".join(errors), duration_ms=duration_ms)
+        return ProviderResult(success=True, data={"message": "ARI update applied"}, duration_ms=duration_ms)
 
     # ── Reservation Delivery Confirmation ─────────────────────────────
 
