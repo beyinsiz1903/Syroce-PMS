@@ -331,6 +331,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
                 <DollarSign className="w-5 h-5 text-emerald-400" />
                 Fiyat ve Müsaitlik Düzenle
               </DialogTitle>
+              <p className="text-xs text-zinc-500">Seçili hücrenin değerlerini güncelleyin</p>
             </DialogHeader>
             {editDialog && (
               <div className="space-y-4">
