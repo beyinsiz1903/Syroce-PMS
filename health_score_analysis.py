@@ -9,7 +9,7 @@ import requests
 from datetime import datetime
 
 def main():
-    backend_url = "https://exely-importer.preview.emergentagent.com"
+    backend_url = "https://exely-sync-boost.preview.emergentagent.com"
     
     # Authenticate
     session = requests.Session()
