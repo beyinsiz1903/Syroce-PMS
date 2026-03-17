@@ -1,88 +1,75 @@
 # Syroce PMS — Product Requirements Document
 
 ## Original Problem Statement
-Enterprise-grade PMS (Property Management System) with channel management, runtime enforcement, and operational visibility for the Turkish hospitality market. Focus on reliability, observability, and production readiness.
+Enterprise-grade Property Management System (PMS) for hotel operations. The current strategic direction shifted from "building a good product" to "proving a production-ready system." Focus is on live reliability via `observe → stress → verify → rollout → prove`.
 
-## Core Architecture
-- **Backend:** FastAPI + MongoDB + Motor (async)
-- **Frontend:** React + Tailwind + Shadcn/UI
-- **Integrations:** Exely (SOAP), HotelRunner (REST), Slack (notifications)
-- **Realtime:** Socket.IO for cockpit streaming
+## Core System
+- Multi-tenant PMS with Room Management, Reservations, Front Desk, Folio/Billing, Housekeeping, Night Audit
+- Channel Manager integration (Exely SOAP API, HotelRunner REST API)
+- Rate Manager with dynamic availability
+- Runtime Cockpit with WebSocket state snapshot streaming
+- Production Readiness scoring, 1-Click Safe Actions, Narrow Rollout Framework
 
-## User Personas
-- **Hotel Operator:** Day-to-day PMS operations, reservations, ARI management
-- **System Admin:** Runtime monitoring, incident response, rollout management
+## What's Been Implemented
 
-## Completed Phases
+### Phase 6: Production Readiness (COMPLETED)
+- "Why NOT READY?" Scored Breakdown with prioritized blockers
+- "1-Click Safe Actions" with idempotent, guarded operations
+- "Narrow Rollout Framework" with automated gates
+- WebSocket Cockpit with state snapshot streaming
+- 88 passing tests
 
-### P1-P3: Core Foundation
-- Reservation management, room/rate mapping, ARI push/pull
-- Channel Manager with Exely + HotelRunner providers
-- Delta debounce, coalescing, provider simulation
+### Bug Fixes — 2026-03-17 (COMPLETED & TESTED)
+1. **Reservation Cancellation Bug (FIXED):**
+   - Frontend `BookingDetailDialog.js`: Cancel button now makes actual `POST /api/pms-core/cancel` API call
+   - Backend `reservation_state_machine.py`: Creates notification on cancellation, restores availability in rate_calendar
+   - Added `onBookingUpdated` callback to refresh bookings list after cancellation
+2. **Inventory/Availability Bug (FIXED):**
+   - Backend `rate_manager_router.py`: Grid now dynamically calculates availability = base - active bookings
+   - Backend `routers/pms.py`: Allotment contracts endpoint dynamically calculates `used_rooms`
+   - Frontend `RateManager.jsx`: Grid shows sold count with color coding for low availability
 
-### P4: Runtime Enforcement (47 tests)
-- Hard Fail Gate with mapping enforcement
-- Auto-Heal Service with conservative healing
-- Push Loop Worker with delta processing
-- Quarantine mechanism for failed items
+## Prioritized Backlog
 
-### P5: Operational Visibility (26 tests)
-- Notification System with severity model + cooldown
-- Runtime Cockpit Dashboard (flight panel)
-- Quarantine Visibility (classification + age buckets)
+### P0 — Execute Narrow Rollout
+- Phase 1: Internal tenant, test property, HotelRunner only
+- Phase 2: Add Exely provider
+- Phase 3: Real small hotel, low traffic
+- Phase 4: 7-day proof of reliability
 
-### P6: Production Readiness (15 tests) — COMPLETED 2026-03-17
-- **Readiness Scorer:** Scored "Why NOT READY?" breakdown (0-100)
-  - Weighted components: Mapping (40pts), Hard Fail (25pts), Verify (20pts), Drift (10pts), Quarantine (5pts)
-  - Prioritized issues sorted by severity (BLOCKER > CRITICAL > WARNING > INFO)
-  - Fix order suggestions with estimated impact scores
-  - READY state transition logging with delta analysis
-- **1-Click Safe Actions:** Idempotent operator actions
-  - Retry Safe: Re-queue retryable failed change sets
-  - Safe Release Quarantine: Guard chain (mapping validity + staleness)
-  - Revalidate Mapping: Full validation with diff output
-  - Suppress Noise: Temporary notification cooldown (max 120 min)
-- **Narrow Rollout Framework:** Controlled live deployment
-  - 5-phase state machine: INTERNAL → DUAL_PROVIDER → REAL_PILOT → 7DAY_PROOF → PRODUCTION
-  - Strict automatic gate checks (no manual override)
-  - Phase-specific criteria enforcement
-  - Duration minimums per phase
-- **WebSocket Cockpit Streaming:** Real-time snapshot-based updates
-  - Critical metrics: verify_ratio, hard_fail_blocked, quarantine_count, drift_count, queue_size
-  - Diff-based broadcasting (only sends changes)
-  - LIVE indicator in UI
+### P1 — Advanced Auto-Heal
+- Confidence scores, provider-specific rules
 
-## Total Test Coverage
-- P4: 47 tests
-- P5: 26 tests
-- P6: 15 tests
-- **Total: 88 tests, all passing**
+### P2 — Deprecated Code Cleanup
+- Remove old provider files (hotelrunner.py, client.py, exely_client_legacy.py)
 
-## Key API Endpoints
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| /api/lockdown/runtime/cockpit | GET | Full cockpit metrics |
-| /api/lockdown/runtime/readiness-score | GET | Scored readiness breakdown |
-| /api/lockdown/runtime/actions/retry-safe | POST | Retry failed change sets |
-| /api/lockdown/runtime/actions/revalidate-mapping | POST | Validate all mappings |
-| /api/lockdown/runtime/actions/suppress-noise | POST | Suppress notifications |
-| /api/lockdown/runtime/rollout/state | GET | Current rollout state |
-| /api/lockdown/runtime/rollout/initialize | POST | Start rollout |
-| /api/lockdown/runtime/rollout/gate-check | GET | Evaluate gate conditions |
-| /api/lockdown/runtime/rollout/advance | POST | Attempt phase transition |
-| /api/lockdown/runtime/rollout/dashboard | GET | Full rollout dashboard |
-| /api/lockdown/notifications/events | GET | Recent events |
-| /api/lockdown/notifications/summary | GET | Event summary by severity |
+### P3 — Core Lockdown Blocks B & C
+- ProviderCapabilityMatrix, Reconciliation Truth Table
 
-## Test Credentials
+### P4 — Financial Module Hardening
+- Folio and Night Audit modules
+
+### P4 — Tenant Management
+- Per-tenant rollout gates, feature flags
+
+## Known Issues
+- WebSocket LIVE indicator doesn't work in preview environment (environmental, not code bug)
+- Bookings cache can serve stale data for default query (minor, cache refreshes periodically)
+
+## Architecture
+```
+/app
+├── backend/
+│   ├── domains/pms/ (core PMS, channel manager, revenue)
+│   ├── modules/pms_core/ (reservation state machine, front desk, folio)
+│   ├── routers/ (pms, pms_hardening, enterprise, housekeeping)
+│   └── tests/
+└── frontend/src/
+    ├── pages/ (PMSModule, RateManager, ReservationCalendar, RuntimeCockpit)
+    └── components/pms/ (BookingDetailDialog, BookingsTab, etc.)
+```
+
+## Credentials
 | User | Email | Password |
 |------|-------|----------|
 | Demo Admin | demo@hotel.com | demo123 |
-
-## Prioritized Backlog
-- (P0) Narrow Rollout Execution — actually run through phases in live env
-- (P1) Advanced Auto-Heal — confidence score, provider-specific rules
-- (P2) Deprecated Code Cleanup — hotelrunner.py, client.py, exely_client_legacy.py
-- (P3) Core Lockdown Blocks B & C — ProviderCapabilityMatrix, Reconciliation Truth Table
-- (P4) Financial Module Hardening — Folio, Night Audit
-- (P4) Tenant Management — per-tenant rollout gates, feature flags
