@@ -66,7 +66,7 @@ class ReservationStateMachine:
         return existing
 
     async def handle_cancellation(self, tenant_id: str, booking: Dict, cancelled_by: str, reason: str = None) -> Dict:
-        """Cancel a reservation with inventory release and audit trail."""
+        """Cancel a reservation with inventory release, notification, and audit trail."""
         current_status = booking.get("status")
         if current_status in NON_CANCELLABLE_STATES:
             return {"success": False, "error": f"Cannot cancel reservation in '{current_status}' state"}
@@ -92,6 +92,60 @@ class ReservationStateMachine:
             if room and room.get("status") == "occupied" and booking.get("status") == "checked_in":
                 pass  # checked_in cannot be cancelled
             # For non-checked-in bookings, room doesn't need status change (it's not occupied yet)
+
+        # Restore availability in rate_calendar if applicable
+        try:
+            check_in = booking.get("check_in", "")[:10]
+            check_out = booking.get("check_out", "")[:10]
+            room_doc = await db.rooms.find_one({"id": room_id, "tenant_id": tenant_id}, {"_id": 0, "room_type": 1}) if room_id else None
+            if room_doc and check_in and check_out:
+                room_type = room_doc.get("room_type", "")
+                # Find matching exely mapping for room_type_code
+                mapping = await db.exely_room_mappings.find_one(
+                    {"tenant_id": tenant_id, "pms_room_type": room_type}, {"_id": 0, "exely_room_code": 1}
+                )
+                if mapping:
+                    room_type_code = mapping["exely_room_code"]
+                    await db.rate_calendar.update_many(
+                        {
+                            "tenant_id": tenant_id,
+                            "room_type_code": room_type_code,
+                            "date": {"$gte": check_in, "$lt": check_out},
+                            "availability": {"$exists": True},
+                        },
+                        {"$inc": {"availability": 1}},
+                    )
+        except Exception:
+            pass  # Non-critical: availability update failure should not block cancellation
+
+        # Create notification for cancellation
+        try:
+            import uuid as _uuid
+            guest_id = booking.get("guest_id")
+            guest_name = booking.get("guest_name", "")
+            if not guest_name and guest_id:
+                guest_doc = await db.guests.find_one({"id": guest_id}, {"_id": 0, "name": 1})
+                guest_name = guest_doc.get("name", "Misafir") if guest_doc else "Misafir"
+
+            room_number = booking.get("room_number", "")
+            if not room_number and room_id:
+                room_doc2 = await db.rooms.find_one({"id": room_id}, {"_id": 0, "room_number": 1})
+                room_number = room_doc2.get("room_number", "") if room_doc2 else ""
+
+            await db.notifications.insert_one({
+                "id": str(_uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "type": "reservation_cancelled",
+                "severity": "warning",
+                "title": f"Rezervasyon İptal Edildi - Oda {room_number}",
+                "message": f"{guest_name} adlı misafirin {booking.get('check_in', '')[:10]} - {booking.get('check_out', '')[:10]} tarihli rezervasyonu iptal edildi. Sebep: {reason or 'Belirtilmedi'}",
+                "related_entity": "reservation",
+                "related_id": booking["id"],
+                "read": False,
+                "created_at": now.isoformat(),
+            })
+        except Exception:
+            pass  # Non-critical
 
         # Audit trail
         await db.pms_audit_trail.insert_one({

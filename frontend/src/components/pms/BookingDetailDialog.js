@@ -1,12 +1,15 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import axios from 'axios';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { DollarSign, FileText } from 'lucide-react';
+import { DollarSign, FileText, Loader2, XCircle } from 'lucide-react';
 
-const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies, onViewFolio }) => {
+const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies, onViewFolio, onBookingUpdated }) => {
   const { t } = useTranslation();
+  const [cancelling, setCancelling] = useState(false);
 
   if (!booking) return null;
 
@@ -121,14 +124,30 @@ const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies,
               size="sm"
               variant="outline"
               className="border-red-400 text-red-700 hover:bg-red-50"
-              onClick={() => {
-                if (confirm(t('booking.cancelBooking') + '?')) {
-                  toast.success(t('booking.cancelled'));
+              disabled={cancelling || booking.status === 'cancelled' || booking.status === 'checked_in' || booking.status === 'checked_out'}
+              data-testid="cancel-booking-btn"
+              onClick={async () => {
+                if (!confirm(t('booking.cancelBooking') + '?')) return;
+                setCancelling(true);
+                try {
+                  await axios.post('/pms-core/cancel', {
+                    booking_id: booking.id,
+                    reason: 'Kullanıcı tarafından iptal edildi'
+                  });
+                  toast.success('Rezervasyon başarıyla iptal edildi');
+                  if (onBookingUpdated) onBookingUpdated();
                   onClose();
+                } catch (err) {
+                  const detail = err.response?.data?.detail;
+                  const msg = typeof detail === 'string' ? detail : detail?.error || 'İptal işlemi başarısız';
+                  toast.error(msg);
+                } finally {
+                  setCancelling(false);
                 }
               }}
             >
-              {t('booking.cancelBooking')}
+              {cancelling ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <XCircle className="w-4 h-4 mr-1" />}
+              {booking.status === 'cancelled' ? 'İptal Edildi' : t('booking.cancelBooking')}
             </Button>
           </div>
         </div>

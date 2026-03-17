@@ -73,10 +73,11 @@ async def get_rate_grid(
         key = f"{entry['room_type_code']}|{entry['rate_plan_code']}|{entry['date']}"
         cal_index[key] = entry
 
-    # Count available rooms per type
+    # Count rooms per type and collect room IDs per type
     room_counts = {}
+    room_ids_by_type = {}
     rooms = await db.rooms.find(
-        {"tenant_id": tenant_id}, {"_id": 0, "room_type": 1, "status": 1}
+        {"tenant_id": tenant_id}, {"_id": 0, "id": 1, "room_type": 1, "status": 1}
     ).to_list(500)
     for r in rooms:
         rt = r.get("room_type", "")
@@ -84,6 +85,36 @@ async def get_rate_grid(
         room_counts[rt]["total"] += 1
         if r.get("status") == "available":
             room_counts[rt]["available"] += 1
+        room_ids_by_type.setdefault(rt, []).append(r["id"])
+
+    # Fetch active bookings in date range to calculate dynamic availability
+    ACTIVE_STATUSES = ["pending", "confirmed", "guaranteed", "checked_in"]
+    active_bookings = await db.bookings.find(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ACTIVE_STATUSES},
+            "check_in": {"$lt": end_date},
+            "check_out": {"$gt": start_date},
+        },
+        {"_id": 0, "room_id": 1, "check_in": 1, "check_out": 1},
+    ).to_list(10000)
+
+    # Build a lookup: for each room_type + date -> count of sold rooms
+    def count_sold_for_type(pms_room_type, day_str):
+        """Count how many rooms of this type are booked on this date."""
+        rt_room_ids = set(room_ids_by_type.get(pms_room_type, []))
+        if not rt_room_ids:
+            return 0
+        sold = 0
+        for b in active_bookings:
+            rid = b.get("room_id")
+            if rid not in rt_room_ids:
+                continue
+            ci = (b.get("check_in") or "")[:10]
+            co = (b.get("check_out") or "")[:10]
+            if ci <= day_str < co:
+                sold += 1
+        return sold
 
     # Build grid
     grid = []
@@ -105,10 +136,21 @@ async def get_rate_grid(
                 ds = d.strftime("%Y-%m-%d")
                 key = f"{rt['code']}|{rp['code']}|{ds}"
                 entry = cal_index.get(key, {})
+
+                # Dynamic availability: base availability minus sold bookings
+                base_avail = entry.get("availability")
+                sold_count = count_sold_for_type(pms_type or rt["name"], ds)
+                if base_avail is not None:
+                    real_avail = max(base_avail - sold_count, 0)
+                else:
+                    real_avail = max(counts["total"] - sold_count, 0)
+
                 dates_data.append({
                     "date": ds,
                     "rate": entry.get("rate"),
-                    "availability": entry.get("availability", counts["available"]),
+                    "availability": real_avail,
+                    "base_availability": base_avail if base_avail is not None else counts["total"],
+                    "sold": sold_count,
                     "min_stay": entry.get("min_stay", 1),
                     "stop_sell": entry.get("stop_sell", False),
                 })

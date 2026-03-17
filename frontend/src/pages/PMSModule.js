@@ -2903,6 +2903,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           rooms={rooms}
           companies={companies}
           onViewFolio={loadBookingFolios}
+          onBookingUpdated={loadData}
         />
 
         {/* Floating Action Button - Quick Actions */}

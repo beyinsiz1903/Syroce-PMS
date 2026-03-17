@@ -1358,10 +1358,36 @@ async def update_staff_task(
 async def get_allotment_contracts(
     current_user: User = Depends(get_current_user)
 ):
-    """Get tour operator allotment contracts"""
+    """Get tour operator allotment contracts with dynamic usage count"""
     contracts = await db.allotment_contracts.find({
         'tenant_id': current_user.tenant_id
     }, {'_id': 0}).to_list(1000)
+
+    # Dynamically calculate used_rooms from active bookings
+    ACTIVE_STATUSES = ["pending", "confirmed", "guaranteed", "checked_in"]
+    for contract in contracts:
+        room_type = contract.get('room_type')
+        start_date = contract.get('start_date')
+        end_date = contract.get('end_date')
+        if room_type and start_date and end_date:
+            # Find rooms of this type
+            room_ids = []
+            async for room in db.rooms.find(
+                {"tenant_id": current_user.tenant_id, "room_type": room_type},
+                {"_id": 0, "id": 1}
+            ):
+                room_ids.append(room["id"])
+
+            if room_ids:
+                used = await db.bookings.count_documents({
+                    "tenant_id": current_user.tenant_id,
+                    "room_id": {"$in": room_ids},
+                    "status": {"$in": ACTIVE_STATUSES},
+                    "check_in": {"$lt": end_date},
+                    "check_out": {"$gt": start_date},
+                })
+                contract['used_rooms'] = used
+
     return contracts
 
 

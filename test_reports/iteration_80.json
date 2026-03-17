@@ -1,0 +1,68 @@
+{
+  "summary": "Bug fix verification completed for Cancel Reservation and Dynamic Availability features. Both bugs are FIXED and working correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/pms/bookings (no date filter)",
+        "issue": "Cache invalidation issue - stale data returned without date filter params. Using date filters bypasses cache_warmer and returns correct data.",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_bug_fixes_cancel_availability.py",
+    "/app/test_reports/pytest/pytest_bug_fixes_cancel_availability.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Cache invalidation: The bookings endpoint uses cache_warmer which can serve stale data. When cancelling a booking, the cache should be invalidated. However, using date filter params bypasses the cache, so this is a minor issue."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_bug_fixes_cancel_availability.py"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "100%"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bug fixes verified: 1) Cancel reservation flow is working - POST /api/pms-core/cancel properly updates booking status to 'cancelled' and creates a notification with type 'reservation_cancelled'. 2) Rate manager grid now returns dynamic availability with 'sold' count calculated from active bookings. Frontend shows '(X satıldı)' in blue text alongside availability. Note: bookings list endpoint has cache issue - use date filter params to get fresh data.",
+  "bugs_verified_as_fixed": {
+    "bug_1_cancel_reservation": {
+      "status": "FIXED",
+      "description": "Cancelled reservation now properly calls backend API",
+      "verification": [
+        "POST /api/pms-core/cancel returns success=true and updates booking status to 'cancelled' in MongoDB",
+        "Notification created with type 'reservation_cancelled' containing room number, guest name, dates, and reason",
+        "Frontend BookingDetailDialog.js shows Cancel Booking button with data-testid='cancel-booking-btn'",
+        "UI displays cancelled bookings with red 'cancelled' badge"
+      ]
+    },
+    "bug_2_dynamic_availability": {
+      "status": "FIXED",
+      "description": "Rate manager grid now shows sold count alongside availability",
+      "verification": [
+        "GET /api/channel-manager/rate-manager/grid returns base_availability, sold, and availability fields",
+        "availability = base_availability - sold (dynamic calculation)",
+        "Frontend RateManager.jsx displays '(X satıldı)' in blue text when sold > 0",
+        "Example: March 18 shows '7 oda (1 satıldı)' - 7 rooms available, 1 sold"
+      ]
+    }
+  },
+  "test_results": {
+    "test_cancel_api_exists": "PASSED",
+    "test_cancel_booking_flow_creates_notification": "PASSED",
+    "test_rate_manager_grid_returns_sold_count": "PASSED",
+    "test_rate_manager_grid_structure": "PASSED",
+    "test_allotment_contracts_returns_dynamic_used_rooms": "SKIPPED (no allotment contracts)",
+    "test_cancel_api_validates_booking_status": "PASSED",
+    "test_cancel_restores_availability": "PASSED"
+  }
+}

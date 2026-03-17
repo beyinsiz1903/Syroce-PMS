@@ -520,7 +520,14 @@ const RateManager = ({ user, tenant, onLogout }) => {
                                   <div className="text-xs text-gray-300">-</div>
                                 )}
                                 <div className="text-[10px] text-gray-400">
-                                  {cell.availability != null ? `${cell.availability} oda` : ''}
+                                  {cell.availability != null ? (
+                                    <span className={cell.availability === 0 ? 'text-red-500 font-semibold' : cell.availability <= 2 ? 'text-amber-500 font-medium' : ''}>
+                                      {cell.availability} oda
+                                    </span>
+                                  ) : ''}
+                                  {cell.sold > 0 && (
+                                    <span className="text-blue-500 ml-0.5">({cell.sold} satıldı)</span>
+                                  )}
                                 </div>
                                 {cell.min_stay > 1 && (
                                   <div className="text-[10px] text-amber-600">min {cell.min_stay}g</div>
