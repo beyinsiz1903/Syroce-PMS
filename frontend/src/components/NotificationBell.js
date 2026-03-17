@@ -6,6 +6,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Bell, X, AlertCircle, Info, CheckCircle, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
+const API = process.env.REACT_APP_BACKEND_URL;
+
 const NotificationBell = () => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -14,14 +16,17 @@ const NotificationBell = () => {
 
   useEffect(() => {
     loadNotifications();
-    // Poll for new notifications every 30 seconds
-    const interval = setInterval(loadNotifications, 30000);
+    const interval = setInterval(loadNotifications, 15000);
     return () => clearInterval(interval);
   }, []);
 
   const loadNotifications = async () => {
     try {
-      const response = await axios.get('/notifications/my?limit=20');
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const response = await axios.get(`${API}/api/notifications/list?limit=20`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setNotifications(response.data.notifications || []);
       setUnreadCount(response.data.unread_count || 0);
     } catch (error) {
@@ -31,7 +36,10 @@ const NotificationBell = () => {
 
   const markAsRead = async (notificationId) => {
     try {
-      await axios.post(`/notifications/${notificationId}/mark-read`);
+      const token = localStorage.getItem('token');
+      await axios.put(`${API}/api/notifications/${notificationId}/mark-read`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       loadNotifications();
     } catch (error) {
       console.error('Failed to mark as read:', error);
@@ -40,11 +48,17 @@ const NotificationBell = () => {
 
   const markAllAsRead = async () => {
     try {
-      await axios.post('/notifications/mark-all-read');
-      toast.success('✓ Tüm bildirimler okundu olarak işaretlendi');
+      const token = localStorage.getItem('token');
+      const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
+      await Promise.all(unreadIds.map(id =>
+        axios.put(`${API}/api/notifications/${id}/mark-read`, {}, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      ));
+      toast.success('Tüm bildirimler okundu olarak işaretlendi');
       loadNotifications();
     } catch (error) {
-      toast.error('✗ Hata');
+      toast.error('Hata');
     }
   };
 

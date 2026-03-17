@@ -110,6 +110,8 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("domains.channel_manager.providers.exely.exely_router", "router", ["Exely Integration"], None, None),
     # ARI Push Engine
     ("domains.channel_manager.ari.router", "router", ["ARI Push Engine"], None, None),
+    # Rate Manager — Fiyat/Müsaitlik/Kısıtlama Yönetimi
+    ("domains.channel_manager.rate_manager_router", "router", ["Rate Manager"], None, None),
     # Channel Manager — Unified Data Model
     ("domains.channel_manager.model_router", "router", ["Channel Manager — Data Model"], None, None),
     # Reservation Ingest Pipeline

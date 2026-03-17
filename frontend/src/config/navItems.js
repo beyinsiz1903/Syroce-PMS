@@ -150,6 +150,14 @@ export const NAV_ITEMS = [
     group: "professional",
   },
   {
+    key: "rate_manager",
+    label: "Fiyat ve Müsaitlik",
+    path: "/rate-manager",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+  },
+  {
     key: "ari_push",
     label: "ARI Push Engine",
     path: "/ari-push",

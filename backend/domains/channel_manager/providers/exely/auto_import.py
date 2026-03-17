@@ -151,6 +151,25 @@ async def auto_import_reservation(tenant_id: str, channel_res: Dict[str, Any]) -
         }},
     )
 
+    # Create notification for the new booking
+    try:
+        notification = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "user_id": None,
+            "type": "success",
+            "title": "Yeni Rezervasyon",
+            "message": f"{guest_name} - Oda {room.get('room_number', '')} ({pms_room_type}), {checkin} → {checkout}",
+            "priority": "high",
+            "category": "reservation",
+            "read": False,
+            "created_at": now,
+            "action_url": "/bookings",
+        }
+        await db.notifications.insert_one({**notification})
+    except Exception as e:
+        logger.warning(f"[EXELY-IMPORT] Notification creation failed: {e}")
+
     logger.info(
         f"[EXELY-IMPORT] {external_id} -> booking {booking_id}, "
         f"room {room.get('room_number')}, guest {guest_name}"

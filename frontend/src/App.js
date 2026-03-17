@@ -169,6 +169,7 @@ const SoakTestDashboard = lazy(() => import("@/pages/SoakTestDashboard"));
 const HotelRunnerIntegration = lazy(() => import("@/pages/HotelRunnerIntegration"));
 const ExelyIntegration = lazy(() => import("@/pages/ExelyIntegration"));
 const ARIPushDashboard = lazy(() => import("@/pages/ARIPushDashboard"));
+const RateManager = lazy(() => import("@/pages/RateManager"));
 const DataModelDashboard = lazy(() => import("@/pages/DataModelDashboard"));
 
 import { Toaster } from "@/components/ui/sonner";
@@ -1453,6 +1454,16 @@ function App() {
             element={
               isAuthenticated ? (
                 <ARIPushDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/rate-manager"
+            element={
+              isAuthenticated ? (
+                <RateManager user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )
