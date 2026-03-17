@@ -555,14 +555,43 @@ class ReservationImportService:
         logger.info("Modified PMS booking %s", imported.pms_booking_id)
 
     async def _cancel_pms_booking(self, tenant_id: str, pms_booking_id: str):
+        now = datetime.now(timezone.utc)
+        booking = await db.bookings.find_one(
+            {"id": pms_booking_id, "tenant_id": tenant_id},
+            {"_id": 0, "guest_name": 1, "guest_id": 1, "room_id": 1, "room_number": 1, "check_in": 1, "check_out": 1},
+        )
         await db.bookings.update_one(
             {"id": pms_booking_id, "tenant_id": tenant_id},
             {"$set": {
                 "status": "cancelled",
-                "cancelled_at": datetime.now(timezone.utc).isoformat(),
+                "cancelled_at": now.isoformat(),
                 "cancelled_by": "channel_manager",
             }},
         )
+        # Create notification for channel-manager-synced cancellation
+        try:
+            guest_name = booking.get("guest_name", "Misafir") if booking else "Misafir"
+            room_id = booking.get("room_id") if booking else None
+            room_label = ""
+            if room_id:
+                room_doc = await db.rooms.find_one({"id": room_id}, {"_id": 0, "room_number": 1})
+                room_label = f" - Oda {room_doc.get('room_number', '')}" if room_doc else ""
+            check_in = (booking.get("check_in", "") or "")[:10] if booking else ""
+            check_out = (booking.get("check_out", "") or "")[:10] if booking else ""
+            await db.notifications.insert_one({
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "type": "reservation_cancelled",
+                "severity": "warning",
+                "title": f"OTA İptali - {guest_name}{room_label}",
+                "message": f"{guest_name} adlı misafirin {check_in} - {check_out} tarihli OTA rezervasyonu kanal tarafından iptal edildi.",
+                "related_entity": "reservation",
+                "related_id": pms_booking_id,
+                "read": False,
+                "created_at": now.isoformat(),
+            })
+        except Exception:
+            pass
         logger.info("Cancelled PMS booking %s", pms_booking_id)
 
     async def _find_or_create_guest(self, tenant_id: str, canonical: CanonicalReservation) -> str:

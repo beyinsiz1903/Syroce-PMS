@@ -33,11 +33,13 @@ class ReservationReadService:
                 booking["guest_name"] = await self.repository.get_guest_name(booking["guest_id"]) or "Unknown Guest"
 
             if booking.get("room_id"):
-                booking["room_number"] = (
-                    await self.repository.get_room_number(booking["room_id"])
-                    or booking.get("room_number")
-                    or "Unknown Room"
-                )
+                room_doc = await self.repository.get_room_for_tenant_public(booking["room_id"])
+                if room_doc:
+                    booking["room_number"] = room_doc.get("room_number") or booking.get("room_number") or "Unknown Room"
+                    if not booking.get("room_type"):
+                        booking["room_type"] = room_doc.get("room_type")
+                else:
+                    booking["room_number"] = booking.get("room_number") or "Unknown Room"
 
             rate_map = {
                 "advance_purchase": "promotional",

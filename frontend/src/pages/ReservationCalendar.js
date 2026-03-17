@@ -22,7 +22,9 @@ import {
   Info,
   Search,
   AlertCircle,
-  CheckCircle
+  CheckCircle,
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -39,6 +41,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [companies, setCompanies] = useState([]);
   const [roomBlocks, setRoomBlocks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [daysToShow, setDaysToShow] = useState(14); // 2 weeks view
 
   // Calendar data meta (used to avoid misleading Enterprise/AI/Deluxe+ metrics when dataset is empty)
@@ -227,6 +230,56 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       toast.error('Failed to load calendar data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Sync reservations from OTA channels
+  const handleSyncReservations = async () => {
+    setSyncing(true);
+    try {
+      // Get active connectors
+      const connectorsRes = await axios.get('/channel-manager/connectors').catch(() => ({ data: [] }));
+      const connectors = Array.isArray(connectorsRes.data) ? connectorsRes.data : [];
+      
+      if (connectors.length === 0) {
+        toast.info('Aktif kanal bağlantısı bulunamadı');
+        setSyncing(false);
+        return;
+      }
+
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - 7);
+      const endDate = new Date();
+      endDate.setMonth(endDate.getMonth() + 3);
+
+      let totalImported = 0;
+      let totalCancelled = 0;
+      for (const conn of connectors) {
+        try {
+          const result = await axios.post('/channel-manager/reservations/pull', {
+            connector_id: conn.id,
+            date_start: startDate.toISOString().split('T')[0],
+            date_end: endDate.toISOString().split('T')[0],
+          });
+          totalImported += result.data?.imported || 0;
+          totalCancelled += result.data?.cancelled || 0;
+        } catch (e) {
+          console.warn(`Sync failed for connector ${conn.id}:`, e);
+        }
+      }
+
+      if (totalImported > 0 || totalCancelled > 0) {
+        toast.success(`Senkronizasyon tamamlandı: ${totalImported} yeni, ${totalCancelled} iptal`);
+      } else {
+        toast.info('Yeni rezervasyon değişikliği bulunamadı');
+      }
+
+      await loadCalendarData();
+    } catch (error) {
+      console.error('Sync failed:', error);
+      toast.error('Senkronizasyon başarısız');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -475,6 +528,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       setDraggingBooking(null);
       return;
     }
+
+    // If booking is unassigned (no room_id), this is a room assignment (not a move)
+    if (!draggingBooking.room_id) {
+      setDraggingBooking(null);
+      await handleAssignRoom(draggingBooking, newRoomId);
+      return;
+    }
     
     // Check if actually moving to different room or date
     const oldRoomId = draggingBooking.room_id;
@@ -602,7 +662,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     const detectedConflicts = [];
     
     rooms.forEach(room => {
-      const roomBookings = bookings.filter(b => b.room_id === room.id);
+      const roomBookings = bookings.filter(b => b.room_id === room.id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
       
       // Check for overlapping bookings
       for (let i = 0; i < roomBookings.length; i++) {
@@ -672,7 +732,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       }
       
       // Check if room is available for the date range
-      const roomBookings = bookings.filter(b => b.room_id === room.id);
+      const roomBookings = bookings.filter(b => b.room_id === room.id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
       const isAvailable = !roomBookings.some(booking => {
         const bStart = new Date(booking.check_in);
         const bEnd = new Date(booking.check_out);
@@ -725,6 +785,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
     return bookings.some(b => {
       if (b.room_id !== roomId) return false;
+      if (b.status === 'cancelled' || b.status === 'checked_out' || b.status === 'no_show') return false;
 
       const checkIn = toDateStringUTC(b.check_in);
       const checkOut = toDateStringUTC(b.check_out);
@@ -743,12 +804,56 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     return dayStr >= checkIn && dayStr < checkOut;
   };
 
+  // Get bookings that are unassigned (no room_id) for a given room type and date
+  const getUnassignedBookingsForTypeOnDate = (roomType, date) => {
+    const dayStr = toDateStringUTC(date);
+    return bookings.filter(booking => {
+      if (booking.status === 'cancelled' || booking.status === 'checked_out' || booking.status === 'no_show') return false;
+      if (booking.room_id) return false;
+      const bType = (booking.room_type || '').toLowerCase();
+      if (bType !== roomType.toLowerCase()) return false;
+      const checkIn = toDateStringUTC(booking.check_in);
+      const checkOut = toDateStringUTC(booking.check_out);
+      return dayStr >= checkIn && dayStr < checkOut;
+    });
+  };
+
+  // Get all unassigned bookings for a room type (for the unassigned row start detection)
+  const getUnassignedBookingsForType = (roomType) => {
+    return bookings.filter(booking => {
+      if (booking.status === 'cancelled' || booking.status === 'checked_out' || booking.status === 'no_show') return false;
+      if (booking.room_id) return false;
+      const bType = (booking.room_type || '').toLowerCase();
+      return bType === roomType.toLowerCase();
+    });
+  };
+
+  // Handle room assignment via drag from unassigned to a room
+  const handleAssignRoom = async (booking, newRoomId) => {
+    try {
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `room-assign-${Date.now()}`;
+      await axios.put(`/pms/bookings/${booking.id}`, {
+        room_id: newRoomId,
+      }, {
+        headers: { 'Idempotency-Key': idempotencyKey },
+      });
+      const newRoom = rooms.find(r => r.id === newRoomId);
+      toast.success(`Rezervasyon ${newRoom?.room_number || ''} numaralı odaya atandı`);
+      loadCalendarData();
+    } catch (error) {
+      toast.error('Oda ataması başarısız');
+      console.error('Room assignment error:', error);
+    }
+  };
+
   // Get booking for room on specific date
   const getBookingForRoomOnDate = (roomId, date) => {
     const dayStr = toDateStringUTC(date);
     
     const found = bookings.find(booking => {
       if (booking.room_id !== roomId) return false;
+      // Filter out cancelled / checked-out / no-show bookings
+      if (booking.status === 'cancelled' || booking.status === 'checked_out' || booking.status === 'no_show') return false;
       
       const checkIn = toDateStringUTC(booking.check_in);
       const checkOut = toDateStringUTC(booking.check_out);
@@ -1074,6 +1179,16 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             <p className="text-gray-600 mt-1">Timeline view of all bookings</p>
           </div>
           <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              onClick={handleSyncReservations}
+              disabled={syncing}
+              data-testid="sync-reservations-btn"
+              className="border-green-400 text-green-700 hover:bg-green-50"
+            >
+              {syncing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+              {syncing ? 'Senkronize ediliyor...' : 'OTA Sync'}
+            </Button>
             <Button onClick={() => setShowFindRoomDialog(true)}>
               <Search className="w-4 h-4 mr-2" />
               Find Room
@@ -1889,7 +2004,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                     return aIndex - bIndex;
                   });
                   
-                  return sortedTypes.map((roomType) => (
+                  return sortedTypes.map((roomType) => {
+                    const unassignedForType = getUnassignedBookingsForType(roomType);
+                    return (
                     <div key={roomType}>
                       {/* Room Type Header */}
                       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b-2 border-gray-400">
@@ -1901,8 +2018,69 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                           <span className="ml-3 text-xs text-blue-600 font-semibold bg-blue-100 px-2 py-0.5 rounded-full">
                             {groupedRooms[roomType].length} oda
                           </span>
+                          {unassignedForType.length > 0 && (
+                            <span className="ml-2 text-xs text-amber-700 font-semibold bg-amber-100 px-2 py-0.5 rounded-full animate-pulse">
+                              {unassignedForType.length} atanmamış
+                            </span>
+                          )}
                         </div>
                       </div>
+
+                      {/* Unassigned Bookings Row */}
+                      {unassignedForType.length > 0 && (
+                        <div className="flex border-b-2 border-dashed border-amber-400 bg-amber-50/40">
+                          <div className="w-32 flex-shrink-0 p-2 border-r-2 border-gray-400 bg-amber-50">
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></div>
+                              <div className="font-bold text-[10px] text-amber-800 uppercase">Atanmamış</div>
+                            </div>
+                            <div className="text-[9px] text-amber-600 mt-0.5 ml-3 font-medium">Sürükle → Oda</div>
+                          </div>
+                          <div className="flex relative" style={{ width: `${daysToShow * 96}px` }}>
+                            {dateRange.map((date, idx) => {
+                              const dayStr = toDateStringUTC(date);
+                              const unassignedOnDate = getUnassignedBookingsForTypeOnDate(roomType, date);
+                              // Show only the first unassigned booking that starts on this date
+                              const startBooking = unassignedOnDate.find(b => toDateStringUTC(b.check_in) === dayStr);
+
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`w-24 flex-shrink-0 border-r border-b border-amber-200 relative ${
+                                    isToday(date) ? 'bg-amber-100/60' : 'bg-amber-50/20'
+                                  }`}
+                                  style={{ height: '54px', minHeight: '54px', overflow: 'visible' }}
+                                >
+                                  {startBooking && (
+                                    <div
+                                      draggable
+                                      onDragStart={(e) => handleDragStart(e, startBooking)}
+                                      onDragEnd={handleDragEnd}
+                                      onDoubleClick={() => handleBookingDoubleClick(startBooking)}
+                                      className="absolute top-1 left-0.5 rounded-lg text-white text-xs shadow-md hover:shadow-xl transition-all cursor-move z-20 bg-amber-500 border-2 border-amber-600 border-dashed"
+                                      style={{
+                                        width: `${calculateBookingSpan(startBooking, currentDate) * 96 - 4}px`,
+                                        height: '48px',
+                                      }}
+                                      data-testid={`unassigned-booking-${startBooking.id}`}
+                                      title={`${startBooking.guest_name} - Odaya sürükleyin`}
+                                    >
+                                      <div className="p-1.5 h-full relative overflow-hidden">
+                                        <div className="font-bold text-[11px] truncate pr-4 text-white drop-shadow-sm">
+                                          {startBooking.guest_name || 'Misafir'}
+                                        </div>
+                                        <div className="text-[9px] text-amber-100 truncate mt-0.5">
+                                          {startBooking.channel || startBooking.source || 'OTA'} · Oda ata
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                       
                       {/* Rooms of this type */}
                       {groupedRooms[roomType].map((room) => (
@@ -2113,7 +2291,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                   </div>
                       ))}
                     </div>
-                  ));
+                  )});
                 })()
               )}
             </div>
@@ -2641,6 +2819,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             onViewFolio={handleViewFolio}
             onEditReservation={handleEditReservation}
             onSendConfirmation={handleSendConfirmation}
+            onDataRefresh={loadCalendarData}
           />
         </>
       )}

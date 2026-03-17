@@ -56,6 +56,10 @@ class ReservationsRepository:
         room = await db.rooms.find_one({"id": room_id}, {"room_number": 1, "_id": 0})
         return room.get("room_number") if room else None
 
+    async def get_room_for_tenant_public(self, room_id: str) -> Optional[Dict[str, Any]]:
+        """Get room_number + room_type by room_id (no tenant check, for enrichment)."""
+        return await db.rooms.find_one({"id": room_id}, {"_id": 0, "room_number": 1, "room_type": 1})
+
     async def get_room_for_tenant(self, tenant_id: str, room_id: str) -> Optional[Dict[str, Any]]:
         return await db.rooms.find_one(
             {

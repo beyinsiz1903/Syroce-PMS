@@ -763,9 +763,11 @@ async def get_bookings(
                             booking['guest_name'] = guest.get('name') or f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip() or 'Unknown Guest'
                     # Always enrich room_number from room document (handles room moves)
                     if booking.get('room_id'):
-                        room = await db.rooms.find_one({'id': booking['room_id']}, {'room_number': 1, '_id': 0})
+                        room = await db.rooms.find_one({'id': booking['room_id']}, {'room_number': 1, 'room_type': 1, '_id': 0})
                         if room:
                             booking['room_number'] = room.get('room_number', 'Unknown Room')
+                            if not booking.get('room_type'):
+                                booking['room_type'] = room.get('room_type')
                         elif not booking.get('room_number'):
                             booking['room_number'] = 'Unknown Room'
                     if 'rate_type' in booking:

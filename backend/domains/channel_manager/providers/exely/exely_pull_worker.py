@@ -176,10 +176,9 @@ class ExelyPullScheduler:
         duration_ms = int((datetime.now(timezone.utc) - pull_start).total_seconds() * 1000)
         await log_sync(PROVIDER, tenant_id, "scheduled_pull", "success", duration_ms, processed)
 
-        # Auto-import all pending reservations to PMS
-        if processed > 0:
-            import_result = await auto_import_pending(tenant_id)
-            logger.info(f"[EXELY-PULL] Auto-import: {import_result['imported']}/{import_result['total']} imported")
+        # Auto-import all pending reservations to PMS + process cancellations
+        import_result = await auto_import_pending(tenant_id)
+        logger.info(f"[EXELY-PULL] Auto-import: {import_result['imported']}/{import_result['total']} imported")
 
         logger.info(f"[EXELY-PULL] Tenant {tenant_id}: fetched {len(reservations)}, processed {processed}")
         return {
