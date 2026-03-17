@@ -257,8 +257,18 @@ axios.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      console.warn('⚠️ 401 Unauthorized - Token may be invalid');
-      // Don't auto-logout on first 401, let app handle it
+      console.warn('401 Unauthorized - Token may be invalid');
+    }
+    // Normalize Pydantic validation errors: convert detail array to string
+    if (error.response?.data?.detail) {
+      const detail = error.response.data.detail;
+      if (Array.isArray(detail)) {
+        error.response.data.detail = detail
+          .map((d) => (typeof d === 'object' ? d.msg || JSON.stringify(d) : d))
+          .join('; ');
+      } else if (typeof detail === 'object') {
+        error.response.data.detail = detail.msg || JSON.stringify(detail);
+      }
     }
     return Promise.reject(error);
   }

@@ -18,6 +18,8 @@ from models.schemas import User
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_PUSH_CHANNELS = ["reservations", "housekeeping", "maintenance", "system"]
+
 router = APIRouter(prefix="/api", tags=["PMS / Notifications"])
 
 
@@ -199,7 +201,8 @@ async def get_push_status(current_user: User = Depends(get_current_user)):
     )
     
     last_delivery = await db.push_delivery_logs.find(
-        {'tenant_id': current_user.tenant_id, 'target_user_ids': {'$in': [current_user.id]}}
+        {'tenant_id': current_user.tenant_id, 'target_user_ids': {'$in': [current_user.id]}},
+        {'_id': 0}
     ).sort('created_at', -1).to_list(1)
     
     return {

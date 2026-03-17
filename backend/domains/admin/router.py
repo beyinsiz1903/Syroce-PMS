@@ -21,6 +21,12 @@ from subscription_models import SubscriptionTier, SUBSCRIPTION_PLANS
 
 logger = logging.getLogger(__name__)
 
+ROLES_BY_TIER = {
+    "basic": ["admin", "front_desk", "housekeeping"],
+    "professional": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit"],
+    "enterprise": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit", "gm", "super_admin"],
+}
+
 
 from domains.admin.schemas import (  # noqa: E402
     PermissionCheckRequest, TenantModulesUpdate, SubscriptionUpdateRequest,
