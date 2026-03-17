@@ -15,7 +15,8 @@ Build a complete Hotel Property Management System (PMS) with Channel Manager int
 - **Notification System** - Backend creates notifications on new booking import, frontend bell icon displays alerts
 - **Rate Manager Page** - Full-stack ARI management with form-based editing (like Channel Manager's Rate & Availability tab) + grid view
 - **Rate Manager UI Redesign** (Mar 17, 2026) - Redesigned to match Channel Manager's light theme with form-based rate/availability/restrictions editing
-- **ARI Push Bug Fix** (Mar 17, 2026) - Fixed critical bug where rate+availability+restrictions were sent in a single OTA_HotelAvailNotifRQ. Now split into separate SOAP calls: OTA_HotelRateAmountNotifRQ for rates, OTA_HotelAvailNotifRQ for availability/restrictions. This ensures Exely properly receives and applies all changes.
+- **ARI Push Bug Fix** (Mar 17, 2026) - Split into separate SOAP calls: OTA_HotelRateAmountNotifRQ for rates, OTA_HotelAvailNotifRQ for availability/restrictions
+- **Folio Navigation Fix** (Mar 17, 2026) - Fixed "View Full Folio" button in ReservationCalendar sidebar. Was redirecting to /invoices, now correctly navigates to /folio-detail/{folioId}. Also fixed FolioDetailView to read folioId from URL params (useParams).
 - **Channel Manager** - OTA connections, room mappings, rate & availability, reservations, exceptions
 
 ### Architecture
@@ -26,8 +27,8 @@ Build a complete Hotel Property Management System (PMS) with Channel Manager int
 │   ├── domains/
 │   │   ├── channel_manager/
 │   │   │   ├── providers/exely/
-│   │   │   │   ├── provider.py          # MODIFIED: Split push_ari into 2 SOAP calls
-│   │   │   │   └── soap_builder.py      # MODIFIED: Removed rate from OTA_HotelAvailNotifRQ
+│   │   │   │   ├── provider.py          # Split push_ari into 2 SOAP calls
+│   │   │   │   └── soap_builder.py      # Removed rate from OTA_HotelAvailNotifRQ
 │   │   │   └── services/auto_import_service.py
 │   │   └── pms/
 │   │       ├── notifications_router.py
@@ -37,7 +38,11 @@ Build a complete Hotel Property Management System (PMS) with Channel Manager int
     └── src/
         ├── App.jsx
         ├── components/Layout.js
-        └── pages/RateManager.jsx         # REDESIGNED: Form-based UI matching Channel Manager
+        ├── components/ReservationSidebar.js
+        └── pages/
+            ├── RateManager.jsx            # Form-based UI matching Channel Manager
+            ├── ReservationCalendar.js      # Fixed handleViewFolio navigation
+            └── FolioDetailView.js          # Added useParams for URL folioId
 ```
 
 ## Prioritized Backlog
@@ -54,11 +59,12 @@ Remove deprecated provider files (hotelrunner.py, client.py, exely_client_legacy
 Conduct 24h soak test, reservation burst test, and ARI storm test.
 
 ## Key API Endpoints
-- `POST /api/channel-manager/rate-manager/update` - Push ARI updates to Exely (now split into 2 SOAP calls)
+- `POST /api/channel-manager/rate-manager/update` - Push ARI updates to Exely (split into 2 SOAP calls)
 - `GET /api/channel-manager/rate-manager/grid` - Fetch Rate Manager grid data
 - `GET /api/channel-manager/rate-manager/room-types` - Fetch room types and rate plans
 - `GET /api/pms/notifications` - Fetch unread notifications
-- `POST /api/pms/notifications/mark-as-read` - Mark notifications as read
+- `GET /api/folio/booking/{bookingId}` - Get folios for a booking
+- `GET /api/pms-core/folio/detail/{folioId}` - Get folio detail
 
 ## 3rd Party Integrations
 - **Exely (SOAP API)**: Production-ready for reservation pull and ARI push

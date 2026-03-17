@@ -330,9 +330,25 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   };
 
   // Sidebar action handlers
-  const handleViewFolio = (bookingId) => {
-    setShowSidebar(false);
-    navigate('/invoices');
+  const handleViewFolio = async (bookingId) => {
+    // If we already have a loaded folio, navigate directly
+    if (selectedBookingFolio && selectedBookingFolio.id) {
+      setShowSidebar(false);
+      navigate(`/folio-detail/${selectedBookingFolio.id}`);
+      return;
+    }
+    // Otherwise try to load the folio for this booking
+    try {
+      const folioRes = await axios.get(`/folio/booking/${bookingId}`);
+      if (folioRes.data && folioRes.data.length > 0) {
+        setShowSidebar(false);
+        navigate(`/folio-detail/${folioRes.data[0].id}`);
+      } else {
+        toast.info('Bu rezervasyon için henüz folyo oluşturulmamış');
+      }
+    } catch (error) {
+      toast.error('Folyo yüklenemedi');
+    }
   };
 
   const handleEditReservation = (booking) => {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useParams } from "react-router-dom";
 import axios from "axios";
 import { useTranslation } from "react-i18next";
 import Layout from "../components/Layout";
@@ -164,8 +165,9 @@ function VoidDetailsPanel({ voidDetails, t }) {
 }
 
 export default function FolioDetailView({ user, tenant, onLogout, folioId: propFolioId, onClose }) {
+  const { folioId: paramFolioId } = useParams();
   const { t } = useTranslation();
-  const [folioId, setFolioId] = useState(propFolioId || "");
+  const [folioId, setFolioId] = useState(propFolioId || paramFolioId || "");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState("timeline");
@@ -181,7 +183,10 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
     finally { setLoading(false); }
   }, [token, t]);
 
-  useEffect(() => { if (propFolioId) fetchDetail(propFolioId); }, [propFolioId, fetchDetail]);
+  useEffect(() => { 
+    const id = propFolioId || paramFolioId;
+    if (id) fetchDetail(id); 
+  }, [propFolioId, paramFolioId, fetchDetail]);
 
   const summary = data?.summary;
   const folio = data?.folio;
