@@ -12,7 +12,7 @@ Rules:
 """
 import logging
 from datetime import date, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from .events import ARIChangeEvent
 from .repositories import compute_delta_hash, compute_outbound_delta_hash
@@ -26,12 +26,31 @@ def _parse_date(d) -> date:
     return date.fromisoformat(str(d))
 
 
+def _deduplicate_by_date_range(events: List[ARIChangeEvent]) -> List[ARIChangeEvent]:
+    """For overlapping date ranges, keep only the last event (last write wins).
+
+    Events arriving in the same debounce window for the same date range
+    represent successive updates — only the final value matters.
+    """
+    # Group by (date_from, date_to), preserve insertion order, keep last
+    seen: Dict[tuple, ARIChangeEvent] = {}
+    for ev in events:
+        key = (_parse_date(ev.date_from), _parse_date(ev.date_to))
+        seen[key] = ev  # last write wins
+    return list(seen.values())
+
+
 def _merge_date_ranges(events: List[ARIChangeEvent]) -> List[dict]:
-    """Merge consecutive/overlapping date ranges with identical payloads."""
+    """Deduplicate overlapping ranges (last write wins), then merge consecutive
+    date ranges with identical payloads into minimal range set."""
     if not events:
         return []
 
-    sorted_events = sorted(events, key=lambda e: _parse_date(e.date_from))
+    # Step 1: Last-write-wins for identical date ranges
+    deduped = _deduplicate_by_date_range(events)
+
+    # Step 2: Sort by date_from and merge consecutive ranges with same payload
+    sorted_events = sorted(deduped, key=lambda e: _parse_date(e.date_from))
     merged = []
     current = {
         "date_from": _parse_date(sorted_events[0].date_from),

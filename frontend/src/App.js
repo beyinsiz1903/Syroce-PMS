@@ -172,6 +172,7 @@ const ARIPushDashboard = lazy(() => import("@/pages/ARIPushDashboard"));
 const RateManager = lazy(() => import("@/pages/RateManager"));
 const DataModelDashboard = lazy(() => import("@/pages/DataModelDashboard"));
 const LockdownDashboard = lazy(() => import("@/pages/LockdownDashboard"));
+const OperatorIncidentPanel = lazy(() => import("@/pages/OperatorIncidentPanel"));
 
 import { Toaster } from "@/components/ui/sonner";
 
@@ -1485,6 +1486,16 @@ function App() {
             element={
               isAuthenticated ? (
                 <LockdownDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/incidents"
+            element={
+              isAuthenticated ? (
+                <OperatorIncidentPanel user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )

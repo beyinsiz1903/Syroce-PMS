@@ -130,6 +130,8 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("ops.production_rollout_router", "router", ["Production Rollout"], None, None),
     # Core Lockdown — Observability & Health
     ("domains.channel_manager.lockdown_router", "router", ["Core Lockdown"], None, None),
+    # Operator Incident Panel
+    ("domains.channel_manager.incident_router", "router", ["Incident Panel"], None, None),
 ]
 
 # Optional routers with special import paths

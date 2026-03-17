@@ -166,6 +166,22 @@ export const NAV_ITEMS = [
     group: "professional",
   },
   {
+    key: "lockdown_dashboard",
+    label: "Lockdown Dashboard",
+    path: "/lockdown",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+  },
+  {
+    key: "incident_panel",
+    label: "Incident Panel",
+    path: "/incidents",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+  },
+  {
     key: "data_model",
     label: "Data Model",
     path: "/data-model",
