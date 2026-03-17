@@ -107,6 +107,13 @@ async def push_pending_changes(
         prov = cs["provider"]
         prop_id = cs["property_id"]
 
+        # Hard fail gate check (runtime mapping enforcement)
+        from .hard_fail_gate import enforce_hard_fail_gate, HF_PASS
+        verdict = await enforce_hard_fail_gate(cs)
+        if verdict.status != HF_PASS:
+            results["failed"] += 1
+            continue
+
         # Outbound idempotency check
         is_dupe = await repo.check_outbound_idempotency(
             prov, prop_id, cs["provider_delta_hash"]
