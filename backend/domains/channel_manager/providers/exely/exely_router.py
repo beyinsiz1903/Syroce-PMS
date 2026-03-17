@@ -17,6 +17,7 @@ from domains.channel_manager.providers.common_ingest import ingest_reservation, 
 from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
 from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
+from domains.channel_manager.credential_vault import store_secret, get_decrypted_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class ExelyARIUpdate(BaseModel):
     end_date: str
     availability: Optional[int] = None
     rate_amount: Optional[float] = None
-    currency: str = "TRY"
+    currency: str = "USD"
     stop_sell: Optional[bool] = None
     min_stay: Optional[int] = None
 
@@ -67,13 +68,25 @@ async def _get_client(tenant_id: str) -> tuple:
     )
     if not conn:
         raise HTTPException(status_code=404, detail="Exely baglantisi bulunamadi. Lutfen once baglanti kurun.")
-    kwargs = {
-        "username": conn["username"],
-        "password": conn["password"],
-        "hotel_code": conn["hotel_code"],
-    }
-    if conn.get("endpoint_url"):
-        kwargs["endpoint_url"] = conn["endpoint_url"]
+
+    # Try vault first, then fall back to connection doc
+    creds = await get_decrypted_credentials(tenant_id, PROVIDER, conn.get("hotel_code", ""))
+    if creds:
+        kwargs = {
+            "username": creds.get("username", ""),
+            "password": creds.get("password", ""),
+            "hotel_code": creds.get("hotel_code", ""),
+        }
+        if creds.get("endpoint_url"):
+            kwargs["endpoint_url"] = creds["endpoint_url"]
+    else:
+        kwargs = {
+            "username": conn["username"],
+            "password": conn["password"],
+            "hotel_code": conn["hotel_code"],
+        }
+        if conn.get("endpoint_url"):
+            kwargs["endpoint_url"] = conn["endpoint_url"]
     return ExelyProvider(**kwargs), conn
 
 
@@ -99,16 +112,32 @@ async def setup_connection(
     if not test_result["connected"]:
         raise HTTPException(status_code=400, detail=f"Exely baglanti hatasi: {test_result['error']}")
 
-    connection = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
+    # Store credentials in encrypted vault
+    vault_payload = {
         "username": payload.username,
         "password": payload.password,
         "hotel_code": payload.hotel_code,
         "endpoint_url": payload.endpoint_url or "",
+        "currency": "USD",
+    }
+    credentials_ref = await store_secret(
+        tenant_id=current_user.tenant_id,
+        provider=PROVIDER,
+        property_id=payload.hotel_code,
+        credentials=vault_payload,
+    )
+
+    connection = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "hotel_code": payload.hotel_code,
+        "credentials_ref": credentials_ref,
+        "endpoint_url": payload.endpoint_url or "",
         "property_name": payload.property_name or f"Exely Property ({payload.hotel_code})",
         "auto_sync_reservations": payload.auto_sync_reservations,
         "sync_interval_minutes": payload.sync_interval_minutes,
+        "mode": "sandbox",
+        "currency": "USD",
         "is_active": True,
         "room_types": test_result.get("room_types", []),
         "rate_plans": test_result.get("rate_plans", []),
@@ -139,7 +168,7 @@ async def setup_connection(
 async def get_connection_status(current_user: User = Depends(get_current_user)):
     conn = await db.exely_connections.find_one(
         {"tenant_id": current_user.tenant_id},
-        {"_id": 0, "password": 0},
+        {"_id": 0, "password": 0, "username": 0, "credentials_ref": 0},
     )
     if not conn:
         return {"connected": False, "message": "Exely baglantisi kurulmamis"}
@@ -316,12 +345,25 @@ async def manual_pull(current_user: User = Depends(get_current_user)):
     if not conn:
         raise HTTPException(status_code=404, detail="Exely baglantisi bulunamadi")
 
+    # Get credentials from vault
+    creds = await get_decrypted_credentials(current_user.tenant_id, PROVIDER, conn.get("hotel_code", ""))
+    if creds:
+        username = creds.get("username", "")
+        password = creds.get("password", "")
+        hotel_code = creds.get("hotel_code", "")
+        endpoint_url = creds.get("endpoint_url", "")
+    else:
+        username = conn.get("username", "")
+        password = conn.get("password", "")
+        hotel_code = conn.get("hotel_code", "")
+        endpoint_url = conn.get("endpoint_url", "")
+
     result = await exely_pull_scheduler.pull_for_tenant(
         tenant_id=current_user.tenant_id,
-        username=conn["username"],
-        password=conn["password"],
-        hotel_code=conn["hotel_code"],
-        endpoint_url=conn.get("endpoint_url", ""),
+        username=username,
+        password=password,
+        hotel_code=hotel_code,
+        endpoint_url=endpoint_url,
     )
 
     if not result["success"]:

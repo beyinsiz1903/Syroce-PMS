@@ -307,7 +307,7 @@ class TestSoapBuilder:
         assert "OTA_ReadRQ" in xml
         assert "H1" in xml
         assert "2025-01-01" in xml
-        assert "<wsse:Username>u</wsse:Username>" in xml
+        assert 'Username="u"' in xml
 
     def test_build_read_rq_by_id(self):
         xml = build_read_rq("u", "p", "H1", reservation_id="RES123")
@@ -345,14 +345,12 @@ class TestSoapBuilder:
         assert "LengthOfStay" in xml
         assert 'Time="2"' in xml
 
-    def test_wsse_security_header(self):
+    def test_security_header(self):
         xml = build_read_rq("user1", "pass1", "H1")
-        assert "wsse:Security" in xml
-        assert "wsse:UsernameToken" in xml
-        assert "wsse:Nonce" in xml
-        assert "wsu:Timestamp" in xml
-        assert "wsu:Created" in xml
-        assert "wsu:Expires" in xml
+        assert "Security" in xml
+        assert 'Username="user1"' in xml
+        assert 'Password="pass1"' in xml
+        assert "hopenapi.com" in xml
 
 
 # ── Response Parser ──────────────────────────────────────────────────

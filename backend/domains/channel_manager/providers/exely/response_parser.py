@@ -211,15 +211,20 @@ def parse_hotel_avail_rs(xml_bytes: bytes) -> Dict[str, Any]:
 
     for room_stay in body.iter(_ns("RoomStay")):
         for rt in room_stay.iter(_ns("RoomType")):
+            # HopenAPI uses RoomDescription with Name attribute
+            desc = rt.find(_ns("RoomDescription"))
+            name = _attr(desc, "Name", _attr(rt, "RoomDescription", _attr(rt, "RoomTypeCode")))
             room_types.append({
                 "code": _attr(rt, "RoomTypeCode"),
-                "name": _attr(rt, "RoomDescription", _attr(rt, "RoomTypeCode")),
+                "name": name,
                 "quantity": int(_attr(rt, "NumberOfUnits", "0")),
             })
         for rp in room_stay.iter(_ns("RatePlan")):
+            desc = rp.find(_ns("RatePlanDescription"))
+            name = _attr(desc, "Name", _attr(rp, "RatePlanName", ""))
             rate_plans.append({
                 "code": _attr(rp, "RatePlanCode"),
-                "name": _attr(rp, "RatePlanName", ""),
+                "name": name,
             })
 
     # Deduplicate

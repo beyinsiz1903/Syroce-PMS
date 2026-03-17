@@ -1,70 +1,52 @@
 """
 Exely SOAP XML Builder
-Constructs OTA-standard SOAP envelopes with WSSE Security headers.
+Constructs OTA-standard SOAP envelopes for the Exely/HopenAPI PMSConnect WCF service.
 
-Security: WSSE UsernameToken with Timestamp (wsu:Created, wsu:Expires) + Nonce.
+Security: Simple attribute-based Security header per WSDL schema:
+  <Security xmlns="https://www.hopenapi.com/Api/PMSConnect" Username="..." Password="..." />
 
 Supported messages:
-  - OTA_ReadRQ       (pull reservations)
-  - OTA_HotelAvailRQ (discover rooms/rates)
-  - OTA_NotifReportRQ(ARI push)
+  - OTA_ReadRQ              (pull reservations)
+  - OTA_HotelAvailRQ        (discover rooms/rates)
+  - OTA_HotelAvailNotifRQ   (ARI push — availability/restrictions)
+  - OTA_HotelRateAmountNotifRQ (ARI push — rates)
+  - OTA_NotifReportRQ        (delivery confirmation)
 """
-import base64
-import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from lxml import etree
 
 SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/"
-WSSE_NS = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
-WSU_NS = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"
 OTA_NS = "http://www.opentravel.org/OTA/2003/05"
+SEC_NS = "https://www.hopenapi.com/Api/PMSConnect"
 
-NSMAP_SOAP = {"soapenv": SOAP_NS, "wsse": WSSE_NS, "wsu": WSU_NS, "ota": OTA_NS}
+# SOAPAction URIs from WSDL
+SOAP_ACTIONS = {
+    "OTA_HotelAvailRQ": "https://www.hopenapi.com/Api/PMSConnect/HotelAvailRQ",
+    "OTA_ReadRQ": "https://www.hopenapi.com/Api/PMSConnect/HotelReadReservationRQ",
+    "OTA_HotelAvailNotifRQ": "https://www.hopenapi.com/Api/PMSConnect/HotelAvailNotifRQ",
+    "OTA_HotelRateAmountNotifRQ": "https://www.hopenapi.com/Api/PMSConnect/HotelRateAmountNotifRQ",
+    "OTA_NotifReportRQ": "https://www.hopenapi.com/Api/PMSConnect/NotifReportRQRequest",
+    "OTA_HotelInvCountNotifRQ": "https://www.hopenapi.com/Api/PMSConnect/HotelInvCountNotifRQRequest",
+    "PingRQ": "https://www.hopenapi.com/Api/PMSConnect/PingRQRequest",
+}
+
+
+def get_soap_action_uri(operation: str) -> str:
+    """Resolve an OTA operation name to its full WSDL SOAPAction URI."""
+    return SOAP_ACTIONS.get(operation, operation)
 
 
 def _soap_envelope(username: str, password: str, hotel_code: str, body_element: etree._Element) -> str:
-    """Wrap an OTA body element in a full SOAP envelope with WSSE auth + Timestamp + Nonce."""
-    env = etree.Element(f"{{{SOAP_NS}}}Envelope", nsmap=NSMAP_SOAP)
+    """Wrap an OTA body element in a SOAP envelope with the PMSConnect Security header."""
+    env = etree.Element(f"{{{SOAP_NS}}}Envelope", nsmap={"s": SOAP_NS})
 
-    # Header with WSSE Security
+    # Header — simple Security element per WSDL xsd1
     header = etree.SubElement(env, f"{{{SOAP_NS}}}Header")
-    security = etree.SubElement(header, f"{{{WSSE_NS}}}Security", attrib={
-        f"{{{SOAP_NS}}}mustUnderstand": "1",
+    etree.SubElement(header, f"{{{SEC_NS}}}Security", attrib={
+        "Username": username,
+        "Password": password,
     })
-
-    # wsu:Timestamp — Created + Expires (5 min TTL)
-    now = datetime.now(timezone.utc)
-    expires = now + timedelta(minutes=5)
-    timestamp = etree.SubElement(security, f"{{{WSU_NS}}}Timestamp")
-    created_el = etree.SubElement(timestamp, f"{{{WSU_NS}}}Created")
-    created_el.text = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-    expires_el = etree.SubElement(timestamp, f"{{{WSU_NS}}}Expires")
-    expires_el.text = expires.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    # UsernameToken with Nonce
-    username_token = etree.SubElement(security, f"{{{WSSE_NS}}}UsernameToken")
-    un_el = etree.SubElement(username_token, f"{{{WSSE_NS}}}Username")
-    un_el.text = username
-    pw_el = etree.SubElement(username_token, f"{{{WSSE_NS}}}Password", attrib={
-        "Type": "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText",
-    })
-    pw_el.text = password
-
-    # Nonce (16 random bytes, base64-encoded) — replay attack protection
-    nonce_bytes = os.urandom(16)
-    nonce_el = etree.SubElement(username_token, f"{{{WSSE_NS}}}Nonce", attrib={
-        "EncodingType": "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary",
-    })
-    nonce_el.text = base64.b64encode(nonce_bytes).decode("ascii")
-
-    # wsu:Created inside UsernameToken
-    token_created = etree.SubElement(username_token, f"{{{WSU_NS}}}Created")
-    token_created.text = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    # HotelCode in security context
-    hotel_el = etree.SubElement(security, "HotelCode")
-    hotel_el.text = hotel_code
 
     # Body
     body = etree.SubElement(env, f"{{{SOAP_NS}}}Body")
@@ -175,11 +157,11 @@ def build_ari_update_rq(
     start_date: str, end_date: str,
     availability: Optional[int] = None,
     rate_amount: Optional[float] = None,
-    currency: str = "TRY",
+    currency: str = "USD",
     stop_sell: Optional[bool] = None,
     min_stay: Optional[int] = None,
 ) -> str:
-    """Build OTA_HotelAvailNotifRQ for ARI delta push."""
+    """Build OTA_HotelAvailNotifRQ for ARI delta push (availability + restrictions)."""
     rq = etree.Element(f"{{{OTA_NS}}}OTA_HotelAvailNotifRQ", attrib={
         "Version": "1.0",
         "TimeStamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -191,16 +173,16 @@ def build_ari_update_rq(
 
     msg = etree.SubElement(avail_status, f"{{{OTA_NS}}}AvailStatusMessage")
 
-    status_app = etree.SubElement(msg, f"{{{OTA_NS}}}StatusApplicationControl", attrib={  # noqa: F841
+    status_ctrl_attrib = {
         "Start": start_date,
         "End": end_date,
         "InvTypeCode": room_type_code,
         "RatePlanCode": rate_plan_code,
-    })
+    }
+    etree.SubElement(msg, f"{{{OTA_NS}}}StatusApplicationControl", attrib=status_ctrl_attrib)
 
     if availability is not None:
-        lengths = etree.SubElement(msg, f"{{{OTA_NS}}}LengthsOfStay")  # noqa: F841
-        etree.SubElement(msg, f"{{{OTA_NS}}}BookingLimit").text = str(availability)
+        msg.set("BookingLimit", str(availability))
 
     if rate_amount is not None:
         rates = etree.SubElement(msg, f"{{{OTA_NS}}}Rates")
@@ -212,7 +194,7 @@ def build_ari_update_rq(
         })
 
     if stop_sell is not None:
-        restriction = etree.SubElement(msg, f"{{{OTA_NS}}}RestrictionStatus", attrib={  # noqa: F841
+        etree.SubElement(msg, f"{{{OTA_NS}}}RestrictionStatus", attrib={
             "Status": "Close" if stop_sell else "Open",
             "Restriction": "Arrival",
         })
@@ -223,5 +205,45 @@ def build_ari_update_rq(
             "Time": str(min_stay),
             "MinMaxMessageType": "SetMinLOS",
         })
+
+    return _soap_envelope(username, password, hotel_code, rq)
+
+
+def build_rate_amount_notif_rq(
+    username: str, password: str, hotel_code: str,
+    room_type_code: str, rate_plan_code: str,
+    start_date: str, end_date: str,
+    rate_amount: float,
+    currency: str = "USD",
+) -> str:
+    """Build OTA_HotelRateAmountNotifRQ for rate-only push."""
+    rq = etree.Element(f"{{{OTA_NS}}}OTA_HotelRateAmountNotifRQ", attrib={
+        "Version": "1.0",
+        "TimeStamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    })
+
+    rate_amount_msgs = etree.SubElement(rq, f"{{{OTA_NS}}}RateAmountMessages", attrib={
+        "HotelCode": hotel_code,
+    })
+
+    msg = etree.SubElement(rate_amount_msgs, f"{{{OTA_NS}}}RateAmountMessage")
+
+    etree.SubElement(msg, f"{{{OTA_NS}}}StatusApplicationControl", attrib={
+        "Start": start_date,
+        "End": end_date,
+        "InvTypeCode": room_type_code,
+        "RatePlanCode": rate_plan_code,
+    })
+
+    rates = etree.SubElement(msg, f"{{{OTA_NS}}}Rates")
+    rate_el = etree.SubElement(rates, f"{{{OTA_NS}}}Rate", attrib={
+        "Start": start_date,
+        "End": end_date,
+    })
+    base_by_guest = etree.SubElement(rate_el, f"{{{OTA_NS}}}BaseByGuestAmts")
+    etree.SubElement(base_by_guest, f"{{{OTA_NS}}}BaseByGuestAmt", attrib={
+        "AmountAfterTax": f"{rate_amount:.2f}",
+        "CurrencyCode": currency,
+    })
 
     return _soap_envelope(username, password, hotel_code, rq)

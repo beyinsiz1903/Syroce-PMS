@@ -23,6 +23,8 @@ from .soap_builder import (
     build_hotel_avail_rq,
     build_notif_report_rq,
     build_ari_update_rq,
+    build_rate_amount_notif_rq,
+    get_soap_action_uri,
 )
 from .response_parser import (
     parse_read_rs,
@@ -84,11 +86,12 @@ class ExelyProvider:
 
     async def test_connection(self) -> ProviderResult:
         """
-        Smoke test: send OTA_HotelAvailRQ to verify WSSE credentials.
+        Smoke test: send OTA_HotelAvailRQ to verify credentials.
         Returns ProviderResult with connected status + discovered rooms/rates.
         """
         start = time.time()
-        soap_action = "OTA_HotelAvailRQ"
+        operation = "OTA_HotelAvailRQ"
+        soap_action = get_soap_action_uri(operation)
         try:
             checkin = datetime.now().strftime("%Y-%m-%d")
             checkout = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -102,7 +105,7 @@ class ExelyProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                soap_action=soap_action,
+                soap_action=operation,
                 duration_ms=duration_ms,
                 success=result["success"],
                 connection_id=self._connection_id,
@@ -124,7 +127,7 @@ class ExelyProvider:
                 duration_ms=duration_ms,
             )
         except ExelyError as e:
-            return self._handle_error(e, start, soap_action)
+            return self._handle_error(e, start, operation)
 
     # ── Room Discovery ────────────────────────────────────────────────
 
@@ -133,7 +136,8 @@ class ExelyProvider:
     ) -> ProviderResult:
         """Discover room types and rate plans via OTA_HotelAvailRQ."""
         start = time.time()
-        soap_action = "OTA_HotelAvailRQ"
+        operation = "OTA_HotelAvailRQ"
+        soap_action = get_soap_action_uri(operation)
         try:
             ci = checkin or datetime.now().strftime("%Y-%m-%d")
             co = checkout or (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -147,7 +151,7 @@ class ExelyProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                soap_action=soap_action,
+                soap_action=operation,
                 duration_ms=duration_ms,
                 success=result["success"],
                 connection_id=self._connection_id,
@@ -164,7 +168,7 @@ class ExelyProvider:
                 )
             return ProviderResult(success=False, error=result.get("error", "Discovery failed"), duration_ms=duration_ms)
         except ExelyError as e:
-            return self._handle_error(e, start, soap_action)
+            return self._handle_error(e, start, operation)
 
     # ── Reservation Pull ──────────────────────────────────────────────
 
@@ -176,7 +180,8 @@ class ExelyProvider:
     ) -> ProviderResult:
         """Pull reservations via OTA_ReadRQ."""
         start = time.time()
-        soap_action = "OTA_ReadRQ"
+        operation = "OTA_ReadRQ"
+        soap_action = get_soap_action_uri(operation)
         try:
             validate_date_range(from_date, to_date)
             xml = build_read_rq(self._username, self._password, self._hotel_code, from_date, to_date, reservation_id)
@@ -189,7 +194,7 @@ class ExelyProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                soap_action=soap_action,
+                soap_action=operation,
                 duration_ms=duration_ms,
                 success=result["success"],
                 connection_id=self._connection_id,
@@ -206,7 +211,7 @@ class ExelyProvider:
                 )
             return ProviderResult(success=False, error=result.get("error", "Pull failed"), duration_ms=duration_ms)
         except ExelyError as e:
-            return self._handle_error(e, start, soap_action)
+            return self._handle_error(e, start, operation)
 
     # ── ARI Push ──────────────────────────────────────────────────────
 
@@ -218,20 +223,31 @@ class ExelyProvider:
         end_date: str,
         availability: Optional[int] = None,
         rate_amount: Optional[float] = None,
-        currency: str = "TRY",
+        currency: str = "USD",
         stop_sell: Optional[bool] = None,
         min_stay: Optional[int] = None,
     ) -> ProviderResult:
-        """Push ARI update via OTA_HotelAvailNotifRQ."""
+        """Push ARI update via OTA_HotelAvailNotifRQ (availability/restrictions) or OTA_HotelRateAmountNotifRQ (rates)."""
         start = time.time()
-        soap_action = "OTA_HotelAvailNotifRQ"
-        try:
-            validate_ari_payload(room_type_code, rate_plan_code, start_date, end_date)
+        # Use rate-specific message if only pushing rates
+        if rate_amount is not None and availability is None and stop_sell is None and min_stay is None:
+            operation = "OTA_HotelRateAmountNotifRQ"
+            soap_action = get_soap_action_uri(operation)
+            xml = build_rate_amount_notif_rq(
+                self._username, self._password, self._hotel_code,
+                room_type_code, rate_plan_code, start_date, end_date,
+                rate_amount, currency,
+            )
+        else:
+            operation = "OTA_HotelAvailNotifRQ"
+            soap_action = get_soap_action_uri(operation)
             xml = build_ari_update_rq(
                 self._username, self._password, self._hotel_code,
                 room_type_code, rate_plan_code, start_date, end_date,
                 availability, rate_amount, currency, stop_sell, min_stay,
             )
+        try:
+            validate_ari_payload(room_type_code, rate_plan_code, start_date, end_date)
 
             async def _call():
                 return await self._transport.send_soap(xml, soap_action)
@@ -241,7 +257,7 @@ class ExelyProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                soap_action=soap_action,
+                soap_action=operation,
                 duration_ms=duration_ms,
                 success=result["success"],
                 connection_id=self._connection_id,
@@ -251,7 +267,7 @@ class ExelyProvider:
                 return ProviderResult(success=True, data=result, duration_ms=duration_ms)
             return ProviderResult(success=False, error=result.get("error", "ARI push failed"), duration_ms=duration_ms)
         except ExelyError as e:
-            return self._handle_error(e, start, soap_action)
+            return self._handle_error(e, start, operation)
 
     # ── Reservation Delivery Confirmation ─────────────────────────────
 
@@ -262,7 +278,8 @@ class ExelyProvider:
     ) -> ProviderResult:
         """Confirm reservation delivery via OTA_NotifReportRQ."""
         start = time.time()
-        soap_action = "OTA_NotifReportRQ"
+        operation = "OTA_NotifReportRQ"
+        soap_action = get_soap_action_uri(operation)
         try:
             xml = build_notif_report_rq(
                 self._username, self._password, self._hotel_code,
@@ -277,7 +294,7 @@ class ExelyProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                soap_action=soap_action,
+                soap_action=operation,
                 duration_ms=duration_ms,
                 success=result["success"],
                 connection_id=self._connection_id,
@@ -287,7 +304,7 @@ class ExelyProvider:
                 return ProviderResult(success=True, data=result, duration_ms=duration_ms)
             return ProviderResult(success=False, error=result.get("error", "Confirm failed"), duration_ms=duration_ms)
         except ExelyError as e:
-            return self._handle_error(e, start, soap_action)
+            return self._handle_error(e, start, operation)
 
     # ── Canonical helpers (for snapshot collectors & ingest) ───────────
 
