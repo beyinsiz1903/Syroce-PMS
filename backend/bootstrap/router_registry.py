@@ -134,6 +134,8 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("domains.channel_manager.incident_router", "router", ["Incident Panel"], None, None),
     # Runtime Enforcement (Hard Fail, Auto-Heal, Push Loop)
     ("domains.channel_manager.runtime_enforcement_router", "router", ["Runtime Enforcement"], None, None),
+    # Notification Events (High-Signal Dashboard Notifications)
+    ("domains.channel_manager.notification_events_router", "router", ["Notification Events"], None, None),
 ]
 
 # Optional routers with special import paths

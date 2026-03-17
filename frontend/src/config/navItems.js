@@ -182,6 +182,14 @@ export const NAV_ITEMS = [
     group: "professional",
   },
   {
+    key: "runtime_cockpit",
+    label: "Runtime Cockpit",
+    path: "/runtime-cockpit",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+  },
+  {
     key: "data_model",
     label: "Data Model",
     path: "/data-model",

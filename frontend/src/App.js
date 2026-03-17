@@ -173,6 +173,7 @@ const RateManager = lazy(() => import("@/pages/RateManager"));
 const DataModelDashboard = lazy(() => import("@/pages/DataModelDashboard"));
 const LockdownDashboard = lazy(() => import("@/pages/LockdownDashboard"));
 const OperatorIncidentPanel = lazy(() => import("@/pages/OperatorIncidentPanel"));
+const RuntimeCockpitPage = lazy(() => import("@/pages/RuntimeCockpitPage"));
 
 import { Toaster } from "@/components/ui/sonner";
 
@@ -1496,6 +1497,16 @@ function App() {
             element={
               isAuthenticated ? (
                 <OperatorIncidentPanel user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/runtime-cockpit"
+            element={
+              isAuthenticated ? (
+                <RuntimeCockpitPage user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )
