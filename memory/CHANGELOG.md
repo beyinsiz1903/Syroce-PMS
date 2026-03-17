@@ -1,22 +1,28 @@
 # CHANGELOG
 
-## 2026-03-13 — Reservation Ingest Pipeline
-- Implemented production-grade 8-stage ingest pipeline: persist → dedup → hash → stale → normalize → mapping → decide → lineage
-- Created `ingest/normalizer.py` with HotelRunner + Exely payload normalization and identity extraction
-- Created `ingest/decision_engine.py` with 6 decision outcomes: create, update, cancel, skip, pending_mapping, manual_review
-- Created `ingest/pipeline.py` with full async pipeline processing
-- Created `ingest/workers.py` with 4 workers: HR pull (stub), Exely pull (stub), ingest processor, replay worker
-- Created `ingest/ingest_router.py` with monitoring/control API (inject, inject-and-process, worker triggers, status)
-- Updated `hotelrunner_webhook.py` to feed webhooks into unified ingest pipeline
-- Updated `data_model.py` with ProcessingStatus enum, enhanced ReservationLineage (decision tracking, timestamps), new CaseTypes
-- Updated `unified_repository.py` with ingest-specific queries (dedup check, hash check, failed events, event stats)
-- Updated `DataModelDashboard.jsx` with Ingest Pipeline tab: worker controls, raw events table, processing badges
-- Testing: 24/24 backend tests passed, all 8 pipeline stages verified, all frontend features working
+## 2026-03-17 — Real Exely Test Environment Integration
+- **SOAP Builder Rewrite**: Replaced WSSE UsernameToken with WSDL-defined PMSConnect Security header (`Username`/`Password` attributes in `https://www.hopenapi.com/Api/PMSConnect` namespace)
+- **SOAPAction URIs**: All operations now use full WSDL-defined URIs (e.g., `https://www.hopenapi.com/Api/PMSConnect/HotelAvailRQ`)
+- **ARI Push Fix**: BookingLimit moved from child element to attribute on AvailStatusMessage; Rate element now includes Start/End dates
+- **Currency Default**: Changed from TRY to USD across all Exely operations
+- **New Function**: `build_rate_amount_notif_rq` for OTA_HotelRateAmountNotifRQ (rate-only push)
+- **Vault Integration**: `/connect` endpoint now stores credentials in encrypted vault; `_get_client` reads from vault first
+- **Response Parser**: Updated to handle HopenAPI's `RoomDescription Name=` attribute format
+- **Credential Security**: Connection status endpoint no longer exposes username/credentials_ref
+- **Test Results**: 14/14 real API tests pass (testing agent), 77/77 unit tests pass, 14/14 integration tests pass
 
-## 2026-03-13 — 9-Collection Data Model (v2.0)
-- Implemented optimized 9-collection model for 2-provider architecture
-- ConnectorProvider enum: hotelrunner | exely
-- 29/29 backend tests passed
+## 2026-03-14 — Production-Grade Exely SOAP Adapter
+- Created multi-module adapter at `/app/backend/domains/channel_manager/providers/exely/`
+- Implemented facade, SOAP client, error hierarchy, schemas
+- Refactored all legacy call sites to use new ExelyProvider
+- 77 unit + 14 integration tests (100% pass)
+- CI pipeline fix: pytest.mark.skipif for tests requiring live server
 
-## 2026-03-12 — Architectural Enhancements
-- Enriched Delta Hash, Dual-Mode Drift Worker, Provider Test Harness, Dashboard Metrics
+## 2026-03-12 — Production-Grade HotelRunner REST Adapter
+- Created `/app/backend/domains/channel_manager/providers/hotelrunner/`
+- 80+ tests with production patterns
+- Rate limiter, retry logic, observability
+
+## Earlier
+- Phase 1-5: PMS core, Front Desk, Night Audit, Revenue Engine, Channel Manager
+- Slack integration, Dashboard, Calendar, PMS Operations

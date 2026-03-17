@@ -1,37 +1,27 @@
 # ROADMAP
 
-## P0 — Remaining Service Wiring
-- [ ] Extract business logic from frontdesk_router.py to FrontDeskService
-- [ ] Extract business logic from night_audit_router.py to NightAuditService
-- [ ] Extract business logic from pricing_router.py to PricingService
-- [ ] Extract business logic from mobile_router.py to MobileService
-- [ ] Create MessagingService from guest/messaging/router.py
-- [ ] Establish router → service → repository pattern for remaining routers
+## P0 — Complete
+- [x] HotelRunner REST adapter (production-grade)
+- [x] Exely SOAP adapter (production-grade)
+- [x] Real Exely test environment integration
+- [x] Encrypted credential vault for provider secrets
+- [x] CI pipeline test stability
 
-## P1 — Schema Completion
-- [ ] Extract remaining inline models from pos_fnb_router.py, rms_router.py
-- [ ] Create shared schemas for cross-domain models (pagination, audit context)
-- [ ] Add response model type annotations to all endpoints
+## P1 — Next Up
+- [ ] Mapping UI Improvement: PMS room/rate ↔ Provider room/rate mapping interface
+- [ ] Test booking creation via Exely booking link + OTA_ReadRQ verification
+- [ ] Reservation lineage: duplicate/stale detection
 
-## P1 — Frontend Role-Based Views
-- [ ] GM: property-level summary in SystemHealthDashboard
-- [ ] Admin: tenant/property scoped operational summary
-- [ ] Superadmin: cross-property/global summary
-- [ ] Live refresh support (polling/WebSocket)
+## P2 — Planned
+- [ ] Legacy collection cleanup: archive unused DB collections
+- [ ] Deprecation cleanup: remove exely_client_legacy.py, old hotelrunner.py
+- [ ] Multi-day ARI push: date range, availability, restrictions, multi-day rate
 
-## P2 — Frontend Stabilization
-- [ ] Audit frontend dependencies
-- [ ] Implement route-based code splitting
-- [ ] Error boundary components for runtime panels
-
-## P3 — Operational Reliability Tests
-- [ ] Runtime stress tests: OTA reservation burst
-- [ ] ARI update storm simulation
-- [ ] Worker queue saturation test
-- [ ] Reconciliation under drift storm
-- [ ] Tenant isolation failure test
-
-## P3 — PMS Load Test Framework
-- [ ] k6/Locust scripts for key flows
-- [ ] Baseline performance metrics
-- [ ] CI-integrated load test execution
+## P3 — Backlog
+- [ ] Service Wiring: Router → Service → Repository pattern (FrontDesk, NightAudit, Pricing, Mobile, Messaging)
+- [ ] Schema Completion: inline models → shared schemas
+- [ ] Frontend Role-Based Views: GM, Admin, Superadmin dashboards
+- [ ] Frontend Stabilization: dependency audit, code splitting, error boundaries
+- [ ] Stress Testing: 24h soak test, reservation burst, ARI storm
+- [ ] HotelRunner real credential integration (when credentials available)
+- [ ] Two-provider reconciliation verification
