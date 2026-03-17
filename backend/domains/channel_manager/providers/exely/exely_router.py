@@ -418,6 +418,170 @@ async def confirm_reservation(
     return {"message": "Rezervasyon teslimati onaylandi", "reservation_id": reservation_id}
 
 
+@router.post("/reservations/{reservation_id}/import")
+async def import_reservation_to_pms(
+    reservation_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Import a channel reservation into PMS as a booking."""
+    tenant_id = current_user.tenant_id
+
+    # 1. Find channel reservation
+    res = await db.exely_reservations.find_one(
+        {"tenant_id": tenant_id, "id": reservation_id},
+        {"_id": 0},
+    )
+    if not res:
+        res = await db.exely_reservations.find_one(
+            {"tenant_id": tenant_id, "external_id": reservation_id},
+            {"_id": 0},
+        )
+    if not res:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+
+    if res.get("pms_status") == "imported" and res.get("pms_booking_id"):
+        return {"message": "Rezervasyon zaten PMS'e aktarilmis", "pms_booking_id": res["pms_booking_id"]}
+
+    # 2. Map room type from channel code to PMS room type
+    rooms_data = res.get("rooms", [])
+    first_room = rooms_data[0] if rooms_data else {}
+    exely_room_code = first_room.get("room_type_code", "")
+
+    pms_room_type = None
+    if exely_room_code:
+        mapping = await db.exely_room_mappings.find_one(
+            {"tenant_id": tenant_id, "exely_room_code": exely_room_code},
+            {"_id": 0},
+        )
+        if mapping:
+            pms_room_type = mapping.get("pms_room_type")
+
+    if not pms_room_type:
+        pms_room_type = "Standard"
+
+    # 3. Find available room of matching type
+    room = await db.rooms.find_one(
+        {"tenant_id": tenant_id, "room_type": pms_room_type, "status": "available"},
+        {"_id": 0},
+    )
+    if not room:
+        room = await db.rooms.find_one(
+            {"tenant_id": tenant_id, "room_type": pms_room_type},
+            {"_id": 0},
+        )
+    if not room:
+        room = await db.rooms.find_one(
+            {"tenant_id": tenant_id, "status": "available"},
+            {"_id": 0},
+        )
+    if not room:
+        raise HTTPException(status_code=400, detail=f"Uygun oda bulunamadi ({pms_room_type})")
+
+    # 4. Find or create guest
+    guest_name = res.get("guest_name", "")
+    guest_first = res.get("guest_firstname", "")
+    guest_last = res.get("guest_lastname", "")
+    guest_email = res.get("guest_email", "") or f"exely-{res.get('external_id', 'unknown')}@channel.import"
+    guest_phone = res.get("guest_phone", "")
+
+    guest = await db.guests.find_one(
+        {"tenant_id": tenant_id, "email": guest_email},
+        {"_id": 0},
+    )
+    if not guest:
+        guest = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "first_name": guest_first or guest_name.split()[0] if guest_name else "Misafir",
+            "last_name": guest_last or (guest_name.split()[-1] if len(guest_name.split()) > 1 else ""),
+            "name": guest_name or "Kanal Misafiri",
+            "email": guest_email,
+            "phone": guest_phone or "",
+            "id_number": "",
+            "nationality": res.get("guest_country", ""),
+            "vip_level": "none",
+            "loyalty_tier": "none",
+            "total_stays": 0,
+            "notes": f"Exely kanal rezervasyonu ({res.get('external_id', '')})",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.guests.insert_one({**guest})
+        guest.pop("_id", None)
+
+    # 5. Build PMS booking
+    checkin = res.get("checkin_date", "")
+    checkout = res.get("checkout_date", "")
+    total_amount = float(res.get("total", 0))
+    adults = first_room.get("adults", 1) or 1
+    children = first_room.get("children", 0) or 0
+    nights = res.get("nights", 1) or 1
+    base_rate = total_amount / nights if nights > 0 else total_amount
+
+    booking_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+
+    booking = {
+        "id": booking_id,
+        "tenant_id": tenant_id,
+        "guest_id": guest["id"],
+        "room_id": room["id"],
+        "guest_name": guest_name,
+        "room_number": room.get("room_number", ""),
+        "check_in": checkin,
+        "check_out": checkout,
+        "adults": adults,
+        "children": children,
+        "children_ages": [],
+        "guests_count": adults + children,
+        "total_amount": total_amount,
+        "base_rate": base_rate,
+        "paid_amount": 0.0,
+        "status": "confirmed",
+        "channel": "direct",
+        "source_channel": "exely",
+        "origin": "channel_import",
+        "hold_status": "none",
+        "allocation_source": "channel",
+        "rate_plan": first_room.get("rate_plan_code", "Standard"),
+        "special_requests": res.get("note", ""),
+        "group_booking_id": None,
+        "company_id": None,
+        "ota_channel": None,
+        "ota_confirmation": res.get("external_id", ""),
+        "ota_reference_id": res.get("external_id", ""),
+        "created_at": now,
+    }
+
+    await db.bookings.insert_one({**booking})
+    booking.pop("_id", None)
+
+    # Update room status
+    await db.rooms.update_one(
+        {"id": room["id"]},
+        {"$set": {"status": "occupied"}},
+    )
+
+    # 6. Update channel reservation
+    await db.exely_reservations.update_one(
+        {"tenant_id": tenant_id, "id": res["id"]},
+        {"$set": {
+            "pms_status": "imported",
+            "pms_booking_id": booking_id,
+            "imported_at": now,
+        }},
+    )
+
+    logger.info(f"[EXELY] Reservation {res.get('external_id')} imported as PMS booking {booking_id}")
+
+    return {
+        "message": "Rezervasyon PMS'e basariyla aktarildi",
+        "pms_booking_id": booking_id,
+        "guest_id": guest["id"],
+        "room_number": room.get("room_number", ""),
+        "room_type": pms_room_type,
+    }
+
+
 # ── Sync Status & Scheduler ─────────────────────────────────────────
 
 @router.get("/sync/status")

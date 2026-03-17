@@ -12,7 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import {
   Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink,
   Building2, ArrowDownUp, CalendarCheck, Activity,
-  AlertTriangle, Loader2, Search
+  AlertTriangle, Loader2, Search, Download
 } from 'lucide-react';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -121,6 +121,14 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
       fetchAll();
     } catch (e) { toast.error(e.response?.data?.detail || 'Pull hatasi'); }
     finally { setLoading(false); }
+  };
+
+  const handleImport = async (resId) => {
+    try {
+      const { data } = await axios.post(`${API}/api/channel-manager/exely/reservations/${resId}/import`, {}, { headers });
+      toast.success(`${data.message} - Oda: ${data.room_number}`);
+      fetchAll();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Import hatasi'); }
   };
 
   const isConnected = connection?.connected;
@@ -350,6 +358,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                           <th className="pb-2 pr-4">Tutar</th>
                           <th className="pb-2 pr-4">Durum</th>
                           <th className="pb-2">PMS</th>
+                          <th className="pb-2">Islem</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -370,6 +379,21 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                               <Badge variant={res.pms_status === 'imported' ? 'default' : 'secondary'}>
                                 {res.pms_status || 'pending'}
                               </Badge>
+                            </td>
+                            <td className="py-2">
+                              {res.pms_status !== 'imported' && res.state === 'confirmed' ? (
+                                <Button
+                                  data-testid={`exely-import-btn-${i}`}
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs"
+                                  onClick={() => handleImport(res.id || res.external_id)}
+                                >
+                                  <Download className="w-3 h-3 mr-1" /> PMS'e Aktar
+                                </Button>
+                              ) : res.pms_status === 'imported' ? (
+                                <span className="text-xs text-emerald-600 font-medium">Aktarildi</span>
+                              ) : null}
                             </td>
                           </tr>
                         ))}
