@@ -30,13 +30,13 @@ class ExelyPullScheduler:
         self._running = False
         self._task = None
 
-    async def start(self, interval_minutes: int = 15, safety_window_minutes: int = 5):
+    async def start(self, interval_seconds: int = 60, safety_window_minutes: int = 5):
         if self._running:
             logger.warning("[EXELY-PULL] Scheduler already running")
             return
         self._running = True
-        self._task = asyncio.create_task(self._run_loop(interval_minutes, safety_window_minutes))
-        logger.info(f"[EXELY-PULL] Scheduler started: every {interval_minutes}min")
+        self._task = asyncio.create_task(self._run_loop(interval_seconds, safety_window_minutes))
+        logger.info(f"[EXELY-PULL] Scheduler started: every {interval_seconds}s")
 
     async def stop(self):
         self._running = False
@@ -48,7 +48,7 @@ class ExelyPullScheduler:
     def is_running(self) -> bool:
         return self._running
 
-    async def _run_loop(self, interval_minutes: int, safety_window_minutes: int):
+    async def _run_loop(self, interval_seconds: int, safety_window_minutes: int):
         while self._running:
             try:
                 await self._pull_all_tenants(safety_window_minutes)
@@ -56,7 +56,7 @@ class ExelyPullScheduler:
                 break
             except Exception as e:
                 logger.error(f"[EXELY-PULL] Loop error: {e}")
-            await asyncio.sleep(interval_minutes * 60)
+            await asyncio.sleep(interval_seconds)
 
     async def _heartbeat(self, provider: ExelyProvider, tenant_id: str):
         """Send a room discovery request to keep the connection alive in Exely."""

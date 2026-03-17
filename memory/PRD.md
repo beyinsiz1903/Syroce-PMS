@@ -10,7 +10,7 @@ Build a production-grade hospitality platform (RoomOps PMS). Replace all mocked 
 4. **(P0 — DONE)** Calendar crash fix — TDZ error resolved
 5. **(P0 — DONE)** Exely reservation pull — scheduler, vault, heartbeat, mappings
 6. **(P0 — DONE)** Fake reservation cleanup — 758 records removed
-7. **(P0 — DONE)** Exely auto-import pipeline — Pull → Import → Booking+Guest+Room, fully automatic
+7. **(P0 — DONE)** Exely auto-import pipeline — Pull → Import → Booking+Guest+Room, fully automatic (interval: 60s)
 8. **(P1)** Mapping UI improvement — PMS room/rate <-> Provider room/rate mapping
 9. **(P2)** Legacy collection cleanup — archive/delete unused DB collections
 
@@ -21,8 +21,8 @@ Build a production-grade hospitality platform (RoomOps PMS). Replace all mocked 
 - **Database**: hotel_pms (main), MongoDB
 
 ## Exely Auto-Import Flow (DONE)
-1. Backend startup → `ExelyPullScheduler.start(interval=10min)` auto-starts
-2. Every 10 minutes: heartbeat → OTA_ReadRQ pull → `exely_reservations` (pending)
+1. Backend startup → `ExelyPullScheduler.start(interval_seconds=60)` auto-starts
+2. Every 60 seconds: heartbeat → OTA_ReadRQ pull → `exely_reservations` (pending)
 3. Auto-import: `auto_import_pending()` converts all pending → PMS bookings
 4. Each import: maps room type, creates/finds guest, assigns available room, creates booking
 5. Result: reservation visible in Bookings, Calendar, Dashboard, Guests

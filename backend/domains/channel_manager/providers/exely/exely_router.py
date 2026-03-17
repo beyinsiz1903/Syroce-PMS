@@ -492,9 +492,9 @@ async def start_scheduler(current_user: User = Depends(get_current_user)):
     )
     if not conn:
         raise HTTPException(status_code=404, detail="Exely baglantisi bulunamadi")
-    interval = conn.get("sync_interval_minutes", 15)
-    await exely_pull_scheduler.start(interval_minutes=interval)
-    return {"message": f"Scheduler baslatildi ({interval} dk aralikla)", "interval": interval}
+    interval = conn.get("sync_interval_seconds", 60)
+    await exely_pull_scheduler.start(interval_seconds=interval)
+    return {"message": f"Scheduler baslatildi ({interval}s aralikla)", "interval_seconds": interval}
 
 
 @router.post("/sync/scheduler/stop")
