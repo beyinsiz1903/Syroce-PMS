@@ -24,40 +24,53 @@ Full-stack PMS/channel manager production hardening. The system manages hotel re
 - Total: 129 tests passing
 
 ### P3 — Delta Correctness, Provider Resilience & Incident Panel (COMPLETED — 2026-03-17)
-- **Delta-Only Push + Debounce Correctness (50 tests):**
-  - Fixed coalescer `_merge_date_ranges` with `_deduplicate_by_date_range` for last-write-wins
-  - Multi rate changes → only final value pushed
-  - Inventory + restriction simultaneous changes → separate deltas
-  - close/open/close restriction pattern → close wins
-  - Intermediate state loss prevention
-  - Outbound idempotency hash (same data not re-pushed)
-  - Burst → correct final payload
-  - Cross-room isolation, rate plan scoping
-  - End-to-end pipeline correctness
-- **Real Provider Simulation (63 tests):**
-  - 429 rate limiting → token drain, retryable
-  - Timeout → retryable with backoff
-  - Intermittent 200/500 → retry until success
-  - Delayed ACK / ACK-but-no-apply semantics
-  - Permanent failures (400, 401, 403, 422)
-  - Connection errors → retryable
-  - Retry exhaustion → manual_review
-  - Provider error classification accuracy
-  - Rate limiter service correctness
-  - Outbound log audit trail
-- **Operator Incident Panel:**
-  - Backend API: `/api/ops/incidents/summary`, `/list`, `/action/{id}`, `/detail/{id}`
-  - Frontend: `/incidents` route with summary cards, filters, incident list, action buttons
-  - Supports retry, review, resolve, suppress actions with audit trail
-  - Shows enriched data: recommended_action, can_auto_heal, gold_source
+- **Delta-Only Push + Debounce Correctness (50 tests)**
+- **Real Provider Simulation (63 tests)**
+- **Operator Incident Panel** (Backend API + Frontend dashboard)
 - **Total: 242 tests passing (zero regressions)**
 
+### P4 — Runtime Enforcement (COMPLETED — 2026-03-17)
+- **Hard Fail Gate (14 tests):**
+  - Runtime mapping enforcement before ANY ARI push
+  - Quarantines change sets with missing/broken mappings
+  - Creates incidents with operator action hints
+  - Duplicate incident prevention
+  - Quarantine release after mapping fix
+  - Integrated into outbound_service.py push pipeline
+- **Auto-Heal Service (16 tests):**
+  - Conservative auto-healing workflow based on Truth Table
+  - Safe whitelist: stale_locally, stale_remotely
+  - Risky whitelist (opt-in): payload_mismatch
+  - Evidence trail for every heal operation
+  - Failed heal escalation to manual review
+  - Rate-limited cycles (max N per cycle)
+- **Push Loop Worker (12 tests):**
+  - Background runtime push loop with start/stop/pause/resume
+  - Full observability: queued, coalesced, dropped, hard_fail_blocked, emitted, verify_success/fail
+  - Per-provider ack latency tracking
+  - Cycle count and timing metrics
+- **Runtime Enforcement Router:**
+  - `GET /api/lockdown/runtime/hard-fail/stats`
+  - `POST /api/lockdown/runtime/hard-fail/release`
+  - `GET /api/lockdown/runtime/auto-heal/stats`
+  - `POST /api/lockdown/runtime/auto-heal/run`
+  - `GET /api/lockdown/runtime/auto-heal/history`
+  - `GET /api/lockdown/runtime/push-loop/status`
+  - `POST /api/lockdown/runtime/push-loop/start`
+  - `POST /api/lockdown/runtime/push-loop/stop`
+  - `POST /api/lockdown/runtime/push-loop/pause`
+  - `POST /api/lockdown/runtime/push-loop/resume`
+  - `GET /api/lockdown/runtime/push-loop/metrics`
+- **Integration tests (5 tests):** Combined behavior across all three layers
+- **Total: 289 tests passing (zero regressions)**
+
 ## Key Technical Decisions
-- Coalescer uses "last write wins" for overlapping date ranges (P3 fix)
-- All providers: `ack_means_applied = False` → drift detection required
-- Restriction precedence: `close > open` (safety-first)
-- Outbound delta hash prevents re-pushing identical data
-- Incident panel uses `/api/ops/incidents/*` prefix (separate from existing `/api/incidents/*`)
+- Hard Fail Gate blocks pushes at runtime, not just in tests
+- Auto-heal starts conservative (safe whitelist only), risky requires explicit opt-in
+- Every auto-heal produces evidence before modifying data
+- Failed auto-heals escalate (never infinite retry loop)
+- Push loop worker is controllable (start/stop/pause/resume) for safe rollout
+- Per-provider latency tracking for operational visibility
 
 ## Test Coverage
 | Suite | Tests | File |
@@ -68,16 +81,23 @@ Full-stack PMS/channel manager production hardening. The system manages hotel re
 | P2 ARI Stress | 43 | `test_p2_ari_stress.py` |
 | P3 Delta-Debounce | 50 | `test_p3_delta_debounce.py` |
 | P3 Provider Simulation | 63 | `test_p3_provider_simulation.py` |
-| **Total** | **242** | |
+| P4 Runtime Enforcement | 47 | `test_p4_runtime_enforcement.py` |
+| **Total** | **289** | |
 
 ## Upcoming Tasks (Priority Order)
 
-### P4 — Remaining Hardening
-1. **Reconciliation Truth Table** auto-healing vs. manual review workflows
-2. **Hard Fail logic** for incomplete/ambiguous mappings
-3. **Delta-only push + debounce** runtime implementation (tests exist, runtime debounce loop next)
+### P5 — Go-Live Acceleration
+1. **Dashboard Notifications** (Slack/webhook) for critical state transitions:
+   - `READY → NOT READY` (highest priority)
+   - `NOT READY → READY`
+   - mapping_completeness_reached_100
+   - hard_fail_count_reached_0
+   - first_successful_verify
+   - drift_backlog_above_threshold
+   - provider_auth_became_invalid
+2. **Narrow rollout with internal tenant** — observation window before expanding
 
-### P5 — Financial Hardening
+### P6 — Financial Hardening
 - Folio and Night Audit modules
 - Per-tenant rollout gates and feature flags
 
@@ -85,7 +105,7 @@ Full-stack PMS/channel manager production hardening. The system manages hotel re
 - PMS room/rate → provider mapping UI improvement
 - Archive old database collections
 - Remove deprecated files (`hotelrunner.py`, `client.py`, `exely_client_legacy.py`)
-- Slack notifications for go-live acceleration events
+- Runtime Enforcement frontend dashboard
 
 ## Credentials
 | User | Email | Password |
