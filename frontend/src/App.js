@@ -115,6 +115,7 @@ const FnBComplete = lazy(() => import("@/pages/FnBComplete"));
 const FnbBeoGenerator = lazy(() => import("@/pages/FnbBeoGenerator"));
 const KitchenDisplay = lazy(() => import("@/pages/KitchenDisplay"));
 const NightAuditLogs = lazy(() => import("@/pages/NightAuditLogs"));
+const NightAuditDashboard = lazy(() => import("@/pages/NightAuditDashboard"));
 const PMSOperationalDashboard = lazy(() => import("@/pages/PMSOperationalDashboard"));
 const FolioDetailView = lazy(() => import("@/pages/FolioDetailView"));
 const RevenueEngineDashboard = lazy(() => import("@/pages/RevenueEngineDashboard"));
@@ -1219,6 +1220,16 @@ function App() {
             element={
               isAuthenticated ? (
                 <MobileFinance user={user} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/night-audit"
+            element={
+              isAuthenticated ? (
+                <NightAuditDashboard user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )

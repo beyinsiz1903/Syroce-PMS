@@ -74,7 +74,7 @@ const MODULE_GROUPS = [
       { key: 'reservation_calendar', label: 'Rezervasyon Takvimi', hint: 'Drag & drop takvim görünümü', tier: 'basic' },
       { key: 'dashboard', label: 'Dashboard', hint: 'Ana kontrol paneli', tier: 'basic' },
       { key: 'guests', label: 'Misafir Yönetimi', hint: 'Temel misafir profilleri', tier: 'basic' },
-      { key: 'housekeeping', label: t('nav.housekeeping'), hint: 'Temel oda durumu takibi', tier: 'basic' },
+      { key: 'housekeeping', label: 'Housekeeping', hint: 'Temel oda durumu takibi', tier: 'basic' },
       { key: 'basic_reporting', label: 'Temel Raporlar', hint: 'Günlük doluluk ve gelir', tier: 'basic' },
       { key: 'settings', label: 'Ayarlar', hint: 'Otel ayarları', tier: 'basic' },
       { key: 'pms_mobile', label: 'Mobil PMS', hint: 'Mobil erişim', tier: 'basic' },
@@ -90,7 +90,7 @@ const MODULE_GROUPS = [
     items: [
       { key: 'channel_manager', label: 'Channel Manager', hint: 'OTA senkronizasyonu', tier: 'professional' },
       { key: 'folio_management', label: 'Folio Yönetimi', hint: 'Split, routing, posting', tier: 'professional' },
-      { key: 'night_audit', label: t('nav.nightAudit'), hint: 'End-of-day otomasyonu', tier: 'professional' },
+      { key: 'night_audit', label: 'Gece Denetimi', hint: 'End-of-day otomasyonu', tier: 'professional' },
       { key: 'invoices', label: 'Gelişmiş Fatura & Finans', hint: 'E-fatura, AR/AP', tier: 'professional' },
       { key: 'cost_management', label: 'Maliyet Yönetimi', hint: 'Maliyet takibi', tier: 'professional' },
       { key: 'reports', label: 'Gelişmiş Raporlar', hint: 'Detaylı analitik raporlar', tier: 'professional' },
@@ -143,7 +143,6 @@ const MODULE_GROUPS = [
 const tierRank = { basic: 0, professional: 1, enterprise: 2 };
 
 const isModuleIncludedInPlan = (moduleItem, tenantTier) => {
-  const { t } = useTranslation();
   const moduleTier = moduleItem.tier || 'enterprise';
   return tierRank[tenantTier] >= tierRank[moduleTier];
 };

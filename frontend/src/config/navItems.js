@@ -101,6 +101,14 @@ export const NAV_ITEMS = [
     group: "core",
   },
   {
+    key: "night_audit",
+    label: "Gece Denetimi",
+    path: "/night-audit",
+    moduleKey: "night_audit",
+    tier: "professional",
+    group: "professional",
+  },
+  {
     key: "revenue_engine",
     label: "Revenue Engine",
     path: "/revenue-engine",

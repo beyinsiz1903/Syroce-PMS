@@ -11,7 +11,6 @@ import { toast } from "sonner";
 import { useTranslation } from 'react-i18next';
 
 const getDateOffset = (offsetDays) => {
-  const { t } = useTranslation();
   const d = new Date();
   d.setDate(d.getDate() + offsetDays);
   return d.toISOString().split("T")[0];
@@ -19,6 +18,7 @@ const getDateOffset = (offsetDays) => {
 
 const NightAuditLogs = ({ user, tenant, onLogout }) => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [startDate, setStartDate] = useState(getDateOffset(-7));
   const [endDate, setEndDate] = useState(getDateOffset(0));
   const [status, setStatus] = useState("all");
@@ -38,7 +38,7 @@ const NightAuditLogs = ({ user, tenant, onLogout }) => {
       if (endDate) params.end_date = endDate;
       if (status && status !== "all") params.status = status;
 
-      const res = await axios.get("/logs/night-audit", { params });
+      const res = await axios.get("/night-audit/history", { params });
       setLogs(res.data.logs || []);
       setStats(res.data.stats || null);
     } catch (err) {

@@ -1,43 +1,39 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Layout from '@/components/Layout';
-import ReservationSidebar from '@/components/ReservationSidebar';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { X } from 'lucide-react';
+
+import {
+  CalendarHeader,
+  CalendarOccupancy,
+  CalendarGrid,
+  NewBookingDialog,
+  BookingDetailsDialog,
+  MoveReasonDialog,
+  FindRoomDialog,
+  isBookingOnDate,
+  toDateStringUTC,
+  getDateRange,
+  getSegmentColor,
+  getStatusLabel,
+  getRateTypeInfo,
+} from './calendar';
+
+const ReservationSidebar = lazy(() => import('@/components/ReservationSidebar'));
 const FolioDetailView = lazy(() => import('@/pages/FolioDetailView'));
 const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal'));
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  ChevronLeft, 
-  ChevronRight, 
-  Calendar as CalendarIcon,
-  User,
-  Building2,
-  Clock,
-  Plus,
-  TrendingUp,
-  Info,
-  Search,
-  AlertCircle,
-  CheckCircle,
-  RefreshCw,
-  Loader2,
-  X
-} from 'lucide-react';
-import { useTranslation } from 'react-i18next';
+
+const DEBUG_ROOMS = false;
 
 const ReservationCalendar = ({ user, tenant, onLogout }) => {
-  const { t } = useTranslation();
   const navigate = useNavigate();
-  // Debug toggle - set to true only when debugging booking display issues
-  const DEBUG_ROOMS = false;
-  
-  const [currentDate, setCurrentDate] = useState(new Date());
+
+  // Core state
   const [rooms, setRooms] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [guests, setGuests] = useState([]);
@@ -45,193 +41,115 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [roomBlocks, setRoomBlocks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [daysToShow, setDaysToShow] = useState(14); // 2 weeks view
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [daysToShow, setDaysToShow] = useState(14);
+  const [calendarMeta, setCalendarMeta] = useState({});
 
-  // Calendar data meta (used to avoid misleading Enterprise/AI/Deluxe+ metrics when dataset is empty)
-  const [calendarMeta, setCalendarMeta] = useState({
-    start_date: null,
-    end_date: null,
-    rooms: 0,
-    bookings: 0,
-  });
-  
-  // Dialog states
-  const [groupColorMap, setGroupColorMap] = useState({});
-
+  // UI State
+  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [selectedBookingFolio, setSelectedBookingFolio] = useState(null);
+  const [showSidebar, setShowSidebar] = useState(false);
   const [showNewBookingDialog, setShowNewBookingDialog] = useState(false);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
-  const [showSidebar, setShowSidebar] = useState(false);
-  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [showFindRoomDialog, setShowFindRoomDialog] = useState(false);
+  const [showMoveReasonDialog, setShowMoveReasonDialog] = useState(false);
   const [showFolioPanel, setShowFolioPanel] = useState(false);
   const [folioPanelId, setFolioPanelId] = useState(null);
-  const [selectedBookingFolio, setSelectedBookingFolio] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [detailModalBookingId, setDetailModalBookingId] = useState(null);
-  const [selectedDate, setSelectedDate] = useState(null);
-  const [selectedRoom, setSelectedRoom] = useState(null);
-  
-  // Drag & Drop state
+
+  // Drag & Drop
   const [draggingBooking, setDraggingBooking] = useState(null);
   const [dragOverCell, setDragOverCell] = useState(null);
-  
-  // Hover tooltip state for ADR/BAR display
-  const [hoveredCell, setHoveredCell] = useState(null);
-  const [cellRates, setCellRates] = useState({});
-  
-  // Room Move state
-  const [showMoveReasonDialog, setShowMoveReasonDialog] = useState(false);
   const [moveData, setMoveData] = useState(null);
   const [moveReason, setMoveReason] = useState('');
-  
-  // Find Room state
-  const [showFindRoomDialog, setShowFindRoomDialog] = useState(false);
-  const [findRoomCriteria, setFindRoomCriteria] = useState({
-    check_in: '',
-    check_out: '',
-    room_type: 'all',
-    guests_count: 2
-  });
-  const [availableRooms, setAvailableRooms] = useState([]);
-  
-  // Enterprise Mode states
+
+  // Enterprise / AI Mode
+  const [showEnterprisePanel, setShowEnterprisePanel] = useState(false);
   const [rateLeakages, setRateLeakages] = useState([]);
   const [availabilityHeatmap, setAvailabilityHeatmap] = useState([]);
-  const [showEnterprisePanel, setShowEnterprisePanel] = useState(false);
-  
-  // AI Mode states
   const [showAIPanel, setShowAIPanel] = useState(false);
   const [aiOverbookingSolutions, setAiOverbookingSolutions] = useState([]);
   const [aiRoomMoves, setAiRoomMoves] = useState([]);
   const [aiRateRecommendations, setAiRateRecommendations] = useState([]);
   const [aiNoShowPredictions, setAiNoShowPredictions] = useState([]);
-  
-  // Deluxe+ states
   const [showDeluxePanel, setShowDeluxePanel] = useState(false);
-  const [pickupPaceData, setPickupPaceData] = useState(null);
-  const [leadTimeData, setLeadTimeData] = useState(null);
   const [groupBookings, setGroupBookings] = useState([]);
-
   const [oversellProtection, setOversellProtection] = useState([]);
   const [channelMixData, setChannelMixData] = useState(null);
-  
+  const [groupColorMap, setGroupColorMap] = useState({});
+
   // New booking form
   const [newBooking, setNewBooking] = useState({
-    guest_id: '',
-    room_id: '',
-    check_in: '',
-    check_out: '',
-    guests_count: 2,
-    adults: 2,
-    children: 0,
-    children_ages: [],
-    total_amount: 0,
-    status: 'confirmed'
+    guest_id: '', room_id: '', check_in: '', check_out: '',
+    guests_count: 2, adults: 2, children: 0, children_ages: [],
+    total_amount: 0, status: 'confirmed'
   });
-  
-  // Conflicts state
+
+  // Find room
+  const [findRoomCriteria, setFindRoomCriteria] = useState({
+    check_in: '', check_out: '', room_type: 'all', guests_count: 2
+  });
+  const [availableRooms, setAvailableRooms] = useState([]);
+
+  // Conflicts
   const [conflicts, setConflicts] = useState([]);
 
-  useEffect(() => {
-    loadCalendarData();
-  }, [currentDate, daysToShow]);
+  const dateRange = getDateRange(currentDate, daysToShow);
 
-  // Opens Reports tab Pickup Pace for a given arrival date
-  const openPickupPaceForDate = (dateStr) => {
-    if (!dateStr) return;
-    // Store target date so Reports/PickupPaceReport can pick it up on load
-    try {
-      localStorage.setItem('pickup_target_date', dateStr);
-    } catch (e) {
-      console.warn('Unable to persist pickup target date', e);
-    }
-    window.open('/pms?tab=reports', '_blank');
-  };
+  // ─── Data Loading ─────────────────────────────────────────────
+  useEffect(() => { loadCalendarData(); }, [currentDate, daysToShow]);
 
   const loadCalendarData = async () => {
     setLoading(true);
     try {
-      // Calculate date range for calendar view
       const startDate = new Date(currentDate);
-
-      startDate.setDate(startDate.getDate() - 7); // 1 week before
+      startDate.setDate(startDate.getDate() - 7);
       const endDate = new Date(currentDate);
-      endDate.setDate(endDate.getDate() + daysToShow + 7); // Show range + 1 week after
-      
+      endDate.setDate(endDate.getDate() + daysToShow + 7);
+
       const [roomsRes, bookingsRes, guestsRes, companiesRes, blocksRes] = await Promise.all([
-        axios.get(`/pms/rooms`),
+        axios.get('/pms/rooms'),
         axios.get(`/pms/bookings?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&limit=500`),
-        axios.get(`/pms/guests`).catch(() => ({ data: [] })),
-        axios.get(`/companies`).catch(() => ({ data: [] })),
-        axios.get(`/pms/room-blocks?status=active`).catch(() => ({ data: { blocks: [] } }))
+        axios.get('/pms/guests').catch(() => ({ data: [] })),
+        axios.get('/companies').catch(() => ({ data: [] })),
+        axios.get('/pms/room-blocks?status=active').catch(() => ({ data: { blocks: [] } }))
       ]);
 
-      const rangeStart = startDate.toISOString().split('T')[0];
-      const rangeEnd = endDate.toISOString().split('T')[0];
-      const roomsCount = roomsRes.data?.length || 0;
-      const bookingsCount = bookingsRes.data?.length || 0;
-
       setCalendarMeta({
-        start_date: rangeStart,
-        end_date: rangeEnd,
-        rooms: roomsCount,
-        bookings: bookingsCount,
+        start_date: startDate.toISOString().split('T')[0],
+        end_date: endDate.toISOString().split('T')[0],
+        rooms: roomsRes.data?.length || 0,
+        bookings: bookingsRes.data?.length || 0,
       });
-
-      console.log('📊 Calendar Data Loaded:', {
-        rooms: roomsCount,
-        bookings: bookingsCount,
-        guests: guestsRes.data?.length || 0,
-        bookingsSample: bookingsRes.data?.[0],
-        dateRange: {
-          start: rangeStart,
-          end: rangeEnd
-        }
-      });
-      
-      // Detailed booking logs only if DEBUG_ROOMS is enabled
-      if (DEBUG_ROOMS && bookingsRes.data && bookingsRes.data.length > 0) {
-        console.log('📋 First 3 Bookings:', bookingsRes.data.slice(0, 3).map(b => ({
-          id: b.id?.substring(0, 8),
-          guest: b.guest_name,
-          room: b.room_number,
-          roomId: b.room_id?.substring(0, 8),
-          dates: `${b.check_in?.split('T')[0]} → ${b.check_out?.split('T')[0]}`
-        })));
-      }
-      
       setRooms(roomsRes.data || []);
       setBookings(bookingsRes.data || []);
       setGuests(guestsRes.data || []);
       setCompanies(companiesRes.data || []);
       setRoomBlocks(blocksRes.data.blocks || []);
 
-      // Build group bookings summary for sidebar
+      // Build group bookings summary
       const rawBookings = bookingsRes.data || [];
       const groupMap = new Map();
       rawBookings.forEach(b => {
         if (!b.group_booking_id) return;
-        if (!groupMap.has(b.group_booking_id)) {
-          groupMap.set(b.group_booking_id, []);
-        }
+        if (!groupMap.has(b.group_booking_id)) groupMap.set(b.group_booking_id, []);
         groupMap.get(b.group_booking_id).push(b);
       });
       const groupSummary = Array.from(groupMap.entries()).map(([groupId, groupItems]) => {
         const master = groupItems[0];
-        const totalRooms = groupItems.length;
-        const totalAmount = groupItems.reduce((sum, x) => sum + (x.total_amount || 0), 0);
-        const guestName = master.guest_name || guestsRes.data.find(g => g.id === master.guest_id)?.name || 'Group Guest';
         return {
           group_booking_id: groupId,
-          totalRooms,
-          totalAmount,
+          totalRooms: groupItems.length,
+          totalAmount: groupItems.reduce((sum, x) => sum + (x.total_amount || 0), 0),
           master,
           bookings: groupItems,
-          guest_name: guestName
+          guest_name: master.guest_name || guestsRes.data.find(g => g.id === master.guest_id)?.name || 'Group Guest'
         };
       });
       setGroupBookings(groupSummary);
-      
-      // Enterprise Mode data is loaded lazily only when panel is toggled
     } catch (error) {
       console.error('Failed to load calendar data:', error);
       toast.error('Failed to load calendar data');
@@ -240,396 +158,292 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
   };
 
-  // Sync reservations from OTA channels
+  // Opens Reports tab Pickup Pace for a given arrival date
+  const openPickupPaceForDate = (dateStr) => {
+    if (!dateStr) return;
+    try { localStorage.setItem('pickup_target_date', dateStr); } catch (e) { /* noop */ }
+    window.open('/pms?tab=reports', '_blank');
+  };
+
+  // ─── Sync Reservations ──────────────────────────────────────
   const handleSyncReservations = async () => {
     setSyncing(true);
     try {
-      let totalImported = 0;
-      let totalCancelled = 0;
-      let synced = false;
+      let totalImported = 0, totalCancelled = 0, synced = false;
 
-      // 1) Exely direct sync
       try {
         const exelyRes = await axios.post('/channel-manager/exely/sync/reservations/pull');
         const d = exelyRes.data || {};
         totalImported += d.auto_imported || d.processed || 0;
         totalCancelled += d.cancelled || 0;
         synced = true;
-      } catch (e) {
-        if (e.response?.status !== 404) {
-          console.warn('Exely sync error:', e);
-        }
-      }
+      } catch (e) { if (e.response?.status !== 404) console.warn('Exely sync error:', e); }
 
-      // 2) HotelRunner / v2 connector flow
       try {
         const connectorsRes = await axios.get('/channel-manager/v2/connectors');
         const connectors = Array.isArray(connectorsRes.data) ? connectorsRes.data : [];
-        const startDate = new Date();
-        startDate.setDate(startDate.getDate() - 7);
-        const endDate = new Date();
-        endDate.setMonth(endDate.getMonth() + 3);
-
+        const sDate = new Date(); sDate.setDate(sDate.getDate() - 7);
+        const eDate = new Date(); eDate.setMonth(eDate.getMonth() + 3);
         for (const conn of connectors) {
           try {
             const result = await axios.post('/channel-manager/v2/reservations/pull', {
               connector_id: conn.id,
-              date_start: startDate.toISOString().split('T')[0],
-              date_end: endDate.toISOString().split('T')[0],
+              date_start: sDate.toISOString().split('T')[0],
+              date_end: eDate.toISOString().split('T')[0],
             });
             totalImported += result.data?.imported || result.data?.new || 0;
             totalCancelled += result.data?.cancelled || 0;
             synced = true;
-          } catch (e) {
-            console.warn(`Sync failed for connector ${conn.id}:`, e);
-          }
+          } catch (e) { console.warn(`Sync failed for connector ${conn.id}:`, e); }
         }
-      } catch (e) {
-        if (e.response?.status !== 404) {
-          console.warn('v2 connector sync error:', e);
-        }
-      }
+      } catch (e) { if (e.response?.status !== 404) console.warn('v2 connector sync error:', e); }
 
-      if (!synced) {
-        toast.info('Aktif kanal bağlantısı bulunamadı');
-        setSyncing(false);
-        return;
-      }
-
+      if (!synced) { toast.info('Aktif kanal baglantisi bulunamadi'); setSyncing(false); return; }
       if (totalImported > 0 || totalCancelled > 0) {
-        toast.success(`Senkronizasyon tamamlandı: ${totalImported} yeni, ${totalCancelled} iptal`);
+        toast.success(`Senkronizasyon tamamlandi: ${totalImported} yeni, ${totalCancelled} iptal`);
       } else {
-        toast.info('Yeni rezervasyon değişikliği bulunamadı');
+        toast.info('Yeni rezervasyon degisikligi bulunamadi');
       }
-
       await loadCalendarData();
     } catch (error) {
       console.error('Sync failed:', error);
-      toast.error('Senkronizasyon başarısız');
-    } finally {
-      setSyncing(false);
-    }
+      toast.error('Senkronizasyon basarisiz');
+    } finally { setSyncing(false); }
   };
 
+  // ─── Enterprise / AI / Deluxe Data Loading ─────────────────
   const loadEnterpriseData = async ({ roomsCount } = {}) => {
     try {
-      // If there are no rooms for this tenant, Enterprise metrics are meaningless.
-      if (typeof roomsCount === 'number' && roomsCount === 0) {
-        setRateLeakages([]);
-        setAvailabilityHeatmap([]);
-        return;
-      }
-
-      const startDate = currentDate.toISOString().split('T')[0];
-      const endDate = new Date(currentDate.getTime() + daysToShow * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
+      if (typeof roomsCount === 'number' && roomsCount === 0) { setRateLeakages([]); setAvailabilityHeatmap([]); return; }
+      const sd = currentDate.toISOString().split('T')[0];
+      const ed = new Date(currentDate.getTime() + daysToShow * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       const [leakageRes, heatmapRes] = await Promise.all([
-        axios.get(`/enterprise/rate-leakage?start_date=${startDate}&end_date=${endDate}`).catch(() => ({ data: { leakages: [] } })),
-        axios.get(`/enterprise/availability-heatmap?start_date=${startDate}&end_date=${endDate}`).catch(() => ({ data: { heatmap: [] } }))
+        axios.get(`/enterprise/rate-leakage?start_date=${sd}&end_date=${ed}`).catch(() => ({ data: { leakages: [] } })),
+        axios.get(`/enterprise/availability-heatmap?start_date=${sd}&end_date=${ed}`).catch(() => ({ data: { heatmap: [] } }))
       ]);
-
       setRateLeakages(leakageRes.data.leakages || []);
       setAvailabilityHeatmap(heatmapRes.data.heatmap || []);
-    } catch (error) {
-      console.error('Failed to load enterprise data:', error);
-    }
+    } catch (error) { console.error('Failed to load enterprise data:', error); }
   };
 
   const loadAIRecommendations = async () => {
     try {
       const today = new Date().toISOString().split('T')[0];
-      const startDate = currentDate.toISOString().split('T')[0];
-      const endDate = new Date(currentDate.getTime() + daysToShow * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      
+      const sd = currentDate.toISOString().split('T')[0];
+      const ed = new Date(currentDate.getTime() + daysToShow * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       const [overbookingRes, roomMovesRes, ratesRes, noShowRes] = await Promise.all([
-        axios
-          .post(`/ai/solve-overbooking`, null, { params: { date: today } })
-          .catch(() => ({ data: { solutions: [] } })),
-        axios
-          .post(`/ai/recommend-room-moves`, null, { params: { date: today } })
-          .catch(() => ({ data: { recommendations: [] } })),
-        axios
-          .post(`/ai/recommend-rates`, null, { params: { start_date: startDate, end_date: endDate } })
-          .catch(() => ({ data: { recommendations: [] } })),
-        axios
-          .post(`/ai/predict-no-shows`, null, { params: { date: today } })
-          .catch(() => ({ data: { predictions: [] } }))
+        axios.post('/ai/solve-overbooking', null, { params: { date: today } }).catch(() => ({ data: { solutions: [] } })),
+        axios.post('/ai/recommend-room-moves', null, { params: { date: today } }).catch(() => ({ data: { recommendations: [] } })),
+        axios.post('/ai/recommend-rates', null, { params: { start_date: sd, end_date: ed } }).catch(() => ({ data: { recommendations: [] } })),
+        axios.post('/ai/predict-no-shows', null, { params: { date: today } }).catch(() => ({ data: { predictions: [] } }))
       ]);
-      
       setAiOverbookingSolutions(overbookingRes.data.solutions || []);
       setAiRoomMoves(roomMovesRes.data.recommendations || []);
       setAiRateRecommendations(ratesRes.data.recommendations || []);
       setAiNoShowPredictions(noShowRes.data.predictions || []);
-    } catch (error) {
-      console.error('Failed to load AI recommendations:', error);
-    }
+    } catch (error) { console.error('Failed to load AI recommendations:', error); }
   };
 
-  // Deterministic color for group bookings
-  const getGroupColor = (booking) => {
-    if (!booking || !booking.group_booking_id) return '#2563eb'; // default blue
-    const groupId = booking.group_booking_id;
-    if (groupColorMap[groupId]) return groupColorMap[groupId];
-    const palette = ['#2563eb', '#0891b2', '#7c3aed', '#db2777', '#059669', '#ea580c'];
-    let hash = 0;
-    for (let i = 0; i < groupId.length; i++) {
-      hash = groupId.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const idx = Math.abs(hash) % palette.length;
-    const color = palette[idx];
-    setGroupColorMap(prev => ({ ...prev, [groupId]: color }));
-    return color;
+  const loadDeluxeFeatures = async () => {
+    try {
+      const sd = currentDate.toISOString().split('T')[0];
+      const ed = new Date(currentDate.getTime() + daysToShow * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const [groupsRes, oversellRes, channelRes] = await Promise.all([
+        axios.get(`/deluxe/group-bookings?start_date=${sd}&end_date=${ed}&min_rooms=5`).catch(() => ({ data: { groups: [] } })),
+        axios.get(`/deluxe/oversell-protection?start_date=${sd}&end_date=${ed}`).catch(() => ({ data: { protection_map: [] } })),
+        axios.post('/deluxe/optimize-channel-mix', { start_date: sd, end_date: ed }).catch(() => ({ data: null }))
+      ]);
+      setGroupBookings(groupsRes.data.groups || []);
+      setOversellProtection(oversellRes.data.protection_map || []);
+      setChannelMixData(channelRes.data);
+    } catch (error) { console.error('Failed to load deluxe features:', error); }
   };
 
-  // Handle cell click - Open new booking dialog
+  // ─── Conflict Detection ────────────────────────────────────
+  const detectConflicts = () => {
+    const detectedConflicts = [];
+    rooms.forEach(room => {
+      const roomBookings = bookings.filter(b => b.room_id === room.id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
+      for (let i = 0; i < roomBookings.length; i++) {
+        for (let j = i + 1; j < roomBookings.length; j++) {
+          const b1 = roomBookings[i], b2 = roomBookings[j];
+          const s1 = new Date(b1.check_in), e1 = new Date(b1.check_out);
+          const s2 = new Date(b2.check_in), e2 = new Date(b2.check_out);
+          if (s1 < e2 && s2 < e1) {
+            detectedConflicts.push({
+              type: 'overbooking', room_id: room.id, room_number: room.room_number,
+              booking1_id: b1.id, booking2_id: b2.id,
+              guest1: b1.guest_name, guest2: b2.guest_name,
+              overlap_start: s1 > s2 ? s1 : s2, overlap_end: e1 < e2 ? e1 : e2
+            });
+          }
+        }
+      }
+    });
+    setConflicts(detectedConflicts);
+    return detectedConflicts;
+  };
+
+  useEffect(() => { detectConflicts(); }, [bookings]);
+
+  // ─── Occupancy ─────────────────────────────────────────────
+  const getOccupancyForDate = (date) => {
+    const occupiedCount = bookings.filter(b => isBookingOnDate(b, date) && b.status === 'checked_in').length;
+    return rooms.length > 0 ? Math.round((occupiedCount / rooms.length) * 100) : 0;
+  };
+
+  // ─── Event Handlers ────────────────────────────────────────
   const handleCellClick = (roomId, date) => {
-
     const room = rooms.find(r => r.id === roomId);
     if (!room) return;
-    
     setSelectedRoom(room);
     setSelectedDate(date);
-    
     const checkInDate = new Date(date);
     const checkOutDate = new Date(date);
     checkOutDate.setDate(checkOutDate.getDate() + 1);
-    
     setNewBooking({
-      guest_id: '',
-      room_id: roomId,
+      guest_id: '', room_id: roomId,
       check_in: checkInDate.toISOString().split('T')[0],
       check_out: checkOutDate.toISOString().split('T')[0],
-      guests_count: 2,
-      adults: 2,
-      children: 0,
-      children_ages: [],
-      total_amount: room.base_price || 100,
-      status: 'confirmed'
+      guests_count: 2, adults: 2, children: 0, children_ages: [],
+      total_amount: room.base_price || 100, status: 'confirmed'
     });
-    
     setShowNewBookingDialog(true);
   };
 
-  // Sidebar action handlers
-  const handleViewFolio = async (bookingId) => {
-    // Open folio in inline panel instead of navigating away
-    if (selectedBookingFolio && selectedBookingFolio.id) {
-      setFolioPanelId(selectedBookingFolio.id);
-      setShowFolioPanel(true);
-      return;
-    }
-    // Otherwise try to load the folio for this booking
-    try {
-      const folioRes = await axios.get(`/folio/booking/${bookingId}`);
-      if (folioRes.data && folioRes.data.length > 0) {
-        setFolioPanelId(folioRes.data[0].id);
-        setShowFolioPanel(true);
-      } else {
-        toast.info('Bu rezervasyon için henüz folyo oluşturulmamış');
-      }
-    } catch (error) {
-      toast.error('Folyo yüklenemedi');
-    }
-  };
-
-  const handleEditReservation = (booking) => {
-    setShowSidebar(false);
-    navigate('/pms#bookings');
-  };
-
-  const handleSendConfirmation = async (booking) => {
-    try {
-      await axios.post(`/whatsapp/send-confirmation?booking_id=${booking.id}`);
-      toast.success('Onay mesajı gönderildi!');
-    } catch (error) {
-      const detail = error.response?.data?.detail;
-      if (detail && detail.includes('telefon')) {
-        toast.error('Misafir telefon numarası bulunamadı');
-      } else {
-        toast.info('Onay mesajı göndermek için WhatsApp entegrasyonu gereklidir');
-      }
-    }
-  };
-
-  // Handle booking double-click - Open reservation detail modal
   const handleBookingDoubleClick = async (booking) => {
     setDetailModalBookingId(booking.id);
     setShowDetailModal(true);
   };
 
-  // Handle new booking submit
   const handleCreateBooking = async (e) => {
     e.preventDefault();
-    
     let guestId = newBooking.guest_id;
-    
-    // If new guest, create guest first
     if (!guestId && newBooking.guest_name) {
       try {
         const newGuest = {
-          id: `guest_${Date.now()}`,
-          name: newBooking.guest_name,
-          email: newBooking.guest_email || '',
-          phone: newBooking.guest_phone || '',
-          tenant_id: user.tenant_id,
-          created_at: new Date().toISOString()
+          id: `guest_${Date.now()}`, name: newBooking.guest_name,
+          email: newBooking.guest_email || '', phone: newBooking.guest_phone || '',
+          tenant_id: user.tenant_id, created_at: new Date().toISOString()
         };
-        
         await axios.post('/pms/guests', newGuest);
         guestId = newGuest.id;
-        toast.success('Yeni misafir oluşturuldu!');
+        toast.success('Yeni misafir olusturuldu!');
       } catch (error) {
-        toast.error('Misafir oluşturulamadı: ' + (error.response?.data?.detail || error.message));
+        toast.error('Misafir olusturulamadi: ' + (error.response?.data?.detail || error.message));
         return;
       }
     }
-    
-    if (!guestId) {
-      toast.error('Lütfen bir misafir seçin veya yeni misafir ekleyin');
-      return;
-    }
-    
+    if (!guestId) { toast.error('Lutfen bir misafir secin veya yeni misafir ekleyin'); return; }
     try {
-      const bookingData = {
-        ...newBooking,
-        guest_id: guestId
-      };
-      
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-create-${Date.now()}-${Math.random()}`;
-      await axios.post('/pms/bookings', bookingData, {
-        headers: {
-          'Idempotency-Key': idempotencyKey,
-        },
+      await axios.post('/pms/bookings', { ...newBooking, guest_id: guestId }, {
+        headers: { 'Idempotency-Key': idempotencyKey },
       });
-      toast.success('Rezervasyon başarıyla oluşturuldu!');
+      toast.success('Rezervasyon basariyla olusturuldu!');
       setShowNewBookingDialog(false);
-      
-      // Reload calendar to show new booking
       loadCalendarData();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Rezervasyon oluşturulamadı');
+      toast.error(error.response?.data?.detail || 'Rezervasyon olusturulamadi');
     }
   };
 
-  // Drag & Drop handlers
+  // ─── Drag & Drop ───────────────────────────────────────────
   const handleDragStart = (e, booking) => {
     setDraggingBooking(booking);
     e.dataTransfer.effectAllowed = 'move';
   };
-
   const handleDragOver = (e, roomId, date) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setDragOverCell({ roomId, date: date.toISOString() });
   };
+  const handleDragLeave = () => { setDragOverCell(null); };
+  const handleDragEnd = () => { setDraggingBooking(null); setDragOverCell(null); };
 
-  const handleDragLeave = () => {
-    setDragOverCell(null);
+  const handleAssignRoom = async (booking, newRoomId) => {
+    try {
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `room-assign-${Date.now()}`;
+      await axios.put(`/pms/bookings/${booking.id}`, { room_id: newRoomId }, {
+        headers: { 'Idempotency-Key': idempotencyKey },
+      });
+      const newRoom = rooms.find(r => r.id === newRoomId);
+      toast.success(`Rezervasyon ${newRoom?.room_number || ''} numarali odaya atandi`);
+      loadCalendarData();
+    } catch (error) {
+      toast.error('Oda atamasi basarisiz');
+      console.error('Room assignment error:', error);
+    }
   };
 
   const handleDrop = async (e, newRoomId, newDate) => {
     e.preventDefault();
     setDragOverCell(null);
-    
     if (!draggingBooking) return;
-    
-    // Check if room is blocked
-    const roomBlock = getRoomBlockForDate(newRoomId, newDate);
+
+    const { getRoomBlockForDate: getRBF } = await import('./calendar/calendarHelpers');
+    const roomBlock = getRBF(newRoomId, newDate, roomBlocks);
     if (roomBlock && !roomBlock.allow_sell) {
       toast.error(`Cannot move booking: Room is ${roomBlock.type.replace('_', ' ')} (${roomBlock.reason})`);
       setDraggingBooking(null);
       return;
     }
 
-    // If booking is unassigned (no room_id), this is a room assignment (not a move)
     if (!draggingBooking.room_id) {
       setDraggingBooking(null);
       await handleAssignRoom(draggingBooking, newRoomId);
       return;
     }
-    
-    // Check if actually moving to different room or date
+
     const oldRoomId = draggingBooking.room_id;
     const oldDate = new Date(draggingBooking.check_in);
-    const isSameRoom = oldRoomId === newRoomId;
-    const isSameDate = oldDate.toDateString() === newDate.toDateString();
-    
-    if (isSameRoom && isSameDate) {
+    if (oldRoomId === newRoomId && oldDate.toDateString() === newDate.toDateString()) {
       setDraggingBooking(null);
       return;
     }
-    
+
     const daysDiff = Math.ceil((new Date(draggingBooking.check_out) - new Date(draggingBooking.check_in)) / (1000 * 60 * 60 * 24));
-    
     const newCheckIn = new Date(newDate);
     const newCheckOut = new Date(newDate);
     newCheckOut.setDate(newCheckOut.getDate() + daysDiff);
-    
-    // Store move data and show reason dialog
+
     const oldRoom = rooms.find(r => r.id === oldRoomId);
     const newRoom = rooms.find(r => r.id === newRoomId);
-    
+
     setMoveData({
       booking: draggingBooking,
-      oldRoom: oldRoom?.room_number,
-      newRoom: newRoom?.room_number,
+      oldRoom: oldRoom?.room_number, newRoom: newRoom?.room_number,
       oldCheckIn: draggingBooking.check_in,
       newCheckIn: newCheckIn.toISOString().split('T')[0],
       newCheckOut: newCheckOut.toISOString().split('T')[0],
-      newRoomId: newRoomId
+      newRoomId
     });
-    
     setShowMoveReasonDialog(true);
     setDraggingBooking(null);
   };
 
   const handleConfirmMove = async () => {
-    if (!moveReason.trim()) {
-      toast.error('Please provide a reason for the room move');
-      return;
-    }
-    
-    console.log('🔄 Moving booking:', {
-      bookingId: moveData.booking.id,
-      from: `${moveData.oldRoom} (${moveData.oldCheckIn})`,
-      to: `${moveData.newRoom} (${moveData.newCheckIn})`,
-      currentDateView: currentDate.toISOString().split('T')[0]
-    });
-    
+    if (!moveReason.trim()) { toast.error('Please provide a reason for the room move'); return; }
     try {
-      // Update booking with new room and dates — send only changed fields
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-move-${Date.now()}-${Math.random()}`;
-      const updateResponse = await axios.put(`/pms/bookings/${moveData.booking.id}`, {
+      await axios.put(`/pms/bookings/${moveData.booking.id}`, {
         room_id: moveData.newRoomId,
         check_in: moveData.newCheckIn,
         check_out: moveData.newCheckOut
-      }, {
-        headers: {
-          'Idempotency-Key': idempotencyKey,
-        },
-      });
-      
-      console.log('✅ Booking updated:', updateResponse.data);
-      
-      // Log room move history
+      }, { headers: { 'Idempotency-Key': idempotencyKey } });
+
       await axios.post('/pms/room-move-history', {
         booking_id: moveData.booking.id,
-        old_room: moveData.oldRoom,
-        new_room: moveData.newRoom,
-        old_check_in: moveData.oldCheckIn,
-        new_check_in: moveData.newCheckIn,
-        reason: moveReason,
-        moved_by: user.name,
+        old_room: moveData.oldRoom, new_room: moveData.newRoom,
+        old_check_in: moveData.oldCheckIn, new_check_in: moveData.newCheckIn,
+        reason: moveReason, moved_by: user.name,
         timestamp: new Date().toISOString()
       }).catch(err => console.log('History logging failed:', err));
-      
-      toast.success(`Rezervasyon ${moveData.newRoom} numaralı odaya taşındı!`);
-      
+
+      toast.success(`Rezervasyon ${moveData.newRoom} numarali odaya tasindi!`);
       setShowMoveReasonDialog(false);
       setMoveReason('');
       setMoveData(null);
-      
-      // Reload data without shifting the calendar view so other bookings stay visible
       loadCalendarData();
     } catch (error) {
       toast.error('Failed to move booking');
@@ -637,587 +451,99 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
   };
 
-  const handleDragEnd = () => {
-    setDraggingBooking(null);
-    setDragOverCell(null);
-  };
-
-  // Calculate occupancy for each date
-  const getOccupancyForDate = (date) => {
-    const occupiedCount = bookings.filter(b => 
-      isBookingOnDate(b, date) && b.status === 'checked_in'
-    ).length;
-    
-    return rooms.length > 0 ? Math.round((occupiedCount / rooms.length) * 100) : 0;
-  };
-
-  // Calculate forecast occupancy (next 14 days avg)
-  const getForecastOccupancy = () => {
-    const forecastDates = [];
-    const today = new Date();
-    
-    for (let i = 0; i < 14; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
-      forecastDates.push(date);
-    }
-    
-    const avgOccupancy = forecastDates.reduce((sum, date) => {
-      return sum + getOccupancyForDate(date);
-    }, 0) / forecastDates.length;
-    
-    return Math.round(avgOccupancy);
-  };
-
-  // Detect conflicts (overbooking, overlaps)
-  const detectConflicts = () => {
-    const detectedConflicts = [];
-    
-    rooms.forEach(room => {
-      const roomBookings = bookings.filter(b => b.room_id === room.id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
-      
-      // Check for overlapping bookings
-      for (let i = 0; i < roomBookings.length; i++) {
-        for (let j = i + 1; j < roomBookings.length; j++) {
-          const booking1 = roomBookings[i];
-          const booking2 = roomBookings[j];
-          
-          const start1 = new Date(booking1.check_in);
-          const end1 = new Date(booking1.check_out);
-          const start2 = new Date(booking2.check_in);
-          const end2 = new Date(booking2.check_out);
-          
-          // Check if dates overlap
-          if (start1 < end2 && start2 < end1) {
-            detectedConflicts.push({
-              type: 'overbooking',
-              room_id: room.id,
-              room_number: room.room_number,
-              booking1_id: booking1.id,
-              booking2_id: booking2.id,
-              guest1: booking1.guest_name,
-              guest2: booking2.guest_name,
-              overlap_start: start1 > start2 ? start1 : start2,
-              overlap_end: end1 < end2 ? end1 : end2
-            });
-          }
-        }
-      }
-    });
-    
-    setConflicts(detectedConflicts);
-    return detectedConflicts;
-  };
-
-  useEffect(() => {
-    detectConflicts();
-  }, [bookings]);
-
-  // Check if a room/date has conflict
-  const hasConflict = (roomId, date) => {
-    return conflicts.some(c => 
-      c.room_id === roomId && 
-      date >= new Date(c.overlap_start) && 
-      date < new Date(c.overlap_end)
-    );
-  };
-
-  // Find available rooms
+  // ─── Find Room ─────────────────────────────────────────────
   const handleFindRoom = async () => {
     if (!findRoomCriteria.check_in || !findRoomCriteria.check_out) {
       toast.error('Please select check-in and check-out dates');
       return;
     }
-    
     const checkIn = new Date(findRoomCriteria.check_in);
     const checkOut = new Date(findRoomCriteria.check_out);
-    
     const available = rooms.filter(room => {
-      // Filter by room type if specified
-      if (findRoomCriteria.room_type !== 'all' && room.room_type !== findRoomCriteria.room_type) {
-        return false;
-      }
-      
-      // Filter by capacity
-      if (room.capacity < findRoomCriteria.guests_count) {
-        return false;
-      }
-      
-      // Check if room is available for the date range
+      if (findRoomCriteria.room_type !== 'all' && room.room_type !== findRoomCriteria.room_type) return false;
+      if (room.capacity < findRoomCriteria.guests_count) return false;
       const roomBookings = bookings.filter(b => b.room_id === room.id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
-      const isAvailable = !roomBookings.some(booking => {
-        const bStart = new Date(booking.check_in);
-        const bEnd = new Date(booking.check_out);
+      return !roomBookings.some(b => {
+        const bStart = new Date(b.check_in);
+        const bEnd = new Date(b.check_out);
         return checkIn < bEnd && checkOut > bStart;
       });
-      
-      return isAvailable;
     });
-    
     setAvailableRooms(available);
   };
 
-  // Generate date range
-  const getDateRange = () => {
-    const dates = [];
-    const start = new Date(currentDate);
-    
-    // Get start date components in local time
-    const startYear = start.getFullYear();
-    const startMonth = start.getMonth();
-    const startDay = start.getDate();
-
-    for (let i = 0; i < daysToShow; i++) {
-      // Create date in UTC to avoid timezone issues
-      const date = new Date(Date.UTC(startYear, startMonth, startDay + i));
-      dates.push(date);
+  // ─── Folio / Sidebar ──────────────────────────────────────
+  const handleViewFolio = async (bookingId) => {
+    if (selectedBookingFolio && selectedBookingFolio.id) {
+      setFolioPanelId(selectedBookingFolio.id);
+      setShowFolioPanel(true);
+      return;
     }
-    return dates;
-  };
-
-  const dateRange = getDateRange();
-
-  // Utility: Convert any date value to YYYY-MM-DD string (timezone-safe)
-  const toDateStringUTC = (value) => {
-    if (typeof value === 'string') {
-      return value.slice(0, 10); // YYYY-MM-DD
-    }
-    
-    const d = new Date(value);
-    // Use UTC methods to avoid timezone shift
-    const year = d.getUTCFullYear();
-    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(d.getUTCDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  // Check if room is occupied on specific day
-  const isRoomOccupiedOnDay = (roomId, day, bookings) => {
-    const dayStr = toDateStringUTC(day);
-
-    return bookings.some(b => {
-      if (b.room_id !== roomId) return false;
-      if (b.status === 'cancelled' || b.status === 'checked_out' || b.status === 'no_show') return false;
-
-      const checkIn = toDateStringUTC(b.check_in);
-      const checkOut = toDateStringUTC(b.check_out);
-
-      // Day is in range if: checkIn <= day < checkOut
-      return dayStr >= checkIn && dayStr < checkOut;
-    });
-  };
-
-  // Check if booking overlaps with date (OLD FUNCTION - keeping for compatibility)
-  const isBookingOnDate = (booking, date) => {
-    const dayStr = toDateStringUTC(date);
-    const checkIn = toDateStringUTC(booking.check_in);
-    const checkOut = toDateStringUTC(booking.check_out);
-    
-    return dayStr >= checkIn && dayStr < checkOut;
-  };
-
-  // Get all unassigned bookings for a room type that overlap with the visible date range
-  const getUnassignedBookingsForType = (roomType) => {
-    const rangeStart = dateRange.length > 0 ? toDateStringUTC(dateRange[0]) : '';
-    const rangeEnd = dateRange.length > 0 ? toDateStringUTC(dateRange[dateRange.length - 1]) : '';
-    return bookings.filter(booking => {
-      if (booking.status === 'cancelled' || booking.status === 'checked_out' || booking.status === 'no_show') return false;
-      if (booking.room_id) return false;
-      const bType = (booking.room_type || '').toLowerCase();
-      if (bType !== roomType.toLowerCase()) return false;
-      // Filter: booking must overlap with visible date range
-      if (rangeStart && rangeEnd) {
-        const checkIn = toDateStringUTC(booking.check_in);
-        const checkOut = toDateStringUTC(booking.check_out);
-        // Booking overlaps if: checkIn <= rangeEnd AND checkOut > rangeStart
-        if (checkIn > rangeEnd || checkOut <= rangeStart) return false;
-      }
-      return true;
-    });
-  };
-
-  // Compute lane allocation for unassigned bookings to avoid overlap
-  const computeUnassignedLanes = (unassignedBookings) => {
-    if (!unassignedBookings.length) return { lanes: {}, maxLane: 0 };
-    const sorted = [...unassignedBookings].sort((a, b) => {
-      const aIn = toDateStringUTC(a.check_in);
-      const bIn = toDateStringUTC(b.check_in);
-      if (aIn !== bIn) return aIn < bIn ? -1 : 1;
-      const aOut = toDateStringUTC(a.check_out);
-      const bOut = toDateStringUTC(b.check_out);
-      return aOut < bOut ? -1 : 1;
-    });
-    const lanes = {};
-    const laneEnds = []; // tracks the check_out of the booking occupying each lane
-    let maxLane = 0;
-    for (const booking of sorted) {
-      const checkIn = toDateStringUTC(booking.check_in);
-      let placed = false;
-      for (let i = 0; i < laneEnds.length; i++) {
-        if (checkIn >= laneEnds[i]) {
-          lanes[booking.id] = i;
-          laneEnds[i] = toDateStringUTC(booking.check_out);
-          placed = true;
-          break;
-        }
-      }
-      if (!placed) {
-        const lane = laneEnds.length;
-        lanes[booking.id] = lane;
-        laneEnds.push(toDateStringUTC(booking.check_out));
-        if (lane > maxLane) maxLane = lane;
-      }
-    }
-    return { lanes, maxLane };
-  };
-
-  // Handle room assignment via drag from unassigned to a room
-  const handleAssignRoom = async (booking, newRoomId) => {
     try {
-      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `room-assign-${Date.now()}`;
-      await axios.put(`/pms/bookings/${booking.id}`, {
-        room_id: newRoomId,
-      }, {
-        headers: { 'Idempotency-Key': idempotencyKey },
-      });
-      const newRoom = rooms.find(r => r.id === newRoomId);
-      toast.success(`Rezervasyon ${newRoom?.room_number || ''} numaralı odaya atandı`);
-      loadCalendarData();
+      const folioRes = await axios.get(`/folio/booking/${bookingId}`);
+      if (folioRes.data && folioRes.data.length > 0) {
+        setFolioPanelId(folioRes.data[0].id);
+        setShowFolioPanel(true);
+      } else {
+        toast.info('Bu rezervasyon icin henuz folyo olusturulmamis');
+      }
     } catch (error) {
-      toast.error('Oda ataması başarısız');
-      console.error('Room assignment error:', error);
+      toast.error('Folyo yuklenemedi');
     }
   };
 
-  // Get booking for room on specific date
-  const getBookingForRoomOnDate = (roomId, date) => {
-    const dayStr = toDateStringUTC(date);
-    
-    const found = bookings.find(booking => {
-      if (booking.room_id !== roomId) return false;
-      // Filter out cancelled / checked-out / no-show bookings
-      if (booking.status === 'cancelled' || booking.status === 'checked_out' || booking.status === 'no_show') return false;
-      
-      const checkIn = toDateStringUTC(booking.check_in);
-      const checkOut = toDateStringUTC(booking.check_out);
-      
-      return dayStr >= checkIn && dayStr < checkOut;
-    });
-    
-    // Debug only if enabled
-    if (DEBUG_ROOMS && !window.debuggedRooms) window.debuggedRooms = {};
-    if (DEBUG_ROOMS && !window.debuggedRooms[roomId]) {
-      window.debuggedRooms[roomId] = true;
-      console.log(`\n🔬 getBookingForRoomOnDate DEBUG (Room: ${roomId.substring(0,8)}..., Date: ${dayStr}):`);
-      console.log('  Total bookings to search:', bookings.length);
-      console.log('  Looking for room_id:', roomId);
-      
-      const roomBookings = bookings.filter(b => b.room_id === roomId);
-      console.log('  Bookings with this room_id:', roomBookings.length);
-      
-      if (roomBookings.length > 0) {
-        console.log('  Sample booking for this room:');
-        console.log('    - Guest:', roomBookings[0].guest_name);
-        console.log('    - Check-in:', toDateStringUTC(roomBookings[0].check_in));
-        console.log('    - Check-out:', toDateStringUTC(roomBookings[0].check_out));
-        console.log('    - Room #:', roomBookings[0].room_number);
+  const handleEditReservation = () => {
+    setShowSidebar(false);
+    navigate('/pms#bookings');
+  };
+
+  const handleSendConfirmation = async (booking) => {
+    try {
+      await axios.post(`/whatsapp/send-confirmation?booking_id=${booking.id}`);
+      toast.success('Onay mesaji gonderildi!');
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      if (detail && detail.includes('telefon')) {
+        toast.error('Misafir telefon numarasi bulunamadi');
+      } else {
+        toast.info('Onay mesaji gondermek icin WhatsApp entegrasyonu gereklidir');
       }
     }
-    
-    return found;
   };
 
-  // Get room block for room on specific date
-  const getRoomBlockForDate = (roomId, date) => {
-    const dayStr = toDateStringUTC(date);
-    
-    return roomBlocks.find(block => {
-      if (block.room_id !== roomId || block.status !== 'active') return false;
-      
-      const blockStart = toDateStringUTC(block.start_date);
-      const blockEnd = block.end_date ? toDateStringUTC(block.end_date) : '9999-12-31';
-      
-      return dayStr >= blockStart && dayStr <= blockEnd;
-    });
-  };
-
-  // Check if block starts on this date
-  const isBlockStart = (block, date) => {
-    const dayStr = toDateStringUTC(date);
-    const blockStartStr = toDateStringUTC(block.start_date);
-    
-    return dayStr === blockStartStr;
-  };
-
-  // Calculate block span (how many days visible)
-  const calculateBlockSpan = (block, startDate) => {
-    const blockStart = toDateStringUTC(block.start_date);
-    const blockEnd = block.end_date ? toDateStringUTC(block.end_date) : '9999-12-31';
-    const rangeStart = toDateStringUTC(startDate);
-    
-    const rangeEndDate = new Date(startDate);
-    rangeEndDate.setDate(rangeEndDate.getDate() + daysToShow);
-    const rangeEnd = toDateStringUTC(rangeEndDate);
-    
-    const visibleStart = blockStart > rangeStart ? blockStart : rangeStart;
-    const visibleEnd = blockEnd < rangeEnd ? blockEnd : rangeEnd;
-    
-    const startMs = new Date(visibleStart).getTime();
-    const endMs = new Date(visibleEnd).getTime();
-    const days = Math.ceil((endMs - startMs) / (1000 * 60 * 60 * 24));
-    
-    return Math.max(1, Math.min(days, daysToShow));
-  };
-
-  // Calculate booking span width (how many days)
-  const calculateBookingSpan = (booking, startDate) => {
-    const checkIn = toDateStringUTC(booking.check_in);
-    const checkOut = toDateStringUTC(booking.check_out);
-    const rangeStart = toDateStringUTC(startDate);
-    
-    // Calculate range end
-    const rangeEndDate = new Date(startDate);
-    rangeEndDate.setDate(rangeEndDate.getDate() + daysToShow);
-    const rangeEnd = toDateStringUTC(rangeEndDate);
-
-    // Effective visible range
-    const effectiveStart = checkIn < rangeStart ? rangeStart : checkIn;
-    const effectiveEnd = checkOut > rangeEnd ? rangeEnd : checkOut;
-
-    // Calculate days between strings
-    const startMs = new Date(effectiveStart).getTime();
-    const endMs = new Date(effectiveEnd).getTime();
-    const nights = Math.ceil((endMs - startMs) / (1000 * 60 * 60 * 24));
-    
-    return Math.max(1, nights);
-  };
-
-  // Check if booking starts on this date
-  const isBookingStart = (booking, date) => {
-    const dayStr = toDateStringUTC(date);
-    const checkInStr = toDateStringUTC(booking.check_in);
-    
-    return dayStr === checkInStr;
-  };
-
-  const getStatusColor = (status) => {
-    const colors = {
-      confirmed: 'bg-blue-500',
-      checked_in: 'bg-green-500',
-      checked_out: 'bg-gray-400',
-      cancelled: 'bg-red-500',
-      guaranteed: 'bg-purple-500'
-    };
-    return colors[status] || 'bg-gray-500';
-  };
-
-  // Get color by market segment (more important for revenue management)
-  const getSegmentColor = (segment) => {
-    const colors = {
-      corporate: 'bg-blue-600',      // Corporate → Blue
-      'ota': 'bg-purple-600',        // OTA → Purple
-      'walk_in': 'bg-orange-500',    // Walk-in → Orange
-      'walk-in': 'bg-orange-500',    // Walk-in → Orange
-      group: 'bg-green-600',         // Group → Green
-      leisure: 'bg-pink-500',        // Leisure → Pink
-      government: 'bg-indigo-600',   // Government → Indigo
-      default: 'bg-blue-500'
-    };
-    return colors[segment?.toLowerCase()] || colors.default;
-  };
-
-  // Get rate type label with styling
-  const getRateTypeInfo = (booking) => {
-    const rateTypes = {
-      'corp_std': { label: 'CORP-STD', color: 'text-blue-300' },
-      'corp_pref': { label: 'CORP-PREF', color: 'text-blue-200' },
-      'gov': { label: 'GOV', color: 'text-indigo-300' },
-      'leisure': { label: 'RACK', color: 'text-pink-300' },
-      'ota': { label: 'OTA', color: 'text-purple-300' },
-      'group': { label: 'GROUP', color: 'text-green-300' }
-    };
-    
-    return rateTypes[booking.rate_type] || { label: booking.rate_type?.toUpperCase() || 'STD', color: 'text-gray-300' };
-  };
-
-  // Check if booking is arrival/stayover/departure for current date
-  const getBookingStatus = (booking, date) => {
-    const dayStr = toDateStringUTC(date);
-    const checkInStr = toDateStringUTC(booking.check_in);
-    const checkOutStr = toDateStringUTC(booking.check_out);
-    
-    if (dayStr === checkInStr) return 'arrival';
-    if (dayStr === checkOutStr) return 'departure';
-    if (dayStr > checkInStr && dayStr < checkOutStr) return 'stayover';
-    return null;
-  };
-
-  const getStatusLabel = (status) => {
-    const labels = {
-      confirmed: 'Confirmed',
-      checked_in: 'In-House',
-      checked_out: 'Departed',
-      cancelled: 'Cancelled',
-      guaranteed: 'Guaranteed'
-    };
-    return labels[status] || status;
-  };
-
-  // OTA Helper Functions
-  const getOTAInfo = (channel) => {
-    const otaData = {
-      'booking_com': { label: 'BKG', name: 'Booking.com', color: 'bg-indigo-600' },
-      'expedia': { label: 'EXP', name: 'Expedia', color: 'bg-blue-600' },
-      'airbnb': { label: 'ABNB', name: 'Airbnb', color: 'bg-red-600' },
-      'agoda': { label: 'AGD', name: 'Agoda', color: 'bg-purple-600' },
-      'hotels_com': { label: 'HTL', name: 'Hotels.com', color: 'bg-rose-600' },
-      'direct': { label: 'DIR', name: 'Direct', color: 'bg-green-600' },
-      'phone': { label: 'TEL', name: 'Phone', color: 'bg-gray-600' },
-      'walk_in': { label: 'WLK', name: 'Walk-in', color: 'bg-orange-600' }
-    };
-    return otaData[channel] || { label: 'OTA', name: 'OTA', color: 'bg-gray-600' };
-  };
-
-  // Enterprise Mode: Check if booking has rate leakage
-  const hasRateLeakage = (bookingId) => {
-    return rateLeakages.find(l => l.booking_id === bookingId);
-  };
-
-  // Enterprise Mode: Get heatmap intensity for date
-  const getHeatmapIntensity = (date) => {
-    const dateStr = date.toISOString().split('T')[0];
-    const heatmapDay = availabilityHeatmap.find(h => h.date === dateStr);
-    return heatmapDay?.intensity || 'low';
-  };
-
-  const getHeatmapColor = (intensity) => {
-    const colors = {
-      'critical': 'bg-red-100 border-red-300',
-      'high': 'bg-orange-100 border-orange-300',
-      'moderate': 'bg-yellow-100 border-yellow-300',
-      'medium': 'bg-green-100 border-green-300',
-      'low': 'bg-white'
-    };
-    return colors[intensity] || colors.low;
-  };
-
-  // AI Mode: Check if booking has AI recommendation
-  const getAIRecommendation = (bookingId) => {
-    const roomMove = aiRoomMoves.find(r => r.booking_id === bookingId);
-    const overbooking = aiOverbookingSolutions.find(s => s.booking_id === bookingId);
-    return roomMove || overbooking;
-  };
-
-  // AI Mode: Check no-show risk
-  const getNoShowRisk = (bookingId) => {
-    return aiNoShowPredictions.find(p => p.booking_id === bookingId);
-  };
-
+  // ─── Toggle Handlers ──────────────────────────────────────
   const toggleAIMode = () => {
     const newState = !showAIPanel;
     setShowAIPanel(newState);
-
-    if (newState) {
-      // Prevent misleading AI metrics if there is no data context
-      if ((calendarMeta.rooms || 0) === 0) return;
-      loadAIRecommendations();
-    }
+    if (newState && (calendarMeta.rooms || 0) > 0) loadAIRecommendations();
   };
 
   const toggleDeluxeMode = () => {
     const newState = !showDeluxePanel;
     setShowDeluxePanel(newState);
-
-    if (newState) {
-      // Prevent misleading Deluxe+ metrics if there is no data context
-      if ((calendarMeta.rooms || 0) === 0) return;
-      loadDeluxeFeatures();
-    }
+    if (newState && (calendarMeta.rooms || 0) > 0) loadDeluxeFeatures();
   };
 
-  const loadDeluxeFeatures = async () => {
-    try {
-      const startDate = currentDate.toISOString().split('T')[0];
-      const endDate = new Date(currentDate.getTime() + daysToShow * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const today = new Date().toISOString().split('T')[0];
-      
-      const [groupsRes, oversellRes, channelRes] = await Promise.all([
-        axios.get(`/deluxe/group-bookings?start_date=${startDate}&end_date=${endDate}&min_rooms=5`).catch(() => ({ data: { groups: [] } })),
-        axios.get(`/deluxe/oversell-protection?start_date=${startDate}&end_date=${endDate}`).catch(() => ({ data: { protection_map: [] } })),
-        axios.post(`/deluxe/optimize-channel-mix`, { start_date: startDate, end_date: endDate }).catch(() => ({ data: null }))
-      ]);
-      
-      setGroupBookings(groupsRes.data.groups || []);
-      setOversellProtection(oversellRes.data.protection_map || []);
-      setChannelMixData(channelRes.data);
-    } catch (error) {
-      console.error('Failed to load deluxe features:', error);
-    }
+  const toggleEnterprise = () => {
+    const newState = !showEnterprisePanel;
+    setShowEnterprisePanel(newState);
+    if (newState) loadEnterpriseData({ roomsCount: rooms.length });
   };
 
-  // Check if booking is part of a group
-  const isGroupBooking = (bookingId) => {
-    return groupBookings.some(g => g.booking_ids.includes(bookingId));
-  };
-
-  const getGroupInfo = (bookingId) => {
-    return groupBookings.find(g => g.booking_ids.includes(bookingId));
-  };
-
+  // ─── Navigation ────────────────────────────────────────────
   const navigatePrevious = () => {
-    const newDate = new Date(currentDate);
-    newDate.setDate(newDate.getDate() - daysToShow);
-    setCurrentDate(newDate);
+    const nd = new Date(currentDate);
+    nd.setDate(nd.getDate() - daysToShow);
+    setCurrentDate(nd);
   };
-
   const navigateNext = () => {
-    const newDate = new Date(currentDate);
-    newDate.setDate(newDate.getDate() + daysToShow);
-    setCurrentDate(newDate);
+    const nd = new Date(currentDate);
+    nd.setDate(nd.getDate() + daysToShow);
+    setCurrentDate(nd);
   };
+  const goToToday = () => { setCurrentDate(new Date()); };
 
-  const goToToday = () => {
-    setCurrentDate(new Date());
-  };
-
-  const formatDate = (date) => {
-    return date.toLocaleDateString('tr-TR', { month: 'short', day: 'numeric' });
-  };
-
-  const turkishDayNames = ['Paz', 'Pts', 'Sal', 'Çar', 'Per', 'Cum', 'Cts'];
-
-  const formatDateWithDay = (date) => {
-    const dayName = turkishDayNames[date.getUTCDay()];
-    const dayNum = String(date.getUTCDate()).padStart(2, '0');
-    return { dayName, dayNum };
-  };
-
-  const isWeekend = (date) => {
-    const day = date.getUTCDay();
-    return day === 0 || day === 6;
-  };
-
-  const isToday = (date) => {
-    const today = new Date();
-    return date.toDateString() === today.toDateString();
-  };
-
-  // Source-based booking card color mapping
-  const getSourceColor = (booking) => {
-    const channel = (booking.ota_channel || booking.source_channel || booking.channel || booking.source || '').toLowerCase();
-    if (channel.includes('expedia')) return { bg: '#F97316', border: '#EA580C', label: 'Expedia' };
-    if (channel.includes('booking')) return { bg: '#1D4ED8', border: '#1E40AF', label: 'Booking.com' };
-    if (channel.includes('tatilbudur')) return { bg: '#2563EB', border: '#1D4ED8', label: 'Tatilbudur.com' };
-    if (channel.includes('airbnb')) return { bg: '#E11D48', border: '#BE123C', label: 'Airbnb' };
-    if (channel.includes('agoda')) return { bg: '#7C3AED', border: '#6D28D9', label: 'Agoda' };
-    if (channel.includes('hotels')) return { bg: '#BE123C', border: '#9F1239', label: 'Hotels.com' };
-    if (channel.includes('online')) return { bg: '#2563EB', border: '#1D4ED8', label: 'Online' };
-    if (channel.includes('setur')) return { bg: '#0D9488', border: '#0F766E', label: 'Setur' };
-    if (channel === 'direct' || channel === 'phone' || channel === 'walk_in' || channel === 'walk-in') return { bg: '#374151', border: '#1F2937', label: 'Kesin' };
-    // Default confirmed/manual
-    return { bg: '#374151', border: '#1F2937', label: 'Kesin' };
-  };
-
+  // ─── Loading State ─────────────────────────────────────────
   if (loading) {
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reservation_calendar">
@@ -1228,684 +554,35 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     );
   }
 
+  // ─── Render ────────────────────────────────────────────────
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="calendar">
       <div className="p-4 space-y-3">
-        {/* Header - PMS Style */}
-        <div className="flex items-center justify-between" data-testid="calendar-header">
-          <div className="flex items-center gap-2">
-            <Button
-              className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-4 py-2 rounded-md text-sm"
-              data-testid="reservations-tab-btn"
-            >
-              <CalendarIcon className="w-4 h-4 mr-1.5" />
-              Rezervasyonlar
-            </Button>
-            {bookings.filter(b => !b.room_id && b.status !== 'cancelled').length > 0 && (
-              <Button
-                variant="outline"
-                className="border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 font-medium text-sm px-3 py-2 rounded-md"
-                data-testid="unassigned-count-btn"
-              >
-                {bookings.filter(b => !b.room_id && b.status !== 'cancelled').length} atanmamış oda
-              </Button>
-            )}
-            {conflicts.length > 0 && (
-              <Badge className="bg-red-500 animate-pulse text-white text-xs px-2 py-1">
-                {conflicts.length} Çakışma
-              </Badge>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={navigatePrevious} className="h-8 w-8 p-0" data-testid="nav-prev-btn">
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <Button variant="outline" size="sm" onClick={goToToday} className="h-8 px-3 text-xs font-medium" data-testid="go-today-btn">
-              Tarihe git
-            </Button>
-            <Button variant="outline" size="sm" onClick={navigateNext} className="h-8 w-8 p-0" data-testid="nav-next-btn">
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSyncReservations}
-              disabled={syncing}
-              data-testid="sync-reservations-btn"
-              className="text-xs h-8"
-            >
-              {syncing ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
-              {syncing ? 'Senkronize...' : 'OTA Sync'}
-            </Button>
-            <select
-              className="border rounded-md px-2 py-1 text-xs h-8"
-              value={daysToShow}
-              onChange={(e) => setDaysToShow(Number(e.target.value))}
-              data-testid="days-selector"
-            >
-              <option value={7}>7 Gün</option>
-              <option value={14}>14 Gün</option>
-              <option value={30}>30 Gün</option>
-            </select>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowFindRoomDialog(true)}
-              className="text-xs h-8"
-              data-testid="find-room-btn"
-            >
-              Genel Bakış
-            </Button>
-            <Button
-              onClick={() => setShowNewBookingDialog(true)}
-              className="bg-orange-500 hover:bg-orange-600 text-white text-xs h-8 px-3 font-semibold"
-              data-testid="add-reservation-btn"
-            >
-              <Plus className="w-3.5 h-3.5 mr-1" />
-              Rezervasyon ekle
-            </Button>
-          </div>
-        </div>
+        <CalendarHeader
+          dateRange={dateRange}
+          daysToShow={daysToShow}
+          setDaysToShow={setDaysToShow}
+          bookings={bookings}
+          conflicts={conflicts}
+          syncing={syncing}
+          showEnterprisePanel={showEnterprisePanel}
+          showAIPanel={showAIPanel}
+          onNavigatePrevious={navigatePrevious}
+          onNavigateNext={navigateNext}
+          onGoToToday={goToToday}
+          onSyncReservations={handleSyncReservations}
+          onToggleEnterprise={toggleEnterprise}
+          onToggleAI={toggleAIMode}
+          onShowFindRoomDialog={() => setShowFindRoomDialog(true)}
+          onShowNewBookingDialog={() => setShowNewBookingDialog(true)}
+        />
 
-        {/* Date Range & Filters Row */}
-        <div className="flex items-center justify-between bg-white border rounded-lg px-4 py-2" data-testid="date-range-bar">
-          <div className="text-sm font-semibold text-gray-800">
-            {dateRange.length > 0 && (
-              <>
-                {dateRange[0].toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })} – {dateRange[dateRange.length - 1].toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })}
-              </>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 text-xs text-gray-600">
-              <span>Rezervasyon durumu</span>
-              <select className="border rounded px-2 py-1 text-xs" data-testid="status-filter">
-                <option>Hepsi</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant={showEnterprisePanel ? "default" : "outline"}
-                onClick={() => {
-                  const newState = !showEnterprisePanel;
-                  setShowEnterprisePanel(newState);
-                  if (newState) loadEnterpriseData({ roomsCount: rooms.length });
-                }}
-                className="h-7 text-xs px-2"
-                data-testid="enterprise-toggle"
-              >
-                Ayarlar
-              </Button>
-              <Button
-                size="sm"
-                variant={showAIPanel ? "default" : "outline"}
-                onClick={toggleAIMode}
-                className="h-7 text-xs px-2"
-                data-testid="ai-toggle"
-              >
-                Renklendirme
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Occupancy Chart - Line Style */}
-        <div className="bg-white border rounded-lg p-4" data-testid="occupancy-chart">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs font-semibold text-gray-500 tracking-wider">Doluluk</div>
-            <div className="flex items-center gap-3">
-              <Button
-                size="sm"
-                variant={showDeluxePanel ? "default" : "outline"}
-                onClick={toggleDeluxeMode}
-                className="h-6 text-[10px] px-2"
-              >
-                Deluxe+
-              </Button>
-            </div>
-          </div>
-          <div className="relative" style={{ height: '80px' }}>
-            {/* Percentage labels */}
-            <div className="absolute top-0 left-0 right-0 flex" style={{ height: '20px' }}>
-              {dateRange.map((date, idx) => {
-                const occ = getOccupancyForDate(date);
-                return (
-                  <div key={idx} className="flex-1 text-center">
-                    <span className={`text-[10px] font-bold ${occ >= 50 ? 'text-orange-600' : occ > 0 ? 'text-blue-500' : 'text-gray-400'}`}>
-                      {occ > 0 ? occ : '0'}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-            {/* SVG Line Chart */}
-            <svg className="w-full" style={{ height: '60px', marginTop: '20px' }} viewBox={`0 0 ${dateRange.length * 100} 60`} preserveAspectRatio="none">
-              <defs>
-                <linearGradient id="occGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="#60A5FA" stopOpacity="0.3" />
-                  <stop offset="100%" stopColor="#60A5FA" stopOpacity="0.05" />
-                </linearGradient>
-              </defs>
-              {/* Area fill */}
-              <path
-                d={(() => {
-                  const points = dateRange.map((date, idx) => {
-                    const occ = getOccupancyForDate(date);
-                    const x = idx * 100 + 50;
-                    const y = 60 - (occ / 100) * 55;
-                    return { x, y };
-                  });
-                  if (points.length === 0) return '';
-                  let path = `M ${points[0].x} ${points[0].y}`;
-                  for (let i = 1; i < points.length; i++) {
-                    const cp1x = points[i-1].x + (points[i].x - points[i-1].x) / 3;
-                    const cp2x = points[i].x - (points[i].x - points[i-1].x) / 3;
-                    path += ` C ${cp1x} ${points[i-1].y} ${cp2x} ${points[i].y} ${points[i].x} ${points[i].y}`;
-                  }
-                  path += ` L ${points[points.length-1].x} 60 L ${points[0].x} 60 Z`;
-                  return path;
-                })()}
-                fill="url(#occGradient)"
-              />
-              {/* Line */}
-              <path
-                d={(() => {
-                  const points = dateRange.map((date, idx) => {
-                    const occ = getOccupancyForDate(date);
-                    const x = idx * 100 + 50;
-                    const y = 60 - (occ / 100) * 55;
-                    return { x, y };
-                  });
-                  if (points.length === 0) return '';
-                  let path = `M ${points[0].x} ${points[0].y}`;
-                  for (let i = 1; i < points.length; i++) {
-                    const cp1x = points[i-1].x + (points[i].x - points[i-1].x) / 3;
-                    const cp2x = points[i].x - (points[i].x - points[i-1].x) / 3;
-                    path += ` C ${cp1x} ${points[i-1].y} ${cp2x} ${points[i].y} ${points[i].x} ${points[i].y}`;
-                  }
-                  return path;
-                })()}
-                fill="none"
-                stroke="#60A5FA"
-                strokeWidth="2.5"
-              />
-            </svg>
-          </div>
-          {/* % label */}
-          <div className="text-left text-[10px] text-gray-400 font-medium mt-1">%</div>
-        </div>
-
-        {/* Deluxe+ Panel */}
-        {showDeluxePanel && (
-          <Card className="border-2 border-amber-500 bg-gradient-to-br from-amber-50 to-orange-50">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                💎 Deluxe+ Features
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Group Bookings */}
-              {groupBookings.length > 0 && (
-                <div className="bg-white p-3 rounded-lg border-2 border-amber-300">
-                  <div className="text-sm font-semibold text-amber-700 mb-2">
-                    👥 Group Bookings ({groupBookings.length})
-                  </div>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {groupBookings.slice(0, 5).map((group, idx) => (
-                      <div key={idx} className="bg-amber-50 p-2 rounded border border-amber-200 text-xs">
-                        <div className="flex justify-between items-start mb-1">
-                          <div>
-                            <span className="font-semibold">{group.company_name}</span>
-                            {group.is_large_group && (
-                              <Badge className="ml-2 bg-orange-600 text-white text-[8px]">LARGE</Badge>
-                            )}
-                          </div>
-                          <Badge className="bg-amber-600 text-white text-[9px]">
-                            {group.room_count} rooms
-                          </Badge>
-                        </div>
-                        <div className="text-gray-600">
-
-              {/* Data Source / Empty Dataset Notice */}
-              {(calendarMeta.rooms || 0) === 0 ? (
-                <div className="bg-white/70 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
-                  <div className="font-semibold mb-1">Bu otel için oda kaydı bulunamadı.</div>
-                  <div className="text-xs text-amber-800/90">
-                    Deluxe+ analizleri oda ve rezervasyon verisine göre hesaplanır. Önce oda ekleyin veya bu otelin verisi olan bir tenant ile giriş yapın.
-                  </div>
-                </div>
-              ) : (calendarMeta.bookings || 0) === 0 ? (
-                <div className="bg-white/70 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
-                  <div className="font-semibold mb-1">Seçili tarih aralığında rezervasyon yok.</div>
-                  <div className="text-xs text-amber-800/90">
-                    Tarih aralığı: <span className="font-medium">{calendarMeta.start_date} → {calendarMeta.end_date}</span>. Deluxe+ metrikleri bu aralıkta rezervasyon olmadığında gösterilmez.
-                  </div>
-                </div>
-              ) : (
-                <div className="text-[11px] text-amber-800/80">
-                  Veri kaynağı: {calendarMeta.rooms} oda, {calendarMeta.bookings} rezervasyon (aralık: {calendarMeta.start_date} → {calendarMeta.end_date})
-                </div>
-              )}
-
-                          {new Date(group.check_in).toLocaleDateString()} - {new Date(group.check_out).toLocaleDateString()}
-                        </div>
-                        <div className="flex justify-between mt-1">
-                          <span className="text-gray-500">Revenue:</span>
-                          <span className="font-semibold text-green-600">${group.total_revenue}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Oversell Protection Map */}
-              {(calendarMeta.bookings || 0) > 0 && oversellProtection.length > 0 && (
-                <div className="bg-white p-3 rounded-lg border-2 border-red-300">
-                  <div className="text-sm font-semibold text-red-700 mb-2">
-                    🛡️ Oversell Protection Status
-                  </div>
-                  <div className="grid grid-cols-4 gap-2">
-                    <div className="text-center">
-                      <div className="text-xl font-bold text-red-600">
-                        {oversellProtection.filter(d => d.risk_level === 'danger').length}
-                      </div>
-                      <div className="text-[10px] text-gray-600">DANGER</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-xl font-bold text-yellow-600">
-                        {oversellProtection.filter(d => d.risk_level === 'caution').length}
-                      </div>
-                      <div className="text-[10px] text-gray-600">CAUTION</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-xl font-bold text-blue-600">
-                        {oversellProtection.filter(d => d.risk_level === 'moderate').length}
-                      </div>
-                      <div className="text-[10px] text-gray-600">MODERATE</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-xl font-bold text-green-600">
-                        {oversellProtection.filter(d => d.risk_level === 'safe').length}
-                      </div>
-                      <div className="text-[10px] text-gray-600">SAFE</div>
-                    </div>
-                  </div>
-                  <div className="mt-2 text-xs text-gray-600 space-y-1">
-                    {oversellProtection.filter(d => d.risk_level === 'danger').slice(0, 2).map((day, idx) => (
-                      <div key={idx} className="flex justify-between bg-red-50 p-1 rounded">
-                        <span>{new Date(day.date).toLocaleDateString()}</span>
-                        <span className="font-semibold text-red-600">{day.recommendation}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Channel Mix Optimization */}
-              {(calendarMeta.bookings || 0) > 0 && channelMixData && (
-                <div className="bg-white p-3 rounded-lg border-2 border-blue-300">
-                  <div className="text-sm font-semibold text-blue-700 mb-2">
-                    📊 Channel Mix Analysis
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-gray-600">Direct Booking Gap:</span>
-                      <span className="font-bold text-orange-600">
-                        {channelMixData.analysis?.direct_booking_gap}%
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-gray-600">Commission Rate:</span>
-                      <span className="font-bold text-red-600">
-                        {channelMixData.analysis?.current_commission_rate}%
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-gray-600">Potential Annual Savings:</span>
-                      <span className="font-bold text-green-600">
-                        ${Math.round(channelMixData.analysis?.potential_annual_savings || 0)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="mt-2 pt-2 border-t">
-                    <div className="text-xs font-semibold text-gray-700 mb-1">Top Recommendation:</div>
-                    <div className="text-xs text-gray-600 bg-blue-50 p-2 rounded">
-                      {channelMixData.recommendations?.[0]}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Empty State */}
-              {(calendarMeta.rooms || 0) > 0 && (calendarMeta.bookings || 0) > 0 &&
-               groupBookings.length === 0 && oversellProtection.length === 0 && !channelMixData && (
-                <div className="text-center py-8 text-gray-500">
-                  <div className="text-4xl mb-2">💎</div>
-                  <div className="text-sm">Deluxe+ analytics loading...</div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* AI Mode Panel */}
-        {showAIPanel && (
-          <Card className="border-2 border-purple-500 bg-gradient-to-br from-purple-50 to-blue-50">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                🤖 AI Operations Intelligence
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-
-              {/* Data Source / Empty Dataset Notice */}
-              {(calendarMeta.rooms || 0) === 0 ? (
-                <div className="bg-white/70 border border-purple-200 rounded-lg p-3 text-sm text-purple-900">
-                  <div className="font-semibold mb-1">Bu otel için oda kaydı bulunamadı.</div>
-                  <div className="text-xs text-purple-800/90">
-                    AI önerileri oda ve rezervasyon verisine göre hesaplanır. Önce oda ekleyin veya verisi olan bir tenant ile giriş yapın.
-                  </div>
-                </div>
-              ) : (calendarMeta.bookings || 0) === 0 ? (
-                <div className="bg-white/70 border border-purple-200 rounded-lg p-3 text-sm text-purple-900">
-                  <div className="font-semibold mb-1">Seçili tarih aralığında rezervasyon yok.</div>
-                  <div className="text-xs text-purple-800/90">
-                    Tarih aralığı: <span className="font-medium">{calendarMeta.start_date} → {calendarMeta.end_date}</span>. AI metrikleri bu aralıkta veri olmadığında gösterilmez.
-                  </div>
-                </div>
-              ) : (
-                <div className="text-[11px] text-purple-800/80">
-                  Veri kaynağı: {calendarMeta.rooms} oda, {calendarMeta.bookings} rezervasyon (aralık: {calendarMeta.start_date} → {calendarMeta.end_date})
-                </div>
-              )}
-
-              {/* Overbooking Solutions */}
-              {(calendarMeta.bookings || 0) > 0 && aiOverbookingSolutions.length > 0 && (
-                <div className="bg-white p-3 rounded-lg border-2 border-red-300">
-                  <div className="text-sm font-semibold text-red-700 mb-2 flex items-center gap-2">
-                    <span>🚨 Overbooking Conflicts ({aiOverbookingSolutions.length})</span>
-                  </div>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {aiOverbookingSolutions.map((solution, idx) => (
-                      <div key={idx} className="bg-red-50 p-2 rounded border border-red-200 text-xs">
-                        <div className="flex justify-between items-start mb-1">
-                          <div>
-                            <span className="font-semibold">{solution.guest_name}</span>
-                            <span className="mx-1">•</span>
-                            <span>Room {solution.current_room}</span>
-                          </div>
-                          <Badge className="bg-purple-600 text-white text-[9px]">
-                            {Math.round(solution.confidence * 100)}% confident
-                          </Badge>
-                        </div>
-                        <div className="text-green-600 font-semibold">
-                          ✓ Move to Room {solution.recommended_room}
-                        </div>
-                        <div className="text-gray-600 mt-1">{solution.reason}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Room Move Recommendations */}
-              {(calendarMeta.bookings || 0) > 0 && aiRoomMoves.length > 0 && (
-                <div className="bg-white p-3 rounded-lg border-2 border-blue-300">
-                  <div className="text-sm font-semibold text-blue-700 mb-2">
-                    💎 Smart Room Moves ({aiRoomMoves.length})
-                  </div>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {aiRoomMoves.slice(0, 5).map((move, idx) => (
-                      <div key={idx} className="bg-blue-50 p-2 rounded border border-blue-200 text-xs">
-                        <div className="flex justify-between items-start mb-1">
-                          <div>
-                            <span className="font-semibold">{move.guest_name}</span>
-                            {move.loyalty_tier && (
-                              <Badge className="ml-2 bg-yellow-500 text-white text-[8px]">
-                                {move.loyalty_tier.toUpperCase()}
-                              </Badge>
-                            )}
-                          </div>
-                          <Badge className={`text-white text-[9px] ${
-                            move.priority === 'urgent' ? 'bg-red-600' :
-                            move.priority === 'high' ? 'bg-orange-600' : 'bg-blue-600'
-                          }`}>
-                            {move.priority.toUpperCase()}
-                          </Badge>
-                        </div>
-                        <div className="text-green-600 font-semibold">
-                          {move.type === 'upgrade' ? '⬆️' : '🔄'} {move.current_room} → {move.recommended_room}
-                        </div>
-                        <div className="text-gray-600 mt-1">{move.reason}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* No-Show Risk Predictions */}
-              {(calendarMeta.bookings || 0) > 0 && aiNoShowPredictions.filter(p => p.risk_level !== 'low').length > 0 && (
-                <div className="bg-white p-3 rounded-lg border-2 border-yellow-300">
-                  <div className="text-sm font-semibold text-yellow-700 mb-2">
-                    ⚠️ High No-Show Risk ({aiNoShowPredictions.filter(p => p.risk_level === 'high').length})
-                  </div>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {aiNoShowPredictions.filter(p => p.risk_level !== 'low').slice(0, 5).map((pred, idx) => (
-                      <div key={idx} className="bg-yellow-50 p-2 rounded border border-yellow-200 text-xs">
-                        <div className="flex justify-between items-start mb-1">
-                          <div>
-                            <span className="font-semibold">{pred.guest_name}</span>
-                            <span className="mx-1">•</span>
-                            <span>Room {pred.room_number}</span>
-                          </div>
-                          <Badge className={`text-white text-[9px] ${
-                            pred.risk_level === 'high' ? 'bg-red-600' : 'bg-yellow-600'
-                          }`}>
-                            {pred.risk_score}% RISK
-                          </Badge>
-                        </div>
-                        <div className="text-gray-600">
-                          Factors: {pred.risk_factors.slice(0, 2).join(', ')}
-                        </div>
-                        <div className="text-blue-600 mt-1 font-semibold">
-                          💡 {pred.recommendation}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Rate Recommendations Summary */}
-              {(calendarMeta.bookings || 0) > 0 && aiRateRecommendations.length > 0 && (
-                <div className="bg-white p-3 rounded-lg border-2 border-green-300">
-                  <div className="text-sm font-semibold text-green-700 mb-2">
-                    💰 Dynamic Rate Recommendations
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-green-600">
-                        {aiRateRecommendations.filter(r => r.strategy === 'demand_surge').length}
-                      </div>
-                      <div className="text-xs text-gray-600">Surge Pricing</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-blue-600">
-                        {aiRateRecommendations.filter(r => r.strategy === 'optimize').length}
-                      </div>
-                      <div className="text-xs text-gray-600">Optimize</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-orange-600">
-                        {aiRateRecommendations.filter(r => r.strategy === 'attract').length}
-                      </div>
-                      <div className="text-xs text-gray-600">Attract</div>
-                    </div>
-                  </div>
-                  <div className="mt-2 text-center">
-                    <div className="text-xl font-bold text-purple-600">
-                      ${Math.round(aiRateRecommendations.reduce((sum, r) => sum + (r.revenue_impact || 0), 0))}
-                    </div>
-                    <div className="text-xs text-gray-600">Potential Revenue Increase</div>
-                  </div>
-                </div>
-              )}
-
-
-              {/* No AI recommendations */}
-              {(calendarMeta.bookings || 0) > 0 &&
-               aiOverbookingSolutions.length === 0 && aiRoomMoves.length === 0 &&
-               aiNoShowPredictions.filter(p => p.risk_level !== 'low').length === 0 && (
-                <div className="text-center py-8 text-gray-500">
-                  <div className="text-4xl mb-2">🤖</div>
-                  <div className="text-sm">All systems optimal - No urgent AI recommendations</div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Enterprise Mode Panel */}
-        {showEnterprisePanel && (
-          <Card className="border-2 border-purple-300 bg-purple-50">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-purple-600" />
-                Enterprise Intelligence
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Rate Leakage Alerts */}
-              {(calendarMeta.bookings || 0) > 0 && rateLeakages.length > 0 && (
-                <div>
-                  <div className="text-sm font-semibold text-red-700 mb-2">
-                    💸 Rate Leakage Detected ({rateLeakages.length} instances)
-                  </div>
-                  <div className="space-y-2 max-h-40 overflow-y-auto">
-                    {rateLeakages.slice(0, 5).map((leak, idx) => (
-                      <div key={idx} className="bg-white p-2 rounded border border-red-200 text-xs">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <span className="font-semibold">{leak.guest_name}</span>
-                            <span className="mx-2">•</span>
-                            <Badge className={getOTAInfo(leak.ota_channel).color + " text-white text-[9px]"}>
-                              {getOTAInfo(leak.ota_channel).label}
-                            </Badge>
-                          </div>
-                          <div className="text-red-600 font-bold">
-                            -${leak.difference_per_night}/nt
-                          </div>
-
-              {/* Data Source / Empty Dataset Notice */}
-              {(calendarMeta.rooms || 0) === 0 ? (
-                <div className="bg-white/70 border border-purple-200 rounded-lg p-3 text-sm text-purple-900">
-                  <div className="font-semibold mb-1">Bu otel için oda kaydı bulunamadı.</div>
-                  <div className="text-xs text-purple-800/90">
-                    Enterprise metrikleri oda ve rezervasyon verisine göre hesaplanır. Önce oda ekleyin veya verisi olan bir tenant ile giriş yapın.
-                  </div>
-                </div>
-              ) : (calendarMeta.bookings || 0) === 0 ? (
-                <div className="bg-white/70 border border-purple-200 rounded-lg p-3 text-sm text-purple-900">
-                  <div className="font-semibold mb-1">Seçili tarih aralığında rezervasyon yok.</div>
-                  <div className="text-xs text-purple-800/90">
-                    Tarih aralığı: <span className="font-medium">{calendarMeta.start_date} → {calendarMeta.end_date}</span>. Enterprise metrikleri bu aralıkta veri olmadığında gösterilmez.
-                  </div>
-                </div>
-              ) : (
-                <div className="text-[11px] text-purple-800/80">
-                  Veri kaynağı: {calendarMeta.rooms} oda, {calendarMeta.bookings} rezervasyon (aralık: {calendarMeta.start_date} → {calendarMeta.end_date})
-                </div>
-              )}
-
-                        </div>
-                        <div className="text-gray-600 mt-1">
-                          {leak.room_type} • {new Date(leak.check_in).toLocaleDateString()} - {new Date(leak.check_out).toLocaleDateString()}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {rateLeakages.length > 5 && (
-                    <div className="text-xs text-gray-500 mt-2">
-                      +{rateLeakages.length - 5} more leakages
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Heatmap Legend */}
-              {(calendarMeta.bookings || 0) > 0 && (
-              <div>
-                <div className="text-sm font-semibold text-gray-700 mb-2">
-                  📊 Availability Heatmap Legend
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-4 bg-red-100 border border-red-300 rounded"></div>
-                    <span className="text-xs">Critical (95%+)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-4 bg-orange-100 border border-orange-300 rounded"></div>
-                    <span className="text-xs">High (85-94%)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-4 bg-yellow-100 border border-yellow-300 rounded"></div>
-                    <span className="text-xs">Moderate (70-84%)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-4 bg-green-100 border border-green-300 rounded"></div>
-                    <span className="text-xs">Medium (50-69%)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-4 bg-white border border-gray-300 rounded"></div>
-                    <span className="text-xs">Low (&lt;50%)</span>
-                  </div>
-                </div>
-              </div>
-              )}
-
-              {/* Quick Stats */}
-              {(calendarMeta.bookings || 0) > 0 && availabilityHeatmap.length > 0 && (
-                <div className="grid grid-cols-3 gap-4 pt-3 border-t">
-                  <div className="text-center">
-                    <div className="text-xl font-bold text-red-600">
-                      {availabilityHeatmap.filter(h => h.intensity === 'critical').length}
-                    </div>
-                    <div className="text-xs text-gray-600">Critical Days</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-xl font-bold text-orange-600">
-                      {availabilityHeatmap.filter(h => h.intensity === 'high').length}
-                    </div>
-                    <div className="text-xs text-gray-600">High Demand</div>
-                  </div>
-                  <div className="text-center">
-                <div className="mt-3 text-right">
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    onClick={() => {
-                      const target = currentDate.toISOString().split('T')[0];
-                      openPickupPaceForDate(target);
-                    }}
-                  >
-                    Open Pickup Pace (Reports)
-                  </Button>
-                </div>
-
-                    <div className="text-xl font-bold text-purple-600">
-                      {Math.round(availabilityHeatmap.reduce((sum, h) => sum + h.occupancy_pct, 0) / availabilityHeatmap.length)}%
-                    </div>
-                    <div className="text-xs text-gray-600">Avg Occupancy</div>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
+        <CalendarOccupancy
+          dateRange={dateRange}
+          getOccupancyForDate={getOccupancyForDate}
+          showDeluxePanel={showDeluxePanel}
+          onToggleDeluxe={toggleDeluxeMode}
+        />
 
         {/* Compact Legend */}
         <div className="bg-white border rounded-lg px-4 py-2" data-testid="calendar-legend">
@@ -1929,7 +606,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                <span>Müsait</span>
+                <span>Musait</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-red-500"></div>
@@ -1937,432 +614,40 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               </div>
             </div>
             <div className="flex items-center gap-3 text-gray-400">
-              <span>Tıkla = Yeni rez.</span>
-              <span>Çift tıkla = Detay</span>
-              <span>Sürükle = Taşı</span>
+              <span>Tikla = Yeni rez.</span>
+              <span>Cift tikla = Detay</span>
+              <span>Surukle = Tasi</span>
             </div>
           </div>
         </div>
 
-        {/* Calendar Grid */}
-        <div className="bg-white rounded-lg border border-gray-200 relative" data-testid="calendar-grid">
-          {/* Date Header Row - STICKY */}
-          <div className="sticky top-16 z-40 bg-white border-b border-gray-300 overflow-x-auto">
-            <div className="min-w-max">
-              {/* Month label row */}
-              <div className="flex">
-                <div className="w-32 flex-shrink-0 border-r border-gray-200"></div>
-                <div className="flex-1 text-center text-xs font-semibold text-gray-500 py-1">
-                  {dateRange.length > 0 && dateRange[Math.floor(dateRange.length / 2)].toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}
-                </div>
-              </div>
-              <div className="flex bg-white">
-                <div className="w-32 flex-shrink-0 px-3 py-2 border-r border-gray-200 text-xs text-gray-500 font-medium flex items-end">
-                  <span className="cursor-pointer hover:text-gray-700">Listeyi daralt ^</span>
-                </div>
-                {dateRange.map((date, idx) => {
-                  const { dayName, dayNum } = formatDateWithDay(date);
-                  const weekend = isWeekend(date);
-                  const today = isToday(date);
-                  
-                  return (
-                    <div
-                      key={idx}
-                      className={`w-24 flex-shrink-0 py-1.5 border-r text-center ${
-                        today ? 'bg-blue-50 border-blue-200' : weekend ? 'bg-orange-50 border-gray-200' : 'bg-white border-gray-200'
-                      }`}
-                      data-testid={`date-header-${dayNum}`}
-                    >
-                      <div className={`text-[10px] font-semibold tracking-wide ${today ? 'text-blue-600' : 'text-gray-500'}`}>
-                        {dayName}
-                      </div>
-                      <div className={`text-base font-bold ${today ? 'text-blue-600' : 'text-gray-800'}`}>
-                        {dayNum}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-          
-          {/* Room Rows - INSIDE separate scroll container */}
-          <div className="overflow-x-auto">
-            <div className="min-w-max">
-              {rooms.length === 0 ? (
-                <div className="p-12 text-center text-gray-500">
-                  <CalendarIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>Oda bulunamadı</p>
-                </div>
-              ) : (
-                (() => {
-                  // Group rooms by type
-                  const groupedRooms = rooms.reduce((acc, room) => {
-                    const type = room.room_type || 'standard';
-                    if (!acc[type]) acc[type] = [];
-                    acc[type].push(room);
-                    return acc;
-                  }, {});
-                  
-                  // Sort room types
-                  const roomTypeOrder = ['suite', 'deluxe', 'superior', 'standard', 'economy'];
-                  const sortedTypes = Object.keys(groupedRooms).sort((a, b) => {
-                    const aIndex = roomTypeOrder.indexOf(a.toLowerCase());
-                    const bIndex = roomTypeOrder.indexOf(b.toLowerCase());
-                    if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
-                    if (aIndex === -1) return 1;
-                    if (bIndex === -1) return -1;
-                    return aIndex - bIndex;
-                  });
-                  
-                  return sortedTypes.map((roomType) => {
-                    const unassignedForType = getUnassignedBookingsForType(roomType);
-                    const typeRooms = groupedRooms[roomType];
-                    return (
-                    <div key={roomType}>
-                      {/* Room Type Header with Price/Occupancy Row */}
-                      <div className="bg-amber-50 border-b border-amber-200">
-                        <div className="flex">
-                          <div className="w-32 flex-shrink-0 px-3 py-2 border-r border-amber-200 flex items-center">
-                            <span className="font-bold text-sm text-gray-800" data-testid={`room-type-${roomType}`}>
-                              {roomType} ^
-                            </span>
-                          </div>
-                          {dateRange.map((date, idx) => {
-                            const weekend = isWeekend(date);
-                            // Calculate price & occupancy for this room type on this date
-                            const typeBookings = bookings.filter(b => {
-                              if (b.status === 'cancelled' || b.status === 'checked_out' || b.status === 'no_show') return false;
-                              const room = rooms.find(r => r.id === b.room_id);
-                              if (!room || (room.room_type || 'standard') !== roomType) return false;
-                              return isBookingOnDate(b, date);
-                            });
-                            const occupiedCount = typeBookings.length;
-                            const totalTypeRooms = typeRooms.length;
-                            const isFull = occupiedCount >= totalTypeRooms;
-                            // Average price per night for the room type
-                            const avgPrice = typeBookings.length > 0
-                              ? Math.round(typeBookings.reduce((sum, b) => {
-                                  const nights = Math.max(1, Math.ceil((new Date(b.check_out) - new Date(b.check_in)) / (1000 * 60 * 60 * 24)));
-                                  return sum + (b.total_amount || 0) / nights;
-                                }, 0) / typeBookings.length)
-                              : typeRooms[0]?.base_price || 0;
-                            
-                            return (
-                              <div
-                                key={idx}
-                                className={`w-24 flex-shrink-0 px-1 py-1.5 border-r text-center text-[10px] ${
-                                  weekend ? 'bg-amber-100/60 border-amber-200' : 'bg-amber-50 border-amber-200'
-                                }`}
-                              >
-                                <div className="text-gray-700 font-medium truncate">
-                                  {avgPrice > 0 ? `${avgPrice.toLocaleString('tr-TR')} ₺` : '-'}
-                                </div>
-                                <div className="flex items-center justify-center gap-0.5 mt-0.5">
-                                  <div className={`w-1.5 h-1.5 rounded-full ${isFull ? 'bg-red-500' : 'bg-green-500'}`}></div>
-                                  <span className={`text-[9px] font-semibold ${isFull ? 'text-red-600' : 'text-green-700'}`}>
-                                    {occupiedCount}/{totalTypeRooms}
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Unassigned Bookings Row */}
-                      {unassignedForType.length > 0 && (() => {
-                        const { lanes, maxLane } = computeUnassignedLanes(unassignedForType);
-                        const laneHeight = 44;
-                        const rowHeight = (maxLane + 1) * laneHeight + 8;
-                        return (
-                        <div className="flex border-b border-dashed border-amber-300 bg-amber-50/30">
-                          <div className="w-32 flex-shrink-0 px-3 py-2 border-r border-gray-200 bg-amber-50/60" style={{ height: `${rowHeight}px` }}>
-                            <div className="flex items-center gap-1.5">
-                              <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></div>
-                              <div className="font-semibold text-[10px] text-amber-700">Atanmamış Rezervasyonlar</div>
-                            </div>
-                            {unassignedForType.length > 1 && (
-                              <div className="text-[9px] text-amber-500 ml-3 mt-0.5">{unassignedForType.length} rez.</div>
-                            )}
-                          </div>
-                          <div className="flex relative" style={{ width: `${daysToShow * 96}px`, height: `${rowHeight}px` }}>
-                            {dateRange.map((date, idx) => {
-                              const dayStr = toDateStringUTC(date);
-                              const weekend = isWeekend(date);
-                              return (
-                                <div
-                                  key={idx}
-                                  className={`w-24 flex-shrink-0 border-r border-b relative ${
-                                    weekend ? 'bg-amber-50/40 border-amber-100' : 'bg-amber-50/10 border-amber-100'
-                                  } ${isToday(date) ? 'bg-blue-50/40' : ''}`}
-                                  style={{ height: `${rowHeight}px`, minHeight: `${rowHeight}px` }}
-                                >
-                                </div>
-                              );
-                            })}
-                            {/* Render each unassigned booking as absolute overlay on start date */}
-                            {unassignedForType.map((booking) => {
-                              const checkInStr = toDateStringUTC(booking.check_in);
-                              const checkOutStr = toDateStringUTC(booking.check_out);
-                              const rangeStartStr = dateRange.length > 0 ? toDateStringUTC(dateRange[0]) : '';
-                              let startIdx = dateRange.findIndex(d => toDateStringUTC(d) === checkInStr);
-                              // If booking starts before visible range, render from index 0
-                              if (startIdx < 0 && checkInStr < rangeStartStr && checkOutStr > rangeStartStr) {
-                                startIdx = 0;
-                              }
-                              if (startIdx < 0) return null;
-                              const lane = lanes[booking.id] || 0;
-                              // Calculate visible span (clamp to visible range)
-                              const visibleEndIdx = dateRange.findIndex(d => toDateStringUTC(d) >= checkOutStr);
-                              const endIdx = visibleEndIdx >= 0 ? visibleEndIdx : dateRange.length;
-                              const span = Math.max(endIdx - startIdx, 1);
-                              return (
-                                <div
-                                  key={booking.id}
-                                  draggable
-                                  onDragStart={(e) => handleDragStart(e, booking)}
-                                  onDragEnd={handleDragEnd}
-                                  onDoubleClick={() => handleBookingDoubleClick(booking)}
-                                  className="absolute rounded text-white text-xs shadow-sm hover:shadow-md transition-all cursor-move z-20 border border-amber-400"
-                                  style={{
-                                    left: `${startIdx * 96 + 2}px`,
-                                    top: `${lane * laneHeight + 4}px`,
-                                    width: `${span * 96 - 4}px`,
-                                    height: `${laneHeight - 6}px`,
-                                    backgroundColor: getSourceColor(booking).bg,
-                                    borderColor: getSourceColor(booking).border,
-                                  }}
-                                  data-testid={`unassigned-booking-${booking.id}`}
-                                  title={`${booking.guest_name} - Odaya sürükleyin`}
-                                >
-                                  <div className="px-2 py-1 h-full relative overflow-hidden">
-                                    <div className="font-bold text-[11px] truncate text-white">
-                                      {booking.guest_name || 'Misafir'}
-                                    </div>
-                                    <div className="text-[9px] text-white/80 truncate mt-0.5">
-                                      {getSourceColor(booking).label} · Oda ata
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        );
-                      })()}
-                      
-                      {/* Rooms of this type */}
-                      {groupedRooms[roomType].map((room) => {
-                        // Check if room has any booking today
-                        const hasBookingToday = bookings.some(b => b.room_id === room.id && isBookingOnDate(b, new Date()) && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
-                        return (
-                  <div key={room.id} className="flex border-b border-gray-100 hover:bg-gray-50/50 transition-colors">
-                    {/* Room Cell */}
-                    <div className="w-32 flex-shrink-0 px-3 py-2 border-r border-gray-200 bg-white">
-                      <div className="flex items-center gap-1.5">
-                        <div className={`w-2 h-2 rounded-full ${hasBookingToday ? 'bg-red-500' : 'bg-green-500'}`}></div>
-                        <div className="font-semibold text-sm text-gray-800" data-testid={`room-${room.room_number}`}>{room.room_number}</div>
-                      </div>
-                    </div>
-
-                    {/* Timeline Cells */}
-                    <div className="flex relative" style={{ width: `${daysToShow * 96}px` }}>
-                      {dateRange.map((date, idx) => {
-                        const dayStr = toDateStringUTC(date);
-                        const booking = getBookingForRoomOnDate(room.id, date);
-                        const isStart = booking && isBookingStart(booking, date);
-                        
-                        // Debug logging - only if DEBUG_ROOMS enabled
-                        if (DEBUG_ROOMS && room.room_number === '101' && idx < 3) {
-                          console.log(`\n🔍 ROOM 101 DEBUG - Date ${idx} (${dayStr}):`);
-                          console.log('  Room ID:', room.id);
-                          console.log('  Date string:', dayStr);
-                          console.log('  Date object:', date.toString());
-                          console.log('  Total bookings in state:', bookings.length);
-                          console.log('  Booking found:', booking ? 'YES' : 'NO');
-                          
-                          if (booking) {
-                            console.log('  ✅ Booking Details:');
-                            console.log('    - Guest:', booking.guest_name);
-                            console.log('    - Room #:', booking.room_number);
-                            console.log('    - Check-in:', toDateStringUTC(booking.check_in));
-                            console.log('    - Check-out:', toDateStringUTC(booking.check_out));
-                            console.log('    - Is Start:', isStart);
-                          } else {
-                            console.log('  ❌ No booking found');
-                            const roomBookings = bookings.filter(b => b.room_id === room.id);
-                            console.log('  Checking bookings with this room_id:', roomBookings.length, 
-                              roomBookings.map(b => ({
-                                guest: b.guest_name,
-                                checkIn: toDateStringUTC(b.check_in),
-                                checkOut: toDateStringUTC(b.check_out),
-                                matchesDate: dayStr >= toDateStringUTC(b.check_in) && dayStr < toDateStringUTC(b.check_out)
-                              }))
-                            );
-                          }
-                        }
-                        
-                        const roomBlock = getRoomBlockForDate(room.id, date);
-                        const blockIsStart = roomBlock && isBlockStart(roomBlock, date);
-                        const isDragOver = dragOverCell?.roomId === room.id && 
-                                          new Date(dragOverCell.date).toDateString() === date.toDateString();
-
-                        return (
-                          <div
-                            key={idx}
-                            className={`w-24 flex-shrink-0 border-r border-gray-100 relative cursor-pointer transition-all ${
-                              isToday(date) ? 'bg-blue-50/60' : isWeekend(date) ? 'bg-orange-50/50' : 'bg-white hover:bg-gray-50'
-                            } ${isDragOver ? 'bg-emerald-50 ring-1 ring-emerald-400' : ''}
-                            ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''}`}
-                            style={{ height: '52px', minHeight: '52px', overflow: 'visible' }}
-                            onClick={() => !booking && !roomBlock && handleCellClick(room.id, date)}
-                            onDragOver={(e) => handleDragOver(e, room.id, date)}
-                            onDragLeave={handleDragLeave}
-                            onDrop={(e) => handleDrop(e, room.id, date)}
-                            title={roomBlock ? `${roomBlock.type.toUpperCase()}: ${roomBlock.reason}` : ''}
-                          >
-                            {/* Room Block Indicator */}
-                            {blockIsStart && roomBlock && (
-                              <div 
-                                className={`absolute top-0 left-0 h-full opacity-60 border-2 ${
-                                  roomBlock.type === 'out_of_order' ? 'bg-red-600 border-red-700' :
-                                  roomBlock.type === 'out_of_service' ? 'bg-orange-500 border-orange-600' :
-                                  'bg-yellow-600 border-yellow-700'
-                                }`}
-                                style={{
-                                  width: `${calculateBlockSpan(roomBlock, currentDate) * 96 - 4}px`,
-                                  backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.1) 10px, rgba(255,255,255,.1) 20px)',
-                                  zIndex: 5
-                                }}
-                                title={`${roomBlock.type.replace('_', ' ').toUpperCase()}: ${roomBlock.reason}\n${roomBlock.start_date} - ${roomBlock.end_date || 'Open-ended'}`}
-                              >
-                                <div className="p-1 text-white text-[10px] font-bold">
-                                  {roomBlock.type === 'out_of_order' ? 'OOO' :
-                                   roomBlock.type === 'out_of_service' ? 'OOS' : 'MNT'}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Empty cell indicator */}
-                            {!booking && !roomBlock && (
-                              <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                                <Plus className="w-6 h-6 text-gray-400" />
-                              </div>
-                            )}
-                            
-                            {/* Booking bar - source color coded */}
-                            {isStart && booking && (
-                              <div
-                                draggable
-                                onDragStart={(e) => handleDragStart(e, booking)}
-                                onDragEnd={handleDragEnd}
-                                onDoubleClick={() => handleBookingDoubleClick(booking)}
-                                className={`absolute top-1 left-0.5 rounded text-white text-xs shadow-sm hover:shadow-md transition-all cursor-move z-20 group ${
-                                  draggingBooking?.id === booking.id ? 'opacity-50 scale-95' : ''
-                                } ${hasConflict(room.id, date) ? 'ring-2 ring-red-500 animate-pulse' : ''}
-                                ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
-                                style={{
-                                  width: `${calculateBookingSpan(booking, currentDate) * 96 - 4}px`,
-                                  height: '46px',
-                                  backgroundColor: booking.group_booking_id ? getGroupColor(booking) : getSourceColor(booking).bg,
-                                  borderLeft: `3px solid ${booking.group_booking_id ? getGroupColor(booking) : getSourceColor(booking).border}`,
-                                  ...(booking.group_booking_id ? {
-                                    backgroundImage: 'repeating-linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.08) 8px, transparent 8px, transparent 16px)'
-                                  } : {})
-                                }}
-                                data-testid={`booking-bar-${booking.id}`}
-                                title={`${booking.guest_name}`}
-                              >
-                                {/* Main booking info */}
-                                <div className="px-2 py-1 h-[46px] relative overflow-hidden">
-                                  <div className="font-bold text-[11px] truncate pr-4 text-white">
-                                    {booking.guest_name || 'Misafir'}
-                                  </div>
-                                  <div className="text-[9px] text-white/80 truncate mt-0.5 flex items-center gap-1">
-                                    <span>{getSourceColor(booking).label}</span>
-                                    {booking.adults && <span>Kş: {(booking.adults || 0) + (booking.children || 0)}</span>}
-                                  </div>
-                                  
-                                  {/* Status indicators - top right */}
-                                  <div className="absolute top-1 right-1 flex flex-col space-y-1 items-end">
-                                    {/* AI Recommendation Badge */}
-                                    {showAIPanel && getAIRecommendation(booking.id) && (
-                                      <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white text-[8px] font-bold px-1 py-0.5 rounded animate-pulse" title="AI Recommendation Available">
-                                        🤖 AI
-                                      </div>
-                                    )}
-                                    
-                                    {/* No-Show Risk Badge */}
-                                    {showAIPanel && getNoShowRisk(booking.id) && getNoShowRisk(booking.id).risk_level === 'high' && (
-                                      <div className="bg-red-600 text-white text-[8px] font-bold px-1 py-0.5 rounded" title={`High No-Show Risk: ${getNoShowRisk(booking.id).risk_score}%`}>
-                                        ⚠️ RISK
-                                      </div>
-                                    )}
-                                    
-                                    {/* Group Badge - Deluxe+ */}
-                                    {showDeluxePanel && isGroupBooking(booking.id) && (
-                                      <div className="bg-gradient-to-r from-amber-500 to-orange-600 text-white text-[8px] font-bold px-1 py-0.5 rounded" title={`Group: ${getGroupInfo(booking.id)?.company_name} (${getGroupInfo(booking.id)?.room_count} rooms)`}>
-                                        👥 GRP
-                                      </div>
-                                    )}
-                                    
-                                    {/* OTA Badge */}
-                                    {booking.ota_channel && (
-                                      <div className={`${getOTAInfo(booking.ota_channel).color} text-white text-[9px] font-bold px-1.5 py-0.5 rounded`} title={getOTAInfo(booking.ota_channel).name}>
-                                        {getOTAInfo(booking.ota_channel).label}
-                                      </div>
-                                    )}
-                                    
-                                    <div className="flex space-x-1">
-                                      {getBookingStatus(booking, date) === 'arrival' && (
-                                        <div className="bg-white text-green-600 rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold" title="Arrival">
-                                          ↓
-                                        </div>
-                                      )}
-                                      {getBookingStatus(booking, date) === 'departure' && (
-                                        <div className="bg-white text-red-600 rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold" title="Departure">
-                                          ↑
-                                        </div>
-                                      )}
-                                      {getBookingStatus(booking, date) === 'stayover' && (
-                                        <div className="bg-white text-blue-600 rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold" title="Stayover">
-                                          •
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                                
-                                {/* Rate Leakage Warning - Enterprise Mode */}
-                                {hasRateLeakage(booking.id) && (
-                                  <div className="absolute top-0 left-0 bg-red-600 text-white text-[8px] px-1 py-0.5 rounded-br font-bold" title={`Rate Leakage: -$${hasRateLeakage(booking.id).difference_per_night}/night`}>
-                                    💸 LEAK
-                                  </div>
-                                )}
-                                
-                                {/* Conflict indicator */}
-                                {hasConflict(room.id, date) && (
-                                  <div className="absolute top-0 right-0 bg-red-600 text-white text-[8px] px-1 py-0.5 rounded-bl font-bold animate-pulse">
-                                    ⚠️ CONFLICT
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                      );
-                      })}
-                    </div>
-                  )});
-                })()
-              )}
-            </div>
-          </div>
-        </div>
+        <CalendarGrid
+          rooms={rooms}
+          bookings={bookings}
+          roomBlocks={roomBlocks}
+          dateRange={dateRange}
+          daysToShow={daysToShow}
+          currentDate={currentDate}
+          conflicts={conflicts}
+          draggingBooking={draggingBooking}
+          dragOverCell={dragOverCell}
+          showAIPanel={showAIPanel}
+          showDeluxePanel={showDeluxePanel}
+          groupColorMap={groupColorMap}
+          setGroupColorMap={setGroupColorMap}
+          rateLeakages={rateLeakages}
+          aiRoomMoves={aiRoomMoves}
+          aiOverbookingSolutions={aiOverbookingSolutions}
+          aiNoShowPredictions={aiNoShowPredictions}
+          groupBookings={groupBookings}
+          onCellClick={handleCellClick}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onDragEnd={handleDragEnd}
+          onBookingDoubleClick={handleBookingDoubleClick}
+        />
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -2393,487 +678,61 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               <div className="text-sm text-gray-600">Occupancy Today</div>
               <div className="text-3xl font-bold text-purple-600">
                 {rooms.length > 0
-                  ? Math.round(
-                      (bookings.filter(b => isBookingOnDate(b, new Date()) && b.status === 'checked_in')
-                        .length /
-                        rooms.length) *
-                        100
-                    )
-                  : 0}
-                %
+                  ? Math.round((bookings.filter(b => isBookingOnDate(b, new Date()) && b.status === 'checked_in').length / rooms.length) * 100)
+                  : 0}%
               </div>
             </CardContent>
           </Card>
         </div>
       </div>
 
-      {/* New Booking Dialog */}
-      <Dialog open={showNewBookingDialog} onOpenChange={setShowNewBookingDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Quick Booking</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleCreateBooking} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Room</Label>
-                <Input value={selectedRoom?.room_number || ''} disabled />
-              </div>
-              <div>
-                <Label>Misafir *</Label>
-                <div className="flex gap-2">
-                  <select
-                    className="flex-1 border rounded-md p-2"
-                    value={newBooking.guest_id}
-                    onChange={(e) => {
-                      if (e.target.value === 'NEW') {
-                        setNewBooking({...newBooking, guest_id: '', guest_name: '', guest_email: '', guest_phone: ''});
-                      } else {
-                        setNewBooking({...newBooking, guest_id: e.target.value});
-                      }
-                    }}
-                  >
-                    <option value="">Misafir seçin...</option>
-                    <option value="NEW" className="font-bold text-blue-600">+ Yeni Misafir Ekle</option>
-                    {guests.map(guest => (
-                      <option key={guest.id} value={guest.id}>{guest.name}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                {/* New Guest Form */}
-                {newBooking.guest_id === '' && newBooking.guest_name !== undefined && (
-                  <div className="mt-3 p-3 border rounded-md bg-blue-50 space-y-2">
-                    <div className="text-sm font-semibold text-blue-900 mb-2">Yeni Misafir Bilgileri</div>
-                    <Input
-                      placeholder="İsim Soyisim *"
-                      value={newBooking.guest_name || ''}
-                      onChange={(e) => setNewBooking({...newBooking, guest_name: e.target.value})}
-                      required
-                    />
-                    <Input
-                      type="email"
-                      placeholder="E-posta"
-                      value={newBooking.guest_email || ''}
-                      onChange={(e) => setNewBooking({...newBooking, guest_email: e.target.value})}
-                    />
-                    <Input
-                      type="tel"
-                      placeholder="Telefon"
-                      value={newBooking.guest_phone || ''}
-                      onChange={(e) => setNewBooking({...newBooking, guest_phone: e.target.value})}
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Check-in</Label>
-                <Input
-                  type="date"
-                  value={newBooking.check_in}
-                  onChange={(e) => setNewBooking({...newBooking, check_in: e.target.value})}
-                  required
-                />
-              </div>
-              <div>
-                <Label>Check-out</Label>
-                <Input
-                  type="date"
-                  value={newBooking.check_out}
-                  onChange={(e) => setNewBooking({...newBooking, check_out: e.target.value})}
-                  required
-                />
-              </div>
-            </div>
+      {/* Dialogs */}
+      <NewBookingDialog
+        open={showNewBookingDialog}
+        onOpenChange={setShowNewBookingDialog}
+        newBooking={newBooking}
+        setNewBooking={setNewBooking}
+        selectedRoom={selectedRoom}
+        guests={guests}
+        onSubmit={handleCreateBooking}
+      />
 
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label>Adults</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={newBooking.adults}
-                  onChange={(e) => setNewBooking({
-                    ...newBooking, 
-                    adults: Number(e.target.value),
-                    guests_count: Number(e.target.value) + newBooking.children
-                  })}
-                />
-              </div>
-              <div>
-                <Label>Children</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={newBooking.children}
-                  onChange={(e) => setNewBooking({
-                    ...newBooking, 
-                    children: Number(e.target.value),
-                    guests_count: newBooking.adults + Number(e.target.value)
-                  })}
-                />
-              </div>
-              <div>
-                <Label>Total Amount</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={newBooking.total_amount}
-                  onChange={(e) => setNewBooking({...newBooking, total_amount: Number(e.target.value)})}
-                />
-              </div>
-            </div>
+      <BookingDetailsDialog
+        open={showDetailsDialog}
+        onOpenChange={setShowDetailsDialog}
+        selectedBooking={selectedBooking}
+        rooms={rooms}
+      />
 
-            <div>
-              <Label>Status</Label>
-              <select
-                className="w-full border rounded-md p-2"
-                value={newBooking.status}
-                onChange={(e) => setNewBooking({...newBooking, status: e.target.value})}
-              >
-                <option value="confirmed">Confirmed</option>
-                <option value="guaranteed">Guaranteed</option>
-                <option value="checked_in">Checked-in</option>
-              </select>
-            </div>
+      <MoveReasonDialog
+        open={showMoveReasonDialog}
+        onOpenChange={(open) => {
+          setShowMoveReasonDialog(open);
+          if (!open) { setMoveReason(''); setMoveData(null); }
+        }}
+        moveData={moveData}
+        moveReason={moveReason}
+        setMoveReason={setMoveReason}
+        onConfirmMove={handleConfirmMove}
+      />
 
-            <div className="flex space-x-2 pt-4">
-              <Button type="submit" className="flex-1">Create Booking</Button>
-              <Button type="button" variant="outline" onClick={() => setShowNewBookingDialog(false)}>
-                Cancel
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <FindRoomDialog
+        open={showFindRoomDialog}
+        onOpenChange={setShowFindRoomDialog}
+        findRoomCriteria={findRoomCriteria}
+        setFindRoomCriteria={setFindRoomCriteria}
+        availableRooms={availableRooms}
+        onFindRoom={handleFindRoom}
+        onSelectRoom={(room) => {
+          handleCellClick(room.id, new Date(findRoomCriteria.check_in));
+          setShowFindRoomDialog(false);
+        }}
+      />
 
-      {/* Booking Details Dialog */}
-      <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Booking Details</DialogTitle>
-          </DialogHeader>
-          {selectedBooking && (
-            <div className="space-y-4">
-              {/* Main Details */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-sm text-gray-600">Guest Name</div>
-                  <div className="text-lg font-semibold">{selectedBooking.guest_name}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-600">Status</div>
-                  <div className="flex items-center space-x-2">
-                    <Badge className={getSegmentColor(selectedBooking.market_segment)}>
-                      {selectedBooking.market_segment || 'Standard'}
-                    </Badge>
-                    <Badge className={getStatusColor(selectedBooking.status)}>
-                      {getStatusLabel(selectedBooking.status)}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-sm text-gray-600">Check-in</div>
-                  <div className="font-semibold">{selectedBooking.check_in}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-600">Check-out</div>
-                  <div className="font-semibold">{selectedBooking.check_out}</div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-sm text-gray-600">Room</div>
-                  <div className="font-semibold">
-                    {rooms.find(r => r.id === selectedBooking.room_id)?.room_number}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-600">Total Amount</div>
-                  <div className="font-semibold">${selectedBooking.total_amount}</div>
-                </div>
-              </div>
-
-              {/* Rate Details */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <div className="text-sm font-semibold text-blue-900 mb-2">Rate Details</div>
-                <div className="grid grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <div className="text-gray-600">ADR</div>
-                    <div className="font-bold text-lg">
-                      ${selectedBooking.total_amount ? 
-                        (selectedBooking.total_amount / 
-                        Math.ceil((new Date(selectedBooking.check_out) - new Date(selectedBooking.check_in)) / (1000 * 60 * 60 * 24))).toFixed(2) 
-                        : '0.00'}
-                    </div>
-                  </div>
-                  {selectedBooking.rate_type && (
-                    <div>
-                      <div className="text-gray-600">Rate Code</div>
-                      <div className="font-semibold text-blue-600 uppercase">
-                        {selectedBooking.rate_type}
-                      </div>
-                    </div>
-                  )}
-                  {selectedBooking.market_segment && (
-                    <div>
-                      <div className="text-gray-600">Segment</div>
-                      <div className="font-semibold text-blue-600 capitalize">
-                        {selectedBooking.market_segment}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-sm text-gray-600">Adults</div>
-                  <div className="font-semibold">{selectedBooking.adults}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-600">Children</div>
-                  <div className="font-semibold">{selectedBooking.children}</div>
-                </div>
-              </div>
-
-              {selectedBooking.company_name && (
-                <div>
-                  <div className="text-sm text-gray-600">Company</div>
-                  <div className="font-semibold">{selectedBooking.company_name}</div>
-                </div>
-              )}
-
-              {/* Room Move History */}
-              <div className="border-t pt-4">
-                <div className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
-                  <Clock className="w-4 h-4 mr-2" />
-                  Room Move History
-                </div>
-                {selectedBooking.room_moves && selectedBooking.room_moves.length > 0 ? (
-                  <div className="space-y-2">
-                    {selectedBooking.room_moves.map((move, idx) => (
-                      <div key={idx} className="bg-gray-50 border border-gray-200 rounded p-3 text-sm">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <span className="font-semibold">Room {move.old_room}</span>
-                            <span className="mx-2 text-gray-400">→</span>
-                            <span className="font-semibold">Room {move.new_room}</span>
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {new Date(move.timestamp).toLocaleString()}
-                          </div>
-                        </div>
-                        <div className="mt-1 text-xs text-gray-600">
-                          <strong>Reason:</strong> {move.reason}
-                        </div>
-                        <div className="mt-1 text-xs text-gray-500">
-                          Moved by: {move.moved_by}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-500 italic">
-                    No room moves recorded for this booking
-                  </div>
-                )}
-              </div>
-
-              <div className="flex space-x-2 pt-4 border-t">
-                <Button variant="outline" onClick={() => setShowDetailsDialog(false)}>
-                  Close
-                </Button>
-                <Button variant="outline" onClick={() => {
-                  setShowDetailsDialog(false);
-                  // Navigate to booking edit or folio
-                }}>
-                  Edit Booking
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Room Move Reason Dialog */}
-      <Dialog open={showMoveReasonDialog} onOpenChange={setShowMoveReasonDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Room Move - Reason Required</DialogTitle>
-          </DialogHeader>
-          {moveData && (
-            <div className="space-y-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="text-sm text-blue-900">
-                  <div className="font-semibold mb-2">Moving Booking:</div>
-                  <div>Guest: <strong>{moveData.booking.guest_name}</strong></div>
-                  <div>From: <strong>Room {moveData.oldRoom}</strong> → <strong>Room {moveData.newRoom}</strong></div>
-                  <div>Dates: <strong>{moveData.newCheckIn}</strong> to <strong>{moveData.newCheckOut}</strong></div>
-                </div>
-              </div>
-
-              <div>
-                <Label>Reason for Move *</Label>
-                <select
-                  className="w-full border rounded-md p-2 mb-2"
-                  value={moveReason}
-                  onChange={(e) => setMoveReason(e.target.value)}
-                >
-                  <option value="">Select reason...</option>
-                  <option value="Guest Request">Guest Request</option>
-                  <option value="Room Maintenance">Room Maintenance</option>
-                  <option value="Upgrade">Room Upgrade</option>
-                  <option value="Downgrade">Room Downgrade</option>
-                  <option value="Overbooking">Overbooking Resolution</option>
-                  <option value="VIP Guest">VIP Guest Priority</option>
-                  <option value="Room Issue">Room Issue / Complaint</option>
-                  <option value="Operational">Operational Reasons</option>
-                  <option value="Other">Other</option>
-                </select>
-                {moveReason === 'Other' && (
-                  <Input
-                    placeholder="Please specify..."
-                    onChange={(e) => setMoveReason(e.target.value)}
-                  />
-                )}
-              </div>
-
-              <div className="text-xs text-gray-600 bg-gray-50 p-3 rounded">
-                <strong>Note:</strong> This move will be recorded in the room move history with timestamp and your user details for audit purposes.
-              </div>
-
-              <div className="flex space-x-2">
-                <Button onClick={handleConfirmMove} className="flex-1">
-                  Confirm Move
-                </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    setShowMoveReasonDialog(false);
-                    setMoveReason('');
-                    setMoveData(null);
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Find Room Dialog */}
-      <Dialog open={showFindRoomDialog} onOpenChange={setShowFindRoomDialog}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Find Available Room</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-4 gap-4">
-              <div>
-                <Label>Check-in</Label>
-                <Input
-                  type="date"
-                  value={findRoomCriteria.check_in}
-                  onChange={(e) => setFindRoomCriteria({...findRoomCriteria, check_in: e.target.value})}
-                />
-              </div>
-              <div>
-                <Label>Check-out</Label>
-                <Input
-                  type="date"
-                  value={findRoomCriteria.check_out}
-                  onChange={(e) => setFindRoomCriteria({...findRoomCriteria, check_out: e.target.value})}
-                />
-              </div>
-              <div>
-                <Label>Room Type</Label>
-                <select
-                  className="w-full border rounded-md p-2"
-                  value={findRoomCriteria.room_type}
-                  onChange={(e) => setFindRoomCriteria({...findRoomCriteria, room_type: e.target.value})}
-                >
-                  <option value="all">All Types</option>
-                  <option value="standard">Standard</option>
-                  <option value="deluxe">Deluxe</option>
-                  <option value="suite">Suite</option>
-                </select>
-              </div>
-              <div>
-                <Label>Guests</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={findRoomCriteria.guests_count}
-                  onChange={(e) => setFindRoomCriteria({...findRoomCriteria, guests_count: Number(e.target.value)})}
-                />
-              </div>
-            </div>
-
-            <Button onClick={handleFindRoom} className="w-full">
-              <Search className="w-4 h-4 mr-2" />
-              Search Available Rooms
-            </Button>
-
-            {availableRooms.length > 0 && (
-              <div className="border rounded-lg p-4 max-h-96 overflow-y-auto">
-                <h3 className="font-semibold mb-3 flex items-center">
-                  <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
-                  {availableRooms.length} Room{availableRooms.length > 1 ? 's' : ''} Available
-                </h3>
-                <div className="space-y-2">
-                  {availableRooms.map(room => (
-                    <div key={room.id} className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded">
-                      <div>
-                        <div className="font-semibold">Room {room.room_number}</div>
-                        <div className="text-sm text-gray-600 capitalize">
-                          {room.room_type} • Floor {room.floor} • Capacity: {room.capacity}
-                        </div>
-                        <div className="text-sm font-semibold text-green-600">
-                          ${room.base_price}/night
-                        </div>
-                      </div>
-                      <Button size="sm" onClick={() => {
-                        handleCellClick(room.id, new Date(findRoomCriteria.check_in));
-                        setShowFindRoomDialog(false);
-                      }}>
-                        Book Now
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {findRoomCriteria.check_in && findRoomCriteria.check_out && availableRooms.length === 0 && (
-              <div className="text-center py-8 text-red-600">
-                <AlertCircle className="w-12 h-12 mx-auto mb-3" />
-                <p className="font-semibold">No rooms available for selected dates</p>
-                <p className="text-sm">Try different dates or room type</p>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Reservation Details Sidebar - Opera Navigator Style */}
+      {/* Reservation Details Sidebar */}
       {showSidebar && (
         <>
-          {/* Backdrop */}
-          <div 
-            className="fixed inset-0 bg-black bg-opacity-50 z-40"
-            onClick={() => setShowSidebar(false)}
-          ></div>
-          
-          {/* Sidebar */}
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-40" onClick={() => setShowSidebar(false)}></div>
           <ReservationSidebar
             booking={selectedBooking}
             folio={selectedBookingFolio}
@@ -2890,28 +749,22 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         </>
       )}
 
-      {/* Inline Folio Panel - slides in from right */}
+      {/* Inline Folio Panel */}
       {showFolioPanel && folioPanelId && (
         <>
-          <div 
+          <div
             className="fixed inset-0 bg-black/40 z-50 transition-opacity"
             onClick={() => setShowFolioPanel(false)}
             data-testid="folio-panel-backdrop"
           ></div>
           <div className="fixed top-0 right-0 h-full w-[700px] max-w-[90vw] bg-white z-50 shadow-2xl overflow-y-auto animate-in slide-in-from-right" data-testid="folio-inline-panel">
             <div className="sticky top-0 z-10 bg-white border-b px-4 py-3 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-800 text-sm">Folyo Detayı</h3>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowFolioPanel(false)}
-                className="h-8 w-8 p-0"
-                data-testid="close-folio-panel-btn"
-              >
+              <h3 className="font-semibold text-gray-800 text-sm">Folyo Detayi</h3>
+              <Button variant="ghost" size="sm" onClick={() => setShowFolioPanel(false)} className="h-8 w-8 p-0" data-testid="close-folio-panel-btn">
                 <X className="w-4 h-4" />
               </Button>
             </div>
-            <Suspense fallback={<div className="p-8 text-center text-gray-400">Yükleniyor...</div>}>
+            <Suspense fallback={<div className="p-8 text-center text-gray-400">Yukleniyor...</div>}>
               <FolioDetailView folioId={folioPanelId} onClose={() => setShowFolioPanel(false)} />
             </Suspense>
           </div>
@@ -2920,7 +773,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
       {/* Reservation Detail Modal */}
       {showDetailModal && detailModalBookingId && (
-        <Suspense fallback={<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"><div className="bg-white rounded-xl p-6 text-gray-500">Yükleniyor...</div></div>}>
+        <Suspense fallback={<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"><div className="bg-white rounded-xl p-6 text-gray-500">Yukleniyor...</div></div>}>
           <ReservationDetailModal
             bookingId={detailModalBookingId}
             onClose={() => { setShowDetailModal(false); setDetailModalBookingId(null); loadCalendarData(); }}
