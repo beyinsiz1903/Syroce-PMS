@@ -58,6 +58,18 @@ Enterprise-grade Property Management System (PMS) for hotel operations. The curr
    - `reservation_read_service.py` now enriches `room_type` from rooms collection
    - Both cached and non-cached booking query paths include room_type
 
+### Bug Fixes — 2026-03-18 (COMPLETED & TESTED — 100% pass rate)
+1. **OTA Sync Button URL Fix (BUG FIX):**
+   - `ReservationCalendar.js`: `handleSyncReservations` now calls the correct Exely endpoint `POST /channel-manager/exely/sync/reservations/pull` and v2 connector flow `/channel-manager/v2/connectors`
+   - Previously called non-existent `/channel-manager/connectors` which silently failed
+2. **Individual Cancellation Detection (BUG FIX):**
+   - `exely_router.py`: Added `_check_individual_cancellations()` that checks each imported reservation individually via Exely SOAP to detect cancellations the batch "Undelivered" pull may miss
+   - `soap_builder.py`: Fixed `build_read_rq` to include `SelectionCriteria` element for individual reservation lookups (Exely requires it)
+3. **Unassigned Bookings Overlap Fix (BUG FIX):**
+   - `ReservationCalendar.js`: Added `computeUnassignedLanes()` lane allocation algorithm that assigns vertical lanes to overlapping bookings
+   - Unassigned row height dynamically expands based on number of overlapping booking lanes
+   - Each booking positioned at its computed lane offset to prevent visual overlap
+
 ## Prioritized Backlog
 
 ### P0 — Execute Narrow Rollout
