@@ -1,15 +1,17 @@
 """
 Night Audit — API Router (Production-Grade)
-Exposes night audit execution, history, exceptions, and business date.
+Exposes night audit execution, history, exceptions, business date, and financial reporting.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 import logging
+from datetime import datetime, timezone
 
 from core.security import get_current_user
 from models.schemas import User
 from common.context import OperationContext
 from domains.pms.night_audit.schemas import RunNightAuditRequest, NightAuditScheduleRequest
 from domains.pms.night_audit.service import night_audit_core_service
+from domains.pms.night_audit.financial_service import financial_service
 
 logger = logging.getLogger(__name__)
 
@@ -103,4 +105,62 @@ async def get_schedule_status(
     """Get scheduler status and recent auto-run logs."""
     ctx = OperationContext.from_user(current_user)
     result = await night_audit_core_service.get_schedule_status(ctx)
+    return result.data
+
+
+# ── Financial Reporting Endpoints ──────────────────────────────────────
+
+@router.get("/financial-summary")
+async def get_financial_summary(
+    date: str = Query(None, description="Business date (YYYY-MM-DD)"),
+    current_user: User = Depends(get_current_user),
+):
+    """Get daily financial summary for a business date."""
+    ctx = OperationContext.from_user(current_user)
+    if not date:
+        bd_result = await night_audit_core_service.get_business_date(ctx)
+        date = bd_result.data.get("business_date", datetime.now(timezone.utc).date().isoformat())
+    result = await financial_service.get_daily_financial_summary(ctx, date)
+    return result.data
+
+
+@router.get("/payment-reconciliation")
+async def get_payment_reconciliation(
+    date: str = Query(None, description="Business date (YYYY-MM-DD)"),
+    current_user: User = Depends(get_current_user),
+):
+    """Reconcile charges vs payments for a business date."""
+    ctx = OperationContext.from_user(current_user)
+    if not date:
+        bd_result = await night_audit_core_service.get_business_date(ctx)
+        date = bd_result.data.get("business_date", datetime.now(timezone.utc).date().isoformat())
+    result = await financial_service.get_payment_reconciliation(ctx, date)
+    return result.data
+
+
+@router.get("/financial-report")
+async def get_financial_report(
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate financial report for a date range."""
+    ctx = OperationContext.from_user(current_user)
+    result = await financial_service.get_financial_report(ctx, start_date, end_date)
+    if not result.ok:
+        raise HTTPException(status_code=400, detail=result.to_dict())
+    return result.data
+
+
+@router.get("/integrity-check")
+async def get_integrity_check(
+    date: str = Query(None, description="Business date (YYYY-MM-DD)"),
+    current_user: User = Depends(get_current_user),
+):
+    """Run financial integrity checks for a business date."""
+    ctx = OperationContext.from_user(current_user)
+    if not date:
+        bd_result = await night_audit_core_service.get_business_date(ctx)
+        date = bd_result.data.get("business_date", datetime.now(timezone.utc).date().isoformat())
+    result = await financial_service.get_integrity_check(ctx, date)
     return result.data

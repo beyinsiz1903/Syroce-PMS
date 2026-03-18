@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 # Configuration
-BASE_URL = "https://calendar-refactor-2.preview.emergentagent.com/api"
+BASE_URL = "https://auto-midnight.preview.emergentagent.com/api"
 TEST_CREDENTIALS = {
     "email": "demo@hotel.com", 
     "password": "demo123"
