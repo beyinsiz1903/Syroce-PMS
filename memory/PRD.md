@@ -12,12 +12,29 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - Group Booking Management
 - Deposit Tracking
 - Channel Manager (Exely) integration
+- Night Audit Dashboard
+- Housekeeping Status Management
+- Wake-up Call Management
+- Lost & Found Module
 
 ## Architecture
 - Frontend: React + TailwindCSS + Shadcn/UI
 - Backend: FastAPI + MongoDB
 - Authentication: JWT-based
 - Routing: /api prefix for all backend routes
+
+### Calendar Architecture (Refactored)
+```
+/app/frontend/src/pages/
+  ReservationCalendar.js       (~800 lines - main orchestrator)
+  calendar/
+    CalendarHeader.js          (header, navigation, buttons)
+    CalendarGrid.js            (room grid, booking bars, drag/drop)
+    CalendarOccupancy.js       (occupancy chart SVG)
+    CalendarDialogs.js         (NewBooking, Details, MoveReason, FindRoom)
+    calendarHelpers.js         (pure utility functions)
+    index.js                   (barrel exports)
+```
 
 ## What's Been Implemented
 
@@ -37,35 +54,37 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] Group Reservation Management page
 - [x] Guest Communication History tab
 - [x] Deposit Tracking page and tab
-- [x] ReservationCalendar.js refactoring (CalendarDialogs, CalendarWidgets)
+- [x] ReservationCalendar.js initial refactoring
 
-### Session 5 (Current - Mar 18, 2026)
+### Session 5
 - [x] Fixed balance calculation (now includes total_amount in folio balance)
-- [x] Added "Giris Yap" (Check-in) button to modal sidebar (conditional on confirmed status)
-- [x] Added "Cikis Yap" (Check-out) button to modal sidebar (conditional on checked_in status)
-- [x] Added "Acenteye Aktar" button to Folyolar tab (transfer cari to agency)
-- [x] Added "Mahsuplastir" button to Folyolar tab (cari reconciliation/offset)
-- [x] Added "room_service/Oda Servisi" category to extra charges dropdown
-- [x] New API: POST /api/pms/cari-accounts/{id}/reconcile
-- [x] New API: POST /api/pms/cari-accounts/{id}/transfer-to-agency
-- [x] All tested: 17/17 backend tests passed, all frontend features verified
+- [x] Added Check-in/Check-out buttons to modal sidebar
+- [x] Added "Acenteye Aktar" and "Mahsuplastir" buttons to Folyolar tab
+- [x] Added "room_service/Oda Servisi" category to extra charges
+- [x] New APIs: reconcile, transfer-to-agency
+- [x] All tested: 17/17 backend tests passed
 
-### Session 6 (Mar 18, 2026 - P2 Features)
-- [x] **Housekeeping Status Management** - Room clean/dirty/inspected/maintenance/out_of_order status within room grid, bulk update, filtering, search
-- [x] **Wake-up Call Management** - Full CRUD with scheduling, status tracking (pending/completed/missed/cancelled), method selection (phone/system/both), recurring support
-- [x] **Lost & Found Module** - Item registration with category (electronics/clothing/jewelry/docs/bags), guest matching via booking ID, status flow (found → stored → claimed → returned)
-- [x] **Hotel Settings for Invoice** - New "Fatura Ayarlari" tab in Settings page with logo upload, hotel name, tax info, currency, invoice header/footer
-- [x] **PDF Invoice from Folio** - "PDF Fatura" button in reservation's Folyolar tab, generates styled HTML invoice with hotel branding, print support
-- [x] **Group Folio Merging** - Merge group member folios into a master folio with payment transfer, merge history log
-- [x] **Auto-Dirty on Checkout** - Room housekeeping_status automatically set to "dirty" when guest checks out (individual + group checkout)
-- [x] New API endpoints in /app/backend/routers/hotel_services.py (17 routes)
-- [x] 4 new frontend pages: HousekeepingStatusPage, WakeUpCallsPage, LostFoundPage, GroupFolioPage
-- [x] All tested: Backend 100%, Frontend 100% (iteration_89.json)
+### Session 6 (P2 Features)
+- [x] Housekeeping Status Management
+- [x] Wake-up Call Management
+- [x] Lost & Found Module
+- [x] Hotel Settings for Invoice
+- [x] PDF Invoice from Folio
+- [x] Group Folio Merging
+- [x] Auto-Dirty on Checkout
+
+### Session 7 (Mar 18, 2026 - Current)
+- [x] **Night Audit Dashboard** - New `/night-audit` page with business date, stats cards, audit history, run audit dialog (dry run, force rerun, skip validations)
+- [x] **ReservationCalendar.js Refactoring** - Reduced from 2936 lines to ~800 lines by extracting 5 sub-components into `/pages/calendar/` folder
+- [x] **NightAuditLogs.js Hook Fix** - Fixed useTranslation called outside component, corrected API path from `/logs/night-audit` to `/night-audit/history`
+- [x] **AdminTenants.js Hook Fix** - Removed useTranslation calls from outside component functions
+- [x] **Code Cleanup** - Removed .backup files (PMSModule.js.backup, Reports.js.backup, RMSModule.js.backup)
+- [x] All tested: Frontend 100% (iteration_90.json)
 
 ## Key API Endpoints
 - POST /api/auth/login
 - GET/POST /api/pms/bookings
-- PUT /api/pms/bookings/{id} (with Idempotency-Key header)
+- PUT /api/pms/bookings/{id}
 - GET /api/pms/reservations/{id}/full-detail
 - POST /api/pms/reservations/{id}/record-payment
 - POST /api/pms/reservations/{id}/transfer-to-cari
@@ -75,29 +94,16 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - POST /api/pms/reservations/{id}/room-change
 - POST /api/pms/cari-accounts/{id}/reconcile
 - POST /api/pms/cari-accounts/{id}/transfer-to-agency
-- GET /api/pms/available-rooms
-- GET /api/pms/housekeeping/rooms
-- PUT /api/pms/housekeeping/rooms/{id}/status
-- GET/POST /api/pms/wake-up-calls
-- PUT/DELETE /api/pms/wake-up-calls/{id}
-- GET/POST /api/pms/lost-found
-- PUT/DELETE /api/pms/lost-found/{id}
-- POST /api/pms/lost-found/{id}/match-guest
-- GET/PUT /api/pms/hotel-settings
-- GET /api/pms/reservations/{id}/invoice-pdf
-- POST /api/pms/group-folio/merge
-- GET /api/pms/group-folio/{id}
+- GET /api/night-audit/business-date
+- POST /api/night-audit/run
+- GET /api/night-audit/history
+- GET /api/night-audit/exceptions/{audit_id}
 
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
 
 ## Backlog (Future Tasks)
-- [x] ~~P1: Housekeeping Integration~~ (DONE - Session 6)
-- [x] ~~P2: Wake-up Call Management~~ (DONE - Session 6)
-- [x] ~~P3: Lost & Found Module~~ (DONE - Session 6)
-- [x] ~~P4: PDF Invoice/Receipt from Folio~~ (DONE - Session 6)
-- [x] ~~P5: Group Folio Merging~~ (DONE - Session 6)
-- [ ] P5: Advanced Auto-Heal, Deprecated Code Cleanup
-- [ ] P5: Financial Module Hardening (Night Audit)
-- [ ] P5: Tenant Management
-- [ ] Ongoing: ReservationCalendar.js further refactoring
+- [ ] P2: Tenant Management page improvements (detail view, data summary, access logs)
+- [ ] P3: Financial Module Hardening (night audit integration with folios)
+- [ ] P5: Advanced Auto-Heal patterns
+- [ ] P5: GroupFolioPage.js full implementation (currently skeleton)
