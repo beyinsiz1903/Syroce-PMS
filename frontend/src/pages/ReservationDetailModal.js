@@ -138,6 +138,8 @@ function FoliosTab({ folios, charges, payments, extra_charges, summary, booking,
   const [showAgency, setShowAgency] = useState(false);
   const [showCariTransfer, setShowCariTransfer] = useState(false);
   const [showReconcile, setShowReconcile] = useState(false);
+  const [showInvoice, setShowInvoice] = useState(false);
+  const [invoiceHtml, setInvoiceHtml] = useState('');
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', payment_type: 'interim', reference: '' });
   const [cariAccounts, setCariAccounts] = useState([]);
   const [cariForm, setCariForm] = useState({ amount: '', cari_account_id: '', description: '' });
@@ -170,6 +172,15 @@ function FoliosTab({ folios, charges, payments, extra_charges, summary, booking,
         <Button size="sm" variant="outline" onClick={() => setShowAgency(!showAgency)} className="h-8 text-xs border-purple-300 text-purple-700 hover:bg-purple-50" data-testid="btn-acente-odemesi"><Building2 className="w-3 h-3 mr-1" /> Acente Odemesi</Button>
         <Button size="sm" variant="outline" onClick={() => { setShowCariTransfer(!showCariTransfer); loadCari(); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acenteye-aktar"><ArrowDownUp className="w-3 h-3 mr-1" /> Acenteye Aktar</Button>
         <Button size="sm" variant="outline" onClick={() => { setShowReconcile(!showReconcile); loadCari(); }} className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" data-testid="btn-mahsuplastir"><DollarSign className="w-3 h-3 mr-1" /> Mahsuplastir</Button>
+        <Button size="sm" variant="outline" onClick={async () => {
+          try {
+            const res = await axios.get(`${API}/api/pms/reservations/${booking.id}/invoice-pdf`);
+            setInvoiceHtml(res.data?.invoice_html || '');
+            setShowInvoice(true);
+          } catch (e) { toast.error('Fatura olusturulamadi: ' + (e.response?.data?.detail || e.message)); }
+        }} className="h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-50" data-testid="btn-fatura-pdf">
+          <FileText className="w-3 h-3 mr-1" /> PDF Fatura
+        </Button>
       </div>
 
       {showPayment && (
@@ -263,6 +274,30 @@ function FoliosTab({ folios, charges, payments, extra_charges, summary, booking,
           </div>
           <FormField label="Aciklama" value={reconcileForm.description} onChange={v => setReconcileForm(p => ({ ...p, description: v }))} placeholder="Mahsuplastirma aciklamasi" />
         </FormPanel>
+      )}
+
+      {/* Invoice Preview Modal */}
+      {showInvoice && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowInvoice(false)}>
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()} data-testid="invoice-preview-modal">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="font-semibold text-gray-800 flex items-center gap-2"><FileText className="w-5 h-5 text-blue-600" /> Fatura Onizleme</h3>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => {
+                  const printWindow = window.open('', '_blank');
+                  printWindow.document.write(invoiceHtml);
+                  printWindow.document.close();
+                  printWindow.focus();
+                  setTimeout(() => printWindow.print(), 300);
+                }} className="h-8 text-xs" data-testid="print-invoice-btn">Yazdir</Button>
+                <Button size="sm" variant="ghost" onClick={() => setShowInvoice(false)} className="h-8"><X className="w-4 h-4" /></Button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <iframe srcDoc={invoiceHtml} className="w-full h-full min-h-[600px] border rounded-lg" title="Invoice" />
+            </div>
+          </div>
+        </div>
       )}
 
       <div className="space-y-2">

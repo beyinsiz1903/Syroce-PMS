@@ -177,6 +177,12 @@ const RuntimeCockpitPage = lazy(() => import("@/pages/RuntimeCockpitPage"));
 const GroupBookingsPage = lazy(() => import("@/pages/GroupBookings"));
 const DepositTrackingPage = lazy(() => import("@/pages/DepositTracking"));
 
+// P2 Features - Housekeeping, Wake-up, Lost & Found, Group Folio
+const HousekeepingStatusPage = lazy(() => import("@/pages/HousekeepingStatusPage"));
+const WakeUpCallsPage = lazy(() => import("@/pages/WakeUpCallsPage"));
+const LostFoundPage = lazy(() => import("@/pages/LostFoundPage"));
+const GroupFolioPage = lazy(() => import("@/pages/GroupFolioPage"));
+
 import { Toaster } from "@/components/ui/sonner";
 
 // Loading component
@@ -755,6 +761,46 @@ function App() {
             element={
               isAuthenticated ? (
                 <DepositTrackingPage user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/housekeeping-status"
+            element={
+              isAuthenticated ? (
+                <HousekeepingStatusPage user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/wake-up-calls"
+            element={
+              isAuthenticated ? (
+                <WakeUpCallsPage user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/lost-found"
+            element={
+              isAuthenticated ? (
+                <LostFoundPage user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/group-folio"
+            element={
+              isAuthenticated ? (
+                <GroupFolioPage user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )

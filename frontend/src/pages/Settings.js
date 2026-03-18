@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import {
   Settings as SettingsIcon, Users, CreditCard, Shield, Plus, Trash2,
   Building2, Zap, Crown, ArrowRight, CheckCircle2, Lock, AlertTriangle,
-  ArrowDown, Sparkles, Clock, Receipt, Save, Pencil, X
+  ArrowDown, Sparkles, Clock, Receipt, Save, Pencil, X, FileText, Upload, Image
 } from 'lucide-react';
 
 // ─── Plan Config ──────────────────────────────────
@@ -108,6 +108,11 @@ const Settings = ({ user, tenant, onLogout }) => {
   const [hotelForm, setHotelForm] = useState({});
   const [hotelSaving, setHotelSaving] = useState(false);
 
+  // Invoice settings
+  const [invoiceSettings, setInvoiceSettings] = useState({});
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceSaving, setInvoiceSaving] = useState(false);
+
   const currentTier = useMemo(() => {
     const t = tenant?.subscription_tier || 'basic';
     if (t === 'pro') return 'professional';
@@ -150,11 +155,22 @@ const Settings = ({ user, tenant, onLogout }) => {
     finally { setBillingLoading(false); }
   }, []);
 
+  const loadInvoiceSettings = useCallback(async () => {
+    setInvoiceLoading(true);
+    try {
+      const API = process.env.REACT_APP_BACKEND_URL;
+      const res = await axios.get(`${API}/api/pms/hotel-settings`);
+      setInvoiceSettings(res.data || {});
+    } catch (err) { console.error('Invoice settings load failed', err); }
+    finally { setInvoiceLoading(false); }
+  }, []);
+
   useEffect(() => {
     loadTeam();
     loadSubscription();
     loadBillingHistory();
-  }, [loadTeam, loadSubscription, loadBillingHistory]);
+    loadInvoiceSettings();
+  }, [loadTeam, loadSubscription, loadBillingHistory, loadInvoiceSettings]);
 
   // Init hotel form from tenant
   useEffect(() => {
@@ -243,6 +259,32 @@ const Settings = ({ user, tenant, onLogout }) => {
     } finally { setHotelSaving(false); }
   };
 
+  const handleSaveInvoiceSettings = async () => {
+    setInvoiceSaving(true);
+    try {
+      const API = process.env.REACT_APP_BACKEND_URL;
+      const res = await axios.put(`${API}/api/pms/hotel-settings`, invoiceSettings);
+      toast.success('Fatura ayarları kaydedildi');
+      setInvoiceSettings(res.data?.settings || invoiceSettings);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Kaydedilemedi');
+    } finally { setInvoiceSaving(false); }
+  };
+
+  const handleLogoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Logo dosyası 2MB\'dan küçük olmalıdır');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setInvoiceSettings(prev => ({ ...prev, logo_data: event.target.result }));
+    };
+    reader.readAsDataURL(file);
+  };
+
   // Plan tiers for upgrade/downgrade
   const tierOrder = ['basic', 'professional', 'enterprise'];
   const currentIdx = tierOrder.indexOf(currentTier);
@@ -275,7 +317,7 @@ const Settings = ({ user, tenant, onLogout }) => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="team" className="flex items-center gap-1.5 text-xs sm:text-sm">
               <Users className="w-4 h-4" /> Ekip
             </TabsTrigger>
@@ -287,6 +329,9 @@ const Settings = ({ user, tenant, onLogout }) => {
             </TabsTrigger>
             <TabsTrigger value="hotel" className="flex items-center gap-1.5 text-xs sm:text-sm">
               <Building2 className="w-4 h-4" /> Otel
+            </TabsTrigger>
+            <TabsTrigger value="invoice" className="flex items-center gap-1.5 text-xs sm:text-sm" data-testid="invoice-settings-tab">
+              <FileText className="w-4 h-4" /> Fatura Ayarları
             </TabsTrigger>
           </TabsList>
 
@@ -633,6 +678,121 @@ const Settings = ({ user, tenant, onLogout }) => {
                 <div className="flex justify-between"><span className="text-gray-500">Durum</span><span className="font-semibold text-green-600">{subscription?.status === 'active' ? 'Aktif' : subscription?.status || '—'}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Oda</span><span className="font-semibold">{subscription?.rooms_count || 0} / {currentPlan.maxRooms || '∞'}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Kullanıcı</span><span className="font-semibold">{subscription?.users_count || 0} / {currentPlan.maxUsers || '∞'}</span></div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ═══════════ INVOICE SETTINGS TAB ═══════════ */}
+          <TabsContent value="invoice" className="space-y-4" data-testid="invoice-settings-content">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center justify-between">
+                  <span className="flex items-center gap-2"><FileText className="w-4 h-4" /> Fatura & Logo Ayarları</span>
+                  <Button size="sm" onClick={handleSaveInvoiceSettings} disabled={invoiceSaving} data-testid="save-invoice-settings-btn">
+                    <Save className="w-4 h-4 mr-1" /> {invoiceSaving ? 'Kaydediliyor...' : 'Kaydet'}
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {invoiceLoading ? (
+                  <div className="text-center py-8 text-gray-400">Yükleniyor...</div>
+                ) : (
+                  <>
+                    {/* Logo Upload */}
+                    <div>
+                      <Label>Otel Logosu</Label>
+                      <div className="flex items-center gap-4 mt-2">
+                        {invoiceSettings.logo_data ? (
+                          <div className="relative">
+                            <img src={invoiceSettings.logo_data} alt="Logo" className="h-16 max-w-[200px] object-contain border rounded-lg p-2" />
+                            <button
+                              onClick={() => setInvoiceSettings(prev => ({ ...prev, logo_data: null }))}
+                              className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="h-16 w-32 border-2 border-dashed rounded-lg flex items-center justify-center text-gray-400">
+                            <Image className="w-6 h-6" />
+                          </div>
+                        )}
+                        <label className="cursor-pointer">
+                          <div className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700">
+                            <Upload className="w-4 h-4" /> Logo Yükle
+                          </div>
+                          <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} data-testid="logo-upload-input" />
+                          <p className="text-[10px] text-gray-400 mt-1">PNG, JPG (max 2MB)</p>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Hotel Info for Invoice */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Otel Adı (Fatura)</Label>
+                        <Input value={invoiceSettings.hotel_name || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, hotel_name: e.target.value }))} placeholder="Otel adı" />
+                      </div>
+                      <div>
+                        <Label>E-posta</Label>
+                        <Input value={invoiceSettings.hotel_email || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, hotel_email: e.target.value }))} placeholder="info@otel.com" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Telefon</Label>
+                        <Input value={invoiceSettings.hotel_phone || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, hotel_phone: e.target.value }))} />
+                      </div>
+                      <div>
+                        <Label>Adres</Label>
+                        <Input value={invoiceSettings.hotel_address || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, hotel_address: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    {/* Tax Info */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Vergi Numarası</Label>
+                        <Input value={invoiceSettings.tax_id || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, tax_id: e.target.value }))} placeholder="1234567890" data-testid="tax-id-input" />
+                      </div>
+                      <div>
+                        <Label>Vergi Dairesi</Label>
+                        <Input value={invoiceSettings.tax_office || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, tax_office: e.target.value }))} placeholder="Beyoğlu" data-testid="tax-office-input" />
+                      </div>
+                    </div>
+
+                    {/* Currency */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Para Birimi</Label>
+                        <select value={invoiceSettings.currency || 'TRY'} onChange={e => setInvoiceSettings(prev => ({ ...prev, currency: e.target.value }))} className="w-full border rounded-md px-3 py-2 text-sm">
+                          <option value="TRY">Türk Lirası (TRY)</option>
+                          <option value="EUR">Euro (EUR)</option>
+                          <option value="USD">Amerikan Doları (USD)</option>
+                          <option value="GBP">İngiliz Sterlini (GBP)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <Label>Para Birimi Simgesi</Label>
+                        <Input value={invoiceSettings.currency_symbol || '₺'} onChange={e => setInvoiceSettings(prev => ({ ...prev, currency_symbol: e.target.value }))} placeholder="₺" />
+                      </div>
+                    </div>
+
+                    {/* Invoice Header/Footer */}
+                    <div>
+                      <Label>Fatura Üst Bilgi</Label>
+                      <textarea value={invoiceSettings.invoice_header || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, invoice_header: e.target.value }))} className="w-full border rounded-md px-3 py-2 text-sm min-h-[60px] focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Fatura başlığı..." />
+                    </div>
+                    <div>
+                      <Label>Fatura Alt Bilgi</Label>
+                      <textarea value={invoiceSettings.invoice_footer || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, invoice_footer: e.target.value }))} className="w-full border rounded-md px-3 py-2 text-sm min-h-[60px] focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Fatura alt notu..." />
+                    </div>
+                    <div>
+                      <Label>Ek Notlar</Label>
+                      <textarea value={invoiceSettings.invoice_notes || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, invoice_notes: e.target.value }))} className="w-full border rounded-md px-3 py-2 text-sm min-h-[60px] focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Ek bilgiler..." />
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
