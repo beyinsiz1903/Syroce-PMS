@@ -81,6 +81,16 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] **Code Cleanup** - Removed .backup files (PMSModule.js.backup, Reports.js.backup, RMSModule.js.backup)
 - [x] All tested: Frontend 100% (iteration_90.json)
 
+### Session 8 (Mar 18, 2026)
+- [x] **Night Audit Automatic Scheduling** - Full EOD automation with background scheduler
+  - Backend: Background asyncio scheduler (60s check interval) triggers night audit at configured time per tenant
+  - Backend: 3 new endpoints: GET/PUT /api/night-audit/schedule, GET /api/night-audit/schedule/status
+  - Backend: Auto-retry logic (configurable max retries), timezone support, schedule logging
+  - Frontend: Schedule card on dashboard with toggle, time display, last run status, feature badges
+  - Frontend: Settings dialog with hour/minute pickers, timezone selector, auto-retry config, skip validations toggle
+  - Accessibility fix: Added DialogDescription to Schedule and Run dialogs
+- [x] All tested: Backend 13/13 + Frontend 100% (iteration_91.json)
+
 ## Key API Endpoints
 - POST /api/auth/login
 - GET/POST /api/pms/bookings
@@ -98,12 +108,15 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - POST /api/night-audit/run
 - GET /api/night-audit/history
 - GET /api/night-audit/exceptions/{audit_id}
+- GET /api/night-audit/schedule
+- PUT /api/night-audit/schedule
+- GET /api/night-audit/schedule/status
 
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
 
 ## Backlog (Future Tasks)
-- [ ] P2: Tenant Management page improvements (detail view, data summary, access logs)
-- [ ] P3: Financial Module Hardening (night audit integration with folios)
+- [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
+- [ ] P2: Financial Module Hardening (deeper folio integration, reporting expansion)
 - [ ] P5: Advanced Auto-Heal patterns
 - [ ] P5: GroupFolioPage.js full implementation (currently skeleton)
