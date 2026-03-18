@@ -91,6 +91,17 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Accessibility fix: Added DialogDescription to Schedule and Run dialogs
 - [x] All tested: Backend 13/13 + Frontend 100% (iteration_91.json)
 
+### Session 9 (Mar 18, 2026)
+- [x] **Financial Module Hardening** - Comprehensive financial reporting and integrity system
+  - Backend: 4 new endpoints for financial operations
+    - GET /api/night-audit/financial-summary: Daily revenue, tax, payments, open folios, net position
+    - GET /api/night-audit/payment-reconciliation: Charges vs payments, discrepancies, high-balance folios
+    - GET /api/night-audit/integrity-check: 5 automated financial checks (folio match, voided charges, negative balances, rate consistency, closed folio charges)
+    - GET /api/night-audit/financial-report: Date-range reporting with revenue by category/date, payment methods, audit history
+  - Frontend: 5-tab Night Audit Dashboard (Genel Bakis, Finansal Ozet, Mutabakat, Butunluk, Rapor)
+  - Fixed: apscheduler added to requirements.txt
+- [x] All tested: Backend 31/31 + Frontend 100% (iteration_92.json)
+
 ## Key API Endpoints
 - POST /api/auth/login
 - GET/POST /api/pms/bookings
@@ -111,12 +122,15 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - GET /api/night-audit/schedule
 - PUT /api/night-audit/schedule
 - GET /api/night-audit/schedule/status
+- GET /api/night-audit/financial-summary
+- GET /api/night-audit/payment-reconciliation
+- GET /api/night-audit/financial-report
+- GET /api/night-audit/integrity-check
 
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
 
 ## Backlog (Future Tasks)
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
-- [ ] P2: Financial Module Hardening (deeper folio integration, reporting expansion)
 - [ ] P5: Advanced Auto-Heal patterns
 - [ ] P5: GroupFolioPage.js full implementation (currently skeleton)
