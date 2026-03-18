@@ -52,8 +52,8 @@ const RateManager = ({ user, tenant, onLogout }) => {
   const [pricingSettings, setPricingSettings] = useState({});
 
   // ─── BULK UPDATE STATE ───
-  const [selectedRoomTypes, setSelectedRoomTypes] = useState(new Set());
-  const [selectedRatePlans, setSelectedRatePlans] = useState(new Set());
+  // selections: { roomTypeCode: Set<ratePlanCode> } — per room type independent selection
+  const [selections, setSelections] = useState({});
   const [enabledFields, setEnabledFields] = useState(new Set());
   const [allDays, setAllDays] = useState(true);
   const [selectedDays, setSelectedDays] = useState(new Set([0, 1, 2, 3, 4, 5, 6]));
@@ -121,37 +121,64 @@ const RateManager = ({ user, tenant, onLogout }) => {
   }, [roomTypes, ratePlans]);
 
   // ─── SELECTION HELPERS ───
+  // Toggle entire room type: selects/deselects ALL rate plans under it
   const toggleRoomType = (code) => {
-    setSelectedRoomTypes(prev => {
-      const next = new Set(prev);
-      if (next.has(code)) next.delete(code); else next.add(code);
+    setSelections(prev => {
+      const next = { ...prev };
+      const allPlans = ratePlans.map(rp => rp.code);
+      if (next[code] && next[code].size === allPlans.length) {
+        // All plans selected → deselect entire room type
+        delete next[code];
+      } else {
+        // Select all plans for this room type
+        next[code] = new Set(allPlans);
+      }
       return next;
     });
   };
 
   const toggleAllRoomTypes = () => {
-    if (selectedRoomTypes.size === roomTypes.length) {
-      setSelectedRoomTypes(new Set());
+    const allPlans = ratePlans.map(rp => rp.code);
+    const allSelected = roomTypes.length > 0 && roomTypes.every(rt =>
+      selections[rt.code] && selections[rt.code].size === allPlans.length
+    );
+    if (allSelected) {
+      setSelections({});
     } else {
-      setSelectedRoomTypes(new Set(roomTypes.map(rt => rt.code)));
+      const next = {};
+      roomTypes.forEach(rt => { next[rt.code] = new Set(allPlans); });
+      setSelections(next);
     }
   };
 
-  const toggleRatePlan = (code) => {
-    setSelectedRatePlans(prev => {
-      const next = new Set(prev);
-      if (next.has(code)) next.delete(code); else next.add(code);
+  // Toggle individual rate plan under a specific room type
+  const toggleRatePlan = (roomTypeCode, ratePlanCode) => {
+    setSelections(prev => {
+      const next = { ...prev };
+      const current = next[roomTypeCode] ? new Set(next[roomTypeCode]) : new Set();
+      if (current.has(ratePlanCode)) {
+        current.delete(ratePlanCode);
+      } else {
+        current.add(ratePlanCode);
+      }
+      if (current.size === 0) {
+        delete next[roomTypeCode];
+      } else {
+        next[roomTypeCode] = current;
+      }
       return next;
     });
   };
 
-  const toggleAllRatePlans = () => {
-    if (selectedRatePlans.size === ratePlans.length) {
-      setSelectedRatePlans(new Set());
-    } else {
-      setSelectedRatePlans(new Set(ratePlans.map(rp => rp.code)));
-    }
-  };
+  // Check if a room type has any selections
+  const isRoomTypeSelected = (code) => selections[code] && selections[code].size > 0;
+  const isRoomTypeFullySelected = (code) => selections[code] && selections[code].size === ratePlans.length;
+  const isRatePlanSelected = (roomTypeCode, ratePlanCode) =>
+    selections[roomTypeCode] && selections[roomTypeCode].has(ratePlanCode);
+
+  // Count total selected pairs
+  const totalSelectedRoomTypes = Object.keys(selections).length;
+  const totalSelectedPlans = Object.values(selections).reduce((sum, s) => sum + s.size, 0);
 
   const toggleField = (key) => {
     setEnabledFields(prev => {
@@ -211,8 +238,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
 
   // ─── RESET ───
   const handleReset = () => {
-    setSelectedRoomTypes(new Set());
-    setSelectedRatePlans(new Set());
+    setSelections({});
     setEnabledFields(new Set());
     setAllDays(true);
     setSelectedDays(new Set([0, 1, 2, 3, 4, 5, 6]));
@@ -229,11 +255,11 @@ const RateManager = ({ user, tenant, onLogout }) => {
 
   // ─── BULK UPDATE ───
   const handleBulkUpdate = async () => {
-    if (selectedRoomTypes.size === 0) {
+    if (totalSelectedRoomTypes === 0) {
       toast.error('Lütfen en az bir oda tipi seçin');
       return;
     }
-    if (selectedRatePlans.size === 0) {
+    if (totalSelectedPlans === 0) {
       toast.error('Lütfen en az bir fiyat planı seçin');
       return;
     }
@@ -249,8 +275,10 @@ const RateManager = ({ user, tenant, onLogout }) => {
     setSaving(true);
     try {
       const payload = {
-        room_type_codes: Array.from(selectedRoomTypes),
-        rate_plan_codes: Array.from(selectedRatePlans),
+        selections: Object.entries(selections).map(([rtCode, rpSet]) => ({
+          room_type_code: rtCode,
+          rate_plan_codes: Array.from(rpSet),
+        })),
         start_date: dateFrom,
         end_date: dateTo,
         selected_days: allDays ? null : Array.from(selectedDays),
@@ -528,7 +556,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
                         className="text-xs text-blue-600 hover:underline"
                         data-testid="select-all-rooms"
                       >
-                        {selectedRoomTypes.size === roomTypes.length ? 'Tümünü kaldır' : 'Tümünü seç'}
+                        {roomTypes.length > 0 && roomTypes.every(rt => isRoomTypeFullySelected(rt.code)) ? 'Tümünü kaldır' : 'Tümünü seç'}
                       </button>
                     </div>
                   </CardHeader>
@@ -548,14 +576,14 @@ const RateManager = ({ user, tenant, onLogout }) => {
                             {/* Room Type Header */}
                             <label
                               className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors ${
-                                selectedRoomTypes.has(rt.code)
+                                isRoomTypeSelected(rt.code)
                                   ? 'bg-orange-50 border-l-4 border-l-orange-500'
                                   : 'hover:bg-gray-50 border-l-4 border-l-transparent'
                               }`}
                               data-testid={`room-type-${rt.code}`}
                             >
                               <Checkbox
-                                checked={selectedRoomTypes.has(rt.code)}
+                                checked={isRoomTypeFullySelected(rt.code)}
                                 onCheckedChange={() => toggleRoomType(rt.code)}
                               />
                               <div className="flex-1 min-w-0">
@@ -579,15 +607,15 @@ const RateManager = ({ user, tenant, onLogout }) => {
                               <label
                                 key={`${rt.code}-${rp.code}`}
                                 className={`flex items-center gap-3 px-3 py-2 pl-8 border-t border-gray-100 cursor-pointer transition-colors ${
-                                  selectedRatePlans.has(rp.code) && selectedRoomTypes.has(rt.code)
+                                  isRatePlanSelected(rt.code, rp.code)
                                     ? 'bg-blue-50'
                                     : 'hover:bg-gray-50'
                                 }`}
                                 data-testid={`rate-plan-${rt.code}-${rp.code}`}
                               >
                                 <Checkbox
-                                  checked={selectedRatePlans.has(rp.code)}
-                                  onCheckedChange={() => toggleRatePlan(rp.code)}
+                                  checked={isRatePlanSelected(rt.code, rp.code)}
+                                  onCheckedChange={() => toggleRatePlan(rt.code, rp.code)}
                                 />
                                 <div className="flex-1 min-w-0">
                                   <div className="text-sm text-gray-700">
@@ -625,16 +653,16 @@ const RateManager = ({ user, tenant, onLogout }) => {
             </div>
 
             {/* Summary Bar */}
-            {(selectedRoomTypes.size > 0 || enabledFields.size > 0) && (
+            {(totalSelectedRoomTypes > 0 || enabledFields.size > 0) && (
               <Card className="border-orange-200 bg-orange-50/50" data-testid="bulk-summary">
                 <CardContent className="py-3 px-4">
                   <div className="flex flex-wrap items-center gap-3 text-sm">
                     <span className="font-medium text-gray-700">Özet:</span>
                     <Badge variant="outline" className="bg-white">
-                      {selectedRoomTypes.size} oda tipi
+                      {totalSelectedRoomTypes} oda tipi
                     </Badge>
                     <Badge variant="outline" className="bg-white">
-                      {selectedRatePlans.size} plan
+                      {totalSelectedPlans} plan
                     </Badge>
                     <Badge variant="outline" className="bg-white">
                       {enabledFields.size} alan

@@ -37,10 +37,17 @@ class BulkRateUpdateRequest(BaseModel):
     updates: List[RateUpdateRequest]
 
 
+class RoomTypeSelection(BaseModel):
+    """Per-room-type rate plan selection."""
+    room_type_code: str
+    rate_plan_codes: List[str]
+
+
 class BulkGridUpdateRequest(BaseModel):
     """HotelRunner-style bulk update: apply same values to multiple room types at once."""
-    room_type_codes: List[str]          # Selected room type codes
-    rate_plan_codes: List[str]          # Selected rate plan codes
+    room_type_codes: Optional[List[str]] = None  # Legacy: cross-product mode
+    rate_plan_codes: Optional[List[str]] = None   # Legacy: cross-product mode
+    selections: Optional[List[RoomTypeSelection]] = None  # New: per-room-type selections
     start_date: str                     # YYYY-MM-DD
     end_date: str                       # YYYY-MM-DD
     selected_days: Optional[List[int]] = None  # 0=Sun..6=Sat, None=all days
@@ -393,8 +400,18 @@ async def bulk_grid_update(
     selected_days_set = set(request.selected_days) if request.selected_days else None
     update_fields = set(request.update_fields)
 
-    for rt_code in request.room_type_codes:
-        for rp_code in request.rate_plan_codes:
+    # Build iteration pairs: support both new per-room-type selections and legacy cross-product
+    pairs = []
+    if request.selections:
+        for sel in request.selections:
+            for rp_code in sel.rate_plan_codes:
+                pairs.append((sel.room_type_code, rp_code))
+    elif request.room_type_codes and request.rate_plan_codes:
+        for rt_code in request.room_type_codes:
+            for rp_code in request.rate_plan_codes:
+                pairs.append((rt_code, rp_code))
+
+    for rt_code, rp_code in pairs:
             d = datetime.strptime(request.start_date, "%Y-%m-%d").date()
             end = datetime.strptime(request.end_date, "%Y-%m-%d").date()
 
