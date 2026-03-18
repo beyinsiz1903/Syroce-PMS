@@ -1,98 +1,117 @@
-# Syroce PMS — Product Requirements Document
+# Syroce PMS - Product Requirements Document
 
 ## Original Problem Statement
-Hotel management platform (PMS) with channel manager integration (Exely, HotelRunner). Turkish-language interface.
+Hotel PMS (Property Management System) for managing reservations, folios, guest operations, and front desk workflows with multi-channel integration (Exely, HotelRunner).
 
-### Key Feature: Toplu Güncellemeler (Bulk Updates)
-HotelRunner-style bulk rate/availability management screen with:
-- Per-room-type pricing toggle (per_person vs per_room)
+## Core Modules
+
+### 1. Reservation Management
+- Calendar-based reservation view with drag-and-drop
+- Multi-channel booking integration (Exely, HotelRunner, Booking.com, Expedia)
+- Booking creation with idempotency support
+
+### 2. Reservation Detail Module (NEW - March 18, 2026)
+Full-screen modal accessible by double-clicking a booking bar on the calendar.
+
+**Tabs:**
+- Genel Bilgiler (General Info): Dates, room, status, channel, guest contact
+- Misafirler (Guests): Guest list with avatar, VIP status
+- Folyolar (Folios): Payment recording, cari transfer, agency payment, transaction history
+- Gunluk Fiyatlar (Daily Rates): Per-night pricing with edit capability
+- Ek Ucretler (Extra Charges): Add/manage charges with categories, charge splitting to other rooms
+- Notlar (Notes): Reservation notes with types (general/important/internal/guest_request)
+- Gecmis (History): Full audit trail of all operations
+
+**Left Sidebar Quick Actions:**
+- Erken Giris (Early Check-in) with optional extra charge
+- Gec Cikis (Late Check-out) with optional extra charge
+- VIP toggle
+- No-Show marking
+
+**Folio Features:**
+- Record payments (cash, card, bank transfer, online)
+- Transfer to cari (account receivable) with account selection
+- Record agency payments
+- Split charges between rooms/folios
+- Full activity logging for all operations
+
+### 3. Cari (Account Receivable) System (NEW - March 18, 2026)
+- Create/list cari accounts (company, agency, individual)
+- Credit limits and payment terms
+- Transaction tracking per account
+- Transfer from reservation folio to cari
+
+### 4. Folio Management
+- Per-reservation folio with charges and payments
+- Guest, agency, and company folio types
+- Balance tracking
+
+### 5. Front Desk Operations
+- Room change with audit trail and folio transfer
+- Early check-in / Late check-out management
+- No-show handling with room release
+- VIP guest management
+- Deposit recording
+
+### 6. Channel Manager Integration
+- Exely integration with sync
+- HotelRunner integration
+- OTA rate plan management
 - Independent rate plan selection per room type
-- Calendar grid view
-- Exely push integration
 
 ## Architecture
-- **Frontend:** React + Shadcn UI + Tailwind CSS
-- **Backend:** FastAPI + MongoDB
-- **Integrations:** Exely (SOAP), HotelRunner (REST), Slack, Socket.IO
 
-## What's Been Implemented
+### Backend
+- FastAPI with MongoDB
+- Key routers:
+  - `/app/backend/routers/pms.py` - Core PMS operations
+  - `/app/backend/routers/reservation_detail.py` - Reservation detail & front desk APIs (18 endpoints)
+  - `/app/backend/bootstrap/router_registry.py` - Router registration
 
-### Completed Features
-1. **Toplu Güncellemeler Screen** — Bulk update UI with room types, rate plans, channels, date range, day selection
-2. **Takvim Görünümü** — Calendar grid view for rates/availability
-3. **Per-Room-Type Pricing Toggle** — Switch between per_person and per_room pricing for each room type
-4. **Independent Room Type Selection (2026-03-18)** — Each room type has independent rate plan selection; clicking a room type header selects all its rate plans without affecting other room types
-5. **Session & 404 Fixes (2026-03-18):**
-   - Added catch-all route for unknown URLs → redirects to dashboard or auth
-   - Fixed aggressive `localStorage.clear()` in handleLogin to only clear auth keys
-   - Confirmed session persistence across multiple refreshes
-6. **Exely Sync Fixes (2026-03-18):**
-   - Batch pull now detects modifications via last_modify timestamp + guest_name/date comparison, even when Exely status is "commit"
-   - Individual change checks limited to 30-day check-in window and batch size reduced from 50 to 20 for speed
-7. **Unassigned Overlap Fix (2026-03-18):**
-   - `getUnassignedBookingsForType` now filters by visible date range to avoid lane waste
-   - Bookings starting before visible range now render from index 0 (left edge) instead of being hidden
-   - Visible span calculation clamps to visible range boundaries
+### Frontend
+- React with Tailwind CSS + Shadcn UI
+- Key components:
+  - `/app/frontend/src/pages/ReservationCalendar.js` - Main calendar view (~2900 lines)
+  - `/app/frontend/src/pages/ReservationDetailModal.js` - Full reservation detail modal (NEW)
+  - `/app/frontend/src/pages/FolioDetailView.js` - Legacy folio view
 
-### Key Files
-- `frontend/src/pages/RateManager.jsx` — Main rate manager UI
-- `frontend/src/pages/ReservationCalendar.js` — Reservation calendar with unassigned overlap fix
-- `frontend/src/App.js` — App routing, auth state, axios config, catch-all route
-- `backend/domains/channel_manager/rate_manager_router.py` — Rate manager API
-- `backend/domains/channel_manager/providers/exely/exely_pull_worker.py` — Exely sync with modification detection
-- `backend/domains/channel_manager/providers/exely/auto_import.py` — Exely auto-import with cancellation handling
-- `backend/domains/channel_manager/providers/common_ingest.py` — Idempotency guard and ingest pipeline
-- `backend/core/security.py` — JWT auth, token creation/validation
+### Database Collections
+- `bookings` - Reservation records
+- `guests` - Guest information
+- `rooms` - Room inventory
+- `folios` - Folio headers
+- `folio_charges` - Folio line items
+- `payments` - Payment records
+- `extra_charges` - Extra charge records
+- `reservation_notes` - Reservation notes
+- `reservation_activity_log` - Audit trail
+- `room_move_history` - Room change history
+- `daily_rates` - Per-night pricing
+- `cari_accounts` - Account receivable accounts
+- `cari_transactions` - Cari account transactions
+- `deposits` - Deposit records
 
-### Key API Endpoints
-- `GET /api/channel-manager/rate-manager/grid` — Rate calendar grid
-- `POST /api/channel-manager/rate-manager/bulk-grid-update` — Bulk update (supports per-room-type selections)
-- `GET /api/channel-manager/rate-manager/pricing-settings` — Get pricing settings
-- `PUT /api/channel-manager/rate-manager/pricing-settings` — Update pricing settings
-- `GET /api/auth/me` — Verify token and get current user
-- `GET /api/subscription/current` — Get tenant subscription/modules
-- `GET /api/pms/rooms` — Get rooms
-- `GET /api/pms/bookings` — Get bookings
-
-### DB Collections
-- `rate_calendar` — Date-based rate/availability data
-- `pricing_settings` — Per room type pricing model (per_person/per_room)
-- `exely_reservations` — Exely reservation data with sync state
-- `bookings` — PMS bookings
-
-### Technical Notes
-- **axios baseURL**: Emergent platform auto-appends `/api` to `REACT_APP_BACKEND_URL`. Relative axios calls (e.g., `/auth/me`) already route to `/api/auth/me`. DO NOT add `/api` prefix to relative calls.
-- **JWT_SECRET**: Set in `backend/.env`. Token expiry: 168 hours (7 days).
-- **Exely Pull Worker**: Runs every 30s, checks Exely SOAP API for new/modified/cancelled reservations.
-
-## Pending Issues
-- None critical. All P0-P2 issues resolved.
-
-## Future Tasks (Priority Order)
-1. **(P0) Narrow Rollout** — Execute narrow rollout with verified features
-2. **(P1) Advanced Auto-Heal** — Enhance with confidence scores and provider-specific rules
-3. **(P2) Deprecated Code Cleanup** — Remove old provider files (hotelrunner.py, client.py, exely_client_legacy.py)
-4. **(P3) Core Lockdown Blocks B & C** — Finalize ProviderCapabilityMatrix and Reconciliation Truth Table
-5. **(P4) Folio & Night Audit Hardening** — Harden financial modules
-6. **(P4) Tenant Management** — Implement per-tenant rollout gates and feature flags
-
-## Test Reports
-- `/app/test_reports/iteration_84.json` — All tests passed (Backend 100%, Frontend 100%)
-- `/app/test_reports/iteration_85.json` — Calendar visual redesign verified (Frontend 100%, 10/10 features)
-
-## Recent Changes
-- **Calendar Visual Redesign (2026-03-18):**
-  - Orange "Rezervasyonlar" tab header matching PMS reference design
-  - Turkish date formatting (Çar, Per, Cum, Cts, Paz, Pts, Sal) with prominent day numbers
-  - Line-style occupancy chart ("Doluluk") replacing bar chart
-  - Yellow/amber room type headers with per-day price (₺) and occupancy count (e.g., 0/4)
-  - Source-based booking card colors (Expedia=orange, Tatilbudur/Online=blue, Booking.com=dark blue, Kesin=dark gray)
-  - Weekend column highlighting (light orange tint for Cts/Paz)
-  - Today's column blue tint
-  - Compact legend bar with source color references
-  - Thinner borders and cleaner layout throughout
-
-## Credentials
+## Test Credentials
 | User | Email | Password |
 |------|-------|----------|
 | Demo Admin | demo@hotel.com | demo123 |
+
+## Completed Work
+- [x] Calendar UI redesign (March 2026)
+- [x] Booking creation idempotency fix
+- [x] Inline folio panel in calendar
+- [x] **Reservation Detail Modal** (March 18, 2026) - Full implementation with all 7 tabs
+- [x] **Cari Account System** (March 18, 2026)
+- [x] **Front Desk Operations** (March 18, 2026) - Early check-in, late checkout, room change, no-show, VIP, deposit
+
+## Pending/Future Tasks
+- [ ] Oda degistirme UI (Room change UI within the modal)
+- [ ] Grup rezervasyon yonetimi (Group booking management)
+- [ ] Misafir iletisim gecmisi (Guest communication log - SMS/email)
+- [ ] Depozito takip ekrani (Deposit tracking screen)
+- [ ] Advanced Auto-Heal
+- [ ] Deprecated code cleanup
+- [ ] ProviderCapabilityMatrix finalization
+- [ ] Financial Module Hardening
+- [ ] Tenant Management with feature flags
+- [ ] ReservationCalendar.js refactoring (break into sub-components)
