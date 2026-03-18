@@ -78,6 +78,19 @@ HotelRunner-style bulk rate/availability management screen with:
 
 ## Test Reports
 - `/app/test_reports/iteration_84.json` — All tests passed (Backend 100%, Frontend 100%)
+- `/app/test_reports/iteration_85.json` — Calendar visual redesign verified (Frontend 100%, 10/10 features)
+
+## Recent Changes
+- **Calendar Visual Redesign (2026-03-18):**
+  - Orange "Rezervasyonlar" tab header matching PMS reference design
+  - Turkish date formatting (Çar, Per, Cum, Cts, Paz, Pts, Sal) with prominent day numbers
+  - Line-style occupancy chart ("Doluluk") replacing bar chart
+  - Yellow/amber room type headers with per-day price (₺) and occupancy count (e.g., 0/4)
+  - Source-based booking card colors (Expedia=orange, Tatilbudur/Online=blue, Booking.com=dark blue, Kesin=dark gray)
+  - Weekend column highlighting (light orange tint for Cts/Paz)
+  - Today's column blue tint
+  - Compact legend bar with source color references
+  - Thinner borders and cleaner layout throughout
 
 ## Credentials
 | User | Email | Password |
