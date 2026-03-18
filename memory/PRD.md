@@ -5,91 +5,70 @@ Hotel PMS (Property Management System) for managing reservations, folios, guest 
 
 ## Core Modules
 
-### 1. Reservation Management
-- Calendar-based reservation view with drag-and-drop
-- Multi-channel booking integration (Exely, HotelRunner, Booking.com, Expedia)
-- Booking creation with idempotency support
+### 1. Reservation Calendar
+- Calendar-based view with drag-and-drop
+- Multi-channel booking integration
+- Booking creation with idempotency
 
-### 2. Reservation Detail Module (NEW - March 18, 2026)
-Full-screen modal accessible by double-clicking a booking bar on the calendar.
+### 2. Reservation Detail Modal (March 18, 2026)
+Full-screen modal with 10 tabs accessible via double-click on booking bar.
 
 **Tabs:**
-- Genel Bilgiler (General Info): Dates, room, status, channel, guest contact
-- Misafirler (Guests): Guest list with avatar, VIP status
-- Folyolar (Folios): Payment recording, cari transfer, agency payment, transaction history
-- Gunluk Fiyatlar (Daily Rates): Per-night pricing with edit capability
-- Ek Ucretler (Extra Charges): Add/manage charges with categories, charge splitting to other rooms
-- Notlar (Notes): Reservation notes with types (general/important/internal/guest_request)
-- Gecmis (History): Full audit trail of all operations
+- Genel Bilgiler: Dates, room, status, channel, guest contact, edit capability
+- Misafirler: Guest list with VIP badges
+- Folyolar: Payment recording (cash/card/bank/online), cari transfer, agency payment
+- Gunluk Fiyatlar: Per-night pricing with inline edit
+- Ek Ucretler: Add charges with categories, split charges to other rooms
+- Oda Degistir: Room change with available rooms dropdown, reason, audit trail
+- Depozito: Record/refund deposits, summary cards
+- Iletisim: SMS/email/phone/WhatsApp communication log
+- Notlar: Notes with types (general/important/internal/guest_request)
+- Gecmis: Full audit trail timeline
 
-**Left Sidebar Quick Actions:**
-- Erken Giris (Early Check-in) with optional extra charge
-- Gec Cikis (Late Check-out) with optional extra charge
-- VIP toggle
-- No-Show marking
+**Sidebar Quick Actions:** Erken Giris, Gec Cikis, VIP toggle, No-Show
 
-**Folio Features:**
-- Record payments (cash, card, bank transfer, online)
-- Transfer to cari (account receivable) with account selection
-- Record agency payments
-- Split charges between rooms/folios
-- Full activity logging for all operations
+### 3. Group Booking Management (March 18, 2026)
+- Dedicated page at /group-bookings-manage
+- Create groups with booking selection
+- Toplu Giris (bulk check-in) / Toplu Cikis (bulk check-out)
+- Group detail dialog with bookings table
 
-### 3. Cari (Account Receivable) System (NEW - March 18, 2026)
-- Create/list cari accounts (company, agency, individual)
-- Credit limits and payment terms
-- Transaction tracking per account
+### 4. Deposit Tracking (March 18, 2026)
+- Dedicated page at /deposit-tracking with summary cards
+- Record deposits, refund deposits
+- Status tracking (active/partially refunded/refunded)
+
+### 5. Communication Log (March 18, 2026)
+- Per-reservation communication history
+- Channels: email, SMS, phone, WhatsApp
+- Directions: inbound/outbound
+- Integrated in the reservation detail modal
+
+### 6. Cari (Account Receivable) System
+- Company/agency/individual accounts
 - Transfer from reservation folio to cari
+- Transaction tracking
 
-### 4. Folio Management
-- Per-reservation folio with charges and payments
-- Guest, agency, and company folio types
-- Balance tracking
-
-### 5. Front Desk Operations
-- Room change with audit trail and folio transfer
-- Early check-in / Late check-out management
-- No-show handling with room release
-- VIP guest management
-- Deposit recording
-
-### 6. Channel Manager Integration
-- Exely integration with sync
-- HotelRunner integration
+### 7. Channel Manager Integration
+- Exely, HotelRunner integrations
 - OTA rate plan management
-- Independent rate plan selection per room type
 
 ## Architecture
 
-### Backend
-- FastAPI with MongoDB
-- Key routers:
-  - `/app/backend/routers/pms.py` - Core PMS operations
-  - `/app/backend/routers/reservation_detail.py` - Reservation detail & front desk APIs (18 endpoints)
-  - `/app/backend/bootstrap/router_registry.py` - Router registration
+### Backend (FastAPI + MongoDB)
+- `/app/backend/routers/pms.py` - Core PMS operations
+- `/app/backend/routers/reservation_detail.py` - 30 endpoints for detail/folio/group/comm/deposit/room-change
 
-### Frontend
-- React with Tailwind CSS + Shadcn UI
-- Key components:
-  - `/app/frontend/src/pages/ReservationCalendar.js` - Main calendar view (~2900 lines)
-  - `/app/frontend/src/pages/ReservationDetailModal.js` - Full reservation detail modal (NEW)
-  - `/app/frontend/src/pages/FolioDetailView.js` - Legacy folio view
+### Frontend (React + Tailwind + Shadcn)
+- `/app/frontend/src/pages/ReservationCalendar.js` - Main calendar
+- `/app/frontend/src/pages/ReservationDetailModal.js` - 10-tab modal
+- `/app/frontend/src/pages/GroupBookings.js` - Group management
+- `/app/frontend/src/pages/DepositTracking.js` - Deposit tracking
+- `/app/frontend/src/components/calendar/CalendarWidgets.js` - Extracted occupancy chart/stats
+- `/app/frontend/src/components/calendar/CalendarDialogs.js` - Extracted dialogs
 
 ### Database Collections
-- `bookings` - Reservation records
-- `guests` - Guest information
-- `rooms` - Room inventory
-- `folios` - Folio headers
-- `folio_charges` - Folio line items
-- `payments` - Payment records
-- `extra_charges` - Extra charge records
-- `reservation_notes` - Reservation notes
-- `reservation_activity_log` - Audit trail
-- `room_move_history` - Room change history
-- `daily_rates` - Per-night pricing
-- `cari_accounts` - Account receivable accounts
-- `cari_transactions` - Cari account transactions
-- `deposits` - Deposit records
+bookings, guests, rooms, folios, folio_charges, payments, extra_charges, reservation_notes, reservation_activity_log, room_move_history, daily_rates, cari_accounts, cari_transactions, deposits, deposit_refunds, communication_logs, group_bookings, booking_guests, folio_operations
 
 ## Test Credentials
 | User | Email | Password |
@@ -97,21 +76,23 @@ Full-screen modal accessible by double-clicking a booking bar on the calendar.
 | Demo Admin | demo@hotel.com | demo123 |
 
 ## Completed Work
-- [x] Calendar UI redesign (March 2026)
+- [x] Calendar UI redesign
 - [x] Booking creation idempotency fix
-- [x] Inline folio panel in calendar
-- [x] **Reservation Detail Modal** (March 18, 2026) - Full implementation with all 7 tabs
-- [x] **Cari Account System** (March 18, 2026)
-- [x] **Front Desk Operations** (March 18, 2026) - Early check-in, late checkout, room change, no-show, VIP, deposit
+- [x] Reservation Detail Modal (10 tabs)
+- [x] Cari Account System
+- [x] Front Desk Operations (early check-in, late checkout, room change, no-show, VIP, deposit)
+- [x] **Oda Degistir UI** (March 18, 2026) - Room change tab within modal
+- [x] **Grup Rezervasyon Yonetimi** (March 18, 2026) - Dedicated page with bulk ops
+- [x] **Misafir Iletisim Gecmisi** (March 18, 2026) - Communication log tab
+- [x] **Depozito Takip Ekrani** (March 18, 2026) - Page + modal tab
+- [x] **ReservationCalendar.js Refactoring** (March 18, 2026) - CalendarWidgets, CalendarDialogs extracted
 
 ## Pending/Future Tasks
-- [ ] Oda degistirme UI (Room change UI within the modal)
-- [ ] Grup rezervasyon yonetimi (Group booking management)
-- [ ] Misafir iletisim gecmisi (Guest communication log - SMS/email)
-- [ ] Depozito takip ekrani (Deposit tracking screen)
 - [ ] Advanced Auto-Heal
 - [ ] Deprecated code cleanup
 - [ ] ProviderCapabilityMatrix finalization
-- [ ] Financial Module Hardening
+- [ ] Financial Module Hardening (Night Audit)
 - [ ] Tenant Management with feature flags
-- [ ] ReservationCalendar.js refactoring (break into sub-components)
+- [ ] Housekeeping status integration
+- [ ] Wake-up call management
+- [ ] Lost & found tracking
