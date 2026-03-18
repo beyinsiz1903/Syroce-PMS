@@ -50,6 +50,17 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] New API: POST /api/pms/cari-accounts/{id}/transfer-to-agency
 - [x] All tested: 17/17 backend tests passed, all frontend features verified
 
+### Session 6 (Mar 18, 2026 - P2 Features)
+- [x] **Housekeeping Status Management** - Room clean/dirty/inspected/maintenance/out_of_order status within room grid, bulk update, filtering, search
+- [x] **Wake-up Call Management** - Full CRUD with scheduling, status tracking (pending/completed/missed/cancelled), method selection (phone/system/both), recurring support
+- [x] **Lost & Found Module** - Item registration with category (electronics/clothing/jewelry/docs/bags), guest matching via booking ID, status flow (found → stored → claimed → returned)
+- [x] **Hotel Settings for Invoice** - New "Fatura Ayarlari" tab in Settings page with logo upload, hotel name, tax info, currency, invoice header/footer
+- [x] **PDF Invoice from Folio** - "PDF Fatura" button in reservation's Folyolar tab, generates styled HTML invoice with hotel branding, print support
+- [x] **Group Folio Merging** - Merge group member folios into a master folio with payment transfer, merge history log
+- [x] New API endpoints in /app/backend/routers/hotel_services.py (17 routes)
+- [x] 4 new frontend pages: HousekeepingStatusPage, WakeUpCallsPage, LostFoundPage, GroupFolioPage
+- [x] All tested: Backend 100%, Frontend 100% (iteration_89.json)
+
 ## Key API Endpoints
 - POST /api/auth/login
 - GET/POST /api/pms/bookings
@@ -64,16 +75,27 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - POST /api/pms/cari-accounts/{id}/reconcile
 - POST /api/pms/cari-accounts/{id}/transfer-to-agency
 - GET /api/pms/available-rooms
+- GET /api/pms/housekeeping/rooms
+- PUT /api/pms/housekeeping/rooms/{id}/status
+- GET/POST /api/pms/wake-up-calls
+- PUT/DELETE /api/pms/wake-up-calls/{id}
+- GET/POST /api/pms/lost-found
+- PUT/DELETE /api/pms/lost-found/{id}
+- POST /api/pms/lost-found/{id}/match-guest
+- GET/PUT /api/pms/hotel-settings
+- GET /api/pms/reservations/{id}/invoice-pdf
+- POST /api/pms/group-folio/merge
+- GET /api/pms/group-folio/{id}
 
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
 
 ## Backlog (Future Tasks)
-- [ ] P1: Housekeeping Integration
-- [ ] P2: Wake-up Call Management
-- [ ] P3: Lost & Found Module
-- [ ] P4: PDF Invoice/Receipt from Folio
-- [ ] P5: Group Folio Merging
+- [x] ~~P1: Housekeeping Integration~~ (DONE - Session 6)
+- [x] ~~P2: Wake-up Call Management~~ (DONE - Session 6)
+- [x] ~~P3: Lost & Found Module~~ (DONE - Session 6)
+- [x] ~~P4: PDF Invoice/Receipt from Folio~~ (DONE - Session 6)
+- [x] ~~P5: Group Folio Merging~~ (DONE - Session 6)
 - [ ] P5: Advanced Auto-Heal, Deprecated Code Cleanup
 - [ ] P5: Financial Module Hardening (Night Audit)
 - [ ] P5: Tenant Management
