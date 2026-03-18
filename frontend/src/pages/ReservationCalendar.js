@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import Layout from '@/components/Layout';
 import ReservationSidebar from '@/components/ReservationSidebar';
 const FolioDetailView = lazy(() => import('@/pages/FolioDetailView'));
+const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal'));
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -64,6 +65,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [showFolioPanel, setShowFolioPanel] = useState(false);
   const [folioPanelId, setFolioPanelId] = useState(null);
   const [selectedBookingFolio, setSelectedBookingFolio] = useState(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [detailModalBookingId, setDetailModalBookingId] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedRoom, setSelectedRoom] = useState(null);
   
@@ -448,31 +451,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
   };
 
-  // Handle booking double-click - Show sidebar
+  // Handle booking double-click - Open reservation detail modal
   const handleBookingDoubleClick = async (booking) => {
-    // Attach group summary if this booking is part of a group
-    let enrichedBooking = booking;
-    if (booking.group_booking_id && groupBookings && groupBookings.length > 0) {
-      const summary = groupBookings.find(g => g.group_booking_id === booking.group_booking_id);
-      if (summary) {
-        enrichedBooking = { ...booking, _group_summary: summary };
-      }
-    }
-
-    setSelectedBooking(enrichedBooking);
-    
-    // Load folio data
-    try {
-      const folioRes = await axios.get(`/folio/booking/${booking.id}`);
-      if (folioRes.data && folioRes.data.length > 0) {
-        setSelectedBookingFolio(folioRes.data[0]);
-      }
-    } catch (error) {
-      console.log('No folio found for this booking');
-      setSelectedBookingFolio(null);
-    }
-    
-    setShowSidebar(true);
+    setDetailModalBookingId(booking.id);
+    setShowDetailModal(true);
   };
 
   // Handle new booking submit
@@ -2934,6 +2916,17 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             </Suspense>
           </div>
         </>
+      )}
+
+      {/* Reservation Detail Modal */}
+      {showDetailModal && detailModalBookingId && (
+        <Suspense fallback={<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"><div className="bg-white rounded-xl p-6 text-gray-500">Yükleniyor...</div></div>}>
+          <ReservationDetailModal
+            bookingId={detailModalBookingId}
+            onClose={() => { setShowDetailModal(false); setDetailModalBookingId(null); loadCalendarData(); }}
+            allBookings={bookings}
+          />
+        </Suspense>
       )}
     </Layout>
   );
