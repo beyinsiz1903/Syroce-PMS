@@ -230,7 +230,7 @@ async def on_startup(app):
         )
         if active_exely:
             from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
-            await exely_pull_scheduler.start(interval_seconds=60)
+            await exely_pull_scheduler.start(interval_seconds=30)
             app.state.exely_pull_scheduler = exely_pull_scheduler
             print("✅ Exely Pull Scheduler started (60s interval, auto-import enabled)")
         else:

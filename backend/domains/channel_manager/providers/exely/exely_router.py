@@ -375,21 +375,30 @@ async def manual_pull(current_user: User = Depends(get_current_user)):
         current_user.tenant_id, username, password, hotel_code, endpoint_url,
     )
 
+    # Also check for modifications (name, date, room type changes)
+    mod_detected = await _check_individual_modifications(
+        current_user.tenant_id, username, password, hotel_code, endpoint_url,
+    )
+
     # Auto-import is already triggered inside pull_for_tenant
-    # Also import any previously pending ones
+    # Also import any previously pending ones (including modifications)
     from domains.channel_manager.providers.exely.auto_import import auto_import_pending
     import_result = await auto_import_pending(current_user.tenant_id)
 
     cancelled = import_result.get("cancelled", 0) + cancel_detected
+    updated = import_result.get("updated", 0) + mod_detected
     msg_parts = [f"{result['processed']} rezervasyon cekildi"]
     if import_result["imported"]:
         msg_parts.append(f"{import_result['imported']} PMS'e aktarildi")
+    if updated:
+        msg_parts.append(f"{updated} guncellendi")
     if cancelled:
         msg_parts.append(f"{cancelled} iptal edildi")
     return {
         "message": ", ".join(msg_parts),
         **result,
         "auto_imported": import_result["imported"],
+        "updated": updated,
         "cancelled": cancelled,
     }
 
@@ -401,8 +410,6 @@ async def _check_individual_cancellations(
     Check each imported (non-cancelled) exely_reservation individually via Exely SOAP
     to detect cancellations that the batch 'Undelivered' pull may miss.
     """
-    from domains.channel_manager.providers.exely.normalizer import normalize_reservation
-    from domains.channel_manager.providers.common_ingest import ingest_reservation
 
     imported_reservations = await db.exely_reservations.find(
         {"tenant_id": tenant_id, "state": {"$in": ["confirmed", "pending"]}, "pms_status": "imported"},
@@ -446,6 +453,98 @@ async def _check_individual_cancellations(
             logger.warning(f"[EXELY-CANCEL-CHECK] Error checking {ext_id}: {e}")
 
     return cancel_count
+
+
+async def _check_individual_modifications(
+    tenant_id: str, username: str, password: str, hotel_code: str, endpoint_url: str,
+) -> int:
+    """
+    Check each imported exely_reservation individually via Exely SOAP
+    to detect modifications (name changes, date changes, room type changes)
+    that the batch 'Undelivered' pull may miss.
+    """
+
+    imported_reservations = await db.exely_reservations.find(
+        {"tenant_id": tenant_id, "state": {"$in": ["confirmed", "modified"]}, "pms_status": "imported"},
+        {"_id": 0, "external_id": 1, "provider_reservation_id": 1,
+         "guest_name": 1, "checkin_date": 1, "checkout_date": 1, "rooms": 1,
+         "provider_last_modified_at": 1},
+    ).to_list(50)
+
+    if not imported_reservations:
+        return 0
+
+    provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
+    if endpoint_url:
+        provider_kwargs["endpoint_url"] = endpoint_url
+    provider = ExelyProvider(**provider_kwargs)
+
+    mod_count = 0
+    for res in imported_reservations:
+        ext_id = res.get("external_id", "")
+        prov_res_id = res.get("provider_reservation_id", ext_id)
+        try:
+            pull_result = await provider.legacy_pull_reservations(reservation_id=prov_res_id)
+            if not pull_result.get("success"):
+                continue
+            reservations = pull_result.get("reservations", [])
+            if not reservations:
+                continue
+            raw_res = reservations[0]
+            status = (raw_res.get("status") or "").lower()
+
+            # Skip cancelled (handled by cancellation check)
+            if status in ("cancel", "cancelled"):
+                continue
+
+            # Detect changes by comparing with stored data
+            changed = False
+            new_name = raw_res.get("guest_name", "")
+            new_checkin = raw_res.get("checkin_date", "")
+            new_checkout = raw_res.get("checkout_date", "")
+            new_rooms = raw_res.get("rooms", [])
+            new_room_code = new_rooms[0].get("room_type_code", "") if new_rooms else ""
+
+            stored_name = res.get("guest_name", "")
+            stored_checkin = res.get("checkin_date", "")
+            stored_checkout = res.get("checkout_date", "")
+            stored_rooms = res.get("rooms", [])
+            stored_room_code = stored_rooms[0].get("room_type_code", "") if stored_rooms else ""
+
+            # Compare last_modify timestamp
+            new_last_modify = raw_res.get("last_modify", "")
+            stored_last_modify = res.get("provider_last_modified_at", "")
+            if new_last_modify and stored_last_modify and new_last_modify != stored_last_modify:
+                changed = True
+
+            # Also compare individual fields
+            if new_name and new_name != stored_name:
+                changed = True
+            if new_checkin and new_checkin[:10] != (stored_checkin or "")[:10]:
+                changed = True
+            if new_checkout and new_checkout[:10] != (stored_checkout or "")[:10]:
+                changed = True
+            if new_room_code and new_room_code != stored_room_code:
+                changed = True
+
+            if changed:
+                ingest_result = await ingest_reservation(
+                    provider=PROVIDER,
+                    tenant_id=tenant_id,
+                    raw_payload=raw_res,
+                    normalizer=normalize_reservation,
+                    event_type="modification",
+                    source="individual_mod_check",
+                )
+                if ingest_result.get("action") in ("updated", "created"):
+                    mod_count += 1
+                    logger.info(f"[EXELY-MOD-CHECK] Detected modification for {ext_id}: "
+                                f"name={new_name != stored_name}, dates={new_checkin[:10] != (stored_checkin or '')[:10]}, "
+                                f"room={new_room_code != stored_room_code}")
+        except Exception as e:
+            logger.warning(f"[EXELY-MOD-CHECK] Error checking {ext_id}: {e}")
+
+    return mod_count
 
 
 @router.get("/reservations/local")

@@ -176,9 +176,20 @@ class ExelyPullScheduler:
         duration_ms = int((datetime.now(timezone.utc) - pull_start).total_seconds() * 1000)
         await log_sync(PROVIDER, tenant_id, "scheduled_pull", "success", duration_ms, processed)
 
-        # Auto-import all pending reservations to PMS + process cancellations
+        # Auto-import all pending reservations to PMS + process cancellations + modifications
         import_result = await auto_import_pending(tenant_id)
-        logger.info(f"[EXELY-PULL] Auto-import: {import_result['imported']}/{import_result['total']} imported")
+        logger.info(f"[EXELY-PULL] Auto-import: {import_result['imported']}/{import_result['total']} imported, {import_result.get('updated', 0)} updated")
+
+        # Individual check for cancellations and modifications that batch pull may miss
+        try:
+            cancel_detected = await self._check_individual_changes(provider, tenant_id)
+            if cancel_detected.get("cancelled", 0) > 0 or cancel_detected.get("modified", 0) > 0:
+                # Re-run auto_import to process any new changes
+                import_result2 = await auto_import_pending(tenant_id)
+                logger.info(f"[EXELY-PULL] Post-individual-check import: "
+                            f"{import_result2.get('updated', 0)} updated, {import_result2.get('cancelled', 0)} cancelled")
+        except Exception as e:
+            logger.warning(f"[EXELY-PULL] Individual check error: {e}")
 
         logger.info(f"[EXELY-PULL] Tenant {tenant_id}: fetched {len(reservations)}, processed {processed}")
         return {
@@ -187,6 +198,75 @@ class ExelyPullScheduler:
             "processed": processed,
             "from_date": from_date,
         }
+
+    async def _check_individual_changes(self, provider: ExelyProvider, tenant_id: str) -> Dict[str, int]:
+        """Check individual imported reservations for cancellations and modifications."""
+        imported = await db.exely_reservations.find(
+            {"tenant_id": tenant_id, "state": {"$in": ["confirmed", "modified", "pending"]}, "pms_status": "imported"},
+            {"_id": 0, "external_id": 1, "provider_reservation_id": 1,
+             "guest_name": 1, "checkin_date": 1, "checkout_date": 1,
+             "rooms": 1, "provider_last_modified_at": 1},
+        ).to_list(50)
+
+        if not imported:
+            return {"cancelled": 0, "modified": 0}
+
+        cancel_count = 0
+        mod_count = 0
+
+        for res in imported:
+            ext_id = res.get("external_id", "")
+            prov_res_id = res.get("provider_reservation_id", ext_id)
+            try:
+                pull_result = await provider.legacy_pull_reservations(reservation_id=prov_res_id)
+                if not pull_result.get("success"):
+                    continue
+                reservations = pull_result.get("reservations", [])
+                if not reservations:
+                    continue
+                raw_res = reservations[0]
+                status = (raw_res.get("status") or "").lower()
+
+                if status in ("cancel", "cancelled"):
+                    ingest_result = await ingest_reservation(
+                        provider=PROVIDER, tenant_id=tenant_id,
+                        raw_payload=raw_res, normalizer=normalize_reservation,
+                        event_type="cancellation", source="scheduled_cancel_check",
+                    )
+                    if ingest_result.get("action") == "cancelled":
+                        cancel_count += 1
+                    continue
+
+                # Check for modifications
+                changed = False
+                new_last_modify = raw_res.get("last_modify", "")
+                stored_last_modify = res.get("provider_last_modified_at", "")
+                if new_last_modify and stored_last_modify and new_last_modify != stored_last_modify:
+                    changed = True
+
+                new_name = raw_res.get("guest_name", "")
+                if new_name and new_name != res.get("guest_name", ""):
+                    changed = True
+                new_checkin = raw_res.get("checkin_date", "")
+                if new_checkin and new_checkin[:10] != (res.get("checkin_date", "") or "")[:10]:
+                    changed = True
+                new_checkout = raw_res.get("checkout_date", "")
+                if new_checkout and new_checkout[:10] != (res.get("checkout_date", "") or "")[:10]:
+                    changed = True
+
+                if changed:
+                    ingest_result = await ingest_reservation(
+                        provider=PROVIDER, tenant_id=tenant_id,
+                        raw_payload=raw_res, normalizer=normalize_reservation,
+                        event_type="modification", source="scheduled_mod_check",
+                    )
+                    if ingest_result.get("action") in ("updated", "created"):
+                        mod_count += 1
+                        logger.info(f"[EXELY-PULL] Modification detected for {ext_id}")
+            except Exception as e:
+                logger.warning(f"[EXELY-PULL] Individual check error for {ext_id}: {e}")
+
+        return {"cancelled": cancel_count, "modified": mod_count}
 
 
 # Singleton

@@ -210,6 +210,8 @@ async def process_reservation(
 
     elif action == "update":
         res_doc["pms_status"] = "updated" if has_mapping else "pending_mapping"
+        # Remove provider_version from $set to avoid conflict with $inc
+        res_doc.pop("provider_version", None)
         await col.update_one({"tenant_id": tenant_id, "external_id": external_id}, {
             "$set": res_doc,
             "$inc": {"provider_version": 1},
