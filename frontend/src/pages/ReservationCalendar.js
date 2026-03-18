@@ -509,7 +509,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         guest_id: guestId
       };
       
-      await axios.post('/pms/bookings', bookingData);
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-create-${Date.now()}-${Math.random()}`;
+      await axios.post('/pms/bookings', bookingData, {
+        headers: {
+          'Idempotency-Key': idempotencyKey,
+        },
+      });
       toast.success('Rezervasyon başarıyla oluşturuldu!');
       setShowNewBookingDialog(false);
       
