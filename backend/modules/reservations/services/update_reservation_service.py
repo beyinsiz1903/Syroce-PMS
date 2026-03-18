@@ -122,6 +122,24 @@ class UpdateReservationService:
                     {"status": "occupied", "current_booking_id": booking_id},
                 )
 
+            # Auto-mark room as dirty on checkout
+            old_status = existing_booking.get("status")
+            new_status = update_data.get("status")
+            if new_status == "checked_out" and old_status != "checked_out":
+                room_id = existing_booking.get("room_id")
+                if room_id:
+                    await self.repository.update_room_for_tenant(
+                        tenant_context.tenant_id,
+                        room_id,
+                        {
+                            "status": "available",
+                            "current_booking_id": None,
+                            "housekeeping_status": "dirty",
+                            "housekeeping_updated_at": datetime.now(timezone.utc).isoformat(),
+                            "housekeeping_updated_by": "Sistem (Otomatik Cikis)",
+                        },
+                    )
+
             await self.repository.update_booking(tenant_context.tenant_id, booking_id, update_data)
             updated_booking = await self.repository.get_booking_for_tenant(tenant_context.tenant_id, booking_id)
 

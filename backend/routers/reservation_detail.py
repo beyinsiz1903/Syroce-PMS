@@ -1377,7 +1377,13 @@ async def group_check_out_all(
             if booking and booking.get("room_id"):
                 await db.rooms.update_one(
                     {"id": booking["room_id"], "tenant_id": tid},
-                    {"$set": {"status": "dirty", "current_booking_id": None}},
+                    {"$set": {
+                        "status": "available",
+                        "current_booking_id": None,
+                        "housekeeping_status": "dirty",
+                        "housekeeping_updated_at": now,
+                        "housekeeping_updated_by": "Sistem (Grup Cikis)",
+                    }},
                 )
             await _log_activity(tid, bid, "group_checkout", current_user.name, {"group_id": group_id})
 

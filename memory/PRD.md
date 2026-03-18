@@ -57,6 +57,7 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] **Hotel Settings for Invoice** - New "Fatura Ayarlari" tab in Settings page with logo upload, hotel name, tax info, currency, invoice header/footer
 - [x] **PDF Invoice from Folio** - "PDF Fatura" button in reservation's Folyolar tab, generates styled HTML invoice with hotel branding, print support
 - [x] **Group Folio Merging** - Merge group member folios into a master folio with payment transfer, merge history log
+- [x] **Auto-Dirty on Checkout** - Room housekeeping_status automatically set to "dirty" when guest checks out (individual + group checkout)
 - [x] New API endpoints in /app/backend/routers/hotel_services.py (17 routes)
 - [x] 4 new frontend pages: HousekeepingStatusPage, WakeUpCallsPage, LostFoundPage, GroupFolioPage
 - [x] All tested: Backend 100%, Frontend 100% (iteration_89.json)
