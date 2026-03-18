@@ -70,6 +70,23 @@ Enterprise-grade Property Management System (PMS) for hotel operations. The curr
    - Unassigned row height dynamically expands based on number of overlapping booking lanes
    - Each booking positioned at its computed lane offset to prevent visual overlap
 
+### Toplu Güncellemeler (Bulk Updates) — 2026-03-18 (COMPLETED & TESTED — 100% pass rate)
+1. **RateManager Redesign (NEW FEATURE):**
+   - Complete rewrite of `RateManager.jsx` as HotelRunner-style "Toplu Güncellemeler" interface
+   - 3-panel layout: Left (filters/values), Center (all room types + rate plans), Right (channels)
+   - Left panel: Update field checkboxes (Müsaitlik, Fiyat, Min/Max konaklama, CTA, CTD, Satışı durdur), tarih aralığı, gün seçimi
+   - Center panel: All room types displayed at once with rate plans — no more one-by-one selection
+   - Right panel: 16 channel checkboxes (Booking.com, Expedia, Hotelbeds, etc.)
+   - Two tabs: "Toplu Güncelle" (bulk update) and "Takvim Görünümü" (calendar grid)
+   - Summary bar showing selection counts
+2. **Bulk Grid Update API (NEW ENDPOINT):**
+   - `POST /api/channel-manager/rate-manager/bulk-grid-update`
+   - Supports multiple room types and rate plans in a single request
+   - Day-of-week filtering (e.g., weekends only, specific days)
+   - Pushes updates to Exely automatically
+3. **Channel Manager Rate Tab Update:**
+   - Rate & Availability tab in Channel Manager now redirects to Toplu Güncellemeler page
+
 ## Prioritized Backlog
 
 ### P0 — Execute Narrow Rollout
