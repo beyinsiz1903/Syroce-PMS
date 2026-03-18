@@ -9,7 +9,7 @@ import requests
 from datetime import datetime
 
 def main():
-    backend_url = "https://reservation-overlap.preview.emergentagent.com"
+    backend_url = "https://exely-sync-fix.preview.emergentagent.com"
     
     # Authenticate
     session = requests.Session()
