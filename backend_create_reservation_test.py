@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 # Configuration
-BASE_URL = "https://calendar-overlap-1.preview.emergentagent.com/api"
+BASE_URL = "https://booking-fixes-5.preview.emergentagent.com/api"
 TEST_CREDENTIALS = {
     "email": "demo@hotel.com", 
     "password": "demo123"
