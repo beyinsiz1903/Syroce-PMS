@@ -394,8 +394,11 @@ function App() {
       tenantData: tenantData 
     });
     
-    // IMPORTANT: Clear old data first to prevent stale data
-    localStorage.clear();
+    // IMPORTANT: Clear old auth data first to prevent stale data
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('tenant');
+    localStorage.removeItem('modules');
     
     // Then set new data
     localStorage.setItem('token', token);
@@ -482,6 +485,7 @@ function App() {
                 <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                 <Route path="/gizlilik" element={<PrivacyPolicy />} />
                 <Route path="/guest-portal/*" element={<GuestPortal user={user} onLogout={handleLogout} />} />
+                <Route path="*" element={<Navigate to="/guest-portal" replace />} />
               </Routes>
             </BrowserRouter>
             <NotificationCenter />
@@ -1978,6 +1982,15 @@ function App() {
           <Route path="/central-pricing" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><CentralPricingManager user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
           <Route path="/cross-property-guests" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><CrossPropertyGuests user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
           <Route path="/ml-dashboard" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><MLDashboard user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
+
+          {/* Catch-all: redirect unknown routes */}
+          <Route path="*" element={
+            isAuthenticated ? (
+              <Navigate to="/app/dashboard" replace />
+            ) : (
+              <Navigate to="/auth" replace />
+            )
+          } />
         </Routes>
         </PlanRouteGuard>
         </ErrorBoundary>

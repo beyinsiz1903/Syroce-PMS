@@ -22,25 +22,36 @@ HotelRunner-style bulk rate/availability management screen with:
 2. **Takvim Görünümü** — Calendar grid view for rates/availability
 3. **Per-Room-Type Pricing Toggle** — Switch between per_person and per_room pricing for each room type
 4. **Independent Room Type Selection (2026-03-18)** — Each room type has independent rate plan selection; clicking a room type header selects all its rate plans without affecting other room types
+5. **Session & 404 Fixes (2026-03-18):**
+   - Added catch-all route for unknown URLs → redirects to dashboard or auth
+   - Fixed aggressive `localStorage.clear()` in handleLogin to only clear auth keys
+   - Confirmed session persistence across multiple refreshes
 
 ### Key Files
 - `frontend/src/pages/RateManager.jsx` — Main rate manager UI
+- `frontend/src/App.js` — App routing, auth state, axios config
 - `backend/domains/channel_manager/rate_manager_router.py` — Rate manager API
+- `backend/core/security.py` — JWT auth, token creation/validation
 
 ### Key API Endpoints
 - `GET /api/channel-manager/rate-manager/grid` — Rate calendar grid
 - `POST /api/channel-manager/rate-manager/bulk-grid-update` — Bulk update (supports per-room-type selections)
 - `GET /api/channel-manager/rate-manager/pricing-settings` — Get pricing settings
 - `PUT /api/channel-manager/rate-manager/pricing-settings` — Update pricing settings
+- `GET /api/auth/me` — Verify token and get current user
+- `GET /api/subscription/current` — Get tenant subscription/modules
 
 ### DB Collections
 - `rate_calendar` — Date-based rate/availability data
 - `pricing_settings` — Per room type pricing model (per_person/per_room)
 
+### Technical Notes
+- **axios baseURL**: Emergent platform auto-appends `/api` to `REACT_APP_BACKEND_URL`. Relative axios calls (e.g., `/auth/me`) already route to `/api/auth/me`. DO NOT add `/api` prefix to relative calls.
+- **JWT_SECRET**: Set in `backend/.env`. Token expiry: 168 hours (7 days).
+
 ## Pending Issues
 - P1: Exely sync bug fixes (name/date changes, cancellation speed)
 - P2: "Unassigned Overlap" in calendar view
-- P3: Session logouts and 404 errors
 
 ## Future Tasks
 - Narrow Rollout execution
