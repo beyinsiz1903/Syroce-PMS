@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Layout from '@/components/Layout';
 import ReservationSidebar from '@/components/ReservationSidebar';
+const FolioDetailView = lazy(() => import('@/pages/FolioDetailView'));
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,7 +25,8 @@ import {
   AlertCircle,
   CheckCircle,
   RefreshCw,
-  Loader2
+  Loader2,
+  X
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -59,6 +61,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [showFolioPanel, setShowFolioPanel] = useState(false);
+  const [folioPanelId, setFolioPanelId] = useState(null);
   const [selectedBookingFolio, setSelectedBookingFolio] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedRoom, setSelectedRoom] = useState(null);
@@ -405,18 +409,18 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
   // Sidebar action handlers
   const handleViewFolio = async (bookingId) => {
-    // If we already have a loaded folio, navigate directly
+    // Open folio in inline panel instead of navigating away
     if (selectedBookingFolio && selectedBookingFolio.id) {
-      setShowSidebar(false);
-      navigate(`/folio-detail/${selectedBookingFolio.id}`);
+      setFolioPanelId(selectedBookingFolio.id);
+      setShowFolioPanel(true);
       return;
     }
     // Otherwise try to load the folio for this booking
     try {
       const folioRes = await axios.get(`/folio/booking/${bookingId}`);
       if (folioRes.data && folioRes.data.length > 0) {
-        setShowSidebar(false);
-        navigate(`/folio-detail/${folioRes.data[0].id}`);
+        setFolioPanelId(folioRes.data[0].id);
+        setShowFolioPanel(true);
       } else {
         toast.info('Bu rezervasyon için henüz folyo oluşturulmamış');
       }
@@ -2901,6 +2905,34 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             onSendConfirmation={handleSendConfirmation}
             onDataRefresh={loadCalendarData}
           />
+        </>
+      )}
+
+      {/* Inline Folio Panel - slides in from right */}
+      {showFolioPanel && folioPanelId && (
+        <>
+          <div 
+            className="fixed inset-0 bg-black/40 z-50 transition-opacity"
+            onClick={() => setShowFolioPanel(false)}
+            data-testid="folio-panel-backdrop"
+          ></div>
+          <div className="fixed top-0 right-0 h-full w-[700px] max-w-[90vw] bg-white z-50 shadow-2xl overflow-y-auto animate-in slide-in-from-right" data-testid="folio-inline-panel">
+            <div className="sticky top-0 z-10 bg-white border-b px-4 py-3 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-800 text-sm">Folyo Detayı</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowFolioPanel(false)}
+                className="h-8 w-8 p-0"
+                data-testid="close-folio-panel-btn"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <Suspense fallback={<div className="p-8 text-center text-gray-400">Yükleniyor...</div>}>
+              <FolioDetailView folioId={folioPanelId} onClose={() => setShowFolioPanel(false)} />
+            </Suspense>
+          </div>
         </>
       )}
     </Layout>
