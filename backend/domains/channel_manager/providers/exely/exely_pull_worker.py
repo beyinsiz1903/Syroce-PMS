@@ -142,12 +142,40 @@ class ExelyPullScheduler:
         for raw_res in reservations:
             # Determine event type from status
             status = (raw_res.get("status") or "").lower()
+            ext_id = raw_res.get("reservation_id", "")
+
             if status in ("cancel", "cancelled"):
                 event_type = "cancellation"
             elif status in ("modify", "modified"):
                 event_type = "modification"
             else:
+                # Check if this reservation already exists — if so, detect changes
+                # even when Exely reports status as "commit"/"confirmed"
                 event_type = "reservation"
+                if ext_id:
+                    existing = await db.exely_reservations.find_one(
+                        {"tenant_id": tenant_id, "external_id": ext_id,
+                         "pms_status": {"$in": ["imported", "confirmed"]}},
+                        {"_id": 0, "provider_last_modified_at": 1,
+                         "guest_name": 1, "checkin_date": 1, "checkout_date": 1},
+                    )
+                    if existing:
+                        # Compare last_modify timestamp or key fields
+                        new_lm = raw_res.get("last_modify", "")
+                        old_lm = existing.get("provider_last_modified_at", "")
+                        new_name = raw_res.get("guest_name", "")
+                        old_name = existing.get("guest_name", "")
+                        new_ci = (raw_res.get("checkin_date", "") or "")[:10]
+                        old_ci = (existing.get("checkin_date", "") or "")[:10]
+                        new_co = (raw_res.get("checkout_date", "") or "")[:10]
+                        old_co = (existing.get("checkout_date", "") or "")[:10]
+
+                        if ((new_lm and old_lm and new_lm != old_lm) or
+                            (new_name and old_name and new_name != old_name) or
+                            (new_ci and old_ci and new_ci != old_ci) or
+                            (new_co and old_co and new_co != old_co)):
+                            event_type = "modification"
+                            logger.info(f"[EXELY-PULL] Detected modification for {ext_id} (status={status})")
 
             ingest_result = await ingest_reservation(
                 provider=PROVIDER,
@@ -200,13 +228,18 @@ class ExelyPullScheduler:
         }
 
     async def _check_individual_changes(self, provider: ExelyProvider, tenant_id: str) -> Dict[str, int]:
-        """Check individual imported reservations for cancellations and modifications."""
+        """Check individual imported reservations for cancellations and modifications.
+        Only check reservations with check-in within the next 30 days for performance."""
+        cutoff_date = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
         imported = await db.exely_reservations.find(
-            {"tenant_id": tenant_id, "state": {"$in": ["confirmed", "modified", "pending"]}, "pms_status": "imported"},
+            {"tenant_id": tenant_id,
+             "state": {"$in": ["confirmed", "modified", "pending"]},
+             "pms_status": "imported",
+             "checkin_date": {"$lte": cutoff_date}},
             {"_id": 0, "external_id": 1, "provider_reservation_id": 1,
              "guest_name": 1, "checkin_date": 1, "checkout_date": 1,
              "rooms": 1, "provider_last_modified_at": 1},
-        ).to_list(50)
+        ).to_list(20)  # Reduced from 50 to 20 for speed
 
         if not imported:
             return {"cancelled": 0, "modified": 0}

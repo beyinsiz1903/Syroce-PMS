@@ -825,13 +825,23 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     return dayStr >= checkIn && dayStr < checkOut;
   };
 
-  // Get all unassigned bookings for a room type (for the unassigned row start detection)
+  // Get all unassigned bookings for a room type that overlap with the visible date range
   const getUnassignedBookingsForType = (roomType) => {
+    const rangeStart = dateRange.length > 0 ? toDateStringUTC(dateRange[0]) : '';
+    const rangeEnd = dateRange.length > 0 ? toDateStringUTC(dateRange[dateRange.length - 1]) : '';
     return bookings.filter(booking => {
       if (booking.status === 'cancelled' || booking.status === 'checked_out' || booking.status === 'no_show') return false;
       if (booking.room_id) return false;
       const bType = (booking.room_type || '').toLowerCase();
-      return bType === roomType.toLowerCase();
+      if (bType !== roomType.toLowerCase()) return false;
+      // Filter: booking must overlap with visible date range
+      if (rangeStart && rangeEnd) {
+        const checkIn = toDateStringUTC(booking.check_in);
+        const checkOut = toDateStringUTC(booking.check_out);
+        // Booking overlaps if: checkIn <= rangeEnd AND checkOut > rangeStart
+        if (checkIn > rangeEnd || checkOut <= rangeStart) return false;
+      }
+      return true;
     });
   };
 
@@ -2102,10 +2112,19 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                             {/* Render each unassigned booking as absolute overlay on start date */}
                             {unassignedForType.map((booking) => {
                               const checkInStr = toDateStringUTC(booking.check_in);
-                              const startIdx = dateRange.findIndex(d => toDateStringUTC(d) === checkInStr);
+                              const checkOutStr = toDateStringUTC(booking.check_out);
+                              const rangeStartStr = dateRange.length > 0 ? toDateStringUTC(dateRange[0]) : '';
+                              let startIdx = dateRange.findIndex(d => toDateStringUTC(d) === checkInStr);
+                              // If booking starts before visible range, render from index 0
+                              if (startIdx < 0 && checkInStr < rangeStartStr && checkOutStr > rangeStartStr) {
+                                startIdx = 0;
+                              }
                               if (startIdx < 0) return null;
                               const lane = lanes[booking.id] || 0;
-                              const span = calculateBookingSpan(booking, currentDate);
+                              // Calculate visible span (clamp to visible range)
+                              const visibleEndIdx = dateRange.findIndex(d => toDateStringUTC(d) >= checkOutStr);
+                              const endIdx = visibleEndIdx >= 0 ? visibleEndIdx : dateRange.length;
+                              const span = Math.max(endIdx - startIdx, 1);
                               return (
                                 <div
                                   key={booking.id}
