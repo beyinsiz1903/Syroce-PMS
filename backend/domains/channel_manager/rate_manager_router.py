@@ -27,11 +27,33 @@ class RateUpdateRequest(BaseModel):
     rate: Optional[float] = None
     availability: Optional[int] = None
     min_stay: Optional[int] = None
+    max_stay: Optional[int] = None
     stop_sell: Optional[bool] = None
+    cta: Optional[bool] = None  # Close to Arrival
+    ctd: Optional[bool] = None  # Close to Departure
 
 
 class BulkRateUpdateRequest(BaseModel):
     updates: List[RateUpdateRequest]
+
+
+class BulkGridUpdateRequest(BaseModel):
+    """HotelRunner-style bulk update: apply same values to multiple room types at once."""
+    room_type_codes: List[str]          # Selected room type codes
+    rate_plan_codes: List[str]          # Selected rate plan codes
+    start_date: str                     # YYYY-MM-DD
+    end_date: str                       # YYYY-MM-DD
+    selected_days: Optional[List[int]] = None  # 0=Sun..6=Sat, None=all days
+    # Fields to update (only non-None fields get applied)
+    rate: Optional[float] = None
+    availability: Optional[int] = None
+    min_stay: Optional[int] = None
+    max_stay: Optional[int] = None
+    stop_sell: Optional[bool] = None
+    cta: Optional[bool] = None
+    ctd: Optional[bool] = None
+    # Which update fields are enabled
+    update_fields: List[str] = []       # e.g. ["rate", "availability", "min_stay"]
 
 
 @router.get("/grid")
@@ -302,4 +324,141 @@ async def get_room_types(current_user: User = Depends(get_current_user)):
     return {
         "room_types": conn.get("room_types", []),
         "rate_plans": conn.get("rate_plans", []),
+    }
+
+
+
+@router.post("/bulk-grid-update")
+async def bulk_grid_update(
+    request: BulkGridUpdateRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    HotelRunner-style toplu güncelleme:
+    Birden fazla oda tipi + plan için aynı değerleri tek seferde uygula.
+    Gün filtreleme desteği ile (ör. sadece hafta sonu).
+    """
+    tenant_id = current_user.tenant_id
+    now = datetime.now(timezone.utc).isoformat()
+    saved = 0
+    push_results = []
+
+    conn = await db.exely_connections.find_one(
+        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
+    )
+    if not conn:
+        raise HTTPException(status_code=404, detail="Exely bağlantısı bulunamadı")
+
+    # Get credentials for Exely push
+    creds = await get_decrypted_credentials(tenant_id, "exely", conn["hotel_code"])
+    provider = None
+    if creds:
+        from domains.channel_manager.providers.exely.provider import ExelyProvider
+        provider_kwargs = {
+            "username": creds["username"],
+            "password": creds["password"],
+            "hotel_code": conn["hotel_code"],
+        }
+        if conn.get("endpoint_url"):
+            provider_kwargs["endpoint_url"] = conn["endpoint_url"]
+        provider = ExelyProvider(**provider_kwargs)
+
+    selected_days_set = set(request.selected_days) if request.selected_days else None
+    update_fields = set(request.update_fields)
+
+    for rt_code in request.room_type_codes:
+        for rp_code in request.rate_plan_codes:
+            d = datetime.strptime(request.start_date, "%Y-%m-%d").date()
+            end = datetime.strptime(request.end_date, "%Y-%m-%d").date()
+
+            while d <= end:
+                # Day-of-week filter: 0=Sun..6=Sat (JS convention)
+                js_dow = d.isoweekday() % 7  # Python: Mon=1..Sun=7 -> JS: Sun=0..Sat=6
+                if selected_days_set is not None and js_dow not in selected_days_set:
+                    d += timedelta(days=1)
+                    continue
+
+                ds = d.strftime("%Y-%m-%d")
+                set_fields = {
+                    "tenant_id": tenant_id,
+                    "room_type_code": rt_code,
+                    "rate_plan_code": rp_code,
+                    "date": ds,
+                    "updated_at": now,
+                    "updated_by": current_user.id,
+                }
+
+                if "rate" in update_fields and request.rate is not None:
+                    set_fields["rate"] = request.rate
+                if "availability" in update_fields and request.availability is not None:
+                    set_fields["availability"] = request.availability
+                if "min_stay" in update_fields and request.min_stay is not None:
+                    set_fields["min_stay"] = request.min_stay
+                if "max_stay" in update_fields and request.max_stay is not None:
+                    set_fields["max_stay"] = request.max_stay
+                if "stop_sell" in update_fields and request.stop_sell is not None:
+                    set_fields["stop_sell"] = request.stop_sell
+                if "cta" in update_fields and request.cta is not None:
+                    set_fields["cta"] = request.cta
+                if "ctd" in update_fields and request.ctd is not None:
+                    set_fields["ctd"] = request.ctd
+
+                await db.rate_calendar.update_one(
+                    {
+                        "tenant_id": tenant_id,
+                        "room_type_code": rt_code,
+                        "rate_plan_code": rp_code,
+                        "date": ds,
+                    },
+                    {"$set": set_fields},
+                    upsert=True,
+                )
+                saved += 1
+                d += timedelta(days=1)
+
+            # Push to Exely
+            if provider:
+                try:
+                    push_rate = request.rate if "rate" in update_fields else None
+                    push_avail = request.availability if "availability" in update_fields else None
+                    push_stop = request.stop_sell if "stop_sell" in update_fields else None
+                    push_min = request.min_stay if "min_stay" in update_fields else None
+
+                    result = await provider.push_ari(
+                        room_type_code=rt_code,
+                        rate_plan_code=rp_code,
+                        start_date=request.start_date,
+                        end_date=request.end_date,
+                        availability=push_avail,
+                        rate_amount=push_rate,
+                        currency=conn.get("currency", "TRY"),
+                        stop_sell=push_stop,
+                        min_stay=push_min,
+                    )
+                    push_results.append({
+                        "room_type_code": rt_code,
+                        "rate_plan_code": rp_code,
+                        "success": result.success,
+                        "error": result.error if not result.success else None,
+                    })
+                except Exception as e:
+                    logger.error(f"[BULK-UPDATE] Exely push error: {e}")
+                    push_results.append({
+                        "room_type_code": rt_code,
+                        "rate_plan_code": rp_code,
+                        "success": False,
+                        "error": str(e),
+                    })
+
+    all_success = len(push_results) > 0 and all(r["success"] for r in push_results)
+
+    return {
+        "saved": saved,
+        "push_results": push_results,
+        "all_pushed": all_success,
+        "total_room_types": len(request.room_type_codes),
+        "total_rate_plans": len(request.rate_plan_codes),
+        "message": f"{saved} kayıt güncellendi" + (
+            " ve Exely'ye gönderildi" if all_success else ""
+        ),
     }
