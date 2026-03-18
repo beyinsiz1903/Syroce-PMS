@@ -1180,7 +1180,7 @@ function App() {
             path="/folio-detail"
             element={
               isAuthenticated ? (
-                <FolioDetailView />
+                <FolioDetailView user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )
@@ -1190,7 +1190,7 @@ function App() {
             path="/folio-detail/:folioId"
             element={
               isAuthenticated ? (
-                <FolioDetailView />
+                <FolioDetailView user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )
