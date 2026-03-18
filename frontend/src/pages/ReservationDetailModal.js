@@ -136,10 +136,14 @@ function FoliosTab({ folios, charges, payments, extra_charges, summary, booking,
   const [showPayment, setShowPayment] = useState(false);
   const [showCari, setShowCari] = useState(false);
   const [showAgency, setShowAgency] = useState(false);
+  const [showCariTransfer, setShowCariTransfer] = useState(false);
+  const [showReconcile, setShowReconcile] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', payment_type: 'interim', reference: '' });
   const [cariAccounts, setCariAccounts] = useState([]);
   const [cariForm, setCariForm] = useState({ amount: '', cari_account_id: '', description: '' });
   const [agencyForm, setAgencyForm] = useState({ amount: '', agency_name: '', reference: '' });
+  const [cariTransferForm, setCariTransferForm] = useState({ source_id: '', target_id: '', amount: '', description: '' });
+  const [reconcileForm, setReconcileForm] = useState({ cari_account_id: '', amount: '', description: '' });
   const [loading, setLoading] = useState(false);
 
   const loadCari = async () => { try { const r = await axios.get(`${API}/api/pms/cari-accounts`); setCariAccounts(r.data.accounts || []); } catch {} };
@@ -161,9 +165,11 @@ function FoliosTab({ folios, charges, payments, extra_charges, summary, booking,
         <SummaryCard label="Bakiye" value={summary?.balance} color={(summary?.balance || 0) > 0 ? 'red' : 'green'} />
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => setShowPayment(!showPayment)} className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs"><CreditCard className="w-3 h-3 mr-1" /> Odeme Al</Button>
-        <Button size="sm" variant="outline" onClick={() => { setShowCari(!showCari); loadCari(); }} className="h-8 text-xs border-orange-300 text-orange-700 hover:bg-orange-50"><ArrowRightLeft className="w-3 h-3 mr-1" /> Cariye Aktar</Button>
-        <Button size="sm" variant="outline" onClick={() => setShowAgency(!showAgency)} className="h-8 text-xs border-purple-300 text-purple-700 hover:bg-purple-50"><Building2 className="w-3 h-3 mr-1" /> Acente Odemesi</Button>
+        <Button size="sm" onClick={() => setShowPayment(!showPayment)} className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" data-testid="btn-odeme-al"><CreditCard className="w-3 h-3 mr-1" /> Odeme Al</Button>
+        <Button size="sm" variant="outline" onClick={() => { setShowCari(!showCari); loadCari(); }} className="h-8 text-xs border-orange-300 text-orange-700 hover:bg-orange-50" data-testid="btn-cariye-aktar"><ArrowRightLeft className="w-3 h-3 mr-1" /> Cariye Aktar</Button>
+        <Button size="sm" variant="outline" onClick={() => setShowAgency(!showAgency)} className="h-8 text-xs border-purple-300 text-purple-700 hover:bg-purple-50" data-testid="btn-acente-odemesi"><Building2 className="w-3 h-3 mr-1" /> Acente Odemesi</Button>
+        <Button size="sm" variant="outline" onClick={() => { setShowCariTransfer(!showCariTransfer); loadCari(); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acenteye-aktar"><ArrowDownUp className="w-3 h-3 mr-1" /> Acenteye Aktar</Button>
+        <Button size="sm" variant="outline" onClick={() => { setShowReconcile(!showReconcile); loadCari(); }} className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" data-testid="btn-mahsuplastir"><DollarSign className="w-3 h-3 mr-1" /> Mahsuplastir</Button>
       </div>
 
       {showPayment && (
@@ -192,7 +198,7 @@ function FoliosTab({ folios, charges, payments, extra_charges, summary, booking,
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Tutar (TL)" type="number" value={cariForm.amount} onChange={v => setCariForm(p => ({ ...p, amount: v }))} />
             <SelectField label="Cari Hesap" value={cariForm.cari_account_id} onChange={v => setCariForm(p => ({ ...p, cari_account_id: v }))}
-              options={[['','Hesap Seciniz...'], ...cariAccounts.map(a => [a.id, a.name])]} />
+              options={[['','Hesap Seciniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
           </div>
           <FormField label="Aciklama" value={cariForm.description} onChange={v => setCariForm(p => ({ ...p, description: v }))} placeholder="Opsiyonel" />
         </FormPanel>
@@ -209,6 +215,53 @@ function FoliosTab({ folios, charges, payments, extra_charges, summary, booking,
             <FormField label="Acente Adi" value={agencyForm.agency_name} onChange={v => setAgencyForm(p => ({ ...p, agency_name: v }))} />
           </div>
           <FormField label="Referans" value={agencyForm.reference} onChange={v => setAgencyForm(p => ({ ...p, reference: v }))} placeholder="Voucher No" />
+        </FormPanel>
+      )}
+
+      {showCariTransfer && (
+        <FormPanel color="indigo" title="Cariyi Acenteye Aktar" testid="cari-agency-transfer-form" onClose={() => setShowCariTransfer(false)} loading={loading}
+          onSubmit={() => exec(async () => {
+            if (!cariTransferForm.source_id || !cariTransferForm.target_id) { toast.error('Kaynak ve hedef cari hesap seciniz'); return; }
+            await axios.post(`${API}/api/pms/cari-accounts/${cariTransferForm.source_id}/transfer-to-agency`, {
+              amount: parseFloat(cariTransferForm.amount),
+              cari_account_id: cariTransferForm.target_id,
+              description: cariTransferForm.description || 'Acenteye aktarim'
+            });
+            toast.success('Cari bakiye acenteye aktarildi');
+            setShowCariTransfer(false);
+            setCariTransferForm({ source_id: '', target_id: '', amount: '', description: '' });
+          })}>
+          <div className="grid grid-cols-2 gap-3">
+            <SelectField label="Kaynak Cari Hesap" value={cariTransferForm.source_id} onChange={v => setCariTransferForm(p => ({ ...p, source_id: v }))}
+              options={[['','Hesap Seciniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
+            <SelectField label="Hedef Acente Hesabi" value={cariTransferForm.target_id} onChange={v => setCariTransferForm(p => ({ ...p, target_id: v }))}
+              options={[['','Acente Seciniz...'], ...cariAccounts.filter(a => a.account_type === 'agency').map(a => [a.id, a.name])]} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Tutar (TL)" type="number" value={cariTransferForm.amount} onChange={v => setCariTransferForm(p => ({ ...p, amount: v }))} />
+            <FormField label="Aciklama" value={cariTransferForm.description} onChange={v => setCariTransferForm(p => ({ ...p, description: v }))} placeholder="Opsiyonel" />
+          </div>
+        </FormPanel>
+      )}
+
+      {showReconcile && (
+        <FormPanel color="teal" title="Mahsuplastirma (Cari Odeme)" testid="reconcile-form" onClose={() => setShowReconcile(false)} loading={loading}
+          onSubmit={() => exec(async () => {
+            if (!reconcileForm.cari_account_id) { toast.error('Cari hesap seciniz'); return; }
+            await axios.post(`${API}/api/pms/cari-accounts/${reconcileForm.cari_account_id}/reconcile`, {
+              amount: parseFloat(reconcileForm.amount),
+              description: reconcileForm.description || 'Mahsuplastirma'
+            });
+            toast.success('Mahsuplastirma kaydedildi');
+            setShowReconcile(false);
+            setReconcileForm({ cari_account_id: '', amount: '', description: '' });
+          })}>
+          <div className="grid grid-cols-2 gap-3">
+            <SelectField label="Cari Hesap" value={reconcileForm.cari_account_id} onChange={v => setReconcileForm(p => ({ ...p, cari_account_id: v }))}
+              options={[['','Hesap Seciniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
+            <FormField label="Tutar (TL)" type="number" value={reconcileForm.amount} onChange={v => setReconcileForm(p => ({ ...p, amount: v }))} />
+          </div>
+          <FormField label="Aciklama" value={reconcileForm.description} onChange={v => setReconcileForm(p => ({ ...p, description: v }))} placeholder="Mahsuplastirma aciklamasi" />
         </FormPanel>
       )}
 
@@ -289,7 +342,7 @@ function ExtraChargesTab({ extra_charges, charges, booking, onRefresh, allBookin
   const [splitForm, setSplitForm] = useState({ target_booking_id: '', split_amount: '', reason: '' });
   const [loading, setLoading] = useState(false);
   const allCharges = [...(extra_charges || []), ...(charges || [])].filter(c => !c.voided);
-  const cats = { room: 'Oda', food: 'Yemek', beverage: 'Icecek', minibar: 'Minibar', spa: 'SPA', laundry: 'Camasir', parking: 'Otopark', other: 'Diger' };
+  const cats = { room_service: 'Oda Servisi', room: 'Oda', food: 'Yemek', beverage: 'Icecek', minibar: 'Minibar', spa: 'SPA', laundry: 'Camasir', parking: 'Otopark', telephone: 'Telefon', transfer: 'Transfer', other: 'Diger' };
 
   const handleAdd = async () => {
     if (!form.description || !form.amount) { toast.error('Aciklama ve tutar zorunlu'); return; }
@@ -894,6 +947,25 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 <div className="border-t pt-2 flex justify-between text-xs"><span className="text-gray-500">BAKIYE</span><span className={`font-bold ${(summary?.balance || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>{fmtTL(summary?.balance)} TL</span></div>
               </div>
               <div className="space-y-1.5">
+                {booking?.status === 'confirmed' && (
+                  <Button size="sm" variant="outline" onClick={async () => {
+                    try {
+                      const idempKey = `checkin-${bookingId}-${Date.now()}`;
+                      await axios.put(`${API}/api/pms/bookings/${bookingId}`, { status: 'checked_in' }, { headers: { 'Idempotency-Key': idempKey } });
+                      toast.success('Giris yapildi'); loadData();
+                    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+                  }} className="w-full h-8 text-xs justify-start bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"><LogIn className="w-3 h-3 mr-2" /> Giris Yap</Button>
+                )}
+                {booking?.status === 'checked_in' && (
+                  <Button size="sm" variant="outline" onClick={async () => {
+                    if (!window.confirm('Cikis yapilsin mi?')) return;
+                    try {
+                      const idempKey = `checkout-${bookingId}-${Date.now()}`;
+                      await axios.put(`${API}/api/pms/bookings/${bookingId}`, { status: 'checked_out' }, { headers: { 'Idempotency-Key': idempKey } });
+                      toast.success('Cikis yapildi'); loadData();
+                    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+                  }} className="w-full h-8 text-xs justify-start bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"><LogOut className="w-3 h-3 mr-2" /> Cikis Yap</Button>
+                )}
                 <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, 'Erken giris yapildi')} className="w-full h-8 text-xs justify-start"><LogIn className="w-3 h-3 mr-2" /> Erken Giris</Button>
                 <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/late-checkout`, { extra_charge: 0 }, 'Gec cikis kaydedildi')} className="w-full h-8 text-xs justify-start"><LogOut className="w-3 h-3 mr-2" /> Gec Cikis</Button>
                 <Button size="sm" variant="outline" onClick={async () => {

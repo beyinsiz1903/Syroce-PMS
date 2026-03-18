@@ -270,7 +270,8 @@ async def get_reservation_full_detail(
     total_payments = sum(p.get("amount", 0) for p in payments if not p.get("voided"))
     total_extra = sum(ec.get("charge_amount", ec.get("amount", 0)) for ec in extra_charges)
     total_deposits = sum(dep.get("amount", 0) for dep in deposits if dep.get("status") != "refunded")
-    balance = total_charges + total_extra - total_payments
+    room_total = booking.get("total_amount", 0)
+    balance = room_total + total_charges + total_extra - total_payments
 
     return {
         "booking": booking,
@@ -1060,6 +1061,107 @@ async def get_cari_transactions(
         transactions.append(t)
 
     return {"transactions": transactions}
+
+
+class CariReconciliation(BaseModel):
+    amount: float
+    description: Optional[str] = None
+
+
+@router.post("/cari-accounts/{account_id}/reconcile")
+async def reconcile_cari_account(
+    account_id: str,
+    data: CariReconciliation,
+    current_user: User = Depends(get_current_user),
+):
+    """Reconcile (mahsuplaştır) a cari account - record a payment/offset."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    account = await db.cari_accounts.find_one({"id": account_id, "tenant_id": tid}, {"_id": 0})
+    if not account:
+        raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
+
+    txn = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "cari_account_id": account_id,
+        "booking_id": None,
+        "transaction_type": "payment",
+        "amount": data.amount,
+        "description": data.description or "Mahsuplaştırma",
+        "posted_by": current_user.name or current_user.email,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.cari_transactions.insert_one({**txn})
+    txn.pop("_id", None)
+
+    # Update account balance
+    await db.cari_accounts.update_one(
+        {"id": account_id, "tenant_id": tid},
+        {"$inc": {"balance": -data.amount}},
+    )
+
+    return {"success": True, "transaction": txn}
+
+
+@router.post("/cari-accounts/{account_id}/transfer-to-agency")
+async def transfer_cari_to_agency(
+    account_id: str,
+    data: CariTransfer,
+    current_user: User = Depends(get_current_user),
+):
+    """Transfer cari balance to an agency cari account."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    source = await db.cari_accounts.find_one({"id": account_id, "tenant_id": tid}, {"_id": 0})
+    if not source:
+        raise HTTPException(status_code=404, detail="Kaynak cari hesap bulunamadı")
+
+    target = await db.cari_accounts.find_one({"id": data.cari_account_id, "tenant_id": tid}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="Hedef cari hesap bulunamadı")
+
+    now = datetime.now(timezone.utc).isoformat()
+    actor = current_user.name or current_user.email
+
+    # Debit from source
+    debit_txn = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "cari_account_id": account_id,
+        "booking_id": None,
+        "transaction_type": "transfer_out",
+        "amount": data.amount,
+        "description": data.description or f"{target.get('name', '')} hesabina aktarim",
+        "posted_by": actor,
+        "created_at": now,
+    }
+    await db.cari_transactions.insert_one({**debit_txn})
+    debit_txn.pop("_id", None)
+
+    # Credit to target
+    credit_txn = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "cari_account_id": data.cari_account_id,
+        "booking_id": None,
+        "transaction_type": "transfer_in",
+        "amount": data.amount,
+        "description": data.description or f"{source.get('name', '')} hesabindan aktarim",
+        "posted_by": actor,
+        "created_at": now,
+    }
+    await db.cari_transactions.insert_one({**credit_txn})
+    credit_txn.pop("_id", None)
+
+    # Update balances
+    await db.cari_accounts.update_one({"id": account_id, "tenant_id": tid}, {"$inc": {"balance": -data.amount}})
+    await db.cari_accounts.update_one({"id": data.cari_account_id, "tenant_id": tid}, {"$inc": {"balance": data.amount}})
+
+    return {"success": True, "debit": debit_txn, "credit": credit_txn}
+
 
 
 # ── Available Rooms Endpoint ──
