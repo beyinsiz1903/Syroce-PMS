@@ -50,6 +50,23 @@ export const NAV_ITEMS = [
     moduleKey: "pms",
     tier: "basic",
     group: "core",
+    hidden: true,
+  },
+  {
+    key: "group_bookings",
+    label: "Grup Rezervasyonlari",
+    path: "/group-bookings-manage",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "core",
+  },
+  {
+    key: "deposit_tracking",
+    label: "Depozito Takibi",
+    path: "/deposit-tracking",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "core",
   },
   {
     key: "revenue_engine",

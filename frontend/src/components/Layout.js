@@ -43,6 +43,8 @@ const ICON_BY_KEY = {
   revenue_engine: TrendingUp,
   operational_events: Zap,
   guest_journey: Award,
+  group_bookings: Users,
+  deposit_tracking: Shield,
 };
 
 // ─── Tier badge in header ─────────────────────────────

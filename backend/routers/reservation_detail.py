@@ -106,6 +106,30 @@ class GuestUpdate(BaseModel):
     vip_status: Optional[bool] = None
 
 
+class GroupBookingCreate(BaseModel):
+    group_name: str
+    booking_ids: List[str] = []
+
+
+class GroupBookingAddRoom(BaseModel):
+    booking_id: str
+
+
+class CommunicationLogCreate(BaseModel):
+    channel: str = "email"  # email, sms, phone, whatsapp
+    direction: str = "outbound"  # inbound, outbound
+    subject: Optional[str] = None
+    content: str
+    recipient: Optional[str] = None
+
+
+class DepositRefund(BaseModel):
+    deposit_id: str
+    refund_amount: float
+    refund_method: str = "cash"
+    reason: Optional[str] = None
+
+
 # ── Helper ──
 
 def _clean_doc(doc):
@@ -231,10 +255,21 @@ async def get_reservation_full_detail(
     if booking.get("company_id"):
         company = await db.companies.find_one({"id": booking["company_id"], "tenant_id": tid}, {"_id": 0})
 
+    # Communication logs
+    communication_logs = []
+    async for cl in db.communication_logs.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
+        communication_logs.append(cl)
+
+    # Deposits
+    deposits = []
+    async for dep in db.deposits.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
+        deposits.append(dep)
+
     # Calculate totals
     total_charges = sum(c.get("total", c.get("amount", 0)) for c in charges if not c.get("voided"))
     total_payments = sum(p.get("amount", 0) for p in payments if not p.get("voided"))
     total_extra = sum(ec.get("charge_amount", ec.get("amount", 0)) for ec in extra_charges)
+    total_deposits = sum(dep.get("amount", 0) for dep in deposits if dep.get("status") != "refunded")
     balance = total_charges + total_extra - total_payments
 
     return {
@@ -251,11 +286,14 @@ async def get_reservation_full_detail(
         "room_moves": room_moves,
         "daily_rates": daily_rates,
         "guests": guests_list,
+        "communication_logs": communication_logs,
+        "deposits": deposits,
         "summary": {
             "total_amount": booking.get("total_amount", 0),
             "total_charges": round(total_charges, 2),
             "total_payments": round(total_payments, 2),
             "total_extra": round(total_extra, 2),
+            "total_deposits": round(total_deposits, 2),
             "balance": round(balance, 2),
             "paid_amount": booking.get("paid_amount", 0),
         },
@@ -1022,3 +1060,362 @@ async def get_cari_transactions(
         transactions.append(t)
 
     return {"transactions": transactions}
+
+
+# ── Available Rooms Endpoint ──
+
+@router.get("/available-rooms")
+async def get_available_rooms(
+    check_in: str = "",
+    check_out: str = "",
+    current_user: User = Depends(get_current_user),
+):
+    """Get available rooms for room change."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    all_rooms = []
+    async for r in db.rooms.find({"tenant_id": tid}, {"_id": 0}).sort("room_number", 1):
+        all_rooms.append(r)
+
+    if not check_in or not check_out:
+        return {"rooms": all_rooms}
+
+    # Find bookings that overlap the date range
+    occupied_room_ids = set()
+    async for b in db.bookings.find({
+        "tenant_id": tid,
+        "status": {"$nin": ["cancelled", "no_show", "checked_out"]},
+    }, {"_id": 0, "room_id": 1, "check_in": 1, "check_out": 1}):
+        b_ci = str(b.get("check_in", ""))[:10]
+        b_co = str(b.get("check_out", ""))[:10]
+        if b_ci < check_out and b_co > check_in:
+            if b.get("room_id"):
+                occupied_room_ids.add(b["room_id"])
+
+    available = [r for r in all_rooms if r.get("id") not in occupied_room_ids]
+    return {"rooms": available, "all_rooms": all_rooms}
+
+
+# ── Group Booking Endpoints ──
+
+@router.post("/group-bookings")
+async def create_group_booking(
+    data: GroupBookingCreate,
+    current_user: User = Depends(get_current_user),
+):
+    """Create a new group booking."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    group_id = str(uuid.uuid4())
+    group = {
+        "id": group_id,
+        "tenant_id": tid,
+        "group_name": data.group_name,
+        "booking_ids": data.booking_ids,
+        "status": "active",
+        "total_rooms": len(data.booking_ids),
+        "created_by": current_user.name,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.group_bookings.insert_one({**group})
+
+    # Tag each booking with the group_booking_id
+    for bid in data.booking_ids:
+        await db.bookings.update_one(
+            {"id": bid, "tenant_id": tid},
+            {"$set": {"group_booking_id": group_id}},
+        )
+
+    group.pop("_id", None)
+    return {"success": True, "group": group}
+
+
+@router.get("/group-bookings")
+async def list_group_bookings(current_user: User = Depends(get_current_user)):
+    """List all group bookings."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    groups = []
+    async for g in db.group_bookings.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
+        # Enrich with booking details
+        group_bookings = []
+        async for b in db.bookings.find(
+            {"id": {"$in": g.get("booking_ids", [])}, "tenant_id": tid}, {"_id": 0}
+        ):
+            group_bookings.append(b)
+        g["bookings"] = group_bookings
+        g["total_amount"] = sum(b.get("total_amount", 0) for b in group_bookings)
+        g["total_paid"] = sum(b.get("paid_amount", 0) for b in group_bookings)
+        groups.append(g)
+
+    return {"groups": groups}
+
+
+@router.get("/group-bookings/{group_id}")
+async def get_group_booking_detail(
+    group_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Get detailed group booking info."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    group = await db.group_bookings.find_one({"id": group_id, "tenant_id": tid}, {"_id": 0})
+    if not group:
+        raise HTTPException(status_code=404, detail="Grup rezervasyon bulunamadi")
+
+    bookings_list = []
+    async for b in db.bookings.find(
+        {"id": {"$in": group.get("booking_ids", [])}, "tenant_id": tid}, {"_id": 0}
+    ):
+        guest = None
+        if b.get("guest_id"):
+            guest = await db.guests.find_one({"id": b["guest_id"], "tenant_id": tid}, {"_id": 0})
+        b["guest_detail"] = guest
+        bookings_list.append(b)
+
+    group["bookings"] = bookings_list
+    group["total_amount"] = sum(b.get("total_amount", 0) for b in bookings_list)
+    group["total_paid"] = sum(b.get("paid_amount", 0) for b in bookings_list)
+    return group
+
+
+@router.post("/group-bookings/{group_id}/add-room")
+async def add_room_to_group(
+    group_id: str,
+    data: GroupBookingAddRoom,
+    current_user: User = Depends(get_current_user),
+):
+    """Add a booking/room to a group."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    group = await db.group_bookings.find_one({"id": group_id, "tenant_id": tid}, {"_id": 0})
+    if not group:
+        raise HTTPException(status_code=404, detail="Grup bulunamadi")
+
+    booking = await db.bookings.find_one({"id": data.booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+
+    existing_ids = group.get("booking_ids", [])
+    if data.booking_id not in existing_ids:
+        existing_ids.append(data.booking_id)
+        await db.group_bookings.update_one(
+            {"id": group_id, "tenant_id": tid},
+            {"$set": {"booking_ids": existing_ids, "total_rooms": len(existing_ids)}},
+        )
+        await db.bookings.update_one(
+            {"id": data.booking_id, "tenant_id": tid},
+            {"$set": {"group_booking_id": group_id}},
+        )
+
+    return {"success": True}
+
+
+@router.post("/group-bookings/{group_id}/check-in-all")
+async def group_check_in_all(
+    group_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Check-in all reservations in a group."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    group = await db.group_bookings.find_one({"id": group_id, "tenant_id": tid}, {"_id": 0})
+    if not group:
+        raise HTTPException(status_code=404, detail="Grup bulunamadi")
+
+    now = datetime.now(timezone.utc).isoformat()
+    checked_in = 0
+    for bid in group.get("booking_ids", []):
+        result = await db.bookings.update_one(
+            {"id": bid, "tenant_id": tid, "status": {"$in": ["confirmed", "pending"]}},
+            {"$set": {"status": "checked_in", "checked_in_at": now}},
+        )
+        if result.modified_count > 0:
+            checked_in += 1
+            booking = await db.bookings.find_one({"id": bid, "tenant_id": tid}, {"_id": 0})
+            if booking and booking.get("room_id"):
+                await db.rooms.update_one(
+                    {"id": booking["room_id"], "tenant_id": tid},
+                    {"$set": {"status": "occupied", "current_booking_id": bid}},
+                )
+            await _log_activity(tid, bid, "group_checkin", current_user.name, {"group_id": group_id})
+
+    return {"success": True, "checked_in_count": checked_in}
+
+
+@router.post("/group-bookings/{group_id}/check-out-all")
+async def group_check_out_all(
+    group_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Check-out all reservations in a group."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    group = await db.group_bookings.find_one({"id": group_id, "tenant_id": tid}, {"_id": 0})
+    if not group:
+        raise HTTPException(status_code=404, detail="Grup bulunamadi")
+
+    now = datetime.now(timezone.utc).isoformat()
+    checked_out = 0
+    for bid in group.get("booking_ids", []):
+        result = await db.bookings.update_one(
+            {"id": bid, "tenant_id": tid, "status": "checked_in"},
+            {"$set": {"status": "checked_out", "checked_out_at": now}},
+        )
+        if result.modified_count > 0:
+            checked_out += 1
+            booking = await db.bookings.find_one({"id": bid, "tenant_id": tid}, {"_id": 0})
+            if booking and booking.get("room_id"):
+                await db.rooms.update_one(
+                    {"id": booking["room_id"], "tenant_id": tid},
+                    {"$set": {"status": "dirty", "current_booking_id": None}},
+                )
+            await _log_activity(tid, bid, "group_checkout", current_user.name, {"group_id": group_id})
+
+    return {"success": True, "checked_out_count": checked_out}
+
+
+# ── Communication Log Endpoints ──
+
+@router.post("/reservations/{booking_id}/communication")
+async def add_communication_log(
+    booking_id: str,
+    data: CommunicationLogCreate,
+    current_user: User = Depends(get_current_user),
+):
+    """Add a communication log entry for a reservation."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    log_entry = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "booking_id": booking_id,
+        "channel": data.channel,
+        "direction": data.direction,
+        "subject": data.subject,
+        "content": data.content,
+        "recipient": data.recipient,
+        "sent_by": current_user.name,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.communication_logs.insert_one({**log_entry})
+
+    await _log_activity(tid, booking_id, "communication_logged", current_user.name, {
+        "channel": data.channel, "direction": data.direction,
+    })
+
+    log_entry.pop("_id", None)
+    return {"success": True, "log": log_entry}
+
+
+@router.get("/reservations/{booking_id}/communication")
+async def get_communication_logs(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Get communication log for a reservation."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    logs = []
+    async for entry in db.communication_logs.find(
+        {"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}
+    ).sort("created_at", -1):
+        logs.append(entry)
+
+    return {"logs": logs}
+
+
+# ── Deposit Management Endpoints ──
+
+@router.get("/reservations/{booking_id}/deposits")
+async def get_deposits(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Get deposits for a reservation."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    deposits = []
+    async for d in db.deposits.find(
+        {"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}
+    ).sort("created_at", -1):
+        deposits.append(d)
+
+    return {"deposits": deposits}
+
+
+@router.post("/reservations/{booking_id}/refund-deposit")
+async def refund_deposit(
+    booking_id: str,
+    data: DepositRefund,
+    current_user: User = Depends(get_current_user),
+):
+    """Refund a deposit."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    deposit = await db.deposits.find_one(
+        {"id": data.deposit_id, "tenant_id": tid}, {"_id": 0}
+    )
+    if not deposit:
+        raise HTTPException(status_code=404, detail="Depozito bulunamadi")
+
+    if data.refund_amount > deposit.get("amount", 0):
+        raise HTTPException(status_code=400, detail="Iade tutari depozito tutarindan buyuk olamaz")
+
+    refund = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "booking_id": booking_id,
+        "deposit_id": data.deposit_id,
+        "refund_amount": data.refund_amount,
+        "refund_method": data.refund_method,
+        "reason": data.reason,
+        "status": "refunded",
+        "refunded_by": current_user.name,
+        "refunded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.deposit_refunds.insert_one({**refund})
+
+    # Update deposit status
+    remaining = deposit.get("amount", 0) - data.refund_amount
+    new_status = "refunded" if remaining <= 0 else "partially_refunded"
+    await db.deposits.update_one(
+        {"id": data.deposit_id, "tenant_id": tid},
+        {"$set": {"status": new_status, "refunded_amount": data.refund_amount}},
+    )
+
+    await _log_activity(tid, booking_id, "deposit_refunded", current_user.name, {
+        "deposit_id": data.deposit_id, "refund_amount": data.refund_amount,
+    })
+
+    refund.pop("_id", None)
+    return {"success": True, "refund": refund}
+
+
+@router.get("/deposits/all")
+async def list_all_deposits(current_user: User = Depends(get_current_user)):
+    """List all deposits across all reservations."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    deposits = []
+    async for d in db.deposits.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
+        # Enrich with booking info
+        booking = await db.bookings.find_one({"id": d.get("booking_id"), "tenant_id": tid}, {"_id": 0, "guest_name": 1, "room_number": 1, "check_in": 1, "check_out": 1})
+        if booking:
+            d["guest_name"] = booking.get("guest_name")
+            d["room_number"] = booking.get("room_number")
+        deposits.append(d)
+
+    return {"deposits": deposits}
