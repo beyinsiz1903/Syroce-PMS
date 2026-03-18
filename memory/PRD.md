@@ -87,6 +87,19 @@ Enterprise-grade Property Management System (PMS) for hotel operations. The curr
 3. **Channel Manager Rate Tab Update:**
    - Rate & Availability tab in Channel Manager now redirects to Toplu Güncellemeler page
 
+### Oda Bazlı Fiyatlandırma Ayarı — 2026-03-18 (COMPLETED & TESTED)
+1. **Per-Room / Per-Person Pricing Toggle (NEW FEATURE):**
+   - Each room type can independently be set to "Kişi bazlı fiyatlandırma" (per-person) or "Oda bazlı fiyatlandırma" (per-room)
+   - Clickable label on each room type in the Toplu Güncelle panel — single click toggles between modes
+   - Color coded: orange = per-person, blue = per-room
+   - Rate plan rows inherit the parent room type's pricing type
+   - Optimistic UI update with rollback on error
+2. **Pricing Settings API (NEW ENDPOINTS):**
+   - `GET /api/channel-manager/rate-manager/pricing-settings` — returns per-room-type pricing type map
+   - `PUT /api/channel-manager/rate-manager/pricing-settings` — upserts pricing type per room type
+   - Settings stored in `pricing_settings` MongoDB collection
+   - Also included in `/room-types` and `/grid` responses
+
 ## Prioritized Backlog
 
 ### P0 — Execute Narrow Rollout

@@ -56,6 +56,15 @@ class BulkGridUpdateRequest(BaseModel):
     update_fields: List[str] = []       # e.g. ["rate", "availability", "min_stay"]
 
 
+class PricingSettingItem(BaseModel):
+    room_type_code: str
+    pricing_type: str  # "per_person" or "per_room"
+
+
+class PricingSettingsRequest(BaseModel):
+    settings: List[PricingSettingItem]
+
+
 @router.get("/grid")
 async def get_rate_grid(
     start_date: str,
@@ -188,10 +197,19 @@ async def get_rate_grid(
                 "dates": dates_data,
             })
 
+    # Fetch pricing settings
+    pricing_docs = await db.pricing_settings.find(
+        {"tenant_id": tenant_id}, {"_id": 0}
+    ).to_list(200)
+    pricing_map = {}
+    for doc in pricing_docs:
+        pricing_map[doc["room_type_code"]] = doc.get("pricing_type", "per_person")
+
     return {
         "grid": grid,
         "room_types": room_types,
         "rate_plans": rate_plans,
+        "pricing_settings": pricing_map,
         "start_date": start_date,
         "end_date": end_date,
     }
@@ -313,7 +331,7 @@ async def update_rates(
 
 @router.get("/room-types")
 async def get_room_types(current_user: User = Depends(get_current_user)):
-    """Mevcut oda tiplerini ve fiyat planlarını döndürür."""
+    """Mevcut oda tiplerini, fiyat planlarını ve fiyatlandırma ayarlarını döndürür."""
     tenant_id = current_user.tenant_id
     conn = await db.exely_connections.find_one(
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
@@ -321,9 +339,18 @@ async def get_room_types(current_user: User = Depends(get_current_user)):
     if not conn:
         raise HTTPException(status_code=404, detail="Exely bağlantısı bulunamadı")
 
+    # Fetch pricing settings
+    pricing_docs = await db.pricing_settings.find(
+        {"tenant_id": tenant_id}, {"_id": 0}
+    ).to_list(200)
+    pricing_map = {}
+    for doc in pricing_docs:
+        pricing_map[doc["room_type_code"]] = doc.get("pricing_type", "per_person")
+
     return {
         "room_types": conn.get("room_types", []),
         "rate_plans": conn.get("rate_plans", []),
+        "pricing_settings": pricing_map,
     }
 
 
@@ -462,3 +489,49 @@ async def bulk_grid_update(
             " ve Exely'ye gönderildi" if all_success else ""
         ),
     }
+
+
+
+@router.get("/pricing-settings")
+async def get_pricing_settings(current_user: User = Depends(get_current_user)):
+    """Oda tipi bazında fiyatlandırma tipi ayarlarını döndürür (per_person / per_room)."""
+    tenant_id = current_user.tenant_id
+    docs = await db.pricing_settings.find(
+        {"tenant_id": tenant_id}, {"_id": 0}
+    ).to_list(200)
+
+    settings = {}
+    for doc in docs:
+        settings[doc["room_type_code"]] = doc.get("pricing_type", "per_person")
+
+    return {"settings": settings}
+
+
+@router.put("/pricing-settings")
+async def update_pricing_settings(
+    request: PricingSettingsRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Oda tipi bazında fiyatlandırma tipini günceller."""
+    tenant_id = current_user.tenant_id
+    now = datetime.now(timezone.utc).isoformat()
+    updated = 0
+
+    for item in request.settings:
+        if item.pricing_type not in ("per_person", "per_room"):
+            raise HTTPException(status_code=400, detail=f"Geçersiz fiyatlandırma tipi: {item.pricing_type}")
+
+        await db.pricing_settings.update_one(
+            {"tenant_id": tenant_id, "room_type_code": item.room_type_code},
+            {"$set": {
+                "tenant_id": tenant_id,
+                "room_type_code": item.room_type_code,
+                "pricing_type": item.pricing_type,
+                "updated_at": now,
+                "updated_by": current_user.id,
+            }},
+            upsert=True,
+        )
+        updated += 1
+
+    return {"updated": updated, "message": f"{updated} oda tipi fiyatlandırma ayarı güncellendi"}

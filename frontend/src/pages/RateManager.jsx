@@ -49,6 +49,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
   const [roomTypes, setRoomTypes] = useState([]);
   const [ratePlans, setRatePlans] = useState([]);
   const [grid, setGrid] = useState([]);
+  const [pricingSettings, setPricingSettings] = useState({});
 
   // ─── BULK UPDATE STATE ───
   const [selectedRoomTypes, setSelectedRoomTypes] = useState(new Set());
@@ -95,6 +96,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
       setGrid(data.grid || []);
       setRoomTypes(data.room_types || []);
       setRatePlans(data.rate_plans || []);
+      if (data.pricing_settings) setPricingSettings(data.pricing_settings);
     } catch {
       toast.error('Veriler yüklenemedi');
     }
@@ -175,6 +177,35 @@ const RateManager = ({ user, tenant, onLogout }) => {
     } else {
       setAllDays(true);
       setSelectedDays(new Set([0, 1, 2, 3, 4, 5, 6]));
+    }
+  };
+
+  // ─── PRICING TYPE TOGGLE ───
+  const getPricingLabel = (roomTypeCode) => {
+    const type = pricingSettings[roomTypeCode] || 'per_person';
+    return type === 'per_room' ? 'Oda bazlı fiyatlandırma' : 'Kişi bazlı fiyatlandırma';
+  };
+
+  const togglePricingType = async (roomTypeCode, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const current = pricingSettings[roomTypeCode] || 'per_person';
+    const newType = current === 'per_person' ? 'per_room' : 'per_person';
+    
+    // Optimistic update
+    setPricingSettings(prev => ({ ...prev, [roomTypeCode]: newType }));
+    
+    try {
+      await axios.put(
+        `${API}/api/channel-manager/rate-manager/pricing-settings`,
+        { settings: [{ room_type_code: roomTypeCode, pricing_type: newType }] },
+        { headers }
+      );
+      toast.success(`${newType === 'per_room' ? 'Oda bazlı' : 'Kişi bazlı'} fiyatlandırma ayarlandı`);
+    } catch {
+      // Revert on error
+      setPricingSettings(prev => ({ ...prev, [roomTypeCode]: current }));
+      toast.error('Fiyatlandırma ayarı güncellenemedi');
     }
   };
 
@@ -529,7 +560,17 @@ const RateManager = ({ user, tenant, onLogout }) => {
                               />
                               <div className="flex-1 min-w-0">
                                 <div className="font-semibold text-sm text-gray-900">{rt.name}</div>
-                                <div className="text-xs text-orange-600 italic">Kişi bazlı fiyatlandırma</div>
+                                <button
+                                  onClick={(e) => togglePricingType(rt.code, e)}
+                                  className={`text-xs italic cursor-pointer hover:underline transition-colors ${
+                                    (pricingSettings[rt.code] || 'per_person') === 'per_room'
+                                      ? 'text-blue-600'
+                                      : 'text-orange-600'
+                                  }`}
+                                  data-testid={`pricing-type-toggle-${rt.code}`}
+                                >
+                                  {getPricingLabel(rt.code)}
+                                </button>
                               </div>
                             </label>
 
@@ -552,7 +593,13 @@ const RateManager = ({ user, tenant, onLogout }) => {
                                   <div className="text-sm text-gray-700">
                                     {rt.name} - {rp.name}
                                   </div>
-                                  <div className="text-xs text-gray-400 italic">Kişi bazlı fiyatlandırma</div>
+                                  <div className={`text-xs italic ${
+                                    (pricingSettings[rt.code] || 'per_person') === 'per_room'
+                                      ? 'text-blue-400'
+                                      : 'text-gray-400'
+                                  }`}>
+                                    {getPricingLabel(rt.code)}
+                                  </div>
                                 </div>
                               </label>
                             ))}
