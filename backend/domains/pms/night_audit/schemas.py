@@ -67,3 +67,15 @@ class AuditException(BaseModel):
     auto_resolved: bool = False
     resolution: Optional[str] = None
     created_at: str = ""
+
+
+class NightAuditScheduleRequest(BaseModel):
+    enabled: bool = False
+    scheduled_hour: int = 0       # 0-23
+    scheduled_minute: int = 0     # 0-59
+    timezone: str = "Europe/Istanbul"
+    skip_validations: bool = False
+    auto_retry: bool = True
+    max_retries: int = 2
+    notify_on_complete: bool = True
+    notify_on_failure: bool = True

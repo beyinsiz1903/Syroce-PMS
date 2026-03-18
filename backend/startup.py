@@ -248,6 +248,14 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Cockpit snapshot worker init warning: {e}")
 
+    # ── Night Audit Scheduler ─────────────────────────────────────────
+    try:
+        from domains.pms.night_audit.scheduler import start_scheduler
+        start_scheduler()
+        print("✅ Night Audit Scheduler started (60s check interval)")
+    except Exception as e:
+        logger.warning(f"Night Audit Scheduler init warning: {e}")
+
 
 async def on_shutdown(app):
     """Graceful shutdown: close connections and stop workers."""
@@ -292,6 +300,13 @@ async def on_shutdown(app):
             await scheduler.stop()
         except Exception as e:
             logger.warning(f"Exely Pull Scheduler shutdown warning: {e}")
+
+    # Night Audit Scheduler
+    try:
+        from domains.pms.night_audit.scheduler import stop_scheduler
+        stop_scheduler()
+    except Exception as e:
+        logger.warning(f"Night Audit Scheduler shutdown warning: {e}")
 
     # Close MongoDB client
     client.close()

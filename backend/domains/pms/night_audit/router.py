@@ -8,7 +8,7 @@ import logging
 from core.security import get_current_user
 from models.schemas import User
 from common.context import OperationContext
-from domains.pms.night_audit.schemas import RunNightAuditRequest
+from domains.pms.night_audit.schemas import RunNightAuditRequest, NightAuditScheduleRequest
 from domains.pms.night_audit.service import night_audit_core_service
 
 logger = logging.getLogger(__name__)
@@ -70,4 +70,37 @@ async def get_business_date(
     """Get current business date for tenant."""
     ctx = OperationContext.from_user(current_user)
     result = await night_audit_core_service.get_business_date(ctx)
+    return result.data
+
+
+@router.get("/schedule")
+async def get_schedule(
+    current_user: User = Depends(get_current_user),
+):
+    """Get night audit schedule configuration."""
+    ctx = OperationContext.from_user(current_user)
+    result = await night_audit_core_service.get_schedule(ctx)
+    return result.data
+
+
+@router.put("/schedule")
+async def update_schedule(
+    request: NightAuditScheduleRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Update night audit schedule configuration."""
+    if current_user.role not in ("super_admin", "admin"):
+        raise HTTPException(status_code=403, detail="Only admins can update schedule")
+    ctx = OperationContext.from_user(current_user)
+    result = await night_audit_core_service.update_schedule(ctx, request.model_dump())
+    return result.data
+
+
+@router.get("/schedule/status")
+async def get_schedule_status(
+    current_user: User = Depends(get_current_user),
+):
+    """Get scheduler status and recent auto-run logs."""
+    ctx = OperationContext.from_user(current_user)
+    result = await night_audit_core_service.get_schedule_status(ctx)
     return result.data

@@ -484,6 +484,173 @@ class NightAuditCoreService:
             "updated_at": (settings or {}).get("business_date_updated_at"),
         })
 
+    # ── Schedule CRUD ────────────────────────────────────────────────
+    async def get_schedule(self, ctx: OperationContext) -> ServiceResult:
+        doc = await self._db.night_audit_schedules.find_one(
+            {"tenant_id": ctx.tenant_id}, {"_id": 0}
+        )
+        if not doc:
+            doc = {
+                "tenant_id": ctx.tenant_id,
+                "enabled": False,
+                "scheduled_hour": 0,
+                "scheduled_minute": 0,
+                "timezone": "Europe/Istanbul",
+                "skip_validations": False,
+                "auto_retry": True,
+                "max_retries": 2,
+                "notify_on_complete": True,
+                "notify_on_failure": True,
+                "last_auto_run": None,
+                "last_auto_run_status": None,
+                "next_scheduled_run": None,
+            }
+        return ServiceResult.success(doc)
+
+    async def update_schedule(self, ctx: OperationContext, schedule_data: dict) -> ServiceResult:
+        now = datetime.now(timezone.utc).isoformat()
+        update_doc = {
+            "tenant_id": ctx.tenant_id,
+            "enabled": schedule_data.get("enabled", False),
+            "scheduled_hour": schedule_data.get("scheduled_hour", 0),
+            "scheduled_minute": schedule_data.get("scheduled_minute", 0),
+            "timezone": schedule_data.get("timezone", "Europe/Istanbul"),
+            "skip_validations": schedule_data.get("skip_validations", False),
+            "auto_retry": schedule_data.get("auto_retry", True),
+            "max_retries": schedule_data.get("max_retries", 2),
+            "notify_on_complete": schedule_data.get("notify_on_complete", True),
+            "notify_on_failure": schedule_data.get("notify_on_failure", True),
+            "updated_at": now,
+            "updated_by": ctx.actor_id,
+        }
+        await self._db.night_audit_schedules.update_one(
+            {"tenant_id": ctx.tenant_id},
+            {"$set": update_doc},
+            upsert=True,
+        )
+        update_doc.pop("_id", None)
+        return ServiceResult.success(update_doc)
+
+    async def get_schedule_status(self, ctx: OperationContext) -> ServiceResult:
+        schedule = await self._db.night_audit_schedules.find_one(
+            {"tenant_id": ctx.tenant_id}, {"_id": 0}
+        )
+        logs = await self._db.night_audit_schedule_logs.find(
+            {"tenant_id": ctx.tenant_id},
+            {"_id": 0},
+        ).sort("triggered_at", -1).limit(10).to_list(10)
+
+        return ServiceResult.success({
+            "enabled": (schedule or {}).get("enabled", False),
+            "scheduled_hour": (schedule or {}).get("scheduled_hour", 0),
+            "scheduled_minute": (schedule or {}).get("scheduled_minute", 0),
+            "timezone": (schedule or {}).get("timezone", "Europe/Istanbul"),
+            "last_auto_run": (schedule or {}).get("last_auto_run"),
+            "last_auto_run_status": (schedule or {}).get("last_auto_run_status"),
+            "recent_logs": logs,
+        })
+
+    async def run_scheduled_audit(self, tenant_id: str) -> dict:
+        """Called by the scheduler background task."""
+        schedule = await self._db.night_audit_schedules.find_one(
+            {"tenant_id": tenant_id}, {"_id": 0}
+        )
+        if not schedule or not schedule.get("enabled"):
+            return {"skipped": True, "reason": "Schedule not enabled"}
+
+        now = datetime.now(timezone.utc)
+        log_id = str(uuid.uuid4())
+
+        # Create a system context
+        ctx = OperationContext(
+            tenant_id=tenant_id,
+            actor_id="system_scheduler",
+            actor_role="system",
+        )
+
+        # Get current business date
+        bd_result = await self.get_business_date(ctx)
+        bd = bd_result.data.get("business_date", now.date().isoformat())
+
+        # Log the attempt
+        log_entry = {
+            "id": log_id,
+            "tenant_id": tenant_id,
+            "triggered_at": now.isoformat(),
+            "business_date": bd,
+            "trigger_type": "automatic",
+            "status": "running",
+        }
+        await self._db.night_audit_schedule_logs.insert_one({**log_entry})
+
+        try:
+            result = await self.run_night_audit(
+                ctx,
+                business_date=bd,
+                force_rerun=False,
+                skip_validations=schedule.get("skip_validations", False),
+                dry_run=False,
+                reason="Otomatik zamanlama ile calistirildi",
+            )
+
+            status = "completed" if result.ok else "failed"
+            error_msg = None if result.ok else result.error
+
+            # Retry logic
+            if not result.ok and schedule.get("auto_retry") and result.code not in ("ALREADY_COMPLETED",):
+                max_retries = schedule.get("max_retries", 2)
+                for attempt in range(1, max_retries + 1):
+                    logger.info(f"Retry {attempt}/{max_retries} for tenant {tenant_id}")
+                    result = await self.run_night_audit(
+                        ctx, business_date=bd, force_rerun=True,
+                        skip_validations=schedule.get("skip_validations", False),
+                        dry_run=False,
+                        reason=f"Otomatik yeniden deneme #{attempt}",
+                    )
+                    if result.ok:
+                        status = "completed"
+                        error_msg = None
+                        break
+                    error_msg = result.error
+
+            await self._db.night_audit_schedule_logs.update_one(
+                {"id": log_id},
+                {"$set": {
+                    "status": status,
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "error": error_msg,
+                    "audit_result": result.data if result.ok else None,
+                }},
+            )
+            await self._db.night_audit_schedules.update_one(
+                {"tenant_id": tenant_id},
+                {"$set": {
+                    "last_auto_run": now.isoformat(),
+                    "last_auto_run_status": status,
+                }},
+            )
+
+            return {"status": status, "audit_id": result.data.get("audit_id") if result.ok else None}
+
+        except Exception as e:
+            logger.exception(f"Scheduled audit failed for tenant {tenant_id}: {e}")
+            await self._db.night_audit_schedule_logs.update_one(
+                {"id": log_id},
+                {"$set": {
+                    "status": "failed",
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "error": str(e),
+                }},
+            )
+            await self._db.night_audit_schedules.update_one(
+                {"tenant_id": tenant_id},
+                {"$set": {
+                    "last_auto_run": now.isoformat(),
+                    "last_auto_run_status": "failed",
+                }},
+            )
+            return {"status": "failed", "error": str(e)}
+
     # ── Helper ─────────────────────────────────────────────────────────
     @staticmethod
     def _make_exception(

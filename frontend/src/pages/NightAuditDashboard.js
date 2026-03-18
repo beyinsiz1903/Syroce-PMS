@@ -4,12 +4,13 @@ import Layout from "@/components/Layout";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import {
   Moon, Play, Clock, CheckCircle2, XCircle, AlertTriangle,
   RefreshCw, Calendar, FileText, ChevronDown, ChevronUp,
   DollarSign, Users, Building2, BarChart3, Eye, Loader2,
-  Shield, Info
+  Shield, Info, Timer, Settings2, Zap, RotateCcw
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -69,6 +70,20 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const [expandedRun, setExpandedRun] = useState(null);
   const [exceptions, setExceptions] = useState({});
   const [showRunDialog, setShowRunDialog] = useState(false);
+  const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [schedule, setSchedule] = useState({
+    enabled: false,
+    scheduled_hour: 0,
+    scheduled_minute: 0,
+    timezone: "Europe/Istanbul",
+    skip_validations: false,
+    auto_retry: true,
+    max_retries: 2,
+    notify_on_complete: true,
+    notify_on_failure: true,
+  });
+  const [scheduleStatus, setScheduleStatus] = useState(null);
   const [runOptions, setRunOptions] = useState({
     force_rerun: false,
     skip_validations: false,
@@ -106,11 +121,29 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
     }
   }, [exceptions]);
 
+  const fetchSchedule = useCallback(async () => {
+    try {
+      const res = await axios.get("/night-audit/schedule");
+      setSchedule(res.data);
+    } catch (err) {
+      console.error("Schedule fetch failed:", err);
+    }
+  }, []);
+
+  const fetchScheduleStatus = useCallback(async () => {
+    try {
+      const res = await axios.get("/night-audit/schedule/status");
+      setScheduleStatus(res.data);
+    } catch (err) {
+      console.error("Schedule status fetch failed:", err);
+    }
+  }, []);
+
   const loadAll = useCallback(async () => {
     setLoading(true);
-    await Promise.all([fetchBusinessDate(), fetchHistory()]);
+    await Promise.all([fetchBusinessDate(), fetchHistory(), fetchSchedule(), fetchScheduleStatus()]);
     setLoading(false);
-  }, [fetchBusinessDate, fetchHistory]);
+  }, [fetchBusinessDate, fetchHistory, fetchSchedule, fetchScheduleStatus]);
 
   useEffect(() => {
     loadAll();
@@ -147,6 +180,32 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       }
     } finally {
       setRunning(false);
+    }
+  };
+
+  const handleSaveSchedule = async () => {
+    setScheduleLoading(true);
+    try {
+      await axios.put("/night-audit/schedule", schedule);
+      toast.success(schedule.enabled ? "Otomatik zamanlama aktif edildi" : "Otomatik zamanlama devre disi birakildi");
+      setShowScheduleDialog(false);
+      await fetchScheduleStatus();
+    } catch (err) {
+      toast.error("Zamanlama kaydedilemedi");
+    } finally {
+      setScheduleLoading(false);
+    }
+  };
+
+  const handleQuickToggleSchedule = async () => {
+    const newEnabled = !schedule.enabled;
+    try {
+      await axios.put("/night-audit/schedule", { ...schedule, enabled: newEnabled });
+      setSchedule((prev) => ({ ...prev, enabled: newEnabled }));
+      toast.success(newEnabled ? "Otomatik zamanlama aktif" : "Otomatik zamanlama devre disi");
+      await fetchScheduleStatus();
+    } catch (err) {
+      toast.error("Durum degistirilemedi");
     }
   };
 
@@ -231,6 +290,135 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
             color="text-amber-600"
           />
         </div>
+
+        {/* Automatic Scheduling Card */}
+        <Card data-testid="schedule-card">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Timer className="w-4 h-4 text-indigo-500" />
+                Otomatik Zamanlama
+              </CardTitle>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    data-testid="schedule-toggle"
+                    checked={schedule.enabled}
+                    onCheckedChange={handleQuickToggleSchedule}
+                  />
+                  <span className={`text-xs font-medium ${schedule.enabled ? "text-emerald-600" : "text-gray-400"}`}>
+                    {schedule.enabled ? "Aktif" : "Devre Disi"}
+                  </span>
+                </div>
+                <Button
+                  data-testid="schedule-settings-btn"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowScheduleDialog(true)}
+                >
+                  <Settings2 className="w-3.5 h-3.5 mr-1" />
+                  Ayarlar
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Schedule Time */}
+              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                <div className="rounded-lg p-2 bg-indigo-100">
+                  <Clock className="w-4 h-4 text-indigo-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {String(schedule.scheduled_hour).padStart(2, "0")}:{String(schedule.scheduled_minute).padStart(2, "0")}
+                  </p>
+                  <p className="text-xs text-gray-500">{schedule.timezone || "Europe/Istanbul"}</p>
+                </div>
+              </div>
+
+              {/* Last Auto Run */}
+              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                <div className={`rounded-lg p-2 ${
+                  scheduleStatus?.last_auto_run_status === "completed"
+                    ? "bg-emerald-100"
+                    : scheduleStatus?.last_auto_run_status === "failed"
+                    ? "bg-red-100"
+                    : "bg-gray-100"
+                }`}>
+                  {scheduleStatus?.last_auto_run_status === "completed" ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  ) : scheduleStatus?.last_auto_run_status === "failed" ? (
+                    <XCircle className="w-4 h-4 text-red-600" />
+                  ) : (
+                    <Clock className="w-4 h-4 text-gray-400" />
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {scheduleStatus?.last_auto_run
+                      ? new Date(scheduleStatus.last_auto_run).toLocaleString("tr-TR")
+                      : "Henuz calistirilmadi"}
+                  </p>
+                  <p className="text-xs text-gray-500">Son otomatik calistirma</p>
+                </div>
+              </div>
+
+              {/* Features */}
+              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                <div className="rounded-lg p-2 bg-blue-100">
+                  <Zap className="w-4 h-4 text-blue-600" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap gap-1">
+                    {schedule.auto_retry && (
+                      <Badge className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px]">
+                        Otomatik Yeniden Deneme
+                      </Badge>
+                    )}
+                    {schedule.skip_validations && (
+                      <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px]">
+                        Dogrulama Atla
+                      </Badge>
+                    )}
+                    {!schedule.auto_retry && !schedule.skip_validations && (
+                      <Badge className="bg-gray-50 text-gray-500 border border-gray-200 text-[10px]">
+                        Standart Ayarlar
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">Ozellikler</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Recent Auto-Run Logs */}
+            {scheduleStatus?.recent_logs?.length > 0 && (
+              <div className="mt-3 border-t pt-3">
+                <p className="text-xs font-semibold text-gray-600 mb-2">Son Otomatik Calistirma Loglari</p>
+                <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                  {scheduleStatus.recent_logs.map((log) => (
+                    <div key={log.id} className="flex items-center justify-between text-xs p-1.5 bg-gray-50 rounded">
+                      <div className="flex items-center gap-2">
+                        {log.status === "completed" ? (
+                          <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                        ) : log.status === "failed" ? (
+                          <XCircle className="w-3 h-3 text-red-500" />
+                        ) : (
+                          <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
+                        )}
+                        <span className="text-gray-700">{log.business_date}</span>
+                      </div>
+                      <span className="text-gray-400">
+                        {log.triggered_at ? new Date(log.triggered_at).toLocaleString("tr-TR") : "-"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Latest Run Summary */}
         {lastRun && (
@@ -441,6 +629,163 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
           </CardContent>
         </Card>
 
+        {/* Schedule Settings Dialog */}
+        <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Timer className="w-5 h-5 text-indigo-600" />
+                Otomatik Zamanlama Ayarlari
+              </DialogTitle>
+              <DialogDescription>
+                Gece denetiminin otomatik olarak calistirilacagi saat ve secenekleri yapilandir.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* Enable/Disable */}
+              <div className="flex items-center justify-between p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium text-indigo-800">Otomatik Calistirma</p>
+                  <p className="text-xs text-indigo-600">Belirlenen saatte otomatik olarak calistirilir</p>
+                </div>
+                <Switch
+                  data-testid="schedule-enable-switch"
+                  checked={schedule.enabled}
+                  onCheckedChange={(checked) => setSchedule({ ...schedule, enabled: checked })}
+                />
+              </div>
+
+              {/* Time Selection */}
+              <div>
+                <label className="text-xs text-gray-600 mb-1.5 block font-medium">Zamanlama Saati</label>
+                <div className="flex gap-2 items-center">
+                  <select
+                    data-testid="schedule-hour-select"
+                    value={schedule.scheduled_hour}
+                    onChange={(e) => setSchedule({ ...schedule, scheduled_hour: parseInt(e.target.value) })}
+                    className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+                  >
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <option key={i} value={i}>{String(i).padStart(2, "0")}</option>
+                    ))}
+                  </select>
+                  <span className="text-lg font-bold text-gray-400">:</span>
+                  <select
+                    data-testid="schedule-minute-select"
+                    value={schedule.scheduled_minute}
+                    onChange={(e) => setSchedule({ ...schedule, scheduled_minute: parseInt(e.target.value) })}
+                    className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+                  >
+                    {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
+                      <option key={m} value={m}>{String(m).padStart(2, "0")}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Timezone */}
+              <div>
+                <label className="text-xs text-gray-600 mb-1.5 block font-medium">Saat Dilimi</label>
+                <select
+                  data-testid="schedule-timezone-select"
+                  value={schedule.timezone}
+                  onChange={(e) => setSchedule({ ...schedule, timezone: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+                >
+                  <option value="Europe/Istanbul">Europe/Istanbul (UTC+3)</option>
+                  <option value="Europe/Berlin">Europe/Berlin (UTC+1)</option>
+                  <option value="Europe/London">Europe/London (UTC+0)</option>
+                  <option value="Europe/Moscow">Europe/Moscow (UTC+3)</option>
+                  <option value="Asia/Dubai">Asia/Dubai (UTC+4)</option>
+                  <option value="UTC">UTC</option>
+                </select>
+              </div>
+
+              {/* Options */}
+              <div className="space-y-2">
+                <label className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
+                  <div className="flex items-center gap-2">
+                    <RotateCcw className="w-4 h-4 text-blue-500" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">Otomatik Yeniden Deneme</p>
+                      <p className="text-xs text-gray-500">Basarisiz olursa tekrar dener</p>
+                    </div>
+                  </div>
+                  <Switch
+                    data-testid="schedule-auto-retry-switch"
+                    checked={schedule.auto_retry}
+                    onCheckedChange={(checked) => setSchedule({ ...schedule, auto_retry: checked })}
+                  />
+                </label>
+
+                {schedule.auto_retry && (
+                  <div className="ml-8">
+                    <label className="text-xs text-gray-600 mb-1 block">Maks. Deneme Sayisi</label>
+                    <select
+                      data-testid="schedule-max-retries-select"
+                      value={schedule.max_retries}
+                      onChange={(e) => setSchedule({ ...schedule, max_retries: parseInt(e.target.value) })}
+                      className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+                    >
+                      {[1, 2, 3, 5].map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <label className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">Dogrulamalari Atla</p>
+                      <p className="text-xs text-gray-500">On kontrolleri atlayarak calistir</p>
+                    </div>
+                  </div>
+                  <Switch
+                    data-testid="schedule-skip-validations-switch"
+                    checked={schedule.skip_validations}
+                    onCheckedChange={(checked) => setSchedule({ ...schedule, skip_validations: checked })}
+                  />
+                </label>
+              </div>
+
+              {schedule.skip_validations && (
+                <div className="p-2 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-red-700">
+                    Otomatik calistirmada dogrulama atlama veri tutarsizliklarina yol acabilir.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setShowScheduleDialog(false)} disabled={scheduleLoading}>
+                  Iptal
+                </Button>
+                <Button
+                  data-testid="schedule-save-btn"
+                  onClick={handleSaveSchedule}
+                  disabled={scheduleLoading}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                >
+                  {scheduleLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                      Kaydediliyor...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 mr-1" />
+                      Kaydet
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Run Audit Dialog */}
         <Dialog open={showRunDialog} onOpenChange={setShowRunDialog}>
           <DialogContent className="max-w-md">
@@ -449,6 +794,9 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 <Moon className="w-5 h-5 text-indigo-600" />
                 Gece Denetimi Baslat
               </DialogTitle>
+              <DialogDescription>
+                Secili is gunu icin gece denetimi islemini baslatir.
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
