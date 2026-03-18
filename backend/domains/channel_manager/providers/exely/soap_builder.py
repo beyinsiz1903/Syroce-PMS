@@ -80,6 +80,10 @@ def build_read_rq(
             "Type": "14",
             "ID": reservation_id,
         })
+        # Exely requires SelectionCriteria even for specific reservation lookups
+        etree.SubElement(read_request, f"{{{OTA_NS}}}SelectionCriteria", attrib={
+            "SelectionType": "All",
+        })
     else:
         selection = etree.SubElement(read_request, f"{{{OTA_NS}}}SelectionCriteria", attrib={
             "SelectionType": "Undelivered",

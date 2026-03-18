@@ -237,35 +237,56 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const handleSyncReservations = async () => {
     setSyncing(true);
     try {
-      // Get active connectors
-      const connectorsRes = await axios.get('/channel-manager/connectors').catch(() => ({ data: [] }));
-      const connectors = Array.isArray(connectorsRes.data) ? connectorsRes.data : [];
-      
-      if (connectors.length === 0) {
+      let totalImported = 0;
+      let totalCancelled = 0;
+      let synced = false;
+
+      // 1) Exely direct sync
+      try {
+        const exelyRes = await axios.post('/channel-manager/exely/sync/reservations/pull');
+        const d = exelyRes.data || {};
+        totalImported += d.auto_imported || d.processed || 0;
+        totalCancelled += d.cancelled || 0;
+        synced = true;
+      } catch (e) {
+        if (e.response?.status !== 404) {
+          console.warn('Exely sync error:', e);
+        }
+      }
+
+      // 2) HotelRunner / v2 connector flow
+      try {
+        const connectorsRes = await axios.get('/channel-manager/v2/connectors');
+        const connectors = Array.isArray(connectorsRes.data) ? connectorsRes.data : [];
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+        const endDate = new Date();
+        endDate.setMonth(endDate.getMonth() + 3);
+
+        for (const conn of connectors) {
+          try {
+            const result = await axios.post('/channel-manager/v2/reservations/pull', {
+              connector_id: conn.id,
+              date_start: startDate.toISOString().split('T')[0],
+              date_end: endDate.toISOString().split('T')[0],
+            });
+            totalImported += result.data?.imported || result.data?.new || 0;
+            totalCancelled += result.data?.cancelled || 0;
+            synced = true;
+          } catch (e) {
+            console.warn(`Sync failed for connector ${conn.id}:`, e);
+          }
+        }
+      } catch (e) {
+        if (e.response?.status !== 404) {
+          console.warn('v2 connector sync error:', e);
+        }
+      }
+
+      if (!synced) {
         toast.info('Aktif kanal bağlantısı bulunamadı');
         setSyncing(false);
         return;
-      }
-
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - 7);
-      const endDate = new Date();
-      endDate.setMonth(endDate.getMonth() + 3);
-
-      let totalImported = 0;
-      let totalCancelled = 0;
-      for (const conn of connectors) {
-        try {
-          const result = await axios.post('/channel-manager/reservations/pull', {
-            connector_id: conn.id,
-            date_start: startDate.toISOString().split('T')[0],
-            date_end: endDate.toISOString().split('T')[0],
-          });
-          totalImported += result.data?.imported || 0;
-          totalCancelled += result.data?.cancelled || 0;
-        } catch (e) {
-          console.warn(`Sync failed for connector ${conn.id}:`, e);
-        }
       }
 
       if (totalImported > 0 || totalCancelled > 0) {
@@ -804,20 +825,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     return dayStr >= checkIn && dayStr < checkOut;
   };
 
-  // Get bookings that are unassigned (no room_id) for a given room type and date
-  const getUnassignedBookingsForTypeOnDate = (roomType, date) => {
-    const dayStr = toDateStringUTC(date);
-    return bookings.filter(booking => {
-      if (booking.status === 'cancelled' || booking.status === 'checked_out' || booking.status === 'no_show') return false;
-      if (booking.room_id) return false;
-      const bType = (booking.room_type || '').toLowerCase();
-      if (bType !== roomType.toLowerCase()) return false;
-      const checkIn = toDateStringUTC(booking.check_in);
-      const checkOut = toDateStringUTC(booking.check_out);
-      return dayStr >= checkIn && dayStr < checkOut;
-    });
-  };
-
   // Get all unassigned bookings for a room type (for the unassigned row start detection)
   const getUnassignedBookingsForType = (roomType) => {
     return bookings.filter(booking => {
@@ -826,6 +833,41 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       const bType = (booking.room_type || '').toLowerCase();
       return bType === roomType.toLowerCase();
     });
+  };
+
+  // Compute lane allocation for unassigned bookings to avoid overlap
+  const computeUnassignedLanes = (unassignedBookings) => {
+    if (!unassignedBookings.length) return { lanes: {}, maxLane: 0 };
+    const sorted = [...unassignedBookings].sort((a, b) => {
+      const aIn = toDateStringUTC(a.check_in);
+      const bIn = toDateStringUTC(b.check_in);
+      if (aIn !== bIn) return aIn < bIn ? -1 : 1;
+      const aOut = toDateStringUTC(a.check_out);
+      const bOut = toDateStringUTC(b.check_out);
+      return aOut < bOut ? -1 : 1;
+    });
+    const lanes = {};
+    const laneEnds = []; // tracks the check_out of the booking occupying each lane
+    let maxLane = 0;
+    for (const booking of sorted) {
+      const checkIn = toDateStringUTC(booking.check_in);
+      let placed = false;
+      for (let i = 0; i < laneEnds.length; i++) {
+        if (checkIn >= laneEnds[i]) {
+          lanes[booking.id] = i;
+          laneEnds[i] = toDateStringUTC(booking.check_out);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        const lane = laneEnds.length;
+        lanes[booking.id] = lane;
+        laneEnds.push(toDateStringUTC(booking.check_out));
+        if (lane > maxLane) maxLane = lane;
+      }
+    }
+    return { lanes, maxLane };
   };
 
   // Handle room assignment via drag from unassigned to a room
@@ -2027,60 +2069,75 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                       </div>
 
                       {/* Unassigned Bookings Row */}
-                      {unassignedForType.length > 0 && (
+                      {unassignedForType.length > 0 && (() => {
+                        const { lanes, maxLane } = computeUnassignedLanes(unassignedForType);
+                        const laneHeight = 52;
+                        const rowHeight = (maxLane + 1) * laneHeight + 8;
+                        return (
                         <div className="flex border-b-2 border-dashed border-amber-400 bg-amber-50/40">
-                          <div className="w-32 flex-shrink-0 p-2 border-r-2 border-gray-400 bg-amber-50">
+                          <div className="w-32 flex-shrink-0 p-2 border-r-2 border-gray-400 bg-amber-50" style={{ height: `${rowHeight}px` }}>
                             <div className="flex items-center gap-1.5">
                               <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></div>
                               <div className="font-bold text-[10px] text-amber-800 uppercase">Atanmamış</div>
                             </div>
                             <div className="text-[9px] text-amber-600 mt-0.5 ml-3 font-medium">Sürükle → Oda</div>
+                            {unassignedForType.length > 1 && (
+                              <div className="text-[9px] text-amber-500 ml-3 mt-0.5">{unassignedForType.length} rez.</div>
+                            )}
                           </div>
-                          <div className="flex relative" style={{ width: `${daysToShow * 96}px` }}>
+                          <div className="flex relative" style={{ width: `${daysToShow * 96}px`, height: `${rowHeight}px` }}>
                             {dateRange.map((date, idx) => {
                               const dayStr = toDateStringUTC(date);
-                              const unassignedOnDate = getUnassignedBookingsForTypeOnDate(roomType, date);
-                              // Show only the first unassigned booking that starts on this date
-                              const startBooking = unassignedOnDate.find(b => toDateStringUTC(b.check_in) === dayStr);
-
                               return (
                                 <div
                                   key={idx}
                                   className={`w-24 flex-shrink-0 border-r border-b border-amber-200 relative ${
                                     isToday(date) ? 'bg-amber-100/60' : 'bg-amber-50/20'
                                   }`}
-                                  style={{ height: '54px', minHeight: '54px', overflow: 'visible' }}
+                                  style={{ height: `${rowHeight}px`, minHeight: `${rowHeight}px` }}
                                 >
-                                  {startBooking && (
-                                    <div
-                                      draggable
-                                      onDragStart={(e) => handleDragStart(e, startBooking)}
-                                      onDragEnd={handleDragEnd}
-                                      onDoubleClick={() => handleBookingDoubleClick(startBooking)}
-                                      className="absolute top-1 left-0.5 rounded-lg text-white text-xs shadow-md hover:shadow-xl transition-all cursor-move z-20 bg-amber-500 border-2 border-amber-600 border-dashed"
-                                      style={{
-                                        width: `${calculateBookingSpan(startBooking, currentDate) * 96 - 4}px`,
-                                        height: '48px',
-                                      }}
-                                      data-testid={`unassigned-booking-${startBooking.id}`}
-                                      title={`${startBooking.guest_name} - Odaya sürükleyin`}
-                                    >
-                                      <div className="p-1.5 h-full relative overflow-hidden">
-                                        <div className="font-bold text-[11px] truncate pr-4 text-white drop-shadow-sm">
-                                          {startBooking.guest_name || 'Misafir'}
-                                        </div>
-                                        <div className="text-[9px] text-amber-100 truncate mt-0.5">
-                                          {startBooking.channel || startBooking.source || 'OTA'} · Oda ata
-                                        </div>
-                                      </div>
+                                </div>
+                              );
+                            })}
+                            {/* Render each unassigned booking as absolute overlay on start date */}
+                            {unassignedForType.map((booking) => {
+                              const checkInStr = toDateStringUTC(booking.check_in);
+                              const startIdx = dateRange.findIndex(d => toDateStringUTC(d) === checkInStr);
+                              if (startIdx < 0) return null;
+                              const lane = lanes[booking.id] || 0;
+                              const span = calculateBookingSpan(booking, currentDate);
+                              return (
+                                <div
+                                  key={booking.id}
+                                  draggable
+                                  onDragStart={(e) => handleDragStart(e, booking)}
+                                  onDragEnd={handleDragEnd}
+                                  onDoubleClick={() => handleBookingDoubleClick(booking)}
+                                  className="absolute rounded-lg text-white text-xs shadow-md hover:shadow-xl transition-all cursor-move z-20 bg-amber-500 border-2 border-amber-600 border-dashed"
+                                  style={{
+                                    left: `${startIdx * 96 + 2}px`,
+                                    top: `${lane * laneHeight + 4}px`,
+                                    width: `${span * 96 - 4}px`,
+                                    height: `${laneHeight - 6}px`,
+                                  }}
+                                  data-testid={`unassigned-booking-${booking.id}`}
+                                  title={`${booking.guest_name} - Odaya sürükleyin`}
+                                >
+                                  <div className="p-1.5 h-full relative overflow-hidden">
+                                    <div className="font-bold text-[11px] truncate pr-4 text-white drop-shadow-sm">
+                                      {booking.guest_name || 'Misafir'}
                                     </div>
-                                  )}
+                                    <div className="text-[9px] text-amber-100 truncate mt-0.5">
+                                      {booking.channel || booking.source || 'OTA'} · Oda ata
+                                    </div>
+                                  </div>
                                 </div>
                               );
                             })}
                           </div>
                         </div>
-                      )}
+                        );
+                      })()}
                       
                       {/* Rooms of this type */}
                       {groupedRooms[roomType].map((room) => (

@@ -369,16 +369,83 @@ async def manual_pull(current_user: User = Depends(get_current_user)):
     if not result["success"]:
         raise HTTPException(status_code=502, detail=f"Pull hatasi: {result.get('error')}")
 
+    # Also check individual imported reservations for cancellation status changes.
+    # The batch "Undelivered" pull may not return cancellations immediately.
+    cancel_detected = await _check_individual_cancellations(
+        current_user.tenant_id, username, password, hotel_code, endpoint_url,
+    )
+
     # Auto-import is already triggered inside pull_for_tenant
     # Also import any previously pending ones
     from domains.channel_manager.providers.exely.auto_import import auto_import_pending
     import_result = await auto_import_pending(current_user.tenant_id)
 
+    cancelled = import_result.get("cancelled", 0) + cancel_detected
+    msg_parts = [f"{result['processed']} rezervasyon cekildi"]
+    if import_result["imported"]:
+        msg_parts.append(f"{import_result['imported']} PMS'e aktarildi")
+    if cancelled:
+        msg_parts.append(f"{cancelled} iptal edildi")
     return {
-        "message": f"{result['processed']} rezervasyon cekildi, {import_result['imported']} PMS'e aktarildi",
+        "message": ", ".join(msg_parts),
         **result,
         "auto_imported": import_result["imported"],
+        "cancelled": cancelled,
     }
+
+
+async def _check_individual_cancellations(
+    tenant_id: str, username: str, password: str, hotel_code: str, endpoint_url: str,
+) -> int:
+    """
+    Check each imported (non-cancelled) exely_reservation individually via Exely SOAP
+    to detect cancellations that the batch 'Undelivered' pull may miss.
+    """
+    from domains.channel_manager.providers.exely.normalizer import normalize_reservation
+    from domains.channel_manager.providers.common_ingest import ingest_reservation
+
+    imported_reservations = await db.exely_reservations.find(
+        {"tenant_id": tenant_id, "state": {"$in": ["confirmed", "pending"]}, "pms_status": "imported"},
+        {"_id": 0, "external_id": 1, "provider_reservation_id": 1},
+    ).to_list(50)
+
+    if not imported_reservations:
+        return 0
+
+    provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
+    if endpoint_url:
+        provider_kwargs["endpoint_url"] = endpoint_url
+    provider = ExelyProvider(**provider_kwargs)
+
+    cancel_count = 0
+    for res in imported_reservations:
+        ext_id = res.get("external_id", "")
+        prov_res_id = res.get("provider_reservation_id", ext_id)
+        try:
+            pull_result = await provider.legacy_pull_reservations(reservation_id=prov_res_id)
+            if not pull_result.get("success"):
+                continue
+            reservations = pull_result.get("reservations", [])
+            if not reservations:
+                continue
+            raw_res = reservations[0]
+            status = (raw_res.get("status") or "").lower()
+            if status in ("cancel", "cancelled"):
+                ingest_result = await ingest_reservation(
+                    provider=PROVIDER,
+                    tenant_id=tenant_id,
+                    raw_payload=raw_res,
+                    normalizer=normalize_reservation,
+                    event_type="cancellation",
+                    source="manual_cancel_check",
+                )
+                if ingest_result.get("action") == "cancelled":
+                    cancel_count += 1
+                    logger.info(f"[EXELY-CANCEL-CHECK] Detected cancellation for {ext_id}")
+        except Exception as e:
+            logger.warning(f"[EXELY-CANCEL-CHECK] Error checking {ext_id}: {e}")
+
+    return cancel_count
 
 
 @router.get("/reservations/local")
