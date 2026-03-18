@@ -1190,16 +1190,41 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   };
 
   const formatDate = (date) => {
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return date.toLocaleDateString('tr-TR', { month: 'short', day: 'numeric' });
   };
 
+  const turkishDayNames = ['Paz', 'Pts', 'Sal', 'Çar', 'Per', 'Cum', 'Cts'];
+
   const formatDateWithDay = (date) => {
-    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const dayName = turkishDayNames[date.getUTCDay()];
+    const dayNum = String(date.getUTCDate()).padStart(2, '0');
+    return { dayName, dayNum };
+  };
+
+  const isWeekend = (date) => {
+    const day = date.getUTCDay();
+    return day === 0 || day === 6;
   };
 
   const isToday = (date) => {
     const today = new Date();
     return date.toDateString() === today.toDateString();
+  };
+
+  // Source-based booking card color mapping
+  const getSourceColor = (booking) => {
+    const channel = (booking.ota_channel || booking.source_channel || booking.channel || booking.source || '').toLowerCase();
+    if (channel.includes('expedia')) return { bg: '#F97316', border: '#EA580C', label: 'Expedia' };
+    if (channel.includes('booking')) return { bg: '#1D4ED8', border: '#1E40AF', label: 'Booking.com' };
+    if (channel.includes('tatilbudur')) return { bg: '#2563EB', border: '#1D4ED8', label: 'Tatilbudur.com' };
+    if (channel.includes('airbnb')) return { bg: '#E11D48', border: '#BE123C', label: 'Airbnb' };
+    if (channel.includes('agoda')) return { bg: '#7C3AED', border: '#6D28D9', label: 'Agoda' };
+    if (channel.includes('hotels')) return { bg: '#BE123C', border: '#9F1239', label: 'Hotels.com' };
+    if (channel.includes('online')) return { bg: '#2563EB', border: '#1D4ED8', label: 'Online' };
+    if (channel.includes('setur')) return { bg: '#0D9488', border: '#0F766E', label: 'Setur' };
+    if (channel === 'direct' || channel === 'phone' || channel === 'walk_in' || channel === 'walk-in') return { bg: '#374151', border: '#1F2937', label: 'Kesin' };
+    // Default confirmed/manual
+    return { bg: '#374151', border: '#1F2937', label: 'Kesin' };
   };
 
   if (loading) {
@@ -1214,174 +1239,213 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="calendar">
-      <div className="p-6 space-y-4">
-        {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <div className="flex items-center space-x-3">
-              <h1 className="text-4xl font-bold" style={{ fontFamily: 'Space Grotesk' }}>
-                Reservation Calendar
-              </h1>
-              {conflicts.length > 0 && (
-                <Badge className="bg-red-500 animate-pulse">
-                  ⚠️ {conflicts.length} Conflict{conflicts.length > 1 ? 's' : ''}
-                </Badge>
-              )}
-            </div>
-            <p className="text-gray-600 mt-1">Timeline view of all bookings</p>
+      <div className="p-4 space-y-3">
+        {/* Header - PMS Style */}
+        <div className="flex items-center justify-between" data-testid="calendar-header">
+          <div className="flex items-center gap-2">
+            <Button
+              className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-4 py-2 rounded-md text-sm"
+              data-testid="reservations-tab-btn"
+            >
+              <CalendarIcon className="w-4 h-4 mr-1.5" />
+              Rezervasyonlar
+            </Button>
+            {bookings.filter(b => !b.room_id && b.status !== 'cancelled').length > 0 && (
+              <Button
+                variant="outline"
+                className="border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 font-medium text-sm px-3 py-2 rounded-md"
+                data-testid="unassigned-count-btn"
+              >
+                {bookings.filter(b => !b.room_id && b.status !== 'cancelled').length} atanmamış oda
+              </Button>
+            )}
+            {conflicts.length > 0 && (
+              <Badge className="bg-red-500 animate-pulse text-white text-xs px-2 py-1">
+                {conflicts.length} Çakışma
+              </Badge>
+            )}
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={navigatePrevious} className="h-8 w-8 p-0" data-testid="nav-prev-btn">
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <Button variant="outline" size="sm" onClick={goToToday} className="h-8 px-3 text-xs font-medium" data-testid="go-today-btn">
+              Tarihe git
+            </Button>
+            <Button variant="outline" size="sm" onClick={navigateNext} className="h-8 w-8 p-0" data-testid="nav-next-btn">
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
             <Button
               variant="outline"
+              size="sm"
               onClick={handleSyncReservations}
               disabled={syncing}
               data-testid="sync-reservations-btn"
-              className="border-green-400 text-green-700 hover:bg-green-50"
+              className="text-xs h-8"
             >
-              {syncing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-              {syncing ? 'Senkronize ediliyor...' : 'OTA Sync'}
-            </Button>
-            <Button onClick={() => setShowFindRoomDialog(true)}>
-              <Search className="w-4 h-4 mr-2" />
-              Find Room
+              {syncing ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
+              {syncing ? 'Senkronize...' : 'OTA Sync'}
             </Button>
             <select
-              className="border rounded-md px-3 py-2"
+              className="border rounded-md px-2 py-1 text-xs h-8"
               value={daysToShow}
               onChange={(e) => setDaysToShow(Number(e.target.value))}
+              data-testid="days-selector"
             >
-              <option value={7}>7 Days</option>
-              <option value={14}>14 Days</option>
-              <option value={30}>30 Days</option>
+              <option value={7}>7 Gün</option>
+              <option value={14}>14 Gün</option>
+              <option value={30}>30 Gün</option>
             </select>
-            <Button variant="outline" onClick={goToToday}>
-              <CalendarIcon className="w-4 h-4 mr-2" />
-              Today
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowFindRoomDialog(true)}
+              className="text-xs h-8"
+              data-testid="find-room-btn"
+            >
+              Genel Bakış
             </Button>
-            <Button variant="outline" onClick={navigatePrevious}>
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <Button variant="outline" onClick={navigateNext}>
-              <ChevronRight className="w-4 h-4" />
+            <Button
+              onClick={() => setShowNewBookingDialog(true)}
+              className="bg-orange-500 hover:bg-orange-600 text-white text-xs h-8 px-3 font-semibold"
+              data-testid="add-reservation-btn"
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" />
+              Rezervasyon ekle
             </Button>
           </div>
         </div>
 
-        {/* Conflict Alert */}
-        {conflicts.length > 0 && (
-          <Card className="border-red-500 bg-red-50">
-            <CardContent className="py-4">
-              <div className="flex items-start space-x-3">
-                <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0" />
-                <div className="flex-1">
-                  <h3 className="font-bold text-red-900 mb-2">⚠️ Overbooking Detected!</h3>
-                  <div className="space-y-2">
-                    {conflicts.map((conflict, idx) => (
-                      <div key={idx} className="text-sm text-red-800 bg-white rounded p-2">
-                        <strong>Room {conflict.room_number}:</strong> {conflict.guest1} and {conflict.guest2} 
-                        {' '}have overlapping reservations from{' '}
-                        {new Date(conflict.overlap_start).toLocaleDateString()} to{' '}
-                        {new Date(conflict.overlap_end).toLocaleDateString()}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Occupancy Bar */}
-        <Card>
-          <CardContent className="py-4">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-700">Occupancy Overview</h3>
-                  <p className="text-xs text-gray-500">Hover over dates to see occupancy %</p>
-                </div>
-                <div className="flex items-center space-x-4">
-                  <Button
-                    size="sm"
-                    variant={showEnterprisePanel ? "default" : "outline"}
-                    onClick={() => {
-                      const newState = !showEnterprisePanel;
-                      setShowEnterprisePanel(newState);
-                      if (newState) loadEnterpriseData({ roomsCount: rooms.length });
-                    }}
-                    className="flex items-center gap-2"
-                  >
-                    <TrendingUp className="w-4 h-4" />
-                    Enterprise
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={showAIPanel ? "default" : "outline"}
-                    onClick={toggleAIMode}
-                    className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700"
-                  >
-                    🤖 AI
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={showDeluxePanel ? "default" : "outline"}
-                    onClick={toggleDeluxeMode}
-                    className="flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700"
-                  >
-                    💎 Deluxe+
-                  </Button>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-600">{getOccupancyForDate(new Date())}%</div>
-                    <div className="text-xs text-gray-600">Today</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600">{getForecastOccupancy()}%</div>
-                    <div className="text-xs text-gray-600 flex items-center">
-                      <TrendingUp className="w-3 h-3 mr-1" />
-                      14-Day Forecast
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Occupancy bars for visible dates */}
-              <div className="flex space-x-1">
-                {dateRange.map((date, idx) => {
-                  const occ = getOccupancyForDate(date);
-                  const isCurrentDate = isToday(date);
-                  
-                  return (
-                    <div
-                      key={idx}
-                      className="flex-1 relative group"
-                      title={`${formatDate(date)}: ${occ}% occupancy`}
-                    >
-
-
-                      <div className="h-8 bg-gray-200 rounded overflow-hidden">
-                        <div
-                          className={`h-full transition-all ${
-                            occ >= 90 ? 'bg-red-500' :
-                            occ >= 75 ? 'bg-orange-500' :
-                            occ >= 50 ? 'bg-yellow-500' :
-                            'bg-green-500'
-                          }`}
-                          style={{ width: `${occ}%` }}
-                        ></div>
-                      </div>
-                      {isCurrentDate && (
-                        <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-2 h-2 bg-blue-600 rounded-full"></div>
-                      )}
-                      <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 text-xs text-gray-500 opacity-0 group-hover:opacity-100 whitespace-nowrap">
-                        {occ}%
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+        {/* Date Range & Filters Row */}
+        <div className="flex items-center justify-between bg-white border rounded-lg px-4 py-2" data-testid="date-range-bar">
+          <div className="text-sm font-semibold text-gray-800">
+            {dateRange.length > 0 && (
+              <>
+                {dateRange[0].toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })} – {dateRange[dateRange.length - 1].toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-xs text-gray-600">
+              <span>Rezervasyon durumu</span>
+              <select className="border rounded px-2 py-1 text-xs" data-testid="status-filter">
+                <option>Hepsi</option>
+              </select>
             </div>
-          </CardContent>
-        </Card>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant={showEnterprisePanel ? "default" : "outline"}
+                onClick={() => {
+                  const newState = !showEnterprisePanel;
+                  setShowEnterprisePanel(newState);
+                  if (newState) loadEnterpriseData({ roomsCount: rooms.length });
+                }}
+                className="h-7 text-xs px-2"
+                data-testid="enterprise-toggle"
+              >
+                Ayarlar
+              </Button>
+              <Button
+                size="sm"
+                variant={showAIPanel ? "default" : "outline"}
+                onClick={toggleAIMode}
+                className="h-7 text-xs px-2"
+                data-testid="ai-toggle"
+              >
+                Renklendirme
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Occupancy Chart - Line Style */}
+        <div className="bg-white border rounded-lg p-4" data-testid="occupancy-chart">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-semibold text-gray-500 tracking-wider">Doluluk</div>
+            <div className="flex items-center gap-3">
+              <Button
+                size="sm"
+                variant={showDeluxePanel ? "default" : "outline"}
+                onClick={toggleDeluxeMode}
+                className="h-6 text-[10px] px-2"
+              >
+                Deluxe+
+              </Button>
+            </div>
+          </div>
+          <div className="relative" style={{ height: '80px' }}>
+            {/* Percentage labels */}
+            <div className="absolute top-0 left-0 right-0 flex" style={{ height: '20px' }}>
+              {dateRange.map((date, idx) => {
+                const occ = getOccupancyForDate(date);
+                return (
+                  <div key={idx} className="flex-1 text-center">
+                    <span className={`text-[10px] font-bold ${occ >= 50 ? 'text-orange-600' : occ > 0 ? 'text-blue-500' : 'text-gray-400'}`}>
+                      {occ > 0 ? occ : '0'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {/* SVG Line Chart */}
+            <svg className="w-full" style={{ height: '60px', marginTop: '20px' }} viewBox={`0 0 ${dateRange.length * 100} 60`} preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="occGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#60A5FA" stopOpacity="0.3" />
+                  <stop offset="100%" stopColor="#60A5FA" stopOpacity="0.05" />
+                </linearGradient>
+              </defs>
+              {/* Area fill */}
+              <path
+                d={(() => {
+                  const points = dateRange.map((date, idx) => {
+                    const occ = getOccupancyForDate(date);
+                    const x = idx * 100 + 50;
+                    const y = 60 - (occ / 100) * 55;
+                    return { x, y };
+                  });
+                  if (points.length === 0) return '';
+                  let path = `M ${points[0].x} ${points[0].y}`;
+                  for (let i = 1; i < points.length; i++) {
+                    const cp1x = points[i-1].x + (points[i].x - points[i-1].x) / 3;
+                    const cp2x = points[i].x - (points[i].x - points[i-1].x) / 3;
+                    path += ` C ${cp1x} ${points[i-1].y} ${cp2x} ${points[i].y} ${points[i].x} ${points[i].y}`;
+                  }
+                  path += ` L ${points[points.length-1].x} 60 L ${points[0].x} 60 Z`;
+                  return path;
+                })()}
+                fill="url(#occGradient)"
+              />
+              {/* Line */}
+              <path
+                d={(() => {
+                  const points = dateRange.map((date, idx) => {
+                    const occ = getOccupancyForDate(date);
+                    const x = idx * 100 + 50;
+                    const y = 60 - (occ / 100) * 55;
+                    return { x, y };
+                  });
+                  if (points.length === 0) return '';
+                  let path = `M ${points[0].x} ${points[0].y}`;
+                  for (let i = 1; i < points.length; i++) {
+                    const cp1x = points[i-1].x + (points[i].x - points[i-1].x) / 3;
+                    const cp2x = points[i].x - (points[i].x - points[i-1].x) / 3;
+                    path += ` C ${cp1x} ${points[i-1].y} ${cp2x} ${points[i].y} ${points[i].x} ${points[i].y}`;
+                  }
+                  return path;
+                })()}
+                fill="none"
+                stroke="#60A5FA"
+                strokeWidth="2.5"
+              />
+            </svg>
+          </div>
+          {/* % label */}
+          <div className="text-left text-[10px] text-gray-400 font-medium mt-1">%</div>
+        </div>
 
         {/* Deluxe+ Panel */}
         {showDeluxePanel && (
@@ -1852,175 +1916,79 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           </Card>
         )}
 
-        {/* Legend - Market Segments & Quick Tips */}
-        <Card>
-          <CardContent className="py-3">
-            <div className="space-y-3">
-              {/* Market Segment Colors */}
-              <div>
-                <div className="text-xs font-semibold text-gray-700 mb-2">Market Segments (by color):</div>
-                <div className="flex items-center space-x-4 text-sm">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 bg-blue-600 rounded"></div>
-                    <span>Corporate</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 bg-purple-600 rounded"></div>
-                    <span>OTA</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 bg-orange-500 rounded"></div>
-                    <span>Walk-in</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 bg-green-600 rounded"></div>
-                    <span>Group</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 bg-pink-500 rounded"></div>
-                    <span>Leisure</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 bg-indigo-600 rounded"></div>
-                    <span>Government</span>
-                  </div>
-                </div>
+        {/* Compact Legend */}
+        <div className="bg-white border rounded-lg px-4 py-2" data-testid="calendar-legend">
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#F97316' }}></div>
+                <span>Expedia</span>
               </div>
-
-              {/* Status Indicators */}
-              <div>
-                <div className="text-xs font-semibold text-gray-700 mb-2">Status Indicators:</div>
-                <div className="flex items-center space-x-4 text-sm">
-                  <div className="flex items-center space-x-2">
-                    <div className="bg-white border-2 border-green-600 text-green-600 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">↓</div>
-                    <span>Arrival</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="bg-white border-2 border-red-600 text-red-600 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">↑</div>
-                    <span>Departure</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="bg-white border-2 border-blue-600 text-blue-600 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">•</div>
-                    <span>Stayover</span>
-                  </div>
-                </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#2563EB' }}></div>
+                <span>Tatilbudur/Online</span>
               </div>
-
-              {/* Room Blocks */}
-              <div>
-                <div className="text-xs font-semibold text-gray-700 mb-2">Room Blocks:</div>
-                <div className="flex items-center space-x-4 text-sm">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 bg-red-600 rounded opacity-60" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(255,255,255,.3) 2px, rgba(255,255,255,.3) 4px)' }}></div>
-                    <span>Out of Order</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 bg-orange-500 rounded opacity-60" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(255,255,255,.3) 2px, rgba(255,255,255,.3) 4px)' }}></div>
-                    <span>Out of Service</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 bg-yellow-600 rounded opacity-60" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(255,255,255,.3) 2px, rgba(255,255,255,.3) 4px)' }}></div>
-                    <span>Maintenance</span>
-                  </div>
-                </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#1D4ED8' }}></div>
+                <span>Booking.com</span>
               </div>
-
-              {/* OTA Channels */}
-              <div>
-                <div className="text-xs font-semibold text-gray-700 mb-2">OTA Channels:</div>
-                <div className="flex items-center space-x-3 text-sm flex-wrap gap-y-1">
-                  <div className="flex items-center space-x-1">
-                    <Badge className="bg-indigo-600 text-white text-[9px] px-1.5">BKG</Badge>
-                    <span className="text-xs">Booking.com</span>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <Badge className="bg-blue-600 text-white text-[9px] px-1.5">EXP</Badge>
-                    <span className="text-xs">Expedia</span>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <Badge className="bg-red-600 text-white text-[9px] px-1.5">ABNB</Badge>
-                    <span className="text-xs">Airbnb</span>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <Badge className="bg-purple-600 text-white text-[9px] px-1.5">AGD</Badge>
-                    <span className="text-xs">Agoda</span>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <Badge className="bg-rose-600 text-white text-[9px] px-1.5">HTL</Badge>
-                    <span className="text-xs">Hotels.com</span>
-                  </div>
-                </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#374151' }}></div>
+                <span>Kesin</span>
               </div>
-
-              {/* Quick Tips */}
-              <div className="flex items-center justify-between pt-2 border-t">
-                <div className="flex items-center space-x-4 text-xs text-gray-600">
-                  <div className="flex items-center space-x-1">
-                    <Plus className="w-3 h-3" />
-                    <span>Click cell = New booking</span>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <Info className="w-3 h-3" />
-                    <span>Double-click = Details</span>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <span>🖱️ Drag & drop = Move</span>
-                  </div>
-                </div>
-                <div className="text-xs text-gray-600">
-                  <span className="font-semibold">💡 Hover</span> over booking bars to see ADR & rate codes
-                </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                <span>Müsait</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                <span>Dolu</span>
               </div>
             </div>
-          </CardContent>
-        </Card>
+            <div className="flex items-center gap-3 text-gray-400">
+              <span>Tıkla = Yeni rez.</span>
+              <span>Çift tıkla = Detay</span>
+              <span>Sürükle = Taşı</span>
+            </div>
+          </div>
+        </div>
 
-        {/* Calendar Grid - Fixed sticky structure */}
-        <div className="bg-white rounded-lg shadow-sm border relative">
-          {/* Date Header Row - STICKY with overflow inside */}
-          <div className="sticky top-16 z-40 bg-white shadow-md border-b-2 border-gray-400 overflow-x-auto">
+        {/* Calendar Grid */}
+        <div className="bg-white rounded-lg border border-gray-200 relative" data-testid="calendar-grid">
+          {/* Date Header Row - STICKY */}
+          <div className="sticky top-16 z-40 bg-white border-b border-gray-300 overflow-x-auto">
             <div className="min-w-max">
-              <div 
-                className="flex bg-white"
-              >
-                <div className="w-32 flex-shrink-0 p-2 border-r-2 border-gray-400 font-bold text-gray-800 text-xs">
-                  ODALAR
+              {/* Month label row */}
+              <div className="flex">
+                <div className="w-32 flex-shrink-0 border-r border-gray-200"></div>
+                <div className="flex-1 text-center text-xs font-semibold text-gray-500 py-1">
+                  {dateRange.length > 0 && dateRange[Math.floor(dateRange.length / 2)].toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}
+                </div>
+              </div>
+              <div className="flex bg-white">
+                <div className="w-32 flex-shrink-0 px-3 py-2 border-r border-gray-200 text-xs text-gray-500 font-medium flex items-end">
+                  <span className="cursor-pointer hover:text-gray-700">Listeyi daralt ^</span>
                 </div>
                 {dateRange.map((date, idx) => {
-                  const intensity = getHeatmapIntensity(date);
-                  
-                  // Calculate occupancy percentage and ADR for this date
-                  const dayBookings = bookings.filter(b => {
-                    const checkIn = new Date(b.check_in);
-                    const checkOut = new Date(b.check_out);
-                    checkIn.setHours(0, 0, 0, 0);
-                    checkOut.setHours(0, 0, 0, 0);
-                    const currentDate = new Date(date);
-                    currentDate.setHours(0, 0, 0, 0);
-                    return currentDate >= checkIn && currentDate < checkOut && b.status !== 'cancelled';
-                  });
-                  
-                  const occupancyRate = rooms.length > 0 ? Math.round((dayBookings.length / rooms.length) * 100) : 0;
-                  
-                  const totalRevenue = dayBookings.reduce((sum, b) => {
-                    const nights = Math.ceil((new Date(b.check_out) - new Date(b.check_in)) / (1000 * 60 * 60 * 24));
-                    return sum + ((b.total_amount || 0) / nights);
-                  }, 0);
-                  const adr = dayBookings.length > 0 ? Math.round(totalRevenue / dayBookings.length) : 0;
+                  const { dayName, dayNum } = formatDateWithDay(date);
+                  const weekend = isWeekend(date);
+                  const today = isToday(date);
                   
                   return (
-                  <div
-                    key={idx}
-                    className={`w-24 flex-shrink-0 p-1.5 border-r-2 border-gray-400 text-center ${
-                      isToday(date) ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'
-                    }`}
-                    title={`Doluluk: ${occupancyRate}% | ADR: $${adr}`}
-                  >
-                    <div className="text-[10px] font-bold uppercase tracking-wide">{formatDateWithDay(date)}</div>
-                    <div className={`text-[9px] mt-0.5 font-semibold ${isToday(date) ? 'text-blue-100' : 'text-gray-500'}`}>
-                      ${adr > 0 ? adr : '-'} · %{occupancyRate}
+                    <div
+                      key={idx}
+                      className={`w-24 flex-shrink-0 py-1.5 border-r text-center ${
+                        today ? 'bg-blue-50 border-blue-200' : weekend ? 'bg-orange-50 border-gray-200' : 'bg-white border-gray-200'
+                      }`}
+                      data-testid={`date-header-${dayNum}`}
+                    >
+                      <div className={`text-[10px] font-semibold tracking-wide ${today ? 'text-blue-600' : 'text-gray-500'}`}>
+                        {dayName}
+                      </div>
+                      <div className={`text-base font-bold ${today ? 'text-blue-600' : 'text-gray-800'}`}>
+                        {dayNum}
+                      </div>
                     </div>
-                  </div>
                   );
                 })}
               </div>
@@ -2058,39 +2026,71 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                   
                   return sortedTypes.map((roomType) => {
                     const unassignedForType = getUnassignedBookingsForType(roomType);
+                    const typeRooms = groupedRooms[roomType];
                     return (
                     <div key={roomType}>
-                      {/* Room Type Header */}
-                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b-2 border-gray-400">
-                        <div className="flex items-center px-4 py-2.5">
-                          <Building2 className="w-4 h-4 mr-2 text-blue-600" />
-                          <span className="font-bold text-sm text-blue-900 tracking-wide uppercase">
-                            {roomType}
-                          </span>
-                          <span className="ml-3 text-xs text-blue-600 font-semibold bg-blue-100 px-2 py-0.5 rounded-full">
-                            {groupedRooms[roomType].length} oda
-                          </span>
-                          {unassignedForType.length > 0 && (
-                            <span className="ml-2 text-xs text-amber-700 font-semibold bg-amber-100 px-2 py-0.5 rounded-full animate-pulse">
-                              {unassignedForType.length} atanmamış
+                      {/* Room Type Header with Price/Occupancy Row */}
+                      <div className="bg-amber-50 border-b border-amber-200">
+                        <div className="flex">
+                          <div className="w-32 flex-shrink-0 px-3 py-2 border-r border-amber-200 flex items-center">
+                            <span className="font-bold text-sm text-gray-800" data-testid={`room-type-${roomType}`}>
+                              {roomType} ^
                             </span>
-                          )}
+                          </div>
+                          {dateRange.map((date, idx) => {
+                            const weekend = isWeekend(date);
+                            // Calculate price & occupancy for this room type on this date
+                            const typeBookings = bookings.filter(b => {
+                              if (b.status === 'cancelled' || b.status === 'checked_out' || b.status === 'no_show') return false;
+                              const room = rooms.find(r => r.id === b.room_id);
+                              if (!room || (room.room_type || 'standard') !== roomType) return false;
+                              return isBookingOnDate(b, date);
+                            });
+                            const occupiedCount = typeBookings.length;
+                            const totalTypeRooms = typeRooms.length;
+                            const isFull = occupiedCount >= totalTypeRooms;
+                            // Average price per night for the room type
+                            const avgPrice = typeBookings.length > 0
+                              ? Math.round(typeBookings.reduce((sum, b) => {
+                                  const nights = Math.max(1, Math.ceil((new Date(b.check_out) - new Date(b.check_in)) / (1000 * 60 * 60 * 24)));
+                                  return sum + (b.total_amount || 0) / nights;
+                                }, 0) / typeBookings.length)
+                              : typeRooms[0]?.base_price || 0;
+                            
+                            return (
+                              <div
+                                key={idx}
+                                className={`w-24 flex-shrink-0 px-1 py-1.5 border-r text-center text-[10px] ${
+                                  weekend ? 'bg-amber-100/60 border-amber-200' : 'bg-amber-50 border-amber-200'
+                                }`}
+                              >
+                                <div className="text-gray-700 font-medium truncate">
+                                  {avgPrice > 0 ? `${avgPrice.toLocaleString('tr-TR')} ₺` : '-'}
+                                </div>
+                                <div className="flex items-center justify-center gap-0.5 mt-0.5">
+                                  <div className={`w-1.5 h-1.5 rounded-full ${isFull ? 'bg-red-500' : 'bg-green-500'}`}></div>
+                                  <span className={`text-[9px] font-semibold ${isFull ? 'text-red-600' : 'text-green-700'}`}>
+                                    {occupiedCount}/{totalTypeRooms}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
 
                       {/* Unassigned Bookings Row */}
                       {unassignedForType.length > 0 && (() => {
                         const { lanes, maxLane } = computeUnassignedLanes(unassignedForType);
-                        const laneHeight = 52;
+                        const laneHeight = 44;
                         const rowHeight = (maxLane + 1) * laneHeight + 8;
                         return (
-                        <div className="flex border-b-2 border-dashed border-amber-400 bg-amber-50/40">
-                          <div className="w-32 flex-shrink-0 p-2 border-r-2 border-gray-400 bg-amber-50" style={{ height: `${rowHeight}px` }}>
+                        <div className="flex border-b border-dashed border-amber-300 bg-amber-50/30">
+                          <div className="w-32 flex-shrink-0 px-3 py-2 border-r border-gray-200 bg-amber-50/60" style={{ height: `${rowHeight}px` }}>
                             <div className="flex items-center gap-1.5">
                               <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></div>
-                              <div className="font-bold text-[10px] text-amber-800 uppercase">Atanmamış</div>
+                              <div className="font-semibold text-[10px] text-amber-700">Atanmamış Rezervasyonlar</div>
                             </div>
-                            <div className="text-[9px] text-amber-600 mt-0.5 ml-3 font-medium">Sürükle → Oda</div>
                             {unassignedForType.length > 1 && (
                               <div className="text-[9px] text-amber-500 ml-3 mt-0.5">{unassignedForType.length} rez.</div>
                             )}
@@ -2098,12 +2098,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                           <div className="flex relative" style={{ width: `${daysToShow * 96}px`, height: `${rowHeight}px` }}>
                             {dateRange.map((date, idx) => {
                               const dayStr = toDateStringUTC(date);
+                              const weekend = isWeekend(date);
                               return (
                                 <div
                                   key={idx}
-                                  className={`w-24 flex-shrink-0 border-r border-b border-amber-200 relative ${
-                                    isToday(date) ? 'bg-amber-100/60' : 'bg-amber-50/20'
-                                  }`}
+                                  className={`w-24 flex-shrink-0 border-r border-b relative ${
+                                    weekend ? 'bg-amber-50/40 border-amber-100' : 'bg-amber-50/10 border-amber-100'
+                                  } ${isToday(date) ? 'bg-blue-50/40' : ''}`}
                                   style={{ height: `${rowHeight}px`, minHeight: `${rowHeight}px` }}
                                 >
                                 </div>
@@ -2132,22 +2133,24 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                                   onDragStart={(e) => handleDragStart(e, booking)}
                                   onDragEnd={handleDragEnd}
                                   onDoubleClick={() => handleBookingDoubleClick(booking)}
-                                  className="absolute rounded-lg text-white text-xs shadow-md hover:shadow-xl transition-all cursor-move z-20 bg-amber-500 border-2 border-amber-600 border-dashed"
+                                  className="absolute rounded text-white text-xs shadow-sm hover:shadow-md transition-all cursor-move z-20 border border-amber-400"
                                   style={{
                                     left: `${startIdx * 96 + 2}px`,
                                     top: `${lane * laneHeight + 4}px`,
                                     width: `${span * 96 - 4}px`,
                                     height: `${laneHeight - 6}px`,
+                                    backgroundColor: getSourceColor(booking).bg,
+                                    borderColor: getSourceColor(booking).border,
                                   }}
                                   data-testid={`unassigned-booking-${booking.id}`}
                                   title={`${booking.guest_name} - Odaya sürükleyin`}
                                 >
-                                  <div className="p-1.5 h-full relative overflow-hidden">
-                                    <div className="font-bold text-[11px] truncate pr-4 text-white drop-shadow-sm">
+                                  <div className="px-2 py-1 h-full relative overflow-hidden">
+                                    <div className="font-bold text-[11px] truncate text-white">
                                       {booking.guest_name || 'Misafir'}
                                     </div>
-                                    <div className="text-[9px] text-amber-100 truncate mt-0.5">
-                                      {booking.channel || booking.source || 'OTA'} · Oda ata
+                                    <div className="text-[9px] text-white/80 truncate mt-0.5">
+                                      {getSourceColor(booking).label} · Oda ata
                                     </div>
                                   </div>
                                 </div>
@@ -2159,15 +2162,17 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                       })()}
                       
                       {/* Rooms of this type */}
-                      {groupedRooms[roomType].map((room) => (
-                  <div key={room.id} className="flex border-b-2 border-gray-400 hover:bg-blue-50/20 transition-colors">
-                    {/* Room Cell - Compact Modern Design */}
-                    <div className="w-32 flex-shrink-0 p-2 border-r-2 border-gray-400 bg-white">
+                      {groupedRooms[roomType].map((room) => {
+                        // Check if room has any booking today
+                        const hasBookingToday = bookings.some(b => b.room_id === room.id && isBookingOnDate(b, new Date()) && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
+                        return (
+                  <div key={room.id} className="flex border-b border-gray-100 hover:bg-gray-50/50 transition-colors">
+                    {/* Room Cell */}
+                    <div className="w-32 flex-shrink-0 px-3 py-2 border-r border-gray-200 bg-white">
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>
-                        <div className="font-bold text-xs text-gray-900">{room.room_number}</div>
+                        <div className={`w-2 h-2 rounded-full ${hasBookingToday ? 'bg-red-500' : 'bg-green-500'}`}></div>
+                        <div className="font-semibold text-sm text-gray-800" data-testid={`room-${room.room_number}`}>{room.room_number}</div>
                       </div>
-                      <div className="text-[10px] text-gray-500 mt-0.5 ml-3 font-medium">Kat {room.floor}</div>
                     </div>
 
                     {/* Timeline Cells */}
@@ -2215,11 +2220,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                         return (
                           <div
                             key={idx}
-                            className={`w-24 flex-shrink-0 border-r-2 border-b-2 border-gray-400 relative cursor-pointer transition-all ${
-                              isToday(date) ? 'bg-blue-50/80 shadow-inner' : 'bg-white hover:bg-gray-50'
-                            } ${isDragOver ? 'bg-emerald-50 ring-2 ring-emerald-400 shadow-lg' : ''}
+                            className={`w-24 flex-shrink-0 border-r border-gray-100 relative cursor-pointer transition-all ${
+                              isToday(date) ? 'bg-blue-50/60' : isWeekend(date) ? 'bg-orange-50/50' : 'bg-white hover:bg-gray-50'
+                            } ${isDragOver ? 'bg-emerald-50 ring-1 ring-emerald-400' : ''}
                             ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''}`}
-                            style={{ height: '60px', minHeight: '60px', overflow: 'visible' }}
+                            style={{ height: '52px', minHeight: '52px', overflow: 'visible' }}
                             onClick={() => !booking && !roomBlock && handleCellClick(room.id, date)}
                             onDragOver={(e) => handleDragOver(e, room.id, date)}
                             onDragLeave={handleDragLeave}
@@ -2255,41 +2260,37 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                               </div>
                             )}
                             
-                            {/* Booking bar - segment color coded */}
+                            {/* Booking bar - source color coded */}
                             {isStart && booking && (
                               <div
                                 draggable
                                 onDragStart={(e) => handleDragStart(e, booking)}
                                 onDragEnd={handleDragEnd}
                                 onDoubleClick={() => handleBookingDoubleClick(booking)}
-                                className={`absolute top-1 left-0.5 rounded-lg text-white text-xs shadow-md hover:shadow-xl transition-all cursor-move z-20 group border border-white/30 ${
-                                  getSegmentColor(booking.market_segment)} ${
+                                className={`absolute top-1 left-0.5 rounded text-white text-xs shadow-sm hover:shadow-md transition-all cursor-move z-20 group ${
                                   draggingBooking?.id === booking.id ? 'opacity-50 scale-95' : ''
                                 } ${hasConflict(room.id, date) ? 'ring-2 ring-red-500 animate-pulse' : ''}
                                 ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
                                 style={{
                                   width: `${calculateBookingSpan(booking, currentDate) * 96 - 4}px`,
-                                  height: '54px',
+                                  height: '46px',
+                                  backgroundColor: booking.group_booking_id ? getGroupColor(booking) : getSourceColor(booking).bg,
+                                  borderLeft: `3px solid ${booking.group_booking_id ? getGroupColor(booking) : getSourceColor(booking).border}`,
                                   ...(booking.group_booking_id ? {
-                                    backgroundColor: getGroupColor(booking),
                                     backgroundImage: 'repeating-linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.08) 8px, transparent 8px, transparent 16px)'
                                   } : {})
                                 }}
-                                title=""
+                                data-testid={`booking-bar-${booking.id}`}
+                                title={`${booking.guest_name}`}
                               >
                                 {/* Main booking info */}
-                                <div className="p-1.5 h-[54px] relative overflow-hidden">
-                                  <div className="font-bold text-xs truncate pr-6 text-white drop-shadow-sm">
+                                <div className="px-2 py-1 h-[46px] relative overflow-hidden">
+                                  <div className="font-bold text-[11px] truncate pr-4 text-white">
                                     {booking.guest_name || 'Misafir'}
                                   </div>
-                                  <div className="text-[10px] text-white/90 truncate mt-0.5">
-                                    {booking.ota_channel
-                                      ? getOTAInfo(booking.ota_channel).name
-                                      : booking.source_channel && booking.source_channel !== 'direct'
-                                        ? booking.source_channel
-                                        : booking.channel && booking.channel !== 'direct'
-                                          ? booking.channel
-                                          : 'Direct'}
+                                  <div className="text-[9px] text-white/80 truncate mt-0.5 flex items-center gap-1">
+                                    <span>{getSourceColor(booking).label}</span>
+                                    {booking.adults && <span>Kş: {(booking.adults || 0) + (booking.children || 0)}</span>}
                                   </div>
                                   
                                   {/* Status indicators - top right */}
@@ -2342,9 +2343,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                                   </div>
                                 </div>
                                 
-                                {/* Left border - segment indicator */}
-                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-white opacity-30"></div>
-                                
                                 {/* Rate Leakage Warning - Enterprise Mode */}
                                 {hasRateLeakage(booking.id) && (
                                   <div className="absolute top-0 left-0 bg-red-600 text-white text-[8px] px-1 py-0.5 rounded-br font-bold" title={`Rate Leakage: -$${hasRateLeakage(booking.id).difference_per_night}/night`}>
@@ -2365,7 +2363,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                       })}
                     </div>
                   </div>
-                      ))}
+                      );
+                      })}
                     </div>
                   )});
                 })()
