@@ -144,6 +144,15 @@ try:
 except ImportError:
     pass
 
+# ── Auth router ─────────────────────────────────────────────────────
+try:
+    from routers.auth import router as auth_router, init_auth_router
+    init_auth_router()
+    app.include_router(auth_router, tags=["Auth"])
+    logger.info("  ✅ Auth router loaded")
+except Exception as e:
+    logger.warning(f"  ⚠️ Auth router failed to load: {e}")
+
 # ── External routers (via bootstrap registry) ───────────────────────
 from bootstrap.router_registry import register_routers  # noqa: E402
 
