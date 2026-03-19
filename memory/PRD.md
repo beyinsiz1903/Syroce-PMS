@@ -261,8 +261,14 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Aktif rezervasyonlar (confirmed/checked_in/guaranteed) ile oda eşleştirmesi yapılıyor
   - Modified: `PMSModule.js`, `RoomsTab.js`
 
+### Session 18 (Mar 19, 2026)
+- [x] **P0: Eski Exely Webhook Kodunu Temizleme**
+  - Silinen dosya: `backend/domains/channel_manager/providers/exely/exely_webhook_router.py` (489 satır)
+  - `bootstrap/router_registry.py`'den webhook router kaydı kaldırıldı
+  - `ExelyIntegration.jsx`'den webhook URL kartı ve kullanılmayan import'lar (`Webhook`, `Copy`) kaldırıldı
+  - Doğrulama: Webhook endpoint artık 404 döndürüyor, Exely sayfası temiz çalışıyor
+
 ## Backlog (Future Tasks)
-- [ ] P0: Remove obsolete webhook code (exely_webhook_router.py, router_registry.py, ExelyIntegration.jsx)
 - [ ] P1: User verification for Exely Reservation Delivery Confirmation fix
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
 - [ ] P1: User verification for completed features backlog (11+ features)
