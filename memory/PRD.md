@@ -301,6 +301,18 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Searched all PMS-related components - no static "unknown" key values found in any .map() list render
   - Warning was from previous session, likely already resolved
 
+### Session 21 (Mar 19, 2026)
+- [x] **Feature: Kirli Oda Check-in Uyarisi (Dirty Room Check-in Warning)**
+  - Kirli (dirty/cleaning) odaya check-in yapilirken uyari dialogu gosteriliyor
+  - Dialog: "Bu oda kirli durumda. Odayi temiz olarak isaretleyip check-in yapmak ister misiniz?"
+  - "Temizle ve Check-in Yap" butonu: Odayi temizleyip check-in yapiyor (force_clean=true)
+  - "Iptal" butonu: Islemi iptal eder
+  - Backend: `frontdesk_service.py` checkin() metoduna `force_clean` parametresi eklendi
+  - Backend: `frontdesk_router.py` checkin endpoint'ine `force_clean` query param eklendi
+  - Frontend: `RoomsTab.js`'ye kirli oda uyari dialogu eklendi, `PMSModule.js` handleCheckIn guncellendi
+  - Modified: `frontdesk_service.py`, `frontdesk_router.py`, `RoomsTab.js`, `PMSModule.js`
+  - Tested: Backend curl (dirty room -> 400 without force, 200 with force_clean) + Frontend E2E (dialog shows, check-in succeeds)
+
 ## Backlog (Future Tasks)
 - [ ] P1: User verification for Exely Reservation Delivery Confirmation fix
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)

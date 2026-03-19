@@ -65,7 +65,7 @@ class FrontdeskService:
     # Check-in
     # ------------------------------------------------------------------
     @audited("frontdesk.checkin", "booking", severity=SEVERITY_INFO, capture_before=True)
-    async def checkin(self, ctx: OperationContext, booking_id: str, create_folio: bool = True) -> ServiceResult:
+    async def checkin(self, ctx: OperationContext, booking_id: str, create_folio: bool = True, force_clean: bool = False) -> ServiceResult:
         booking = await self._db.bookings.find_one({"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not booking:
             return ServiceResult.fail("Booking not found", "NOT_FOUND")
@@ -75,7 +75,14 @@ class FrontdeskService:
         room = await self._db.rooms.find_one({"id": booking["room_id"]}, {"_id": 0})
         if not room:
             return ServiceResult.fail("Room not found", "NOT_FOUND")
-        if room["status"] not in ("available", "inspected"):
+
+        # If room is dirty/cleaning and force_clean requested, clean it first
+        if room["status"] in ("dirty", "cleaning") and force_clean:
+            await self._db.rooms.update_one(
+                {"id": room["id"]},
+                {"$set": {"status": "available"}},
+            )
+        elif room["status"] not in ("available", "inspected"):
             return ServiceResult.fail(f"Room not ready. Status: {room['status']}", "ROOM_NOT_READY")
 
         if create_folio:

@@ -83,10 +83,10 @@ async def get_frontdesk_audit_checklist(
 
 
 @router.post("/frontdesk/checkin/{booking_id}")
-async def check_in_guest(booking_id: str, create_folio: bool = True, current_user: User = Depends(get_current_user)):
-    """Check-in guest with validations and auto-folio creation"""
+async def check_in_guest(booking_id: str, create_folio: bool = True, force_clean: bool = False, current_user: User = Depends(get_current_user)):
+    """Check-in guest with validations and auto-folio creation. force_clean=true cleans a dirty room before check-in."""
     ctx = OperationContext.from_user(current_user)
-    result = await frontdesk_service.checkin(ctx, booking_id, create_folio)
+    result = await frontdesk_service.checkin(ctx, booking_id, create_folio, force_clean)
     if not result.ok:
         code_map = {"NOT_FOUND": 404, "ALREADY_CHECKED_IN": 400, "ROOM_NOT_READY": 400}
         raise HTTPException(status_code=code_map.get(result.code, 400), detail=result.error)

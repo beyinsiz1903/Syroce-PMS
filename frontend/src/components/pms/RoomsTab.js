@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, IdCard } from 'lucide-react';
+import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, IdCard, SprayCan } from 'lucide-react';
 
 const RoomsTab = ({
   rooms,
@@ -35,6 +35,10 @@ const RoomsTab = ({
   // Checkout confirmation dialog state
   const [checkoutDialog, setCheckoutDialog] = useState(false);
   const [checkoutBooking, setCheckoutBooking] = useState(null);
+
+  // Dirty room check-in dialog state
+  const [dirtyRoomDialog, setDirtyRoomDialog] = useState(false);
+  const [dirtyRoomInfo, setDirtyRoomInfo] = useState(null);
 
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
 
@@ -154,6 +158,17 @@ const RoomsTab = ({
     }
   };
 
+  // Handle check-in click with dirty room check
+  const handleCheckInClick = useCallback((e, room, guestInfo) => {
+    e.stopPropagation();
+    if (room.status === 'dirty' || room.status === 'cleaning') {
+      setDirtyRoomInfo({ room, guestInfo });
+      setDirtyRoomDialog(true);
+    } else {
+      handleCheckIn?.(guestInfo.booking_id);
+    }
+  }, [handleCheckIn]);
+
   // Handle checkout with balance check
   const handleCheckOutClick = useCallback(async (e, guestInfo) => {
     e.stopPropagation();
@@ -261,7 +276,7 @@ const RoomsTab = ({
                         <Button
                           size="sm"
                           className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white px-2"
-                          onClick={(e) => { e.stopPropagation(); handleCheckIn?.(guestInfo.booking_id); }}
+                          onClick={(e) => handleCheckInClick(e, room, guestInfo)}
                           data-testid={`room-checkin-btn-${room.room_number}`}
                         >
                           <LogIn className="w-3 h-3 mr-1" />
@@ -435,6 +450,55 @@ const RoomsTab = ({
                   onClick={() => setCheckoutDialog(false)}
                 >
                   Kapat
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dirty Room Check-in Warning Dialog */}
+      <Dialog open={dirtyRoomDialog} onOpenChange={(o) => !o && setDirtyRoomDialog(false)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <SprayCan className="w-5 h-5" />
+              Kirli Oda Uyarisi
+            </DialogTitle>
+            <DialogDescription>
+              Bu oda henuz temizlenmemis durumda
+            </DialogDescription>
+          </DialogHeader>
+          {dirtyRoomInfo && (
+            <div className="space-y-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-amber-900">Oda {dirtyRoomInfo.room.room_number}</span>
+                  <Badge className="bg-yellow-100 text-yellow-800">{dirtyRoomInfo.room.status}</Badge>
+                </div>
+                <p className="text-sm text-amber-700 mt-1">{dirtyRoomInfo.guestInfo.guest_name}</p>
+              </div>
+              <p className="text-sm text-gray-600">
+                Bu oda kirli durumda. Odayi temiz olarak isaretleyip check-in yapmak ister misiniz?
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  onClick={() => {
+                    setDirtyRoomDialog(false);
+                    handleCheckIn?.(dirtyRoomInfo.guestInfo.booking_id, true);
+                  }}
+                  data-testid="dirty-room-checkin-btn"
+                >
+                  <SprayCan className="w-4 h-4 mr-1" />
+                  Temizle ve Check-in Yap
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setDirtyRoomDialog(false)}
+                  data-testid="dirty-room-cancel-btn"
+                >
+                  Iptal
                 </Button>
               </div>
             </div>

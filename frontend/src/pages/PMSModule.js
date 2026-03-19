@@ -771,10 +771,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     }
   };
 
-  const handleCheckIn = async (bookingId) => {
+  const handleCheckIn = async (bookingId, forceClean = false) => {
     try {
-      const response = await axios.post(`/frontdesk/checkin/${bookingId}?create_folio=true`);
-      toast.success(`✅ ${response.data.message} - Room ${response.data.room_number}`);
+      const params = new URLSearchParams({ create_folio: 'true' });
+      if (forceClean) params.append('force_clean', 'true');
+      const response = await axios.post(`/frontdesk/checkin/${bookingId}?${params}`);
+      toast.success(`${response.data.message} - Oda ${response.data.room_number}`);
       loadData();
       loadFrontDeskData();
     } catch (error) {
