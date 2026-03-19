@@ -116,6 +116,28 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - "Bakiye tutarini doldur" quick-fill button, real-time distribution preview per booking
 - [x] All tested: Backend 100% (3/3) + Frontend 100% (iteration_96.json)
 
+### Session 12 (Mar 19, 2026)
+- [x] **11 Calendar & Reservation Improvements**
+  1. Calendar "Rezervasyonlar" button active - navigates to /pms?tab=bookings
+  2. "Rezervasyon ekle" dialog - room type dropdown + room selection working
+  3. "Tarihe Git" - functional date picker popup with "Bugun" shortcut
+  4. Calendar nav arrows - overlapping scroll (SCROLL_DAYS = daysToShow/3) instead of full page jump
+  5. Genel Bakis (FindRoom) - check-out auto-sets from check-in date
+  6. Calendar colors simplified: green (checked_in), red (checked_out/past), gray (future). Agency names/colors removed
+  7. Room change dialog - shows room types with availability count, available rooms per type, upgrade pricing options (current/upgrade/custom)
+  8. Voucher tab - generates professional HTML voucher, print/PDF support
+  9. Cancel tab - reason selection, cancel types, no-show option with charge (per night/full stay/custom)
+  10. Invoice tab - billing info fields, selectable charge items, professional HTML invoice, print/PDF
+  11. Cari transfer - "Yeni Cari Olustur" button with full account creation form
+- [x] **New Backend Endpoints**:
+  - POST /api/pms/reservations/{id}/cancel
+  - GET /api/pms/reservations/{id}/voucher
+  - GET /api/pms/reservations/{id}/invoice-charges
+  - POST /api/pms/reservations/{id}/generate-invoice
+  - GET /api/pms/available-rooms-by-type
+  - POST /api/pms/cari-accounts/create
+- [x] All tested: Backend 15/15 + Frontend 100% (iteration_97.json)
+
 ## Key API Endpoints
 - POST /api/auth/login
 - GET/POST /api/pms/bookings
@@ -146,6 +168,12 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - POST /api/pms/group-folio/payment
 - POST /api/pms/group-folio/merge
 - POST /api/pms/group-folio/bulk-payment
+- POST /api/pms/reservations/{id}/cancel
+- GET /api/pms/reservations/{id}/voucher
+- GET /api/pms/reservations/{id}/invoice-charges
+- POST /api/pms/reservations/{id}/generate-invoice
+- GET /api/pms/available-rooms-by-type
+- POST /api/pms/cari-accounts/create
 
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
