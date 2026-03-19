@@ -309,8 +309,9 @@ async def _update_existing_booking(tenant_id: str, channel_res: Dict[str, Any]) 
     }
 
 
-async def auto_import_pending(tenant_id: str) -> Dict[str, Any]:
-    """Import all pending exely_reservations for a tenant."""
+async def auto_import_pending(tenant_id: str, provider=None) -> Dict[str, Any]:
+    """Import all pending exely_reservations for a tenant.
+    If provider is given, also confirm delivery to Exely after each successful import."""
     pending = await db.exely_reservations.find(
         {"tenant_id": tenant_id, "pms_status": {"$in": ["pending", "updated"]}, "state": {"$ne": "cancelled"}},
         {"_id": 0},
@@ -326,6 +327,19 @@ async def auto_import_pending(tenant_id: str) -> Dict[str, Any]:
                 updated += 1
             else:
                 imported += 1
+
+            # Confirm delivery to Exely so it marks the reservation as delivered
+            if provider and result.get("pms_booking_id"):
+                try:
+                    external_id = res.get("external_id", "")
+                    pms_booking_id = result["pms_booking_id"]
+                    confirm_result = await provider.confirm_delivery(external_id, pms_booking_id)
+                    if confirm_result.success:
+                        logger.info(f"[EXELY-IMPORT] Delivery confirmed for {external_id} -> PMS {pms_booking_id}")
+                    else:
+                        logger.warning(f"[EXELY-IMPORT] Delivery confirm failed for {external_id}: {confirm_result.error}")
+                except Exception as e:
+                    logger.warning(f"[EXELY-IMPORT] Delivery confirm error for {res.get('external_id')}: {e}")
         else:
             errors.append({"external_id": res.get("external_id"), "reason": result.get("reason")})
 

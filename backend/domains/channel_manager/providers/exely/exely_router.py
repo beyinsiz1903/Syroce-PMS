@@ -407,7 +407,12 @@ async def manual_pull(current_user: User = Depends(get_current_user)):
     # Auto-import is already triggered inside pull_for_tenant
     # Also import any previously pending ones (including modifications)
     from domains.channel_manager.providers.exely.auto_import import auto_import_pending
-    import_result = await auto_import_pending(current_user.tenant_id)
+    from domains.channel_manager.providers.exely.provider import ExelyProvider
+    provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
+    if endpoint_url:
+        provider_kwargs["endpoint_url"] = endpoint_url
+    confirm_provider = ExelyProvider(**provider_kwargs)
+    import_result = await auto_import_pending(current_user.tenant_id, provider=confirm_provider)
 
     cancelled = import_result.get("cancelled", 0) + cancel_detected
     updated = import_result.get("updated", 0) + mod_detected
@@ -614,6 +619,51 @@ async def confirm_reservation(
     return {"message": "Rezervasyon teslimati onaylandi", "reservation_id": reservation_id}
 
 
+@router.post("/reservations/confirm-all-imported")
+async def confirm_all_imported_deliveries(
+    current_user: User = Depends(get_current_user),
+):
+    """Confirm delivery for all imported but unconfirmed reservations."""
+    tenant_id = current_user.tenant_id
+    client, conn = await _get_client(tenant_id)
+
+    # Find imported reservations that haven't been confirmed to Exely
+    unconfirmed = await db.exely_reservations.find(
+        {
+            "tenant_id": tenant_id,
+            "pms_status": "imported",
+            "pms_booking_id": {"$ne": None},
+            "delivery_confirmed": {"$ne": True},
+        },
+        {"_id": 0, "external_id": 1, "pms_booking_id": 1},
+    ).to_list(200)
+
+    confirmed = 0
+    errors = []
+    for res in unconfirmed:
+        try:
+            result = await client.legacy_confirm_delivery(res["external_id"], res["pms_booking_id"])
+            if result.get("success"):
+                await db.exely_reservations.update_one(
+                    {"tenant_id": tenant_id, "external_id": res["external_id"]},
+                    {"$set": {"delivery_confirmed": True, "confirmed_at": datetime.now(timezone.utc).isoformat()}},
+                )
+                confirmed += 1
+                logger.info(f"[EXELY] Bulk confirm: {res['external_id']} -> OK")
+            else:
+                errors.append({"external_id": res["external_id"], "error": result.get("error", "unknown")})
+        except Exception as e:
+            errors.append({"external_id": res["external_id"], "error": str(e)})
+
+    return {
+        "message": f"{confirmed}/{len(unconfirmed)} teslimat onaylandi",
+        "confirmed": confirmed,
+        "total": len(unconfirmed),
+        "errors": errors,
+    }
+
+
+
 @router.post("/reservations/{reservation_id}/import")
 async def import_reservation_to_pms(
     reservation_id: str,
@@ -643,6 +693,17 @@ async def import_reservation_to_pms(
 
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=f"Import hatasi: {result.get('reason')}")
+
+    # Confirm delivery to Exely
+    if result.get("pms_booking_id"):
+        try:
+            client, conn = await _get_client(tenant_id)
+            external_id = res.get("external_id", reservation_id)
+            confirm = await client.legacy_confirm_delivery(external_id, result["pms_booking_id"])
+            if confirm.get("success"):
+                logger.info(f"[EXELY] Delivery confirmed for {external_id}")
+        except Exception as e:
+            logger.warning(f"[EXELY] Delivery confirm error: {e}")
 
     return {
         "message": "Rezervasyon PMS'e basariyla aktarildi",

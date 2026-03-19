@@ -126,29 +126,44 @@ def build_hotel_avail_rq(
 def build_notif_report_rq(
     username: str, password: str, hotel_code: str,
     reservation_id: str, confirmation_number: str,
+    create_datetime: str = None, last_modify_datetime: str = None,
 ) -> str:
     """Build OTA_NotifReportRQ to confirm reservation delivery."""
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     rq = etree.Element(f"{{{OTA_NS}}}OTA_NotifReportRQ", attrib={
         "Version": "1.0",
-        "TimeStamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "TimeStamp": now_str,
     })
 
-    notif_report = etree.SubElement(rq, f"{{{OTA_NS}}}NotifDetails")
+    etree.SubElement(rq, f"{{{OTA_NS}}}Success")
+
+    notif_report = etree.SubElement(rq, f"{{{OTA_NS}}}NotifDetails", attrib={
+        "HotelCode": hotel_code,
+    })
     hotel_notif = etree.SubElement(notif_report, f"{{{OTA_NS}}}HotelNotifReport", attrib={
         "HotelCode": hotel_code,
     })
 
     notif_item = etree.SubElement(hotel_notif, f"{{{OTA_NS}}}HotelReservations")
-    hotel_res = etree.SubElement(notif_item, f"{{{OTA_NS}}}HotelReservation")
+    hotel_res = etree.SubElement(notif_item, f"{{{OTA_NS}}}HotelReservation", attrib={
+        "ResStatus": "Initiate",
+        "CreateDateTime": create_datetime or now_str,
+        "LastModifyDateTime": last_modify_datetime or now_str,
+    })
 
-    unique_id = etree.SubElement(hotel_res, f"{{{OTA_NS}}}UniqueID", attrib={  # noqa: F841
-        "Type": "14",
+    etree.SubElement(hotel_res, f"{{{OTA_NS}}}UniqueID", attrib={
+        "Type": "16",
         "ID": reservation_id,
     })
+
     res_id = etree.SubElement(hotel_res, f"{{{OTA_NS}}}ResGlobalInfo")
     hotel_res_ids = etree.SubElement(res_id, f"{{{OTA_NS}}}HotelReservationIDs")
     etree.SubElement(hotel_res_ids, f"{{{OTA_NS}}}HotelReservationID", attrib={
-        "ResID_Type": "14",
+        "ResID_Type": "10",
+        "ResID_Value": reservation_id,
+    })
+    etree.SubElement(hotel_res_ids, f"{{{OTA_NS}}}HotelReservationID", attrib={
+        "ResID_Type": "40",
         "ResID_Value": confirmation_number,
     })
 

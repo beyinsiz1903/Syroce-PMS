@@ -205,7 +205,7 @@ class ExelyPullScheduler:
         await log_sync(PROVIDER, tenant_id, "scheduled_pull", "success", duration_ms, processed)
 
         # Auto-import all pending reservations to PMS + process cancellations + modifications
-        import_result = await auto_import_pending(tenant_id)
+        import_result = await auto_import_pending(tenant_id, provider=provider)
         logger.info(f"[EXELY-PULL] Auto-import: {import_result['imported']}/{import_result['total']} imported, {import_result.get('updated', 0)} updated")
 
         # Individual check for cancellations and modifications that batch pull may miss
@@ -213,7 +213,7 @@ class ExelyPullScheduler:
             cancel_detected = await self._check_individual_changes(provider, tenant_id)
             if cancel_detected.get("cancelled", 0) > 0 or cancel_detected.get("modified", 0) > 0:
                 # Re-run auto_import to process any new changes
-                import_result2 = await auto_import_pending(tenant_id)
+                import_result2 = await auto_import_pending(tenant_id, provider=provider)
                 logger.info(f"[EXELY-PULL] Post-individual-check import: "
                             f"{import_result2.get('updated', 0)} updated, {import_result2.get('cancelled', 0)} cancelled")
         except Exception as e:

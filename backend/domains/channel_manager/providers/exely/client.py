@@ -75,6 +75,11 @@ class ExelySoapTransport:
                     "[EXELY] SOAP %s -> %d (%dms) [%s]",
                     soap_action or "POST", resp.status_code, duration_ms, corr_id,
                 )
+                if "NotifReport" in (soap_action or ""):
+                    logger.info("[EXELY] NOTIF REQUEST [%s]:\n%s", corr_id, xml_body[:3000])
+                    logger.info("[EXELY] NOTIF RESPONSE [%s]:\n%s", corr_id, resp.text[:3000])
+                if "ReadRQ" in (soap_action or "") or "ResRetrieve" in (soap_action or ""):
+                    logger.info("[EXELY] READRQ RESPONSE [%s]:\n%s", corr_id, resp.text[:5000])
                 logger.debug(
                     "[EXELY] RAW REQUEST [%s]:\n%s", corr_id, xml_body[:2000],
                 )
