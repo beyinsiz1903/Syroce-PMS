@@ -320,6 +320,15 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - PMSModule.js'ye lazy-loaded ReservationDetailModal eklendi, yeni `reservationDetailId` state ile kontrol ediliyor
   - RoomsTab.js: Kimlik dialogu kaldırıldı, handleGuestNameClick artık onBookingDoubleClick çağırıyor
   - Modified: `RoomsTab.js`, `PMSModule.js`
+- [x] **Odalar Sekmesi: Misafir Durumuna Göre Renkli Oda Kartları**
+  - Yeşil (sol kenar + badge "İçeride"): checked_in misafir
+  - Turuncu (sol kenar + badge "Yarın Çıkış"): yarın checkout yapacak misafir
+  - Kırmızı (sol kenar + badge "Bugün Çıkış"): bugün checkout yapacak misafir
+  - Mor (sol kenar + badge "Giriş Bekleniyor"): confirmed/guaranteed ama henüz check-in yapılmamış
+  - Sarı sol kenar: kirli oda
+  - Üstte renk açıklamaları (legend) eklendi
+  - Misafir bilgi alanı renkleri de kategoriye göre dinamik
+  - Modified: `RoomsTab.js`
 
 ## Backlog (Future Tasks)
 - [ ] P1: User verification for Exely Reservation Delivery Confirmation fix

@@ -32,6 +32,11 @@ const RoomsTab = ({
   const [dirtyRoomInfo, setDirtyRoomInfo] = useState(null);
 
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const tomorrow = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  }, []);
 
   // Build a map of room_number -> current guest info from active bookings
   const roomGuestMap = useMemo(() => {
@@ -44,6 +49,11 @@ const RoomsTab = ({
       const co = (b.check_out || '').slice(0, 10);
       if (ci <= today && co > today) {
         const balance = Math.max(0, (b.total_amount || 0) - (b.paid_amount || 0));
+        // Determine guest category
+        let category = 'pending_checkin'; // confirmed/guaranteed but not checked in
+        if (b.status === 'checked_in') {
+          category = co === tomorrow ? 'departing_tomorrow' : 'in_house';
+        }
         map[String(b.room_number)] = {
           booking_id: b.id,
           guest_id: b.guest_id,
@@ -56,6 +66,7 @@ const RoomsTab = ({
           balance: Math.round(balance * 100) / 100,
           isCheckInToday: ci === today,
           isCheckOutToday: co === today,
+          category,
         };
       }
       // Also handle check-out today for checked_in guests whose co == today
@@ -73,11 +84,12 @@ const RoomsTab = ({
           balance: Math.round(balance * 100) / 100,
           isCheckInToday: ci === today,
           isCheckOutToday: true,
+          category: 'departing_today',
         };
       }
     }
     return map;
-  }, [bookings, today]);
+  }, [bookings, today, tomorrow]);
 
   const filteredRooms = useMemo(() => {
     return rooms.filter(r => {
@@ -92,14 +104,33 @@ const RoomsTab = ({
   const allViews = [...new Set(rooms.map(r => r.view).filter(Boolean))];
   const allAmenities = [...new Set(rooms.flatMap(r => r.amenities || []))];
 
-  const statusColors = {
-    available: 'bg-green-100 text-green-800',
-    occupied: 'bg-blue-100 text-blue-800',
-    dirty: 'bg-yellow-100 text-yellow-800',
-    cleaning: 'bg-orange-100 text-orange-800',
-    maintenance: 'bg-red-100 text-red-800',
-    out_of_order: 'bg-gray-100 text-gray-800',
-    inspected: 'bg-purple-100 text-purple-800',
+  // Card border/bg colors based on guest category
+  const categoryStyles = {
+    in_house: 'border-l-4 border-l-green-500 bg-green-50/40',
+    departing_today: 'border-l-4 border-l-red-500 bg-red-50/40',
+    departing_tomorrow: 'border-l-4 border-l-orange-500 bg-orange-50/40',
+    pending_checkin: 'border-l-4 border-l-purple-500 bg-purple-50/40',
+  };
+
+  const categoryLabels = {
+    in_house: { text: 'Iceride', cls: 'bg-green-100 text-green-700' },
+    departing_today: { text: 'Bugun Cikis', cls: 'bg-red-100 text-red-700' },
+    departing_tomorrow: { text: 'Yarin Cikis', cls: 'bg-orange-100 text-orange-700' },
+    pending_checkin: { text: 'Giris Bekleniyor', cls: 'bg-purple-100 text-purple-700' },
+  };
+
+  const guestSectionStyles = {
+    in_house: 'bg-green-50 border-green-200',
+    departing_today: 'bg-red-50 border-red-200',
+    departing_tomorrow: 'bg-orange-50 border-orange-200',
+    pending_checkin: 'bg-purple-50 border-purple-200',
+  };
+
+  const guestTextStyles = {
+    in_house: { icon: 'text-green-600', name: 'text-green-800', date: 'text-green-500', link: 'text-green-400', hoverBg: 'hover:bg-green-100' },
+    departing_today: { icon: 'text-red-600', name: 'text-red-800', date: 'text-red-500', link: 'text-red-400', hoverBg: 'hover:bg-red-100' },
+    departing_tomorrow: { icon: 'text-orange-600', name: 'text-orange-800', date: 'text-orange-500', link: 'text-orange-400', hoverBg: 'hover:bg-orange-100' },
+    pending_checkin: { icon: 'text-purple-600', name: 'text-purple-800', date: 'text-purple-500', link: 'text-purple-400', hoverBg: 'hover:bg-purple-100' },
   };
 
   // Handle guest name click -> open reservation detail modal (same as calendar double-click)
@@ -167,6 +198,16 @@ const RoomsTab = ({
         </Select>
       </div>
 
+      {/* Legend */}
+      <div className="flex gap-4 flex-wrap text-xs">
+        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-green-500" /> Iceride</div>
+        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-orange-500" /> Yarin Cikis</div>
+        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-500" /> Bugun Cikis</div>
+        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-purple-500" /> Giris Bekleniyor</div>
+        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-yellow-400" /> Kirli</div>
+        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-gray-300" /> Bos</div>
+      </div>
+
       {/* Room Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
         {filteredRooms.map(room => {
@@ -175,17 +216,35 @@ const RoomsTab = ({
           const showCheckOut = guestInfo && guestInfo.isCheckOutToday && guestInfo.status === 'checked_in';
           const hasBalance = guestInfo && guestInfo.balance > 0.01;
           const isOccupied = guestInfo && guestInfo.status === 'checked_in';
+          const cat = guestInfo?.category;
+          const cardExtra = cat ? categoryStyles[cat] : (room.status === 'dirty' || room.status === 'cleaning') ? 'border-l-4 border-l-yellow-400' : '';
+          const catLabel = cat ? categoryLabels[cat] : null;
+          const guestBg = cat ? guestSectionStyles[cat] : 'bg-blue-50 border-blue-100';
+          const gText = cat ? guestTextStyles[cat] : { icon: 'text-blue-600', name: 'text-blue-800', date: 'text-blue-500', link: 'text-blue-400', hoverBg: 'hover:bg-blue-100' };
+
+          const statusColors = {
+            available: 'bg-green-100 text-green-800',
+            occupied: 'bg-blue-100 text-blue-800',
+            dirty: 'bg-yellow-100 text-yellow-800',
+            cleaning: 'bg-orange-100 text-orange-800',
+            maintenance: 'bg-red-100 text-red-800',
+            out_of_order: 'bg-gray-100 text-gray-800',
+            inspected: 'bg-purple-100 text-purple-800',
+          };
 
           return (
             <Card
               key={room.id}
-              className="hover:shadow-md transition-all"
+              className={`hover:shadow-md transition-all ${cardExtra}`}
               data-testid={`room-card-${room.room_number}`}
             >
               <CardContent className="p-3">
                 <div className="flex justify-between items-start mb-2">
                   <span className="text-lg font-bold">{room.room_number}</span>
-                  <Badge className={statusColors[room.status] || 'bg-gray-100'}>{room.status}</Badge>
+                  <div className="flex gap-1 items-center">
+                    {catLabel && <Badge className={`text-[10px] ${catLabel.cls}`}>{catLabel.text}</Badge>}
+                    <Badge className={statusColors[room.status] || 'bg-gray-100'}>{room.status}</Badge>
+                  </div>
                 </div>
                 <p className="text-sm text-gray-600">{room.room_type}</p>
                 <p className="text-xs text-gray-400">Kat {room.floor} &bull; {room.capacity} kisi</p>
@@ -193,24 +252,24 @@ const RoomsTab = ({
                 {/* Guest info section */}
                 {guestInfo && (
                   <div
-                    className="mt-2 p-2 bg-blue-50 rounded-md border border-blue-100"
+                    className={`mt-2 p-2 rounded-md border ${guestBg}`}
                     data-testid={`room-guest-${room.room_number}`}
                     onDoubleClick={(e) => handleGuestNameClick(e, guestInfo)}
                     title="Tikla: Rezervasyon detayi"
                   >
                     <div
-                      className="flex items-center gap-1.5 cursor-pointer hover:bg-blue-100 rounded px-1 -mx-1 transition-colors"
+                      className={`flex items-center gap-1.5 cursor-pointer ${gText.hoverBg} rounded px-1 -mx-1 transition-colors`}
                       onClick={(e) => handleGuestNameClick(e, guestInfo)}
                       data-testid={`guest-name-click-${room.room_number}`}
                       title="Tikla: Rezervasyon detayi"
                     >
-                      <User className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
-                      <span className="text-sm font-medium text-blue-800 truncate underline decoration-dotted underline-offset-2">
+                      <User className={`w-3.5 h-3.5 ${gText.icon} flex-shrink-0`} />
+                      <span className={`text-sm font-medium ${gText.name} truncate underline decoration-dotted underline-offset-2`}>
                         {guestInfo.guest_name}
                       </span>
-                      <ExternalLink className="w-3 h-3 text-blue-400 flex-shrink-0" />
+                      <ExternalLink className={`w-3 h-3 ${gText.link} flex-shrink-0`} />
                     </div>
-                    <p className="text-[10px] text-blue-500 mt-0.5">
+                    <p className={`text-[10px] ${gText.date} mt-0.5`}>
                       {guestInfo.check_in} &rarr; {guestInfo.check_out}
                     </p>
 
