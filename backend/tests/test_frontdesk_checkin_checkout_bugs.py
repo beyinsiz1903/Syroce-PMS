@@ -1,287 +1,253 @@
 """
 Test Cases for Bug A and Bug B fixes:
-Bug A: Check-in from Rooms tab quick action fails with 400 error 'occupied' even though guest hasn't checked in
+Bug A: Check-in from Rooms tab quick action fails with 400 error 'occupied'
 Bug B: Checkout from ReservationDetailModal allowed checkout despite outstanding balance
 
-Fixes verified:
-1. ReservationDetailModal 'Giriş Yap' button uses POST /api/frontdesk/checkin/{bookingId}?create_folio=true&force_clean=true
-2. ReservationDetailModal 'Çıkış Yap' button uses POST /api/frontdesk/checkout/{bookingId}?auto_close_folios=true
-3. Backend frontdesk_service.py checkin handles stale 'occupied' room status
-4. Backend checkout returns 402 if outstanding balance exists
+All tests create their own data to be fully self-contained and idempotent.
 """
 
 import pytest
 import requests
 import os
-import uuid
 from datetime import datetime, timedelta
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
-@pytest.fixture(scope="module")
-def auth_token():
-    """Login and get auth token"""
-    response = requests.post(f"{BASE_URL}/api/auth/login", json={
-        "email": "demo@hotel.com",
-        "password": "demo123"
-    })
-    assert response.status_code == 200, f"Login failed: {response.text}"
-    data = response.json()
-    return data.get("access_token")
 
 @pytest.fixture(scope="module")
-def api_client(auth_token):
-    """Session with auth header"""
+def api_client():
+    """Login and return session with auth header"""
     session = requests.Session()
+    resp = session.post(f"{BASE_URL}/api/auth/login", json={
+        "email": "demo@hotel.com", "password": "demo123"
+    })
+    assert resp.status_code == 200, f"Login failed: {resp.text}"
+    token = resp.json()["access_token"]
     session.headers.update({
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {auth_token}"
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": "",  # will be overwritten per-request
     })
     return session
 
 
+def _get_available_room(api_client):
+    resp = api_client.get(f"{BASE_URL}/api/pms/rooms")
+    rooms = resp.json()
+    avail = [r for r in rooms if r.get("status") == "available" and r.get("id")]
+    return avail[0] if avail else None
+
+
+def _get_guest(api_client):
+    resp = api_client.get(f"{BASE_URL}/api/pms/guests")
+    guests = resp.json()
+    return guests[0] if guests else None
+
+
+def _create_confirmed_booking(api_client, total_amount=500.0):
+    """Create a confirmed booking with a room for testing."""
+    room = _get_available_room(api_client)
+    if not room:
+        return None
+    guest = _get_guest(api_client)
+    if not guest:
+        return None
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    checkout = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
+
+    import uuid
+    idem_key = str(uuid.uuid4())
+    api_client.headers["Idempotency-Key"] = idem_key
+
+    resp = api_client.post(f"{BASE_URL}/api/pms/bookings", json={
+        "guest_id": guest["id"],
+        "room_id": room["id"],
+        "check_in": today,
+        "check_out": checkout,
+        "adults": 1,
+        "children": 0,
+        "guests_count": 1,
+        "total_amount": total_amount,
+        "source_channel": "direct",
+        "origin": "ui",
+        "hold_status": "none",
+        "allocation_source": "manual",
+    })
+    if resp.status_code in (200, 201):
+        booking = resp.json()
+        return booking
+    return None
+
+
+# ─── Bug A Tests ──────────────────────────────────────────────────────
+
 class TestBugACheckinStaleOccupied:
-    """Bug A: Check-in fails with 400 'occupied' even though guest hasn't checked in"""
 
     def test_checkin_endpoint_exists(self, api_client):
-        """Verify POST /api/frontdesk/checkin/{booking_id} endpoint exists"""
-        # Use a non-existent booking to test endpoint existence
-        response = api_client.post(f"{BASE_URL}/api/frontdesk/checkin/nonexistent-booking-id?create_folio=true")
-        # Should return 404 (booking not found) not 405 (method not allowed)
-        assert response.status_code in [404, 400], f"Unexpected status: {response.status_code}, {response.text}"
-        print(f"✓ Checkin endpoint exists, returned {response.status_code} for nonexistent booking")
+        resp = api_client.post(f"{BASE_URL}/api/frontdesk/checkin/nonexistent-id?create_folio=true")
+        assert resp.status_code in [404, 400]
 
-    def test_checkin_force_clean_parameter(self, api_client):
-        """Verify force_clean parameter is accepted"""
-        response = api_client.post(f"{BASE_URL}/api/frontdesk/checkin/nonexistent?create_folio=true&force_clean=true")
-        # Should return 404 not 422 (validation error)
-        assert response.status_code in [404, 400], f"Unexpected status: {response.status_code}"
-        print("✓ force_clean parameter is accepted")
+    def test_checkin_force_clean_accepted(self, api_client):
+        resp = api_client.post(f"{BASE_URL}/api/frontdesk/checkin/nonexistent?create_folio=true&force_clean=true")
+        assert resp.status_code in [404, 400]
 
-    def test_get_confirmed_bookings_for_checkin(self, api_client):
-        """Get confirmed/guaranteed bookings that could be checked in today"""
-        today = datetime.now().strftime('%Y-%m-%d')
-        response = api_client.get(f"{BASE_URL}/api/pms/bookings")
-        assert response.status_code == 200
-        
-        bookings = response.json()
-        confirmed = [b for b in bookings if b.get('status') in ['confirmed', 'guaranteed']]
-        print(f"✓ Found {len(confirmed)} confirmed/guaranteed bookings")
-        
-        # Find one with today's check-in
-        today_arrivals = [b for b in confirmed if b.get('check_in', '').startswith(today)]
-        print(f"✓ Found {len(today_arrivals)} arrivals for today")
-        
-        return confirmed
+    def test_checkin_confirmed_booking(self, api_client):
+        booking = _create_confirmed_booking(api_client)
+        if not booking:
+            pytest.skip("Could not create test booking")
 
-    def test_checkin_with_stale_occupied_room(self, api_client):
-        """Test that checkin handles stale 'occupied' room status"""
-        # First, get a confirmed booking
-        response = api_client.get(f"{BASE_URL}/api/pms/bookings")
-        assert response.status_code == 200
-        bookings = response.json()
-        
-        confirmed = [b for b in bookings if b.get('status') == 'confirmed']
-        if not confirmed:
-            pytest.skip("No confirmed bookings available for test")
-        
-        booking = confirmed[0]
-        booking_id = booking['id']
-        print(f"Testing checkin for booking {booking_id}, room: {booking.get('room_number')}")
-        
-        # Attempt checkin with force_clean=true (handles stale occupied)
-        response = api_client.post(
+        booking_id = booking["id"]
+        resp = api_client.post(
             f"{BASE_URL}/api/frontdesk/checkin/{booking_id}?create_folio=true&force_clean=true"
         )
-        
-        # Success or specific failure (not generic 400 'occupied')
-        if response.status_code == 200:
-            print(f"✓ Checkin succeeded: {response.json()}")
-        elif response.status_code == 400:
-            detail = response.json().get('detail', '')
-            # Should NOT be generic "Room is occupied"
-            assert 'occupied by another guest' in detail or 'not ready' in detail.lower() or 'already checked' in detail.lower(), \
-                f"Unexpected 400 error: {detail} - Bug A may not be fixed"
-            print(f"✓ Checkin failed with proper error: {detail}")
-        else:
-            print(f"Checkin response: {response.status_code} - {response.text}")
+        assert resp.status_code == 200, f"Checkin should succeed: {resp.text}"
+        data = resp.json()
+        assert "room_number" in data
+        print(f"PASS checkin: room {data['room_number']}")
 
+        # Cleanup: force checkout
+        api_client.post(f"{BASE_URL}/api/frontdesk/checkout/{booking_id}?force=true&auto_close_folios=true")
+
+    def test_checkin_stale_occupied_room(self, api_client):
+        """If room is 'occupied' from stale state but no other checked-in booking, allow checkin."""
+        booking = _create_confirmed_booking(api_client)
+        if not booking:
+            pytest.skip("Could not create test booking")
+
+        booking_id = booking["id"]
+        room_id = booking.get("room_id")
+
+        # Manually set room to 'occupied' to simulate stale state
+        if room_id:
+            import uuid
+            api_client.headers["Idempotency-Key"] = str(uuid.uuid4())
+            api_client.put(f"{BASE_URL}/api/pms/rooms/{room_id}", json={"status": "occupied"})
+
+        resp = api_client.post(
+            f"{BASE_URL}/api/frontdesk/checkin/{booking_id}?create_folio=true"
+        )
+        assert resp.status_code == 200, f"Stale-occupied checkin should succeed: {resp.text}"
+        print(f"PASS stale-occupied checkin: {resp.json()}")
+
+        # Cleanup
+        api_client.post(f"{BASE_URL}/api/frontdesk/checkout/{booking_id}?force=true&auto_close_folios=true")
+
+
+# ─── Bug B Tests ──────────────────────────────────────────────────────
 
 class TestBugBCheckoutWithBalance:
-    """Bug B: Checkout allowed despite outstanding balance"""
 
     def test_checkout_endpoint_exists(self, api_client):
-        """Verify POST /api/frontdesk/checkout/{booking_id} endpoint exists"""
-        response = api_client.post(f"{BASE_URL}/api/frontdesk/checkout/nonexistent?auto_close_folios=true")
-        assert response.status_code in [404, 400], f"Unexpected status: {response.status_code}"
-        print("✓ Checkout endpoint exists")
+        resp = api_client.post(f"{BASE_URL}/api/frontdesk/checkout/nonexistent?auto_close_folios=true")
+        assert resp.status_code in [404, 400]
 
-    def test_checkout_returns_402_for_outstanding_balance(self, api_client):
-        """Verify checkout returns 402 when booking has outstanding balance"""
-        # Get checked_in bookings with outstanding balance
-        response = api_client.get(f"{BASE_URL}/api/pms/bookings")
-        assert response.status_code == 200
-        bookings = response.json()
-        
-        checked_in = [b for b in bookings if b.get('status') == 'checked_in']
-        print(f"Found {len(checked_in)} checked-in bookings")
-        
-        with_balance = [b for b in checked_in 
-                       if (b.get('total_amount', 0) or 0) > (b.get('paid_amount', 0) or 0)]
-        print(f"Found {len(with_balance)} checked-in bookings with outstanding balance")
-        
-        if not with_balance:
-            pytest.skip("No checked-in bookings with outstanding balance for test")
-        
-        booking = with_balance[0]
-        booking_id = booking['id']
-        balance = (booking.get('total_amount', 0) or 0) - (booking.get('paid_amount', 0) or 0)
-        print(f"Testing checkout for booking {booking_id}, balance: {balance}")
-        
-        # Attempt checkout without force
-        response = api_client.post(
-            f"{BASE_URL}/api/frontdesk/checkout/{booking_id}?auto_close_folios=true"
-        )
-        
-        # Should return 402 for outstanding balance
-        assert response.status_code == 402, \
-            f"Expected 402 for outstanding balance, got {response.status_code}: {response.text}"
-        
-        detail = response.json().get('detail', '')
-        assert 'outstanding balance' in detail.lower() or 'balance' in detail.lower(), \
-            f"Error should mention balance: {detail}"
-        
-        print(f"✓ Checkout blocked with 402: {detail}")
+    def test_checkout_blocked_with_outstanding_balance(self, api_client):
+        """Checkout returns 402 when booking has unpaid balance."""
+        booking = _create_confirmed_booking(api_client, total_amount=500.0)
+        if not booking:
+            pytest.skip("Could not create test booking")
 
-    def test_checkout_with_force_bypasses_balance_check(self, api_client):
-        """Verify force=true bypasses balance check"""
-        response = api_client.get(f"{BASE_URL}/api/pms/bookings")
-        bookings = response.json()
-        
-        checked_in = [b for b in bookings if b.get('status') == 'checked_in']
-        with_balance = [b for b in checked_in 
-                       if (b.get('total_amount', 0) or 0) > (b.get('paid_amount', 0) or 0)]
-        
-        if not with_balance:
-            pytest.skip("No checked-in bookings with balance for force checkout test")
-        
-        booking = with_balance[0]
-        booking_id = booking['id']
-        
-        # With force=true, should succeed even with balance
-        response = api_client.post(
-            f"{BASE_URL}/api/frontdesk/checkout/{booking_id}?auto_close_folios=true&force=true"
-        )
-        
-        # Should succeed
-        if response.status_code == 200:
-            print(f"✓ Force checkout succeeded: {response.json()}")
-        else:
-            # Already checked out is also valid
-            assert 'already checked out' in response.text.lower(), \
-                f"Force checkout failed unexpectedly: {response.text}"
-            print(f"✓ Booking already checked out")
+        booking_id = booking["id"]
 
-    def test_checkout_zero_balance_succeeds(self, api_client):
-        """Verify checkout succeeds when balance is zero"""
-        response = api_client.get(f"{BASE_URL}/api/pms/bookings")
-        bookings = response.json()
-        
-        checked_in = [b for b in bookings if b.get('status') == 'checked_in']
-        zero_balance = [b for b in checked_in 
-                       if (b.get('total_amount', 0) or 0) <= (b.get('paid_amount', 0) or 0)]
-        
-        if not zero_balance:
-            print("No checked-in bookings with zero balance - this is expected in most test environments")
-            pytest.skip("No checked-in bookings with zero balance")
-        
-        booking = zero_balance[0]
-        booking_id = booking['id']
-        
-        response = api_client.post(
-            f"{BASE_URL}/api/frontdesk/checkout/{booking_id}?auto_close_folios=true"
-        )
-        
-        assert response.status_code == 200, f"Zero balance checkout should succeed: {response.text}"
-        print(f"✓ Zero balance checkout succeeded")
+        # Check in
+        ci = api_client.post(f"{BASE_URL}/api/frontdesk/checkin/{booking_id}?create_folio=true&force_clean=true")
+        assert ci.status_code == 200, f"Checkin failed: {ci.text}"
+
+        # Try checkout without paying -> expect 402
+        co = api_client.post(f"{BASE_URL}/api/frontdesk/checkout/{booking_id}?auto_close_folios=true")
+        assert co.status_code == 402, f"Expected 402, got {co.status_code}: {co.text}"
+        assert "balance" in co.json().get("detail", "").lower()
+        print(f"PASS checkout blocked: {co.json()['detail']}")
+
+        # Cleanup
+        api_client.post(f"{BASE_URL}/api/frontdesk/checkout/{booking_id}?force=true&auto_close_folios=true")
+
+    def test_checkout_force_bypasses_balance(self, api_client):
+        """force=true allows checkout despite outstanding balance."""
+        booking = _create_confirmed_booking(api_client, total_amount=300.0)
+        if not booking:
+            pytest.skip("Could not create test booking")
+
+        booking_id = booking["id"]
+
+        ci = api_client.post(f"{BASE_URL}/api/frontdesk/checkin/{booking_id}?create_folio=true&force_clean=true")
+        assert ci.status_code == 200
+
+        co = api_client.post(f"{BASE_URL}/api/frontdesk/checkout/{booking_id}?force=true&auto_close_folios=true")
+        assert co.status_code == 200, f"Force checkout should succeed: {co.text}"
+        print(f"PASS force checkout: {co.json()['message']}")
+
+    def test_checkout_succeeds_zero_balance(self, api_client):
+        """Checkout succeeds when balance is fully paid."""
+        booking = _create_confirmed_booking(api_client, total_amount=200.0)
+        if not booking:
+            pytest.skip("Could not create test booking")
+
+        booking_id = booking["id"]
+
+        # Check in
+        ci = api_client.post(f"{BASE_URL}/api/frontdesk/checkin/{booking_id}?create_folio=true&force_clean=true")
+        assert ci.status_code == 200
+
+        # Pay full amount
+        pay = api_client.post(f"{BASE_URL}/api/pms/reservations/{booking_id}/record-payment", json={
+            "amount": 200.0, "method": "cash", "payment_type": "interim",
+        })
+        assert pay.status_code == 200, f"Payment failed: {pay.text}"
+
+        # Checkout should succeed
+        co = api_client.post(f"{BASE_URL}/api/frontdesk/checkout/{booking_id}?auto_close_folios=true")
+        assert co.status_code == 200, f"Zero balance checkout should succeed: {co.text}"
+        print(f"PASS zero-balance checkout: {co.json()['message']}")
 
 
-class TestFrontdeskEndpointIntegration:
-    """Integration tests for frontdesk endpoints"""
+# ─── Integration Tests ────────────────────────────────────────────────
+
+class TestFrontdeskIntegration:
 
     def test_checkin_creates_folio(self, api_client):
-        """Verify checkin with create_folio=true creates a folio"""
-        response = api_client.get(f"{BASE_URL}/api/pms/bookings")
-        bookings = response.json()
-        
-        confirmed = [b for b in bookings if b.get('status') == 'confirmed']
-        if not confirmed:
-            pytest.skip("No confirmed bookings for folio creation test")
-        
-        booking = confirmed[0]
-        booking_id = booking['id']
-        
-        # Checkin
-        checkin_response = api_client.post(
-            f"{BASE_URL}/api/frontdesk/checkin/{booking_id}?create_folio=true&force_clean=true"
-        )
-        
-        if checkin_response.status_code == 200:
-            # Check folio was created
-            folio_response = api_client.get(f"{BASE_URL}/api/frontdesk/folio/{booking_id}")
-            if folio_response.status_code == 200:
-                print(f"✓ Folio created/exists for booking {booking_id}")
-        else:
-            print(f"Checkin failed (may already be checked in): {checkin_response.text}")
+        booking = _create_confirmed_booking(api_client)
+        if not booking:
+            pytest.skip("Could not create test booking")
+        booking_id = booking["id"]
 
-    def test_checkout_creates_housekeeping_task(self, api_client):
-        """Verify checkout sets room to dirty (creates HK task implicitly)"""
-        response = api_client.get(f"{BASE_URL}/api/pms/bookings")
-        bookings = response.json()
-        
-        checked_in = [b for b in bookings if b.get('status') == 'checked_in']
-        if not checked_in:
-            pytest.skip("No checked-in bookings for HK task test")
-        
-        # Find one with zero or force checkout
-        booking = checked_in[0]
-        room_id = booking.get('room_id')
-        
-        # Force checkout 
-        checkout_response = api_client.post(
-            f"{BASE_URL}/api/frontdesk/checkout/{booking['id']}?auto_close_folios=true&force=true"
-        )
-        
-        if checkout_response.status_code == 200:
-            # Verify room status changed
-            if room_id:
-                room_response = api_client.get(f"{BASE_URL}/api/pms/rooms/{room_id}")
-                if room_response.status_code == 200:
-                    room = room_response.json()
-                    print(f"Room status after checkout: {room.get('status')}")
-        else:
-            print(f"Checkout response: {checkout_response.text}")
+        ci = api_client.post(f"{BASE_URL}/api/frontdesk/checkin/{booking_id}?create_folio=true&force_clean=true")
+        assert ci.status_code == 200
 
+        folio = api_client.get(f"{BASE_URL}/api/frontdesk/folio/{booking_id}")
+        assert folio.status_code == 200
+        print(f"PASS folio created for {booking_id}")
 
-class TestRoomsTabQuickActions:
-    """Test RoomsTab quick action button flows"""
+        api_client.post(f"{BASE_URL}/api/frontdesk/checkout/{booking_id}?force=true&auto_close_folios=true")
 
-    def test_rooms_list_includes_booking_info(self, api_client):
-        """Verify rooms endpoint includes booking/guest info for display"""
-        response = api_client.get(f"{BASE_URL}/api/pms/rooms")
-        assert response.status_code == 200
-        
-        rooms = response.json()
-        occupied = [r for r in rooms if r.get('status') == 'occupied']
-        print(f"✓ Found {len(occupied)} occupied rooms out of {len(rooms)} total")
+    def test_checkout_sets_room_dirty(self, api_client):
+        booking = _create_confirmed_booking(api_client)
+        if not booking:
+            pytest.skip("Could not create test booking")
+        booking_id = booking["id"]
+        room_id = booking.get("room_id")
 
-    def test_bookings_include_balance_calculation(self, api_client):
-        """Verify bookings include fields needed for balance calculation"""
-        response = api_client.get(f"{BASE_URL}/api/pms/bookings")
-        assert response.status_code == 200
-        
-        bookings = response.json()
-        if bookings:
-            booking = bookings[0]
-            assert 'total_amount' in booking or booking.get('total_amount') is None, "Missing total_amount field"
-            print(f"✓ Booking has total_amount: {booking.get('total_amount')}, paid_amount: {booking.get('paid_amount')}")
+        ci = api_client.post(f"{BASE_URL}/api/frontdesk/checkin/{booking_id}?create_folio=true&force_clean=true")
+        assert ci.status_code == 200
+
+        co = api_client.post(f"{BASE_URL}/api/frontdesk/checkout/{booking_id}?force=true&auto_close_folios=true")
+        assert co.status_code == 200
+
+        if room_id:
+            room_resp = api_client.get(f"{BASE_URL}/api/pms/rooms/{room_id}")
+            if room_resp.status_code == 200:
+                assert room_resp.json().get("status") == "dirty"
+                print(f"PASS room {room_id[:8]} set to dirty after checkout")
+
+    def test_rooms_and_bookings_endpoints(self, api_client):
+        rooms = api_client.get(f"{BASE_URL}/api/pms/rooms")
+        assert rooms.status_code == 200
+        assert len(rooms.json()) > 0
+
+        bookings = api_client.get(f"{BASE_URL}/api/pms/bookings")
+        assert bookings.status_code == 200
+        b = bookings.json()
+        if b:
+            assert "total_amount" in b[0] or b[0].get("total_amount") is None
+        print(f"PASS rooms={len(rooms.json())} bookings={len(b)}")
