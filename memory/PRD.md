@@ -196,6 +196,18 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Modified files: ReservationCalendar.js, CalendarDialogs.js, create_reservation_service.py
   - All tested: Backend curl tests passed (400 for past, 200 for today)
 
+### Session 14 (Mar 19, 2026)
+- [x] **Per-Room-Type Bulk Rate Update (Feature)**
+  - Redesigned Rate Manager "Toplu Güncellemeler" page for per-room-type inline editing
+  - Each room type row now has its own Fiyat, Müsaitlik, Min. Konaklama input fields
+  - Left panel "Neleri güncellemek istiyorsunuz?" checkboxes control visible table columns
+  - Removed single global "Değerler" section — values are now per room type
+  - Backend: Added `RoomTypeValuesItem` model and `per_room_values` field to `BulkGridUpdateRequest`
+  - Backend: `bulk-grid-update` endpoint processes per-room-type values with room-specific rates
+  - Frontend: `roomValues` state manages per-room-type values, table layout with inline inputs
+  - Modified files: RateManager.jsx, rate_manager_router.py
+  - All tested: Backend API (6 records saved with different per-room values), Frontend E2E (values filled, Güncelle clicked, Calendar View confirmed correct values per room type)
+
 ## Backlog (Future Tasks)
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
 - [ ] P2: Refactor ReservationDetailModal.js (1400+ lines → smaller components)

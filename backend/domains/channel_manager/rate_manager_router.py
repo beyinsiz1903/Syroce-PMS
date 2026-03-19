@@ -43,15 +43,29 @@ class RoomTypeSelection(BaseModel):
     rate_plan_codes: List[str]
 
 
+class RoomTypeValuesItem(BaseModel):
+    """Per-room-type values for bulk update."""
+    room_type_code: str
+    rate_plan_codes: List[str]
+    rate: Optional[float] = None
+    availability: Optional[int] = None
+    min_stay: Optional[int] = None
+    max_stay: Optional[int] = None
+    stop_sell: Optional[bool] = None
+    cta: Optional[bool] = None
+    ctd: Optional[bool] = None
+
+
 class BulkGridUpdateRequest(BaseModel):
     """HotelRunner-style bulk update: apply same values to multiple room types at once."""
     room_type_codes: Optional[List[str]] = None  # Legacy: cross-product mode
     rate_plan_codes: Optional[List[str]] = None   # Legacy: cross-product mode
-    selections: Optional[List[RoomTypeSelection]] = None  # New: per-room-type selections
+    selections: Optional[List[RoomTypeSelection]] = None  # Per-room-type selections
+    per_room_values: Optional[List[RoomTypeValuesItem]] = None  # Per-room-type values
     start_date: str                     # YYYY-MM-DD
     end_date: str                       # YYYY-MM-DD
     selected_days: Optional[List[int]] = None  # 0=Sun..6=Sat, None=all days
-    # Fields to update (only non-None fields get applied)
+    # Fields to update (only non-None fields get applied) — used with global values
     rate: Optional[float] = None
     availability: Optional[int] = None
     min_stay: Optional[int] = None
@@ -400,9 +414,20 @@ async def bulk_grid_update(
     selected_days_set = set(request.selected_days) if request.selected_days else None
     update_fields = set(request.update_fields)
 
-    # Build iteration pairs: support both new per-room-type selections and legacy cross-product
+    # Build per-room-type values index for quick lookup
+    per_room_map = {}
+    if request.per_room_values:
+        for prv in request.per_room_values:
+            per_room_map[prv.room_type_code] = prv
+
+    # Build iteration pairs
     pairs = []
-    if request.selections:
+    if request.per_room_values:
+        # Per-room-type mode: each item has its own rate_plan_codes and values
+        for prv in request.per_room_values:
+            for rp_code in prv.rate_plan_codes:
+                pairs.append((prv.room_type_code, rp_code))
+    elif request.selections:
         for sel in request.selections:
             for rp_code in sel.rate_plan_codes:
                 pairs.append((sel.room_type_code, rp_code))
@@ -411,88 +436,101 @@ async def bulk_grid_update(
             for rp_code in request.rate_plan_codes:
                 pairs.append((rt_code, rp_code))
 
+    total_room_types_set = set()
     for rt_code, rp_code in pairs:
-            d = datetime.strptime(request.start_date, "%Y-%m-%d").date()
-            end = datetime.strptime(request.end_date, "%Y-%m-%d").date()
+        total_room_types_set.add(rt_code)
+        # Get per-room values if available, else use global values
+        rv = per_room_map.get(rt_code)
 
-            while d <= end:
-                # Day-of-week filter: 0=Sun..6=Sat (JS convention)
-                js_dow = d.isoweekday() % 7  # Python: Mon=1..Sun=7 -> JS: Sun=0..Sat=6
-                if selected_days_set is not None and js_dow not in selected_days_set:
-                    d += timedelta(days=1)
-                    continue
+        d = datetime.strptime(request.start_date, "%Y-%m-%d").date()
+        end = datetime.strptime(request.end_date, "%Y-%m-%d").date()
 
-                ds = d.strftime("%Y-%m-%d")
-                set_fields = {
+        while d <= end:
+            js_dow = d.isoweekday() % 7
+            if selected_days_set is not None and js_dow not in selected_days_set:
+                d += timedelta(days=1)
+                continue
+
+            ds = d.strftime("%Y-%m-%d")
+            set_fields = {
+                "tenant_id": tenant_id,
+                "room_type_code": rt_code,
+                "rate_plan_code": rp_code,
+                "date": ds,
+                "updated_at": now,
+                "updated_by": current_user.id,
+            }
+
+            # Use per-room values if available, otherwise global
+            v_rate = rv.rate if rv else request.rate
+            v_avail = rv.availability if rv else request.availability
+            v_min = rv.min_stay if rv else request.min_stay
+            v_max = rv.max_stay if rv else request.max_stay
+            v_stop = rv.stop_sell if rv else request.stop_sell
+            v_cta = rv.cta if rv else request.cta
+            v_ctd = rv.ctd if rv else request.ctd
+
+            if "rate" in update_fields and v_rate is not None:
+                set_fields["rate"] = v_rate
+            if "availability" in update_fields and v_avail is not None:
+                set_fields["availability"] = v_avail
+            if "min_stay" in update_fields and v_min is not None:
+                set_fields["min_stay"] = v_min
+            if "max_stay" in update_fields and v_max is not None:
+                set_fields["max_stay"] = v_max
+            if "stop_sell" in update_fields and v_stop is not None:
+                set_fields["stop_sell"] = v_stop
+            if "cta" in update_fields and v_cta is not None:
+                set_fields["cta"] = v_cta
+            if "ctd" in update_fields and v_ctd is not None:
+                set_fields["ctd"] = v_ctd
+
+            await db.rate_calendar.update_one(
+                {
                     "tenant_id": tenant_id,
                     "room_type_code": rt_code,
                     "rate_plan_code": rp_code,
                     "date": ds,
-                    "updated_at": now,
-                    "updated_by": current_user.id,
-                }
+                },
+                {"$set": set_fields},
+                upsert=True,
+            )
+            saved += 1
+            d += timedelta(days=1)
 
-                if "rate" in update_fields and request.rate is not None:
-                    set_fields["rate"] = request.rate
-                if "availability" in update_fields and request.availability is not None:
-                    set_fields["availability"] = request.availability
-                if "min_stay" in update_fields and request.min_stay is not None:
-                    set_fields["min_stay"] = request.min_stay
-                if "max_stay" in update_fields and request.max_stay is not None:
-                    set_fields["max_stay"] = request.max_stay
-                if "stop_sell" in update_fields and request.stop_sell is not None:
-                    set_fields["stop_sell"] = request.stop_sell
-                if "cta" in update_fields and request.cta is not None:
-                    set_fields["cta"] = request.cta
-                if "ctd" in update_fields and request.ctd is not None:
-                    set_fields["ctd"] = request.ctd
+        # Push to Exely
+        if provider:
+            try:
+                push_rate = v_rate if "rate" in update_fields else None
+                push_avail = v_avail if "availability" in update_fields else None
+                push_stop = v_stop if "stop_sell" in update_fields else None
+                push_min = v_min if "min_stay" in update_fields else None
 
-                await db.rate_calendar.update_one(
-                    {
-                        "tenant_id": tenant_id,
-                        "room_type_code": rt_code,
-                        "rate_plan_code": rp_code,
-                        "date": ds,
-                    },
-                    {"$set": set_fields},
-                    upsert=True,
+                result = await provider.push_ari(
+                    room_type_code=rt_code,
+                    rate_plan_code=rp_code,
+                    start_date=request.start_date,
+                    end_date=request.end_date,
+                    availability=push_avail,
+                    rate_amount=push_rate,
+                    currency=conn.get("currency", "TRY"),
+                    stop_sell=push_stop,
+                    min_stay=push_min,
                 )
-                saved += 1
-                d += timedelta(days=1)
-
-            # Push to Exely
-            if provider:
-                try:
-                    push_rate = request.rate if "rate" in update_fields else None
-                    push_avail = request.availability if "availability" in update_fields else None
-                    push_stop = request.stop_sell if "stop_sell" in update_fields else None
-                    push_min = request.min_stay if "min_stay" in update_fields else None
-
-                    result = await provider.push_ari(
-                        room_type_code=rt_code,
-                        rate_plan_code=rp_code,
-                        start_date=request.start_date,
-                        end_date=request.end_date,
-                        availability=push_avail,
-                        rate_amount=push_rate,
-                        currency=conn.get("currency", "TRY"),
-                        stop_sell=push_stop,
-                        min_stay=push_min,
-                    )
-                    push_results.append({
-                        "room_type_code": rt_code,
-                        "rate_plan_code": rp_code,
-                        "success": result.success,
-                        "error": result.error if not result.success else None,
-                    })
-                except Exception as e:
-                    logger.error(f"[BULK-UPDATE] Exely push error: {e}")
-                    push_results.append({
-                        "room_type_code": rt_code,
-                        "rate_plan_code": rp_code,
-                        "success": False,
-                        "error": str(e),
-                    })
+                push_results.append({
+                    "room_type_code": rt_code,
+                    "rate_plan_code": rp_code,
+                    "success": result.success,
+                    "error": result.error if not result.success else None,
+                })
+            except Exception as e:
+                logger.error(f"[BULK-UPDATE] Exely push error: {e}")
+                push_results.append({
+                    "room_type_code": rt_code,
+                    "rate_plan_code": rp_code,
+                    "success": False,
+                    "error": str(e),
+                })
 
     all_success = len(push_results) > 0 and all(r["success"] for r in push_results)
 
@@ -500,8 +538,7 @@ async def bulk_grid_update(
         "saved": saved,
         "push_results": push_results,
         "all_pushed": all_success,
-        "total_room_types": len(request.room_type_codes),
-        "total_rate_plans": len(request.rate_plan_codes),
+        "total_room_types": len(total_room_types_set),
         "message": f"{saved} kayıt güncellendi" + (
             " ve Exely'ye gönderildi" if all_success else ""
         ),

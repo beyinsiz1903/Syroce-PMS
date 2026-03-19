@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DollarSign, Calendar, Save, Loader2, ChevronLeft, ChevronRight,
   BedDouble, Lock, Unlock, ArrowUpRight, RefreshCw, Eye, RotateCcw,
-  CalendarDays, Grid3X3, Settings2
+  CalendarDays, Grid3X3, Settings2, Home, Moon, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -64,14 +64,10 @@ const RateManager = ({ user, tenant, onLogout }) => {
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(nextWeek);
 
-  // Values to apply
-  const [bulkRate, setBulkRate] = useState('');
-  const [bulkAvailability, setBulkAvailability] = useState('');
-  const [bulkMinStay, setBulkMinStay] = useState('');
-  const [bulkMaxStay, setBulkMaxStay] = useState('');
-  const [bulkStopSell, setBulkStopSell] = useState(false);
-  const [bulkCTA, setBulkCTA] = useState(false);
-  const [bulkCTD, setBulkCTD] = useState(false);
+  // Per-room-type values: { [roomTypeCode]: { rate: '', availability: '', min_stay: '', max_stay: '', stop_sell: false, cta: false, ctd: false } }
+  const [roomValues, setRoomValues] = useState({});
+  // Track expanded rate plans per room type
+  const [expandedRoomTypes, setExpandedRoomTypes] = useState(new Set());
 
   // Grid view state
   const [gridRoomType, setGridRoomType] = useState('all');
@@ -121,20 +117,37 @@ const RateManager = ({ user, tenant, onLogout }) => {
   }, [roomTypes, ratePlans]);
 
   // ─── SELECTION HELPERS ───
+  const getDefaultValues = () => ({ rate: '', availability: '', min_stay: '', max_stay: '', stop_sell: false, cta: false, ctd: false });
+
+  const updateRoomValue = (roomTypeCode, field, value) => {
+    setRoomValues(prev => ({
+      ...prev,
+      [roomTypeCode]: { ...(prev[roomTypeCode] || getDefaultValues()), [field]: value }
+    }));
+  };
+
+  const toggleExpanded = (code) => {
+    setExpandedRoomTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code); else next.add(code);
+      return next;
+    });
+  };
+
   // Toggle entire room type: selects/deselects ALL rate plans under it
   const toggleRoomType = (code) => {
     setSelections(prev => {
       const next = { ...prev };
       const allPlans = ratePlans.map(rp => rp.code);
       if (next[code] && next[code].size === allPlans.length) {
-        // All plans selected → deselect entire room type
         delete next[code];
       } else {
-        // Select all plans for this room type
         next[code] = new Set(allPlans);
       }
       return next;
     });
+    // Init room values if not present
+    setRoomValues(prev => prev[code] ? prev : { ...prev, [code]: getDefaultValues() });
   };
 
   const toggleAllRoomTypes = () => {
@@ -146,8 +159,13 @@ const RateManager = ({ user, tenant, onLogout }) => {
       setSelections({});
     } else {
       const next = {};
-      roomTypes.forEach(rt => { next[rt.code] = new Set(allPlans); });
+      const rv = { ...roomValues };
+      roomTypes.forEach(rt => {
+        next[rt.code] = new Set(allPlans);
+        if (!rv[rt.code]) rv[rt.code] = getDefaultValues();
+      });
       setSelections(next);
+      setRoomValues(rv);
     }
   };
 
@@ -242,13 +260,8 @@ const RateManager = ({ user, tenant, onLogout }) => {
     setEnabledFields(new Set());
     setAllDays(true);
     setSelectedDays(new Set([0, 1, 2, 3, 4, 5, 6]));
-    setBulkRate('');
-    setBulkAvailability('');
-    setBulkMinStay('');
-    setBulkMaxStay('');
-    setBulkStopSell(false);
-    setBulkCTA(false);
-    setBulkCTD(false);
+    setRoomValues({});
+    setExpandedRoomTypes(new Set());
     setDateFrom(today);
     setDateTo(nextWeek);
   };
@@ -272,24 +285,49 @@ const RateManager = ({ user, tenant, onLogout }) => {
       return;
     }
 
+    // Validate that at least one room has a value filled
+    const selectedRoomCodes = Object.keys(selections);
+    const hasAnyValue = selectedRoomCodes.some(rtCode => {
+      const rv = roomValues[rtCode];
+      if (!rv) return false;
+      if (enabledFields.has('rate') && rv.rate) return true;
+      if (enabledFields.has('availability') && rv.availability) return true;
+      if (enabledFields.has('min_stay') && rv.min_stay) return true;
+      if (enabledFields.has('max_stay') && rv.max_stay) return true;
+      if (enabledFields.has('stop_sell') && rv.stop_sell) return true;
+      if (enabledFields.has('cta') && rv.cta) return true;
+      if (enabledFields.has('ctd') && rv.ctd) return true;
+      return false;
+    });
+
+    if (!hasAnyValue) {
+      toast.error('Lütfen en az bir oda tipi için değer girin');
+      return;
+    }
+
     setSaving(true);
     try {
-      const payload = {
-        selections: Object.entries(selections).map(([rtCode, rpSet]) => ({
+      const perRoomValues = selectedRoomCodes.map(rtCode => {
+        const rv = roomValues[rtCode] || getDefaultValues();
+        return {
           room_type_code: rtCode,
-          rate_plan_codes: Array.from(rpSet),
-        })),
+          rate_plan_codes: Array.from(selections[rtCode]),
+          rate: enabledFields.has('rate') && rv.rate ? parseFloat(rv.rate) : null,
+          availability: enabledFields.has('availability') && rv.availability ? parseInt(rv.availability) : null,
+          min_stay: enabledFields.has('min_stay') && rv.min_stay ? parseInt(rv.min_stay) : null,
+          max_stay: enabledFields.has('max_stay') && rv.max_stay ? parseInt(rv.max_stay) : null,
+          stop_sell: enabledFields.has('stop_sell') ? rv.stop_sell : null,
+          cta: enabledFields.has('cta') ? rv.cta : null,
+          ctd: enabledFields.has('ctd') ? rv.ctd : null,
+        };
+      });
+
+      const payload = {
+        per_room_values: perRoomValues,
         start_date: dateFrom,
         end_date: dateTo,
         selected_days: allDays ? null : Array.from(selectedDays),
         update_fields: Array.from(enabledFields),
-        rate: enabledFields.has('rate') && bulkRate ? parseFloat(bulkRate) : null,
-        availability: enabledFields.has('availability') && bulkAvailability ? parseInt(bulkAvailability) : null,
-        min_stay: enabledFields.has('min_stay') && bulkMinStay ? parseInt(bulkMinStay) : null,
-        max_stay: enabledFields.has('max_stay') && bulkMaxStay ? parseInt(bulkMaxStay) : null,
-        stop_sell: enabledFields.has('stop_sell') ? bulkStopSell : null,
-        cta: enabledFields.has('cta') ? bulkCTA : null,
-        ctd: enabledFields.has('ctd') ? bulkCTD : null,
       };
 
       const { data } = await axios.post(
@@ -381,8 +419,8 @@ const RateManager = ({ user, tenant, onLogout }) => {
           {/* ═══════════════ BULK UPDATE VIEW ═══════════════ */}
           <TabsContent value="bulk" className="mt-4">
             <div className="flex flex-col lg:flex-row gap-4" data-testid="bulk-update-layout">
-              {/* ─── LEFT PANEL: Filters & Values ─── */}
-              <div className="w-full lg:w-[280px] flex-shrink-0 space-y-4" data-testid="bulk-left-panel">
+              {/* ─── LEFT PANEL: Filters ─── */}
+              <div className="w-full lg:w-[240px] flex-shrink-0 space-y-4" data-testid="bulk-left-panel">
                 {/* Update Fields Selection */}
                 <Card>
                   <CardHeader className="pb-2 pt-4 px-4">
@@ -404,81 +442,6 @@ const RateManager = ({ user, tenant, onLogout }) => {
                     ))}
                   </CardContent>
                 </Card>
-
-                {/* Values to apply */}
-                {enabledFields.size > 0 && (
-                  <Card>
-                    <CardHeader className="pb-2 pt-4 px-4">
-                      <CardTitle className="text-sm font-semibold text-gray-700">
-                        Değerler
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="px-4 pb-4 space-y-3">
-                      {enabledFields.has('rate') && (
-                        <div>
-                          <Label className="text-xs text-gray-500">Fiyat (TRY)</Label>
-                          <Input
-                            type="number" step="0.01" placeholder="0.00"
-                            value={bulkRate} onChange={e => setBulkRate(e.target.value)}
-                            className="mt-1 h-8 text-sm"
-                            data-testid="bulk-rate-input"
-                          />
-                        </div>
-                      )}
-                      {enabledFields.has('availability') && (
-                        <div>
-                          <Label className="text-xs text-gray-500">Müsait Oda</Label>
-                          <Input
-                            type="number" min="0" placeholder="0"
-                            value={bulkAvailability} onChange={e => setBulkAvailability(e.target.value)}
-                            className="mt-1 h-8 text-sm"
-                            data-testid="bulk-availability-input"
-                          />
-                        </div>
-                      )}
-                      {enabledFields.has('min_stay') && (
-                        <div>
-                          <Label className="text-xs text-gray-500">Min. Konaklama (gece)</Label>
-                          <Input
-                            type="number" min="1" placeholder="1"
-                            value={bulkMinStay} onChange={e => setBulkMinStay(e.target.value)}
-                            className="mt-1 h-8 text-sm"
-                            data-testid="bulk-min-stay-input"
-                          />
-                        </div>
-                      )}
-                      {enabledFields.has('max_stay') && (
-                        <div>
-                          <Label className="text-xs text-gray-500">Max. Konaklama (gece)</Label>
-                          <Input
-                            type="number" min="1" placeholder="30"
-                            value={bulkMaxStay} onChange={e => setBulkMaxStay(e.target.value)}
-                            className="mt-1 h-8 text-sm"
-                            data-testid="bulk-max-stay-input"
-                          />
-                        </div>
-                      )}
-                      {enabledFields.has('stop_sell') && (
-                        <label className="flex items-center gap-2 text-sm cursor-pointer" data-testid="bulk-stop-sell">
-                          <Checkbox checked={bulkStopSell} onCheckedChange={setBulkStopSell} />
-                          <span>Satışı Durdur</span>
-                        </label>
-                      )}
-                      {enabledFields.has('cta') && (
-                        <label className="flex items-center gap-2 text-sm cursor-pointer" data-testid="bulk-cta">
-                          <Checkbox checked={bulkCTA} onCheckedChange={setBulkCTA} />
-                          <span>Varışa Kapalı (CTA)</span>
-                        </label>
-                      )}
-                      {enabledFields.has('ctd') && (
-                        <label className="flex items-center gap-2 text-sm cursor-pointer" data-testid="bulk-ctd">
-                          <Checkbox checked={bulkCTD} onCheckedChange={setBulkCTD} />
-                          <span>Çıkışa Kapalı (CTD)</span>
-                        </label>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
 
                 {/* Date Range */}
                 <Card>
@@ -545,7 +508,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
                 </div>
               </div>
 
-              {/* ─── CENTER PANEL: Room Types ─── */}
+              {/* ─── CENTER PANEL: Room Types Table with Inline Inputs ─── */}
               <div className="flex-1 min-w-0" data-testid="bulk-center-panel">
                 <Card className="h-full">
                   <CardHeader className="pb-2 pt-4 px-4">
@@ -560,79 +523,225 @@ const RateManager = ({ user, tenant, onLogout }) => {
                       </button>
                     </div>
                   </CardHeader>
-                  <CardContent className="px-4 pb-4">
+                  <CardContent className="px-0 pb-4">
                     {loading && roomTypes.length === 0 ? (
                       <div className="flex items-center justify-center py-12">
                         <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
                       </div>
                     ) : roomTypes.length === 0 ? (
-                      <div className="text-center py-12 text-gray-400 text-sm">
+                      <div className="text-center py-12 text-gray-400 text-sm px-4">
                         Exely bağlantısı bulunamadı veya oda tipi tanımlı değil
                       </div>
                     ) : (
-                      <div className="space-y-1" data-testid="room-type-list">
-                        {roomTypeTree.map(rt => (
-                          <div key={rt.code} className="border rounded-lg overflow-hidden">
-                            {/* Room Type Header */}
-                            <label
-                              className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors ${
-                                isRoomTypeSelected(rt.code)
-                                  ? 'bg-orange-50 border-l-4 border-l-orange-500'
-                                  : 'hover:bg-gray-50 border-l-4 border-l-transparent'
-                              }`}
-                              data-testid={`room-type-${rt.code}`}
-                            >
-                              <Checkbox
-                                checked={isRoomTypeFullySelected(rt.code)}
-                                onCheckedChange={() => toggleRoomType(rt.code)}
-                              />
-                              <div className="flex-1 min-w-0">
-                                <div className="font-semibold text-sm text-gray-900">{rt.name}</div>
-                                <button
-                                  onClick={(e) => togglePricingType(rt.code, e)}
-                                  className={`text-xs italic cursor-pointer hover:underline transition-colors ${
-                                    (pricingSettings[rt.code] || 'per_person') === 'per_room'
-                                      ? 'text-blue-600'
-                                      : 'text-orange-600'
-                                  }`}
-                                  data-testid={`pricing-type-toggle-${rt.code}`}
-                                >
-                                  {getPricingLabel(rt.code)}
-                                </button>
-                              </div>
-                            </label>
-
-                            {/* Rate Plans under this room type */}
-                            {rt.plans.map(rp => (
-                              <label
-                                key={`${rt.code}-${rp.code}`}
-                                className={`flex items-center gap-3 px-3 py-2 pl-8 border-t border-gray-100 cursor-pointer transition-colors ${
-                                  isRatePlanSelected(rt.code, rp.code)
-                                    ? 'bg-blue-50'
-                                    : 'hover:bg-gray-50'
-                                }`}
-                                data-testid={`rate-plan-${rt.code}-${rp.code}`}
-                              >
-                                <Checkbox
-                                  checked={isRatePlanSelected(rt.code, rp.code)}
-                                  onCheckedChange={() => toggleRatePlan(rt.code, rp.code)}
-                                />
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-sm text-gray-700">
-                                    {rt.name} - {rp.name}
-                                  </div>
-                                  <div className={`text-xs italic ${
-                                    (pricingSettings[rt.code] || 'per_person') === 'per_room'
-                                      ? 'text-blue-400'
-                                      : 'text-gray-400'
-                                  }`}>
-                                    {getPricingLabel(rt.code)}
-                                  </div>
-                                </div>
-                              </label>
-                            ))}
+                      <div className="overflow-x-auto" data-testid="room-type-list">
+                        {/* Table Header */}
+                        <div className="grid items-center border-b bg-gray-50 px-4 py-2 text-xs font-medium text-gray-500 gap-3"
+                          style={{ gridTemplateColumns: 'minmax(220px, 1fr) repeat(auto-fit, minmax(130px, 1fr))' }}>
+                          <div className="grid items-center gap-3" style={{ gridTemplateColumns: `minmax(220px, 1fr)${enabledFields.has('rate') ? ' 150px' : ''}${enabledFields.has('availability') ? ' 130px' : ''}${enabledFields.has('min_stay') ? ' 150px' : ''}${enabledFields.has('max_stay') ? ' 150px' : ''}${enabledFields.has('stop_sell') ? ' 100px' : ''}${enabledFields.has('cta') ? ' 80px' : ''}${enabledFields.has('ctd') ? ' 80px' : ''}` }}>
+                            <span>Oda adı</span>
+                            {enabledFields.has('rate') && <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" /> Fiyat</span>}
+                            {enabledFields.has('availability') && <span className="flex items-center gap-1"><Home className="w-3 h-3" /> Müsaitlik</span>}
+                            {enabledFields.has('min_stay') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Min. konaklama</span>}
+                            {enabledFields.has('max_stay') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Max. konaklama</span>}
+                            {enabledFields.has('stop_sell') && <span>Satış durdur</span>}
+                            {enabledFields.has('cta') && <span>CTA</span>}
+                            {enabledFields.has('ctd') && <span>CTD</span>}
                           </div>
-                        ))}
+                        </div>
+
+                        {/* Room Type Rows */}
+                        <div className="divide-y">
+                          {roomTypeTree.map(rt => {
+                            const rv = roomValues[rt.code] || getDefaultValues();
+                            const isSelected = isRoomTypeSelected(rt.code);
+                            const isExpanded = expandedRoomTypes.has(rt.code);
+
+                            return (
+                              <div key={rt.code} data-testid={`room-type-row-${rt.code}`}>
+                                {/* Room Type Main Row */}
+                                <div
+                                  className={`grid items-center px-4 py-3 gap-3 transition-colors ${
+                                    isSelected ? 'bg-orange-50/60' : 'hover:bg-gray-50'
+                                  }`}
+                                  style={{ gridTemplateColumns: `minmax(220px, 1fr)${enabledFields.has('rate') ? ' 150px' : ''}${enabledFields.has('availability') ? ' 130px' : ''}${enabledFields.has('min_stay') ? ' 150px' : ''}${enabledFields.has('max_stay') ? ' 150px' : ''}${enabledFields.has('stop_sell') ? ' 100px' : ''}${enabledFields.has('cta') ? ' 80px' : ''}${enabledFields.has('ctd') ? ' 80px' : ''}` }}
+                                >
+                                  {/* Room name + checkbox + expand toggle */}
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox
+                                      checked={isRoomTypeFullySelected(rt.code)}
+                                      onCheckedChange={() => toggleRoomType(rt.code)}
+                                      data-testid={`room-type-check-${rt.code}`}
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="font-semibold text-sm text-gray-900">{rt.name}</div>
+                                      <button
+                                        onClick={(e) => togglePricingType(rt.code, e)}
+                                        className={`text-xs italic cursor-pointer hover:underline transition-colors ${
+                                          (pricingSettings[rt.code] || 'per_person') === 'per_room'
+                                            ? 'text-blue-600'
+                                            : 'text-orange-600'
+                                        }`}
+                                        data-testid={`pricing-type-toggle-${rt.code}`}
+                                      >
+                                        {getPricingLabel(rt.code)}
+                                      </button>
+                                    </div>
+                                    {rt.plans.length > 0 && (
+                                      <button
+                                        onClick={() => toggleExpanded(rt.code)}
+                                        className="text-gray-400 hover:text-gray-600 p-0.5"
+                                        data-testid={`expand-toggle-${rt.code}`}
+                                      >
+                                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  {/* Inline Rate Input */}
+                                  {enabledFields.has('rate') && (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-xs text-gray-400">₺</span>
+                                      <Input
+                                        type="number" step="0.01" placeholder="Fiyat"
+                                        value={rv.rate}
+                                        onChange={e => updateRoomValue(rt.code, 'rate', e.target.value)}
+                                        className="h-8 text-sm"
+                                        data-testid={`rate-input-${rt.code}`}
+                                      />
+                                    </div>
+                                  )}
+
+                                  {/* Inline Availability Input */}
+                                  {enabledFields.has('availability') && (
+                                    <div className="flex items-center gap-1">
+                                      <Home className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                                      <Input
+                                        type="number" min="0" placeholder="Müsaitlik"
+                                        value={rv.availability}
+                                        onChange={e => updateRoomValue(rt.code, 'availability', e.target.value)}
+                                        className="h-8 text-sm"
+                                        data-testid={`avail-input-${rt.code}`}
+                                      />
+                                    </div>
+                                  )}
+
+                                  {/* Inline Min Stay Input */}
+                                  {enabledFields.has('min_stay') && (
+                                    <div className="flex items-center gap-1">
+                                      <Moon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                                      <Input
+                                        type="number" min="1" placeholder="Min. konaklama"
+                                        value={rv.min_stay}
+                                        onChange={e => updateRoomValue(rt.code, 'min_stay', e.target.value)}
+                                        className="h-8 text-sm"
+                                        data-testid={`min-stay-input-${rt.code}`}
+                                      />
+                                    </div>
+                                  )}
+
+                                  {/* Inline Max Stay Input */}
+                                  {enabledFields.has('max_stay') && (
+                                    <div className="flex items-center gap-1">
+                                      <Moon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                                      <Input
+                                        type="number" min="1" placeholder="Max. konaklama"
+                                        value={rv.max_stay}
+                                        onChange={e => updateRoomValue(rt.code, 'max_stay', e.target.value)}
+                                        className="h-8 text-sm"
+                                        data-testid={`max-stay-input-${rt.code}`}
+                                      />
+                                    </div>
+                                  )}
+
+                                  {/* Inline Stop Sell */}
+                                  {enabledFields.has('stop_sell') && (
+                                    <div className="flex items-center justify-center">
+                                      <Checkbox
+                                        checked={rv.stop_sell}
+                                        onCheckedChange={v => updateRoomValue(rt.code, 'stop_sell', v)}
+                                        data-testid={`stop-sell-${rt.code}`}
+                                      />
+                                    </div>
+                                  )}
+
+                                  {/* Inline CTA */}
+                                  {enabledFields.has('cta') && (
+                                    <div className="flex items-center justify-center">
+                                      <Checkbox
+                                        checked={rv.cta}
+                                        onCheckedChange={v => updateRoomValue(rt.code, 'cta', v)}
+                                        data-testid={`cta-${rt.code}`}
+                                      />
+                                    </div>
+                                  )}
+
+                                  {/* Inline CTD */}
+                                  {enabledFields.has('ctd') && (
+                                    <div className="flex items-center justify-center">
+                                      <Checkbox
+                                        checked={rv.ctd}
+                                        onCheckedChange={v => updateRoomValue(rt.code, 'ctd', v)}
+                                        data-testid={`ctd-${rt.code}`}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Expanded Rate Plans */}
+                                {isExpanded && rt.plans.map(rp => (
+                                  <div
+                                    key={`${rt.code}-${rp.code}`}
+                                    className={`grid items-center px-4 py-2 pl-10 gap-3 border-t border-gray-100 transition-colors ${
+                                      isRatePlanSelected(rt.code, rp.code) ? 'bg-blue-50/40' : 'hover:bg-gray-50'
+                                    }`}
+                                    style={{ gridTemplateColumns: `minmax(220px, 1fr)${enabledFields.has('rate') ? ' 150px' : ''}${enabledFields.has('availability') ? ' 130px' : ''}${enabledFields.has('min_stay') ? ' 150px' : ''}${enabledFields.has('max_stay') ? ' 150px' : ''}${enabledFields.has('stop_sell') ? ' 100px' : ''}${enabledFields.has('cta') ? ' 80px' : ''}${enabledFields.has('ctd') ? ' 80px' : ''}` }}
+                                    data-testid={`rate-plan-row-${rt.code}-${rp.code}`}
+                                  >
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                      <Checkbox
+                                        checked={isRatePlanSelected(rt.code, rp.code)}
+                                        onCheckedChange={() => toggleRatePlan(rt.code, rp.code)}
+                                      />
+                                      <div className="min-w-0">
+                                        <div className="text-sm text-gray-700">{rt.name} - {rp.name}</div>
+                                        <div className={`text-xs italic ${
+                                          (pricingSettings[rt.code] || 'per_person') === 'per_room'
+                                            ? 'text-blue-400' : 'text-gray-400'
+                                        }`}>
+                                          {getPricingLabel(rt.code)}
+                                        </div>
+                                      </div>
+                                    </label>
+                                    {/* Rate plan rows show parent room type's price info */}
+                                    {enabledFields.has('rate') && (
+                                      <div className="text-xs text-gray-400 italic">
+                                        {rv.rate ? `Ana Fiyat: ${rv.rate} TRY` : '—'}
+                                      </div>
+                                    )}
+                                    {enabledFields.has('availability') && (
+                                      <div className="text-xs text-gray-400 italic">
+                                        {rv.availability ? rv.availability : '—'}
+                                      </div>
+                                    )}
+                                    {enabledFields.has('min_stay') && (
+                                      <div className="text-xs text-gray-400 italic">
+                                        {rv.min_stay ? rv.min_stay : '—'}
+                                      </div>
+                                    )}
+                                    {enabledFields.has('max_stay') && (
+                                      <div className="text-xs text-gray-400 italic">
+                                        {rv.max_stay ? rv.max_stay : '—'}
+                                      </div>
+                                    )}
+                                    {enabledFields.has('stop_sell') && <div />}
+                                    {enabledFields.has('cta') && <div />}
+                                    {enabledFields.has('ctd') && <div />}
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                   </CardContent>
@@ -654,7 +763,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
 
             {/* Summary Bar */}
             {(totalSelectedRoomTypes > 0 || enabledFields.size > 0) && (
-              <Card className="border-orange-200 bg-orange-50/50" data-testid="bulk-summary">
+              <Card className="border-orange-200 bg-orange-50/50 mt-4" data-testid="bulk-summary">
                 <CardContent className="py-3 px-4">
                   <div className="flex flex-wrap items-center gap-3 text-sm">
                     <span className="font-medium text-gray-700">Özet:</span>
