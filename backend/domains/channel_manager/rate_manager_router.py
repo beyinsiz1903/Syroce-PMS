@@ -314,7 +314,7 @@ async def update_rates(
                     end_date=upd.end_date,
                     availability=upd.availability,
                     rate_amount=upd.rate,
-                    currency=conn.get("currency", "USD"),
+                    currency=conn.get("currency", "TRY"),
                     stop_sell=upd.stop_sell,
                     min_stay=upd.min_stay,
                 )

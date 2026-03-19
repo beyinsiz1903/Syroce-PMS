@@ -223,7 +223,7 @@ class ExelyProvider:
         end_date: str,
         availability: Optional[int] = None,
         rate_amount: Optional[float] = None,
-        currency: str = "USD",
+        currency: str = "TRY",
         stop_sell: Optional[bool] = None,
         min_stay: Optional[int] = None,
     ) -> ProviderResult:

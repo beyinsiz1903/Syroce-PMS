@@ -211,9 +211,14 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 ### Session 15 (Mar 19, 2026)
 - [x] **Bug Fix: /api/invoices/stats 500 Error**
   - Root cause: Some invoice documents in DB missing `status` field, causing `KeyError: 'status'`
-  - Fix: Changed direct dict key access (`inv['status']`, `inv['total']`) to safe `.get()` calls with defaults
+  - Fix: Changed direct dict key access to safe `.get()` calls with defaults
   - Modified file: routers/finance.py (line 943-946)
-  - Tested: API returns valid JSON response `{"total_invoices":2,...}` instead of 500
+
+- [x] **Bug Fix: Exely Currency USD→TRY**
+  - Root cause: Multiple places in codebase defaulted currency to "USD" instead of "TRY"
+  - Fix applied in: rate_manager_router.py, provider.py, soap_builder.py, exely_router.py
+  - Also updated existing DB connection record (exely_connections) from "USD" to "TRY"
+  - SOAP XML `CurrencyCode` now correctly sends "TRY" to Exely
 
 ## Backlog (Future Tasks)
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)

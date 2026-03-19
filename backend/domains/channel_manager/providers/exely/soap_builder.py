@@ -161,7 +161,7 @@ def build_ari_update_rq(
     start_date: str, end_date: str,
     availability: Optional[int] = None,
     rate_amount: Optional[float] = None,
-    currency: str = "USD",
+    currency: str = "TRY",
     stop_sell: Optional[bool] = None,
     min_stay: Optional[int] = None,
 ) -> str:
@@ -210,7 +210,7 @@ def build_rate_amount_notif_rq(
     room_type_code: str, rate_plan_code: str,
     start_date: str, end_date: str,
     rate_amount: float,
-    currency: str = "USD",
+    currency: str = "TRY",
 ) -> str:
     """Build OTA_HotelRateAmountNotifRQ for rate-only push."""
     rq = etree.Element(f"{{{OTA_NS}}}OTA_HotelRateAmountNotifRQ", attrib={

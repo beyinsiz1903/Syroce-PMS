@@ -55,7 +55,7 @@ class ExelyARIUpdate(BaseModel):
     end_date: str
     availability: Optional[int] = None
     rate_amount: Optional[float] = None
-    currency: str = "USD"
+    currency: str = "TRY"
     stop_sell: Optional[bool] = None
     min_stay: Optional[int] = None
 
@@ -118,7 +118,7 @@ async def setup_connection(
         "password": payload.password,
         "hotel_code": payload.hotel_code,
         "endpoint_url": payload.endpoint_url or "",
-        "currency": "USD",
+        "currency": "TRY",
     }
     credentials_ref = await store_secret(
         tenant_id=current_user.tenant_id,
@@ -137,7 +137,7 @@ async def setup_connection(
         "auto_sync_reservations": payload.auto_sync_reservations,
         "sync_interval_minutes": payload.sync_interval_minutes,
         "mode": "sandbox",
-        "currency": "USD",
+        "currency": "TRY",
         "is_active": True,
         "room_types": test_result.get("room_types", []),
         "rate_plans": test_result.get("rate_plans", []),
