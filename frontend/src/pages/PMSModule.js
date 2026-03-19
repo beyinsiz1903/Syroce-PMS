@@ -1550,6 +1550,25 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             <RoomsTab
               rooms={rooms}
               bookings={bookings}
+              guests={guests}
+              handleCheckIn={handleCheckIn}
+              handleCheckOut={handleCheckOut}
+              onPayment={(bookingId) => {
+                setSelectedBookingDetail(bookings.find(b => b.id === bookingId) || null);
+                setOpenDialog('bookingDetail');
+              }}
+              onGuestClick={(guestId) => {
+                const guest = guests.find(g => g.id === guestId);
+                if (guest) {
+                  setSelectedGuest(guest);
+                  setOpenDialog('guestInfo');
+                }
+              }}
+              onBookingDoubleClick={(booking) => {
+                setSelectedBookingDetail(booking);
+                setOpenDialog('bookingDetail');
+              }}
+              onDataRefresh={loadData}
             />
           </TabsContent>
 

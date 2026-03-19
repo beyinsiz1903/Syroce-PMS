@@ -1,0 +1,107 @@
+{
+  "summary": "PMS Rooms Tab Quick Actions Testing - 7/8 backend tests passed, UI components verified. CRITICAL ISSUE: GET/PUT /api/pms/guests/{id} endpoints are MISSING (404), which breaks the Identity Dialog save functionality. C/In buttons, balance display, and guest name click work correctly. No C/Out or Payment buttons visible because there are no checked_in bookings with checkout=today in test data.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/pms/guests/{id}",
+        "issue": "Endpoint does not exist - returns 404. RoomsTab.js line 123 calls this endpoint when guest is not in local cache",
+        "priority": "CRITICAL"
+      },
+      {
+        "endpoint": "PUT /api/pms/guests/{id}",
+        "issue": "Endpoint does not exist - returns 404. RoomsTab.js line 147 calls this endpoint in handleSaveIdentity(). Identity dialog 'Kaydet' (Save) button will fail silently or show error toast",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/frontdesk/checkin/{booking_id}",
+        "issue": "Returns 400 'Room not ready. Status: dirty' when room status is dirty - this is expected behavior"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Identity Dialog Save",
+        "issue": "Save button calls PUT /api/pms/guests/{id} which doesn't exist. Will show 'Kimlik bilgileri kaydedilemedi' error toast",
+        "affected_selectors": ["[data-testid=\"identity-save-btn\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_rooms_tab_quick_actions.py",
+    "/app/test_reports/pytest/pytest_rooms_tab_quick_actions.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Add GET /api/pms/guests/{id} endpoint to return single guest by ID",
+    "CRITICAL: Add PUT /api/pms/guests/{id} endpoint to update guest identity fields (name, id_type, id_number, nationality, date_of_birth)",
+    "Verify C/Out button appears when a booking has status=checked_in AND check_out=today",
+    "Verify Payment button appears when booking has status=checked_in"
+  ],
+  "critical_code_review_comments": [
+    "RoomsTab.js line 123: axios.get(`/pms/guests/${guestInfo.guest_id}`) - endpoint doesn't exist",
+    "RoomsTab.js line 147: axios.put(`/pms/guests/${identityGuest.id}`, identityGuest) - endpoint doesn't exist",
+    "Backend pms.py only has POST /pms/guests and GET /pms/guests (list), no single guest GET/PUT endpoints",
+    "The roomGuestMap logic correctly filters bookings where ci <= today && co > today",
+    "showCheckIn correctly checks isCheckInToday && (status=confirmed OR guaranteed)",
+    "showCheckOut correctly checks isCheckOutToday && status=checked_in",
+    "isOccupied correctly checks status=checked_in for Payment button"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_rooms_tab_quick_actions.py"
+  ],
+  "success_rate": {
+    "backend": "87.5% (7/8 tests passed, 1 skipped - no checked_in bookings)",
+    "frontend": "UI components verified - 41 room cards, 3 C/In buttons, 3 clickable guest names, 3 balance displays, Identity dialog opens"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123",
+    "role": "super_admin"
+  },
+  "seed_data_creation": "None - used existing bookings with check_in=2026-03-19",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Missing backend endpoints for single guest GET/PUT. RoomsTab quick actions UI elements work but Identity dialog save fails due to missing PUT endpoint. Need to create checked_in bookings with check_out=today to test C/Out and Payment buttons. Frontend login requires manual localStorage token setting in Playwright due to session persistence issues.",
+  "ui_verification": {
+    "rooms_tab_loads": true,
+    "room_cards_displayed": 41,
+    "guest_info_sections": 3,
+    "checkin_buttons": 3,
+    "checkout_buttons": 0,
+    "payment_buttons": 0,
+    "clickable_guest_names": 3,
+    "balance_displays": 3,
+    "balance_format": "Bakiye: X.XX (Turkish format with comma decimal)",
+    "identity_dialog_opens": true,
+    "identity_dialog_fields": ["Ad Soyad (name)", "Kimlik Tipi (id_type)", "Kimlik No (id_number)", "Uyruk (nationality)", "Dogum Tarihi (date_of_birth)"],
+    "identity_dialog_save_works": false
+  },
+  "missing_endpoints_to_add": {
+    "GET /api/pms/guests/{guest_id}": {
+      "description": "Return single guest by ID",
+      "expected_response": {
+        "id": "string",
+        "name": "string",
+        "id_type": "string (national_id|passport|drivers_license)",
+        "id_number": "string",
+        "nationality": "string",
+        "date_of_birth": "string (ISO date)"
+      }
+    },
+    "PUT /api/pms/guests/{guest_id}": {
+      "description": "Update guest identity fields",
+      "request_body": {
+        "name": "string",
+        "id_type": "string",
+        "id_number": "string",
+        "nationality": "string",
+        "date_of_birth": "string"
+      },
+      "expected_response": "Updated guest object"
+    }
+  }
+}
