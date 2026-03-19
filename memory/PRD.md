@@ -354,6 +354,19 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Modified: `ReservationDetailModal.js`, `frontdesk_service.py`
   - Tested: Backend 11/12 tests passed, Frontend UI verified, checkout with balance blocked with 402 error
 
+### Session 25 (Mar 20, 2026)
+- [x] **Feature: Otel İş Günü Bazlı Rezervasyon (Business Date Validation)**
+  - Gün sonu (night audit) yapılmadıysa gece 2'de bile önceki güne rezervasyon yapılabilir
+  - Backend: `create_reservation_service.py` artık `tenant_settings.business_date` kullanarak kontrol yapıyor
+  - Frontend: `handleCellClick` ve `handleCreateBooking` iş gününe göre doğrulama yapıyor
+  - Frontend: `NewBookingDialog` check-in min tarihi iş gününe ayarlı
+  - Modified: `create_reservation_service.py`, `ReservationCalendar.js`, `CalendarDialogs.js`
+- [x] **Feature: Takvim 3 Gün Geriden Başlıyor**
+  - Takvim açıldığında `currentDate` bugünden 3 gün geriye ayarlanıyor
+  - Dün veya önceki günden kalmaya devam eden misafirler görülebiliyor
+  - Modified: `ReservationCalendar.js` (line 44-47)
+  - Tested: Backend 6/6 + Frontend 100% (iteration_103.json)
+
 ## Backlog (Future Tasks)
 - [ ] P1: User verification for Exely availability discrepancy fix
 - [ ] P1: User verification for Exely Reservation Delivery Confirmation fix
