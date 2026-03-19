@@ -296,6 +296,17 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const handleCellClick = (roomId, date) => {
     const room = rooms.find(r => r.id === roomId);
     if (!room) return;
+
+    // Geçmiş tarih kontrolü
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const clickedDate = new Date(date);
+    clickedDate.setHours(0, 0, 0, 0);
+    if (clickedDate < today) {
+      toast.error('Gecmis tarihe rezervasyon yapilamaz');
+      return;
+    }
+
     setSelectedRoom(room);
     setSelectedDate(date);
     const checkInDate = new Date(date);
@@ -318,6 +329,16 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
   const handleCreateBooking = async (e) => {
     e.preventDefault();
+
+    // Geçmiş tarih kontrolü (form üzerinden de değiştirilebileceği için)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkInDate = new Date(newBooking.check_in + 'T00:00:00');
+    if (checkInDate < today) {
+      toast.error('Gecmis tarihe rezervasyon yapilamaz');
+      return;
+    }
+
     let guestId = newBooking.guest_id;
     if (!guestId && newBooking.guest_name) {
       try {

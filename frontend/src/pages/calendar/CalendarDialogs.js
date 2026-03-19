@@ -117,8 +117,19 @@ export const NewBookingDialog = ({
             <Input
               type="date"
               value={newBooking.check_in}
-              onChange={(e) => setNewBooking({...newBooking, check_in: e.target.value})}
+              min={new Date().toISOString().split('T')[0]}
+              onChange={(e) => {
+                const newCi = e.target.value;
+                const updates = {...newBooking, check_in: newCi};
+                if (newCi && (!newBooking.check_out || newBooking.check_out <= newCi)) {
+                  const nextDay = new Date(newCi + 'T00:00:00');
+                  nextDay.setDate(nextDay.getDate() + 1);
+                  updates.check_out = nextDay.toISOString().split('T')[0];
+                }
+                setNewBooking(updates);
+              }}
               required
+              data-testid="new-booking-checkin"
             />
           </div>
           <div>
@@ -126,9 +137,10 @@ export const NewBookingDialog = ({
             <Input
               type="date"
               value={newBooking.check_out}
-              min={newBooking.check_in || undefined}
+              min={newBooking.check_in || new Date().toISOString().split('T')[0]}
               onChange={(e) => setNewBooking({...newBooking, check_out: e.target.value})}
               required
+              data-testid="new-booking-checkout"
             />
           </div>
         </div>

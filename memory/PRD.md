@@ -40,6 +40,10 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - When clicking a room cell in the calendar grid, the booking dialog shows the selected room info directly without room type/room selection dropdowns
 - When clicking "Rezervasyon ekle" button in the header, the full room selection is shown
 - Drag-and-drop for room/date changes is already implemented
+- **Past date reservation prevention (3-layer):**
+  - Frontend: Calendar cell click blocks past dates with toast error
+  - Frontend: Date input min attribute prevents past date selection
+  - Backend: API validates check-in date >= today, returns 400 for past dates
 
 ## What's Been Implemented
 
@@ -183,6 +187,16 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
 
+### Session 13 (Mar 19, 2026)
+- [x] **Past Date Reservation Prevention (Bug Fix)**
+  - Frontend: `handleCellClick` blocks past date clicks with toast error "Gecmis tarihe rezervasyon yapilamaz"
+  - Frontend: `NewBookingDialog` check-in input `min` attribute set to today's date
+  - Frontend: `handleCreateBooking` validates check-in date before form submission
+  - Backend: `CreateReservationService.create()` validates check_in >= today, returns HTTP 400
+  - Modified files: ReservationCalendar.js, CalendarDialogs.js, create_reservation_service.py
+  - All tested: Backend curl tests passed (400 for past, 200 for today)
+
 ## Backlog (Future Tasks)
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
+- [ ] P2: Refactor ReservationDetailModal.js (1400+ lines → smaller components)
 - [ ] P5: Advanced Auto-Heal patterns (remaining)
