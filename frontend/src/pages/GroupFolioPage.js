@@ -147,6 +147,14 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
   const [paymentRef, setPaymentRef] = useState('');
   const [paying, setPaying] = useState(false);
 
+  // Bulk payment dialog state
+  const [showBulkPayment, setShowBulkPayment] = useState(false);
+  const [bulkAmount, setBulkAmount] = useState('');
+  const [bulkMethod, setBulkMethod] = useState('cash');
+  const [bulkRef, setBulkRef] = useState('');
+  const [bulkDistribution, setBulkDistribution] = useState('proportional');
+  const [bulkPaying, setBulkPaying] = useState(false);
+
   const loadGroups = useCallback(async () => {
     try {
       const res = await axios.get(`${API}/api/pms/group-bookings`);
@@ -257,6 +265,35 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
       toast.error('Odeme hatasi: ' + (e.response?.data?.detail || e.message));
     } finally {
       setPaying(false);
+    }
+  };
+
+  const handleBulkPayment = async () => {
+    const amt = parseFloat(bulkAmount);
+    if (!amt || amt <= 0) {
+      toast.error('Gecerli bir tutar giriniz');
+      return;
+    }
+
+    setBulkPaying(true);
+    try {
+      const res = await axios.post(`${API}/api/pms/group-folio/bulk-payment`, {
+        group_id: selectedGroup.id,
+        total_amount: amt,
+        method: bulkMethod,
+        reference: bulkRef,
+        distribution: bulkDistribution,
+      });
+      toast.success(`${res.data?.payments_count || 0} rezervasyona toplam ${fmtTL(res.data?.total_distributed || 0)} TL dagitildi`);
+      setShowBulkPayment(false);
+      setBulkAmount('');
+      setBulkRef('');
+      loadGroupDetail(selectedGroup.id);
+      loadSummary();
+    } catch (e) {
+      toast.error('Toplu odeme hatasi: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      setBulkPaying(false);
     }
   };
 
@@ -392,6 +429,16 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowBulkPayment(true)}
+                      disabled={!groupDetail.bookings || unmergedCount === 0}
+                      className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                      data-testid="bulk-payment-btn"
+                    >
+                      <Users className="w-4 h-4 mr-1" /> Toplu Odeme
+                    </Button>
                     <Button
                       size="sm"
                       variant="outline"
@@ -673,6 +720,132 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                 <Button variant="outline" onClick={() => setShowPayment(false)}>Iptal</Button>
                 <Button onClick={handlePayment} disabled={paying} className="bg-emerald-600 hover:bg-emerald-700" data-testid="confirm-payment-btn">
                   {paying ? 'Kaydediliyor...' : 'Odemeyi Kaydet'}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* ─── Bulk Payment Dialog ─── */}
+        <Dialog open={showBulkPayment} onOpenChange={setShowBulkPayment}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-emerald-600" /> Tum Grup Icin Toplu Odeme
+              </DialogTitle>
+              <DialogDescription>
+                Girdiginiz tutar gruptaki aktif rezervasyonlara otomatik dagitilir.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* Summary info */}
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+                <div className="font-medium mb-1">Grup: {selectedGroup?.group_name}</div>
+                <div className="flex gap-4 text-xs">
+                  <span>{unmergedCount} aktif rezervasyon</span>
+                  <span>Toplam bakiye: <strong>{fmtTL(groupBalance)} TL</strong></span>
+                </div>
+              </div>
+
+              <div>
+                <Label>Toplam Tutar (TL)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={bulkAmount}
+                  onChange={e => setBulkAmount(e.target.value)}
+                  placeholder={groupBalance > 0 ? fmtTL(groupBalance) : '0.00'}
+                  className="mt-1"
+                  data-testid="bulk-amount-input"
+                />
+                {groupBalance > 0 && (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="text-xs text-blue-600 p-0 h-auto mt-1"
+                    onClick={() => setBulkAmount(String(groupBalance > 0 ? groupBalance : 0))}
+                    data-testid="fill-balance-btn"
+                  >
+                    Bakiye tutarini doldur ({fmtTL(groupBalance)} TL)
+                  </Button>
+                )}
+              </div>
+
+              <div>
+                <Label>Dagitim Yontemi</Label>
+                <Select value={bulkDistribution} onValueChange={setBulkDistribution}>
+                  <SelectTrigger className="mt-1" data-testid="bulk-distribution-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="proportional">Oransal (bakiyeye gore)</SelectItem>
+                    <SelectItem value="equal">Esit (her rezervasyona esit)</SelectItem>
+                    <SelectItem value="balance_only">Sadece bakiyesi olan</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Odeme Yontemi</Label>
+                <Select value={bulkMethod} onValueChange={setBulkMethod}>
+                  <SelectTrigger className="mt-1" data-testid="bulk-method-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Nakit</SelectItem>
+                    <SelectItem value="credit_card">Kredi Karti</SelectItem>
+                    <SelectItem value="bank_transfer">Banka Havale</SelectItem>
+                    <SelectItem value="agency">Acenta</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Referans / Aciklama</Label>
+                <Input
+                  value={bulkRef}
+                  onChange={e => setBulkRef(e.target.value)}
+                  placeholder="Opsiyonel"
+                  className="mt-1"
+                  data-testid="bulk-ref-input"
+                />
+              </div>
+
+              {/* Preview distribution */}
+              {bulkAmount && parseFloat(bulkAmount) > 0 && (
+                <div className="border rounded-lg p-3 bg-gray-50">
+                  <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Dagitim Onizleme</div>
+                  {(groupDetail?.bookings || []).filter(b => !b.folio_merged_to).map(b => {
+                    const amt = parseFloat(bulkAmount) || 0;
+                    const totalPos = (groupDetail?.bookings || []).filter(x => !x.folio_merged_to && x.balance > 0).reduce((s, x) => s + x.balance, 0);
+                    let share = 0;
+                    if (bulkDistribution === 'equal') {
+                      share = amt / unmergedCount;
+                    } else if (bulkDistribution === 'balance_only') {
+                      share = b.balance > 0 ? Math.min(b.balance, amt * (b.balance / Math.max(totalPos, 1))) : 0;
+                    } else {
+                      share = totalPos > 0 && b.balance > 0 ? amt * (b.balance / totalPos) : amt / unmergedCount;
+                    }
+                    return (
+                      <div key={b.booking_id} className="flex items-center justify-between text-sm py-1 border-b border-gray-100 last:border-0">
+                        <span className="text-gray-600">Oda {b.room_number} - {b.guest_name}</span>
+                        <span className="font-medium text-emerald-600">{fmtTL(share)} TL</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setShowBulkPayment(false)}>Iptal</Button>
+                <Button
+                  onClick={handleBulkPayment}
+                  disabled={bulkPaying || !bulkAmount || parseFloat(bulkAmount) <= 0}
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                  data-testid="confirm-bulk-payment-btn"
+                >
+                  {bulkPaying ? 'Dagitiliyor...' : 'Toplu Odemeyi Kaydet'}
                 </Button>
               </div>
             </div>

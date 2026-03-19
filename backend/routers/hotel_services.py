@@ -1021,6 +1021,108 @@ async def record_group_payment(
     return {"success": True, "payment": payment}
 
 
+
+class GroupBulkPaymentRequest(BaseModel):
+    group_id: str
+    total_amount: float
+    method: str = "cash"
+    reference: str = ""
+    distribution: str = "proportional"  # proportional | equal | balance_only
+
+
+@router.post("/group-folio/bulk-payment")
+async def record_group_bulk_payment(
+    data: GroupBulkPaymentRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Record a bulk payment distributed across all active bookings in a group."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    group = await db.group_bookings.find_one({"id": data.group_id, "tenant_id": tid}, {"_id": 0})
+    if not group:
+        raise HTTPException(status_code=404, detail="Grup bulunamadi")
+
+    # Collect active (unmerged) bookings with positive balances
+    active_bookings = []
+    for bid in group.get("booking_ids", []):
+        booking = await db.bookings.find_one({"id": bid, "tenant_id": tid}, {"_id": 0})
+        if not booking or booking.get("folio_merged_to"):
+            continue
+
+        folio_total = 0
+        async for f in db.folios.find({"booking_id": bid, "tenant_id": tid}, {"_id": 0}):
+            if f.get("type") != "payment":
+                folio_total += f.get("amount", 0)
+        payment_total = 0
+        async for p in db.payments.find({"booking_id": bid, "tenant_id": tid}, {"_id": 0}):
+            payment_total += p.get("amount", 0)
+
+        balance = booking.get("total_amount", 0) + folio_total - payment_total
+        active_bookings.append({
+            "booking_id": bid,
+            "guest_name": booking.get("guest_name", "-"),
+            "room_number": booking.get("room_number", "-"),
+            "balance": balance,
+        })
+
+    if not active_bookings:
+        raise HTTPException(status_code=400, detail="Aktif rezervasyon bulunamadi")
+
+    # Calculate distribution
+    total_positive_balance = sum(max(b["balance"], 0) for b in active_bookings)
+    remaining = data.total_amount
+    payments_created = []
+
+    for i, ab in enumerate(active_bookings):
+        if remaining <= 0:
+            break
+
+        if data.distribution == "equal":
+            share = round(data.total_amount / len(active_bookings), 2)
+        elif data.distribution == "balance_only":
+            if ab["balance"] <= 0:
+                continue
+            share = min(ab["balance"], remaining)
+        else:  # proportional
+            if total_positive_balance > 0 and ab["balance"] > 0:
+                share = round(data.total_amount * (ab["balance"] / total_positive_balance), 2)
+            else:
+                share = round(data.total_amount / len(active_bookings), 2)
+
+        # Last booking gets the remainder to avoid rounding issues
+        if i == len(active_bookings) - 1 and data.distribution != "balance_only":
+            share = remaining
+
+        share = min(share, remaining)
+        if share <= 0:
+            continue
+
+        payment = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tid,
+            "booking_id": ab["booking_id"],
+            "amount": share,
+            "method": data.method,
+            "payment_type": "group_bulk_payment",
+            "reference": data.reference or f"Toplu grup odeme - Oda {ab['room_number']}",
+            "recorded_by": current_user.name,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.payments.insert_one(payment)
+        payment.pop("_id", None)
+        payments_created.append({**payment, "guest_name": ab["guest_name"]})
+        remaining = round(remaining - share, 2)
+
+    return {
+        "success": True,
+        "total_distributed": round(data.total_amount - remaining, 2),
+        "payments_count": len(payments_created),
+        "payments": payments_created,
+    }
+
+
+
 @router.get("/group-folio-summary")
 async def get_group_folio_summary(
     current_user: User = Depends(get_current_user),
