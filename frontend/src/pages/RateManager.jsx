@@ -657,7 +657,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
                                   {enabledFields.has('stop_sell') && (
                                     <div className="flex items-center justify-center">
                                       <Checkbox
-                                        checked={rv.stop_sell}
+                                        checked={!!rv.stop_sell}
                                         onCheckedChange={v => updateRoomValue(rt.code, 'stop_sell', v)}
                                         data-testid={`stop-sell-${rt.code}`}
                                       />
@@ -668,7 +668,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
                                   {enabledFields.has('cta') && (
                                     <div className="flex items-center justify-center">
                                       <Checkbox
-                                        checked={rv.cta}
+                                        checked={!!rv.cta}
                                         onCheckedChange={v => updateRoomValue(rt.code, 'cta', v)}
                                         data-testid={`cta-${rt.code}`}
                                       />
@@ -679,7 +679,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
                                   {enabledFields.has('ctd') && (
                                     <div className="flex items-center justify-center">
                                       <Checkbox
-                                        checked={rv.ctd}
+                                        checked={!!rv.ctd}
                                         onCheckedChange={v => updateRoomValue(rt.code, 'ctd', v)}
                                         data-testid={`ctd-${rt.code}`}
                                       />

@@ -227,6 +227,13 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - All rate pushes use the configured currency from the connection
   - Modified files: exely_router.py, ExelyIntegration.jsx, provider.py, soap_builder.py, rate_manager_router.py
 
+- [x] **Performance: Rate Manager Bulk Update ~6.5x Faster**
+  - DB writes: 352 individual `update_one` calls → single `bulk_write` batch
+  - Exely pushes: 8 sequential SOAP calls → 8 parallel `asyncio.gather` calls
+  - Result: 15s → 2.3s for 2 rooms x 4 plans x 44 days
+  - Also applied to `/update` endpoint
+  - Fixed checkbox controlled/uncontrolled React warnings (!!rv.stop_sell etc.)
+
 ## Backlog (Future Tasks)
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
 - [ ] P2: Refactor ReservationDetailModal.js (1400+ lines → smaller components)

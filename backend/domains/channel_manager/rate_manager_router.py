@@ -2,6 +2,7 @@
 Rate Manager Router — Fiyat, Müsaitlik, Min Konaklama Yönetimi
 PMS üzerinden ayarla → Exely'ye push et → OTA'lara yansısın.
 """
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone, date, timedelta
@@ -9,6 +10,7 @@ from typing import Optional, List
 from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, HTTPException
+from pymongo import UpdateOne
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
@@ -267,6 +269,9 @@ async def update_rates(
             provider_kwargs["endpoint_url"] = conn["endpoint_url"]
         provider = ExelyProvider(**provider_kwargs)
 
+    bulk_ops = []
+    push_tasks = []
+
     for upd in request.updates:
         # Save each date in range to rate_calendar
         d = datetime.strptime(upd.start_date, "%Y-%m-%d").date()
@@ -291,7 +296,7 @@ async def update_rates(
             if upd.stop_sell is not None:
                 set_fields["stop_sell"] = upd.stop_sell
 
-            await db.rate_calendar.update_one(
+            bulk_ops.append(UpdateOne(
                 {
                     "tenant_id": tenant_id,
                     "room_type_code": upd.room_type_code,
@@ -300,38 +305,30 @@ async def update_rates(
                 },
                 {"$set": set_fields},
                 upsert=True,
-            )
+            ))
             saved += 1
             d += timedelta(days=1)
 
-        # Push to Exely
+        # Prepare Exely push task (will run in parallel)
         if provider:
-            try:
-                result = await provider.push_ari(
-                    room_type_code=upd.room_type_code,
-                    rate_plan_code=upd.rate_plan_code,
-                    start_date=upd.start_date,
-                    end_date=upd.end_date,
-                    availability=upd.availability,
-                    rate_amount=upd.rate,
-                    currency=conn.get("currency", "TRY"),
-                    stop_sell=upd.stop_sell,
-                    min_stay=upd.min_stay,
-                )
-                push_results.append({
-                    "room_type_code": upd.room_type_code,
-                    "rate_plan_code": upd.rate_plan_code,
-                    "success": result.success,
-                    "error": result.error if not result.success else None,
-                })
-            except Exception as e:
-                logger.error(f"[RATE-MGR] Exely push error: {e}")
-                push_results.append({
-                    "room_type_code": upd.room_type_code,
-                    "rate_plan_code": upd.rate_plan_code,
-                    "success": False,
-                    "error": str(e),
-                })
+            async def _push(u=upd):
+                try:
+                    result = await provider.push_ari(
+                        room_type_code=u.room_type_code,
+                        rate_plan_code=u.rate_plan_code,
+                        start_date=u.start_date,
+                        end_date=u.end_date,
+                        availability=u.availability,
+                        rate_amount=u.rate,
+                        currency=conn.get("currency", "TRY"),
+                        stop_sell=u.stop_sell,
+                        min_stay=u.min_stay,
+                    )
+                    return {"room_type_code": u.room_type_code, "rate_plan_code": u.rate_plan_code, "success": result.success, "error": result.error if not result.success else None}
+                except Exception as e:
+                    logger.error(f"[RATE-MGR] Exely push error: {e}")
+                    return {"room_type_code": u.room_type_code, "rate_plan_code": u.rate_plan_code, "success": False, "error": str(e)}
+            push_tasks.append(_push())
         else:
             push_results.append({
                 "room_type_code": upd.room_type_code,
@@ -339,6 +336,14 @@ async def update_rates(
                 "success": False,
                 "error": "Exely kimlik bilgileri bulunamadı",
             })
+
+    # Execute DB bulk write in one batch
+    if bulk_ops:
+        await db.rate_calendar.bulk_write(bulk_ops, ordered=False)
+
+    # Execute all Exely pushes in parallel
+    if push_tasks:
+        push_results.extend(await asyncio.gather(*push_tasks))
 
     all_success = all(r["success"] for r in push_results)
 
@@ -437,10 +442,21 @@ async def bulk_grid_update(
                 pairs.append((rt_code, rp_code))
 
     total_room_types_set = set()
+    bulk_ops = []
+    push_tasks = []
+
     for rt_code, rp_code in pairs:
         total_room_types_set.add(rt_code)
-        # Get per-room values if available, else use global values
         rv = per_room_map.get(rt_code)
+
+        # Use per-room values if available, otherwise global
+        v_rate = rv.rate if rv else request.rate
+        v_avail = rv.availability if rv else request.availability
+        v_min = rv.min_stay if rv else request.min_stay
+        v_max = rv.max_stay if rv else request.max_stay
+        v_stop = rv.stop_sell if rv else request.stop_sell
+        v_cta = rv.cta if rv else request.cta
+        v_ctd = rv.ctd if rv else request.ctd
 
         d = datetime.strptime(request.start_date, "%Y-%m-%d").date()
         end = datetime.strptime(request.end_date, "%Y-%m-%d").date()
@@ -461,15 +477,6 @@ async def bulk_grid_update(
                 "updated_by": current_user.id,
             }
 
-            # Use per-room values if available, otherwise global
-            v_rate = rv.rate if rv else request.rate
-            v_avail = rv.availability if rv else request.availability
-            v_min = rv.min_stay if rv else request.min_stay
-            v_max = rv.max_stay if rv else request.max_stay
-            v_stop = rv.stop_sell if rv else request.stop_sell
-            v_cta = rv.cta if rv else request.cta
-            v_ctd = rv.ctd if rv else request.ctd
-
             if "rate" in update_fields and v_rate is not None:
                 set_fields["rate"] = v_rate
             if "availability" in update_fields and v_avail is not None:
@@ -485,7 +492,7 @@ async def bulk_grid_update(
             if "ctd" in update_fields and v_ctd is not None:
                 set_fields["ctd"] = v_ctd
 
-            await db.rate_calendar.update_one(
+            bulk_ops.append(UpdateOne(
                 {
                     "tenant_id": tenant_id,
                     "room_type_code": rt_code,
@@ -494,43 +501,46 @@ async def bulk_grid_update(
                 },
                 {"$set": set_fields},
                 upsert=True,
-            )
+            ))
             saved += 1
             d += timedelta(days=1)
 
-        # Push to Exely
+        # Prepare Exely push task (will run in parallel)
         if provider:
-            try:
-                push_rate = v_rate if "rate" in update_fields else None
-                push_avail = v_avail if "availability" in update_fields else None
-                push_stop = v_stop if "stop_sell" in update_fields else None
-                push_min = v_min if "min_stay" in update_fields else None
+            push_rate = v_rate if "rate" in update_fields else None
+            push_avail = v_avail if "availability" in update_fields else None
+            push_stop = v_stop if "stop_sell" in update_fields else None
+            push_min = v_min if "min_stay" in update_fields else None
 
-                result = await provider.push_ari(
-                    room_type_code=rt_code,
-                    rate_plan_code=rp_code,
-                    start_date=request.start_date,
-                    end_date=request.end_date,
-                    availability=push_avail,
-                    rate_amount=push_rate,
-                    currency=conn.get("currency", "TRY"),
-                    stop_sell=push_stop,
-                    min_stay=push_min,
-                )
-                push_results.append({
-                    "room_type_code": rt_code,
-                    "rate_plan_code": rp_code,
-                    "success": result.success,
-                    "error": result.error if not result.success else None,
-                })
-            except Exception as e:
-                logger.error(f"[BULK-UPDATE] Exely push error: {e}")
-                push_results.append({
-                    "room_type_code": rt_code,
-                    "rate_plan_code": rp_code,
-                    "success": False,
-                    "error": str(e),
-                })
+            async def _push(rt=rt_code, rp=rp_code, rate=push_rate, avail=push_avail, stop=push_stop, minstay=push_min):
+                try:
+                    result = await provider.push_ari(
+                        room_type_code=rt,
+                        rate_plan_code=rp,
+                        start_date=request.start_date,
+                        end_date=request.end_date,
+                        availability=avail,
+                        rate_amount=rate,
+                        currency=conn.get("currency", "TRY"),
+                        stop_sell=stop,
+                        min_stay=minstay,
+                    )
+                    return {"room_type_code": rt, "rate_plan_code": rp, "success": result.success, "error": result.error if not result.success else None}
+                except Exception as e:
+                    logger.error(f"[BULK-UPDATE] Exely push error: {e}")
+                    return {"room_type_code": rt, "rate_plan_code": rp, "success": False, "error": str(e)}
+
+            push_tasks.append(_push())
+
+    # Execute DB bulk write in one batch
+    if bulk_ops:
+        await db.rate_calendar.bulk_write(bulk_ops, ordered=False)
+
+    # Execute all Exely pushes in parallel
+    if push_tasks:
+        push_results = await asyncio.gather(*push_tasks)
+    else:
+        push_results = []
 
     all_success = len(push_results) > 0 and all(r["success"] for r in push_results)
 
