@@ -73,34 +73,41 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] Group Folio Merging
 - [x] Auto-Dirty on Checkout
 
-### Session 7 (Mar 18, 2026 - Current)
-- [x] **Night Audit Dashboard** - New `/night-audit` page with business date, stats cards, audit history, run audit dialog (dry run, force rerun, skip validations)
-- [x] **ReservationCalendar.js Refactoring** - Reduced from 2936 lines to ~800 lines by extracting 5 sub-components into `/pages/calendar/` folder
-- [x] **NightAuditLogs.js Hook Fix** - Fixed useTranslation called outside component, corrected API path from `/logs/night-audit` to `/night-audit/history`
-- [x] **AdminTenants.js Hook Fix** - Removed useTranslation calls from outside component functions
-- [x] **Code Cleanup** - Removed .backup files (PMSModule.js.backup, Reports.js.backup, RMSModule.js.backup)
+### Session 7 (Mar 18, 2026)
+- [x] **Night Audit Dashboard** - New `/night-audit` page
+- [x] **ReservationCalendar.js Refactoring** - Reduced from 2936 to ~800 lines
+- [x] **Code Cleanup** - Removed .backup files
 - [x] All tested: Frontend 100% (iteration_90.json)
 
 ### Session 8 (Mar 18, 2026)
 - [x] **Night Audit Automatic Scheduling** - Full EOD automation with background scheduler
-  - Backend: Background asyncio scheduler (60s check interval) triggers night audit at configured time per tenant
-  - Backend: 3 new endpoints: GET/PUT /api/night-audit/schedule, GET /api/night-audit/schedule/status
-  - Backend: Auto-retry logic (configurable max retries), timezone support, schedule logging
-  - Frontend: Schedule card on dashboard with toggle, time display, last run status, feature badges
-  - Frontend: Settings dialog with hour/minute pickers, timezone selector, auto-retry config, skip validations toggle
-  - Accessibility fix: Added DialogDescription to Schedule and Run dialogs
 - [x] All tested: Backend 13/13 + Frontend 100% (iteration_91.json)
 
 ### Session 9 (Mar 18, 2026)
 - [x] **Financial Module Hardening** - Comprehensive financial reporting and integrity system
-  - Backend: 4 new endpoints for financial operations
-    - GET /api/night-audit/financial-summary: Daily revenue, tax, payments, open folios, net position
-    - GET /api/night-audit/payment-reconciliation: Charges vs payments, discrepancies, high-balance folios
-    - GET /api/night-audit/integrity-check: 5 automated financial checks (folio match, voided charges, negative balances, rate consistency, closed folio charges)
-    - GET /api/night-audit/financial-report: Date-range reporting with revenue by category/date, payment methods, audit history
-  - Frontend: 5-tab Night Audit Dashboard (Genel Bakis, Finansal Ozet, Mutabakat, Butunluk, Rapor)
-  - Fixed: apscheduler added to requirements.txt
 - [x] All tested: Backend 31/31 + Frontend 100% (iteration_92.json)
+
+### Session 10 (Mar 19, 2026)
+- [x] **Top Navigation Simplification** - Major UX overhaul of the top menu bar
+- [x] All tested: Frontend 100% (iteration_93.json, iteration_94.json)
+
+### Session 11 (Mar 19, 2026)
+- [x] **GroupFolioPage.js Full Implementation** - Enhanced from basic to fully functional
+  - Summary stats cards (total groups, bookings, balance, merge operations)
+  - Search/filter for groups
+  - Expandable booking rows with folio line item details
+  - Payment recording dialog (amount, method, reference)
+  - Merge dialog with accessibility fix
+  - Group total balance display
+  - Merge history log
+  - Backend: 3 new endpoints (group-folio-summary, group-folio/{id}/booking/{bid}, group-folio/payment)
+- [x] **Deprecated Code Cleanup**
+  - Deleted 5 unused frontend pages: GMDashboardOptimized, MarketplaceInventory, PMSModuleOptimized, PerformanceMonitorDashboard, TestLogin
+  - Removed unused lazy imports from App.js: EnhancedGMDashboard, RevenueManagementMobile
+  - Deleted deprecated backend files: server_pms_complete.py (788 lines), legacy_routes.py, scripts/ directory
+  - Updated pyproject.toml and server.py docstring
+- [x] **Dialog Accessibility Fix** - Auto-injected sr-only DialogDescription in Shadcn Dialog component to fix console warnings across all 29+ dialogs
+- [x] All tested: Backend 7/7 + Frontend 100% (iteration_95.json)
 
 ## Key API Endpoints
 - POST /api/auth/login
@@ -126,25 +133,15 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - GET /api/night-audit/payment-reconciliation
 - GET /api/night-audit/financial-report
 - GET /api/night-audit/integrity-check
+- GET /api/pms/group-folio-summary
+- GET /api/pms/group-folio/{group_id}
+- GET /api/pms/group-folio/{group_id}/booking/{booking_id}
+- POST /api/pms/group-folio/payment
+- POST /api/pms/group-folio/merge
 
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
 
-### Session 10 (Mar 19, 2026)
-- [x] **Top Navigation Simplification** - Major UX overhaul of the top menu bar
-  - Reduced ~20+ individual buttons to 9 clean elements (Dashboard + 7 dropdown groups + Settings)
-  - Groups: Operasyon, Rezervasyon, Finans, Kanallar, Raporlar, Gelismis, Altyapi
-  - Active page's group button highlighted in blue (bg-blue-600)
-  - Dropdown menus with Shadcn DropdownMenu component
-  - Mobile: Accordion-style expandable groups in hamburger menu
-  - Scroll position preserved across page navigations
-  - Files: navItems.js (NAV_GROUPS + navGroup field), Layout.js (complete rewrite)
-  - Bugfix: Responsive text overlap fix - icon-only mode below 1536px, icon+text at 2xl+
-  - Bugfix: UpgradeBanner removed from nav row (was eating space), page uses flex layout to fill viewport
-- [x] All tested: Frontend 100% (iteration_93.json, iteration_94.json)
-
 ## Backlog (Future Tasks)
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
-- [ ] P2: Dialog accessibility warnings (DialogDescription missing)
-- [ ] P5: Advanced Auto-Heal patterns
-- [ ] P5: GroupFolioPage.js full implementation (currently skeleton)
+- [ ] P5: Advanced Auto-Heal patterns (remaining)
