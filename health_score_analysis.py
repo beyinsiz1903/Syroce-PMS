@@ -9,7 +9,7 @@ import requests
 from datetime import datetime
 
 def main():
-    backend_url = "https://date-guard-2.preview.emergentagent.com"
+    backend_url = "https://rate-manager-v2.preview.emergentagent.com"
     
     # Authenticate
     session = requests.Session()

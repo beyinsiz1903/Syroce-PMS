@@ -208,7 +208,16 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Modified files: RateManager.jsx, rate_manager_router.py
   - All tested: Backend API (6 records saved with different per-room values), Frontend E2E (values filled, Güncelle clicked, Calendar View confirmed correct values per room type)
 
+### Session 15 (Mar 19, 2026)
+- [x] **Bug Fix: /api/invoices/stats 500 Error**
+  - Root cause: Some invoice documents in DB missing `status` field, causing `KeyError: 'status'`
+  - Fix: Changed direct dict key access (`inv['status']`, `inv['total']`) to safe `.get()` calls with defaults
+  - Modified file: routers/finance.py (line 943-946)
+  - Tested: API returns valid JSON response `{"total_invoices":2,...}` instead of 500
+
 ## Backlog (Future Tasks)
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
 - [ ] P2: Refactor ReservationDetailModal.js (1400+ lines → smaller components)
+- [ ] P3: Refactor RateManager.jsx (1000+ lines → smaller components)
+- [ ] P4: Visually distinguish past dates in calendar (grayed out)
 - [ ] P5: Advanced Auto-Heal patterns (remaining)
