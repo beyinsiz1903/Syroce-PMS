@@ -313,7 +313,7 @@ async def auto_import_pending(tenant_id: str, provider=None) -> Dict[str, Any]:
     """Import all pending exely_reservations for a tenant.
     If provider is given, also confirm delivery to Exely after each successful import."""
     pending = await db.exely_reservations.find(
-        {"tenant_id": tenant_id, "pms_status": {"$in": ["pending", "updated"]}, "state": {"$ne": "cancelled"}},
+        {"tenant_id": tenant_id, "pms_status": {"$in": ["pending", "updated", "pending_mapping"]}, "state": {"$ne": "cancelled"}},
         {"_id": 0},
     ).to_list(100)
 

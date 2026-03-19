@@ -12,7 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import {
   Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink,
   Building2, ArrowDownUp, CalendarCheck, Activity,
-  AlertTriangle, Loader2, Search, Download
+  AlertTriangle, Loader2, Search, Download, Webhook, Copy, ExternalLink
 } from 'lucide-react';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -288,6 +288,50 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                         </div>
                       </div>
                     )}
+                  </CardContent>
+                </Card>
+
+                {/* Webhook URL Card */}
+                <Card className="border-amber-200 bg-amber-50/50">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Webhook className="w-5 h-5 text-amber-600" />
+                      Exely Webhook URL (Rezervasyon Teslimi)
+                    </CardTitle>
+                    <CardDescription>
+                      Bu URL'yi Exely extranet'inizdeki "Senkronizasyon Ayarlari" bolumune girin.
+                      Exely yeni rezervasyonlari bu adrese otomatik olarak gonderecektir.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-2">
+                      <code
+                        data-testid="exely-webhook-url"
+                        className="flex-1 bg-white border border-amber-200 rounded-md px-3 py-2 text-sm font-mono text-slate-800 select-all"
+                      >
+                        {`${API}/api/webhooks/exely/reservations`}
+                      </code>
+                      <Button
+                        data-testid="exely-webhook-copy-btn"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(`${API}/api/webhooks/exely/reservations`);
+                          toast.success('Webhook URL kopyalandi');
+                        }}
+                      >
+                        <Copy className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <div className="mt-3 text-xs text-amber-700 space-y-1">
+                      <p>Exely'de bu URL'yi girmek icin:</p>
+                      <ol className="list-decimal list-inside space-y-0.5 ml-1">
+                        <li>Exely extranet'e giris yapin</li>
+                        <li>"Senkronizasyon Ayarlari" sayfasini acin</li>
+                        <li>"PMS Endpoint URL" veya "Webhook URL" alanina yukaridaki URL'yi yapisitirin</li>
+                        <li>Ayarlari kaydedin</li>
+                      </ol>
+                    </div>
                   </CardContent>
                 </Card>
               </div>
