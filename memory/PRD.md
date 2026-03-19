@@ -330,6 +330,18 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Misafir bilgi alanı renkleri de kategoriye göre dinamik
   - Modified: `RoomsTab.js`
 
+### Session 23 (Mar 19, 2026)
+- [x] **Hızlı Ödeme Modalı (Quick Payment from Rooms Tab)**
+  - Eski: "Ödeme" butonu BookingDetailDialog açıyordu (kullanıcı "saçma sayfa" olarak niteledi)
+  - Yeni: "Ödeme" butonuna tıklayınca inline hızlı ödeme modalı açılıyor
+  - Modal içeriği: Misafir adı, toplam tutar, ödenen, kalan bakiye, ödeme tutarı (bakiye ile ön-doldurulmuş), "Tamamını Al" butonu
+  - Ödeme yöntemi: Nakit / Kart / Havale (büyük butonlarla seçim)
+  - "Ödeme Al" butonu ile direkt `POST /api/pms/reservations/{id}/record-payment` API'si çağrılıyor
+  - Başarılı ödemeden sonra data otomatik yenileniyor, bakiye güncelleniyor
+  - Checkout bakiye uyarısı dialogundaki "Ödeme Al" butonu da artık hızlı ödeme modalını açıyor
+  - Modified: `RoomsTab.js`
+  - Tested: E2E (50 TL ödeme başarıyla alındı, bakiye 200 → 150 güncellendi)
+
 ## Backlog (Future Tasks)
 - [ ] P1: User verification for Exely Reservation Delivery Confirmation fix
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)

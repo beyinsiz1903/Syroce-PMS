@@ -1,11 +1,15 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import axios from 'axios';
+import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink } from 'lucide-react';
+import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink, Banknote, Building2, Wallet } from 'lucide-react';
 
 const RoomsTab = ({
   rooms,
@@ -30,6 +34,13 @@ const RoomsTab = ({
   // Dirty room check-in dialog state
   const [dirtyRoomDialog, setDirtyRoomDialog] = useState(false);
   const [dirtyRoomInfo, setDirtyRoomInfo] = useState(null);
+
+  // Quick payment dialog state
+  const [paymentDialog, setPaymentDialog] = useState(false);
+  const [paymentTarget, setPaymentTarget] = useState(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [paymentLoading, setPaymentLoading] = useState(false);
 
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
   const tomorrow = useMemo(() => {
@@ -164,6 +175,41 @@ const RoomsTab = ({
       handleCheckOut?.(guestInfo.booking_id);
     }
   }, [handleCheckOut]);
+
+  // Open quick payment dialog
+  const handlePaymentClick = useCallback((e, guestInfo) => {
+    e.stopPropagation();
+    setPaymentTarget(guestInfo);
+    setPaymentAmount(guestInfo.balance > 0 ? String(guestInfo.balance) : '');
+    setPaymentMethod('cash');
+    setPaymentDialog(true);
+  }, []);
+
+  // Submit quick payment
+  const handleQuickPayment = useCallback(async () => {
+    if (!paymentTarget) return;
+    const amount = parseFloat(paymentAmount);
+    if (!amount || amount <= 0) {
+      toast.error('Lutfen gecerli bir tutar giriniz');
+      return;
+    }
+    setPaymentLoading(true);
+    try {
+      await axios.post(`/pms/reservations/${paymentTarget.booking_id}/record-payment`, {
+        amount,
+        method: paymentMethod,
+        payment_type: 'interim',
+      });
+      toast.success(`${amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} odeme basariyla alindi`);
+      setPaymentDialog(false);
+      setPaymentTarget(null);
+      onDataRefresh?.();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Odeme islemi basarisiz');
+    } finally {
+      setPaymentLoading(false);
+    }
+  }, [paymentTarget, paymentAmount, paymentMethod, onDataRefresh]);
 
 
 
@@ -312,7 +358,7 @@ const RoomsTab = ({
                           size="sm"
                           variant="outline"
                           className="h-7 text-xs px-2"
-                          onClick={(e) => { e.stopPropagation(); onPayment?.(guestInfo.booking_id); }}
+                          onClick={(e) => handlePaymentClick(e, guestInfo)}
                           data-testid={`room-payment-btn-${room.room_number}`}
                         >
                           <CreditCard className="w-3 h-3 mr-1" />
@@ -373,7 +419,7 @@ const RoomsTab = ({
                   className="flex-1"
                   onClick={() => {
                     setCheckoutDialog(false);
-                    onPayment?.(checkoutBooking.booking_id);
+                    handlePaymentClick({ stopPropagation: () => {} }, checkoutBooking);
                   }}
                   data-testid="checkout-pay-btn"
                 >
@@ -436,6 +482,125 @@ const RoomsTab = ({
                   Iptal
                 </Button>
               </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick Payment Dialog */}
+      <Dialog open={paymentDialog} onOpenChange={(o) => !o && setPaymentDialog(false)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wallet className="w-5 h-5 text-blue-600" />
+              Hizli Odeme
+            </DialogTitle>
+            <DialogDescription>
+              Odeme bilgilerini girin
+            </DialogDescription>
+          </DialogHeader>
+          {paymentTarget && (
+            <div className="space-y-4">
+              {/* Guest & balance info */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm font-medium text-blue-900">{paymentTarget.guest_name}</p>
+                <div className="mt-2 space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Toplam Tutar:</span>
+                    <span className="font-medium">{paymentTarget.total_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Odenen:</span>
+                    <span className="font-medium text-green-700">{paymentTarget.paid_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between border-t pt-1">
+                    <span className="text-blue-800 font-semibold">Kalan Bakiye:</span>
+                    <span className="font-bold text-blue-800">{paymentTarget.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment amount */}
+              <div>
+                <Label className="text-sm font-medium">Odeme Tutari</Label>
+                <div className="flex gap-2 mt-1">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="flex-1"
+                    data-testid="quick-payment-amount"
+                  />
+                  {paymentTarget.balance > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs whitespace-nowrap"
+                      onClick={() => setPaymentAmount(String(paymentTarget.balance))}
+                      data-testid="quick-payment-fill-balance"
+                    >
+                      Tamamini Al
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Payment method */}
+              <div>
+                <Label className="text-sm font-medium">Odeme Yontemi</Label>
+                <div className="grid grid-cols-3 gap-2 mt-1">
+                  <Button
+                    variant={paymentMethod === 'cash' ? 'default' : 'outline'}
+                    className={`h-14 flex-col gap-1 ${paymentMethod === 'cash' ? 'bg-green-600 hover:bg-green-700' : ''}`}
+                    onClick={() => setPaymentMethod('cash')}
+                    data-testid="quick-payment-method-cash"
+                  >
+                    <Banknote className="w-5 h-5" />
+                    <span className="text-xs">Nakit</span>
+                  </Button>
+                  <Button
+                    variant={paymentMethod === 'card' ? 'default' : 'outline'}
+                    className={`h-14 flex-col gap-1 ${paymentMethod === 'card' ? 'bg-blue-600 hover:bg-blue-700' : ''}`}
+                    onClick={() => setPaymentMethod('card')}
+                    data-testid="quick-payment-method-card"
+                  >
+                    <CreditCard className="w-5 h-5" />
+                    <span className="text-xs">Kart</span>
+                  </Button>
+                  <Button
+                    variant={paymentMethod === 'bank_transfer' ? 'default' : 'outline'}
+                    className={`h-14 flex-col gap-1 ${paymentMethod === 'bank_transfer' ? 'bg-purple-600 hover:bg-purple-700' : ''}`}
+                    onClick={() => setPaymentMethod('bank_transfer')}
+                    data-testid="quick-payment-method-transfer"
+                  >
+                    <Building2 className="w-5 h-5" />
+                    <span className="text-xs">Havale</span>
+                  </Button>
+                </div>
+              </div>
+
+              {/* Submit */}
+              <Button
+                className="w-full bg-green-600 hover:bg-green-700"
+                onClick={handleQuickPayment}
+                disabled={paymentLoading || !paymentAmount || parseFloat(paymentAmount) <= 0}
+                data-testid="quick-payment-submit"
+              >
+                {paymentLoading ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Isleniyor...
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <Wallet className="w-4 h-4" />
+                    Odeme Al
+                  </span>
+                )}
+              </Button>
             </div>
           )}
         </DialogContent>
