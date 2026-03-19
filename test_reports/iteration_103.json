@@ -1,0 +1,84 @@
+{
+  "summary": "Business date validation feature fully tested. Backend: 6/6 tests passed. Frontend: Calendar starts 3 days back (March 16 from today March 19), new booking dialog min date is business date (2026-03-13), cell click validation implemented.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_business_date_validation.py",
+    "/app/test_reports/pytest/pytest_business_date_validation.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ReservationCalendar.js lines 44-47: currentDate initialized 3 days back from today - CORRECT",
+    "ReservationCalendar.js lines 111-120: Fetches hotelBusinessDate from /api/night-audit/business-date - CORRECT",
+    "ReservationCalendar.js lines 314-324: handleCellClick validates clicked date >= hotelBusinessDate, shows toast.error if before - CORRECT",
+    "ReservationCalendar.js lines 346-354: handleCreateBooking validates newBooking.check_in >= hotelBusinessDate - CORRECT",
+    "CalendarDialogs.js lines 11-16: NewBookingDialog receives minDate prop - CORRECT",
+    "CalendarDialogs.js line 120: Check-in input has min={effectiveMinDate} attribute - CORRECT",
+    "create_reservation_service.py lines 67-80: Backend validates check_in against business_date from tenant_settings - CORRECT"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_business_date_validation.py"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6 tests passed)",
+    "frontend": "100% - Calendar date range, min date, and validation verified"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123"
+  },
+  "seed_data_creation": "None - used existing test data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Business date validation feature complete. Hotel business date is 2026-03-13 (from tenant_settings). Calendar starts showing 3 days back from today. Backend rejects bookings with check_in before business date with HTTP 400. Frontend shows toast error when clicking calendar cells before business date. New booking dialog has min date set to business date.",
+  "verified_features": {
+    "calendar_starts_3_days_back": {
+      "description": "Calendar date range starts at today-3 instead of today",
+      "implementation": "ReservationCalendar.js lines 44-47: currentDate = new Date(); d.setDate(d.getDate() - 3)",
+      "test_result": "PASS - Calendar shows '16 Mar – 29 Mar 2026' when today is March 19",
+      "screenshot": ".screenshots/calendar.png"
+    },
+    "business_date_api": {
+      "description": "GET /api/night-audit/business-date returns hotel business date",
+      "test_result": "PASS - Returns {business_date: '2026-03-13'}",
+      "verified_in_test": "test_get_business_date"
+    },
+    "backend_booking_validation": {
+      "description": "POST /api/pms/bookings rejects check_in before business date",
+      "implementation": "create_reservation_service.py lines 67-80",
+      "test_results": {
+        "test_booking_rejected_before_business_date": "PASS - HTTP 400 with error mentioning business date",
+        "test_booking_rejected_day_before_business_date": "PASS - HTTP 400 for 2026-03-12",
+        "test_booking_allowed_on_business_date": "PASS - HTTP 200/201 for 2026-03-13",
+        "test_booking_allowed_on_future_date": "PASS - HTTP 200/201 for 2026-03-25",
+        "test_booking_allowed_on_today": "PASS - HTTP 200/201 for current date"
+      }
+    },
+    "frontend_new_booking_min_date": {
+      "description": "New booking dialog check-in input has min attribute set to business date",
+      "implementation": "CalendarDialogs.js line 120: min={effectiveMinDate}",
+      "test_result": "PASS - Input min='2026-03-13'",
+      "screenshot": ".screenshots/new_booking_dialog.png"
+    },
+    "frontend_cell_click_validation": {
+      "description": "Clicking calendar cells before business date shows error toast",
+      "implementation": "ReservationCalendar.js lines 314-324: handleCellClick validates date and calls toast.error",
+      "test_result": "Code verified - shows 'Otel is gununden (YYYY-MM-DD) oncesine rezervasyon yapilamaz'"
+    }
+  },
+  "test_details": {
+    "backend_tests_run": 6,
+    "backend_tests_passed": 6,
+    "backend_tests_failed": 0,
+    "frontend_login": "PASS - demo@hotel.com / demo123",
+    "frontend_navigation": "PASS - /reservation-calendar loads",
+    "frontend_calendar_date_range": "PASS - Shows 16 Mar (3 days back from today)"
+  }
+}

@@ -10,9 +10,10 @@ import { getSegmentColor, getStatusColor, getStatusLabel } from "./calendarHelpe
 // New Booking Dialog
 export const NewBookingDialog = ({
   open, onOpenChange, newBooking, setNewBooking,
-  selectedRoom, guests, rooms, onSubmit,
+  selectedRoom, guests, rooms, onSubmit, minDate,
 }) => {
   const roomTypes = rooms ? [...new Set(rooms.map(r => r.room_type).filter(Boolean))] : [];
+  const effectiveMinDate = minDate || new Date().toISOString().split('T')[0];
 
   return (
   <Dialog open={open} onOpenChange={onOpenChange}>
@@ -117,7 +118,7 @@ export const NewBookingDialog = ({
             <Input
               type="date"
               value={newBooking.check_in}
-              min={new Date().toISOString().split('T')[0]}
+              min={effectiveMinDate}
               onChange={(e) => {
                 const newCi = e.target.value;
                 const updates = {...newBooking, check_in: newCi};
@@ -137,7 +138,7 @@ export const NewBookingDialog = ({
             <Input
               type="date"
               value={newBooking.check_out}
-              min={newBooking.check_in || new Date().toISOString().split('T')[0]}
+              min={newBooking.check_in || effectiveMinDate}
               onChange={(e) => setNewBooking({...newBooking, check_out: e.target.value})}
               required
               data-testid="new-booking-checkout"

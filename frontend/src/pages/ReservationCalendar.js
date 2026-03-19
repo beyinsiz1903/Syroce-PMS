@@ -41,9 +41,14 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [roomBlocks, setRoomBlocks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 3);
+    return d;
+  });
   const [daysToShow, setDaysToShow] = useState(14);
   const [calendarMeta, setCalendarMeta] = useState({});
+  const [hotelBusinessDate, setHotelBusinessDate] = useState(null);
 
   // UI State
   const [selectedRoom, setSelectedRoom] = useState(null);
@@ -101,6 +106,19 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
   // ─── Data Loading ─────────────────────────────────────────────
   useEffect(() => { loadCalendarData(); }, [currentDate, daysToShow]);
+
+  // Fetch hotel business date once on mount
+  useEffect(() => {
+    axios.get('/night-audit/business-date')
+      .then(res => {
+        const bd = res.data?.business_date;
+        if (bd) setHotelBusinessDate(bd);
+      })
+      .catch(() => {
+        // Fallback: use today if business date endpoint fails
+        setHotelBusinessDate(new Date().toISOString().split('T')[0]);
+      });
+  }, []);
 
   const loadCalendarData = async () => {
     setLoading(true);
@@ -297,13 +315,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     const room = rooms.find(r => r.id === roomId);
     if (!room) return;
 
-    // Geçmiş tarih kontrolü
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const clickedDate = new Date(date);
-    clickedDate.setHours(0, 0, 0, 0);
-    if (clickedDate < today) {
-      toast.error('Gecmis tarihe rezervasyon yapilamaz');
+    // Otel iş günü bazlı kontrol (gün sonu yapılmadıysa önceki güne izin verir)
+    const minDate = hotelBusinessDate || new Date().toISOString().split('T')[0];
+    const clickedDateStr = new Date(date).toISOString().split('T')[0];
+    if (clickedDateStr < minDate) {
+      toast.error(`Otel is gununden (${minDate}) oncesine rezervasyon yapilamaz`);
       return;
     }
 
@@ -330,12 +346,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const handleCreateBooking = async (e) => {
     e.preventDefault();
 
-    // Geçmiş tarih kontrolü (form üzerinden de değiştirilebileceği için)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const checkInDate = new Date(newBooking.check_in + 'T00:00:00');
-    if (checkInDate < today) {
-      toast.error('Gecmis tarihe rezervasyon yapilamaz');
+    // Otel iş günü bazlı kontrol
+    const minDate = hotelBusinessDate || new Date().toISOString().split('T')[0];
+    if (newBooking.check_in < minDate) {
+      toast.error(`Otel is gununden (${minDate}) oncesine rezervasyon yapilamaz`);
       return;
     }
 
@@ -722,6 +736,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         guests={guests}
         rooms={rooms}
         onSubmit={handleCreateBooking}
+        minDate={hotelBusinessDate}
       />
 
       <BookingDetailsDialog

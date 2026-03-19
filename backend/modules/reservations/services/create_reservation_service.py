@@ -64,12 +64,19 @@ class CreateReservationService:
             check_in_dt = datetime.fromisoformat(booking_data.check_in.replace('Z', '+00:00'))
             check_out_dt = datetime.fromisoformat(booking_data.check_out.replace('Z', '+00:00'))
 
-            # Geçmiş tarih kontrolü
-            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-            if check_in_dt.replace(tzinfo=timezone.utc) < today_start:
+            # Geçmiş tarih kontrolü - otel iş gününe göre (gün sonu yapılmadıysa önceki gün hala geçerli)
+            from core.database import db as _db
+            tenant_settings = await _db.tenant_settings.find_one(
+                {"tenant_id": tenant_context.tenant_id}, {"_id": 0}
+            )
+            business_date_str = (tenant_settings or {}).get(
+                "business_date", datetime.now(timezone.utc).date().isoformat()
+            )
+            business_date_start = datetime.fromisoformat(business_date_str + "T00:00:00+00:00")
+            if check_in_dt.replace(tzinfo=timezone.utc) < business_date_start:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Gecmis tarihe rezervasyon yapilamaz"
+                    detail=f"Otel is gununden ({business_date_str}) oncesine rezervasyon yapilamaz"
                 )
 
             booking_id = str(uuid.uuid4())
