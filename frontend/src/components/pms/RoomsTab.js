@@ -1,25 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, CheckSquare, Trash2, Image, BedDouble, User } from 'lucide-react';
-import LiteSetupBanner from '@/components/LiteSetupBanner';
+import { BedDouble, User } from 'lucide-react';
 
 const RoomsTab = ({
   rooms,
   bookings = [],
-  bulkRoomMode,
-  setBulkRoomMode,
-  selectedRooms,
-  setSelectedRooms,
-  setOpenDialog,
-  setSelectedRoom,
-  isLite,
-  roomsCount,
-  activeTab,
 }) => {
   const { t } = useTranslation();
   const [typeFilter, setTypeFilter] = useState('all');
@@ -73,50 +61,9 @@ const RoomsTab = ({
 
   return (
     <div className="space-y-4">
-      {isLite && roomsCount === 0 && activeTab === 'rooms' && (
-        <LiteSetupBanner
-          title={t('pms.addRoomsTitle') || 'Başlamak için oda ekleyin'}
-          desc={t('pms.addRoomsDesc') || 'En hızlı yöntem: Hızlı / Çoklu Oda Ekle'}
-          actionLabel={t('pms.bulkAddRooms') || 'Hızlı / Çoklu Oda Ekle'}
-          onAction={() => setOpenDialog('bulk-rooms')}
-          secondaryLabel={t('pms.addSingleRoom') || 'Tek Oda Ekle'}
-          onSecondary={() => setOpenDialog('room')}
-        />
-      )}
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-semibold">{t('pms.rooms')} ({rooms.length})</h2>
-        <div className="flex gap-2">
-          <Button
-            variant={bulkRoomMode ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => { setBulkRoomMode(!bulkRoomMode); setSelectedRooms([]); }}
-          >
-            <CheckSquare className="w-4 h-4 mr-2" />
-            {t('common.bulkMode') || 'Bulk Mode'}
-          </Button>
-          <Button variant="outline" onClick={() => setOpenDialog('bulk-rooms')}>
-            <Plus className="w-4 h-4 mr-2" />
-            {t('pms.bulkAddRooms') || 'Hızlı / Çoklu Oda Ekle'}
-          </Button>
-          <Button onClick={() => setOpenDialog('room')}>
-            <Plus className="w-4 h-4 mr-2" />
-            {t('common.add')} {t('pms.rooms')}
-          </Button>
-        </div>
       </div>
-
-      {bulkRoomMode && selectedRooms.length > 0 && (
-        <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-          <span className="text-sm font-medium text-red-700">{selectedRooms.length} {t('pms.rooms')} {t('common.selected') || 'selected'}</span>
-          <Button size="sm" variant="destructive" onClick={() => setOpenDialog('bulk-delete-rooms')}>
-            <Trash2 className="w-4 h-4 mr-1" />
-            {t('common.delete')}
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setSelectedRooms([])}>
-            {t('common.cancel')}
-          </Button>
-        </div>
-      )}
 
       {/* Filters */}
       <div className="flex gap-3 flex-wrap">
@@ -148,15 +95,8 @@ const RoomsTab = ({
         {filteredRooms.map(room => (
           <Card
             key={room.id}
-            className={`cursor-pointer hover:shadow-md transition-all ${bulkRoomMode && selectedRooms.includes(room.id) ? 'ring-2 ring-blue-500' : ''}`}
-            onClick={() => {
-              if (bulkRoomMode) {
-                setSelectedRooms(prev => prev.includes(room.id) ? prev.filter(id => id !== room.id) : [...prev, room.id]);
-              } else {
-                setSelectedRoom(room);
-                setOpenDialog('room');
-              }
-            }}
+            className="hover:shadow-md transition-all"
+            data-testid={`room-card-${room.room_number}`}
           >
             <CardContent className="p-3">
               <div className="flex justify-between items-start mb-2">
@@ -181,24 +121,6 @@ const RoomsTab = ({
                 {room.view && <Badge variant="outline" className="text-[10px]">{room.view}</Badge>}
                 {room.bed_type && <Badge variant="outline" className="text-[10px]"><BedDouble className="w-3 h-3 mr-0.5" />{room.bed_type}</Badge>}
               </div>
-              {(room.images || []).length > 0 && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="mt-1 text-xs p-0 h-6"
-                  onClick={(e) => { e.stopPropagation(); setSelectedRoom(room); setOpenDialog('room-images'); }}
-                >
-                  <Image className="w-3 h-3 mr-1" />{room.images.length} {t('common.photo') || 'photos'}
-                </Button>
-              )}
-              {bulkRoomMode && (
-                <input
-                  type="checkbox"
-                  checked={selectedRooms.includes(room.id)}
-                  readOnly
-                  className="absolute top-2 right-2 w-4 h-4"
-                />
-              )}
             </CardContent>
           </Card>
         ))}

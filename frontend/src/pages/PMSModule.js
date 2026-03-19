@@ -1550,15 +1550,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             <RoomsTab
               rooms={rooms}
               bookings={bookings}
-              bulkRoomMode={bulkRoomMode}
-              setBulkRoomMode={setBulkRoomMode}
-              selectedRooms={selectedRooms}
-              setSelectedRooms={setSelectedRooms}
-              setOpenDialog={setOpenDialog}
-              setSelectedRoom={setSelectedRoom}
-              isLite={isLite}
-              roomsCount={roomsCount}
-              activeTab={activeTab}
             />
           </TabsContent>
 

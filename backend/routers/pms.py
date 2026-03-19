@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from core.database import db
 from core.security import get_current_user
 from core.helpers import (
-    require_module, create_audit_log,
+    require_module, create_audit_log, require_super_admin_guard,
 )
 from models.enums import (
     UserRole, BookingStatus, FolioType,
@@ -80,7 +80,7 @@ class RejectRequest(BaseModel):
 @router.post("/pms/rooms", response_model=Room)
 async def create_room(
     room_data: RoomCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_super_admin_guard(not_found=False)),
     _: None = Depends(require_module("pms")),
 ):
     room = Room(tenant_id=current_user.tenant_id, **room_data.model_dump())
@@ -294,7 +294,7 @@ class RoomBulkDeleteResponse(BaseModel):
 @router.post("/pms/rooms/bulk/range", response_model=RoomBulkCreateResponse)
 async def bulk_create_rooms_range(
     payload: RoomBulkRangeRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_super_admin_guard(not_found=False)),
     _: None = Depends(require_module("pms")),
 ):
     if payload.end_number < payload.start_number:
@@ -351,7 +351,7 @@ async def bulk_create_rooms_range(
 @router.post("/pms/rooms/bulk/template", response_model=RoomBulkCreateResponse)
 async def bulk_create_rooms_template(
     payload: RoomBulkTemplateRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_super_admin_guard(not_found=False)),
     _: None = Depends(require_module("pms")),
 ):
     if payload.count <= 0:
@@ -419,12 +419,10 @@ async def bulk_create_rooms_template(
 @router.post("/pms/rooms/bulk/delete", response_model=RoomBulkDeleteResponse)
 async def bulk_delete_rooms(
     payload: RoomBulkDeleteRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_super_admin_guard(not_found=False)),
     _: None = Depends(require_module("pms")),
 ):
-    # Permission: admin + super_admin
-    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN]:
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    # Permission: super_admin only
 
     if (payload.confirm_text or '').strip().upper() != 'DELETE':
         raise HTTPException(status_code=400, detail="Silme işlemini onaylamak için 'DELETE' yazmalısınız")

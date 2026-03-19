@@ -12,8 +12,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import {
   Settings as SettingsIcon, Users, CreditCard, Shield, Plus, Trash2,
   Building2, Zap, Crown, ArrowRight, CheckCircle2, Lock, AlertTriangle,
-  ArrowDown, Sparkles, Clock, Receipt, Save, Pencil, X, FileText, Upload, Image
+  ArrowDown, Sparkles, Clock, Receipt, Save, Pencil, X, FileText, Upload, Image,
+  BedDouble, DoorOpen
 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import BulkRoomsDialog from '@/components/pms/BulkRoomsDialog';
 
 // ─── Plan Config ──────────────────────────────────
 const PLAN_CONFIG = {
@@ -113,6 +117,15 @@ const Settings = ({ user, tenant, onLogout }) => {
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [invoiceSaving, setInvoiceSaving] = useState(false);
 
+  // Room management (super_admin only)
+  const isSuperAdmin = user?.role === 'super_admin';
+  const [roomsList, setRoomsList] = useState([]);
+  const [roomsLoading, setRoomsLoading] = useState(false);
+  const [showBulkRoomsDialog, setShowBulkRoomsDialog] = useState(false);
+  const [showAddRoomDialog, setShowAddRoomDialog] = useState(false);
+  const [newRoom, setNewRoom] = useState({ room_number: '', room_type: 'standard', floor: 1, capacity: 2, base_price: 100 });
+  const [roomSaving, setRoomSaving] = useState(false);
+
   const currentTier = useMemo(() => {
     const t = tenant?.subscription_tier || 'basic';
     if (t === 'pro') return 'professional';
@@ -165,12 +178,24 @@ const Settings = ({ user, tenant, onLogout }) => {
     finally { setInvoiceLoading(false); }
   }, []);
 
+  const loadRooms = useCallback(async () => {
+    if (!isSuperAdmin) return;
+    setRoomsLoading(true);
+    try {
+      const API = process.env.REACT_APP_BACKEND_URL;
+      const res = await axios.get(`${API}/api/pms/rooms?limit=500`);
+      setRoomsList(res.data || []);
+    } catch (err) { console.error('Rooms load failed', err); }
+    finally { setRoomsLoading(false); }
+  }, [isSuperAdmin]);
+
   useEffect(() => {
     loadTeam();
     loadSubscription();
     loadBillingHistory();
     loadInvoiceSettings();
-  }, [loadTeam, loadSubscription, loadBillingHistory, loadInvoiceSettings]);
+    loadRooms();
+  }, [loadTeam, loadSubscription, loadBillingHistory, loadInvoiceSettings, loadRooms]);
 
   // Init hotel form from tenant
   useEffect(() => {
@@ -285,6 +310,37 @@ const Settings = ({ user, tenant, onLogout }) => {
     reader.readAsDataURL(file);
   };
 
+  // Room CRUD (super_admin)
+  const handleCreateRoom = async (e) => {
+    e.preventDefault();
+    setRoomSaving(true);
+    try {
+      const API = process.env.REACT_APP_BACKEND_URL;
+      await axios.post(`${API}/api/pms/rooms`, newRoom);
+      toast.success('Oda oluşturuldu');
+      setShowAddRoomDialog(false);
+      setNewRoom({ room_number: '', room_type: 'standard', floor: 1, capacity: 2, base_price: 100 });
+      loadRooms();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Oda oluşturulamadı');
+    } finally { setRoomSaving(false); }
+  };
+
+  const handleDeleteRoom = async (roomId, roomNumber) => {
+    if (!window.confirm(`${roomNumber} numaralı odayı silmek istediğinize emin misiniz?`)) return;
+    try {
+      const API = process.env.REACT_APP_BACKEND_URL;
+      await axios.post(`${API}/api/pms/rooms/bulk/delete`, {
+        ids: [roomId],
+        confirm_text: 'DELETE'
+      });
+      toast.success(`Oda ${roomNumber} silindi`);
+      loadRooms();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Oda silinemedi');
+    }
+  };
+
   // Plan tiers for upgrade/downgrade
   const tierOrder = ['basic', 'professional', 'enterprise'];
   const currentIdx = tierOrder.indexOf(currentTier);
@@ -317,7 +373,7 @@ const Settings = ({ user, tenant, onLogout }) => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className={`grid w-full ${isSuperAdmin ? 'grid-cols-6' : 'grid-cols-5'}`}>
             <TabsTrigger value="team" className="flex items-center gap-1.5 text-xs sm:text-sm">
               <Users className="w-4 h-4" /> Ekip
             </TabsTrigger>
@@ -333,6 +389,11 @@ const Settings = ({ user, tenant, onLogout }) => {
             <TabsTrigger value="invoice" className="flex items-center gap-1.5 text-xs sm:text-sm" data-testid="invoice-settings-tab">
               <FileText className="w-4 h-4" /> Fatura Ayarları
             </TabsTrigger>
+            {isSuperAdmin && (
+              <TabsTrigger value="rooms" className="flex items-center gap-1.5 text-xs sm:text-sm" data-testid="rooms-settings-tab">
+                <DoorOpen className="w-4 h-4" /> Oda Yönetimi
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* ═══════════ TEAM TAB ═══════════ */}
@@ -796,6 +857,78 @@ const Settings = ({ user, tenant, onLogout }) => {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* ═══════════ ROOMS MANAGEMENT TAB (super_admin only) ═══════════ */}
+          {isSuperAdmin && (
+            <TabsContent value="rooms" className="space-y-4" data-testid="rooms-settings-content">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <DoorOpen className="w-5 h-5" /> Oda Yönetimi
+                      </CardTitle>
+                      <CardDescription>Otel odalarını ekleyin, düzenleyin veya silin</CardDescription>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setShowBulkRoomsDialog(true)} data-testid="bulk-add-rooms-btn">
+                        <Plus className="w-4 h-4 mr-1" /> Toplu Oda Ekle
+                      </Button>
+                      <Button size="sm" onClick={() => setShowAddRoomDialog(true)} data-testid="add-room-btn">
+                        <Plus className="w-4 h-4 mr-1" /> Tek Oda Ekle
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {roomsLoading ? (
+                    <div className="text-center py-8 text-gray-400">Yükleniyor...</div>
+                  ) : roomsList.length === 0 ? (
+                    <div className="text-center py-12 text-gray-400">
+                      <DoorOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                      <p className="text-lg font-medium">Henüz oda eklenmemiş</p>
+                      <p className="text-sm mt-1">Yukarıdaki butonlarla oda ekleyebilirsiniz</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="text-sm text-gray-500 mb-3">Toplam {roomsList.length} oda</div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {roomsList.map(room => (
+                          <div
+                            key={room.id}
+                            className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors"
+                            data-testid={`settings-room-${room.room_number}`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                <span className="text-sm font-bold text-blue-700">{room.room_number}</span>
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium">{room.room_type}</p>
+                                <p className="text-xs text-gray-400">Kat {room.floor} - {room.capacity} kişi</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-xs">{room.status}</Badge>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => handleDeleteRoom(room.id, room.room_number)}
+                                data-testid={`delete-room-${room.room_number}`}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
         </Tabs>
       </div>
 
@@ -884,6 +1017,56 @@ const Settings = ({ user, tenant, onLogout }) => {
           })()}
         </DialogContent>
       </Dialog>
+
+      {/* ─── Add Single Room Modal (super_admin) ─── */}
+      <Dialog open={showAddRoomDialog} onOpenChange={setShowAddRoomDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><DoorOpen className="w-5 h-5" /> Yeni Oda Ekle</DialogTitle></DialogHeader>
+          <form onSubmit={handleCreateRoom} className="space-y-3">
+            <div>
+              <Label>Oda Numarası *</Label>
+              <Input value={newRoom.room_number} onChange={(e) => setNewRoom({ ...newRoom, room_number: e.target.value })} placeholder="101" required data-testid="new-room-number" />
+            </div>
+            <div>
+              <Label>Oda Tipi</Label>
+              <Select value={newRoom.room_type} onValueChange={(v) => setNewRoom({ ...newRoom, room_type: v })}>
+                <SelectTrigger data-testid="new-room-type"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="standard">Standard</SelectItem>
+                  <SelectItem value="deluxe">Deluxe</SelectItem>
+                  <SelectItem value="suite">Suite</SelectItem>
+                  <SelectItem value="presidential">Presidential</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Kat</Label>
+                <Input type="number" value={newRoom.floor} onChange={(e) => setNewRoom({ ...newRoom, floor: parseInt(e.target.value) || 1 })} required />
+              </div>
+              <div>
+                <Label>Kapasite</Label>
+                <Input type="number" value={newRoom.capacity} onChange={(e) => setNewRoom({ ...newRoom, capacity: parseInt(e.target.value) || 2 })} required />
+              </div>
+            </div>
+            <div>
+              <Label>Taban Fiyat</Label>
+              <Input type="number" step="0.01" value={newRoom.base_price} onChange={(e) => setNewRoom({ ...newRoom, base_price: parseFloat(e.target.value) || 0 })} required />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setShowAddRoomDialog(false)}>İptal</Button>
+              <Button type="submit" disabled={roomSaving} data-testid="create-room-submit">{roomSaving ? 'Oluşturuluyor...' : 'Oda Oluştur'}</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Bulk Rooms Dialog (super_admin) ─── */}
+      <BulkRoomsDialog
+        open={showBulkRoomsDialog}
+        onClose={() => setShowBulkRoomsDialog(false)}
+        onRoomsCreated={loadRooms}
+      />
     </Layout>
   );
 };
