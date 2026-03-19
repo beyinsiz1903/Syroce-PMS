@@ -17,7 +17,7 @@ import Dashboard from "@/pages/Dashboard";
 
 // Lazy load all other pages for faster initial load
 const GMDashboard = lazy(() => import("@/pages/GMDashboard"));
-const EnhancedGMDashboard = lazy(() => import("@/pages/EnhancedGMDashboard"));
+
 const PMSModule = lazy(() => import("@/pages/PMSModule"));
 const InvoiceModule = lazy(() => import("@/pages/InvoiceModule"));
 const RMSModule = lazy(() => import("@/pages/RMSModule"));
@@ -61,7 +61,7 @@ const MobileOrderTracking = lazy(() => import("@/pages/MobileOrderTracking"));
 const MobileInventory = lazy(() => import("@/pages/MobileInventory"));
 const MobileApprovals = lazy(() => import("@/pages/MobileApprovals"));
 const ExecutiveDashboard = lazy(() => import("@/pages/ExecutiveDashboard"));
-const RevenueManagementMobile = lazy(() => import("@/pages/RevenueManagementMobile"));
+
 const GMEnhancedDashboard = lazy(() => import("@/pages/GMEnhancedDashboard"));
 const SalesCRMMobile = lazy(() => import("@/pages/SalesCRMMobile"));
 import LandingPage from "@/pages/LandingPage";

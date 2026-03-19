@@ -5,8 +5,8 @@ This is the uvicorn entrypoint.  It creates the FastAPI app, registers
 middleware and routers via bootstrap modules, wires startup/shutdown
 lifecycle events, and re-exports key symbols for backward compatibility.
 
-All endpoint definitions live in legacy_routes.py (Phase B will move
-them into domain-specific router modules).
+All endpoint definitions live in domain-specific router modules under
+domains/ and routers/.
 
 Target: < 300 lines.
 """
@@ -123,11 +123,10 @@ try:
 except Exception:
     pass
 
-# ── Legacy routes (shared api_router for backward compatibility) ─────
+# ── Additional API router (AI endpoints) ─────────────────────────────
 from fastapi import APIRouter
 api_router = APIRouter(prefix="/api")
 
-# AI endpoints (was previously mounted via legacy_routes.py)
 try:
     from ai_endpoints import api_router as ai_ai_router
     api_router.include_router(ai_ai_router, tags=["AI Intelligence"])

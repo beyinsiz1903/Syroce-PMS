@@ -931,3 +931,138 @@ async def get_group_folio_status(
         "bookings": bookings_data,
         "merge_logs": merge_logs,
     }
+
+
+
+# ═══════════════════════════════════════════════════
+# 7. GROUP FOLIO - BOOKING DETAIL & GROUP PAYMENT
+# ═══════════════════════════════════════════════════
+
+@router.get("/group-folio/{group_id}/booking/{booking_id}")
+async def get_group_booking_folio_detail(
+    group_id: str,
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Get detailed folio line items for a booking within a group."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+
+    charges = []
+    async for c in db.folio_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
+        charges.append(c)
+
+    folios = []
+    async for f in db.folios.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
+        folios.append(f)
+
+    payments = []
+    async for p in db.payments.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
+        payments.append(p)
+
+    extra_charges = []
+    async for ec in db.extra_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
+        extra_charges.append(ec)
+
+    return {
+        "booking_id": booking_id,
+        "guest_name": booking.get("guest_name", "-"),
+        "room_number": booking.get("room_number", "-"),
+        "check_in": booking.get("check_in"),
+        "check_out": booking.get("check_out"),
+        "status": booking.get("status", "confirmed"),
+        "total_amount": booking.get("total_amount", 0),
+        "charges": charges,
+        "folios": folios,
+        "payments": payments,
+        "extra_charges": extra_charges,
+    }
+
+
+class GroupPaymentRequest(BaseModel):
+    group_id: str
+    booking_id: str
+    amount: float
+    method: str = "cash"
+    reference: str = ""
+
+
+@router.post("/group-folio/payment")
+async def record_group_payment(
+    data: GroupPaymentRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Record a payment for a booking within a group."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one({"id": data.booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+
+    payment = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "booking_id": data.booking_id,
+        "amount": data.amount,
+        "method": data.method,
+        "payment_type": "group_payment",
+        "reference": data.reference or f"Grup odeme - {data.group_id[:8]}",
+        "recorded_by": current_user.name,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.payments.insert_one(payment)
+    payment.pop("_id", None)
+
+    return {"success": True, "payment": payment}
+
+
+@router.get("/group-folio-summary")
+async def get_group_folio_summary(
+    current_user: User = Depends(get_current_user),
+):
+    """Get summary statistics for all group folios."""
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    groups = []
+    async for g in db.group_bookings.find({"tenant_id": tid}, {"_id": 0}):
+        groups.append(g)
+
+    total_groups = len(groups)
+    total_bookings = sum(len(g.get("booking_ids", [])) for g in groups)
+    active_groups = sum(1 for g in groups if g.get("status") == "active")
+
+    total_balance = 0
+    merged_count = 0
+    for g in groups:
+        for bid in g.get("booking_ids", []):
+            booking = await db.bookings.find_one({"id": bid, "tenant_id": tid}, {"_id": 0})
+            if not booking:
+                continue
+            if booking.get("folio_merged_to"):
+                merged_count += 1
+
+            folio_total = 0
+            async for f in db.folios.find({"booking_id": bid, "tenant_id": tid}, {"_id": 0}):
+                if f.get("type") != "payment":
+                    folio_total += f.get("amount", 0)
+            payment_total = 0
+            async for p in db.payments.find({"booking_id": bid, "tenant_id": tid}, {"_id": 0}):
+                payment_total += p.get("amount", 0)
+            total_balance += booking.get("total_amount", 0) + folio_total - payment_total
+
+    merge_log_count = await db.folio_merge_logs.count_documents({"tenant_id": tid})
+
+    return {
+        "total_groups": total_groups,
+        "active_groups": active_groups,
+        "total_bookings": total_bookings,
+        "total_balance": total_balance,
+        "merged_folios": merged_count,
+        "merge_operations": merge_log_count,
+    }

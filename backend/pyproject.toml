@@ -7,13 +7,11 @@ target-version = "py311"
 line-length = 200
 exclude = [
     "accounting_endpoints.py",
-    "server_pms_complete.py",
     "create_*.py",
     "seed_*.py",
     "fix_*.py",
     "ml_data_generators.py",
     "demo_data_generator.py",
-    "scripts/",
     "load_tests/",
     "tests/",
 ]
