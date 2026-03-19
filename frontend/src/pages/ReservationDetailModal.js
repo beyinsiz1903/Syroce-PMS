@@ -1306,11 +1306,10 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 <div className="border-t pt-2 flex justify-between text-xs"><span className="text-gray-500">BAKIYE</span><span className={`font-bold ${(summary?.balance || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>{fmtTL(summary?.balance)} TL</span></div>
               </div>
               <div className="space-y-1.5">
-                {booking?.status === 'confirmed' && (
+                {(booking?.status === 'confirmed' || booking?.status === 'guaranteed') && (
                   <Button size="sm" variant="outline" onClick={async () => {
                     try {
-                      const idempKey = `checkin-${bookingId}-${Date.now()}`;
-                      await axios.put(`${API}/api/pms/bookings/${bookingId}`, { status: 'checked_in' }, { headers: { 'Idempotency-Key': idempKey } });
+                      await axios.post(`${API}/api/frontdesk/checkin/${bookingId}?create_folio=true&force_clean=true`);
                       toast.success('Giris yapildi'); loadData();
                     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
                   }} className="w-full h-8 text-xs justify-start bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"><LogIn className="w-3 h-3 mr-2" /> Giris Yap</Button>
@@ -1319,10 +1318,21 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   <Button size="sm" variant="outline" onClick={async () => {
                     if (!window.confirm('Cikis yapilsin mi?')) return;
                     try {
-                      const idempKey = `checkout-${bookingId}-${Date.now()}`;
-                      await axios.put(`${API}/api/pms/bookings/${bookingId}`, { status: 'checked_out' }, { headers: { 'Idempotency-Key': idempKey } });
-                      toast.success('Cikis yapildi'); loadData();
-                    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+                      const res = await axios.post(`${API}/api/frontdesk/checkout/${bookingId}?auto_close_folios=true`);
+                      if (res.data.total_balance > 0.01) {
+                        toast.warning(`Acik bakiye ile cikis yapildi: ${res.data.total_balance.toFixed(2)}`);
+                      } else {
+                        toast.success('Cikis yapildi');
+                      }
+                      loadData();
+                    } catch (e) {
+                      const detail = e.response?.data?.detail || e.message;
+                      if (e.response?.status === 402) {
+                        toast.error(`Acik bakiye var: ${detail}. Lutfen once odeme aliniz.`);
+                      } else {
+                        toast.error('Hata: ' + detail);
+                      }
+                    }
                   }} className="w-full h-8 text-xs justify-start bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"><LogOut className="w-3 h-3 mr-2" /> Cikis Yap</Button>
                 )}
                 <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, 'Erken giris yapildi')} className="w-full h-8 text-xs justify-start"><LogIn className="w-3 h-3 mr-2" /> Erken Giris</Button>

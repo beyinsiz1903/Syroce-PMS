@@ -82,6 +82,17 @@ class FrontdeskService:
                 {"id": room["id"]},
                 {"$set": {"status": "available"}},
             )
+        elif room["status"] == "occupied":
+            # Check if another booking is actively checked in for this room
+            other_active = await self._db.bookings.find_one({
+                "room_id": room["id"],
+                "tenant_id": ctx.tenant_id,
+                "status": "checked_in",
+                "id": {"$ne": booking_id},
+            })
+            if other_active:
+                return ServiceResult.fail(f"Room is occupied by another guest", "ROOM_NOT_READY")
+            # Stale occupied status — allow check-in
         elif room["status"] not in ("available", "inspected"):
             return ServiceResult.fail(f"Room not ready. Status: {room['status']}", "ROOM_NOT_READY")
 
