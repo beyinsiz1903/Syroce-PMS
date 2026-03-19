@@ -109,6 +109,13 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] **Dialog Accessibility Fix** - Auto-injected sr-only DialogDescription in Shadcn Dialog component to fix console warnings across all 29+ dialogs
 - [x] All tested: Backend 7/7 + Frontend 100% (iteration_95.json)
 
+### Session 11b (Mar 19, 2026)
+- [x] **Toplu Odeme (Bulk Payment)** - Group-level bulk payment distribution
+  - Backend: POST /api/pms/group-folio/bulk-payment with 3 distribution methods (proportional, equal, balance_only)
+  - Frontend: "Toplu Odeme" button in group detail, dialog with amount, distribution preview, payment method
+  - "Bakiye tutarini doldur" quick-fill button, real-time distribution preview per booking
+- [x] All tested: Backend 100% (3/3) + Frontend 100% (iteration_96.json)
+
 ## Key API Endpoints
 - POST /api/auth/login
 - GET/POST /api/pms/bookings
@@ -138,6 +145,7 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - GET /api/pms/group-folio/{group_id}/booking/{booking_id}
 - POST /api/pms/group-folio/payment
 - POST /api/pms/group-folio/merge
+- POST /api/pms/group-folio/bulk-payment
 
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
