@@ -208,6 +208,9 @@ class ExelyPullScheduler:
         import_result = await auto_import_pending(tenant_id, provider=provider)
         logger.info(f"[EXELY-PULL] Auto-import: {import_result['imported']}/{import_result['total']} imported, {import_result.get('updated', 0)} updated")
 
+        # Auto-confirm delivery for all newly imported reservations
+        await self._auto_confirm_deliveries(provider, tenant_id)
+
         # Individual check for cancellations and modifications that batch pull may miss
         try:
             cancel_detected = await self._check_individual_changes(provider, tenant_id)
@@ -300,6 +303,42 @@ class ExelyPullScheduler:
                 logger.warning(f"[EXELY-PULL] Individual check error for {ext_id}: {e}")
 
         return {"cancelled": cancel_count, "modified": mod_count}
+
+    async def _auto_confirm_deliveries(self, provider: ExelyProvider, tenant_id: str):
+        """Auto-confirm delivery for all imported but unconfirmed reservations."""
+        try:
+            unconfirmed = await db.exely_reservations.find(
+                {
+                    "tenant_id": tenant_id,
+                    "delivery_confirmed": {"$ne": True},
+                    "pms_status": {"$in": ["imported", "confirmed"]},
+                    "state": {"$ne": "cancelled"},
+                },
+                {"_id": 0, "external_id": 1, "pms_booking_id": 1},
+            ).to_list(50)
+
+            if not unconfirmed:
+                return
+
+            confirmed = 0
+            for res in unconfirmed:
+                ext_id = res.get("external_id", "")
+                pms_id = res.get("pms_booking_id", ext_id)
+                try:
+                    result = await provider.confirm_delivery(ext_id, pms_id)
+                    if result.get("success"):
+                        await db.exely_reservations.update_one(
+                            {"tenant_id": tenant_id, "external_id": ext_id},
+                            {"$set": {"delivery_confirmed": True, "delivery_confirmed_at": datetime.now(timezone.utc).isoformat()}},
+                        )
+                        confirmed += 1
+                except Exception as e:
+                    logger.warning(f"[EXELY-PULL] Delivery confirm error for {ext_id}: {e}")
+
+            if confirmed:
+                logger.info(f"[EXELY-PULL] Auto-confirmed {confirmed}/{len(unconfirmed)} deliveries for tenant {tenant_id}")
+        except Exception as e:
+            logger.warning(f"[EXELY-PULL] Auto-confirm error: {e}")
 
 
 # Singleton

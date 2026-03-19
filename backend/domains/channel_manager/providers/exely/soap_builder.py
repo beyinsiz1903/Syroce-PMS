@@ -146,25 +146,26 @@ def build_notif_report_rq(
 
     notif_item = etree.SubElement(hotel_notif, f"{{{OTA_NS}}}HotelReservations")
     hotel_res = etree.SubElement(notif_item, f"{{{OTA_NS}}}HotelReservation", attrib={
-        "ResStatus": "Initiate",
+        "ResStatus": "Reserved",
         "CreateDateTime": create_datetime or now_str,
         "LastModifyDateTime": last_modify_datetime or now_str,
     })
 
     etree.SubElement(hotel_res, f"{{{OTA_NS}}}UniqueID", attrib={
-        "Type": "16",
+        "Type": "14",
         "ID": reservation_id,
     })
 
     res_id = etree.SubElement(hotel_res, f"{{{OTA_NS}}}ResGlobalInfo")
     hotel_res_ids = etree.SubElement(res_id, f"{{{OTA_NS}}}HotelReservationIDs")
     etree.SubElement(hotel_res_ids, f"{{{OTA_NS}}}HotelReservationID", attrib={
-        "ResID_Type": "10",
+        "ResID_Type": "14",
         "ResID_Value": reservation_id,
     })
     etree.SubElement(hotel_res_ids, f"{{{OTA_NS}}}HotelReservationID", attrib={
-        "ResID_Type": "40",
+        "ResID_Type": "14",
         "ResID_Value": confirmation_number,
+        "ResID_Source": "PMS",
     })
 
     return _soap_envelope(username, password, hotel_code, rq)

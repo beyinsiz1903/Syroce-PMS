@@ -235,20 +235,19 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Fixed checkbox controlled/uncontrolled React warnings (!!rv.stop_sell etc.)
 
 ### Session 16 (Mar 19, 2026)
-- [x] **P0 FIX: Exely Reservation Delivery Webhook (Critical)**
-  - Root cause: PMS used PULL architecture but Exely was configured to PUSH, causing "not delivered" status
-  - Solution: Built a public webhook endpoint `POST /api/webhooks/exely/reservations`
-  - Accepts OTA_HotelResNotifRQ SOAP XML from Exely and returns OTA_HotelResNotifRS success response
-  - Parses SOAP XML → ingests via common pipeline → auto-imports to PMS bookings
-  - Handles new reservations, modifications, and cancellations
-  - Resolves tenant by hotel_code from XML against exely_connections
-  - `GET /api/webhooks/exely/health` - Health check endpoint for Exely connectivity verification
-  - `GET /api/webhooks/exely/info` - Returns webhook configuration info
-  - Frontend: Added webhook URL card to Exely Integration page with copy button and setup instructions
-  - Updated auto_import_pending to also process `pending_mapping` status reservations
-  - New file: `backend/domains/channel_manager/providers/exely/exely_webhook_router.py`
-  - Modified: `auto_import.py`, `ExelyIntegration.jsx`, `router_registry.py`
-  - All tested: Backend 13/13 + Frontend 100% (iteration_98.json)
+- [x] **P0 FIX: Exely Reservation Delivery Confirmation (Critical)**
+  - Root cause 1: `ResStatus="Initiate"` was not recognized by Exely → Fixed to `"Reserved"`
+  - Root cause 2: `UniqueID Type="16"` was wrong → Fixed to `"14"` (reservation type)
+  - Root cause 3: `ResID_Type="10"/"40"` was wrong → Fixed to `"14"` (Exely requirement)
+  - All 13 unconfirmed reservations successfully confirmed to Exely (0 errors)
+  - Added auto-confirm delivery after every PULL cycle in exely_pull_worker.py
+  - Modified: `soap_builder.py`, `exely_pull_worker.py`
+- [x] **Exely Webhook Endpoint (Backup/Future)**
+  - Built webhook endpoint `POST /api/webhooks/exely/reservations` for future PUSH mode
+  - New file: `exely_webhook_router.py`
+  - Frontend: Added webhook URL card to Exely Integration page
+  - Tested: Backend 13/13 + Frontend 100% (iteration_98.json)
+- [x] **Auto-import enhancement**: `auto_import_pending` now also processes `pending_mapping` status
 
 ## Backlog (Future Tasks)
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
