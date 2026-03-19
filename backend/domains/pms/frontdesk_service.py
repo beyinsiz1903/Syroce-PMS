@@ -142,14 +142,21 @@ class FrontdeskService:
                 "balance": balance,
             })
 
-        if total_balance > 0.01 and not force:
+        # Also check booking-level balance (total_amount - paid_amount)
+        booking_total = booking.get("total_amount", 0) or 0
+        booking_paid = booking.get("paid_amount", 0) or 0
+        booking_balance = round(booking_total - booking_paid, 2)
+        effective_balance = max(total_balance, booking_balance)
+
+        if effective_balance > 0.01 and not force:
             return ServiceResult.fail(
-                f"Outstanding balance: ${total_balance:.2f}",
+                f"Outstanding balance: {effective_balance:.2f}",
                 "OUTSTANDING_BALANCE",
                 folio_details=folio_details,
+                booking_balance=booking_balance,
             )
 
-        if auto_close_folios and total_balance <= 0.01:
+        if auto_close_folios and effective_balance <= 0.01:
             for folio in folios:
                 await self._db.folios.update_one(
                     {"id": folio["id"]},

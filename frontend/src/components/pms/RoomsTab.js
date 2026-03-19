@@ -35,7 +35,6 @@ const RoomsTab = ({
   // Checkout confirmation dialog state
   const [checkoutDialog, setCheckoutDialog] = useState(false);
   const [checkoutBooking, setCheckoutBooking] = useState(null);
-  const [checkingOut, setCheckingOut] = useState(false);
 
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
 
@@ -166,27 +165,7 @@ const RoomsTab = ({
     }
   }, [handleCheckOut]);
 
-  // Force checkout after confirmation
-  const handleForceCheckout = async () => {
-    if (!checkoutBooking) return;
-    setCheckingOut(true);
-    try {
-      const response = await axios.post(
-        `/frontdesk/checkout/${checkoutBooking.booking_id}?force=true&auto_close_folios=true`
-      );
-      if (response.data.total_balance > 0.01) {
-        toast.warning(`Check-out yapildi. Acik bakiye: ${response.data.total_balance.toFixed(2)}`);
-      } else {
-        toast.success('Check-out basarili');
-      }
-      setCheckoutDialog(false);
-      onDataRefresh?.();
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Check-out basarisiz');
-    } finally {
-      setCheckingOut(false);
-    }
-  };
+
 
   return (
     <div className="space-y-4">
