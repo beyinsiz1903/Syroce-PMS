@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, Suspense, lazy, memo } from 'react';
+const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal'));
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -124,6 +125,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [guest360Data, setGuest360Data] = useState(null);
   const [loadingGuest360, setLoadingGuest360] = useState(false);
   const [selectedBookingDetail, setSelectedBookingDetail] = useState(null);
+  const [reservationDetailId, setReservationDetailId] = useState(null);
   const [expandedChargeItems, setExpandedChargeItems] = useState({});
   const [guestTag, setGuestTag] = useState('');
   const [guestNote, setGuestNote] = useState('');
@@ -1567,8 +1569,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                 }
               }}
               onBookingDoubleClick={(booking) => {
-                setSelectedBookingDetail(booking);
-                setOpenDialog('bookingDetail');
+                setReservationDetailId(booking.id);
               }}
               onDataRefresh={loadData}
             />
@@ -2918,6 +2919,17 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           onViewFolio={loadBookingFolios}
           onBookingUpdated={loadData}
         />
+
+        {/* Reservation Detail Modal (same as Calendar double-click) */}
+        {reservationDetailId && (
+          <Suspense fallback={<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"><div className="bg-white rounded-xl p-6 text-gray-500">Yukleniyor...</div></div>}>
+            <ReservationDetailModal
+              bookingId={reservationDetailId}
+              onClose={() => { setReservationDetailId(null); loadData(); }}
+              allBookings={bookings}
+            />
+          </Suspense>
+        )}
 
         {/* Floating Action Button - Quick Actions */}
         {/* Maintenance Work Order Dialog */}
