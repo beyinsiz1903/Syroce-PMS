@@ -313,6 +313,14 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Modified: `frontdesk_service.py`, `frontdesk_router.py`, `RoomsTab.js`, `PMSModule.js`
   - Tested: Backend curl (dirty room -> 400 without force, 200 with force_clean) + Frontend E2E (dialog shows, check-in succeeds)
 
+### Session 22 (Mar 19, 2026)
+- [x] **Odalar Sekmesi: Misafir Adına Tıklama → Rezervasyon Detay Modalı**
+  - Eskisi: Misafir adına tıklayınca kimlik bilgileri dialogu açılıyordu
+  - Yenisi: Misafir adına tıklayınca takvim sekmesindeki çift tıklama ile aynı Rezervasyon Detay Modalı (BookingDetailDialog) açılıyor
+  - Kimlik dialogu ve ilgili state/fonksiyonlar temizlendi (identityDialog, identityGuest, handleSaveIdentity)
+  - ExternalLink ikonu ile tıklanabilirlik gösterimi iyileştirildi
+  - Modified: `RoomsTab.js`
+
 ## Backlog (Future Tasks)
 - [ ] P1: User verification for Exely Reservation Delivery Confirmation fix
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
