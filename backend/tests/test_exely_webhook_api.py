@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime, timedelta
 
 # Use external URL for testing
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://reservation-webhook.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://exely-backlog-clear.preview.emergentagent.com')
 
 # Test credentials from review request
 DEMO_EMAIL = "demo@hotel.com"

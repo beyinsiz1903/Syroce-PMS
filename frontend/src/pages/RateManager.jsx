@@ -50,6 +50,10 @@ const RateManager = ({ user, tenant, onLogout }) => {
   const [ratePlans, setRatePlans] = useState([]);
   const [grid, setGrid] = useState([]);
   const [pricingSettings, setPricingSettings] = useState({});
+  const [currency, setCurrency] = useState('TRY');
+
+  const CURRENCY_SYMBOLS = { TRY: '₺', USD: '$', EUR: '€', GBP: '£', RUB: '₽' };
+  const currencySymbol = CURRENCY_SYMBOLS[currency] || currency;
 
   // ─── BULK UPDATE STATE ───
   // selections: { roomTypeCode: Set<ratePlanCode> } — per room type independent selection
@@ -93,6 +97,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
       setRoomTypes(data.room_types || []);
       setRatePlans(data.rate_plans || []);
       if (data.pricing_settings) setPricingSettings(data.pricing_settings);
+      if (data.currency) setCurrency(data.currency);
     } catch {
       toast.error('Veriler yüklenemedi');
     }
@@ -539,7 +544,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
                           style={{ gridTemplateColumns: 'minmax(220px, 1fr) repeat(auto-fit, minmax(130px, 1fr))' }}>
                           <div className="grid items-center gap-3" style={{ gridTemplateColumns: `minmax(220px, 1fr)${enabledFields.has('rate') ? ' 150px' : ''}${enabledFields.has('availability') ? ' 130px' : ''}${enabledFields.has('min_stay') ? ' 150px' : ''}${enabledFields.has('max_stay') ? ' 150px' : ''}${enabledFields.has('stop_sell') ? ' 100px' : ''}${enabledFields.has('cta') ? ' 80px' : ''}${enabledFields.has('ctd') ? ' 80px' : ''}` }}>
                             <span>Oda adı</span>
-                            {enabledFields.has('rate') && <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" /> Fiyat</span>}
+                            {enabledFields.has('rate') && <span className="flex items-center gap-1">{currencySymbol} Fiyat</span>}
                             {enabledFields.has('availability') && <span className="flex items-center gap-1"><Home className="w-3 h-3" /> Müsaitlik</span>}
                             {enabledFields.has('min_stay') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Min. konaklama</span>}
                             {enabledFields.has('max_stay') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Max. konaklama</span>}
@@ -600,7 +605,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
                                   {/* Inline Rate Input */}
                                   {enabledFields.has('rate') && (
                                     <div className="flex items-center gap-1">
-                                      <span className="text-xs text-gray-400">₺</span>
+                                      <span className="text-xs text-gray-400">{currencySymbol}</span>
                                       <Input
                                         type="number" step="0.01" placeholder="Fiyat"
                                         value={rv.rate}
@@ -715,7 +720,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
                                     {/* Rate plan rows show parent room type's price info */}
                                     {enabledFields.has('rate') && (
                                       <div className="text-xs text-gray-400 italic">
-                                        {rv.rate ? `Ana Fiyat: ${rv.rate} TRY` : '—'}
+                                        {rv.rate ? `Ana Fiyat: ${rv.rate} ${currency}` : '—'}
                                       </div>
                                     )}
                                     {enabledFields.has('availability') && (
@@ -912,7 +917,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
                                 >
                                   <div className="space-y-0.5">
                                     {cell.rate != null ? (
-                                      <div className="text-xs font-semibold text-blue-700">{cell.rate} TRY</div>
+                                      <div className="text-xs font-semibold text-blue-700">{cell.rate} {currency}</div>
                                     ) : (
                                       <div className="text-xs text-gray-300">-</div>
                                     )}

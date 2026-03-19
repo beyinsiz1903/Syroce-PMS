@@ -228,11 +228,14 @@ async def get_rate_grid(
     for doc in pricing_docs:
         pricing_map[doc["room_type_code"]] = doc.get("pricing_type", "per_person")
 
+    currency = conn.get("currency", "TRY")
+
     return {
         "grid": grid,
         "room_types": room_types,
         "rate_plans": rate_plans,
         "pricing_settings": pricing_map,
+        "currency": currency,
         "start_date": start_date,
         "end_date": end_date,
     }

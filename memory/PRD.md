@@ -249,11 +249,21 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Tested: Backend 13/13 + Frontend 100% (iteration_98.json)
 - [x] **Auto-import enhancement**: `auto_import_pending` now also processes `pending_mapping` status
 
+### Session 17 (Mar 19, 2026)
+- [x] **Bug Fix: Rate Manager Para Birimi Sembolü**
+  - Problem: Otel USD olarak ayarlı olmasına rağmen RateManager'da "₺" (TRY) sabit kodlanmıştı
+  - Fix: Backend grid API'ye `currency` alanı eklendi, frontend'de sembol dinamik hale getirildi
+  - 3 hardcoded referans düzeltildi: satır içi sembol, fiyat planı metni, takvim hücreleri
+  - Modified: `rate_manager_router.py`, `RateManager.jsx`
+
 ## Backlog (Future Tasks)
+- [ ] P0: Remove obsolete webhook code (exely_webhook_router.py, router_registry.py, ExelyIntegration.jsx)
+- [ ] P1: User verification for Exely Reservation Delivery Confirmation fix
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
 - [ ] P1: User verification for completed features backlog (11+ features)
 - [ ] P2: Refactor ReservationDetailModal.js (1400+ lines → smaller components)
 - [ ] P3: Refactor RateManager.jsx (1000+ lines → smaller components)
 - [ ] P3: Clean up soap_builder.py (commented-out code from SOAP debugging)
 - [ ] P4: Visually distinguish past dates in calendar (grayed out)
+- [ ] P4: Fix React "duplicate key" console warning
 - [ ] P5: Advanced Auto-Heal patterns (remaining)
