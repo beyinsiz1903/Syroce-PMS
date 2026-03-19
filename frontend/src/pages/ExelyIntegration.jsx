@@ -30,7 +30,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
 
   const [connectForm, setConnectForm] = useState({
     username: '', password: '', hotel_code: '', endpoint_url: '',
-    property_name: '', auto_sync_reservations: true, sync_interval_minutes: 15,
+    property_name: '', currency: 'TRY', auto_sync_reservations: true, sync_interval_minutes: 15,
   });
 
   const headers = { Authorization: `Bearer ${user?.token || user?.access_token}` };
@@ -195,6 +195,19 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                         value={connectForm.endpoint_url} onChange={e => setConnectForm(p => ({ ...p, endpoint_url: e.target.value }))} />
                     </div>
                     <div>
+                      <Label htmlFor="exely-currency">Para Birimi</Label>
+                      <select id="exely-currency" data-testid="exely-currency-select"
+                        value={connectForm.currency}
+                        onChange={e => setConnectForm(p => ({ ...p, currency: e.target.value }))}
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                        <option value="TRY">TRY - Turk Lirasi</option>
+                        <option value="USD">USD - Amerikan Dolari</option>
+                        <option value="EUR">EUR - Euro</option>
+                        <option value="GBP">GBP - Ingiliz Sterlini</option>
+                        <option value="RUB">RUB - Rus Rublesi</option>
+                      </select>
+                    </div>
+                    <div>
                       <Label htmlFor="exely-interval">Sync Araligi (dk)</Label>
                       <Input id="exely-interval" type="number" min={5} max={60}
                         value={connectForm.sync_interval_minutes} onChange={e => setConnectForm(p => ({ ...p, sync_interval_minutes: parseInt(e.target.value) || 15 }))} />
@@ -222,7 +235,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap gap-3 items-center">
                       <Button data-testid="exely-test-btn" variant="outline" onClick={handleTest} disabled={loading}>
                         {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
                         Baglanti Test
@@ -230,6 +243,30 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                       <Button data-testid="exely-disconnect-btn" variant="destructive" onClick={handleDisconnect}>
                         <Unlink className="w-4 h-4 mr-2" /> Baglantivi Kes
                       </Button>
+                      <div className="flex items-center gap-2 ml-auto">
+                        <Label className="text-sm text-slate-600 whitespace-nowrap">Para Birimi:</Label>
+                        <select
+                          data-testid="exely-currency-change"
+                          value={connection.connection?.currency || 'TRY'}
+                          onChange={async (e) => {
+                            const newCurrency = e.target.value;
+                            try {
+                              await axios.patch(`${API}/api/channel-manager/exely/currency`, { currency: newCurrency }, { headers });
+                              toast.success(`Para birimi ${newCurrency} olarak guncellendi`);
+                              fetchConnection();
+                            } catch (err) {
+                              toast.error(err.response?.data?.detail || 'Para birimi guncellenemedi');
+                            }
+                          }}
+                          className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        >
+                          <option value="TRY">TRY</option>
+                          <option value="USD">USD</option>
+                          <option value="EUR">EUR</option>
+                          <option value="GBP">GBP</option>
+                          <option value="RUB">RUB</option>
+                        </select>
+                      </div>
                     </div>
                     {syncStatus && (
                       <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">

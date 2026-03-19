@@ -220,6 +220,13 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Also updated existing DB connection record (exely_connections) from "USD" to "TRY"
   - SOAP XML `CurrencyCode` now correctly sends "TRY" to Exely
 
+- [x] **Feature: Configurable Currency per Hotel**
+  - Hotels can now set their currency (TRY/USD/EUR/GBP/RUB) in Exely connection settings
+  - Backend: Added `currency` field to `ExelyConnectionSetup` model, new `PATCH /api/channel-manager/exely/currency` endpoint
+  - Frontend: Currency dropdown in connect form + live currency switcher on active connection card
+  - All rate pushes use the configured currency from the connection
+  - Modified files: exely_router.py, ExelyIntegration.jsx, provider.py, soap_builder.py, rate_manager_router.py
+
 ## Backlog (Future Tasks)
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
 - [ ] P2: Refactor ReservationDetailModal.js (1400+ lines → smaller components)

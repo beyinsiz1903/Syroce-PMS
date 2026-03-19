@@ -34,6 +34,7 @@ class ExelyConnectionSetup(BaseModel):
     hotel_code: str
     endpoint_url: Optional[str] = None
     property_name: Optional[str] = None
+    currency: str = "TRY"
     auto_sync_reservations: bool = True
     sync_interval_minutes: int = 15
 
@@ -118,7 +119,7 @@ async def setup_connection(
         "password": payload.password,
         "hotel_code": payload.hotel_code,
         "endpoint_url": payload.endpoint_url or "",
-        "currency": "TRY",
+        "currency": payload.currency,
     }
     credentials_ref = await store_secret(
         tenant_id=current_user.tenant_id,
@@ -137,7 +138,7 @@ async def setup_connection(
         "auto_sync_reservations": payload.auto_sync_reservations,
         "sync_interval_minutes": payload.sync_interval_minutes,
         "mode": "sandbox",
-        "currency": "TRY",
+        "currency": payload.currency,
         "is_active": True,
         "room_types": test_result.get("room_types", []),
         "rate_plans": test_result.get("rate_plans", []),
@@ -191,6 +192,29 @@ async def disconnect(current_user: User = Depends(get_current_user)):
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Aktif baglanti bulunamadi")
     return {"message": "Exely baglantisi kesildi"}
+
+
+
+class CurrencyUpdateRequest(BaseModel):
+    currency: str  # TRY, USD, EUR
+
+
+@router.patch("/currency")
+async def update_currency(
+    payload: CurrencyUpdateRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Update the currency for the Exely connection."""
+    allowed = {"TRY", "USD", "EUR", "GBP", "RUB"}
+    if payload.currency not in allowed:
+        raise HTTPException(status_code=400, detail=f"Desteklenmeyen para birimi. Desteklenen: {', '.join(sorted(allowed))}")
+    result = await db.exely_connections.update_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"$set": {"currency": payload.currency}},
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Aktif baglanti bulunamadi")
+    return {"message": f"Para birimi {payload.currency} olarak guncellendi", "currency": payload.currency}
 
 
 # ── Room Discovery ───────────────────────────────────────────────────
