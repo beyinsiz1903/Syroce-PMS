@@ -342,7 +342,20 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Modified: `RoomsTab.js`
   - Tested: E2E (50 TL ödeme başarıyla alındı, bakiye 200 → 150 güncellendi)
 
+### Session 24 (Mar 20, 2026)
+- [x] **Bug Fix: ReservationDetailModal Check-in/Checkout Bypass**
+  - **Root cause:** ReservationDetailModal's "Giriş Yap" and "Çıkış Yap" buttons used `PUT /api/pms/bookings/{id}` to directly change booking status, bypassing all frontdesk business logic (room status update, folio creation, balance check, housekeeping task)
+  - **Bug A:** Check-in from Rooms tab failed with "occupied" because ReservationDetailModal check-in didn't update room status → room stayed "occupied" from stale state
+  - **Bug B:** Checkout succeeded despite outstanding balance because ReservationDetailModal checkout bypassed balance validation
+  - **Fix 1 (Frontend):** ReservationDetailModal "Giriş Yap" now uses `POST /api/frontdesk/checkin/{bookingId}?create_folio=true&force_clean=true`
+  - **Fix 2 (Frontend):** ReservationDetailModal "Çıkış Yap" now uses `POST /api/frontdesk/checkout/{bookingId}?auto_close_folios=true` with proper 402 error handling
+  - **Fix 3 (Backend):** `frontdesk_service.py` checkin() handles stale "occupied" rooms: checks if another booking is actively checked in before rejecting
+  - **Fix 4:** Added `guaranteed` status to check-in button visibility in ReservationDetailModal
+  - Modified: `ReservationDetailModal.js`, `frontdesk_service.py`
+  - Tested: Backend 11/12 tests passed, Frontend UI verified, checkout with balance blocked with 402 error
+
 ## Backlog (Future Tasks)
+- [ ] P1: User verification for Exely availability discrepancy fix
 - [ ] P1: User verification for Exely Reservation Delivery Confirmation fix
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
 - [ ] P2: Refactor ReservationDetailModal.js (1400+ lines -> smaller components)
