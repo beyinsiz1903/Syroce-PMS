@@ -531,17 +531,18 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   };
 
   // ─── Navigation ────────────────────────────────────────────
+  const SCROLL_DAYS = Math.max(3, Math.floor(daysToShow / 3));
   const navigatePrevious = () => {
     const nd = new Date(currentDate);
-    nd.setDate(nd.getDate() - daysToShow);
+    nd.setDate(nd.getDate() - SCROLL_DAYS);
     setCurrentDate(nd);
   };
   const navigateNext = () => {
     const nd = new Date(currentDate);
-    nd.setDate(nd.getDate() + daysToShow);
+    nd.setDate(nd.getDate() + SCROLL_DAYS);
     setCurrentDate(nd);
   };
-  const goToToday = () => { setCurrentDate(new Date()); };
+  const goToDate = (date) => { setCurrentDate(date); };
 
   // ─── Loading State ─────────────────────────────────────────
   if (loading) {
@@ -569,7 +570,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           showAIPanel={showAIPanel}
           onNavigatePrevious={navigatePrevious}
           onNavigateNext={navigateNext}
-          onGoToToday={goToToday}
+          onGoToDate={goToDate}
           onSyncReservations={handleSyncReservations}
           onToggleEnterprise={toggleEnterprise}
           onToggleAI={toggleAIMode}
@@ -589,20 +590,16 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           <div className="flex items-center justify-between text-xs text-gray-500">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#F97316' }}></div>
-                <span>Expedia</span>
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#22c55e' }}></div>
+                <span>Iceride (Check-in)</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#2563EB' }}></div>
-                <span>Tatilbudur/Online</span>
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#ef4444' }}></div>
+                <span>Gecmis / Check-out</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#1D4ED8' }}></div>
-                <span>Booking.com</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#374151' }}></div>
-                <span>Kesin</span>
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#9ca3af' }}></div>
+                <span>Gelecek (C/in yapilmamis)</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-green-500"></div>
@@ -694,6 +691,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         setNewBooking={setNewBooking}
         selectedRoom={selectedRoom}
         guests={guests}
+        rooms={rooms}
         onSubmit={handleCreateBooking}
       />
 
@@ -722,6 +720,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         findRoomCriteria={findRoomCriteria}
         setFindRoomCriteria={setFindRoomCriteria}
         availableRooms={availableRooms}
+        rooms={rooms}
         onFindRoom={handleFindRoom}
         onSelectRoom={(room) => {
           handleCellClick(room.id, new Date(findRoomCriteria.check_in));

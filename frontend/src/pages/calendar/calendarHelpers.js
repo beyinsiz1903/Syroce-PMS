@@ -178,7 +178,18 @@ export const getOTAInfo = (channel) => {
   return otaData[channel] || { label: 'OTA', name: 'OTA', color: 'bg-gray-600' };
 };
 
-// Source-based booking card color mapping
+// Status-based booking color for calendar bars
+// green = checked_in (in-house), red = checked_out / past, gray = future (not checked in yet)
+export const getBookingStatusColor = (booking) => {
+  const status = booking.status;
+  const today = new Date().toISOString().slice(0, 10);
+  const checkOut = toDateStringUTC(booking.check_out);
+  if (status === 'checked_in') return { bg: '#22c55e', border: '#16a34a' };
+  if (status === 'checked_out' || checkOut <= today) return { bg: '#ef4444', border: '#dc2626' };
+  return { bg: '#9ca3af', border: '#6b7280' };
+};
+
+// Source-based booking card color mapping (legacy, kept for compatibility)
 export const getSourceColor = (booking) => {
   const channel = (booking.ota_channel || booking.source_channel || booking.channel || booking.source || '').toLowerCase();
   if (channel.includes('expedia')) return { bg: '#F97316', border: '#EA580C', label: 'Expedia' };

@@ -1,11 +1,10 @@
 import React from "react";
 import { Calendar as CalendarIcon, Plus } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import {
   toDateStringUTC, isBookingOnDate, isBookingStart, isWeekend, isToday,
   formatDateWithDay, getBookingForRoomOnDate, getRoomBlockForDate,
   isBlockStart, calculateBlockSpan, calculateBookingSpan,
-  getSourceColor, getBookingStatus, getOTAInfo,
+  getBookingStatusColor, getBookingStatus,
   getUnassignedBookingsForType, computeUnassignedLanes,
 } from "./calendarHelpers";
 
@@ -245,6 +244,7 @@ const CalendarGrid = ({
                             const visibleEndIdx = dateRange.findIndex(d => toDateStringUTC(d) >= checkOutStr);
                             const endIdx = visibleEndIdx >= 0 ? visibleEndIdx : dateRange.length;
                             const span = Math.max(endIdx - startIdx, 1);
+                            const statusColor = getBookingStatusColor(booking);
                             return (
                               <div
                                 key={booking.id}
@@ -252,14 +252,14 @@ const CalendarGrid = ({
                                 onDragStart={(e) => onDragStart(e, booking)}
                                 onDragEnd={onDragEnd}
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
-                                className="absolute rounded text-white text-xs shadow-sm hover:shadow-md transition-all cursor-move z-20 border border-amber-400"
+                                className="absolute rounded text-white text-xs shadow-sm hover:shadow-md transition-all cursor-move z-20 border"
                                 style={{
                                   left: `${startIdx * 96 + 2}px`,
                                   top: `${lane * laneHeight + 4}px`,
                                   width: `${span * 96 - 4}px`,
                                   height: `${laneHeight - 6}px`,
-                                  backgroundColor: getSourceColor(booking).bg,
-                                  borderColor: getSourceColor(booking).border,
+                                  backgroundColor: statusColor.bg,
+                                  borderColor: statusColor.border,
                                 }}
                                 data-testid={`unassigned-booking-${booking.id}`}
                                 title={`${booking.guest_name} - Odaya surukleyin`}
@@ -269,7 +269,7 @@ const CalendarGrid = ({
                                     {booking.guest_name || 'Misafir'}
                                   </div>
                                   <div className="text-[9px] text-white/80 truncate mt-0.5">
-                                    {getSourceColor(booking).label} - Oda ata
+                                    Oda ata
                                   </div>
                                 </div>
                               </div>
@@ -344,7 +344,9 @@ const CalendarGrid = ({
                                 )}
 
                                 {/* Booking bar */}
-                                {bIsStart && booking && (
+                                {bIsStart && booking && (() => {
+                                  const statusColor = getBookingStatusColor(booking);
+                                  return (
                                   <div
                                     draggable
                                     onDragStart={(e) => onDragStart(e, booking)}
@@ -357,11 +359,8 @@ const CalendarGrid = ({
                                     style={{
                                       width: `${calculateBookingSpan(booking, currentDate, daysToShow) * 96 - 4}px`,
                                       height: '46px',
-                                      backgroundColor: booking.group_booking_id ? getGroupColor(booking) : getSourceColor(booking).bg,
-                                      borderLeft: `3px solid ${booking.group_booking_id ? getGroupColor(booking) : getSourceColor(booking).border}`,
-                                      ...(booking.group_booking_id ? {
-                                        backgroundImage: 'repeating-linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.08) 8px, transparent 8px, transparent 16px)'
-                                      } : {})
+                                      backgroundColor: statusColor.bg,
+                                      borderLeft: `3px solid ${statusColor.border}`,
                                     }}
                                     data-testid={`booking-bar-${booking.id}`}
                                     title={`${booking.guest_name}`}
@@ -371,7 +370,6 @@ const CalendarGrid = ({
                                         {booking.guest_name || 'Misafir'}
                                       </div>
                                       <div className="text-[9px] text-white/80 truncate mt-0.5 flex items-center gap-1">
-                                        <span>{getSourceColor(booking).label}</span>
                                         {booking.adults && <span>Ks: {(booking.adults || 0) + (booking.children || 0)}</span>}
                                       </div>
                                       <div className="absolute top-1 right-1 flex flex-col space-y-1 items-end">
@@ -388,11 +386,6 @@ const CalendarGrid = ({
                                         {showDeluxePanel && isGroupBooking(booking.id) && (
                                           <div className="bg-gradient-to-r from-amber-500 to-orange-600 text-white text-[8px] font-bold px-1 py-0.5 rounded" title={`Group: ${getGroupInfo(booking.id)?.company_name}`}>
                                             GRP
-                                          </div>
-                                        )}
-                                        {booking.ota_channel && (
-                                          <div className={`${getOTAInfo(booking.ota_channel).color} text-white text-[9px] font-bold px-1.5 py-0.5 rounded`} title={getOTAInfo(booking.ota_channel).name}>
-                                            {getOTAInfo(booking.ota_channel).label}
                                           </div>
                                         )}
                                         <div className="flex space-x-1">
@@ -419,7 +412,8 @@ const CalendarGrid = ({
                                       </div>
                                     )}
                                   </div>
-                                )}
+                                  );
+                                })()}
                               </div>
                             );
                           })}

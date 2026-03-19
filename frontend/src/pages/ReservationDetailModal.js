@@ -132,19 +132,19 @@ function GuestsTab({ guests, booking }) {
 }
 
 // ── Tab: Folyolar ──
-function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, onRefresh }) {
+function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, onRefresh, onSwitchTab }) {
   const [showPayment, setShowPayment] = useState(false);
   const [showCari, setShowCari] = useState(false);
   const [showAgency, setShowAgency] = useState(false);
   const [showCariTransfer, setShowCariTransfer] = useState(false);
   const [showReconcile, setShowReconcile] = useState(false);
-  const [showInvoice, setShowInvoice] = useState(false);
-  const [invoiceHtml, setInvoiceHtml] = useState('');
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', payment_type: 'interim', reference: '' });
   const [cariAccounts, setCariAccounts] = useState([]);
   const [cariForm, setCariForm] = useState({ amount: '', cari_account_id: '', description: '' });
   const [agencyForm, setAgencyForm] = useState({ amount: '', agency_name: '', reference: '' });
   const [cariTransferForm, setCariTransferForm] = useState({ source_id: '', target_id: '', amount: '', description: '' });
+  const [showNewCari, setShowNewCari] = useState(false);
+  const [newCariForm, setNewCariForm] = useState({ name: '', account_type: 'agency', tax_id: '', tax_office: '', address: '', phone: '', email: '' });
   const [reconcileForm, setReconcileForm] = useState({ cari_account_id: '', amount: '', description: '' });
   const [loading, setLoading] = useState(false);
 
@@ -172,14 +172,8 @@ function FoliosTab({ folios, charges, payments, extra_charges, summary, booking,
         <Button size="sm" variant="outline" onClick={() => setShowAgency(!showAgency)} className="h-8 text-xs border-purple-300 text-purple-700 hover:bg-purple-50" data-testid="btn-acente-odemesi"><Building2 className="w-3 h-3 mr-1" /> Acente Odemesi</Button>
         <Button size="sm" variant="outline" onClick={() => { setShowCariTransfer(!showCariTransfer); loadCari(); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acenteye-aktar"><ArrowDownUp className="w-3 h-3 mr-1" /> Acenteye Aktar</Button>
         <Button size="sm" variant="outline" onClick={() => { setShowReconcile(!showReconcile); loadCari(); }} className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" data-testid="btn-mahsuplastir"><DollarSign className="w-3 h-3 mr-1" /> Mahsuplastir</Button>
-        <Button size="sm" variant="outline" onClick={async () => {
-          try {
-            const res = await axios.get(`${API}/api/pms/reservations/${booking.id}/invoice-pdf`);
-            setInvoiceHtml(res.data?.invoice_html || '');
-            setShowInvoice(true);
-          } catch (e) { toast.error('Fatura olusturulamadi: ' + (e.response?.data?.detail || e.message)); }
-        }} className="h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-50" data-testid="btn-fatura-pdf">
-          <FileText className="w-3 h-3 mr-1" /> PDF Fatura
+        <Button size="sm" variant="outline" onClick={() => onSwitchTab('invoice')} className="h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-50" data-testid="btn-fatura-pdf">
+          <FileText className="w-3 h-3 mr-1" /> Fatura Olustur
         </Button>
       </div>
 
@@ -245,14 +239,50 @@ function FoliosTab({ folios, charges, payments, extra_charges, summary, booking,
           <div className="grid grid-cols-2 gap-3">
             <SelectField label="Kaynak Cari Hesap" value={cariTransferForm.source_id} onChange={v => setCariTransferForm(p => ({ ...p, source_id: v }))}
               options={[['','Hesap Seciniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
-            <SelectField label="Hedef Acente Hesabi" value={cariTransferForm.target_id} onChange={v => setCariTransferForm(p => ({ ...p, target_id: v }))}
-              options={[['','Acente Seciniz...'], ...cariAccounts.filter(a => a.account_type === 'agency').map(a => [a.id, a.name])]} />
+            <div>
+              <SelectField label="Hedef Acente Hesabi" value={cariTransferForm.target_id} onChange={v => setCariTransferForm(p => ({ ...p, target_id: v }))}
+                options={[['','Acente Seciniz...'], ...cariAccounts.filter(a => a.account_type === 'agency').map(a => [a.id, a.name])]} />
+              <Button size="sm" variant="ghost" className="h-6 text-xs text-indigo-600 mt-1 px-0" onClick={() => setShowNewCari(true)} data-testid="btn-new-cari"><Plus className="w-3 h-3 mr-1" /> Yeni Cari Olustur</Button>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Tutar (TL)" type="number" value={cariTransferForm.amount} onChange={v => setCariTransferForm(p => ({ ...p, amount: v }))} />
             <FormField label="Aciklama" value={cariTransferForm.description} onChange={v => setCariTransferForm(p => ({ ...p, description: v }))} placeholder="Opsiyonel" />
           </div>
         </FormPanel>
+      )}
+
+      {showNewCari && (
+        <div className="border rounded-lg p-4 bg-indigo-50/50 space-y-3" data-testid="new-cari-form">
+          <div className="text-sm font-semibold text-indigo-800">Yeni Cari Hesap Olustur</div>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Hesap Adi *" value={newCariForm.name} onChange={v => setNewCariForm(p => ({ ...p, name: v }))} placeholder="Acente / Sirket adi" />
+            <SelectField label="Hesap Tipi" value={newCariForm.account_type} onChange={v => setNewCariForm(p => ({ ...p, account_type: v }))}
+              options={[['agency','Acente'],['corporate','Kurumsal'],['individual','Bireysel']]} />
+            <FormField label="Vergi No" value={newCariForm.tax_id} onChange={v => setNewCariForm(p => ({ ...p, tax_id: v }))} placeholder="Vergi / TC No" />
+            <FormField label="Vergi Dairesi" value={newCariForm.tax_office} onChange={v => setNewCariForm(p => ({ ...p, tax_office: v }))} placeholder="Vergi dairesi" />
+            <FormField label="Telefon" value={newCariForm.phone} onChange={v => setNewCariForm(p => ({ ...p, phone: v }))} placeholder="Telefon" />
+            <FormField label="E-posta" value={newCariForm.email} onChange={v => setNewCariForm(p => ({ ...p, email: v }))} placeholder="E-posta" />
+          </div>
+          <FormField label="Adres" value={newCariForm.address} onChange={v => setNewCariForm(p => ({ ...p, address: v }))} placeholder="Adres" />
+          <div className="flex gap-2">
+            <Button size="sm" onClick={async () => {
+              if (!newCariForm.name) { toast.error('Hesap adi zorunlu'); return; }
+              setLoading(true);
+              try {
+                await axios.post(`${API}/api/pms/cari-accounts/create`, newCariForm);
+                toast.success('Yeni cari hesap olusturuldu');
+                setShowNewCari(false);
+                setNewCariForm({ name: '', account_type: 'agency', tax_id: '', tax_office: '', address: '', phone: '', email: '' });
+                loadCari();
+              } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+              setLoading(false);
+            }} disabled={loading} className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs" data-testid="create-cari-btn">
+              {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Olustur'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowNewCari(false)} className="h-8 text-xs">Iptal</Button>
+          </div>
+        </div>
       )}
 
       {showReconcile && (
@@ -276,29 +306,6 @@ function FoliosTab({ folios, charges, payments, extra_charges, summary, booking,
         </FormPanel>
       )}
 
-      {/* Invoice Preview Modal */}
-      {showInvoice && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowInvoice(false)}>
-          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()} data-testid="invoice-preview-modal">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h3 className="font-semibold text-gray-800 flex items-center gap-2"><FileText className="w-5 h-5 text-blue-600" /> Fatura Onizleme</h3>
-              <div className="flex gap-2">
-                <Button size="sm" onClick={() => {
-                  const printWindow = window.open('', '_blank');
-                  printWindow.document.write(invoiceHtml);
-                  printWindow.document.close();
-                  printWindow.focus();
-                  setTimeout(() => printWindow.print(), 300);
-                }} className="h-8 text-xs" data-testid="print-invoice-btn">Yazdir</Button>
-                <Button size="sm" variant="ghost" onClick={() => setShowInvoice(false)} className="h-8"><X className="w-4 h-4" /></Button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-auto p-4">
-              <iframe srcDoc={invoiceHtml} className="w-full h-full min-h-[600px] border rounded-lg" title="Invoice" />
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="space-y-2">
         <div className="text-xs font-semibold text-gray-500 uppercase">Islem Gecmisi</div>
@@ -455,9 +462,12 @@ function ExtraChargesTab({ extra_charges, charges, booking, onRefresh, allBookin
 
 // ── Tab: Oda Degistir ──
 function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
-  const [availableRooms, setAvailableRooms] = useState([]);
+  const [roomTypes, setRoomTypes] = useState([]);
+  const [selectedType, setSelectedType] = useState('');
   const [selectedRoomId, setSelectedRoomId] = useState('');
   const [reason, setReason] = useState('');
+  const [pricingOption, setPricingOption] = useState('current');
+  const [customPrice, setCustomPrice] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingRooms, setLoadingRooms] = useState(false);
 
@@ -467,55 +477,101 @@ function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
       try {
         const ci = booking?.check_in?.toString().slice(0, 10) || '';
         const co = booking?.check_out?.toString().slice(0, 10) || '';
-        const res = await axios.get(`${API}/api/pms/available-rooms?check_in=${ci}&check_out=${co}`);
-        setAvailableRooms((res.data.rooms || []).filter(r => r.id !== booking?.room_id));
+        const res = await axios.get(`${API}/api/pms/available-rooms-by-type?check_in=${ci}&check_out=${co}`);
+        setRoomTypes(res.data.room_types || []);
       } catch (e) { console.log('Room load error:', e); }
       setLoadingRooms(false);
     };
     loadRooms();
   }, [booking]);
 
+  const currentRoomType = room?.room_type || '';
+  const selectedTypeData = roomTypes.find(rt => rt.type === selectedType);
+  const isUpgrade = selectedTypeData && currentRoomType && selectedTypeData.base_price > (room?.base_price || 0);
+  const priceDiff = selectedTypeData ? (selectedTypeData.base_price - (room?.base_price || 0)) : 0;
+
   const handleChange = async () => {
     if (!selectedRoomId || !reason) { toast.error('Oda ve sebep secimi zorunlu'); return; }
     setLoading(true);
     try {
-      await axios.post(`${API}/api/pms/reservations/${booking.id}/room-change`, { new_room_id: selectedRoomId, reason, transfer_folio: true });
+      const extraCharge = pricingOption === 'upgrade' ? Math.max(0, priceDiff) : pricingOption === 'custom' ? parseFloat(customPrice) || 0 : 0;
+      await axios.post(`${API}/api/pms/reservations/${booking.id}/room-change`, {
+        new_room_id: selectedRoomId, reason, transfer_folio: true, extra_charge: extraCharge
+      });
       toast.success('Oda degistirildi');
-      setSelectedRoomId(''); setReason(''); onRefresh?.();
+      setSelectedRoomId(''); setSelectedType(''); setReason(''); onRefresh?.();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
   return (
     <div data-testid="room-change-tab" className="space-y-4">
-      {/* Current Room */}
       <div className="border rounded-lg p-4 bg-blue-50/50">
         <div className="text-xs font-semibold text-blue-600 uppercase mb-2">Mevcut Oda</div>
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold">{booking?.room_number || '-'}</div>
           <div>
             <div className="text-sm font-semibold">{room?.room_type || 'Oda'} - {booking?.room_number || '-'}</div>
-            <div className="text-xs text-gray-500">Kat: {room?.floor || '-'}</div>
+            <div className="text-xs text-gray-500">Kat: {room?.floor || '-'} | Fiyat: {fmtTL(room?.base_price)} TL/gece</div>
           </div>
         </div>
       </div>
 
-      {/* Room Change Form */}
       <div className="border rounded-lg p-4 space-y-3">
         <div className="text-sm font-semibold text-gray-700">Yeni Oda Sec</div>
         {loadingRooms ? (
           <div className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> Musait odalar yukleniyor...</div>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs">Yeni Oda</Label>
-              <select value={selectedRoomId} onChange={e => setSelectedRoomId(e.target.value)} className="w-full h-8 text-sm border rounded-md px-2 bg-white">
-                <option value="">Oda Seciniz...</option>
-                {availableRooms.map(r => (
-                  <option key={r.id} value={r.id}>{r.room_number} - {r.room_type || ''} (Kat: {r.floor || '-'})</option>
-                ))}
-              </select>
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Oda Tipi</Label>
+                <select value={selectedType} onChange={e => { setSelectedType(e.target.value); setSelectedRoomId(''); }} className="w-full h-8 text-sm border rounded-md px-2 bg-white" data-testid="room-change-type-select">
+                  <option value="">Oda tipi seciniz...</option>
+                  {roomTypes.map(rt => (
+                    <option key={rt.type} value={rt.type}>
+                      {rt.type} ({rt.rooms.filter(r => r.is_available && r.id !== booking?.room_id).length} musait) - {fmtTL(rt.base_price)} TL
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs">Oda</Label>
+                <select value={selectedRoomId} onChange={e => setSelectedRoomId(e.target.value)} className="w-full h-8 text-sm border rounded-md px-2 bg-white" data-testid="room-change-room-select">
+                  <option value="">Oda Seciniz...</option>
+                  {selectedType && roomTypes.find(rt => rt.type === selectedType)?.rooms
+                    .filter(r => r.is_available && r.id !== booking?.room_id)
+                    .map(r => (
+                      <option key={r.id} value={r.id}>{r.room_number} (Kat: {r.floor || '-'})</option>
+                    ))
+                  }
+                </select>
+              </div>
             </div>
+
+            {isUpgrade && selectedType && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+                <div className="text-xs font-semibold text-amber-800">Ust Kategori Oda - Fiyat Farki: {fmtTL(priceDiff)} TL/gece</div>
+                <div className="flex gap-3">
+                  <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <input type="radio" name="pricing" value="current" checked={pricingOption === 'current'} onChange={e => setPricingOption(e.target.value)} />
+                    Mevcut fiyat (ek ucret yok)
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <input type="radio" name="pricing" value="upgrade" checked={pricingOption === 'upgrade'} onChange={e => setPricingOption(e.target.value)} />
+                    Guncel fiyat farki ({fmtTL(priceDiff)} TL)
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <input type="radio" name="pricing" value="custom" checked={pricingOption === 'custom'} onChange={e => setPricingOption(e.target.value)} />
+                    Ozel fiyat
+                  </label>
+                </div>
+                {pricingOption === 'custom' && (
+                  <Input type="number" value={customPrice} onChange={e => setCustomPrice(e.target.value)} placeholder="Ek ucret (TL)" className="h-8 text-sm w-40" />
+                )}
+              </div>
+            )}
+
             <div>
               <Label className="text-xs">Degisiklik Sebebi</Label>
               <select value={reason} onChange={e => setReason(e.target.value)} className="w-full h-8 text-sm border rounded-md px-2 bg-white">
@@ -528,14 +584,13 @@ function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
                 <option value="Diger">Diger</option>
               </select>
             </div>
-          </div>
+          </>
         )}
-        <Button size="sm" onClick={handleChange} disabled={loading || !selectedRoomId || !reason} className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs">
+        <Button size="sm" onClick={handleChange} disabled={loading || !selectedRoomId || !reason} className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs" data-testid="room-change-submit-btn">
           {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Repeat2 className="w-3 h-3 mr-1" />} Oda Degistir
         </Button>
       </div>
 
-      {/* Room Move History */}
       <div className="space-y-2">
         <div className="text-xs font-semibold text-gray-500 uppercase">Oda Degisiklik Gecmisi</div>
         {(!roomMoves || roomMoves.length === 0) ? <div className="text-center py-4 text-gray-400 text-sm">Gecmis oda degisikligi yok</div> : (
@@ -848,6 +903,272 @@ function HistoryTab({ history, roomMoves }) {
   );
 }
 
+// ── Tab: Iptal ──
+function CancelTab({ booking, bookingId, onRefresh, onClose }) {
+  const [reason, setReason] = useState('');
+  const [cancelType, setCancelType] = useState('guest_request');
+  const [applyNoshow, setApplyNoshow] = useState(false);
+  const [noshowChargeType, setNoshowChargeType] = useState('per_night');
+  const [noshowAmount, setNoshowAmount] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const cancelTypes = {
+    guest_request: 'Misafir Talebi',
+    no_suitable_room: 'Uygun Oda Yok',
+    force_majeure: 'Mucbir Sebep',
+    overbooking: 'Overbooking',
+    payment_issue: 'Odeme Sorunu',
+    other: 'Diger'
+  };
+
+  const nights = booking ? Math.max(1, Math.ceil((new Date(booking.check_out) - new Date(booking.check_in)) / (1000 * 60 * 60 * 24))) : 1;
+  const nightlyRate = booking ? (booking.total_amount || 0) / nights : 0;
+
+  useEffect(() => {
+    if (noshowChargeType === 'per_night') setNoshowAmount(String(Math.round(nightlyRate)));
+    else if (noshowChargeType === 'full_stay') setNoshowAmount(String(booking?.total_amount || 0));
+  }, [noshowChargeType, nightlyRate, booking]);
+
+  const handleCancel = async () => {
+    if (!reason) { toast.error('Iptal nedeni giriniz'); return; }
+    if (!window.confirm(applyNoshow ? 'No-show olarak iptal edilsin mi?' : 'Rezervasyon iptal edilsin mi?')) return;
+    setLoading(true);
+    try {
+      await axios.post(`${API}/api/pms/reservations/${bookingId}/cancel`, {
+        reason, cancel_type: cancelType, apply_noshow: applyNoshow,
+        noshow_charge_type: applyNoshow ? noshowChargeType : null,
+        noshow_charge_amount: applyNoshow ? parseFloat(noshowAmount) || 0 : null,
+      });
+      toast.success(applyNoshow ? 'No-show olarak isaretlendi' : 'Rezervasyon iptal edildi');
+      onRefresh?.();
+    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    setLoading(false);
+  };
+
+  return (
+    <div data-testid="cancel-tab" className="space-y-4 max-w-lg">
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+        <div className="text-sm font-semibold text-red-800 mb-3">Rezervasyon Iptali</div>
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs">Iptal Nedeni *</Label>
+            <select value={cancelType} onChange={e => setCancelType(e.target.value)} className="w-full h-8 text-sm border rounded-md px-2 bg-white" data-testid="cancel-type-select">
+              {Object.entries(cancelTypes).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+          <div>
+            <Label className="text-xs">Aciklama *</Label>
+            <textarea value={reason} onChange={e => setReason(e.target.value)} className="w-full h-16 text-sm border rounded-md p-2 resize-none bg-white" placeholder="Iptal aciklamasi..." data-testid="cancel-reason-input" />
+          </div>
+
+          <div className="border-t pt-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={applyNoshow} onChange={e => setApplyNoshow(e.target.checked)} className="rounded" data-testid="noshow-checkbox" />
+              <span className="text-sm font-medium text-red-700">No-Show Uygula</span>
+            </label>
+          </div>
+
+          {applyNoshow && (
+            <div className="bg-white border rounded-lg p-3 space-y-2">
+              <div className="text-xs font-semibold text-gray-700">No-Show Ucreti</div>
+              <div className="flex gap-2">
+                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                  <input type="radio" name="noshowType" value="per_night" checked={noshowChargeType === 'per_night'} onChange={e => setNoshowChargeType(e.target.value)} />
+                  1 Gecelik ({fmtTL(Math.round(nightlyRate))} TL)
+                </label>
+                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                  <input type="radio" name="noshowType" value="full_stay" checked={noshowChargeType === 'full_stay'} onChange={e => setNoshowChargeType(e.target.value)} />
+                  Tum Konaklama ({fmtTL(booking?.total_amount)} TL)
+                </label>
+                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                  <input type="radio" name="noshowType" value="custom" checked={noshowChargeType === 'custom'} onChange={e => setNoshowChargeType(e.target.value)} />
+                  Ozel Tutar
+                </label>
+              </div>
+              <Input type="number" value={noshowAmount} onChange={e => { setNoshowAmount(e.target.value); setNoshowChargeType('custom'); }} placeholder="Tutar (TL)" className="h-8 text-sm w-40" data-testid="noshow-amount-input" />
+            </div>
+          )}
+
+          <Button onClick={handleCancel} disabled={loading || !reason} className="bg-red-600 hover:bg-red-700 text-white h-9 text-sm w-full" data-testid="cancel-submit-btn">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <AlertTriangle className="w-4 h-4 mr-1" />}
+            {applyNoshow ? 'No-Show Olarak Iptal Et' : 'Rezervasyonu Iptal Et'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Tab: Voucher ──
+function VoucherTab({ booking, bookingId }) {
+  const [voucherHtml, setVoucherHtml] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const generateVoucher = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get(`${API}/api/pms/reservations/${bookingId}/voucher`);
+      setVoucherHtml(res.data?.voucher_html || '');
+    } catch (e) { toast.error('Voucher olusturulamadi: ' + (e.response?.data?.detail || e.message)); }
+    setLoading(false);
+  };
+
+  const printVoucher = () => {
+    const w = window.open('', '_blank');
+    w.document.write(voucherHtml);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 300);
+  };
+
+  return (
+    <div data-testid="voucher-tab" className="space-y-4">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold text-gray-700">Misafir Voucher</span>
+        <Button size="sm" onClick={generateVoucher} disabled={loading} className="bg-teal-600 hover:bg-teal-700 text-white h-8 text-xs" data-testid="generate-voucher-btn">
+          {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <FileText className="w-3 h-3 mr-1" />} Voucher Olustur
+        </Button>
+      </div>
+      {voucherHtml && (
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <Button size="sm" onClick={printVoucher} className="h-8 text-xs" data-testid="print-voucher-btn">Yazdir / PDF</Button>
+          </div>
+          <div className="border rounded-lg overflow-hidden">
+            <iframe srcDoc={voucherHtml} className="w-full h-[500px] border-0" title="Voucher" />
+          </div>
+        </div>
+      )}
+      {!voucherHtml && !loading && (
+        <div className="text-center py-12 text-gray-400">
+          <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+          <p className="text-sm">Voucher olusturmak icin yukaridaki butona tiklayin</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Tab: Fatura (Advanced Invoice) ──
+function InvoiceTab({ booking, bookingId }) {
+  const [charges, setCharges] = useState([]);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [billingInfo, setBillingInfo] = useState({ name: '', tax_id: '', tax_office: '', address: '', email: '', note: '' });
+  const [invoiceHtml, setInvoiceHtml] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [loadingCharges, setLoadingCharges] = useState(false);
+
+  useEffect(() => {
+    const loadCharges = async () => {
+      setLoadingCharges(true);
+      try {
+        const res = await axios.get(`${API}/api/pms/reservations/${bookingId}/invoice-charges`);
+        const items = res.data?.charges || [];
+        setCharges(items);
+        setSelectedIds(new Set(items.map(c => c.id)));
+      } catch (e) { console.log('Charge load error:', e); }
+      setLoadingCharges(false);
+    };
+    loadCharges();
+  }, [bookingId]);
+
+  const toggleItem = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const selectedTotal = charges.filter(c => selectedIds.has(c.id)).reduce((s, c) => s + c.amount, 0);
+
+  const generateInvoice = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API}/api/pms/reservations/${bookingId}/generate-invoice`, {
+        selected_charge_ids: [...selectedIds],
+        billing_name: billingInfo.name || null,
+        billing_tax_id: billingInfo.tax_id || null,
+        billing_tax_office: billingInfo.tax_office || null,
+        billing_address: billingInfo.address || null,
+        billing_email: billingInfo.email || null,
+        invoice_note: billingInfo.note || null,
+      });
+      setInvoiceHtml(res.data?.invoice_html || '');
+      toast.success('Fatura olusturuldu');
+    } catch (e) { toast.error('Fatura olusturulamadi: ' + (e.response?.data?.detail || e.message)); }
+    setLoading(false);
+  };
+
+  const printInvoice = () => {
+    const w = window.open('', '_blank');
+    w.document.write(invoiceHtml);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 300);
+  };
+
+  const catLabels = { room: 'Konaklama', food: 'Yemek', beverage: 'Icecek', minibar: 'Minibar', spa: 'SPA', laundry: 'Camasir', parking: 'Otopark', telephone: 'Telefon', transfer: 'Transfer', room_service: 'Oda Servisi', other: 'Diger' };
+
+  return (
+    <div data-testid="invoice-tab" className="space-y-4">
+      {!invoiceHtml ? (
+        <>
+          <div className="text-sm font-semibold text-gray-700">Fatura Bilgileri</div>
+          <div className="border rounded-lg p-4 space-y-3 bg-blue-50/30">
+            <div className="grid grid-cols-2 gap-3">
+              <FormField label="Fatura Edilen Ad/Unvan" value={billingInfo.name} onChange={v => setBillingInfo(p => ({ ...p, name: v }))} placeholder="Firma veya kisi adi" />
+              <FormField label="Vergi No" value={billingInfo.tax_id} onChange={v => setBillingInfo(p => ({ ...p, tax_id: v }))} placeholder="Vergi / TC No" />
+              <FormField label="Vergi Dairesi" value={billingInfo.tax_office} onChange={v => setBillingInfo(p => ({ ...p, tax_office: v }))} placeholder="Vergi dairesi" />
+              <FormField label="E-posta" value={billingInfo.email} onChange={v => setBillingInfo(p => ({ ...p, email: v }))} placeholder="fatura@firma.com" />
+            </div>
+            <FormField label="Adres" value={billingInfo.address} onChange={v => setBillingInfo(p => ({ ...p, address: v }))} placeholder="Fatura adresi" />
+            <FormField label="Fatura Notu" value={billingInfo.note} onChange={v => setBillingInfo(p => ({ ...p, note: v }))} placeholder="Opsiyonel not" />
+          </div>
+
+          <div className="text-sm font-semibold text-gray-700 flex items-center justify-between">
+            <span>Faturaya Eklenecek Kalemler</span>
+            <span className="text-xs text-gray-500">{selectedIds.size}/{charges.length} secili | Toplam: {fmtTL(selectedTotal)} TL</span>
+          </div>
+          {loadingCharges ? (
+            <div className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> Yukleniyor...</div>
+          ) : (
+            <div className="space-y-1 border rounded-lg overflow-hidden">
+              {charges.map(c => (
+                <label key={c.id} className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 transition-colors ${selectedIds.has(c.id) ? 'bg-blue-50/50' : ''}`}>
+                  <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggleItem(c.id)} className="rounded" />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">{c.description}</div>
+                    <div className="text-xs text-gray-400">{catLabels[c.category] || c.category} | {c.date}</div>
+                  </div>
+                  <div className="text-sm font-bold text-gray-700">{fmtTL(c.amount)} TL</div>
+                </label>
+              ))}
+            </div>
+          )}
+
+          <Button onClick={generateInvoice} disabled={loading || selectedIds.size === 0} className="w-full h-9 text-sm bg-blue-600 hover:bg-blue-700 text-white" data-testid="generate-invoice-btn">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <FileText className="w-4 h-4 mr-1" />} Fatura Olustur ({fmtTL(selectedTotal)} TL)
+          </Button>
+        </>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-gray-700">Fatura Onizleme</span>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={printInvoice} className="h-8 text-xs" data-testid="print-invoice-btn">Yazdir / PDF</Button>
+              <Button size="sm" variant="outline" onClick={() => setInvoiceHtml('')} className="h-8 text-xs">Yeni Fatura</Button>
+            </div>
+          </div>
+          <div className="border rounded-lg overflow-hidden">
+            <iframe srcDoc={invoiceHtml} className="w-full h-[600px] border-0" title="Fatura" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Reusable small components ──
 function InfoField({ label, value, className = '' }) {
   return <div><Label className="text-xs text-gray-500 mb-1 block">{label}</Label><div className={`border rounded-lg px-3 py-2 text-sm bg-gray-50 ${className}`}>{value}</div></div>;
@@ -939,6 +1260,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     { id: 'daily_rates', label: 'Gunluk Fiyatlar', icon: Calendar },
     { id: 'extras', label: 'Ek Ucretler', icon: Receipt },
     { id: 'room_change', label: 'Oda Degistir', icon: Repeat2 },
+    { id: 'cancel', label: 'Iptal', icon: AlertTriangle },
+    { id: 'voucher', label: 'Voucher', icon: FileText },
+    { id: 'invoice', label: 'Fatura', icon: Receipt },
     { id: 'deposits', label: `Depozito ${deposits?.length ? `(${deposits.length})` : ''}`, icon: Shield },
     { id: 'communication', label: `Iletisim ${communication_logs?.length ? `(${communication_logs.length})` : ''}`, icon: Mail },
     { id: 'notes', label: `Notlar ${notes?.length ? `(${notes.length})` : ''}`, icon: MessageSquare },
@@ -1009,6 +1333,8 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   catch (e) { toast.error('Hata'); }
                 }} className="w-full h-8 text-xs justify-start"><Star className="w-3 h-3 mr-2" /> {data?.guest?.vip_status ? 'VIP Kaldir' : 'VIP Yap'}</Button>
                 <Button size="sm" variant="outline" onClick={() => { if (window.confirm('No-show olarak isaretlensin mi?')) action(`/api/pms/reservations/${bookingId}/mark-noshow`, {}, 'No-show isaretlendi'); }} className="w-full h-8 text-xs justify-start text-red-600 border-red-200 hover:bg-red-50"><AlertTriangle className="w-3 h-3 mr-2" /> No-Show</Button>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab('cancel')} className="w-full h-8 text-xs justify-start text-red-600 border-red-200 hover:bg-red-50" data-testid="btn-cancel-reservation"><X className="w-3 h-3 mr-2" /> Iptal Et</Button>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab('voucher')} className="w-full h-8 text-xs justify-start text-teal-600 border-teal-200 hover:bg-teal-50" data-testid="btn-voucher"><FileText className="w-3 h-3 mr-2" /> Voucher</Button>
               </div>
             </div>
           </div>
@@ -1027,10 +1353,13 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               <div className="flex-1 overflow-y-auto p-6">
                 <TabsContent value="general" className="mt-0"><GeneralInfoTab booking={booking} guest={guest} room={room} company={company} onGuestUpdate={loadData} /></TabsContent>
                 <TabsContent value="guests" className="mt-0"><GuestsTab guests={guests} booking={booking} /></TabsContent>
-                <TabsContent value="folios" className="mt-0"><FoliosTab folios={folios} charges={charges} payments={payments} extra_charges={extra_charges} summary={summary} booking={booking} onRefresh={loadData} /></TabsContent>
+                <TabsContent value="folios" className="mt-0"><FoliosTab folios={folios} charges={charges} payments={payments} extra_charges={extra_charges} summary={summary} booking={booking} onRefresh={loadData} onSwitchTab={setActiveTab} /></TabsContent>
                 <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="extras" className="mt-0"><ExtraChargesTab extra_charges={extra_charges} charges={charges} booking={booking} onRefresh={loadData} allBookings={allBookings} /></TabsContent>
                 <TabsContent value="room_change" className="mt-0"><RoomChangeTab booking={booking} room={room} roomMoves={room_moves} onRefresh={loadData} /></TabsContent>
+                <TabsContent value="cancel" className="mt-0"><CancelTab booking={booking} bookingId={bookingId} onRefresh={loadData} onClose={onClose} /></TabsContent>
+                <TabsContent value="voucher" className="mt-0"><VoucherTab booking={booking} bookingId={bookingId} /></TabsContent>
+                <TabsContent value="invoice" className="mt-0"><InvoiceTab booking={booking} bookingId={bookingId} /></TabsContent>
                 <TabsContent value="deposits" className="mt-0"><DepositsTab deposits={deposits} booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="communication" className="mt-0"><CommunicationTab booking={booking} onRefresh={loadData} communicationLogs={communication_logs} /></TabsContent>
                 <TabsContent value="notes" className="mt-0"><NotesTab notes={notes} booking={booking} onRefresh={loadData} /></TabsContent>

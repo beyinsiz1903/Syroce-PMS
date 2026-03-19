@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -17,14 +18,25 @@ const CalendarHeader = ({
   showAIPanel,
   onNavigatePrevious,
   onNavigateNext,
-  onGoToToday,
+  onGoToDate,
   onSyncReservations,
   onToggleEnterprise,
   onToggleAI,
   onShowFindRoomDialog,
   onShowNewBookingDialog,
 }) => {
+  const navigate = useNavigate();
   const unassignedCount = bookings.filter(b => !b.room_id && b.status !== 'cancelled').length;
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const datePickerRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (datePickerRef.current && !datePickerRef.current.contains(e.target)) setShowDatePicker(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   return (
     <>
@@ -34,6 +46,7 @@ const CalendarHeader = ({
           <Button
             className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-4 py-2 rounded-md text-sm"
             data-testid="reservations-tab-btn"
+            onClick={() => navigate('/pms?tab=bookings')}
           >
             <CalendarIcon className="w-4 h-4 mr-1.5" />
             Rezervasyonlar
@@ -57,9 +70,30 @@ const CalendarHeader = ({
           <Button variant="outline" size="sm" onClick={onNavigatePrevious} className="h-8 w-8 p-0" data-testid="nav-prev-btn">
             <ChevronLeft className="w-4 h-4" />
           </Button>
-          <Button variant="outline" size="sm" onClick={onGoToToday} className="h-8 px-3 text-xs font-medium" data-testid="go-today-btn">
-            Tarihe git
-          </Button>
+          <div className="relative" ref={datePickerRef}>
+            <Button variant="outline" size="sm" onClick={() => setShowDatePicker(!showDatePicker)} className="h-8 px-3 text-xs font-medium" data-testid="go-today-btn">
+              Tarihe Git
+            </Button>
+            {showDatePicker && (
+              <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50 bg-white border rounded-lg shadow-lg p-3" data-testid="date-picker-popup">
+                <input
+                  type="date"
+                  className="border rounded-md px-3 py-2 text-sm w-44"
+                  data-testid="go-to-date-input"
+                  autoFocus
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      onGoToDate(new Date(e.target.value + 'T00:00:00'));
+                      setShowDatePicker(false);
+                    }
+                  }}
+                />
+                <div className="mt-2 flex gap-1">
+                  <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => { onGoToDate(new Date()); setShowDatePicker(false); }}>Bugun</Button>
+                </div>
+              </div>
+            )}
+          </div>
           <Button variant="outline" size="sm" onClick={onNavigateNext} className="h-8 w-8 p-0" data-testid="nav-next-btn">
             <ChevronRight className="w-4 h-4" />
           </Button>

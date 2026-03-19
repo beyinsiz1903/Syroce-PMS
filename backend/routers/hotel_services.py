@@ -1168,3 +1168,473 @@ async def get_group_folio_summary(
         "merged_folios": merged_count,
         "merge_operations": merge_log_count,
     }
+
+
+
+# ═══════════════════════════════════════════════════
+# 10. RESERVATION CANCELLATION
+# ═══════════════════════════════════════════════════
+
+class CancelReservationRequest(BaseModel):
+    reason: str
+    cancel_type: str = "guest_request"
+    apply_noshow: bool = False
+    noshow_charge_type: Optional[str] = None
+    noshow_charge_amount: Optional[float] = None
+
+
+@router.post("/reservations/{booking_id}/cancel")
+async def cancel_reservation(
+    booking_id: str,
+    body: CancelReservationRequest,
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+
+    update_data = {
+        "status": "no_show" if body.apply_noshow else "cancelled",
+        "cancelled_at": datetime.now(timezone.utc).isoformat(),
+        "cancellation_reason": body.reason,
+        "cancel_type": body.cancel_type,
+    }
+
+    if body.apply_noshow and body.noshow_charge_amount and body.noshow_charge_amount > 0:
+        charge_id = str(uuid.uuid4())
+        await db.folios.insert_one({
+            "id": charge_id,
+            "tenant_id": tid,
+            "booking_id": booking_id,
+            "type": "charge",
+            "category": "no_show",
+            "description": f"No-Show Ucreti ({body.noshow_charge_type or 'ozel'})",
+            "amount": body.noshow_charge_amount,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": current_user.name,
+        })
+        update_data["noshow_charge"] = body.noshow_charge_amount
+
+    await db.bookings.update_one({"id": booking_id, "tenant_id": tid}, {"$set": update_data})
+
+    await db.reservation_history.insert_one({
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "booking_id": booking_id,
+        "action": "cancelled" if not body.apply_noshow else "marked_noshow",
+        "actor": current_user.name,
+        "details": {
+            "reason": body.reason,
+            "cancel_type": body.cancel_type,
+            "noshow": body.apply_noshow,
+            "noshow_charge": body.noshow_charge_amount if body.apply_noshow else None,
+        },
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return {"success": True, "status": update_data["status"], "message": "Rezervasyon iptal edildi"}
+
+
+# ═══════════════════════════════════════════════════
+# 11. VOUCHER GENERATION
+# ═══════════════════════════════════════════════════
+
+@router.get("/reservations/{booking_id}/voucher")
+async def generate_voucher(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+
+    guest = None
+    if booking.get("guest_id"):
+        guest = await db.guests.find_one({"id": booking["guest_id"], "tenant_id": tid}, {"_id": 0})
+
+    room = None
+    if booking.get("room_id"):
+        room = await db.rooms.find_one({"id": booking["room_id"], "tenant_id": tid}, {"_id": 0})
+
+    settings = await db.hotel_settings.find_one({"tenant_id": tid}, {"_id": 0})
+    if not settings:
+        tenant = await db.tenants.find_one({"tenant_id": tid}, {"_id": 0})
+        settings = {
+            "hotel_name": tenant.get("property_name", "Hotel") if tenant else "Hotel",
+            "hotel_address": tenant.get("address", "") if tenant else "",
+            "hotel_phone": tenant.get("phone", "") if tenant else "",
+            "hotel_email": tenant.get("email", "") if tenant else "",
+        }
+
+    guest_name = guest.get("name", booking.get("guest_name", "-")) if guest else booking.get("guest_name", "-")
+    nights = max(1, (datetime.fromisoformat(str(booking.get("check_out", ""))[:10]) - datetime.fromisoformat(str(booking.get("check_in", ""))[:10])).days)
+
+    voucher_no = f"V-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{booking_id[:8].upper()}"
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+body {{ font-family: 'Segoe UI', Arial, sans-serif; margin:0; padding:40px; color:#333; font-size:13px; }}
+.voucher {{ border: 2px solid #1a56db; border-radius: 12px; padding: 32px; max-width: 700px; margin: 0 auto; }}
+.header {{ text-align: center; border-bottom: 2px solid #1a56db; padding-bottom: 16px; margin-bottom: 24px; }}
+.hotel-name {{ font-size: 24px; font-weight: 700; color: #1a56db; }}
+.voucher-title {{ font-size: 20px; font-weight: 600; color: #1e293b; margin-top: 8px; }}
+.voucher-no {{ font-size: 12px; color: #64748b; margin-top: 4px; }}
+.info-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }}
+.info-item {{ padding: 12px; background: #f8fafc; border-radius: 8px; }}
+.info-label {{ font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 600; }}
+.info-value {{ font-size: 14px; font-weight: 600; color: #1e293b; margin-top: 4px; }}
+.footer {{ text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 11px; }}
+</style></head><body>
+<div class="voucher">
+    <div class="header">
+        <div class="hotel-name">{settings.get("hotel_name", "")}</div>
+        <div style="font-size:12px;color:#64748b;">{settings.get("hotel_address", "")}</div>
+        <div class="voucher-title">KONAKLAMA VOUCHER</div>
+        <div class="voucher-no">Voucher No: {voucher_no}</div>
+    </div>
+    <div class="info-grid">
+        <div class="info-item"><div class="info-label">Misafir</div><div class="info-value">{guest_name}</div></div>
+        <div class="info-item"><div class="info-label">Rezervasyon No</div><div class="info-value">{booking.get("ota_confirmation", booking_id[:12])}</div></div>
+        <div class="info-item"><div class="info-label">Giris Tarihi</div><div class="info-value">{str(booking.get("check_in",""))[:10]}</div></div>
+        <div class="info-item"><div class="info-label">Cikis Tarihi</div><div class="info-value">{str(booking.get("check_out",""))[:10]}</div></div>
+        <div class="info-item"><div class="info-label">Oda / Tip</div><div class="info-value">{booking.get("room_number", room.get("room_number","-") if room else "-")} / {room.get("room_type","") if room else booking.get("room_type","")}</div></div>
+        <div class="info-item"><div class="info-label">Gece Sayisi</div><div class="info-value">{nights}</div></div>
+        <div class="info-item"><div class="info-label">Yetiskin / Cocuk</div><div class="info-value">{booking.get("adults",1)} / {booking.get("children",0)}</div></div>
+        <div class="info-item"><div class="info-label">Pansiyon</div><div class="info-value">{booking.get("rate_plan","Standart")}</div></div>
+    </div>
+    {f'<div style="padding:12px;background:#fffbeb;border-radius:8px;margin-bottom:16px;"><strong>Ozel Istekler:</strong> {booking.get("special_requests","")}</div>' if booking.get("special_requests") else ''}
+    <div class="footer">
+        <div>Bu voucher {settings.get("hotel_name","")} tarafindan duzenlenmistir.</div>
+        <div>{settings.get("hotel_phone","")} | {settings.get("hotel_email","")}</div>
+        <div style="margin-top:8px;">Tarih: {datetime.now(timezone.utc).strftime("%d.%m.%Y %H:%M")}</div>
+    </div>
+</div>
+</body></html>"""
+
+    return {"success": True, "voucher_html": html, "voucher_no": voucher_no}
+
+
+# ═══════════════════════════════════════════════════
+# 12. ADVANCED INVOICE WITH ITEM SELECTION
+# ═══════════════════════════════════════════════════
+
+class InvoiceItemSelection(BaseModel):
+    selected_charge_ids: List[str] = []
+    billing_name: Optional[str] = None
+    billing_tax_id: Optional[str] = None
+    billing_tax_office: Optional[str] = None
+    billing_address: Optional[str] = None
+    billing_email: Optional[str] = None
+    invoice_note: Optional[str] = None
+
+
+@router.post("/reservations/{booking_id}/generate-invoice")
+async def generate_custom_invoice(
+    booking_id: str,
+    body: InvoiceItemSelection,
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+
+    guest = None
+    if booking.get("guest_id"):
+        guest = await db.guests.find_one({"id": booking["guest_id"], "tenant_id": tid}, {"_id": 0})
+
+    settings = await db.hotel_settings.find_one({"tenant_id": tid}, {"_id": 0})
+    if not settings:
+        tenant = await db.tenants.find_one({"tenant_id": tid}, {"_id": 0})
+        settings = {
+            "hotel_name": tenant.get("property_name", "Hotel") if tenant else "Hotel",
+            "hotel_address": tenant.get("address", "") if tenant else "",
+            "hotel_phone": tenant.get("phone", "") if tenant else "",
+            "hotel_email": tenant.get("email", "") if tenant else "",
+            "tax_id": "", "tax_office": "", "currency_symbol": "₺", "invoice_footer": "",
+        }
+
+    all_charges = []
+    if booking.get("total_amount", 0) > 0:
+        all_charges.append({
+            "id": "accommodation",
+            "description": "Konaklama",
+            "date": str(booking.get("check_in", ""))[:10],
+            "amount": booking["total_amount"],
+            "category": "room",
+        })
+
+    async for f in db.folios.find({"booking_id": booking_id, "tenant_id": tid, "type": {"$ne": "payment"}}, {"_id": 0}).sort("created_at", 1):
+        all_charges.append({
+            "id": f.get("id", ""),
+            "description": f.get("description", f.get("category", "Masraf")),
+            "date": str(f.get("created_at", ""))[:10],
+            "amount": f.get("amount", 0),
+            "category": f.get("category", "other"),
+        })
+
+    async for ec in db.extra_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", 1):
+        all_charges.append({
+            "id": ec.get("id", ""),
+            "description": ec.get("description", "Ekstra"),
+            "date": str(ec.get("created_at", ""))[:10],
+            "amount": ec.get("total", ec.get("amount", 0)),
+            "category": ec.get("category", "other"),
+        })
+
+    if body.selected_charge_ids:
+        selected = [c for c in all_charges if c["id"] in body.selected_charge_ids]
+    else:
+        selected = all_charges
+
+    currency = settings.get("currency_symbol", "₺")
+    grand_total = sum(c["amount"] for c in selected)
+    invoice_number = f"INV-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M')}-{booking_id[:6].upper()}"
+
+    guest_name = body.billing_name or (guest.get("name", booking.get("guest_name", "-")) if guest else booking.get("guest_name", "-"))
+
+    charge_rows = ""
+    for c in selected:
+        charge_rows += f"""<tr>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;">{c["description"]}</td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:center;">{c["date"]}</td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:600;">{currency}{c["amount"]:,.2f}</td>
+        </tr>"""
+
+    logo_html = ""
+    if settings.get("logo_data"):
+        logo_html = f'<img src="{settings["logo_data"]}" style="max-height:70px;max-width:180px;" />'
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+body {{ font-family: 'Segoe UI', Arial, sans-serif; margin:0; padding:0; color:#1e293b; font-size:13px; background:#fff; }}
+.page {{ max-width:800px; margin:0 auto; padding:40px; }}
+.header {{ display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:24px; border-bottom:3px solid #1a56db; margin-bottom:28px; }}
+.hotel-info {{ text-align:right; }}
+.hotel-name {{ font-size:20px; font-weight:700; color:#1a56db; margin-bottom:4px; }}
+.hotel-detail {{ font-size:11px; color:#64748b; line-height:1.6; }}
+.invoice-badge {{ display:inline-block; background:linear-gradient(135deg,#1a56db,#3b82f6); color:#fff; padding:6px 16px; border-radius:6px; font-size:18px; font-weight:700; letter-spacing:1px; margin-bottom:12px; }}
+.invoice-meta {{ color:#64748b; font-size:12px; line-height:1.8; }}
+.invoice-meta strong {{ color:#1e293b; }}
+.bill-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:28px; }}
+.bill-box {{ background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:16px; }}
+.bill-box h4 {{ margin:0 0 8px; font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; font-weight:600; }}
+.bill-box p {{ margin:2px 0; font-size:13px; }}
+table {{ width:100%; border-collapse:collapse; margin-bottom:24px; }}
+thead th {{ background:#f1f5f9; padding:10px 12px; text-align:left; font-weight:600; font-size:11px; color:#475569; text-transform:uppercase; letter-spacing:0.5px; }}
+.total-section {{ background:#f0f9ff; border:2px solid #bfdbfe; border-radius:8px; padding:16px; text-align:right; }}
+.total-section .grand {{ font-size:20px; font-weight:700; color:#1a56db; }}
+.footer {{ margin-top:40px; padding-top:20px; border-top:2px solid #e2e8f0; text-align:center; color:#94a3b8; font-size:10px; line-height:1.8; }}
+</style></head><body>
+<div class="page">
+    <div class="header">
+        <div>{logo_html}<div class="invoice-badge">FATURA</div>
+            <div class="invoice-meta">Fatura No: <strong>{invoice_number}</strong><br>Tarih: <strong>{datetime.now(timezone.utc).strftime("%d.%m.%Y")}</strong></div>
+        </div>
+        <div class="hotel-info">
+            <div class="hotel-name">{settings.get("hotel_name","")}</div>
+            <div class="hotel-detail">
+                {settings.get("hotel_address","")}<br>
+                Tel: {settings.get("hotel_phone","")}<br>
+                {settings.get("hotel_email","")}
+                {f"<br>Vergi No: {settings.get('tax_id','')}" if settings.get("tax_id") else ""}
+                {f"<br>V.D.: {settings.get('tax_office','')}" if settings.get("tax_office") else ""}
+            </div>
+        </div>
+    </div>
+
+    <div class="bill-grid">
+        <div class="bill-box">
+            <h4>Fatura Edilen</h4>
+            <p><strong>{guest_name}</strong></p>
+            {f"<p>Vergi No: {body.billing_tax_id}</p>" if body.billing_tax_id else ""}
+            {f"<p>V.D.: {body.billing_tax_office}</p>" if body.billing_tax_office else ""}
+            {f"<p>{body.billing_address}</p>" if body.billing_address else ""}
+            {f"<p>{body.billing_email}</p>" if body.billing_email else ""}
+        </div>
+        <div class="bill-box">
+            <h4>Konaklama Bilgileri</h4>
+            <p>Oda: <strong>{booking.get("room_number","-")}</strong></p>
+            <p>Giris: <strong>{str(booking.get("check_in",""))[:10]}</strong></p>
+            <p>Cikis: <strong>{str(booking.get("check_out",""))[:10]}</strong></p>
+            <p>Rez. No: <strong>{booking.get("ota_confirmation", booking_id[:12])}</strong></p>
+        </div>
+    </div>
+
+    <table>
+        <thead><tr><th>Aciklama</th><th style="text-align:center;">Tarih</th><th style="text-align:right;">Tutar</th></tr></thead>
+        <tbody>{charge_rows}</tbody>
+    </table>
+
+    <div class="total-section">
+        <div class="grand">TOPLAM: {currency}{grand_total:,.2f}</div>
+    </div>
+
+    {f'<div style="margin-top:16px;padding:12px;background:#fffbeb;border-radius:8px;font-size:12px;">{body.invoice_note}</div>' if body.invoice_note else ''}
+
+    <div class="footer">
+        {settings.get("invoice_footer", "") or "Bizi tercih ettiginiz icin tesekkur ederiz."}<br>
+        {settings.get("hotel_name","")} | {settings.get("hotel_address","")} | {settings.get("hotel_phone","")}
+    </div>
+</div>
+</body></html>"""
+
+    await db.invoices.insert_one({
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "booking_id": booking_id,
+        "invoice_number": invoice_number,
+        "billing_name": guest_name,
+        "billing_tax_id": body.billing_tax_id,
+        "total": grand_total,
+        "item_count": len(selected),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": current_user.name,
+    })
+
+    return {
+        "success": True,
+        "invoice_html": html,
+        "invoice_number": invoice_number,
+        "total": grand_total,
+        "all_charges": all_charges,
+    }
+
+
+# ═══════════════════════════════════════════════════
+# 13. GET INVOICE CHARGES (for frontend item selection)
+# ═══════════════════════════════════════════════════
+
+@router.get("/reservations/{booking_id}/invoice-charges")
+async def get_invoice_charges(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+
+    charges = []
+    if booking.get("total_amount", 0) > 0:
+        charges.append({
+            "id": "accommodation",
+            "description": "Konaklama",
+            "category": "room",
+            "amount": booking["total_amount"],
+            "date": str(booking.get("check_in", ""))[:10],
+        })
+
+    async for f in db.folios.find({"booking_id": booking_id, "tenant_id": tid, "type": {"$ne": "payment"}}, {"_id": 0}).sort("created_at", 1):
+        charges.append({
+            "id": f.get("id", ""),
+            "description": f.get("description", f.get("category", "Masraf")),
+            "category": f.get("category", "other"),
+            "amount": f.get("amount", 0),
+            "date": str(f.get("created_at", ""))[:10],
+        })
+
+    async for ec in db.extra_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", 1):
+        charges.append({
+            "id": ec.get("id", ""),
+            "description": ec.get("description", "Ekstra"),
+            "category": ec.get("category", "other"),
+            "amount": ec.get("total", ec.get("amount", 0)),
+            "date": str(ec.get("created_at", ""))[:10],
+        })
+
+    return {"charges": charges}
+
+
+# ═══════════════════════════════════════════════════
+# 14. ROOM CHANGE WITH ROOM TYPE FILTER AND PRICING
+# ═══════════════════════════════════════════════════
+
+@router.get("/available-rooms-by-type")
+async def get_available_rooms_by_type(
+    check_in: str,
+    check_out: str,
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    all_rooms = []
+    async for r in db.rooms.find({"tenant_id": tid, "is_active": True}, {"_id": 0}).sort("room_number", 1):
+        all_rooms.append(r)
+
+    conflicting_room_ids = set()
+    async for b in db.bookings.find({
+        "tenant_id": tid,
+        "status": {"$nin": ["cancelled", "checked_out", "no_show"]},
+        "check_in": {"$lt": check_out},
+        "check_out": {"$gt": check_in},
+    }, {"_id": 0, "room_id": 1}):
+        if b.get("room_id"):
+            conflicting_room_ids.add(b["room_id"])
+
+    room_types = {}
+    for r in all_rooms:
+        rt = r.get("room_type", "Standard")
+        if rt not in room_types:
+            room_types[rt] = {"type": rt, "rooms": [], "base_price": r.get("base_price", 0)}
+        is_available = r["id"] not in conflicting_room_ids
+        room_types[rt]["rooms"].append({**r, "is_available": is_available})
+
+    return {"room_types": list(room_types.values())}
+
+
+# ═══════════════════════════════════════════════════
+# 15. CREATE CARI ACCOUNT
+# ═══════════════════════════════════════════════════
+
+class CreateCariAccount(BaseModel):
+    name: str
+    account_type: str = "agency"
+    tax_id: Optional[str] = None
+    tax_office: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
+
+@router.post("/cari-accounts/create")
+async def create_cari_account(
+    body: CreateCariAccount,
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    account_id = str(uuid.uuid4())
+    account = {
+        "id": account_id,
+        "tenant_id": tid,
+        "name": body.name,
+        "account_type": body.account_type,
+        "tax_id": body.tax_id,
+        "tax_office": body.tax_office,
+        "address": body.address,
+        "phone": body.phone,
+        "email": body.email,
+        "balance": 0,
+        "is_active": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": current_user.name,
+    }
+    await db.cari_accounts.insert_one(account)
+    account.pop("_id", None)
+
+    return {"success": True, "account": account}

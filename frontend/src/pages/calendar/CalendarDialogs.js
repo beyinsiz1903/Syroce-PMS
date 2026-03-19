@@ -10,64 +10,94 @@ import { getSegmentColor, getStatusColor, getStatusLabel } from "./calendarHelpe
 // New Booking Dialog
 export const NewBookingDialog = ({
   open, onOpenChange, newBooking, setNewBooking,
-  selectedRoom, guests, onSubmit,
-}) => (
+  selectedRoom, guests, rooms, onSubmit,
+}) => {
+  const roomTypes = rooms ? [...new Set(rooms.map(r => r.room_type).filter(Boolean))] : [];
+
+  return (
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-w-2xl">
       <DialogHeader>
-        <DialogTitle>Quick Booking</DialogTitle>
+        <DialogTitle>Hizli Rezervasyon</DialogTitle>
       </DialogHeader>
       <form onSubmit={onSubmit} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <Label>Room</Label>
-            <Input value={selectedRoom?.room_number || ''} disabled />
+            <Label>Oda Tipi</Label>
+            <select
+              className="w-full border rounded-md p-2"
+              value={newBooking.room_type || selectedRoom?.room_type || ''}
+              onChange={(e) => {
+                setNewBooking({...newBooking, room_type: e.target.value, room_id: ''});
+              }}
+              data-testid="new-booking-room-type"
+            >
+              <option value="">Oda tipi secin...</option>
+              {roomTypes.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
           </div>
           <div>
-            <Label>Misafir *</Label>
-            <div className="flex gap-2">
-              <select
-                className="flex-1 border rounded-md p-2"
-                value={newBooking.guest_id}
-                onChange={(e) => {
-                  if (e.target.value === 'NEW') {
-                    setNewBooking({...newBooking, guest_id: '', guest_name: '', guest_email: '', guest_phone: ''});
-                  } else {
-                    setNewBooking({...newBooking, guest_id: e.target.value});
-                  }
-                }}
-              >
-                <option value="">Misafir secin...</option>
-                <option value="NEW" className="font-bold text-blue-600">+ Yeni Misafir Ekle</option>
-                {guests.map(guest => (
-                  <option key={guest.id} value={guest.id}>{guest.name}</option>
-                ))}
-              </select>
-            </div>
-            {newBooking.guest_id === '' && newBooking.guest_name !== undefined && (
-              <div className="mt-3 p-3 border rounded-md bg-blue-50 space-y-2">
-                <div className="text-sm font-semibold text-blue-900 mb-2">Yeni Misafir Bilgileri</div>
-                <Input
-                  placeholder="Isim Soyisim *"
-                  value={newBooking.guest_name || ''}
-                  onChange={(e) => setNewBooking({...newBooking, guest_name: e.target.value})}
-                  required
-                />
-                <Input
-                  type="email"
-                  placeholder="E-posta"
-                  value={newBooking.guest_email || ''}
-                  onChange={(e) => setNewBooking({...newBooking, guest_email: e.target.value})}
-                />
-                <Input
-                  type="tel"
-                  placeholder="Telefon"
-                  value={newBooking.guest_phone || ''}
-                  onChange={(e) => setNewBooking({...newBooking, guest_phone: e.target.value})}
-                />
-              </div>
-            )}
+            <Label>Oda</Label>
+            <select
+              className="w-full border rounded-md p-2"
+              value={newBooking.room_id || ''}
+              onChange={(e) => setNewBooking({...newBooking, room_id: e.target.value})}
+              data-testid="new-booking-room-select"
+            >
+              <option value="">Oda secin...</option>
+              {(rooms || [])
+                .filter(r => !newBooking.room_type || r.room_type === newBooking.room_type)
+                .map(r => (
+                  <option key={r.id} value={r.id}>{r.room_number} - {r.room_type} (Kat: {r.floor})</option>
+                ))
+              }
+            </select>
           </div>
+        </div>
+        <div>
+          <Label>Misafir *</Label>
+          <div className="flex gap-2">
+            <select
+              className="flex-1 border rounded-md p-2"
+              value={newBooking.guest_id}
+              onChange={(e) => {
+                if (e.target.value === 'NEW') {
+                  setNewBooking({...newBooking, guest_id: '', guest_name: '', guest_email: '', guest_phone: ''});
+                } else {
+                  setNewBooking({...newBooking, guest_id: e.target.value});
+                }
+              }}
+            >
+              <option value="">Misafir secin...</option>
+              <option value="NEW" className="font-bold text-blue-600">+ Yeni Misafir Ekle</option>
+              {guests.map(guest => (
+                <option key={guest.id} value={guest.id}>{guest.name}</option>
+              ))}
+            </select>
+          </div>
+          {newBooking.guest_id === '' && newBooking.guest_name !== undefined && (
+            <div className="mt-3 p-3 border rounded-md bg-blue-50 space-y-2">
+              <div className="text-sm font-semibold text-blue-900 mb-2">Yeni Misafir Bilgileri</div>
+              <Input
+                placeholder="Isim Soyisim *"
+                value={newBooking.guest_name || ''}
+                onChange={(e) => setNewBooking({...newBooking, guest_name: e.target.value})}
+                required
+              />
+              <Input
+                type="email"
+                placeholder="E-posta"
+                value={newBooking.guest_email || ''}
+                onChange={(e) => setNewBooking({...newBooking, guest_email: e.target.value})}
+              />
+              <Input
+                type="tel"
+                placeholder="Telefon"
+                value={newBooking.guest_phone || ''}
+                onChange={(e) => setNewBooking({...newBooking, guest_phone: e.target.value})}
+              />
+            </div>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -84,6 +114,7 @@ export const NewBookingDialog = ({
             <Input
               type="date"
               value={newBooking.check_out}
+              min={newBooking.check_in || undefined}
               onChange={(e) => setNewBooking({...newBooking, check_out: e.target.value})}
               required
             />
@@ -91,7 +122,7 @@ export const NewBookingDialog = ({
         </div>
         <div className="grid grid-cols-3 gap-4">
           <div>
-            <Label>Adults</Label>
+            <Label>Yetiskin</Label>
             <Input
               type="number"
               min="1"
@@ -104,7 +135,7 @@ export const NewBookingDialog = ({
             />
           </div>
           <div>
-            <Label>Children</Label>
+            <Label>Cocuk</Label>
             <Input
               type="number"
               min="0"
@@ -117,7 +148,7 @@ export const NewBookingDialog = ({
             />
           </div>
           <div>
-            <Label>Total Amount</Label>
+            <Label>Toplam Tutar</Label>
             <Input
               type="number"
               step="0.01"
@@ -127,25 +158,26 @@ export const NewBookingDialog = ({
           </div>
         </div>
         <div>
-          <Label>Status</Label>
+          <Label>Durum</Label>
           <select
             className="w-full border rounded-md p-2"
             value={newBooking.status}
             onChange={(e) => setNewBooking({...newBooking, status: e.target.value})}
           >
-            <option value="confirmed">Confirmed</option>
-            <option value="guaranteed">Guaranteed</option>
-            <option value="checked_in">Checked-in</option>
+            <option value="confirmed">Onaylandi</option>
+            <option value="guaranteed">Garantili</option>
+            <option value="checked_in">Giris Yapildi</option>
           </select>
         </div>
         <div className="flex space-x-2 pt-4">
-          <Button type="submit" className="flex-1">Create Booking</Button>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button type="submit" className="flex-1">Rezervasyon Olustur</Button>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Iptal</Button>
         </div>
       </form>
     </DialogContent>
   </Dialog>
-);
+  );
+};
 
 // Booking Details Dialog
 export const BookingDetailsDialog = ({
@@ -337,12 +369,15 @@ export const MoveReasonDialog = ({
 // Find Room Dialog
 export const FindRoomDialog = ({
   open, onOpenChange, findRoomCriteria, setFindRoomCriteria,
-  availableRooms, onFindRoom, onSelectRoom,
-}) => (
+  availableRooms, rooms, onFindRoom, onSelectRoom,
+}) => {
+  const roomTypes = rooms ? [...new Set(rooms.map(r => r.room_type).filter(Boolean))] : [];
+
+  return (
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-w-3xl">
       <DialogHeader>
-        <DialogTitle>Find Available Room</DialogTitle>
+        <DialogTitle>Musaitlik Kontrolu</DialogTitle>
       </DialogHeader>
       <div className="space-y-4">
         <div className="grid grid-cols-4 gap-4">
@@ -351,7 +386,17 @@ export const FindRoomDialog = ({
             <Input
               type="date"
               value={findRoomCriteria.check_in}
-              onChange={(e) => setFindRoomCriteria({...findRoomCriteria, check_in: e.target.value})}
+              onChange={(e) => {
+                const newCi = e.target.value;
+                const updates = { ...findRoomCriteria, check_in: newCi };
+                if (newCi && (!findRoomCriteria.check_out || findRoomCriteria.check_out <= newCi)) {
+                  const nextDay = new Date(newCi + 'T00:00:00');
+                  nextDay.setDate(nextDay.getDate() + 1);
+                  updates.check_out = nextDay.toISOString().split('T')[0];
+                }
+                setFindRoomCriteria(updates);
+              }}
+              data-testid="find-room-checkin"
             />
           </div>
           <div>
@@ -359,24 +404,25 @@ export const FindRoomDialog = ({
             <Input
               type="date"
               value={findRoomCriteria.check_out}
+              min={findRoomCriteria.check_in || undefined}
               onChange={(e) => setFindRoomCriteria({...findRoomCriteria, check_out: e.target.value})}
+              data-testid="find-room-checkout"
             />
           </div>
           <div>
-            <Label>Room Type</Label>
+            <Label>Oda Tipi</Label>
             <select
               className="w-full border rounded-md p-2"
               value={findRoomCriteria.room_type}
               onChange={(e) => setFindRoomCriteria({...findRoomCriteria, room_type: e.target.value})}
+              data-testid="find-room-type"
             >
-              <option value="all">All Types</option>
-              <option value="standard">Standard</option>
-              <option value="deluxe">Deluxe</option>
-              <option value="suite">Suite</option>
+              <option value="all">Tum Tipler</option>
+              {roomTypes.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>
-            <Label>Guests</Label>
+            <Label>Misafir Sayisi</Label>
             <Input
               type="number"
               min="1"
@@ -385,27 +431,27 @@ export const FindRoomDialog = ({
             />
           </div>
         </div>
-        <Button onClick={onFindRoom} className="w-full">
+        <Button onClick={onFindRoom} className="w-full" data-testid="find-room-search-btn">
           <Search className="w-4 h-4 mr-2" />
-          Search Available Rooms
+          Musait Odalari Ara
         </Button>
         {availableRooms.length > 0 && (
           <div className="border rounded-lg p-4 max-h-96 overflow-y-auto">
             <h3 className="font-semibold mb-3 flex items-center">
               <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
-              {availableRooms.length} Room{availableRooms.length > 1 ? 's' : ''} Available
+              {availableRooms.length} Musait Oda
             </h3>
             <div className="space-y-2">
               {availableRooms.map(room => (
                 <div key={room.id} className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded">
                   <div>
-                    <div className="font-semibold">Room {room.room_number}</div>
+                    <div className="font-semibold">Oda {room.room_number}</div>
                     <div className="text-sm text-gray-600 capitalize">
-                      {room.room_type} - Floor {room.floor} - Capacity: {room.capacity}
+                      {room.room_type} - Kat {room.floor} - Kapasite: {room.capacity}
                     </div>
-                    <div className="text-sm font-semibold text-green-600">${room.base_price}/night</div>
+                    <div className="text-sm font-semibold text-green-600">{(room.base_price || 0).toLocaleString('tr-TR')} TL/gece</div>
                   </div>
-                  <Button size="sm" onClick={() => onSelectRoom(room)}>Book Now</Button>
+                  <Button size="sm" onClick={() => onSelectRoom(room)}>Rezerve Et</Button>
                 </div>
               ))}
             </div>
@@ -414,11 +460,12 @@ export const FindRoomDialog = ({
         {findRoomCriteria.check_in && findRoomCriteria.check_out && availableRooms.length === 0 && (
           <div className="text-center py-8 text-red-600">
             <AlertCircle className="w-12 h-12 mx-auto mb-3" />
-            <p className="font-semibold">No rooms available for selected dates</p>
-            <p className="text-sm">Try different dates or room type</p>
+            <p className="font-semibold">Secilen tarihler icin musait oda bulunamadi</p>
+            <p className="text-sm">Farkli tarih veya oda tipi deneyin</p>
           </div>
         )}
       </div>
     </DialogContent>
   </Dialog>
-);
+  );
+};
