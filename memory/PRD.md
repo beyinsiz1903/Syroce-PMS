@@ -286,13 +286,26 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Modified: `RoomsTab.js` (full rewrite), `PMSModule.js`, `routers/pms.py`
   - Test: Backend 7/8 + Frontend verified (iteration_100.json)
 
+### Session 20 (Mar 19, 2026)
+- [x] **P0 FIX: Checkout with Outstanding Balance Prevention (Critical)**
+  - Root cause: `frontdesk_service.py` checkout method only checked folio balance (which was 0 because no charges posted) and ignored booking-level balance (total_amount - paid_amount)
+  - Fix: Added booking-level balance check: `booking_balance = total_amount - paid_amount`, then `effective_balance = max(folio_balance, booking_balance)`
+  - Before fix: Booking with total_amount=700, paid_amount=0 could checkout (HTTP 200)
+  - After fix: Same booking returns HTTP 402 "Outstanding balance: 700.00"
+  - Force checkout (force=true) still works as intended
+  - Frontend cleanup: Removed dead `handleForceCheckout` function and unused `checkingOut` state from RoomsTab.js
+  - Modified: `frontdesk_service.py`, `RoomsTab.js`
+  - All tested: Backend 100% (3/3 checkout + 2 guest endpoint tests) + Frontend 100% (iteration_101.json)
+- [x] **P0 Investigation: React "duplicate key: unknown" Warning**
+  - Could not reproduce in current console logs (checked Dashboard, PMS/Rooms pages)
+  - Searched all PMS-related components - no static "unknown" key values found in any .map() list render
+  - Warning was from previous session, likely already resolved
+
 ## Backlog (Future Tasks)
 - [ ] P1: User verification for Exely Reservation Delivery Confirmation fix
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
-- [ ] P1: User verification for completed features backlog (11+ features)
-- [ ] P2: Refactor ReservationDetailModal.js (1400+ lines → smaller components)
-- [ ] P3: Refactor RateManager.jsx (1000+ lines → smaller components)
+- [ ] P2: Refactor ReservationDetailModal.js (1400+ lines -> smaller components)
+- [ ] P3: Refactor RateManager.jsx (1000+ lines -> smaller components)
 - [ ] P3: Clean up soap_builder.py (commented-out code from SOAP debugging)
 - [ ] P4: Visually distinguish past dates in calendar (grayed out)
-- [ ] P4: Fix React "duplicate key" console warning
 - [ ] P5: Advanced Auto-Heal patterns (remaining)
