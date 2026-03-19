@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink, Banknote, Building2, Wallet } from 'lucide-react';
+import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink, Banknote, Building2, Wallet, Plus, CalendarPlus } from 'lucide-react';
 
 const RoomsTab = ({
   rooms,
@@ -41,6 +41,12 @@ const RoomsTab = ({
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [paymentLoading, setPaymentLoading] = useState(false);
+
+  // Quick reservation dialog state
+  const [quickResDialog, setQuickResDialog] = useState(false);
+  const [quickResRoom, setQuickResRoom] = useState(null);
+  const [quickResForm, setQuickResForm] = useState({ guest_name: '', check_in: '', check_out: '', total_amount: '' });
+  const [quickResLoading, setQuickResLoading] = useState(false);
 
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
   const tomorrow = useMemo(() => {
@@ -211,6 +217,45 @@ const RoomsTab = ({
     }
   }, [paymentTarget, paymentAmount, paymentMethod, onDataRefresh]);
 
+  // Open quick reservation dialog for an empty room
+  const handleQuickResOpen = useCallback((e, room) => {
+    e.stopPropagation();
+    setQuickResRoom(room);
+    setQuickResForm({ guest_name: '', check_in: today, check_out: tomorrow, total_amount: '' });
+    setQuickResDialog(true);
+  }, [today, tomorrow]);
+
+  // Submit quick reservation
+  const handleQuickResSubmit = useCallback(async () => {
+    if (!quickResRoom) return;
+    const { guest_name, check_in, check_out, total_amount } = quickResForm;
+    if (!guest_name.trim()) { toast.error('Misafir adi giriniz'); return; }
+    if (!check_in || !check_out) { toast.error('Tarih seciniz'); return; }
+    if (check_in >= check_out) { toast.error('Cikis tarihi giristen sonra olmalidir'); return; }
+    const amount = parseFloat(total_amount);
+    if (!amount || amount <= 0) { toast.error('Gecerli bir fiyat giriniz'); return; }
+
+    setQuickResLoading(true);
+    try {
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `quick-booking-${Date.now()}-${Math.random()}`;
+      await axios.post('/pms/quick-booking', {
+        guest_name: guest_name.trim(),
+        room_id: quickResRoom.id,
+        check_in: check_in + 'T14:00:00+00:00',
+        check_out: check_out + 'T11:00:00+00:00',
+        total_amount: amount,
+      }, { headers: { 'Idempotency-Key': idempotencyKey } });
+      toast.success(`Oda ${quickResRoom.room_number} icin rezervasyon olusturuldu`);
+      setQuickResDialog(false);
+      setQuickResRoom(null);
+      onDataRefresh?.();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Rezervasyon olusturulamadi');
+    } finally {
+      setQuickResLoading(false);
+    }
+  }, [quickResRoom, quickResForm, onDataRefresh]);
+
 
 
   return (
@@ -374,6 +419,19 @@ const RoomsTab = ({
                   {room.view && <Badge variant="outline" className="text-[10px]">{room.view}</Badge>}
                   {room.bed_type && <Badge variant="outline" className="text-[10px]"><BedDouble className="w-3 h-3 mr-0.5" />{room.bed_type}</Badge>}
                 </div>
+
+                {/* Quick reservation button for empty rooms */}
+                {!guestInfo && room.status === 'available' && (
+                  <Button
+                    size="sm"
+                    className="w-full mt-2 h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                    onClick={(e) => handleQuickResOpen(e, room)}
+                    data-testid={`quick-res-btn-${room.room_number}`}
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" />
+                    Rezervasyon Yap
+                  </Button>
+                )}
               </CardContent>
             </Card>
           );
@@ -598,6 +656,89 @@ const RoomsTab = ({
                   <span className="flex items-center gap-2">
                     <Wallet className="w-4 h-4" />
                     Odeme Al
+                  </span>
+                )}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick Reservation Dialog */}
+      <Dialog open={quickResDialog} onOpenChange={(o) => !o && setQuickResDialog(false)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarPlus className="w-5 h-5 text-blue-600" />
+              Hizli Rezervasyon
+            </DialogTitle>
+            <DialogDescription>
+              {quickResRoom ? `Oda ${quickResRoom.room_number} - ${quickResRoom.room_type}` : 'Oda bilgisi'}
+            </DialogDescription>
+          </DialogHeader>
+          {quickResRoom && (
+            <div className="space-y-4">
+              <div>
+                <Label className="text-sm font-medium">Misafir Adi *</Label>
+                <Input
+                  value={quickResForm.guest_name}
+                  onChange={(e) => setQuickResForm(f => ({ ...f, guest_name: e.target.value }))}
+                  placeholder="Adi Soyadi"
+                  className="mt-1"
+                  autoFocus
+                  data-testid="quick-res-guest-name"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-sm font-medium">Giris Tarihi *</Label>
+                  <Input
+                    type="date"
+                    value={quickResForm.check_in}
+                    onChange={(e) => setQuickResForm(f => ({ ...f, check_in: e.target.value }))}
+                    className="mt-1"
+                    data-testid="quick-res-check-in"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Cikis Tarihi *</Label>
+                  <Input
+                    type="date"
+                    value={quickResForm.check_out}
+                    onChange={(e) => setQuickResForm(f => ({ ...f, check_out: e.target.value }))}
+                    className="mt-1"
+                    data-testid="quick-res-check-out"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Toplam Fiyat *</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={quickResForm.total_amount}
+                  onChange={(e) => setQuickResForm(f => ({ ...f, total_amount: e.target.value }))}
+                  placeholder="0.00"
+                  className="mt-1"
+                  data-testid="quick-res-total-amount"
+                />
+              </div>
+              <Button
+                className="w-full bg-blue-600 hover:bg-blue-700"
+                onClick={handleQuickResSubmit}
+                disabled={quickResLoading}
+                data-testid="quick-res-submit"
+              >
+                {quickResLoading ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Olusturuluyor...
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <CalendarPlus className="w-4 h-4" />
+                    Rezervasyon Olustur
                   </span>
                 )}
               </Button>

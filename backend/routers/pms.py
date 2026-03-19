@@ -783,6 +783,67 @@ async def create_booking(
     return await create_reservation_service.create(booking_data, current_user, request)
 
 
+class QuickBookingCreate(BaseModel):
+    guest_name: str
+    room_id: str
+    check_in: str
+    check_out: str
+    total_amount: float
+
+
+@router.post("/pms/quick-booking")
+async def create_quick_booking(
+    data: QuickBookingCreate,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_module("pms")),
+):
+    """Hizli rezervasyon: misafir adi + oda + tarih + fiyat ile tek adimda rezervasyon olustur."""
+    tenant_id = current_user.tenant_id
+
+    # 1) Validate room exists
+    room = await db.rooms.find_one({"id": data.room_id, "tenant_id": tenant_id}, {"_id": 0})
+    if not room:
+        raise HTTPException(status_code=404, detail="Oda bulunamadi")
+
+    # 2) Create guest with minimal info
+    guest_id = str(uuid.uuid4())
+    now_ts = datetime.now(timezone.utc)
+    guest_doc = {
+        "id": guest_id,
+        "tenant_id": tenant_id,
+        "name": data.guest_name.strip(),
+        "email": f"walk-in-{guest_id[:8]}@placeholder.local",
+        "phone": "",
+        "id_number": "",
+        "vip_status": False,
+        "loyalty_points": 0,
+        "total_stays": 0,
+        "total_spend": 0.0,
+        "created_at": now_ts.isoformat(),
+    }
+    await db.guests.insert_one(guest_doc)
+
+    # 3) Build BookingCreate and delegate to the standard service
+    booking_data = BookingCreate(
+        guest_id=guest_id,
+        room_id=data.room_id,
+        check_in=data.check_in,
+        check_out=data.check_out,
+        adults=1,
+        children=0,
+        guests_count=1,
+        total_amount=data.total_amount,
+        channel="direct",
+        source_channel="direct",
+        origin="ui",
+    )
+    result = await create_reservation_service.create(booking_data, current_user, request)
+    result["guest_name"] = data.guest_name.strip()
+    result["room_number"] = room.get("room_number")
+    return result
+
+
 @router.get("/pms/bookings")
 async def get_bookings(
     limit: int = 30,  # Further reduced for instant response
