@@ -139,7 +139,9 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Mobile: Accordion-style expandable groups in hamburger menu
   - Scroll position preserved across page navigations
   - Files: navItems.js (NAV_GROUPS + navGroup field), Layout.js (complete rewrite)
-- [x] All tested: Frontend 100% (iteration_93.json)
+  - Bugfix: Responsive text overlap fix - icon-only mode below 1536px, icon+text at 2xl+
+  - Bugfix: UpgradeBanner removed from nav row (was eating space), page uses flex layout to fill viewport
+- [x] All tested: Frontend 100% (iteration_93.json, iteration_94.json)
 
 ## Backlog (Future Tasks)
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
