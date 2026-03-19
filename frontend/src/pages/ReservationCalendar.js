@@ -575,7 +575,15 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onToggleEnterprise={toggleEnterprise}
           onToggleAI={toggleAIMode}
           onShowFindRoomDialog={() => setShowFindRoomDialog(true)}
-          onShowNewBookingDialog={() => setShowNewBookingDialog(true)}
+          onShowNewBookingDialog={() => {
+            setSelectedRoom(null);
+            setNewBooking({
+              guest_id: '', room_id: '', check_in: '', check_out: '',
+              guests_count: 2, adults: 2, children: 0, children_ages: [],
+              total_amount: 0, status: 'confirmed'
+            });
+            setShowNewBookingDialog(true);
+          }}
         />
 
         <CalendarOccupancy

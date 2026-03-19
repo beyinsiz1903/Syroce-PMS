@@ -21,39 +21,51 @@ export const NewBookingDialog = ({
         <DialogTitle>Hizli Rezervasyon</DialogTitle>
       </DialogHeader>
       <form onSubmit={onSubmit} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label>Oda Tipi</Label>
-            <select
-              className="w-full border rounded-md p-2"
-              value={newBooking.room_type || selectedRoom?.room_type || ''}
-              onChange={(e) => {
-                setNewBooking({...newBooking, room_type: e.target.value, room_id: ''});
-              }}
-              data-testid="new-booking-room-type"
-            >
-              <option value="">Oda tipi secin...</option>
-              {roomTypes.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+        {selectedRoom ? (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3" data-testid="selected-room-info">
+            <div className="text-xs text-blue-600 font-medium mb-1">Secilen Oda</div>
+            <div className="font-bold text-lg text-gray-900">
+              Oda {selectedRoom.room_number}
+              <span className="text-sm font-normal text-gray-500 ml-2">
+                {selectedRoom.room_type} - Kat {selectedRoom.floor}
+              </span>
+            </div>
           </div>
-          <div>
-            <Label>Oda</Label>
-            <select
-              className="w-full border rounded-md p-2"
-              value={newBooking.room_id || ''}
-              onChange={(e) => setNewBooking({...newBooking, room_id: e.target.value})}
-              data-testid="new-booking-room-select"
-            >
-              <option value="">Oda secin...</option>
-              {(rooms || [])
-                .filter(r => !newBooking.room_type || r.room_type === newBooking.room_type)
-                .map(r => (
-                  <option key={r.id} value={r.id}>{r.room_number} - {r.room_type} (Kat: {r.floor})</option>
-                ))
-              }
-            </select>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Oda Tipi</Label>
+              <select
+                className="w-full border rounded-md p-2"
+                value={newBooking.room_type || ''}
+                onChange={(e) => {
+                  setNewBooking({...newBooking, room_type: e.target.value, room_id: ''});
+                }}
+                data-testid="new-booking-room-type"
+              >
+                <option value="">Oda tipi secin...</option>
+                {roomTypes.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label>Oda</Label>
+              <select
+                className="w-full border rounded-md p-2"
+                value={newBooking.room_id || ''}
+                onChange={(e) => setNewBooking({...newBooking, room_id: e.target.value})}
+                data-testid="new-booking-room-select"
+              >
+                <option value="">Oda secin...</option>
+                {(rooms || [])
+                  .filter(r => !newBooking.room_type || r.room_type === newBooking.room_type)
+                  .map(r => (
+                    <option key={r.id} value={r.id}>{r.room_number} - {r.room_type} (Kat: {r.floor})</option>
+                  ))
+                }
+              </select>
+            </div>
           </div>
-        </div>
+        )}
         <div>
           <Label>Misafir *</Label>
           <div className="flex gap-2">

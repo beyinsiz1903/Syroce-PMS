@@ -36,6 +36,11 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
     index.js                   (barrel exports)
 ```
 
+### Calendar UX - Direct Room Booking (Session Latest)
+- When clicking a room cell in the calendar grid, the booking dialog shows the selected room info directly without room type/room selection dropdowns
+- When clicking "Rezervasyon ekle" button in the header, the full room selection is shown
+- Drag-and-drop for room/date changes is already implemented
+
 ## What's Been Implemented
 
 ### Session 1-3 (Previous)
