@@ -1,24 +1,60 @@
 // Central navigation configuration for main sidebar/top nav
 // Each item maps to a module key from the 3-tier subscription system
-// Module keys: pms, reservation_calendar, dashboard, guests, housekeeping, basic_reporting,
-//   settings, pms_mobile, invoices_basic, channel_manager, folio_management, night_audit,
-//   invoices, cost_management, reports, mobile_housekeeping, rate_management, booking_engine,
-//   guest_advanced, revenue_management, multi_property, group_sales, sales_crm, loyalty_program,
-//   gm_dashboards, mobile_revenue, advanced_analytics, api_access, white_label, audit_trail,
-//   ai, ai_chatbot, ai_pricing, ai_whatsapp, ai_predictive, ai_reputation, ai_revenue_autopilot, ai_social_radar
 
 // Tier that includes this module by default
 // basic = all plans, professional = pro+enterprise, enterprise = enterprise only
+
+// ─── NAV GROUPS for top bar dropdown menus ──────────
+export const NAV_GROUPS = [
+  {
+    id: "operations",
+    label: "Operasyon",
+    icon: "Hotel",
+  },
+  {
+    id: "reservations",
+    label: "Rezervasyon",
+    icon: "CalendarCheck",
+  },
+  {
+    id: "finance",
+    label: "Finans",
+    icon: "DollarSign",
+  },
+  {
+    id: "channels",
+    label: "Kanallar",
+    icon: "Layers",
+  },
+  {
+    id: "reports",
+    label: "Raporlar",
+    icon: "BarChart3",
+  },
+  {
+    id: "advanced",
+    label: "Gelismis",
+    icon: "Zap",
+  },
+  {
+    id: "infrastructure",
+    label: "Altyapi",
+    icon: "Server",
+  },
+];
+
 export const NAV_ITEMS = [
-  // ──── CORE (Basic plan) ────────────────────────────
+  // ──── STANDALONE (shown as direct buttons) ─────────
   {
     key: "dashboard",
     label: "Dashboard",
     path: "/app/dashboard",
-    moduleKey: "dashboard",
     tier: "basic",
     group: "core",
+    navGroup: null, // standalone button - always visible
   },
+
+  // ──── OPERATIONS GROUP ─────────────────────────────
   {
     key: "reservation_calendar",
     label: "Takvim",
@@ -26,6 +62,7 @@ export const NAV_ITEMS = [
     moduleKey: "reservation_calendar",
     tier: "basic",
     group: "core",
+    navGroup: "operations",
   },
   {
     key: "pms",
@@ -34,6 +71,7 @@ export const NAV_ITEMS = [
     moduleKey: "pms",
     tier: "basic",
     group: "core",
+    navGroup: "operations",
   },
   {
     key: "pms_operations",
@@ -42,6 +80,7 @@ export const NAV_ITEMS = [
     moduleKey: "pms",
     tier: "basic",
     group: "core",
+    navGroup: "operations",
   },
   {
     key: "folio_detail",
@@ -50,23 +89,8 @@ export const NAV_ITEMS = [
     moduleKey: "pms",
     tier: "basic",
     group: "core",
+    navGroup: "operations",
     hidden: true,
-  },
-  {
-    key: "group_bookings",
-    label: "Grup Rezervasyonlari",
-    path: "/group-bookings-manage",
-    moduleKey: "pms",
-    tier: "basic",
-    group: "core",
-  },
-  {
-    key: "deposit_tracking",
-    label: "Depozito Takibi",
-    path: "/deposit-tracking",
-    moduleKey: "pms",
-    tier: "basic",
-    group: "core",
   },
   {
     key: "housekeeping_status",
@@ -75,6 +99,7 @@ export const NAV_ITEMS = [
     moduleKey: "pms",
     tier: "basic",
     group: "core",
+    navGroup: "operations",
   },
   {
     key: "wake_up_calls",
@@ -83,6 +108,7 @@ export const NAV_ITEMS = [
     moduleKey: "pms",
     tier: "basic",
     group: "core",
+    navGroup: "operations",
   },
   {
     key: "lost_found",
@@ -91,38 +117,7 @@ export const NAV_ITEMS = [
     moduleKey: "pms",
     tier: "basic",
     group: "core",
-  },
-  {
-    key: "group_folio",
-    label: "Grup Folio",
-    path: "/group-folio",
-    moduleKey: "pms",
-    tier: "basic",
-    group: "core",
-  },
-  {
-    key: "night_audit",
-    label: "Gece Denetimi",
-    path: "/night-audit",
-    moduleKey: "night_audit",
-    tier: "professional",
-    group: "professional",
-  },
-  {
-    key: "revenue_engine",
-    label: "Revenue Engine",
-    path: "/revenue-engine",
-    moduleKey: "revenue_management",
-    tier: "enterprise",
-    group: "enterprise",
-  },
-  {
-    key: "operational_events",
-    label: "Olay Merkezi",
-    path: "/operational-events",
-    moduleKey: "pms",
-    tier: "professional",
-    group: "professional",
+    navGroup: "operations",
   },
   {
     key: "guest_journey",
@@ -131,41 +126,57 @@ export const NAV_ITEMS = [
     moduleKey: "pms",
     tier: "professional",
     group: "professional",
+    navGroup: "operations",
   },
   {
-    key: "platform_scaling",
-    label: "Platform Scaling",
-    path: "/platform-scaling",
+    key: "operational_events",
+    label: "Olay Merkezi",
+    path: "/operational-events",
     moduleKey: "pms",
-    tier: "enterprise",
-    group: "enterprise",
-  },
-  {
-    key: "enterprise_live",
-    label: "Enterprise Live",
-    path: "/enterprise-live",
-    moduleKey: "pms",
-    tier: "enterprise",
-    group: "enterprise",
-  },
-  {
-    key: "reports_basic",
-    label: "Raporlar",
-    path: "/app/raporlar",
-    moduleKey: "basic_reporting",
-    tier: "basic",
-    group: "core",
-  },
-  {
-    key: "settings",
-    label: "Ayarlar",
-    path: "/app/settings",
-    moduleKey: "settings",
-    tier: "basic",
-    group: "core",
+    tier: "professional",
+    group: "professional",
+    navGroup: "operations",
   },
 
-  // ──── PROFESSIONAL ─────────────────────────────────
+  // ──── RESERVATIONS GROUP ───────────────────────────
+  {
+    key: "group_bookings",
+    label: "Grup Rezervasyonlari",
+    path: "/group-bookings-manage",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "core",
+    navGroup: "reservations",
+  },
+  {
+    key: "deposit_tracking",
+    label: "Depozito Takibi",
+    path: "/deposit-tracking",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "core",
+    navGroup: "reservations",
+  },
+  {
+    key: "group_folio",
+    label: "Grup Folio",
+    path: "/group-folio",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "core",
+    navGroup: "reservations",
+  },
+
+  // ──── FINANCE GROUP ────────────────────────────────
+  {
+    key: "night_audit",
+    label: "Gece Denetimi",
+    path: "/night-audit",
+    moduleKey: "night_audit",
+    tier: "professional",
+    group: "professional",
+    navGroup: "finance",
+  },
   {
     key: "invoices",
     label: "Fatura & Finans",
@@ -173,6 +184,7 @@ export const NAV_ITEMS = [
     moduleKey: "invoices",
     tier: "professional",
     group: "professional",
+    navGroup: "finance",
   },
   {
     key: "cost_management",
@@ -181,7 +193,10 @@ export const NAV_ITEMS = [
     moduleKey: "cost_management",
     tier: "professional",
     group: "professional",
+    navGroup: "finance",
   },
+
+  // ──── CHANNELS GROUP ───────────────────────────────
   {
     key: "channel_manager",
     label: "Channel Manager",
@@ -189,6 +204,7 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
+    navGroup: "channels",
   },
   {
     key: "hotelrunner",
@@ -197,6 +213,7 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
+    navGroup: "channels",
   },
   {
     key: "exely",
@@ -205,14 +222,16 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
+    navGroup: "channels",
   },
   {
     key: "rate_manager",
-    label: "Fiyat ve Müsaitlik",
+    label: "Fiyat ve Musaitlik",
     path: "/rate-manager",
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
+    navGroup: "channels",
   },
   {
     key: "ari_push",
@@ -221,6 +240,7 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
+    navGroup: "channels",
   },
   {
     key: "lockdown_dashboard",
@@ -229,6 +249,7 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
+    navGroup: "channels",
   },
   {
     key: "incident_panel",
@@ -237,6 +258,7 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
+    navGroup: "channels",
   },
   {
     key: "runtime_cockpit",
@@ -245,6 +267,7 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
+    navGroup: "channels",
   },
   {
     key: "data_model",
@@ -253,6 +276,7 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
+    navGroup: "channels",
   },
   {
     key: "integration_hub",
@@ -261,6 +285,7 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
+    navGroup: "channels",
   },
   {
     key: "admin_control_panel",
@@ -269,25 +294,39 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
+    navGroup: "channels",
+  },
+
+  // ──── REPORTS GROUP ────────────────────────────────
+  {
+    key: "reports_basic",
+    label: "Raporlar",
+    path: "/app/raporlar",
+    moduleKey: "basic_reporting",
+    tier: "basic",
+    group: "core",
+    navGroup: "reports",
   },
   {
     key: "reports",
-    label: "Gelişmiş Raporlar",
+    label: "Gelismis Raporlar",
     path: "/app/gelismis-raporlar",
     moduleKey: "reports",
     tier: "professional",
     group: "professional",
+    navGroup: "reports",
   },
   {
     key: "report_builder",
-    label: "Rapor Oluşturucu",
+    label: "Rapor Olusturucu",
     path: "/app/rapor-olusturucu",
     moduleKey: "reports",
     tier: "professional",
     group: "professional",
+    navGroup: "reports",
   },
 
-  // ──── ENTERPRISE ───────────────────────────────────
+  // ──── ADVANCED GROUP ───────────────────────────────
   {
     key: "rms",
     label: "Revenue (RMS)",
@@ -295,14 +334,25 @@ export const NAV_ITEMS = [
     moduleKey: "revenue_management",
     tier: "enterprise",
     group: "enterprise",
+    navGroup: "advanced",
   },
   {
     key: "ai",
-    label: "AI Modülleri",
+    label: "AI Modulleri",
     path: "/app/ai",
     moduleKey: "ai",
     tier: "enterprise",
     group: "enterprise",
+    navGroup: "advanced",
+  },
+  {
+    key: "revenue_engine",
+    label: "Revenue Engine",
+    path: "/revenue-engine",
+    moduleKey: "revenue_management",
+    tier: "enterprise",
+    group: "enterprise",
+    navGroup: "advanced",
   },
   {
     key: "data_intelligence",
@@ -311,6 +361,7 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
+    navGroup: "advanced",
   },
   {
     key: "messaging_dashboard",
@@ -319,6 +370,7 @@ export const NAV_ITEMS = [
     moduleKey: "pms",
     tier: "enterprise",
     group: "enterprise",
+    navGroup: "advanced",
   },
   {
     key: "ml_scheduler",
@@ -327,6 +379,7 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
+    navGroup: "advanced",
   },
   {
     key: "revenue_autopilot_v2",
@@ -335,6 +388,7 @@ export const NAV_ITEMS = [
     moduleKey: "revenue_management",
     tier: "enterprise",
     group: "enterprise",
+    navGroup: "advanced",
   },
   {
     key: "analytics_export",
@@ -343,7 +397,10 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
+    navGroup: "advanced",
   },
+
+  // ──── INFRASTRUCTURE GROUP ─────────────────────────
   {
     key: "data_pipeline",
     label: "Data Pipeline",
@@ -351,6 +408,7 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
+    navGroup: "infrastructure",
   },
   {
     key: "event_bus",
@@ -359,6 +417,7 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
+    navGroup: "infrastructure",
   },
   {
     key: "system_health",
@@ -367,6 +426,7 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
+    navGroup: "infrastructure",
   },
   {
     key: "observability",
@@ -375,6 +435,7 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
+    navGroup: "infrastructure",
   },
   {
     key: "security_hardening",
@@ -383,6 +444,7 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
+    navGroup: "infrastructure",
   },
   {
     key: "runtime_infrastructure",
@@ -391,6 +453,7 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
+    navGroup: "infrastructure",
   },
   {
     key: "infra_hardening",
@@ -399,6 +462,7 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
+    navGroup: "infrastructure",
   },
   {
     key: "production_golive",
@@ -407,7 +471,38 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
+    navGroup: "infrastructure",
   },
+  {
+    key: "platform_scaling",
+    label: "Platform Scaling",
+    path: "/platform-scaling",
+    moduleKey: "pms",
+    tier: "enterprise",
+    group: "enterprise",
+    navGroup: "infrastructure",
+  },
+  {
+    key: "enterprise_live",
+    label: "Enterprise Live",
+    path: "/enterprise-live",
+    moduleKey: "pms",
+    tier: "enterprise",
+    group: "enterprise",
+    navGroup: "infrastructure",
+  },
+
+  // ──── STANDALONE: Settings ─────────────────────────
+  {
+    key: "settings",
+    label: "Ayarlar",
+    path: "/app/settings",
+    tier: "basic",
+    group: "core",
+    navGroup: null, // standalone button - always visible
+  },
+
+  // ──── HIDDEN ───────────────────────────────────────
   {
     key: "marketplace",
     label: "Marketplace",
@@ -415,23 +510,26 @@ export const NAV_ITEMS = [
     moduleKey: "marketplace",
     tier: "enterprise",
     group: "enterprise",
+    navGroup: null,
     hidden: true,
   },
 
   // ──── SUPER ADMIN ONLY ─────────────────────────────
   {
     key: "admin_tenants",
-    label: "Otel Yönetimi",
+    label: "Otel Yonetimi",
     path: "/admin/tenants",
     requireSuperAdmin: true,
     group: "admin",
+    navGroup: null,
   },
   {
     key: "admin_module_report",
-    label: "Modül Raporu",
+    label: "Modul Raporu",
     path: "/admin/module-report",
     requireSuperAdmin: true,
     group: "admin",
+    navGroup: null,
   },
   {
     key: "admin_leads",
@@ -439,6 +537,7 @@ export const NAV_ITEMS = [
     path: "/app/admin/leads",
     requireSuperAdmin: true,
     group: "admin",
+    navGroup: null,
   },
 ];
 
