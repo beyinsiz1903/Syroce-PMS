@@ -722,6 +722,57 @@ async def get_guests(
     return guests
 
 
+@router.get("/pms/guests/{guest_id}")
+async def get_guest_by_id(
+    guest_id: str,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_module("pms")),
+):
+    guest = await db.guests.find_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+    )
+    if not guest:
+        raise HTTPException(status_code=404, detail="Misafir bulunamadi")
+    if "first_name" in guest and "last_name" in guest:
+        guest["name"] = f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip()
+    elif "name" not in guest:
+        guest["name"] = guest.get("email", "Unknown")
+    if "id_number" not in guest:
+        guest["id_number"] = guest.get("passport_number", "")
+    return guest
+
+
+@router.put("/pms/guests/{guest_id}")
+async def update_guest(
+    guest_id: str,
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_module("pms")),
+):
+    guest = await db.guests.find_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+    )
+    if not guest:
+        raise HTTPException(status_code=404, detail="Misafir bulunamadi")
+    allowed = {
+        "name", "email", "phone", "id_type", "id_number",
+        "nationality", "date_of_birth", "address", "city",
+        "postal_code", "country", "gender", "notes",
+        "id_issue_date", "id_expiry_date", "id_issuing_authority",
+    }
+    update_fields = {k: v for k, v in data.items() if k in allowed}
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="Guncellenecek alan bulunamadi")
+    await db.guests.update_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id},
+        {"$set": update_fields},
+    )
+    updated = await db.guests.find_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+    )
+    return updated
+
+
 @router.post("/pms/bookings")
 async def create_booking(
     booking_data: BookingCreate,

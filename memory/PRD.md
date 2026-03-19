@@ -273,6 +273,19 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Modified: `RoomsTab.js`, `PMSModule.js`, `Settings.js`, `routers/pms.py`
   - Test: Backend 8/8, Frontend code review verified (iteration_99.json)
 
+### Session 19 (Mar 19, 2026)
+- [x] **Odalar Sekmesi Hizli Islemler (Quick Room Actions)**
+  - C/In butonu: Bugun girisli ve confirmed/guaranteed durumundaki rezervasyonlar icin hizli check-in
+  - C/Out butonu: Bugun cikisli ve checked_in durumundaki rezervasyonlar icin hizli check-out
+  - Bakiye kontrolu: Acik bakiyesi olan misafirler check-out yapilamaz, uyari dialogu gosterilir
+  - Odeme butonu: Checked-in odalarda hizli odeme alma
+  - Misafir adi tiklanabilir: Kimlik bilgileri dialogu acar (TC/Pasaport No, uyruk, dogum tarihi)
+  - Cift tikla: Rezervasyon detay modali acar
+  - Bakiye gosterimi: "Bakiye: X.XX" formati ile acik bakiye
+  - Backend: GET /api/pms/guests/{id} ve PUT /api/pms/guests/{id} endpoint'leri eklendi
+  - Modified: `RoomsTab.js` (full rewrite), `PMSModule.js`, `routers/pms.py`
+  - Test: Backend 7/8 + Frontend verified (iteration_100.json)
+
 ## Backlog (Future Tasks)
 - [ ] P1: User verification for Exely Reservation Delivery Confirmation fix
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
