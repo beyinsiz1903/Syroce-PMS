@@ -266,7 +266,12 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Silinen dosya: `backend/domains/channel_manager/providers/exely/exely_webhook_router.py` (489 satır)
   - `bootstrap/router_registry.py`'den webhook router kaydı kaldırıldı
   - `ExelyIntegration.jsx`'den webhook URL kartı ve kullanılmayan import'lar (`Webhook`, `Copy`) kaldırıldı
-  - Doğrulama: Webhook endpoint artık 404 döndürüyor, Exely sayfası temiz çalışıyor
+- [x] **Oda Yönetimi Erişim Kontrolü**
+  - PMS Odalar sekmesi artık salt-okunur: oda kartlarına tıklanınca dialog açılmıyor, ekleme/silme butonları kaldırıldı
+  - Oda yönetimi Settings > "Oda Yönetimi" sekmesine taşındı (sadece super_admin görür)
+  - Backend: `POST /api/pms/rooms`, `/rooms/bulk/range`, `/rooms/bulk/template`, `/rooms/bulk/delete` endpoint'leri `require_super_admin_guard` ile korunuyor
+  - Modified: `RoomsTab.js`, `PMSModule.js`, `Settings.js`, `routers/pms.py`
+  - Test: Backend 8/8, Frontend code review verified (iteration_99.json)
 
 ## Backlog (Future Tasks)
 - [ ] P1: User verification for Exely Reservation Delivery Confirmation fix
