@@ -255,6 +255,11 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Fix: Backend grid API'ye `currency` alanı eklendi, frontend'de sembol dinamik hale getirildi
   - 3 hardcoded referans düzeltildi: satır içi sembol, fiyat planı metni, takvim hücreleri
   - Modified: `rate_manager_router.py`, `RateManager.jsx`
+- [x] **Enhancement: Odalar Sekmesinde Misafir Bilgisi Gösterimi**
+  - Occupied odalarda mevcut misafirin adı, check-in ve check-out tarihleri gösteriliyor
+  - Bookings verisi PMSModule'den RoomsTab'a aktarıldı
+  - Aktif rezervasyonlar (confirmed/checked_in/guaranteed) ile oda eşleştirmesi yapılıyor
+  - Modified: `PMSModule.js`, `RoomsTab.js`
 
 ## Backlog (Future Tasks)
 - [ ] P0: Remove obsolete webhook code (exely_webhook_router.py, router_registry.py, ExelyIntegration.jsx)

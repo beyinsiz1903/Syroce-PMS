@@ -1549,6 +1549,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           <TabsContent value="rooms" className="space-y-4">
             <RoomsTab
               rooms={rooms}
+              bookings={bookings}
               bulkRoomMode={bulkRoomMode}
               setBulkRoomMode={setBulkRoomMode}
               selectedRooms={selectedRooms}

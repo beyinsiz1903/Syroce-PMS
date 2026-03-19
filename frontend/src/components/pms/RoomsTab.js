@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, CheckSquare, Trash2, Image, BedDouble } from 'lucide-react';
+import { Plus, CheckSquare, Trash2, Image, BedDouble, User } from 'lucide-react';
 import LiteSetupBanner from '@/components/LiteSetupBanner';
 
 const RoomsTab = ({
   rooms,
+  bookings = [],
   bulkRoomMode,
   setBulkRoomMode,
   selectedRooms,
@@ -24,6 +25,28 @@ const RoomsTab = ({
   const [typeFilter, setTypeFilter] = useState('all');
   const [viewFilter, setViewFilter] = useState('all');
   const [amenityFilter, setAmenityFilter] = useState('all');
+
+  // Build a map of room_number -> current guest info from active bookings
+  const roomGuestMap = useMemo(() => {
+    const map = {};
+    const today = new Date().toISOString().split('T')[0];
+    const activeStatuses = ['confirmed', 'checked_in', 'guaranteed'];
+    for (const b of bookings) {
+      if (!activeStatuses.includes(b.status)) continue;
+      if (!b.room_number) continue;
+      const ci = (b.check_in || '').slice(0, 10);
+      const co = (b.check_out || '').slice(0, 10);
+      if (ci <= today && co > today) {
+        map[String(b.room_number)] = {
+          guest_name: b.guest_name || 'Misafir',
+          check_in: ci,
+          check_out: co,
+          status: b.status,
+        };
+      }
+    }
+    return map;
+  }, [bookings]);
 
   const filteredRooms = useMemo(() => {
     return rooms.filter(r => {
@@ -142,6 +165,17 @@ const RoomsTab = ({
               </div>
               <p className="text-sm text-gray-600">{room.room_type}</p>
               <p className="text-xs text-gray-400">{t('pms.roomNumber') || 'Floor'} {room.floor} • {room.capacity} {t('common.guests') || 'guests'}</p>
+              {roomGuestMap[String(room.room_number)] && (
+                <div className="mt-2 p-2 bg-blue-50 rounded-md border border-blue-100" data-testid={`room-guest-${room.room_number}`}>
+                  <div className="flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                    <span className="text-sm font-medium text-blue-800 truncate">{roomGuestMap[String(room.room_number)].guest_name}</span>
+                  </div>
+                  <p className="text-[10px] text-blue-500 mt-0.5">
+                    {roomGuestMap[String(room.room_number)].check_in} → {roomGuestMap[String(room.room_number)].check_out}
+                  </p>
+                </div>
+              )}
               {room.base_price && <p className="text-sm font-semibold mt-1">€{room.base_price}</p>}
               <div className="flex gap-1 mt-2 flex-wrap">
                 {room.view && <Badge variant="outline" className="text-[10px]">{room.view}</Badge>}
