@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime, timedelta
 
 # Use external URL for testing
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://guest-management-ui.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://balance-check-deploy.preview.emergentagent.com')
 
 # Test credentials from review request
 DEMO_EMAIL = "demo@hotel.com"
