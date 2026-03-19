@@ -51,6 +51,8 @@ const AuthPage = ({ onLogin }) => {
   const handleHotelLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
+    console.log('[v0] Login attempt - baseURL:', axios.defaults.baseURL, 'endpoint: /auth/login');
+    console.log('[v0] Full URL will be:', axios.defaults.baseURL + '/auth/login');
     try {
       const response = await axios.post('/auth/login', hotelLoginData);
       
