@@ -234,9 +234,27 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Also applied to `/update` endpoint
   - Fixed checkbox controlled/uncontrolled React warnings (!!rv.stop_sell etc.)
 
+### Session 16 (Mar 19, 2026)
+- [x] **P0 FIX: Exely Reservation Delivery Webhook (Critical)**
+  - Root cause: PMS used PULL architecture but Exely was configured to PUSH, causing "not delivered" status
+  - Solution: Built a public webhook endpoint `POST /api/webhooks/exely/reservations`
+  - Accepts OTA_HotelResNotifRQ SOAP XML from Exely and returns OTA_HotelResNotifRS success response
+  - Parses SOAP XML → ingests via common pipeline → auto-imports to PMS bookings
+  - Handles new reservations, modifications, and cancellations
+  - Resolves tenant by hotel_code from XML against exely_connections
+  - `GET /api/webhooks/exely/health` - Health check endpoint for Exely connectivity verification
+  - `GET /api/webhooks/exely/info` - Returns webhook configuration info
+  - Frontend: Added webhook URL card to Exely Integration page with copy button and setup instructions
+  - Updated auto_import_pending to also process `pending_mapping` status reservations
+  - New file: `backend/domains/channel_manager/providers/exely/exely_webhook_router.py`
+  - Modified: `auto_import.py`, `ExelyIntegration.jsx`, `router_registry.py`
+  - All tested: Backend 13/13 + Frontend 100% (iteration_98.json)
+
 ## Backlog (Future Tasks)
 - [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
+- [ ] P1: User verification for completed features backlog (11+ features)
 - [ ] P2: Refactor ReservationDetailModal.js (1400+ lines → smaller components)
 - [ ] P3: Refactor RateManager.jsx (1000+ lines → smaller components)
+- [ ] P3: Clean up soap_builder.py (commented-out code from SOAP debugging)
 - [ ] P4: Visually distinguish past dates in calendar (grayed out)
 - [ ] P5: Advanced Auto-Heal patterns (remaining)
