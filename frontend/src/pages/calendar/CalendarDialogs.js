@@ -117,6 +117,7 @@ export const NewBookingDialog = ({
             <Input
               type="date"
               value={newBooking.check_in}
+              min={new Date().toISOString().split('T')[0]}
               onChange={(e) => setNewBooking({...newBooking, check_in: e.target.value})}
               required
             />
@@ -126,7 +127,7 @@ export const NewBookingDialog = ({
             <Input
               type="date"
               value={newBooking.check_out}
-              min={newBooking.check_in || undefined}
+              min={newBooking.check_in || new Date().toISOString().split('T')[0]}
               onChange={(e) => setNewBooking({...newBooking, check_out: e.target.value})}
               required
             />
@@ -398,6 +399,7 @@ export const FindRoomDialog = ({
             <Input
               type="date"
               value={findRoomCriteria.check_in}
+              min={new Date().toISOString().split('T')[0]}
               onChange={(e) => {
                 const newCi = e.target.value;
                 const updates = { ...findRoomCriteria, check_in: newCi };
@@ -416,7 +418,7 @@ export const FindRoomDialog = ({
             <Input
               type="date"
               value={findRoomCriteria.check_out}
-              min={findRoomCriteria.check_in || undefined}
+              min={findRoomCriteria.check_in || new Date().toISOString().split('T')[0]}
               onChange={(e) => setFindRoomCriteria({...findRoomCriteria, check_out: e.target.value})}
               data-testid="find-room-checkout"
             />

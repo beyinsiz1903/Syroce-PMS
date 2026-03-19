@@ -63,6 +63,19 @@ class CreateReservationService:
 
             check_in_dt = datetime.fromisoformat(booking_data.check_in.replace('Z', '+00:00'))
             check_out_dt = datetime.fromisoformat(booking_data.check_out.replace('Z', '+00:00'))
+            
+            # Validate that check-in date is not in the past
+            today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            check_in_date_only = check_in_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+            if check_in_date_only.tzinfo is None:
+                check_in_date_only = check_in_date_only.replace(tzinfo=timezone.utc)
+            
+            if check_in_date_only < today:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Gecmis tarih icin rezervasyon olusturulamaz"
+                )
+            
             booking_id = str(uuid.uuid4())
             now_ts = datetime.now(timezone.utc)
 
