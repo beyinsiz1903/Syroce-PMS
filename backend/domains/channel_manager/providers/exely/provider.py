@@ -259,7 +259,7 @@ class ExelyProvider:
                 if not result["success"]:
                     errors.append(f"Rate: {result.get('error', 'failed')}")
                 else:
-                    logger.info(f"[ARI-PUSH] Rate pushed OK: room={room_type_code} plan={rate_plan_code} rate={rate_amount} {start_date}-{end_date}")
+                    logger.info(f"[ARI-PUSH] Rate pushed OK: room={room_type_code} plan={rate_plan_code} rate={rate_amount} currency={currency} {start_date}-{end_date}")
             except ExelyError as e:
                 errors.append(f"Rate: {e}")
                 logger.error(f"[ARI-PUSH] Rate push error: {e}")
