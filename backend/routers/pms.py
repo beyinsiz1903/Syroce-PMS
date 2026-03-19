@@ -801,6 +801,17 @@ async def create_quick_booking(
     """Hizli rezervasyon: misafir adi + oda + tarih + fiyat ile tek adimda rezervasyon olustur."""
     tenant_id = current_user.tenant_id
 
+    # Validate inputs
+    if not data.guest_name.strip():
+        raise HTTPException(status_code=400, detail="Misafir adi bos olamaz")
+    if data.total_amount <= 0:
+        raise HTTPException(status_code=400, detail="Gecerli bir fiyat giriniz")
+
+    ci_dt = datetime.fromisoformat(data.check_in.replace('Z', '+00:00'))
+    co_dt = datetime.fromisoformat(data.check_out.replace('Z', '+00:00'))
+    if co_dt <= ci_dt:
+        raise HTTPException(status_code=400, detail="Cikis tarihi giristen sonra olmalidir")
+
     # 1) Validate room exists
     room = await db.rooms.find_one({"id": data.room_id, "tenant_id": tenant_id}, {"_id": 0})
     if not room:

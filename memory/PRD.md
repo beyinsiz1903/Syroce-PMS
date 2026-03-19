@@ -367,6 +367,17 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Modified: `ReservationCalendar.js` (line 44-47)
   - Tested: Backend 6/6 + Frontend 100% (iteration_103.json)
 
+### Session 26 (Mar 20, 2026)
+- [x] **Feature: Rooms Tab Hizli Rezervasyon (Quick Booking)**
+  - Bos (available) odalarda "+ Rezervasyon Yap" butonu eklendi
+  - Butona tiklaninca minimal dialog aciliyor: Misafir Adi, Giris/Cikis Tarihi, Toplam Fiyat
+  - Backend `POST /api/pms/quick-booking` endpoint: misafir + rezervasyon tek adimda olusturuluyor
+  - Backend validasyonlar: bos isim, gecersiz tarih, negatif fiyat kontrolleri
+  - Placeholder misafir kaydı otomatik olusturuluyor (walk-in-xxx@placeholder.local)
+  - Idempotency-Key header destegiyle cift kayit engelleniyor
+  - Modified: `RoomsTab.js`, `routers/pms.py`
+  - Tested: Backend 7/7 + Frontend 100% (iteration_104.json)
+
 ## Backlog (Future Tasks)
 - [ ] P1: User verification for Exely availability discrepancy fix
 - [ ] P1: User verification for Exely Reservation Delivery Confirmation fix
