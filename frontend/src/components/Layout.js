@@ -9,6 +9,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   Home, Hotel, FileText, TrendingUp, ShoppingCart,
   User, LogOut, Menu, Calendar, DollarSign, Settings as SettingsIcon,
   Layers, BarChart3, Bot, Building2, Zap, Crown, Shield, Users, ClipboardCheck,
@@ -20,7 +26,6 @@ import PushSubscriptionManager from '@/components/PushSubscriptionManager';
 import { NAV_ITEMS, NAV_GROUPS } from '@/config/navItems';
 import { UpgradeBanner } from '@/components/UpgradeBanner';
 
-// ─── Icon mapping by nav key ─────────────────────────
 const ICON_BY_KEY = {
   dashboard: Home,
   pms: Hotel,
@@ -51,7 +56,6 @@ const ICON_BY_KEY = {
   group_folio: FileText,
 };
 
-// ─── Icon mapping for nav groups ─────────────────────
 const GROUP_ICONS = {
   operations: Hotel,
   reservations: CalendarCheck,
@@ -62,7 +66,6 @@ const GROUP_ICONS = {
   infrastructure: Server,
 };
 
-// ─── Tier badge in header ─────────────────────────────
 const TIER_CONFIG = {
   basic: { label: 'Basic', icon: Building2, cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
   professional: { label: 'Pro', icon: Zap, cls: 'bg-blue-100 text-blue-700 border-blue-200' },
@@ -77,7 +80,6 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
   const [expandedMobileGroup, setExpandedMobileGroup] = useState(null);
 
   const isSuperAdmin = user?.role === 'super_admin';
-
   const modules = useMemo(() => tenant?.modules || {}, [tenant]);
 
   const currentTier = useMemo(() => {
@@ -90,10 +92,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
   const tierConfig = TIER_CONFIG[currentTier] || TIER_CONFIG.basic;
   const TierIcon = tierConfig.icon;
 
-  const getUpgradeTier = (itemTier) => {
-    if (itemTier === 'professional') return 'professional';
-    return 'enterprise';
-  };
+  const getUpgradeTier = (itemTier) => itemTier === 'professional' ? 'professional' : 'enterprise';
 
   const isModuleEnabled = (moduleKey) => {
     if (!moduleKey) return true;
@@ -101,11 +100,9 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
     return modules[moduleKey] !== false && modules[moduleKey] !== undefined ? !!modules[moduleKey] : false;
   };
 
-  // ─── Normalize module key for comparison ──────────────
   const normalizeKey = (key) => key ? key.replace(/-/g, '_') : '';
   const normalizedCurrentModule = normalizeKey(currentModule);
 
-  // ─── Build visible/locked items ───────────────────────
   const { visibleNav, lockedNav, upgradeTier } = useMemo(() => {
     const visible = [];
     const locked = [];
@@ -113,19 +110,15 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
 
     NAV_ITEMS.forEach((item) => {
       if (item.hidden) return;
-
       if (item.requireSuperAdmin) {
         if (isSuperAdmin) visible.push(item);
         return;
       }
-
       if (item.moduleKey && isModuleEnabled(item.moduleKey)) {
         visible.push(item);
       } else if (item.moduleKey && !isModuleEnabled(item.moduleKey)) {
         locked.push(item);
-        if (!nextUpgradeTier) {
-          nextUpgradeTier = getUpgradeTier(item.tier);
-        }
+        if (!nextUpgradeTier) nextUpgradeTier = getUpgradeTier(item.tier);
       } else {
         visible.push(item);
       }
@@ -134,7 +127,6 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
     return { visibleNav: visible, lockedNav: locked, upgradeTier: nextUpgradeTier };
   }, [modules, isSuperAdmin]);
 
-  // ─── Group items by navGroup ──────────────────────────
   const { standaloneItems, groupedItems } = useMemo(() => {
     const standalone = [];
     const grouped = {};
@@ -151,80 +143,59 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
     return { standaloneItems: standalone, groupedItems: grouped };
   }, [visibleNav]);
 
-  // ─── Check if any item in a group is active ───────────
   const isGroupActive = (groupId) => {
     const items = groupedItems[groupId] || [];
     return items.some((item) => {
-      const normalized = normalizeKey(item.key);
-      if (normalizedCurrentModule === normalized) return true;
-      // Also check path match
+      if (normalizedCurrentModule === normalizeKey(item.key)) return true;
       if (location.pathname === item.path) return true;
       return false;
     });
   };
 
-  // ─── Navigate without scroll reset ────────────────────
   const handleNavigate = (path, closeMobile = false) => {
     navigate(path);
     if (closeMobile) setMobileMenuOpen(false);
   };
 
-  // ─── Render standalone button ─────────────────────────
-  const renderStandaloneButton = (item) => {
-    const Icon = ICON_BY_KEY[item.key] || Home;
-    const isActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
-
-    return (
-      <Button
-        key={item.key}
-        variant="ghost"
-        size="sm"
-        onClick={() => handleNavigate(item.path)}
-        className={`flex items-center gap-1.5 px-3 py-2 text-xs whitespace-nowrap rounded-lg transition-all duration-200 ${
-          isActive
-            ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
-            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-        }`}
-        data-nav-key={item.key}
-        data-testid={`nav-${item.key}-button`}
-      >
-        <Icon className="w-3.5 h-3.5" />
-        <span className="font-medium">{t(`navKeys.${item.key}`, item.label)}</span>
-      </Button>
-    );
-  };
-
-  // ─── Render group dropdown ────────────────────────────
   const renderGroupDropdown = (groupDef) => {
     const items = groupedItems[groupDef.id];
     if (!items || items.length === 0) return null;
 
     const GroupIcon = GROUP_ICONS[groupDef.id] || Home;
     const active = isGroupActive(groupDef.id);
+    const label = t(`navGroups.${groupDef.id}`, groupDef.label);
 
     return (
       <DropdownMenu key={groupDef.id}>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`flex items-center gap-1.5 px-3 py-2 text-xs whitespace-nowrap rounded-lg transition-all duration-200 ${
-              active
-                ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-            }`}
-            data-testid={`nav-group-${groupDef.id}-button`}
-          >
-            <GroupIcon className="w-3.5 h-3.5" />
-            <span className="font-medium">{t(`navGroups.${groupDef.id}`, groupDef.label)}</span>
-            <ChevronDown className={`w-3 h-3 transition-transform ${active ? 'text-white/80' : 'text-gray-400'}`} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="min-w-[200px]">
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md transition-all duration-150 h-8 ${
+                    active
+                      ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                  }`}
+                  data-testid={`nav-group-${groupDef.id}-button`}
+                >
+                  <GroupIcon className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden 2xl:inline font-medium">{label}</span>
+                  <ChevronDown className={`w-2.5 h-2.5 shrink-0 ${active ? 'text-white/70' : 'text-gray-400'}`} />
+                </Button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="2xl:hidden">
+              <p>{label}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <DropdownMenuContent align="start" className="min-w-[190px]">
           {items.map((item) => {
             const Icon = ICON_BY_KEY[item.key] || Home;
             const isItemActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
-
             return (
               <DropdownMenuItem
                 key={item.key}
@@ -234,8 +205,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                 }`}
                 data-testid={`nav-${item.key}-button`}
               >
-                <Icon className={`w-4 h-4 ${isItemActive ? 'text-blue-600' : 'text-gray-400'}`} />
-                <span>{t(`navKeys.${item.key}`, item.label)}</span>
+                <Icon className={`w-3.5 h-3.5 ${isItemActive ? 'text-blue-600' : 'text-gray-400'}`} />
+                <span className="text-sm">{t(`navKeys.${item.key}`, item.label)}</span>
               </DropdownMenuItem>
             );
           })}
@@ -245,103 +216,149 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-        <div className="px-4 py-2.5">
-          <div className="flex items-center justify-between">
-            {/* Logo & Hotel Name + Tier Badge */}
-            <div className="flex items-center space-x-3 shrink-0">
-              <img
-                src="/syroce-logo.svg"
-                alt="Syroce Logo"
-                className="h-9 w-auto cursor-pointer"
-                onClick={() => navigate('/')}
-              />
-              <div className="flex flex-col leading-tight min-w-0">
-                <span className="text-[10px] uppercase tracking-[0.2em] text-gray-400 hidden lg:block">
-                  Syroce PMS
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm shrink-0">
+        <div className="px-3 py-1.5">
+          <div className="flex items-center h-10">
+            {/* Logo area - fixed width */}
+            <div
+              className="flex items-center gap-2 shrink-0 cursor-pointer mr-3"
+              onClick={() => navigate('/')}
+            >
+              <img src="/syroce-logo.svg" alt="Syroce" className="h-7 w-auto" />
+              <div className="hidden lg:flex flex-col leading-none">
+                <span className="text-[9px] uppercase tracking-widest text-gray-400">Syroce PMS</span>
+                <span className="text-xs font-semibold text-gray-700 truncate max-w-[120px]" title={tenant?.property_name || ''}>
+                  {tenant?.property_name || 'Hotel'}
                 </span>
-                <div className="flex items-center gap-2">
-                  <span
-                    className="text-sm font-semibold text-gray-700 truncate max-w-[120px] lg:max-w-[160px]"
-                    title={tenant?.property_name || 'Hotel Management'}
-                  >
-                    {tenant?.property_name || 'Hotel Management'}
-                  </span>
-                  {!isSuperAdmin && (
-                    <span className={`hidden lg:inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border font-semibold ${tierConfig.cls}`}>
-                      <TierIcon className="w-2.5 h-2.5" />
-                      {tierConfig.label}
-                    </span>
-                  )}
-                  {isSuperAdmin && (
-                    <span className="hidden lg:inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border font-semibold bg-red-100 text-red-700 border-red-200">
-                      <Shield className="w-2.5 h-2.5" />
-                      Admin
-                    </span>
-                  )}
-                </div>
               </div>
             </div>
 
-            {/* Desktop Navigation - Grouped */}
-            <nav className="hidden md:flex items-center gap-1 flex-1 justify-center max-w-4xl mx-4">
-              {/* Dashboard standalone */}
-              {standaloneItems
-                .filter((item) => item.key === 'dashboard')
-                .map((item) => renderStandaloneButton(item))}
+            {/* Desktop Navigation - scrollable */}
+            <nav className="hidden md:flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto scrollbar-none">
+              {/* Dashboard */}
+              {standaloneItems.filter((item) => item.key === 'dashboard').map((item) => {
+                const Icon = ICON_BY_KEY[item.key] || Home;
+                const isActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
+                return (
+                  <TooltipProvider key={item.key} delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleNavigate(item.path)}
+                          className={`flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md h-8 transition-all duration-150 ${
+                            isActive
+                              ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                              : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                          data-nav-key={item.key}
+                          data-testid={`nav-${item.key}-button`}
+                        >
+                          <Icon className="w-3.5 h-3.5 shrink-0" />
+                          <span className="hidden 2xl:inline font-medium">{t(`navKeys.${item.key}`, item.label)}</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="2xl:hidden">
+                        <p>{t(`navKeys.${item.key}`, item.label)}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                );
+              })}
+
+              {/* Separator */}
+              <div className="w-px h-5 bg-gray-200 mx-1 shrink-0" />
 
               {/* Group dropdowns */}
               {NAV_GROUPS.map((groupDef) => renderGroupDropdown(groupDef))}
 
-              {/* Settings standalone */}
-              {standaloneItems
-                .filter((item) => item.key === 'settings')
-                .map((item) => renderStandaloneButton(item))}
+              {/* Separator */}
+              <div className="w-px h-5 bg-gray-200 mx-1 shrink-0" />
+
+              {/* Settings */}
+              {standaloneItems.filter((item) => item.key === 'settings').map((item) => {
+                const Icon = ICON_BY_KEY[item.key] || Home;
+                const isActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
+                return (
+                  <TooltipProvider key={item.key} delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleNavigate(item.path)}
+                          className={`flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md h-8 transition-all duration-150 ${
+                            isActive
+                              ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                              : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                          data-nav-key={item.key}
+                          data-testid={`nav-${item.key}-button`}
+                        >
+                          <Icon className="w-3.5 h-3.5 shrink-0" />
+                          <span className="hidden 2xl:inline font-medium">{t(`navKeys.${item.key}`, item.label)}</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="2xl:hidden">
+                        <p>{t(`navKeys.${item.key}`, item.label)}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                );
+              })}
 
               {/* Super admin items */}
-              {standaloneItems
-                .filter((item) => item.requireSuperAdmin)
-                .map((item) => renderStandaloneButton(item))}
-
-              {/* Upgrade teaser */}
-              {!isSuperAdmin && lockedNav.length > 0 && upgradeTier && (
-                <UpgradeBanner requiredTier={upgradeTier} variant="inline" />
-              )}
+              {standaloneItems.filter((item) => item.requireSuperAdmin).map((item) => {
+                const Icon = ICON_BY_KEY[item.key] || Home;
+                return (
+                  <Button
+                    key={item.key}
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleNavigate(item.path)}
+                    className="flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md h-8 text-gray-600 hover:bg-gray-100"
+                    data-testid={`nav-${item.key}-button`}
+                  >
+                    <Icon className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden 2xl:inline font-medium">{t(`navKeys.${item.key}`, item.label)}</span>
+                  </Button>
+                );
+              })}
             </nav>
 
-            {/* User Menu and Utilities */}
-            <div className="flex items-center space-x-2 shrink-0">
+            {/* Right utilities - fixed */}
+            <div className="flex items-center gap-1.5 shrink-0 ml-2">
               <div className="hidden md:block">
                 <LanguageSelector />
               </div>
               <PushSubscriptionManager />
               <NotificationBell />
+
+              {/* Mobile hamburger */}
               <Button
                 variant="ghost"
                 size="sm"
-                className="md:hidden"
+                className="md:hidden h-8 w-8 p-0"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 data-testid="mobile-menu-toggle"
               >
-                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
               </Button>
 
+              {/* User menu */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="hidden sm:flex">
-                    <User className="w-4 h-4 mr-1.5" />
-                    <span className="max-w-[80px] truncate">{user?.name || 'User'}</span>
+                  <Button variant="outline" size="sm" className="h-8 px-2 text-xs">
+                    <User className="w-3.5 h-3.5 mr-1" />
+                    <span className="hidden sm:inline max-w-[70px] truncate">{user?.name || 'User'}</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem className="text-sm font-medium">
-                    {user?.email}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="text-sm text-gray-500">
-                    Rol: {user?.role}
-                  </DropdownMenuItem>
+                  <DropdownMenuItem className="text-sm font-medium">{user?.email}</DropdownMenuItem>
+                  <DropdownMenuItem className="text-sm text-gray-500">Rol: {user?.role}</DropdownMenuItem>
                   {!isSuperAdmin && (
                     <DropdownMenuItem>
                       <span className={`inline-flex items-center gap-1 ${tierConfig.cls} px-2 py-0.5 rounded-full text-[10px] font-semibold`}>
@@ -361,58 +378,38 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
 
           {/* Mobile Navigation */}
           {mobileMenuOpen && (
-            <nav className="md:hidden mt-3 pb-2 border-t pt-3 max-h-[70vh] overflow-y-auto" data-testid="mobile-nav">
-              {/* Mobile tier badge + language */}
-              <div className="px-2 pb-3 flex items-center gap-2">
-                <span className={`inline-flex items-center gap-1 ${tierConfig.cls} px-2.5 py-1 rounded-full text-xs font-semibold border`}>
-                  <TierIcon className="w-3.5 h-3.5" />
-                  {tierConfig.label} Plan
+            <nav className="md:hidden mt-2 pb-2 border-t pt-2 max-h-[70vh] overflow-y-auto" data-testid="mobile-nav">
+              <div className="px-2 pb-2 flex items-center gap-2">
+                <span className={`inline-flex items-center gap-1 ${tierConfig.cls} px-2 py-0.5 rounded-full text-xs font-semibold border`}>
+                  <TierIcon className="w-3 h-3" />
+                  {tierConfig.label}
                 </span>
                 <LanguageSelector />
               </div>
 
-              {/* Dashboard */}
-              {standaloneItems
-                .filter((item) => item.key === 'dashboard')
-                .map((item) => {
-                  const Icon = ICON_BY_KEY[item.key] || Home;
-                  const isActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
-                  return (
-                    <Button
-                      key={item.key}
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleNavigate(item.path, true)}
-                      className={`w-full justify-start py-2.5 mb-0.5 ${
-                        isActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-100'
-                      }`}
-                      data-testid={`nav-${item.key}-button`}
-                    >
-                      <Icon className="w-4 h-4 mr-2" />
-                      {t(`navKeys.${item.key}`, item.label)}
-                    </Button>
-                  );
-                })}
+              {standaloneItems.filter((item) => item.key === 'dashboard').map((item) => {
+                const Icon = ICON_BY_KEY[item.key] || Home;
+                const isActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
+                return (
+                  <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(item.path, true)}
+                    className={`w-full justify-start py-2 mb-0.5 ${isActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-100'}`}
+                    data-testid={`nav-${item.key}-button`}>
+                    <Icon className="w-4 h-4 mr-2" />{t(`navKeys.${item.key}`, item.label)}
+                  </Button>
+                );
+              })}
 
-              {/* Mobile groups (accordion style) */}
               {NAV_GROUPS.map((groupDef) => {
                 const items = groupedItems[groupDef.id];
                 if (!items || items.length === 0) return null;
-
                 const GroupIcon = GROUP_ICONS[groupDef.id] || Home;
                 const active = isGroupActive(groupDef.id);
                 const isExpanded = expandedMobileGroup === groupDef.id;
-
                 return (
                   <div key={groupDef.id} className="mb-0.5">
-                    <Button
-                      variant="ghost"
-                      size="sm"
+                    <Button variant="ghost" size="sm"
                       onClick={() => setExpandedMobileGroup(isExpanded ? null : groupDef.id)}
-                      className={`w-full justify-between py-2.5 ${
-                        active && !isExpanded ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-100'
-                      }`}
-                    >
+                      className={`w-full justify-between py-2 ${active && !isExpanded ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-100'}`}>
                       <div className="flex items-center">
                         <GroupIcon className="w-4 h-4 mr-2" />
                         {t(`navGroups.${groupDef.id}`, groupDef.label)}
@@ -425,18 +422,11 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                           const Icon = ICON_BY_KEY[item.key] || Home;
                           const isItemActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
                           return (
-                            <Button
-                              key={item.key}
-                              variant="ghost"
-                              size="sm"
+                            <Button key={item.key} variant="ghost" size="sm"
                               onClick={() => handleNavigate(item.path, true)}
-                              className={`w-full justify-start py-2 text-sm ${
-                                isItemActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-50'
-                              }`}
-                              data-testid={`nav-${item.key}-button`}
-                            >
-                              <Icon className="w-3.5 h-3.5 mr-2" />
-                              {t(`navKeys.${item.key}`, item.label)}
+                              className={`w-full justify-start py-1.5 text-sm ${isItemActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-50'}`}
+                              data-testid={`nav-${item.key}-button`}>
+                              <Icon className="w-3.5 h-3.5 mr-2" />{t(`navKeys.${item.key}`, item.label)}
                             </Button>
                           );
                         })}
@@ -446,50 +436,28 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                 );
               })}
 
-              {/* Settings */}
-              {standaloneItems
-                .filter((item) => item.key === 'settings')
-                .map((item) => {
-                  const Icon = ICON_BY_KEY[item.key] || Home;
-                  const isActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
-                  return (
-                    <Button
-                      key={item.key}
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleNavigate(item.path, true)}
-                      className={`w-full justify-start py-2.5 mb-0.5 ${
-                        isActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-100'
-                      }`}
-                      data-testid={`nav-${item.key}-button`}
-                    >
-                      <Icon className="w-4 h-4 mr-2" />
-                      {t(`navKeys.${item.key}`, item.label)}
-                    </Button>
-                  );
-                })}
+              {standaloneItems.filter((item) => item.key === 'settings').map((item) => {
+                const Icon = ICON_BY_KEY[item.key] || Home;
+                const isActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
+                return (
+                  <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(item.path, true)}
+                    className={`w-full justify-start py-2 mb-0.5 ${isActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-100'}`}
+                    data-testid={`nav-${item.key}-button`}>
+                    <Icon className="w-4 h-4 mr-2" />{t(`navKeys.${item.key}`, item.label)}
+                  </Button>
+                );
+              })}
 
-              {/* Super admin items */}
-              {standaloneItems
-                .filter((item) => item.requireSuperAdmin)
-                .map((item) => {
-                  const Icon = ICON_BY_KEY[item.key] || Home;
-                  return (
-                    <Button
-                      key={item.key}
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleNavigate(item.path, true)}
-                      className="w-full justify-start py-2.5 mb-0.5 hover:bg-gray-100"
-                      data-testid={`nav-${item.key}-button`}
-                    >
-                      <Icon className="w-4 h-4 mr-2" />
-                      {t(`navKeys.${item.key}`, item.label)}
-                    </Button>
-                  );
-                })}
+              {standaloneItems.filter((item) => item.requireSuperAdmin).map((item) => {
+                const Icon = ICON_BY_KEY[item.key] || Home;
+                return (
+                  <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(item.path, true)}
+                    className="w-full justify-start py-2 mb-0.5 hover:bg-gray-100" data-testid={`nav-${item.key}-button`}>
+                    <Icon className="w-4 h-4 mr-2" />{t(`navKeys.${item.key}`, item.label)}
+                  </Button>
+                );
+              })}
 
-              {/* Mobile upgrade banner */}
               {!isSuperAdmin && lockedNav.length > 0 && upgradeTier && (
                 <UpgradeBanner requiredTier={upgradeTier} variant="nav-footer" />
               )}
@@ -498,8 +466,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto">
+      {/* Main Content - fills remaining viewport */}
+      <main className="flex-1 max-w-7xl w-full mx-auto overflow-auto">
         {children}
       </main>
     </div>
