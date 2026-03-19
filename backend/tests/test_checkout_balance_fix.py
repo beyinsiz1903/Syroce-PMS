@@ -13,7 +13,7 @@ import os
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
-    BASE_URL = "https://balance-check-deploy.preview.emergentagent.com"
+    BASE_URL = "https://force-clean-feature.preview.emergentagent.com"
 
 
 class TestCheckoutBalanceFix:
