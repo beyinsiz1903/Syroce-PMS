@@ -5,12 +5,47 @@ Implements caching for frequently accessed data
 
 import redis
 import json
+import hashlib
 import os
+from datetime import datetime, date
 from typing import Optional, Any, Callable
 from functools import wraps
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _json_serializer(obj):
+    """Custom JSON serializer that handles Pydantic models, datetime, etc."""
+    if hasattr(obj, 'model_dump'):
+        return obj.model_dump()
+    if hasattr(obj, 'dict'):
+        return obj.dict()
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if hasattr(obj, 'value'):
+        return obj.value
+    return str(obj)
+
+
+def _make_serializable(value: Any) -> Any:
+    """Recursively convert Pydantic models and other non-serializable types to dicts/primitives."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if hasattr(value, 'model_dump'):
+        return value.model_dump()
+    if hasattr(value, 'dict') and not isinstance(value, dict):
+        return value.dict()
+    if isinstance(value, dict):
+        return {k: _make_serializable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_make_serializable(item) for item in value]
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if hasattr(value, 'value'):
+        return value.value
+    return value
+
 
 class CacheManager:
     """Redis-based cache manager with async support"""
@@ -26,12 +61,11 @@ class CacheManager:
                 socket_timeout=5,
                 retry_on_timeout=True
             )
-            # Test connection
             self.client.ping()
             self.enabled = True
-            logger.info("✅ Redis cache connected successfully")
+            logger.info("Redis cache connected successfully")
         except Exception as e:
-            logger.warning(f"⚠️ Redis not available: {e}. Caching disabled.")
+            logger.warning(f"Redis not available: {e}. Caching disabled.")
             self.enabled = False
             self.client = None
     
@@ -55,10 +89,11 @@ class CacheManager:
             return False
         
         try:
+            serializable = _make_serializable(value)
             self.client.setex(
                 key,
                 ttl,
-                json.dumps(value, default=str)
+                json.dumps(serializable, default=_json_serializer)
             )
             return True
         except Exception as e:
@@ -125,43 +160,67 @@ class CacheManager:
 # Global cache instance
 cache = CacheManager()
 
+def _extract_tenant_id(args, kwargs) -> str:
+    """Extract tenant_id from function arguments, checking User objects first."""
+    # Check kwargs for current_user or tenant_id
+    for key in ('current_user', 'user'):
+        obj = kwargs.get(key)
+        if obj and hasattr(obj, 'tenant_id') and obj.tenant_id:
+            return str(obj.tenant_id)
+    
+    if 'tenant_id' in kwargs and kwargs['tenant_id']:
+        return str(kwargs['tenant_id'])
+    
+    # Check positional args for objects with tenant_id
+    for arg in args:
+        if hasattr(arg, 'tenant_id') and getattr(arg, 'tenant_id', None):
+            return str(arg.tenant_id)
+    
+    return 'global'
+
+
+def _build_cache_key(func: Callable, key_prefix: str, tenant_id: str, args, kwargs) -> str:
+    """Build a stable, deterministic cache key."""
+    # Collect key-relevant parts (exclude User objects which are not cache-relevant)
+    key_parts = []
+    for arg in args:
+        if hasattr(arg, 'tenant_id'):
+            continue  # Skip User objects
+        key_parts.append(str(arg))
+    
+    for k, v in sorted(kwargs.items()):
+        if k in ('current_user', 'user', 'request', 'response', 'db'):
+            continue  # Skip non-cacheable params
+        key_parts.append(f"{k}={v}")
+    
+    params_str = "|".join(key_parts)
+    params_hash = hashlib.md5(params_str.encode()).hexdigest()[:12]
+    
+    return f"cache:{tenant_id}:{key_prefix or func.__name__}:{params_hash}"
+
+
 def cached(
     ttl: int = 300,
     key_prefix: str = "",
     invalidate_on: list = None
 ):
     """
-    Decorator for caching function results
+    Decorator for caching function results.
+    Properly serializes Pydantic models and uses stable cache keys.
     
     Args:
         ttl: Time to live in seconds (default 5 minutes)
         key_prefix: Prefix for cache key
         invalidate_on: List of entity types that should invalidate this cache
-    
-    Usage:
-        @cached(ttl=600, key_prefix="dashboard")
-        async def get_dashboard_data(tenant_id: str):
-            ...
     """
     def decorator(func: Callable):
         @wraps(func)
         async def wrapper(*args, **kwargs):
             if not cache.enabled:
-                # If cache disabled, call function directly
                 return await func(*args, **kwargs)
             
-            # Build cache key from function name and arguments
-            # Extract tenant_id if present
-            tenant_id = kwargs.get('tenant_id') or (args[0] if args else 'global')
-            
-            # Create unique cache key
-            cache_key_parts = [
-                'cache',
-                str(tenant_id),
-                key_prefix or func.__name__,
-                str(hash(str(args) + str(sorted(kwargs.items()))))[:16]
-            ]
-            cache_key = ":".join(cache_key_parts)
+            tenant_id = _extract_tenant_id(args, kwargs)
+            cache_key = _build_cache_key(func, key_prefix, tenant_id, args, kwargs)
             
             # Try to get from cache
             cached_value = cache.get(cache_key)
@@ -173,7 +232,7 @@ def cached(
             logger.debug(f"Cache miss: {cache_key}")
             result = await func(*args, **kwargs)
             
-            # Store in cache
+            # Store in cache (Pydantic models are auto-serialized)
             cache.set(cache_key, result, ttl=ttl)
             
             return result
@@ -270,7 +329,8 @@ class ReportCache:
     @staticmethod
     def get_key(tenant_id: str, report_type: str, params: dict) -> str:
         """Get cache key for report"""
-        params_hash = str(hash(str(sorted(params.items()))))[:16]
+        params_str = str(sorted(params.items()))
+        params_hash = hashlib.md5(params_str.encode()).hexdigest()[:12]
         return f"cache:{tenant_id}:reports:{report_type}:{params_hash}"
     
     @staticmethod

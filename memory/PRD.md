@@ -34,15 +34,16 @@ Kullanıcının birincil hedefi kararlı, tamamen geçen bir CI/CD pipeline'ı e
 | Mart 2026 | `tests/test_reconciliation_engine.py` | `test_manual_run`: CI'da reconciliation engine başlatılmamış → `status: unavailable` kontrolü ve pytest.skip eklendi. Aynı dosyadaki 7 teste proaktif koruma eklendi | 1953 test geçti, doğrulama bekliyor |
 | Şubat 2026 | `tests/test_unassigned_booking_and_calendar_features.py` | Veri bağımlı testler düzeltildi: iptal edilen rezervasyon ve tarih format doğrulaması | 2357 test geçti |
 | Şubat 2026 | `tests/unit/test_exely_provider.py` | SOAP XML format assertion'ları güncellendi: eski attribute formatından yeni element formatına | 2357 test geçti |
-| Şubat 2026 | `worker/Dockerfile` | `pip install` komutuna `--extra-index-url` eklendi — `emergentintegrations` paketi bulunamıyordu | Doğrulama bekliyor |
+| Şubat 2026 | `worker/Dockerfile` | `pip install` komutuna `--extra-index-url` eklendi — `emergentintegrations` paketi bulunamıyordu | Kullanıcı dogruladı |
+|| Şubat 2026 | `cache_manager.py` | `@cached` decorator refaktörü: (1) `_make_serializable()` ile Pydantic model->dict dönüşümü, (2) `hashlib.md5` ile deterministik cache key, (3) `_extract_tenant_id()` ile User objesinden tenant_id çıkarımı | 6 birim testi + 3 API testi geçti |
 
 ## Öncelikli Backlog
 
 ### P0
-- [ ] CI/CD pipeline kararlılığı — `worker/Dockerfile`'da `--extra-index-url` eksikliği düzeltildi (emergentintegrations paketi bulunamıyordu). Kullanıcı doğrulaması bekliyor.
+- [x] CI/CD pipeline kararlılığı — `worker/Dockerfile`'da `--extra-index-url` eksikliği düzeltildi. Kullanıcı doğruladı, pipeline yeşil.
 
 ### P1
-- [ ] `@cached` decorator refaktörü (`cache_manager.py`) — Redis + Pydantic serializasyon sorunu
+- [x] `@cached` decorator refaktörü (`cache_manager.py`) — Pydantic serializasyon, deterministik cache key, tenant_id çıkarımı düzeltildi
 
 ### P2
 - [ ] `reconciliation_engine` modül yapısının düzeltilmesi
