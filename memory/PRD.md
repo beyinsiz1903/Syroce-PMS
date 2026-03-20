@@ -85,6 +85,12 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
 
+## Completed (Session 35 - Feb 2026)
+- [x] Bug Fix: ResizeObserver error overlay in "Create New Booking" dialog
+  - Root cause: CRA error overlay capturing benign ResizeObserver loop errors triggered by Radix UI Select
+  - Fix: Added early error suppression script in `public/index.html` <head> before any bundle scripts
+  - Verified: Both "Hizli Rezervasyon" and "Create New Booking" dialogs open without error overlay
+
 ## Completed (Session 34 - Feb 2026)
 - [x] P4: Quick reservation - existing guest search
   - Backend: `GET /api/pms/guests/search?q=...` endpoint (name, email, phone, id_number search)
@@ -96,40 +102,22 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 ## Completed (Session 33 - Feb 2026)
 - [x] P0: User verified refactoring of RateManager and ReservationDetailModal - confirmed working
 - [x] P3: Added unit tests for refactored components (32 tests, 3 test suites, 100% pass)
-  - `reservation-detail/__tests__/helpers.test.js` - fmtDate, fmtTs, fmtTL, statusLabel
-  - `reservation-detail/__tests__/components.test.js` - InfoField, Avatar, EmptyState, SummaryCard, FormField
-  - `rate-manager/__tests__/constants.test.js` - DAYS, UPDATE_FIELDS, CHANNELS
 - [x] P3: soap_builder.py cleanup reviewed - no commented-out code found, file is clean
 - [x] Installed @testing-library/react, @testing-library/jest-dom, @testing-library/dom, @testing-library/user-event
 - [x] Configured Jest moduleNameMapper for @/ alias in package.json
 
 ## Completed (Session 32 - Feb 2026)
-- [x] Fixed CI test failure in `test_p6_readiness_rollout.py::TestAPIEndpoints::test_all_p6_endpoints` - removed hardcoded `localhost:8001`, added skipif guard for CI
-- [x] P2 Refactoring: ReservationDetailModal.js (1385 → 183 lines + 6 sub-files in `reservation-detail/`)
-- [x] P2 Refactoring: RateManager.jsx (1034 → 296 lines + 4 sub-files in `rate-manager/`)
-- [x] Testing: Frontend refactoring validated - all tabs render, no runtime errors (100% pass rate)
-
-## Completed (Session 31 - Feb 2026)
-- [x] Fixed CI test failure in `test_exely_webhook_api.py` - removed hardcoded fallback URL from BASE_URL
-- [x] Fixed same issue in `test_session_calendar_bugs.py` and `test_bug_fixes_cancel_availability.py`
-- [x] CI result: 786 passed, 1640 skipped, 0 failed, 0 errors (verified)
-- [x] Fixed missing navigation modules - Demo tenant had only 2 modules (pms, reports) instead of all 22
-- [x] Updated MongoDB tenant modules and auto_seed.py to include all module keys (reservation_calendar, channel_manager, night_audit, etc.)
-
-## Completed (Session 30 - Mar 20, 2026)
-- [x] Fixed CI test failures: added `pytestmark` skipif to 24 integration test files missing `REACT_APP_BACKEND_URL`
-- [x] Added CI guard to `test_p5_cockpit_notifications.py`, `test_production_hardening_v2.py`, `test_production_hardening_v3.py` (event loop conflict)
-- [x] Fixed incorrect unit tests in `test_exely_provider.py` (SOAP rate test, ARI validation test)
-- [x] CI now: 786 passed, 1640 skipped, 0 failed, 0 errors
-
-## Completed (Session 29 - Mar 20, 2026)
-- [x] Fixed emergentintegrations install error in requirements.txt (added --extra-index-url)
-- [x] Investigated React "duplicate key" warning - confirmed resolved, no warnings across all pages
+- [x] Fixed CI test failure in `test_p6_readiness_rollout.py::TestAPIEndpoints::test_all_p6_endpoints`
+- [x] P2 Refactoring: ReservationDetailModal.js (1385 -> 183 lines + 6 sub-files)
+- [x] P2 Refactoring: RateManager.jsx (1034 -> 296 lines + 4 sub-files)
 
 ## Backlog (Future Tasks)
-- [ ] P1: Mapping UI Improvement (PMS room/rate ↔ Provider mapping interface)
+- [ ] P1: Enhance "New Reservation" dialog on calendar with guest search (consistency with quick reservation)
+- [ ] P1: Mapping UI Improvement (PMS room/rate <-> Provider mapping interface)
 - [ ] P1: Test booking creation via Exely booking link + OTA_ReadRQ verification
 - [ ] P1: Reservation lineage - duplicate/stale detection
 - [ ] P2: Legacy collection cleanup
 - [ ] P2: Deprecation cleanup (remove old files)
 - [ ] P3: Service Wiring, Schema Completion, Frontend Role-Based Views
+- [ ] P5: Rate Manager: "Stop Sale" functionality
+- [ ] P5: Folio Management: Deposit/refund flows and invoice generation
