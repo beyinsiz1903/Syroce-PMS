@@ -888,6 +888,8 @@ async def create_stop_sale_schedule(
                 {"id": schedule["id"]},
                 {"$set": {"applied": True, "applied_at": now}},
             )
+            schedule["applied"] = True
+            schedule["applied_at"] = now
 
     # Remove _id before returning
     schedule.pop("_id", None)

@@ -85,6 +85,23 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
 
+## Completed (Session 40 - Mar 2026)
+- [x] Stop Sale Zamanlayıcı & Tatil Donemi Hızlı Seçim
+  - Backend: `GET /api/channel-manager/rate-manager/holidays` - Python `holidays` kütüphanesi ile Türk tatilleri + `dateutil.easter` ile Paskalya tarihleri
+    - 3 kategori: Türk Tatili (Ramazan/Kurban Bayramı, 23 Nisan, vb.), Uluslararası (Paskalya, Noel, Rus Yılbaşı), Sezon (Yaz, Sömestr)
+    - 2026-2027 yılları için otomatik tarih hesaplama
+  - Backend: Stop Sale Scheduler CRUD
+    - `POST /api/channel-manager/rate-manager/stop-sale-schedules` - zamanlayıcı oluştur (auto_apply ile anında uygulama)
+    - `GET /api/channel-manager/rate-manager/stop-sale-schedules` - listele
+    - `DELETE /api/channel-manager/rate-manager/stop-sale-schedules/{id}` - sil (opsiyonel stop sale kaldırma)
+    - `PATCH /api/channel-manager/rate-manager/stop-sale-schedules/{id}` - güncelle
+  - Frontend: StopSalePanel.jsx tamamen yeniden yazıldı
+    - Tatil hızlı seçim: Pill butonları ile tatil seç → tarihler otomatik dolsun
+    - Manuel tarih girişi desteği (tarihler her zaman düzenlenebilir)
+    - Zamanlayıcı Oluştur & Uygula butonu
+    - Kayıtlı Zamanlayıcılar paneli (silme + stop sale kaldırma)
+  - Test: Backend 100% (20/20) + Frontend 100% (iteration_113.json)
+
 ## Completed (Session 39 - Mar 2026)
 - [x] Performance Fix: Stop Sale "yavaş gönderme" sorunu ✅ KULLANICI ONAYLI
   - Backend: Exely push artık `asyncio.create_task` ile arka planda çalışıyor (fire-and-forget), API yanıtı DB yazımı bittikten hemen sonra dönüyor
