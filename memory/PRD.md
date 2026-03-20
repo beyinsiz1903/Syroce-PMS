@@ -30,10 +30,10 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   ReservationCalendar.js       (~800 lines - main orchestrator)
   calendar/
     CalendarHeader.js          (header, navigation, buttons)
-    CalendarGrid.js            (room grid, booking bars, drag/drop)
+    CalendarGrid.js            (room grid, booking bars, drag/drop, past date styling)
     CalendarOccupancy.js       (occupancy chart SVG)
     CalendarDialogs.js         (NewBooking, Details, MoveReason, FindRoom)
-    calendarHelpers.js         (pure utility functions)
+    calendarHelpers.js         (pure utility functions incl. isPastDate)
     index.js                   (barrel exports)
 ```
 
@@ -86,8 +86,6 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 
 ## Backlog (Future Tasks)
 - [ ] P2: Refactor ReservationDetailModal.js (1400+ lines -> smaller components)
-- [ ] P2: React "duplicate key" console warning fix
-- [ ] P2: Visually distinguish past dates in calendar (grayed out)
 - [ ] P3: Refactor RateManager.jsx (1000+ lines -> smaller components)
 - [ ] P3: Clean up soap_builder.py (commented-out code from SOAP debugging)
 - [ ] P4: Quick reservation - existing guest search

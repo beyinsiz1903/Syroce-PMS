@@ -1,5 +1,11 @@
 # Syroce PMS - Changelog
 
+### Session 28 (Mar 20, 2026)
+- [x] **Bug Fix: /api/pms/guests 500 Error** - Guest.email changed from EmailStr to str in schemas.py to allow walk-in placeholder emails (walk-in-xxx@placeholder.local)
+- [x] **Feature: Calendar Past Date Styling** - Added isPastDate() helper, past dates now show gray background (bg-gray-200/70), lighter text (text-gray-400), and diagonal stripe pattern in room cells
+- [x] **Verified: No Duplicate Key React Warnings** - Console shows 0 duplicate key warnings
+- [x] Tested: Backend 7/7 (100%) + Frontend 100% (iteration_106.json)
+
 ### Session 27 (Mar 20, 2026)
 - [x] **Kiracı Yönetimi Sayfası Tam İyileştirme (Tenant Management Overhaul)**
   - **Yeni Otel Ekleme**: "Yeni Otel Ekle" butonu ile modal form (ad, e-posta, şifre, telefon, adres, konum, açıklama, plan, süre)
