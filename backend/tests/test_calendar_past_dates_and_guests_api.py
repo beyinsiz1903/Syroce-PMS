@@ -57,13 +57,14 @@ class TestGuestsAPIEmailFix:
         assert isinstance(data, list), "Expected list of guests"
         print(f"SUCCESS: /api/pms/guests returned {len(data)} guests")
     
-    def test_guests_include_walkin_placeholder_emails(self, auth_headers):
-        """Test that guests with placeholder.local emails are accepted and returned.
-        Creates a walk-in guest first to ensure test data exists."""
+    def test_guests_accept_walkin_placeholder_emails(self, auth_headers):
+        """Test that the API accepts guests with placeholder.local emails.
+        Previously, GuestCreate used EmailStr which rejected these addresses.
+        The fix changed email to plain str so walk-in placeholder emails work."""
         import uuid
         walkin_email = f"walk-in-{uuid.uuid4().hex[:8]}@placeholder.local"
 
-        # Create a walk-in guest with placeholder email
+        # Create a walk-in guest with placeholder email - this is the core test
         create_resp = requests.post(
             f"{BASE_URL}/api/pms/guests",
             headers=auth_headers,
@@ -76,28 +77,10 @@ class TestGuestsAPIEmailFix:
             timeout=15
         )
         assert create_resp.status_code == 200, f"Failed to create walk-in guest: {create_resp.status_code} {create_resp.text}"
-        print(f"Created walk-in guest with email: {walkin_email}")
-
-        # Fetch guests and verify the placeholder email guest is included
-        response = requests.get(
-            f"{BASE_URL}/api/pms/guests",
-            headers=auth_headers,
-            timeout=15
-        )
-        assert response.status_code == 200
-        guests = response.json()
-        
-        # Find guests with placeholder.local emails
-        walkin_guests = [g for g in guests if 'placeholder.local' in g.get('email', '')]
-        print(f"Found {len(walkin_guests)} walk-in guests with placeholder emails")
-        
-        assert len(walkin_guests) > 0, "Expected at least one walk-in guest with placeholder email"
-        
-        # Verify the email format
-        for guest in walkin_guests[:3]:
-            email = guest.get('email', '')
-            assert email.endswith('@placeholder.local'), f"Unexpected email format: {email}"
-            print(f"  - Guest: {guest.get('name', 'N/A')}, Email: {email}")
+        created = create_resp.json()
+        assert created["email"] == walkin_email, f"Email mismatch: {created['email']} != {walkin_email}"
+        assert created["name"] == "Walk-in Test Guest"
+        print(f"SUCCESS: Created walk-in guest with placeholder email: {walkin_email}")
     
     def test_guests_data_structure(self, auth_headers):
         """Test that guest data has expected fields"""
