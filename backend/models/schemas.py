@@ -793,7 +793,7 @@ class DemandData(BaseModel):
 # Guest & Booking Models
 class GuestCreate(BaseModel):
     name: str
-    email: EmailStr
+    email: str = ""
     phone: str
     id_number: str
     nationality: Optional[str] = None

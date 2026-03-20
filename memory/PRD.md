@@ -170,6 +170,12 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] P2 Refactoring: ReservationDetailModal.js (1385 -> 183 lines + 6 sub-files)
 - [x] P2 Refactoring: RateManager.jsx (1034 -> 296 lines + 4 sub-files)
 
+## Completed (Session 41 - Mar 2026)
+- [x] P0: Fixed CI test `test_guests_include_walkin_placeholder_emails` failure
+  - Root cause: `GuestCreate.email` used `EmailStr` rejecting `@placeholder.local` addresses; test depended on non-existent seed data
+  - Fix: Changed `GuestCreate.email` from `EmailStr` to `str` in `models/schemas.py`
+  - Fix: Test now creates its own walk-in guest (self-sufficient, no seed dependency)
+
 ## Completed (Session 40 - Feb 2026)
 - [x] P0: Fixed CI/CD pipeline `emergentintegrations` package installation error
   - Added `--extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/` to all pip install commands

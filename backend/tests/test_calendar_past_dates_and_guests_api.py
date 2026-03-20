@@ -58,7 +58,27 @@ class TestGuestsAPIEmailFix:
         print(f"SUCCESS: /api/pms/guests returned {len(data)} guests")
     
     def test_guests_include_walkin_placeholder_emails(self, auth_headers):
-        """Test that guests with placeholder.local emails are included"""
+        """Test that guests with placeholder.local emails are accepted and returned.
+        Creates a walk-in guest first to ensure test data exists."""
+        import uuid
+        walkin_email = f"walk-in-{uuid.uuid4().hex[:8]}@placeholder.local"
+
+        # Create a walk-in guest with placeholder email
+        create_resp = requests.post(
+            f"{BASE_URL}/api/pms/guests",
+            headers=auth_headers,
+            json={
+                "name": "Walk-in Test Guest",
+                "email": walkin_email,
+                "phone": "+905551234567",
+                "id_number": ""
+            },
+            timeout=15
+        )
+        assert create_resp.status_code == 200, f"Failed to create walk-in guest: {create_resp.status_code} {create_resp.text}"
+        print(f"Created walk-in guest with email: {walkin_email}")
+
+        # Fetch guests and verify the placeholder email guest is included
         response = requests.get(
             f"{BASE_URL}/api/pms/guests",
             headers=auth_headers,
@@ -71,11 +91,10 @@ class TestGuestsAPIEmailFix:
         walkin_guests = [g for g in guests if 'placeholder.local' in g.get('email', '')]
         print(f"Found {len(walkin_guests)} walk-in guests with placeholder emails")
         
-        # Verify at least one exists (from test data)
         assert len(walkin_guests) > 0, "Expected at least one walk-in guest with placeholder email"
         
         # Verify the email format
-        for guest in walkin_guests[:3]:  # Check first 3
+        for guest in walkin_guests[:3]:
             email = guest.get('email', '')
             assert email.endswith('@placeholder.local'), f"Unexpected email format: {email}"
             print(f"  - Guest: {guest.get('name', 'N/A')}, Email: {email}")
