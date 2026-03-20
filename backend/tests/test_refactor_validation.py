@@ -79,7 +79,7 @@ class TestAuthentication:
         # Verify user info
         assert "user" in data
         assert data["user"]["email"] == TEST_EMAIL
-        assert data["user"]["role"] == "admin"
+        assert data["user"]["role"] == "super_admin"
         
         # Verify tenant info
         assert "tenant" in data
@@ -332,7 +332,7 @@ class TestSecurityModules:
         """Check CORS headers are present"""
         response = requests.options(
             f"{BASE_URL}/api/auth/login",
-            headers={"Origin": "https://pipeline-fix-4.preview.emergentagent.com"}
+            headers={"Origin": "https://pipeline-fix-5.preview.emergentagent.com"}
         )
         # CORS headers should be present
         if "access-control-allow-origin" in response.headers:
