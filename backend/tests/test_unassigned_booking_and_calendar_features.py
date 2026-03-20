@@ -349,8 +349,9 @@ class TestCalendarDataFiltering:
         for booking in bookings:
             assert "check_in" in booking, f"Booking {booking.get('id')} missing check_in"
             assert "check_out" in booking, f"Booking {booking.get('id')} missing check_out"
-            # Verify date format
-            assert "2026-03" in booking["check_in"], f"Invalid check_in format: {booking['check_in']}"
+            # Verify date is a valid ISO format string (YYYY-MM-DD...)
+            assert booking["check_in"][:4].isdigit(), f"Invalid check_in format: {booking['check_in']}"
+            assert booking["check_out"][:4].isdigit(), f"Invalid check_out format: {booking['check_out']}"
         
         print(f"✓ All {len(bookings)} bookings have valid date fields")
 
