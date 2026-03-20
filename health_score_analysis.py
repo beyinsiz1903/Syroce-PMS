@@ -9,7 +9,7 @@ import requests
 from datetime import datetime
 
 def main():
-    backend_url = "https://pms-hotfix.preview.emergentagent.com"
+    backend_url = "https://pytest-validation.preview.emergentagent.com"
     
     # Authenticate
     session = requests.Session()
