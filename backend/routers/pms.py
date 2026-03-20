@@ -919,11 +919,36 @@ async def get_bookings(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     status: Optional[str] = None,
+    search: Optional[str] = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     _: None = Depends(require_module("pms")),
 ):
     """Get bookings - INSTANT RESPONSE"""
     current_user = await get_current_user(credentials)
+
+    # If search is provided, do a text search across bookings
+    if search and search.strip():
+        term = search.strip()
+        query = {
+            "tenant_id": current_user.tenant_id,
+            "$or": [
+                {"guest_name": {"$regex": term, "$options": "i"}},
+                {"room_number": {"$regex": term, "$options": "i"}},
+                {"id": {"$regex": term, "$options": "i"}},
+            ],
+        }
+        bookings = []
+        async for b in db.bookings.find(query, {"_id": 0}).sort("created_at", -1).limit(limit):
+            if not b.get("guest_name") and b.get("guest_id"):
+                guest = await db.guests.find_one({"id": b["guest_id"]}, {"name": 1, "_id": 0})
+                if guest:
+                    b["guest_name"] = guest.get("name", "")
+            if b.get("room_id") and not b.get("room_number"):
+                room = await db.rooms.find_one({"id": b["room_id"]}, {"room_number": 1, "_id": 0})
+                if room:
+                    b["room_number"] = room.get("room_number", "")
+            bookings.append(b)
+        return {"bookings": bookings, "total": len(bookings)}
     
     # Check pre-warmed cache for default query (no filters)
     if not start_date and not end_date and not status and offset == 0:

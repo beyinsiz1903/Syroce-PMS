@@ -4,10 +4,11 @@ import { toast } from 'sonner';
 import Layout from '@/components/Layout';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowUpRight, CalendarDays, Grid3X3 } from 'lucide-react';
+import { ArrowUpRight, CalendarDays, Grid3X3, Ban } from 'lucide-react';
 
 import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
+import { StopSalePanel } from './rate-manager/StopSalePanel';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -252,12 +253,15 @@ const RateManager = ({ user, tenant, onLogout }) => {
         </div>
 
         <Tabs value={activeView} onValueChange={setActiveView}>
-          <TabsList className="grid w-full grid-cols-2 max-w-xs">
+          <TabsList className="grid w-full grid-cols-3 max-w-md">
             <TabsTrigger value="bulk" data-testid="bulk-tab">
               <Grid3X3 className="w-4 h-4 mr-1.5" /> Toplu Guncelle
             </TabsTrigger>
             <TabsTrigger value="grid" data-testid="grid-tab">
               <CalendarDays className="w-4 h-4 mr-1.5" /> Takvim Gorunumu
+            </TabsTrigger>
+            <TabsTrigger value="stop-sale" data-testid="stop-sale-tab">
+              <Ban className="w-4 h-4 mr-1.5" /> Stop Sale
             </TabsTrigger>
           </TabsList>
 
@@ -285,6 +289,15 @@ const RateManager = ({ user, tenant, onLogout }) => {
               gridRatePlan={gridRatePlan} setGridRatePlan={setGridRatePlan}
               startDate={startDate} setStartDate={setStartDate} endDate={endDate} setEndDate={setEndDate}
               shiftDates={shiftDates} fetchGrid={fetchGrid} loading={loading} formatDate={formatDate} currency={currency}
+            />
+          </TabsContent>
+
+          <TabsContent value="stop-sale" className="mt-4">
+            <StopSalePanel
+              roomTypes={roomTypes}
+              ratePlans={ratePlans}
+              fetchGrid={fetchGrid}
+              loading={loading}
             />
           </TabsContent>
         </Tabs>
