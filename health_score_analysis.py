@@ -9,7 +9,7 @@ import requests
 from datetime import datetime
 
 def main():
-    backend_url = "https://exely-webhook-stable.preview.emergentagent.com"
+    backend_url = "https://frontdesk-stable.preview.emergentagent.com"
     
     # Authenticate
     session = requests.Session()

@@ -241,6 +241,16 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Root cause: `date` not imported in `domains/hr/router.py` - `_parse_date_range()` used `date.today()` but only `datetime` was imported
   - Fix: Added `date` to imports: `from datetime import date, datetime, timezone, timedelta`
 
+## Completed (Session 43 - Mar 2026)
+- [x] P0: Fixed CI test `test_get_me_with_token` failure (500 Internal Server Error)
+  - Root cause: `@cached` decorator on `/api/auth/me` endpoint caused Redis to store Pydantic User model as string (`json.dumps(User, default=str)`). On cache hit, FastAPI received a string instead of User object → response_model validation failed → 500
+  - Fix: Removed `@cached` decorator from `get_me` in `routers/auth.py` (unnecessary for a simple Depends passthrough)
+
+## Completed (Session 42 - Mar 2026)
+- [x] P0: Fixed CI test `test_checkin_stale_occupied_room` failure (AssertionError)
+  - Root cause: Test state pollution - broad occupancy check in `frontdesk_service.py` found unrelated bookings
+  - Fix: Changed occupancy check to use room's `current_booking_id` field instead of broad collection search
+
 ## Completed (Session 41 - Mar 2026)
 - [x] P0: Fixed CI test `test_guests_include_walkin_placeholder_emails` failure
   - Root cause: `GuestCreate.email` used `EmailStr` rejecting `@placeholder.local` addresses; test depended on non-existent seed data & cached GET response

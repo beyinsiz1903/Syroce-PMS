@@ -299,7 +299,6 @@ async def login(data: UserLogin):
     return response
 
 @router.get("/auth/me", response_model=User)
-@cached(ttl=300, key_prefix="auth_me")  # Cache for 5 min
 async def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
