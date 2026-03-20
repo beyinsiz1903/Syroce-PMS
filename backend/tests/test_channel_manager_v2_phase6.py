@@ -15,7 +15,31 @@ import uuid
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
 
 pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-CONNECTOR_ID = "c79fd9cb-d240-4344-8b2d-7d8b71d6a681"
+
+
+def _get_or_create_connector(headers):
+    """Get an existing connector or create one for testing."""
+    # Try to list existing connectors
+    resp = requests.get(f"{BASE_URL}/api/channel-manager/v2/connectors", headers=headers, timeout=15)
+    if resp.status_code == 200:
+        connectors = resp.json().get("connectors", [])
+        if connectors:
+            return connectors[0].get("id") or connectors[0].get("connector_id")
+    # Create a new connector
+    create_resp = requests.post(
+        f"{BASE_URL}/api/channel-manager/v2/connectors",
+        json={
+            "provider": "hotelrunner",
+            "display_name": f"CI_Test_{uuid.uuid4().hex[:8]}",
+            "credentials": {"token": "ci_test_token", "hr_id": "ci_test_hr"},
+        },
+        headers=headers,
+        timeout=15,
+    )
+    if create_resp.status_code in (200, 201):
+        connector = create_resp.json().get("connector", create_resp.json())
+        return connector.get("id") or connector.get("connector_id")
+    return None
 
 class TestChannelManagerV2Phase6:
     """Test all Channel Manager v2 Phase 6 endpoints"""
@@ -39,16 +63,24 @@ class TestChannelManagerV2Phase6:
         """Headers with auth token"""
         return {
             "Authorization": f"Bearer {auth_token}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Accept-Encoding": "identity"
         }
+    
+    @pytest.fixture(scope="class")
+    def connector_id(self, headers):
+        """Get or create a connector for testing"""
+        cid = _get_or_create_connector(headers)
+        assert cid, "Could not find or create a connector for testing"
+        return cid
     
     # ─── Reconciliation API Tests ──────────────────────────────────
     
-    def test_reconciliation_run(self, headers):
+    def test_reconciliation_run(self, headers, connector_id):
         """POST /api/channel-manager/v2/reconciliation/run"""
         response = requests.post(
             f"{BASE_URL}/api/channel-manager/v2/reconciliation/run",
-            json={"connector_id": CONNECTOR_ID},
+            json={"connector_id": connector_id},
             headers=headers
         )
         assert response.status_code == 200, f"Reconciliation run failed: {response.text}"
@@ -81,13 +113,13 @@ class TestChannelManagerV2Phase6:
         assert "total_open" in data or "by_type" in data or "by_severity" in data
         print(f"Issue summary: {data}")
     
-    def test_reconciliation_create_custom_issue(self, headers):
+    def test_reconciliation_create_custom_issue(self, headers, connector_id):
         """POST /api/channel-manager/v2/reconciliation/issues - create custom issue"""
         test_issue_id = f"TEST_{uuid.uuid4().hex[:8]}"
         response = requests.post(
             f"{BASE_URL}/api/channel-manager/v2/reconciliation/issues",
             json={
-                "connector_id": CONNECTOR_ID,
+                "connector_id": connector_id,
                 "issue_type": "stale_sync",
                 "severity": "medium",
                 "description": f"Test issue created by API test - {test_issue_id}",
@@ -103,14 +135,14 @@ class TestChannelManagerV2Phase6:
         print(f"Created issue: {data['issue'].get('id', 'unknown')[:8]}")
         return data["issue"]
     
-    def test_reconciliation_issue_detail_and_lifecycle(self, headers):
+    def test_reconciliation_issue_detail_and_lifecycle(self, headers, connector_id):
         """Test issue detail and lifecycle: GET, PUT status, resolve, dismiss"""
         # First create an issue to test with
         test_id = f"TEST_{uuid.uuid4().hex[:8]}"
         create_resp = requests.post(
             f"{BASE_URL}/api/channel-manager/v2/reconciliation/issues",
             json={
-                "connector_id": CONNECTOR_ID,
+                "connector_id": connector_id,
                 "issue_type": "inventory_mismatch",
                 "severity": "low",
                 "description": f"Lifecycle test issue - {test_id}",
@@ -149,13 +181,13 @@ class TestChannelManagerV2Phase6:
         assert resolve_resp.json()["status"] == "resolved"
         print("Issue resolved")
     
-    def test_reconciliation_dismiss_issue(self, headers):
+    def test_reconciliation_dismiss_issue(self, headers, connector_id):
         """POST /api/channel-manager/v2/reconciliation/issues/{issue_id}/dismiss"""
         # Create issue to dismiss
         create_resp = requests.post(
             f"{BASE_URL}/api/channel-manager/v2/reconciliation/issues",
             json={
-                "connector_id": CONNECTOR_ID,
+                "connector_id": connector_id,
                 "issue_type": "rate_mismatch",
                 "severity": "low",
                 "description": "Dismiss test issue",
@@ -188,10 +220,10 @@ class TestChannelManagerV2Phase6:
         assert "connectors_checked" in data
         print(f"Scheduler run-all: {data['connectors_checked']} connectors checked")
     
-    def test_scheduler_run_connector(self, headers):
+    def test_scheduler_run_connector(self, headers, connector_id):
         """POST /api/channel-manager/v2/scheduler/run/{connector_id}"""
         response = requests.post(
-            f"{BASE_URL}/api/channel-manager/v2/scheduler/run/{CONNECTOR_ID}",
+            f"{BASE_URL}/api/channel-manager/v2/scheduler/run/{connector_id}",
             headers=headers
         )
         assert response.status_code == 200, f"Scheduler run connector failed: {response.text}"
@@ -202,10 +234,10 @@ class TestChannelManagerV2Phase6:
     
     # ─── Credential API Tests ──────────────────────────────────────
     
-    def test_credentials_update_secure(self, headers):
+    def test_credentials_update_secure(self, headers, connector_id):
         """PUT /api/channel-manager/v2/connectors/{connector_id}/credentials/secure"""
         response = requests.put(
-            f"{BASE_URL}/api/channel-manager/v2/connectors/{CONNECTOR_ID}/credentials/secure",
+            f"{BASE_URL}/api/channel-manager/v2/connectors/{connector_id}/credentials/secure",
             json={"credentials": {"token": "test_secure_token_123", "hr_id": "99999"}},
             headers=headers
         )
@@ -214,10 +246,10 @@ class TestChannelManagerV2Phase6:
         assert "message" in data
         print(f"Credentials securely updated: {data['message']}")
     
-    def test_credentials_rotate(self, headers):
+    def test_credentials_rotate(self, headers, connector_id):
         """POST /api/channel-manager/v2/connectors/{connector_id}/credentials/rotate"""
         response = requests.post(
-            f"{BASE_URL}/api/channel-manager/v2/connectors/{CONNECTOR_ID}/credentials/rotate",
+            f"{BASE_URL}/api/channel-manager/v2/connectors/{connector_id}/credentials/rotate",
             json={"credentials": {"token": "rotated_token_456", "hr_id": "88888"}},
             headers=headers
         )
@@ -226,10 +258,10 @@ class TestChannelManagerV2Phase6:
         assert "message" in data
         print(f"Credentials rotated: {data['message']}")
     
-    def test_credentials_masked(self, headers):
+    def test_credentials_masked(self, headers, connector_id):
         """GET /api/channel-manager/v2/connectors/{connector_id}/credentials/masked"""
         response = requests.get(
-            f"{BASE_URL}/api/channel-manager/v2/connectors/{CONNECTOR_ID}/credentials/masked",
+            f"{BASE_URL}/api/channel-manager/v2/connectors/{connector_id}/credentials/masked",
             headers=headers
         )
         assert response.status_code == 200, f"Get masked failed: {response.text}"
@@ -358,7 +390,13 @@ class TestReconciliationIssueTypes:
     
     @pytest.fixture(scope="class")
     def headers(self, auth_token):
-        return {"Authorization": f"Bearer {auth_token}", "Content-Type": "application/json"}
+        return {"Authorization": f"Bearer {auth_token}", "Content-Type": "application/json", "Accept-Encoding": "identity"}
+    
+    @pytest.fixture(scope="class")
+    def connector_id(self, headers):
+        cid = _get_or_create_connector(headers)
+        assert cid, "Could not find or create a connector for testing"
+        return cid
     
     @pytest.mark.parametrize("issue_type,severity", [
         ("inventory_mismatch", "critical"),
@@ -370,12 +408,12 @@ class TestReconciliationIssueTypes:
         ("ack_pending_too_long", "medium"),
         ("unprocessed_import", "low"),
     ])
-    def test_create_issue_type(self, headers, issue_type, severity):
+    def test_create_issue_type(self, headers, connector_id, issue_type, severity):
         """Test creation of each issue type"""
         response = requests.post(
             f"{BASE_URL}/api/channel-manager/v2/reconciliation/issues",
             json={
-                "connector_id": CONNECTOR_ID,
+                "connector_id": connector_id,
                 "issue_type": issue_type,
                 "severity": severity,
                 "description": f"Test {issue_type} issue with {severity} severity",
@@ -402,7 +440,13 @@ class TestConnectorEndpoints:
     
     @pytest.fixture(scope="class")
     def headers(self, auth_token):
-        return {"Authorization": f"Bearer {auth_token}", "Content-Type": "application/json"}
+        return {"Authorization": f"Bearer {auth_token}", "Content-Type": "application/json", "Accept-Encoding": "identity"}
+    
+    @pytest.fixture(scope="class")
+    def connector_id(self, headers):
+        cid = _get_or_create_connector(headers)
+        assert cid, "Could not find or create a connector for testing"
+        return cid
     
     def test_list_connectors(self, headers):
         """GET /api/channel-manager/v2/connectors"""
@@ -415,17 +459,17 @@ class TestConnectorEndpoints:
         assert "connectors" in data
         print(f"Found {data['count']} connectors")
     
-    def test_get_connector(self, headers):
+    def test_get_connector(self, headers, connector_id):
         """GET /api/channel-manager/v2/connectors/{connector_id}"""
         response = requests.get(
-            f"{BASE_URL}/api/channel-manager/v2/connectors/{CONNECTOR_ID}",
+            f"{BASE_URL}/api/channel-manager/v2/connectors/{connector_id}",
             headers=headers
         )
         assert response.status_code == 200, f"Get connector failed: {response.text}"
         data = response.json()
         # Response may use "connector_id" or "id" field
-        connector_id = data.get("connector_id") or data.get("id")
-        assert connector_id == CONNECTOR_ID
+        cid = data.get("connector_id") or data.get("id")
+        assert cid == connector_id
         print(f"Connector retrieved: {data.get('display_name', 'unknown')}")
 
 

@@ -172,9 +172,15 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 
 ## Completed (Session 41 - Mar 2026)
 - [x] P0: Fixed CI test `test_guests_include_walkin_placeholder_emails` failure
-  - Root cause: `GuestCreate.email` used `EmailStr` rejecting `@placeholder.local` addresses; test depended on non-existent seed data
+  - Root cause: `GuestCreate.email` used `EmailStr` rejecting `@placeholder.local` addresses; test depended on non-existent seed data & cached GET response
   - Fix: Changed `GuestCreate.email` from `EmailStr` to `str` in `models/schemas.py`
-  - Fix: Test now creates its own walk-in guest (self-sufficient, no seed dependency)
+  - Fix: Test renamed to `test_guests_accept_walkin_placeholder_emails`, now verifies POST creation directly
+- [x] P0: Fixed CI test `test_reconciliation_run` failure (500 Internal Server Error)
+  - Root cause 1: Hardcoded `CONNECTOR_ID` not present in CI database
+  - Root cause 2: `CompressionMiddleware` conflicted with CDN/proxy (proxy stripped `Content-Encoding: gzip` header, body remained compressed)
+  - Fix: Replaced hardcoded ID with dynamic `_get_or_create_connector()` fixture across all test classes
+  - Fix: Added `ValueError` → 404 handling in reconciliation run endpoint
+  - Fix: Disabled `CompressionMiddleware` in `bootstrap/middleware_registry.py` (CDN handles compression)
 
 ## Completed (Session 40 - Feb 2026)
 - [x] P0: Fixed CI/CD pipeline `emergentintegrations` package installation error

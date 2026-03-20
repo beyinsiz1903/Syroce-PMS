@@ -605,7 +605,10 @@ async def run_reconciliation(
     current_user: User = Depends(get_current_user),
 ):
     svc = ReconciliationService()
-    result = await svc.run_reconciliation(current_user.tenant_id, connector_id, current_user.id)
+    try:
+        result = await svc.run_reconciliation(current_user.tenant_id, connector_id, current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
     return result
 
 @router.get("/reconciliation/issues")

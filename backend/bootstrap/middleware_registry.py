@@ -43,9 +43,12 @@ def register_middleware(app: FastAPI) -> None:
     except ImportError:
         pass
 
-    # Compression middleware (custom)
-    try:
-        from compression_middleware import CompressionMiddleware
-        app.add_middleware(CompressionMiddleware)
-    except ImportError:
-        pass
+    # Compression middleware (disabled - CDN/proxy handles compression)
+    # Custom CompressionMiddleware conflicts with proxy layer which strips
+    # Content-Encoding headers while keeping compressed body, causing
+    # API clients to receive undecodable gzip bytes.
+    # try:
+    #     from compression_middleware import CompressionMiddleware
+    #     app.add_middleware(CompressionMiddleware)
+    # except ImportError:
+    #     pass
