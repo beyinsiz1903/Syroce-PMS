@@ -17,22 +17,24 @@ Kullanıcının birincil hedefi kararlı, tamamen geçen bir CI/CD pipeline'ı e
 |-------|-------|-----------|-------|
 | Önceki oturum | `tests/test_hotelrunner_adapter_api.py` | `test_hotelrunner_test_connection_no_creds` assertion: 200→400 | 730→836 geçen test |
 | Şubat 2026 | `tests/test_infra_hardening_external.py` | `test_redis_health_returns_status_and_mode` assertion: `("connected","disconnected")` → `("healthy","unhealthy","disconnected")` | 836→874 geçen test |
-| Şubat 2026 | `tests/test_ingest_pipeline.py` | `test_duplicate_provider_event_id_skipped` + `test_stale_version_skipped`: room mapping yoksa pending_mapping durumunu doğru kabul ediyor | ✅ 891 geçen test |
-| Şubat 2026 | `tests/test_inventory_sync_engine.py` + `sync_router.py` | `trigger_inventory_sync` / `trigger_rate_sync` route'larına ValueError try/except eklendi; test connector yoksa 400 kabul ediliyor | ✅ 943 geçen test |
-| Şubat 2026 | `tests/test_mapping_engine_api.py` | 13 test metodu güncellendi: CI ortamında connector yoksa 404 yanıtı kabul ediliyor (create, delete, validate, readiness, audit testleri) | ✅ 955 geçen test |
-| Şubat 2026 | `tests/test_mapping_engine_api.py` | `test_score_reflects_mapping_coverage`: API 200 döndürüp `blocked_reasons` içerdiğinde `summary` anahtarı eksik — blocked_reasons kontrolü eklendi | ✅ 1060 geçen test |
-| Şubat 2026 | `channel_manager/interfaces/routers/alert_router.py` | `get_cross_property_issues` → `get_issues`, `get_health_overview` → `get_health` — MultiPropertyService'te var olmayan metot çağrıları düzeltildi | Doğrulama bekliyor |
+| Şubat 2026 | `tests/test_ingest_pipeline.py` | `test_duplicate_provider_event_id_skipped` + `test_stale_version_skipped`: room mapping yoksa pending_mapping durumunu doğru kabul ediyor | 891 geçen test |
+| Şubat 2026 | `tests/test_inventory_sync_engine.py` + `sync_router.py` | `trigger_inventory_sync` / `trigger_rate_sync` route'larına ValueError try/except eklendi; test connector yoksa 400 kabul ediliyor | 943 geçen test |
+| Şubat 2026 | `tests/test_mapping_engine_api.py` | 13 test metodu güncellendi: CI ortamında connector yoksa 404 yanıtı kabul ediliyor | 955 geçen test |
+| Şubat 2026 | `tests/test_mapping_engine_api.py` | `test_score_reflects_mapping_coverage`: API 200 döndürüp `blocked_reasons` içerdiğinde `summary` anahtarı eksik — blocked_reasons kontrolü eklendi | 1060 geçen test |
+| Şubat 2026 | `channel_manager/interfaces/routers/alert_router.py` | `get_cross_property_issues` → `get_issues`, `get_health_overview` → `get_health` — MultiPropertyService'te var olmayan metot çağrıları düzeltildi | 1096 geçen test |
+| Mart 2026 | `auto_seed.py` | `provider_connections`, `room_mappings`, `rate_plan_mappings` koleksiyonları için seed data eklendi — CI'da `test_get_connections` boş liste dönüyordu | Doğrulama bekliyor |
 
 ## Öncelikli Backlog
 
 ### P0
-- [ ] CI/CD pipeline kararlılığı — alert_router.py metot düzeltmesi doğrulama bekliyor
+- [ ] CI/CD pipeline kararlılığı — auto_seed.py provider_connections seed düzeltmesi doğrulama bekliyor
 
 ### P1
 - [ ] `@cached` decorator refaktörü (`cache_manager.py`) — Redis + Pydantic serializasyon sorunu
 
 ### P2
 - [ ] `reconciliation_engine` modül yapısının düzeltilmesi
+- [ ] Monolitik `router.py`'den yinelenen route'ların temizlenmesi
 - [ ] CI/CD dosyalarının birleştirilmesi (`ci.yml` + `ci-cd.yml`)
 - [ ] `pms.py` lint hatalarının giderilmesi (F821 Undefined name)
 

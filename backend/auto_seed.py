@@ -461,7 +461,109 @@ async def auto_seed_if_empty(db):
         upsert=True,
     )
 
-    # ── 9. Summary ─────────────────────────────────────────
+    # ── 9. Channel Manager: Provider Connections (9-collection model) ──
+    now_iso = _now().isoformat()
+    hr_conn = {
+        "id": _uuid(),
+        "tenant_id": tenant_id,
+        "property_id": "prop-001",
+        "provider": "hotelrunner",
+        "status": "active",
+        "display_name": "HotelRunner Connection",
+        "credentials": {},
+        "sync_inventory": True,
+        "sync_rates": True,
+        "sync_reservations": True,
+        "sync_restrictions": True,
+        "max_requests_per_minute": 60,
+        "max_requests_per_hour": 1000,
+        "consecutive_failures": 0,
+        "total_syncs": 0,
+        "total_errors": 0,
+        "created_at": now_iso,
+        "created_by": "auto_seed",
+    }
+    ex_conn = {
+        "id": _uuid(),
+        "tenant_id": tenant_id,
+        "property_id": "prop-001",
+        "provider": "exely",
+        "status": "active",
+        "display_name": "Exely Connection",
+        "credentials": {},
+        "sync_inventory": True,
+        "sync_rates": True,
+        "sync_reservations": True,
+        "sync_restrictions": True,
+        "max_requests_per_minute": 60,
+        "max_requests_per_hour": 1000,
+        "consecutive_failures": 0,
+        "total_syncs": 0,
+        "total_errors": 0,
+        "created_at": now_iso,
+        "created_by": "auto_seed",
+    }
+    await db.provider_connections.insert_many([hr_conn, ex_conn])
+
+    # ── 10. Channel Manager: Room Mappings ───────────────────
+    hr_room = {
+        "id": _uuid(),
+        "tenant_id": tenant_id,
+        "property_id": "prop-001",
+        "provider": "hotelrunner",
+        "pms_room_type_id": "std-001",
+        "pms_room_type_name": "Standard Room",
+        "provider_room_code": "STD",
+        "provider_room_id": "hr-std-001",
+        "occupancy_offset": 0,
+        "is_active": True,
+        "validation_status": "valid",
+        "created_at": now_iso,
+    }
+    ex_room = {
+        "id": _uuid(),
+        "tenant_id": tenant_id,
+        "property_id": "prop-001",
+        "provider": "exely",
+        "pms_room_type_id": "dlx-001",
+        "pms_room_type_name": "Deluxe Room",
+        "provider_room_code": "DLX",
+        "provider_room_id": "ex-dlx-001",
+        "occupancy_offset": 0,
+        "is_active": True,
+        "validation_status": "valid",
+        "created_at": now_iso,
+    }
+    await db.room_mappings.insert_many([hr_room, ex_room])
+
+    # ── 11. Channel Manager: Rate Plan Mappings ──────────────
+    hr_rate = {
+        "id": _uuid(),
+        "tenant_id": tenant_id,
+        "property_id": "prop-001",
+        "provider": "hotelrunner",
+        "pms_rate_plan_id": "bar-001",
+        "pms_rate_plan_name": "Best Available Rate",
+        "provider_rate_code": "BAR",
+        "provider_rate_id": "hr-bar-001",
+        "is_active": True,
+        "created_at": now_iso,
+    }
+    ex_rate = {
+        "id": _uuid(),
+        "tenant_id": tenant_id,
+        "property_id": "prop-001",
+        "provider": "exely",
+        "pms_rate_plan_id": "rack-001",
+        "pms_rate_plan_name": "Rack Rate",
+        "provider_rate_code": "RACK",
+        "provider_rate_id": "ex-rack-001",
+        "is_active": True,
+        "created_at": now_iso,
+    }
+    await db.rate_plan_mappings.insert_many([hr_rate, ex_rate])
+
+    # ── 12. Summary ─────────────────────────────────────────
     print("✅ Demo data seeded successfully!")
     print(f"   👤 Users: {1 + len(staff_users)} (admin: {DEMO_EMAIL} / {DEMO_PASSWORD})")
     print(f"   🏨 Tenant: {DEMO_HOTEL_NAME} (tier: enterprise)")
