@@ -110,6 +110,7 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("domains.channel_manager.providers.hotelrunner_router", "router", ["HotelRunner Integration"], None, None),
     ("domains.channel_manager.providers.hotelrunner_webhook", "router", ["HotelRunner Webhooks & Sync"], None, None),
     ("domains.channel_manager.providers.exely.exely_router", "router", ["Exely Integration"], None, None),
+    ("domains.channel_manager.providers.exely.exely_webhook_router", "router", ["Exely Webhooks"], None, None),
     # ARI Push Engine
     ("domains.channel_manager.ari.router", "router", ["ARI Push Engine"], None, None),
     # Rate Manager — Fiyat/Müsaitlik/Kısıtlama Yönetimi

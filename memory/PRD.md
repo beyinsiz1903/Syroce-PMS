@@ -170,6 +170,14 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] P2 Refactoring: ReservationDetailModal.js (1385 -> 183 lines + 6 sub-files)
 - [x] P2 Refactoring: RateManager.jsx (1034 -> 296 lines + 4 sub-files)
 
+## Completed (Session 46 - Mar 2026)
+- [x] P0: Fixed CI test `test_webhook_health_endpoint` failure (404)
+  - Root cause: `test_exely_webhook_api.py` testleri `/api/webhooks/exely/*` endpoint'lerini bekliyordu ama böyle bir router yoktu
+  - Fix: `exely_webhook_router.py` oluşturuldu — GET /health (SOAP PingRS), GET /info (JSON config), POST /reservations (OTA_HotelResNotifRQ SOAP ingest)
+  - Router `bootstrap/router_registry.py`'ye eklendi
+  - Tüm endpoint'ler curl ile doğrulandı: health, info, empty body error, invalid XML error, unknown hotel code error
+  - CI Status: 627 passed + bu 1 fix = 628 geçmeli
+
 ## Completed (Session 45 - Mar 2026)
 - [x] P0: Fixed CI test `test_soap_envelope_contains_timestamp_element` failure
   - Root cause: `soap_builder.py` sadece PMSConnect proprietary Security header kullanıyordu, WSSE elementleri (Timestamp, Nonce, UsernameToken) eksikti
