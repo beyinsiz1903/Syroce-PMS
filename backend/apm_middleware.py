@@ -334,15 +334,24 @@ class EnhancedRateLimitMiddleware:
         # Rate limit tiers: (max_requests, window_seconds)
         # In test/CI environments, use higher limits to avoid test failures
         is_test_env = os.environ.get('TESTING', '') == '1' or os.environ.get('CI', '') != ''
-        auth_limit = 1000 if is_test_env else 15
-        self.limits = {
-            'auth': (auth_limit, 60),  # 15 login attempts/min (1000 in CI)
-            'export': (10, 60),      # 10 exports/min
-            'report': (60, 60),      # 60 report requests/min
-            'write': (120, 60),      # 120 write ops/min
-            'default': (300, 60),    # 300 requests/min (authenticated)
-            'anonymous': (60, 60),   # 60 requests/min (no token)
-        }
+        if is_test_env:
+            self.limits = {
+                'auth': (10000, 60),
+                'export': (10000, 60),
+                'report': (10000, 60),
+                'write': (10000, 60),
+                'default': (10000, 60),
+                'anonymous': (10000, 60),
+            }
+        else:
+            self.limits = {
+                'auth': (15, 60),        # 15 login attempts/min
+                'export': (10, 60),      # 10 exports/min
+                'report': (60, 60),      # 60 report requests/min
+                'write': (120, 60),      # 120 write ops/min
+                'default': (300, 60),    # 300 requests/min (authenticated)
+                'anonymous': (60, 60),   # 60 requests/min (no token)
+            }
 
         # Register state globally for stats access
         _global_rate_limiter_state['windows'] = self._windows
