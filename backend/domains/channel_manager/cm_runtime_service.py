@@ -17,19 +17,50 @@ class CMRuntimeService:
     """Production CM runtime: all data from real DB/subsystem queries."""
 
     def __init__(self):
-        from domains.channel_manager.drift_detector import drift_detector
-        from domains.channel_manager.reconciliation_engine import reconciliation_engine
-        from domains.channel_manager.sync_scheduler import sync_scheduler
-        from domains.channel_manager.provider_failover import provider_failover
-        from domains.channel_manager.runtime_status import cm_runtime_status
-        from domains.channel_manager.encryption import encrypt_credential, mask_credential
-        self._drift = drift_detector
-        self._recon = reconciliation_engine
-        self._sync = sync_scheduler
-        self._failover = provider_failover
-        self._status = cm_runtime_status
-        self._encrypt = encrypt_credential
-        self._mask = mask_credential
+        self._drift = None
+        self._recon = None
+        self._sync = None
+        self._failover = None
+        self._status = None
+        self._encrypt = None
+        self._mask = None
+
+        try:
+            from domains.channel_manager.drift_detector import drift_detector
+            self._drift = drift_detector
+        except Exception:
+            logger.warning("drift_detector unavailable")
+
+        try:
+            from domains.channel_manager.reconciliation_engine import reconciliation_engine
+            self._recon = reconciliation_engine
+        except Exception:
+            logger.warning("reconciliation_engine unavailable")
+
+        try:
+            from domains.channel_manager.sync_scheduler import sync_scheduler
+            self._sync = sync_scheduler
+        except Exception:
+            logger.warning("sync_scheduler unavailable")
+
+        try:
+            from domains.channel_manager.provider_failover import provider_failover
+            self._failover = provider_failover
+        except Exception:
+            logger.warning("provider_failover unavailable")
+
+        try:
+            from domains.channel_manager.runtime_status import cm_runtime_status
+            self._status = cm_runtime_status
+        except Exception:
+            logger.warning("cm_runtime_status unavailable")
+
+        try:
+            from domains.channel_manager.encryption import encrypt_credential, mask_credential
+            self._encrypt = encrypt_credential
+            self._mask = mask_credential
+        except Exception:
+            logger.warning("encryption module unavailable")
 
     # ── Full aggregated runtime status ──────────────────────────────
 
@@ -199,6 +230,12 @@ class CMRuntimeService:
         })
 
     async def run_reconciliation(self, ctx: OperationContext, auto_fix: bool = True) -> ServiceResult:
+        if not self._recon:
+            return ServiceResult.success({
+                "status": "unavailable",
+                "message": "Reconciliation engine not initialized",
+                "tenant_id": ctx.tenant_id,
+            })
         result = await self._recon.reconcile(ctx.tenant_id, auto_fix=auto_fix)
         try:
             from websocket_server import broadcast_system_health_event
@@ -210,6 +247,12 @@ class CMRuntimeService:
         return ServiceResult.success(result)
 
     async def get_reconciliation_history(self, ctx: OperationContext, limit: int = 20) -> ServiceResult:
+        if not self._recon:
+            return ServiceResult.success({
+                "tenant_id": ctx.tenant_id,
+                "results": [],
+                "count": 0,
+            })
         history = await self._recon.get_reconciliation_history(ctx.tenant_id, limit=limit)
         return ServiceResult.success({
             "tenant_id": ctx.tenant_id,

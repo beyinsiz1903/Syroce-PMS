@@ -216,6 +216,14 @@ try:
 except Exception:
     pass
 
+# Channel Manager — Hardening (runtime status, drift, reconciliation, etc.)
+try:
+    from domains.channel_manager.hardening_router import router as cm_hardening_router
+    app.include_router(cm_hardening_router)
+    print("✅ Channel Manager hardening router included")
+except Exception:
+    pass
+
 # Channel Manager v2
 try:
     from channel_manager.interfaces.router_registry import router as cm_v2_router

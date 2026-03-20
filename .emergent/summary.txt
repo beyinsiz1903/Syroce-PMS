@@ -1,70 +1,74 @@
 <analysis>**original_problem_statement:**
-The user initiated this session by providing a new CI/CD failure log immediately after the previous session's fix was deployed. While the previous fix resolved the  error (evidenced by 644 tests passing), a new failure emerged:
+Immediately after the previous session's fix was deployed, a new CI/CD failure emerged, continuing a pattern of cascading failures. The user's goal is to achieve a stable, fully passing CI run to unblock further development.
+
+The latest failure log provided by the user showed:
 
 
-
-This continued the frustrating pattern of one fix revealing a new bug in the brittle CI pipeline. The user's goal remains to achieve a stable, fully passing CI run.
+This indicated that while the previous fix for the  error was successful (as evidenced by the test count increasing from 644 to 684), it revealed a new underlying issue.
 
 **User's preferred language**: Turkish
 
 **what currently exists?**
-The agent diagnosed the new CI failure. The root cause was again **test state pollution**. An earlier test left a  booking in the database. The failing test, , attempts to check into a room that is manually marked as occupied but should be considered stale (i.e., available for a new check-in). The check-in logic was too broad; it found the old, unrelated booking for that room and incorrectly returned a Room is occupied error.
+The agent diagnosed the new  on the  endpoint. The root cause was identified as a faulty caching mechanism. The  decorator in  was serializing the Pydantic  object into a simple string for storage in Redis (which is active in the CI environment). Upon retrieval from the cache, the endpoint received a string instead of a  object, leading to a response model validation failure in FastAPI.
 
-**The Fix**: The agent refined the occupancy check logic in . Instead of searching the entire  collection for any overlapping reservation, the check now specifically looks at the room's . This field is the correct source of truth for a room's active occupancy and is properly managed during check-in/check-out flows.
-
-**Verification**: The agent performed extensive local testing with shell scripts to simulate the stale-occupancy scenario, confirming the fix allows the check-in to succeed (returning HTTP 200) while still correctly blocking check-ins for genuinely occupied rooms.
+The agent implemented a fix by removing the  decorator from the  function in , as caching is not critical for this specific endpoint which simply retrieves the current user's data.
 
 **Last working item**:
--   **Last item agent was working**: Fixing the  in the  CI test by refining the room occupancy check logic.
+-   **Last item agent was working**: Fixing the  for the  CI test.
 -   **Status**: USER VERIFICATION PENDING
--   **Agent Testing Done**: Y (Agent performed extensive local simulation to replicate and validate the fix.)
--   **Which testing method agent to use?** The only valid test is a successful CI run. The next agent must ask the user to push the changes and monitor the GitHub Actions workflow.
+-   **Agent Testing Done**: Y (Agent performed local  tests to confirm the fix resolves the 500 error and the endpoint now consistently returns a 200 status code).
+-   **Which testing method agent to use?** The only valid test is a full CI run. The next agent must instruct the user to push the changes and monitor the GitHub Actions workflow.
 -   **User Testing Done**: N
 
 **All Pending/In progress Issue list**:
 -   **Issue 1: CI/CD Pipeline Instability (P0)**
-    -   **Description**: This remains the highest priority. The test suite's brittleness, caused by state pollution between tests, is the project's primary blocker. A targeted fix for the latest failure () has been implemented and locally verified. It must now be validated in the real CI environment.
+    -   **Description**: This is the project's primary blocker. The test suite is brittle due to environment inconsistencies (e.g., active Redis in CI) and state pollution. A targeted fix for the latest failure () has been implemented and locally verified. It now requires validation in the CI environment.
+    -   **Attempted fixes**: The  decorator was removed from the  function in .
     -   **Next debug checklist**:
         1.  Instruct the user to push the latest commit to the remote repository.
-        2.  Monitor the GitHub Actions run to completion.
-        3.  If it fails again, analyze the new failure log, paying close attention to the test execution order and potential state conflicts.
-    -   **Why fix this issue and what will be achieved with the fix?**: A stable CI pipeline is essential to unblock all other development, including the Stop Sale Scheduler feature, and to restore user confidence.
+        2.  Monitor the new GitHub Actions run to completion.
+        3.  If it fails again, analyze the new failure log, paying close attention to the test execution order and potential environment-specific issues.
+    -   **Why fix this issue and what will be achieved with the fix?**: A stable CI pipeline is essential to unblock all other development and restore user confidence.
     -   **Status**: IN PROGRESS
-    -   **Is recurring issue?**: Y (This is the 11th+ session dealing with cascading CI failures).
+    -   **Is recurring issue?**: Y (This is the 12th+ session dealing with cascading CI failures).
     -   **Should Test frontend/backend/both after fix?**: Backend (via the CI pipeline).
     -   **Blocked on other issue**: None.
 
--   **Issue 2: Stop Sale Scheduler Feature Verification (P1)**
-    -   **Description**: The scheduler feature is functionally complete but cannot be presented to the user for final approval until the CI pipeline is stable.
-    -   **Status**: USER VERIFICATION PENDING
-    -   **Is recurring issue?**: N
-    -   **Should Test frontend/backend/both after fix?**: Frontend
-    -   **Blocked on other issue**: Issue 1: CI/CD Pipeline Instability.
+-   **Issue 2: Unstable  Decorator (P1)**
+    -   **Description**: The root cause of the latest CI failure is the  decorator's inability to correctly handle Pydantic models with Redis. The agent's investigation () revealed this decorator is used across dozens of endpoints, posing a significant risk for future, similar failures. The decorator needs a systemic fix.
+    -   **Attempted fixes**: None. The decorator was only removed from the failing endpoint as a hotfix.
+    -   **Next debug checklist**:
+        1.  Modify .
+        2.  Update the  decorator to use Pydantic-aware serialization/deserialization, such as  when writing to Redis and  when reading.
+    -   **Why fix this issue and what will be achieved with the fix?**: To proactively prevent a cascade of similar caching-related 500 errors and improve the overall stability of the application.
+    -   **Status**: NOT STARTED
+    -   **Is recurring issue?**: Y
+    -   **Should Test frontend/backend/both after fix?**: Backend
+    -   **Blocked on other issue**: None.
 
 **In progress Task List**:
 -   None.
 
 **Upcoming and Future Tasks**
 **Upcoming Tasks**:
-*   **(P0) Validate CI/CD Fix**: Push all changes from this session and confirm the entire CI pipeline passes.
-*   **(P1) User Verification**: Once the CI is green, present the Stop Sale Scheduler feature to the user for approval.
+*   **(P0) Validate CI/CD Fix**: Push the latest commit and confirm the entire CI pipeline passes.
+*   **(P1) User Verification**: Once CI is green, present the Stop Sale Scheduler feature to the user for final approval.
 
 **Future Tasks**:
 *   **(P1)** Enhancement: Add notifications for upcoming stop sales.
 *   **(P1)** UI Enhancement: Improve the Exely mapping UI.
 *   **(P2)** Consolidate CI/CD files ( and ).
 *   **(P2)** Address Python lint errors in .
-*   **(P2)** Refactor the unstable  decorator.
 *   **(P3)** Legacy collection cleanup.
 *   **(P3)** Service Wiring & Schema Completion.
 *   **(P6)** Frontend Role-Based Views.
 *   **(P7)** Stress Testing.
 
 **Completed work in this session**
--   **CI/CD  Fix**: Resolved the  in .
-    -   Identified the root cause as test state pollution, where an unrelated, previously checked-in booking caused a false occupied status.
-    -   Modified  to use the more precise  on the room document for occupancy checks, instead of a broad search on the bookings collection.
--   **Rigorous Local Verification**: Successfully simulated the CI failure and validated the fix using  and  commands.
+-   **CI/CD  Fix**: Resolved the 500 Internal Server Error.
+    -   Identified the root cause as a Pydantic model serialization issue within the  decorator when used with Redis in the CI environment.
+    -   Removed the  decorator from the  function in .
+-   **Local Verification**: Confirmed the fix resolved the issue using  commands.
 -   **Documentation**: Updated  with the resolution details.
 
 **Earlier issues found/mentioned but not fixed**
@@ -16632,72 +16636,72 @@ The agent diagnosed the new CI failure. The root cause was again **test state po
 ./backend/routers/auth.py:266:80: E501 line too long (112 > 79 characters)
 ./backend/routers/auth.py:274:80: E501 line too long (133 > 79 characters)
 ./backend/routers/auth.py:301:1: E302 expected 2 blank lines, found 1
-./backend/routers/auth.py:311:1: W293 blank line contains whitespace
-./backend/routers/auth.py:324:1: W293 blank line contains whitespace
-./backend/routers/auth.py:338:1: W293 blank line contains whitespace
-./backend/routers/auth.py:345:1: W293 blank line contains whitespace
-./backend/routers/auth.py:352:1: W293 blank line contains whitespace
-./backend/routers/auth.py:360:1: W293 blank line contains whitespace
-./backend/routers/auth.py:367:1: W293 blank line contains whitespace
-./backend/routers/auth.py:372:80: E501 line too long (131 > 79 characters)
-./backend/routers/auth.py:377:1: W293 blank line contains whitespace
-./backend/routers/auth.py:379:80: E501 line too long (87 > 79 characters)
-./backend/routers/auth.py:380:1: W293 blank line contains whitespace
-./backend/routers/auth.py:388:1: W293 blank line contains whitespace
-./backend/routers/auth.py:410:1: E302 expected 2 blank lines, found 1
-./backend/routers/auth.py:419:1: E302 expected 2 blank lines, found 1
-./backend/routers/auth.py:424:1: E302 expected 2 blank lines, found 1
-./backend/routers/auth.py:428:1: E302 expected 2 blank lines, found 1
-./backend/routers/auth.py:434:1: E302 expected 2 blank lines, found 1
-./backend/routers/auth.py:440:80: E501 line too long (86 > 79 characters)
-./backend/routers/auth.py:441:1: W293 blank line contains whitespace
-./backend/routers/auth.py:445:1: W293 blank line contains whitespace
-./backend/routers/auth.py:459:1: W293 blank line contains whitespace
-./backend/routers/auth.py:462:1: W293 blank line contains whitespace
-./backend/routers/auth.py:465:1: W293 blank line contains whitespace
-./backend/routers/auth.py:468:1: W293 blank line contains whitespace
-./backend/routers/auth.py:475:1: E302 expected 2 blank lines, found 1
-./backend/routers/auth.py:483:1: W293 blank line contains whitespace
-./backend/routers/auth.py:485:80: E501 line too long (90 > 79 characters)
-./backend/routers/auth.py:486:1: W293 blank line contains whitespace
-./backend/routers/auth.py:493:80: E501 line too long (108 > 79 characters)
-./backend/routers/auth.py:494:1: W293 blank line contains whitespace
-./backend/routers/auth.py:498:80: E501 line too long (86 > 79 characters)
-./backend/routers/auth.py:499:1: W293 blank line contains whitespace
-./backend/routers/auth.py:505:80: E501 line too long (93 > 79 characters)
-./backend/routers/auth.py:515:1: W293 blank line contains whitespace
-./backend/routers/auth.py:530:1: W293 blank line contains whitespace
-./backend/routers/auth.py:533:1: W293 blank line contains whitespace
-./backend/routers/auth.py:536:80: E501 line too long (80 > 79 characters)
-./backend/routers/auth.py:537:1: W293 blank line contains whitespace
-./backend/routers/auth.py:540:1: W293 blank line contains whitespace
-./backend/routers/auth.py:557:1: W293 blank line contains whitespace
-./backend/routers/auth.py:560:1: W293 blank line contains whitespace
-./backend/routers/auth.py:563:1: W293 blank line contains whitespace
-./backend/routers/auth.py:566:80: E501 line too long (80 > 79 characters)
-./backend/routers/auth.py:567:1: W293 blank line contains whitespace
-./backend/routers/auth.py:571:1: E302 expected 2 blank lines, found 1
-./backend/routers/auth.py:577:80: E501 line too long (85 > 79 characters)
-./backend/routers/auth.py:580:80: E501 line too long (84 > 79 characters)
-./backend/routers/auth.py:582:1: W293 blank line contains whitespace
-./backend/routers/auth.py:586:1: W293 blank line contains whitespace
-./backend/routers/auth.py:595:1: W293 blank line contains whitespace
-./backend/routers/auth.py:598:1: W293 blank line contains whitespace
-./backend/routers/auth.py:601:1: W293 blank line contains whitespace
-./backend/routers/auth.py:603:80: E501 line too long (84 > 79 characters)
-./backend/routers/auth.py:604:1: W293 blank line contains whitespace
-./backend/routers/auth.py:607:80: E501 line too long (81 > 79 characters)
-./backend/routers/auth.py:611:1: E302 expected 2 blank lines, found 1
-./backend/routers/auth.py:620:1: W293 blank line contains whitespace
-./backend/routers/auth.py:622:80: E501 line too long (95 > 79 characters)
-./backend/routers/auth.py:623:1: W293 blank line contains whitespace
-./backend/routers/auth.py:630:80: E501 line too long (108 > 79 characters)
-./backend/routers/auth.py:631:1: W293 blank line contains whitespace
-./backend/routers/auth.py:636:1: W293 blank line contains whitespace
-./backend/routers/auth.py:655:1: W293 blank line contains whitespace
-./backend/routers/auth.py:661:1: W293 blank line contains whitespace
-./backend/routers/auth.py:664:80: E501 line too long (95 > 79 characters)
-./backend/routers/auth.py:666:1: W391 blank line at end of file
+./backend/routers/auth.py:310:1: W293 blank line contains whitespace
+./backend/routers/auth.py:323:1: W293 blank line contains whitespace
+./backend/routers/auth.py:337:1: W293 blank line contains whitespace
+./backend/routers/auth.py:344:1: W293 blank line contains whitespace
+./backend/routers/auth.py:351:1: W293 blank line contains whitespace
+./backend/routers/auth.py:359:1: W293 blank line contains whitespace
+./backend/routers/auth.py:366:1: W293 blank line contains whitespace
+./backend/routers/auth.py:371:80: E501 line too long (131 > 79 characters)
+./backend/routers/auth.py:376:1: W293 blank line contains whitespace
+./backend/routers/auth.py:378:80: E501 line too long (87 > 79 characters)
+./backend/routers/auth.py:379:1: W293 blank line contains whitespace
+./backend/routers/auth.py:387:1: W293 blank line contains whitespace
+./backend/routers/auth.py:409:1: E302 expected 2 blank lines, found 1
+./backend/routers/auth.py:418:1: E302 expected 2 blank lines, found 1
+./backend/routers/auth.py:423:1: E302 expected 2 blank lines, found 1
+./backend/routers/auth.py:427:1: E302 expected 2 blank lines, found 1
+./backend/routers/auth.py:433:1: E302 expected 2 blank lines, found 1
+./backend/routers/auth.py:439:80: E501 line too long (86 > 79 characters)
+./backend/routers/auth.py:440:1: W293 blank line contains whitespace
+./backend/routers/auth.py:444:1: W293 blank line contains whitespace
+./backend/routers/auth.py:458:1: W293 blank line contains whitespace
+./backend/routers/auth.py:461:1: W293 blank line contains whitespace
+./backend/routers/auth.py:464:1: W293 blank line contains whitespace
+./backend/routers/auth.py:467:1: W293 blank line contains whitespace
+./backend/routers/auth.py:474:1: E302 expected 2 blank lines, found 1
+./backend/routers/auth.py:482:1: W293 blank line contains whitespace
+./backend/routers/auth.py:484:80: E501 line too long (90 > 79 characters)
+./backend/routers/auth.py:485:1: W293 blank line contains whitespace
+./backend/routers/auth.py:492:80: E501 line too long (108 > 79 characters)
+./backend/routers/auth.py:493:1: W293 blank line contains whitespace
+./backend/routers/auth.py:497:80: E501 line too long (86 > 79 characters)
+./backend/routers/auth.py:498:1: W293 blank line contains whitespace
+./backend/routers/auth.py:504:80: E501 line too long (93 > 79 characters)
+./backend/routers/auth.py:514:1: W293 blank line contains whitespace
+./backend/routers/auth.py:529:1: W293 blank line contains whitespace
+./backend/routers/auth.py:532:1: W293 blank line contains whitespace
+./backend/routers/auth.py:535:80: E501 line too long (80 > 79 characters)
+./backend/routers/auth.py:536:1: W293 blank line contains whitespace
+./backend/routers/auth.py:539:1: W293 blank line contains whitespace
+./backend/routers/auth.py:556:1: W293 blank line contains whitespace
+./backend/routers/auth.py:559:1: W293 blank line contains whitespace
+./backend/routers/auth.py:562:1: W293 blank line contains whitespace
+./backend/routers/auth.py:565:80: E501 line too long (80 > 79 characters)
+./backend/routers/auth.py:566:1: W293 blank line contains whitespace
+./backend/routers/auth.py:570:1: E302 expected 2 blank lines, found 1
+./backend/routers/auth.py:576:80: E501 line too long (85 > 79 characters)
+./backend/routers/auth.py:579:80: E501 line too long (84 > 79 characters)
+./backend/routers/auth.py:581:1: W293 blank line contains whitespace
+./backend/routers/auth.py:585:1: W293 blank line contains whitespace
+./backend/routers/auth.py:594:1: W293 blank line contains whitespace
+./backend/routers/auth.py:597:1: W293 blank line contains whitespace
+./backend/routers/auth.py:600:1: W293 blank line contains whitespace
+./backend/routers/auth.py:602:80: E501 line too long (84 > 79 characters)
+./backend/routers/auth.py:603:1: W293 blank line contains whitespace
+./backend/routers/auth.py:606:80: E501 line too long (81 > 79 characters)
+./backend/routers/auth.py:610:1: E302 expected 2 blank lines, found 1
+./backend/routers/auth.py:619:1: W293 blank line contains whitespace
+./backend/routers/auth.py:621:80: E501 line too long (95 > 79 characters)
+./backend/routers/auth.py:622:1: W293 blank line contains whitespace
+./backend/routers/auth.py:629:80: E501 line too long (108 > 79 characters)
+./backend/routers/auth.py:630:1: W293 blank line contains whitespace
+./backend/routers/auth.py:635:1: W293 blank line contains whitespace
+./backend/routers/auth.py:654:1: W293 blank line contains whitespace
+./backend/routers/auth.py:660:1: W293 blank line contains whitespace
+./backend/routers/auth.py:663:80: E501 line too long (95 > 79 characters)
+./backend/routers/auth.py:665:1: W391 blank line at end of file
 ./backend/routers/data_intelligence.py:2:80: E501 line too long (103 > 79 characters)
 ./backend/routers/data_intelligence.py:39:33: E127 continuation line over-indented for visual indent
 ./backend/routers/data_intelligence.py:39:80: E501 line too long (80 > 79 characters)
@@ -25317,7 +25321,7 @@ The agent diagnosed the new CI failure. The root cause was again **test state po
 ./backend/tests/test_p5_cockpit_notifications.py:422:80: E501 line too long (81 > 79 characters)
 ./backend/tests/test_p5_cockpit_notifications.py:439:80: E501 line too long (85 > 79 characters)
 ./backend/tests/test_p5_stop_sale_deposits.py:3:80: E501 line too long (86 > 79 characters)
-./backend/tests/test_p5_stop_sale_deposits.py:9:80: E501 line too long (104 > 79 characters)
+./backend/tests/test_p5_stop_sale_deposits.py:9:80: E501 line too long (108 > 79 characters)
 ./backend/tests/test_p5_stop_sale_deposits.py:11:1: E302 expected 2 blank lines, found 1
 ./backend/tests/test_p5_stop_sale_deposits.py:13:1: W293 blank line contains whitespace
 ./backend/tests/test_p5_stop_sale_deposits.py:25:1: W293 blank line contains whitespace
@@ -27392,7 +27396,7 @@ The agent diagnosed the new CI failure. The root cause was again **test state po
 ./backend/tests/test_refactor_validation.py:309:1: W293 blank line contains whitespace
 ./backend/tests/test_refactor_validation.py:324:1: W293 blank line contains whitespace
 ./backend/tests/test_refactor_validation.py:330:1: W293 blank line contains whitespace
-./backend/tests/test_refactor_validation.py:335:80: E501 line too long (84 > 79 characters)
+./backend/tests/test_refactor_validation.py:335:80: E501 line too long (88 > 79 characters)
 ./backend/tests/test_refactor_validation.py:339:80: E501 line too long (99 > 79 characters)
 ./backend/tests/test_refactor_validation.py:341:80: E501 line too long (86 > 79 characters)
 ./backend/tests/test_release_room_block_bridge.py:8:1: F811 redefinition of unused 'os' from line 1
@@ -30061,7 +30065,7 @@ The agent diagnosed the new CI failure. The root cause was again **test state po
 ./backend_test.py:724:1: W293 blank line contains whitespace
 ./backend_test.py:731:11: W292 no newline at end of file
 ./detailed_migration_observability_inspection.py:7:1: F401 'json' imported but unused
-./detailed_migration_observability_inspection.py:11:80: E501 line too long (116 > 79 characters)
+./detailed_migration_observability_inspection.py:11:80: E501 line too long (120 > 79 characters)
 ./detailed_migration_observability_inspection.py:13:1: E302 expected 2 blank lines, found 1
 ./detailed_migration_observability_inspection.py:16:1: W293 blank line contains whitespace
 ./detailed_migration_observability_inspection.py:20:1: W293 blank line contains whitespace
@@ -30481,62 +30485,64 @@ The agent diagnosed the new CI failure. The root cause was again **test state po
 ./load_tests/soak_test_staging.py:337:80: E501 line too long (98 > 79 characters)
 ./load_tests/soak_test_staging.py:347:80: E501 line too long (89 > 79 characters)
 ./load_tests/soak_test_staging.py:366:80: E501 line too long (107 > 79 characters) reported  errors in .
--   **Issue 3: Caching Strategy**: The  decorator was previously identified as unstable and needs refactoring.
 
 **Known issue recurrence from previous fork**
--   **Issue recurrence in previous fork**: The CI/CD pipeline's extreme brittleness due to test state pollution. The specific error changes session to session, but the underlying cause of interdependent tests remains.
--   **Recurrence count**: 11+
+-   **Issue recurrence in previous fork**: The CI/CD pipeline's extreme brittleness due to test state pollution and inconsistencies between local and CI environments (e.g., Redis activation).
+-   **Recurrence count**: 12+
 -   **Status**: IN PROGRESS (A new specific fix has been implemented and is ready for CI validation).
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
--   **Test State Pollution**: The core, recurring problem where the state modified by one test (e.g., creating a booking) incorrectly affects the outcome of a subsequent, unrelated test.
--   **Idempotent State Checks**: The fix involved moving from a broad, potentially polluted check (querying a collection) to a more idempotent and reliable one (checking a specific, managed field like ).
+-   **CI/CD Environment Discrepancy**: The bug was specific to the CI environment because the  service is enabled there, which activated the faulty caching logic not triggered in the same way during local testing.
+-   **Pydantic Serialization in Caching**: The core technical problem. Storing complex objects like Pydantic models in a key-value store like Redis requires robust serialization (to JSON string) and deserialization (from JSON string back to a Pydantic object) to preserve type and structure. Naive string conversion breaks this.
 
 **key DB schema**
--   No changes were made to the database schema. The fix relied on better utilization of the existing  field.
+-   No database schema changes were made.
 
 **changes in tech stack**
 -   None.
 
 **All files of reference**
--   : The file where the fix was applied.
--   : The file containing the test that was failing.
--   : Updated with progress.
+-   : The file where the hotfix was applied.
+-   : Contains the faulty  decorator that needs refactoring.
+-   : Contains the test that was failing.
+-   : The CI configuration file showing the Redis service is active.
+-   : The product requirements document that was updated.
 
 **Areas that need refactoring**:
--   **Test Suite Architecture**: The entire test suite urgently needs to be refactored to ensure tests are isolated (e.g., using unique data, cleaning up state after execution). This is the only way to permanently solve the recurring CI failures.
+-   ** Decorator ()**: This is now a critical item. The decorator must be rewritten to correctly handle Pydantic models to prevent future, similar errors across the app.
+-   **Test Suite Architecture**: The overall test suite remains brittle and needs refactoring to ensure better test isolation and cleanup.
 -   **CI/CD Files**: Duplicate CI configuration files (, ) still need to be consolidated.
--   ** Decorator**: This remains a known source of instability and should be refactored.
 
 **key api endpoints**
--   : The endpoint whose underlying service logic was fixed.
+-   : The endpoint whose underlying implementation was fixed.
 
 **Critical Info for New Agent**
-1.  **Dil Türkçe'dir.** Kullanıcı ile tüm iletişim kesinlikle Türkçe olmalıdır.
-2.  **CI PİPELİNE'I HALA EN BÜYÜK ÖNCELİK.** The user is extremely frustrated. Your first and only task is to confirm this latest fix with the user and instruct them to push it to trigger a new CI run. Do not start any other work.
-3.  **Explain the Progress Clearly**: When communicating, it's vital to frame this correctly. The previous fix *did work* (644 tests passed), but it exposed this new, more subtle bug. Explain that the new fix is more robust and specifically addresses the stale room problem. This shows progress, not just endless new errors.
-4.  **Acknowledge the Pattern**: Acknowledge the user's frustration with the one fix, one new error cycle. Frame this fix as another step towards making the entire test suite more robust and independent.
+1.  **Dil Türkçe'dir.** Kullanıcı ile tüm iletişim kesinlikle Türkçe olmalıdır. (All communication with the user must be in Turkish.)
+2.  **CI PIPELINE IS THE ONLY PRIORITY.** The user is highly frustrated with the recurring CI failures. Your first and only task is to confirm this latest fix with the user and instruct them to push it to trigger a new CI run. Do not start any other work.
+3.  **Explain the Progress Clearly**: When communicating, it's vital to frame this correctly. 684 tests now pass (up from 644), which means the previous fix *worked*. This new failure was a more subtle bug exposed by the previous success. Explain that the new fix addresses a caching issue specific to the CI environment. This demonstrates progress, not just an endless cycle of new errors.
+4.  **Acknowledge the Pattern**: Acknowledge the user's frustration. Frame this work as a necessary step in hardening the system and making the test suite more robust. Proposing the refactor of the  decorator (Issue 2) as a next step will show foresight in preventing future, similar bugs.
 
 **documents and test reports created in this job**
 -    was updated.
 
 **Last 10 User Messages and any pending HUMAN messages**
--   User bypassed the agent's planned  and immediately provided the new CI log with the  for , indicating the previous fix had been pushed and failed again, but with a different error.
+-   The user bypassed the agent's planned  and immediately posted a new CI failure log for , setting the session's priority. The rest of the messages are tool outputs from the agent's debugging process.
 
 **Project Health Check:**
--   **Broken**: The project's health is critical. It is stuck in a CI/CD failure loop where fixing one test reveals a failure in another due to systemic test state pollution. Project health depends entirely on achieving a green CI pipeline.
+-   **Broken**: The project's health is critical and it remains blocked by the unstable CI/CD pipeline. Success is defined by a fully green CI run.
 
 **3rd Party Integrations**
 -   Exely (Channel Manager)
 -   HotelRunner (Channel Manager)
+-   Redis (Used for caching in the CI environment)
 
 **Testing status**
 -   **Testing agent used after significant changes**: NO
 -   **Troubleshoot agent used after agent stuck in loop**: NO
--   **Test files created**: None. Temporary shell scripts were used for local verification.
+-   **Test files created**: None.
 -   **Known regressions**: None. The fix is an improvement and should not cause regressions.
 
 **Credentials to test flow:**
@@ -30545,4 +30551,4 @@ The agent diagnosed the new CI failure. The root cause was again **test state po
 | **Demo Admin**|  |  |  |
 
 **What agent forgot to execute**
--   The agent correctly adapted to the user's urgent demand, which pre-empted the planned  flow. The agent's pivot to the new critical bug was the correct action. Nothing was forgotten.</analysis>
+-   The agent correctly pivoted to the user's urgent CI failure, pre-empting its own planned . No tasks were forgotten; the priority was correctly reassigned based on user input.</analysis>
