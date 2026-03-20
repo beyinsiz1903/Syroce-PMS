@@ -24,7 +24,7 @@ from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.infrastructure.rbac")
 
-CREDENTIAL_ADMIN_ROLES = {"tenant_owner", "system_admin", "integration_admin", "admin"}
+CREDENTIAL_ADMIN_ROLES = {"tenant_owner", "system_admin", "integration_admin", "admin", "super_admin"}
 CREDENTIAL_VIEW_ROLES = CREDENTIAL_ADMIN_ROLES | {"operator"}
 RESTRICTED_ROLES = {"staff", "viewer"}
 
