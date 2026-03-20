@@ -175,6 +175,9 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
   - Root cause: `EnhancedRateLimitMiddleware` only raised `auth` limit in CI, but `write` limit (120/min) was unchanged → 438+ tests exhausted write limit
   - Fix: All rate limit categories raised to 10000/min in CI/test environments (`TESTING=1` or `CI` env var)
   - Production limits unchanged
+- [x] P0: Fixed CI test `test_hr_attendance_records` failure (500)
+  - Root cause: `date` not imported in `domains/hr/router.py` - `_parse_date_range()` used `date.today()` but only `datetime` was imported
+  - Fix: Added `date` to imports: `from datetime import date, datetime, timezone, timedelta`
 
 ## Completed (Session 41 - Mar 2026)
 - [x] P0: Fixed CI test `test_guests_include_walkin_placeholder_emails` failure

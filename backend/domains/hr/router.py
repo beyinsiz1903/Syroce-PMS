@@ -5,7 +5,7 @@ HR complete suite, F&B complete suite for department managers.
 """
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 import uuid
 
 from core.database import db
