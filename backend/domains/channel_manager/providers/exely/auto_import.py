@@ -333,7 +333,14 @@ async def auto_import_pending(tenant_id: str, provider=None) -> Dict[str, Any]:
                 try:
                     external_id = res.get("external_id", "")
                     pms_booking_id = result["pms_booking_id"]
-                    confirm_result = await provider.confirm_delivery(external_id, pms_booking_id)
+                    create_dt = res.get("provider_last_modified_at") or res.get("created_at")
+                    modify_dt = res.get("provider_last_modified_at")
+                    confirm_result = await provider.confirm_delivery(
+                        external_id, pms_booking_id,
+                        create_datetime=create_dt,
+                        last_modify_datetime=modify_dt,
+                        res_status="Book",
+                    )
                     if confirm_result.success:
                         await db.exely_reservations.update_one(
                             {"tenant_id": tenant_id, "external_id": external_id},

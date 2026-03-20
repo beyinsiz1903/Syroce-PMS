@@ -314,7 +314,7 @@ class ExelyPullScheduler:
                     "pms_status": {"$in": ["imported", "confirmed"]},
                     "state": {"$ne": "cancelled"},
                 },
-                {"_id": 0, "external_id": 1, "pms_booking_id": 1},
+                {"_id": 0, "external_id": 1, "pms_booking_id": 1, "provider_last_modified_at": 1, "created_at": 1},
             ).to_list(50)
 
             if not unconfirmed:
@@ -324,8 +324,15 @@ class ExelyPullScheduler:
             for res in unconfirmed:
                 ext_id = res.get("external_id", "")
                 pms_id = res.get("pms_booking_id", ext_id)
+                create_dt = res.get("provider_last_modified_at") or res.get("created_at")
+                modify_dt = res.get("provider_last_modified_at")
                 try:
-                    result = await provider.confirm_delivery(ext_id, pms_id)
+                    result = await provider.confirm_delivery(
+                        ext_id, pms_id,
+                        create_datetime=create_dt,
+                        last_modify_datetime=modify_dt,
+                        res_status="Book",
+                    )
                     if result.success:
                         await db.exely_reservations.update_one(
                             {"tenant_id": tenant_id, "external_id": ext_id},

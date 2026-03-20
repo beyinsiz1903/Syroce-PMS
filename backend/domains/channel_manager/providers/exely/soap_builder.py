@@ -28,6 +28,7 @@ SOAP_ACTIONS = {
     "OTA_HotelRateAmountNotifRQ": "https://www.hopenapi.com/Api/PMSConnect/HotelRateAmountNotifRQ",
     "OTA_NotifReportRQ": "https://www.hopenapi.com/Api/PMSConnect/NotifReportRQRequest",
     "OTA_HotelInvCountNotifRQ": "https://www.hopenapi.com/Api/PMSConnect/HotelInvCountNotifRQRequest",
+    "OTA_HotelResNotifRQ": "https://www.hopenapi.com/Api/PMSConnect/HotelResNotifRQRequest",
     "PingRQ": "https://www.hopenapi.com/Api/PMSConnect/PingRQRequest",
 }
 
@@ -127,8 +128,15 @@ def build_notif_report_rq(
     username: str, password: str, hotel_code: str,
     reservation_id: str, confirmation_number: str,
     create_datetime: str = None, last_modify_datetime: str = None,
+    res_status: str = "Book",
 ) -> str:
-    """Build OTA_NotifReportRQ to confirm reservation delivery."""
+    """Build OTA_NotifReportRQ to confirm reservation delivery.
+    
+    res_status values:
+      - "Book"   → new reservation confirmed  (CreateDateTime mandatory)
+      - "Modify" → modification confirmed      (LastModifyDateTime mandatory)
+      - "Cancel" → cancellation confirmed       (LastModifyDateTime mandatory)
+    """
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     rq = etree.Element(f"{{{OTA_NS}}}OTA_NotifReportRQ", attrib={
         "Version": "1.0",
@@ -145,11 +153,14 @@ def build_notif_report_rq(
     })
 
     notif_item = etree.SubElement(hotel_notif, f"{{{OTA_NS}}}HotelReservations")
-    hotel_res = etree.SubElement(notif_item, f"{{{OTA_NS}}}HotelReservation", attrib={
-        "ResStatus": "Reserved",
-        "CreateDateTime": create_datetime or now_str,
-        "LastModifyDateTime": last_modify_datetime or now_str,
-    })
+
+    # Build attributes based on res_status type
+    res_attrib = {"ResStatus": res_status}
+    # Exely requires both CreateDateTime and LastModifyDateTime regardless of res_status
+    res_attrib["CreateDateTime"] = create_datetime or now_str
+    res_attrib["LastModifyDateTime"] = last_modify_datetime or create_datetime or now_str
+
+    hotel_res = etree.SubElement(notif_item, f"{{{OTA_NS}}}HotelReservation", attrib=res_attrib)
 
     etree.SubElement(hotel_res, f"{{{OTA_NS}}}UniqueID", attrib={
         "Type": "14",
@@ -169,6 +180,47 @@ def build_notif_report_rq(
     })
 
     return _soap_envelope(username, password, hotel_code, rq)
+
+
+def build_hotel_res_notif_rq(
+    username: str, password: str, hotel_code: str,
+    reservation_id: str, confirmation_number: str,
+    create_datetime: str = None, last_modify_datetime: str = None,
+    res_status: str = "Reserved",
+) -> str:
+    """Build OTA_HotelResNotifRQ to push reservation confirmation back to Exely."""
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rq = etree.Element(f"{{{OTA_NS}}}OTA_HotelResNotifRQ", attrib={
+        "Version": "1.0",
+        "TimeStamp": now_str,
+    })
+
+    reservations = etree.SubElement(rq, f"{{{OTA_NS}}}HotelReservations")
+    hotel_res = etree.SubElement(reservations, f"{{{OTA_NS}}}HotelReservation", attrib={
+        "ResStatus": res_status,
+        "CreateDateTime": create_datetime or now_str,
+        "LastModifyDateTime": last_modify_datetime or create_datetime or now_str,
+    })
+
+    etree.SubElement(hotel_res, f"{{{OTA_NS}}}UniqueID", attrib={
+        "Type": "14",
+        "ID": reservation_id,
+    })
+
+    res_info = etree.SubElement(hotel_res, f"{{{OTA_NS}}}ResGlobalInfo")
+    hotel_res_ids = etree.SubElement(res_info, f"{{{OTA_NS}}}HotelReservationIDs")
+    etree.SubElement(hotel_res_ids, f"{{{OTA_NS}}}HotelReservationID", attrib={
+        "ResID_Type": "14",
+        "ResID_Value": reservation_id,
+    })
+    etree.SubElement(hotel_res_ids, f"{{{OTA_NS}}}HotelReservationID", attrib={
+        "ResID_Type": "14",
+        "ResID_Value": confirmation_number,
+        "ResID_Source": "PMS",
+    })
+
+    return _soap_envelope(username, password, hotel_code, rq)
+
 
 
 def build_ari_update_rq(

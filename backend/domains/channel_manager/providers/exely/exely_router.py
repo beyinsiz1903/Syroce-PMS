@@ -635,14 +635,19 @@ async def confirm_all_imported_deliveries(
             "pms_booking_id": {"$ne": None},
             "delivery_confirmed": {"$ne": True},
         },
-        {"_id": 0, "external_id": 1, "pms_booking_id": 1},
+        {"_id": 0, "external_id": 1, "pms_booking_id": 1, "provider_last_modified_at": 1, "created_at": 1},
     ).to_list(200)
 
     confirmed = 0
     errors = []
     for res in unconfirmed:
         try:
-            result = await client.legacy_confirm_delivery(res["external_id"], res["pms_booking_id"])
+            create_dt = res.get("provider_last_modified_at") or res.get("created_at")
+            result = await client.legacy_confirm_delivery(
+                res["external_id"], res["pms_booking_id"],
+                create_datetime=create_dt,
+                res_status="Book",
+            )
             if result.get("success"):
                 await db.exely_reservations.update_one(
                     {"tenant_id": tenant_id, "external_id": res["external_id"]},
