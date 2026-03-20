@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink, Banknote, Building2, Wallet, Plus, CalendarPlus } from 'lucide-react';
+import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink, Banknote, Building2, Wallet, Plus, CalendarPlus, Search, UserCheck, UserPlus } from 'lucide-react';
 
 const RoomsTab = ({
   rooms,
@@ -47,6 +47,14 @@ const RoomsTab = ({
   const [quickResRoom, setQuickResRoom] = useState(null);
   const [quickResForm, setQuickResForm] = useState({ guest_name: '', check_in: '', check_out: '', total_amount: '' });
   const [quickResLoading, setQuickResLoading] = useState(false);
+
+  // Guest search state
+  const [guestSearchQuery, setGuestSearchQuery] = useState('');
+  const [guestSearchResults, setGuestSearchResults] = useState([]);
+  const [guestSearchLoading, setGuestSearchLoading] = useState(false);
+  const [selectedGuest, setSelectedGuest] = useState(null);
+  const [showGuestDropdown, setShowGuestDropdown] = useState(false);
+  const guestSearchTimerRef = React.useRef(null);
 
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
   const tomorrow = useMemo(() => {
@@ -222,8 +230,58 @@ const RoomsTab = ({
     e.stopPropagation();
     setQuickResRoom(room);
     setQuickResForm({ guest_name: '', check_in: today, check_out: tomorrow, total_amount: '' });
+    setSelectedGuest(null);
+    setGuestSearchQuery('');
+    setGuestSearchResults([]);
+    setShowGuestDropdown(false);
     setQuickResDialog(true);
   }, [today, tomorrow]);
+
+  // Guest search with debounce
+  const handleGuestSearch = useCallback((query) => {
+    setGuestSearchQuery(query);
+    setQuickResForm(f => ({ ...f, guest_name: query }));
+    setSelectedGuest(null);
+
+    if (guestSearchTimerRef.current) clearTimeout(guestSearchTimerRef.current);
+
+    if (query.trim().length < 2) {
+      setGuestSearchResults([]);
+      setShowGuestDropdown(false);
+      return;
+    }
+
+    setGuestSearchLoading(true);
+    guestSearchTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await axios.get(`/pms/guests/search?q=${encodeURIComponent(query.trim())}&limit=8`);
+        setGuestSearchResults(res.data || []);
+        setShowGuestDropdown(true);
+      } catch {
+        setGuestSearchResults([]);
+      } finally {
+        setGuestSearchLoading(false);
+      }
+    }, 300);
+  }, []);
+
+  // Select an existing guest from search results
+  const handleSelectGuest = useCallback((guest) => {
+    setSelectedGuest(guest);
+    setGuestSearchQuery(guest.name);
+    setQuickResForm(f => ({ ...f, guest_name: guest.name }));
+    setShowGuestDropdown(false);
+    setGuestSearchResults([]);
+  }, []);
+
+  // Clear selected guest
+  const handleClearGuest = useCallback(() => {
+    setSelectedGuest(null);
+    setGuestSearchQuery('');
+    setQuickResForm(f => ({ ...f, guest_name: '' }));
+    setGuestSearchResults([]);
+    setShowGuestDropdown(false);
+  }, []);
 
   // Submit quick reservation
   const handleQuickResSubmit = useCallback(async () => {
@@ -238,13 +296,17 @@ const RoomsTab = ({
     setQuickResLoading(true);
     try {
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `quick-booking-${Date.now()}-${Math.random()}`;
-      await axios.post('/pms/quick-booking', {
+      const payload = {
         guest_name: guest_name.trim(),
         room_id: quickResRoom.id,
         check_in: check_in + 'T14:00:00+00:00',
         check_out: check_out + 'T11:00:00+00:00',
         total_amount: amount,
-      }, { headers: { 'Idempotency-Key': idempotencyKey } });
+      };
+      if (selectedGuest?.id) {
+        payload.guest_id = selectedGuest.id;
+      }
+      await axios.post('/pms/quick-booking', payload, { headers: { 'Idempotency-Key': idempotencyKey } });
       toast.success(`Oda ${quickResRoom.room_number} icin rezervasyon olusturuldu`);
       setQuickResDialog(false);
       setQuickResRoom(null);
@@ -254,7 +316,7 @@ const RoomsTab = ({
     } finally {
       setQuickResLoading(false);
     }
-  }, [quickResRoom, quickResForm, onDataRefresh]);
+  }, [quickResRoom, quickResForm, selectedGuest, onDataRefresh]);
 
 
 
@@ -665,8 +727,8 @@ const RoomsTab = ({
       </Dialog>
 
       {/* Quick Reservation Dialog */}
-      <Dialog open={quickResDialog} onOpenChange={(o) => !o && setQuickResDialog(false)}>
-        <DialogContent className="max-w-sm">
+      <Dialog open={quickResDialog} onOpenChange={(o) => { if (!o) { setQuickResDialog(false); setShowGuestDropdown(false); } }}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CalendarPlus className="w-5 h-5 text-blue-600" />
@@ -678,17 +740,93 @@ const RoomsTab = ({
           </DialogHeader>
           {quickResRoom && (
             <div className="space-y-4">
+              {/* Guest search field */}
               <div>
-                <Label className="text-sm font-medium">Misafir Adi *</Label>
-                <Input
-                  value={quickResForm.guest_name}
-                  onChange={(e) => setQuickResForm(f => ({ ...f, guest_name: e.target.value }))}
-                  placeholder="Adi Soyadi"
-                  className="mt-1"
-                  autoFocus
-                  data-testid="quick-res-guest-name"
-                />
+                <Label className="text-sm font-medium">Misafir *</Label>
+                {selectedGuest ? (
+                  <div className="mt-1 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-md p-2.5" data-testid="quick-res-selected-guest">
+                    <UserCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-blue-900 truncate">{selectedGuest.name}</p>
+                      <p className="text-xs text-blue-600 truncate">
+                        {selectedGuest.email && !selectedGuest.email.includes('placeholder') ? selectedGuest.email : ''}
+                        {selectedGuest.phone ? (selectedGuest.email && !selectedGuest.email.includes('placeholder') ? ' | ' : '') + selectedGuest.phone : ''}
+                        {selectedGuest.total_stays > 0 && ` | ${selectedGuest.total_stays} konaklama`}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 text-blue-400 hover:text-blue-600 hover:bg-blue-100"
+                      onClick={handleClearGuest}
+                      data-testid="quick-res-clear-guest"
+                    >
+                      &times;
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="relative mt-1">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Input
+                        value={guestSearchQuery}
+                        onChange={(e) => handleGuestSearch(e.target.value)}
+                        onFocus={() => { if (guestSearchResults.length > 0) setShowGuestDropdown(true); }}
+                        placeholder="Misafir ara veya yeni isim gir..."
+                        className="pl-9"
+                        autoFocus
+                        data-testid="quick-res-guest-search"
+                      />
+                      {guestSearchLoading && (
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                      )}
+                    </div>
+
+                    {/* Search results dropdown */}
+                    {showGuestDropdown && guestSearchResults.length > 0 && (
+                      <div
+                        className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto"
+                        data-testid="quick-res-guest-dropdown"
+                      >
+                        {guestSearchResults.map((g) => (
+                          <button
+                            key={g.id}
+                            type="button"
+                            className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-50 last:border-b-0 transition-colors"
+                            onClick={() => handleSelectGuest(g)}
+                            data-testid={`quick-res-guest-option-${g.id}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <UserCheck className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-gray-900 truncate">
+                                  {g.name}
+                                  {g.vip_status && <span className="ml-1 text-amber-500 text-xs">VIP</span>}
+                                </p>
+                                <p className="text-xs text-gray-500 truncate">
+                                  {g.email && !g.email.includes('placeholder') ? g.email : ''}
+                                  {g.phone ? (g.email && !g.email.includes('placeholder') ? ' | ' : '') + g.phone : ''}
+                                </p>
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* "New guest" hint when typing but no match selected */}
+                    {guestSearchQuery.trim().length >= 2 && !guestSearchLoading && showGuestDropdown && guestSearchResults.length === 0 && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg px-3 py-2">
+                        <div className="flex items-center gap-2 text-gray-500">
+                          <UserPlus className="w-3.5 h-3.5" />
+                          <span className="text-sm">"{guestSearchQuery.trim()}" yeni misafir olarak eklenecek</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-sm font-medium">Giris Tarihi *</Label>

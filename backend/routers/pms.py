@@ -722,6 +722,54 @@ async def get_guests(
     return guests
 
 
+@router.get("/pms/guests/search")
+async def search_guests(
+    q: str = "",
+    limit: int = 10,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_module("pms")),
+):
+    """Misafir arama: ad, e-posta, telefon veya kimlik numarasina gore arar."""
+    q = q.strip()
+    if not q or len(q) < 2:
+        return []
+
+    tenant_id = current_user.tenant_id
+    regex = {"$regex": q, "$options": "i"}
+    query = {
+        "tenant_id": tenant_id,
+        "$or": [
+            {"name": regex},
+            {"first_name": regex},
+            {"last_name": regex},
+            {"email": regex},
+            {"phone": regex},
+            {"id_number": regex},
+            {"passport_number": regex},
+        ],
+    }
+    guests_raw = await db.guests.find(query, {"_id": 0}).sort("name", 1).limit(limit).to_list(limit)
+
+    results = []
+    for g in guests_raw:
+        if "first_name" in g and "last_name" in g:
+            g["name"] = f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
+        elif "name" not in g:
+            g["name"] = g.get("email", "Unknown")
+        if "id_number" not in g:
+            g["id_number"] = g.get("passport_number", "")
+        results.append({
+            "id": g.get("id", ""),
+            "name": g.get("name", ""),
+            "email": g.get("email", ""),
+            "phone": g.get("phone", ""),
+            "id_number": g.get("id_number", ""),
+            "vip_status": g.get("vip_status", False),
+            "total_stays": g.get("total_stays", 0),
+        })
+    return results
+
+
 @router.get("/pms/guests/{guest_id}")
 async def get_guest_by_id(
     guest_id: str,
@@ -789,6 +837,7 @@ class QuickBookingCreate(BaseModel):
     check_in: str
     check_out: str
     total_amount: float
+    guest_id: Optional[str] = None
 
 
 @router.post("/pms/quick-booking")
@@ -817,23 +866,31 @@ async def create_quick_booking(
     if not room:
         raise HTTPException(status_code=404, detail="Oda bulunamadi")
 
-    # 2) Create guest with minimal info
-    guest_id = str(uuid.uuid4())
-    now_ts = datetime.now(timezone.utc)
-    guest_doc = {
-        "id": guest_id,
-        "tenant_id": tenant_id,
-        "name": data.guest_name.strip(),
-        "email": f"walk-in-{guest_id[:8]}@placeholder.local",
-        "phone": "",
-        "id_number": "",
-        "vip_status": False,
-        "loyalty_points": 0,
-        "total_stays": 0,
-        "total_spend": 0.0,
-        "created_at": now_ts.isoformat(),
-    }
-    await db.guests.insert_one(guest_doc)
+    # 2) Use existing guest or create new one
+    if data.guest_id:
+        existing_guest = await db.guests.find_one(
+            {"id": data.guest_id, "tenant_id": tenant_id}, {"_id": 0}
+        )
+        if not existing_guest:
+            raise HTTPException(status_code=404, detail="Secilen misafir bulunamadi")
+        guest_id = data.guest_id
+    else:
+        guest_id = str(uuid.uuid4())
+        now_ts = datetime.now(timezone.utc)
+        guest_doc = {
+            "id": guest_id,
+            "tenant_id": tenant_id,
+            "name": data.guest_name.strip(),
+            "email": f"walk-in-{guest_id[:8]}@placeholder.local",
+            "phone": "",
+            "id_number": "",
+            "vip_status": False,
+            "loyalty_points": 0,
+            "total_stays": 0,
+            "total_spend": 0.0,
+            "created_at": now_ts.isoformat(),
+        }
+        await db.guests.insert_one(guest_doc)
 
     # 3) Build BookingCreate and delegate to the standard service
     booking_data = BookingCreate(
