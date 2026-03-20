@@ -16,7 +16,8 @@ Kullanıcının birincil hedefi kararlı, tamamen geçen bir CI/CD pipeline'ı e
 | Tarih | Dosya | Değişiklik | Sonuç |
 |-------|-------|-----------|-------|
 | Önceki oturum | `tests/test_hotelrunner_adapter_api.py` | `test_hotelrunner_test_connection_no_creds` assertion: 200→400 | 730→836 geçen test |
-| Şubat 2026 | `tests/test_infra_hardening_external.py` | `test_redis_health_returns_status_and_mode` assertion: `("connected","disconnected")` → `("healthy","unhealthy","disconnected")` | Doğrulama bekliyor |
+| Şubat 2026 | `tests/test_infra_hardening_external.py` | `test_redis_health_returns_status_and_mode` assertion: `("connected","disconnected")` → `("healthy","unhealthy","disconnected")` | 836→874 geçen test |
+| Şubat 2026 | `tests/test_ingest_pipeline.py` | `test_duplicate_provider_event_id_skipped` + `test_stale_version_skipped`: room mapping yoksa pending_mapping durumunu doğru kabul ediyor | Doğrulama bekliyor |
 
 ## Öncelikli Backlog
 
