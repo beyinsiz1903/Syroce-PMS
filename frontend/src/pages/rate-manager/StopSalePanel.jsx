@@ -47,24 +47,10 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
     setLoadingActive(true);
     try {
       const { data } = await axios.get(
-        `${API}/api/channel-manager/rate-manager/grid?start_date=${today}&end_date=${nextMonth}`,
+        `${API}/api/channel-manager/rate-manager/stop-sale-summary?start_date=${today}&end_date=${nextMonth}`,
         { headers }
       );
-      const stops = [];
-      for (const row of (data.grid || [])) {
-        for (const cell of (row.dates || [])) {
-          if (cell.stop_sell) {
-            stops.push({
-              room_type: row.room_type_name,
-              room_type_code: row.room_type_code,
-              rate_plan: row.rate_plan_name,
-              rate_plan_code: row.rate_plan_code,
-              date: cell.date,
-            });
-          }
-        }
-      }
-      setActiveStopSales(stops);
+      setActiveStopSales(data.stops || []);
     } catch {
       console.error('Stop sale durumu yuklenemedi');
     }
@@ -136,9 +122,13 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       } else {
         toast.success(`${data.saved} kayit icin satis acildi`);
       }
+      if (data.background_push) {
+        toast.info('Exely güncellemesi arka planda gönderiliyor...');
+      }
 
       loadActiveStopSales();
-      if (fetchGrid) fetchGrid();
+      // Delay grid refresh slightly so it doesn't block
+      if (fetchGrid) setTimeout(() => fetchGrid(), 500);
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Stop sale isleminde hata olustu');
     }
@@ -169,14 +159,10 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
     setOperatorLoading(prev => ({ ...prev, [operatorId]: false }));
   };
 
-  // Group active stops by room type
+  // Active stops come pre-grouped from the summary endpoint
   const groupedStops = {};
   for (const s of activeStopSales) {
-    const key = s.room_type_code;
-    if (!groupedStops[key]) {
-      groupedStops[key] = { name: s.room_type, dates: new Set() };
-    }
-    groupedStops[key].dates.add(s.date);
+    groupedStops[s.room_type_code] = { name: s.room_type_name, dates: new Set(s.dates) };
   }
 
   return (

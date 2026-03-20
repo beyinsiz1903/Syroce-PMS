@@ -75,7 +75,7 @@
       "webhook_url_card": {
         "status": "PASS",
         "visible_when_connected": true,
-        "url_displayed": "https://guest-search-pms.preview.emergentagent.com/api/webhooks/exely/reservations",
+        "url_displayed": "https://stop-sale-feature.preview.emergentagent.com/api/webhooks/exely/reservations",
         "copy_button": "PASS - visible and functional",
         "setup_instructions": "PASS - displayed below URL"
       },

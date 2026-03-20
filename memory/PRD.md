@@ -85,6 +85,14 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
 
+## Completed (Session 39 - Mar 2026)
+- [x] Performance Fix: Stop Sale "yavaş gönderme" sorunu
+  - Backend: Exely push artık `asyncio.create_task` ile arka planda çalışıyor (fire-and-forget), API yanıtı DB yazımı bittikten hemen sonra dönüyor
+  - Backend: Yeni lightweight `/api/channel-manager/rate-manager/stop-sale-summary` endpoint - MongoDB aggregation ile sadece stop_sell=true kayıtları döndürüyor (tüm grid yerine)
+  - Frontend: StopSalePanel artık hafif summary endpoint kullanıyor (grid endpoint yerine)
+  - Frontend: fetchGrid çağrısı 500ms gecikmeyle yapılıyor, ana yanıtı bloklamıyor
+  - Sonuç: API yanıt süresi ~0.15s (önceki: Exely push başına ~800ms bekleme)
+
 ## Completed (Session 38 - Mar 2026)
 - [x] P5: Rate Manager "Stop Sale" functionality
   - New StopSalePanel.jsx component with 3-panel layout: room type selection, date range + actions, channel-level stop sales

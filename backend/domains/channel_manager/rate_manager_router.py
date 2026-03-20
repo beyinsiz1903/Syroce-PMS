@@ -539,23 +539,79 @@ async def bulk_grid_update(
     if bulk_ops:
         await db.rate_calendar.bulk_write(bulk_ops, ordered=False)
 
-    # Execute all Exely pushes in parallel
+    # Fire-and-forget: push to Exely in background (don't block response)
     if push_tasks:
-        push_results = await asyncio.gather(*push_tasks)
-    else:
-        push_results = []
-
-    all_success = len(push_results) > 0 and all(r["success"] for r in push_results)
+        async def _background_push(tasks):
+            try:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                success = sum(1 for r in results if isinstance(r, dict) and r.get("success"))
+                logger.info(f"[BULK-UPDATE] Background Exely push done: {success}/{len(results)} successful")
+            except Exception as e:
+                logger.error(f"[BULK-UPDATE] Background Exely push failed: {e}")
+        asyncio.create_task(_background_push(push_tasks))
 
     return {
         "saved": saved,
-        "push_results": push_results,
-        "all_pushed": all_success,
+        "push_results": [],
+        "all_pushed": False,
+        "background_push": len(push_tasks) > 0,
         "total_room_types": len(total_room_types_set),
         "message": f"{saved} kayıt güncellendi" + (
-            " ve Exely'ye gönderildi" if all_success else ""
+            f", {len(push_tasks)} Exely push arka planda gönderiliyor" if push_tasks else ""
         ),
     }
+
+
+
+@router.get("/stop-sale-summary")
+async def get_stop_sale_summary(
+    start_date: str,
+    end_date: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Lightweight endpoint: sadece stop_sell=true olan kayıtları döndürür."""
+    tenant_id = current_user.tenant_id
+
+    pipeline = [
+        {
+            "$match": {
+                "tenant_id": tenant_id,
+                "date": {"$gte": start_date, "$lte": end_date},
+                "stop_sell": True,
+            }
+        },
+        {
+            "$group": {
+                "_id": "$room_type_code",
+                "dates": {"$addToSet": "$date"},
+                "count": {"$sum": 1},
+            }
+        },
+    ]
+
+    results = await db.rate_calendar.aggregate(pipeline).to_list(500)
+
+    # Get room type names
+    conn = await db.exely_connections.find_one(
+        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0, "room_types": 1}
+    )
+    rt_map = {}
+    if conn:
+        for rt in conn.get("room_types", []):
+            rt_map[rt.get("code", "")] = rt.get("name", rt.get("code", ""))
+
+    stops = []
+    for r in results:
+        code = r["_id"]
+        dates = sorted(r["dates"])
+        stops.append({
+            "room_type_code": code,
+            "room_type_name": rt_map.get(code, code),
+            "dates": dates,
+            "count": r["count"],
+        })
+
+    return {"stops": stops}
 
 
 
