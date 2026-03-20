@@ -162,17 +162,20 @@ async def trigger_inventory_sync(
         req.date_start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if not req.date_end:
         req.date_end = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
-    result = await svc.trigger_inventory_sync(
-        tenant_id=current_user.tenant_id,
-        connector_id=req.connector_id,
-        date_start=req.date_start,
-        date_end=req.date_end,
-        room_type_ids=req.room_type_ids,
-        triggered_by="user",
-        trigger_reason=req.reason or "Manual inventory sync",
-        actor_id=current_user.id,
-    )
-    return result
+    try:
+        result = await svc.trigger_inventory_sync(
+            tenant_id=current_user.tenant_id,
+            connector_id=req.connector_id,
+            date_start=req.date_start,
+            date_end=req.date_end,
+            room_type_ids=req.room_type_ids,
+            triggered_by="user",
+            trigger_reason=req.reason or "Manual inventory sync",
+            actor_id=current_user.id,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/sync/rates")
@@ -185,16 +188,19 @@ async def trigger_rate_sync(
         req.date_start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if not req.date_end:
         req.date_end = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
-    result = await svc.trigger_rate_sync(
-        tenant_id=current_user.tenant_id,
-        connector_id=req.connector_id,
-        date_start=req.date_start,
-        date_end=req.date_end,
-        rate_plan_ids=req.rate_plan_ids,
-        triggered_by="user",
-        actor_id=current_user.id,
-    )
-    return result
+    try:
+        result = await svc.trigger_rate_sync(
+            tenant_id=current_user.tenant_id,
+            connector_id=req.connector_id,
+            date_start=req.date_start,
+            date_end=req.date_end,
+            rate_plan_ids=req.rate_plan_ids,
+            triggered_by="user",
+            actor_id=current_user.id,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/sync/jobs")
