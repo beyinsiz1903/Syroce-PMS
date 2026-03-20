@@ -74,6 +74,7 @@ async def process_event(event: Dict[str, Any]) -> PipelineResult:
     tenant_id = event["tenant_id"]
     property_id = event["property_id"]
     provider = event["provider"]
+    existing_lineage = None
 
     try:
         # ── Stage 2: Duplicate Detection ──────────────────────────
@@ -107,7 +108,6 @@ async def process_event(event: Dict[str, Any]) -> PipelineResult:
 
         # ── Stage 4: Stale Event Detection ────────────────────────
         incoming_version = event.get("provider_version", "")
-        existing_lineage = None
         if ext_res_id:
             existing_lineage = await repo.get_lineage_by_external_id(
                 tenant_id, provider, ext_res_id,
