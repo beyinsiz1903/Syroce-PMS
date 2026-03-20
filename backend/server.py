@@ -123,6 +123,18 @@ try:
 except Exception:
     pass
 
+# ── Global exception handler for Exely provider errors ──────────────
+from fastapi import Request
+from fastapi.responses import JSONResponse
+try:
+    from domains.channel_manager.providers.exely.errors import ExelyError
+
+    @app.exception_handler(ExelyError)
+    async def exely_error_handler(request: Request, exc: ExelyError):
+        return JSONResponse(status_code=502, content={"detail": f"Exely provider hatasi: {exc.message}"})
+except ImportError:
+    pass
+
 # ── Additional API router (AI endpoints) ─────────────────────────────
 from fastapi import APIRouter
 api_router = APIRouter(prefix="/api")

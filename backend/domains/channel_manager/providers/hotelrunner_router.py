@@ -71,7 +71,10 @@ async def _get_provider(tenant_id: str):
     if not conn:
         raise HTTPException(status_code=404, detail="HotelRunner baglantisi bulunamadi. Lutfen once baglanti kurun.")
 
-    return HotelRunnerProvider(token=conn["token"], hr_id=conn["hr_id"]), conn
+    try:
+        return HotelRunnerProvider(token=conn.get("token", ""), hr_id=conn.get("hr_id", "")), conn
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"HotelRunner kimlik bilgileri gecersiz: {exc}")
 
 
 async def _log_sync(tenant_id: str, sync_type: str, status: str, duration_ms: int = 0,

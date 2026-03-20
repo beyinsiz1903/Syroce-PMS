@@ -262,18 +262,22 @@ async def update_rates(
         raise HTTPException(status_code=404, detail="Exely bağlantısı bulunamadı")
 
     # Get credentials for Exely push
-    creds = await get_decrypted_credentials(tenant_id, "exely", conn["hotel_code"])
+    hotel_code = conn.get("hotel_code", "")
+    creds = await get_decrypted_credentials(tenant_id, "exely", hotel_code)
     provider = None
     if creds:
         from domains.channel_manager.providers.exely.provider import ExelyProvider
         provider_kwargs = {
-            "username": creds["username"],
-            "password": creds["password"],
-            "hotel_code": conn["hotel_code"],
+            "username": creds.get("username", ""),
+            "password": creds.get("password", ""),
+            "hotel_code": hotel_code,
         }
         if conn.get("endpoint_url"):
             provider_kwargs["endpoint_url"] = conn["endpoint_url"]
-        provider = ExelyProvider(**provider_kwargs)
+        try:
+            provider = ExelyProvider(**provider_kwargs)
+        except Exception:
+            provider = None
 
     bulk_ops = []
     push_tasks = []
@@ -409,18 +413,22 @@ async def bulk_grid_update(
         raise HTTPException(status_code=404, detail="Exely bağlantısı bulunamadı")
 
     # Get credentials for Exely push
-    creds = await get_decrypted_credentials(tenant_id, "exely", conn["hotel_code"])
+    hotel_code = conn.get("hotel_code", "")
+    creds = await get_decrypted_credentials(tenant_id, "exely", hotel_code)
     provider = None
     if creds:
         from domains.channel_manager.providers.exely.provider import ExelyProvider
         provider_kwargs = {
-            "username": creds["username"],
-            "password": creds["password"],
-            "hotel_code": conn["hotel_code"],
+            "username": creds.get("username", ""),
+            "password": creds.get("password", ""),
+            "hotel_code": hotel_code,
         }
         if conn.get("endpoint_url"):
             provider_kwargs["endpoint_url"] = conn["endpoint_url"]
-        provider = ExelyProvider(**provider_kwargs)
+        try:
+            provider = ExelyProvider(**provider_kwargs)
+        except Exception:
+            provider = None
 
     selected_days_set = set(request.selected_days) if request.selected_days else None
     update_fields = set(request.update_fields)

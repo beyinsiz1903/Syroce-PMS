@@ -17,6 +17,7 @@ from domains.channel_manager.providers.common_ingest import ingest_reservation, 
 from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
 from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
+from domains.channel_manager.providers.exely.errors import ExelyError
 from domains.channel_manager.credential_vault import store_secret, get_decrypted_credentials
 
 logger = logging.getLogger(__name__)
@@ -88,7 +89,12 @@ async def _get_client(tenant_id: str) -> tuple:
         }
         if conn.get("endpoint_url"):
             kwargs["endpoint_url"] = conn["endpoint_url"]
-    return ExelyProvider(**kwargs), conn
+    try:
+        return ExelyProvider(**kwargs), conn
+    except ExelyError as exc:
+        raise HTTPException(status_code=502, detail=f"Exely kimlik bilgileri gecersiz veya eksik: {exc.message}")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Exely baglanti hatasi: {exc}")
 
 
 # ── Connection Management ────────────────────────────────────────────
