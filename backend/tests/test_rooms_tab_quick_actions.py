@@ -163,15 +163,14 @@ class TestGuestEndpoints:
         
         guest_id = guests[0]['id']
         
-        # This endpoint should exist but doesn't
         response = requests.get(
             f"{BASE_URL}/api/pms/guests/{guest_id}",
             headers=auth_headers
         )
         
-        # Document the issue - this returns 404
-        assert response.status_code == 404, "Endpoint exists now!"
-        print(f"⚠️ ISSUE: GET /api/pms/guests/{{id}} returns 404 - endpoint is MISSING")
+        # Endpoint now exists and should return guest data
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        print(f"✅ GET /api/pms/guests/{{id}} works correctly - status {response.status_code}")
     
     def test_put_single_guest_endpoint_missing(self, auth_headers):
         """PUT /api/pms/guests/{id} - ISSUE: This endpoint doesn't exist"""
