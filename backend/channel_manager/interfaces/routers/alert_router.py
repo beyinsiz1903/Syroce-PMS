@@ -198,7 +198,7 @@ async def get_multi_property_issues(
     current_user: User = Depends(get_current_user),
 ):
     svc = MultiPropertyService()
-    return await svc.get_cross_property_issues(current_user.tenant_id)
+    return await svc.get_issues(current_user.tenant_id)
 
 
 @router.get("/multi-property/health")
@@ -206,4 +206,4 @@ async def get_multi_property_health(
     current_user: User = Depends(get_current_user),
 ):
     svc = MultiPropertyService()
-    return await svc.get_health_overview(current_user.tenant_id)
+    return await svc.get_health(current_user.tenant_id)
