@@ -8,6 +8,9 @@ import uuid
 from datetime import datetime, timezone, date, timedelta
 from typing import Optional, List
 from pydantic import BaseModel
+from collections import defaultdict
+import holidays as holidays_lib
+from dateutil.easter import easter
 
 from fastapi import APIRouter, Depends, HTTPException
 from pymongo import UpdateOne
@@ -658,3 +661,311 @@ async def update_pricing_settings(
         updated += 1
 
     return {"updated": updated, "message": f"{updated} oda tipi fiyatlandırma ayarı güncellendi"}
+
+
+
+# ─── Holiday & Scheduler ────────────────────────────────────────
+
+
+def _get_holiday_periods(year: int) -> list:
+    """
+    Build grouped holiday periods for given year.
+    Includes Turkish public holidays + international tourism holidays.
+    """
+    tr = holidays_lib.Turkey(years=[year])
+
+    # Group consecutive days of the same holiday
+    # holidays lib may return combined names like "Holiday A; Holiday B" for overlapping dates
+    groups = defaultdict(list)
+    for d, name in sorted(tr.items()):
+        # Split combined holiday names and assign date to each
+        parts = [n.strip() for n in name.split(";")]
+        for part in parts:
+            groups[part].append(d)
+
+    periods = []
+    # Turkish holiday name map
+    tr_names = {
+        "New Year's Day": "Yilbasi",
+        "Eid al-Fitr": "Ramazan Bayrami",
+        "Eid al-Adha": "Kurban Bayrami",
+        "National Sovereignty and Children's Day": "23 Nisan Ulusal Egemenlik ve Cocuk Bayrami",
+        "Labour and Solidarity Day": "1 Mayis Isci Bayrami",
+        "Commemoration of Atatürk, Youth and Sports Day": "19 Mayis Ataturk'u Anma",
+        "Democracy and National Unity Day": "15 Temmuz Demokrasi Bayrami",
+        "Victory Day": "30 Agustos Zafer Bayrami",
+        "Republic Day": "29 Ekim Cumhuriyet Bayrami",
+    }
+
+    for en_name, dates in groups.items():
+        sorted_dates = sorted(dates)
+        tr_name = tr_names.get(en_name, en_name)
+        key = en_name.lower().replace(" ", "_").replace("'", "")
+        periods.append({
+            "key": f"tr_{key}_{year}",
+            "name": tr_name,
+            "category": "turkey",
+            "start_date": sorted_dates[0].isoformat(),
+            "end_date": sorted_dates[-1].isoformat(),
+            "days": len(sorted_dates),
+            "year": year,
+        })
+
+    # International tourism holidays
+    easter_date = easter(year)
+    orthodox_easter = easter(year, method=2)
+
+    intl = [
+        {
+            "key": f"easter_{year}",
+            "name": "Paskalya (Bati)",
+            "category": "international",
+            "start_date": (easter_date - timedelta(days=2)).isoformat(),
+            "end_date": (easter_date + timedelta(days=1)).isoformat(),
+            "days": 4,
+            "year": year,
+        },
+        {
+            "key": f"orthodox_easter_{year}",
+            "name": "Ortodoks Paskalya",
+            "category": "international",
+            "start_date": (orthodox_easter - timedelta(days=2)).isoformat(),
+            "end_date": (orthodox_easter + timedelta(days=1)).isoformat(),
+            "days": 4,
+            "year": year,
+        },
+        {
+            "key": f"christmas_{year}",
+            "name": "Noel Tatili",
+            "category": "international",
+            "start_date": f"{year}-12-23",
+            "end_date": f"{year}-12-26",
+            "days": 4,
+            "year": year,
+        },
+        {
+            "key": f"russian_newyear_{year}",
+            "name": "Rus Yilbasi Tatili",
+            "category": "international",
+            "start_date": f"{year}-01-01",
+            "end_date": f"{year}-01-08",
+            "days": 8,
+            "year": year,
+        },
+        {
+            "key": f"summer_peak_{year}",
+            "name": "Yaz Sezonu (Yuksek)",
+            "category": "season",
+            "start_date": f"{year}-07-01",
+            "end_date": f"{year}-08-31",
+            "days": 62,
+            "year": year,
+        },
+        {
+            "key": f"winter_break_{year}",
+            "name": "Soemestr Tatili",
+            "category": "season",
+            "start_date": f"{year}-01-20",
+            "end_date": f"{year}-02-03",
+            "days": 15,
+            "year": year,
+        },
+    ]
+    periods.extend(intl)
+
+    # Sort by start date
+    periods.sort(key=lambda x: x["start_date"])
+    return periods
+
+
+@router.get("/holidays")
+async def get_holidays(
+    current_user: User = Depends(get_current_user),
+):
+    """Tatil donemlerini dondurur (Turk + uluslararasi)."""
+    now = date.today()
+    years = [now.year]
+    if now.month >= 10:
+        years.append(now.year + 1)
+    else:
+        years = [now.year, now.year + 1]
+
+    all_periods = []
+    for y in years:
+        all_periods.extend(_get_holiday_periods(y))
+
+    # Filter out past holidays (keep only those ending today or later)
+    today_str = now.isoformat()
+    upcoming = [p for p in all_periods if p["end_date"] >= today_str]
+
+    return {"holidays": upcoming}
+
+
+# ─── Stop Sale Scheduler ────────────────────────────────────────
+
+class StopSaleScheduleCreate(BaseModel):
+    name: str
+    holiday_key: Optional[str] = None
+    start_date: str  # YYYY-MM-DD
+    end_date: str    # YYYY-MM-DD
+    room_type_codes: List[str]
+    auto_apply: bool = True
+
+
+class StopSaleScheduleUpdate(BaseModel):
+    name: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    room_type_codes: Optional[List[str]] = None
+    auto_apply: Optional[bool] = None
+
+
+@router.get("/stop-sale-schedules")
+async def list_stop_sale_schedules(
+    current_user: User = Depends(get_current_user),
+):
+    """Kaydedilmis stop sale zamanlayicilari listeler."""
+    tenant_id = current_user.tenant_id
+    docs = await db.stop_sale_schedules.find(
+        {"tenant_id": tenant_id}, {"_id": 0}
+    ).sort("start_date", 1).to_list(200)
+    return {"schedules": docs}
+
+
+@router.post("/stop-sale-schedules")
+async def create_stop_sale_schedule(
+    request: StopSaleScheduleCreate,
+    current_user: User = Depends(get_current_user),
+):
+    """Yeni stop sale zamanlayici olusturur."""
+    tenant_id = current_user.tenant_id
+    now = datetime.now(timezone.utc).isoformat()
+
+    schedule = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "name": request.name,
+        "holiday_key": request.holiday_key,
+        "start_date": request.start_date,
+        "end_date": request.end_date,
+        "room_type_codes": request.room_type_codes,
+        "auto_apply": request.auto_apply,
+        "applied": False,
+        "created_at": now,
+        "updated_at": now,
+        "created_by": current_user.id,
+    }
+
+    await db.stop_sale_schedules.insert_one(schedule)
+
+    # If auto_apply is True, immediately apply the stop sale
+    if request.auto_apply:
+        conn = await db.exely_connections.find_one(
+            {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
+        )
+        if conn:
+            rate_plans = conn.get("rate_plans", [])
+            rp_codes = [rp["code"] for rp in rate_plans]
+
+            per_room_values = [
+                {
+                    "room_type_code": rt_code,
+                    "rate_plan_codes": rp_codes,
+                    "stop_sell": True,
+                }
+                for rt_code in request.room_type_codes
+            ]
+
+            bulk_req = BulkGridUpdateRequest(
+                per_room_values=[RoomTypeValuesItem(**prv) for prv in per_room_values],
+                start_date=request.start_date,
+                end_date=request.end_date,
+                update_fields=["stop_sell"],
+            )
+            await bulk_grid_update(bulk_req, current_user)
+
+            await db.stop_sale_schedules.update_one(
+                {"id": schedule["id"]},
+                {"$set": {"applied": True, "applied_at": now}},
+            )
+
+    # Remove _id before returning
+    schedule.pop("_id", None)
+    return {"schedule": schedule, "message": "Zamanlayici olusturuldu"}
+
+
+@router.delete("/stop-sale-schedules/{schedule_id}")
+async def delete_stop_sale_schedule(
+    schedule_id: str,
+    remove_stop_sale: bool = False,
+    current_user: User = Depends(get_current_user),
+):
+    """Stop sale zamanlayiciyi siler. remove_stop_sale=true ise stop sale'i de kaldirir."""
+    tenant_id = current_user.tenant_id
+    schedule = await db.stop_sale_schedules.find_one(
+        {"tenant_id": tenant_id, "id": schedule_id}, {"_id": 0}
+    )
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Zamanlayici bulunamadi")
+
+    # Optionally remove the stop sale
+    if remove_stop_sale and schedule.get("applied"):
+        conn = await db.exely_connections.find_one(
+            {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
+        )
+        if conn:
+            rate_plans = conn.get("rate_plans", [])
+            rp_codes = [rp["code"] for rp in rate_plans]
+
+            per_room_values = [
+                {
+                    "room_type_code": rt_code,
+                    "rate_plan_codes": rp_codes,
+                    "stop_sell": False,
+                }
+                for rt_code in schedule["room_type_codes"]
+            ]
+            bulk_req = BulkGridUpdateRequest(
+                per_room_values=[RoomTypeValuesItem(**prv) for prv in per_room_values],
+                start_date=schedule["start_date"],
+                end_date=schedule["end_date"],
+                update_fields=["stop_sell"],
+            )
+            await bulk_grid_update(bulk_req, current_user)
+
+    await db.stop_sale_schedules.delete_one(
+        {"tenant_id": tenant_id, "id": schedule_id}
+    )
+    return {"message": "Zamanlayici silindi"}
+
+
+@router.patch("/stop-sale-schedules/{schedule_id}")
+async def update_stop_sale_schedule(
+    schedule_id: str,
+    request: StopSaleScheduleUpdate,
+    current_user: User = Depends(get_current_user),
+):
+    """Stop sale zamanlayici gunceller."""
+    tenant_id = current_user.tenant_id
+    now = datetime.now(timezone.utc).isoformat()
+
+    update_fields = {"updated_at": now}
+    if request.name is not None:
+        update_fields["name"] = request.name
+    if request.start_date is not None:
+        update_fields["start_date"] = request.start_date
+    if request.end_date is not None:
+        update_fields["end_date"] = request.end_date
+    if request.room_type_codes is not None:
+        update_fields["room_type_codes"] = request.room_type_codes
+    if request.auto_apply is not None:
+        update_fields["auto_apply"] = request.auto_apply
+
+    result = await db.stop_sale_schedules.update_one(
+        {"tenant_id": tenant_id, "id": schedule_id},
+        {"$set": update_fields},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Zamanlayici bulunamadi")
+
+    return {"message": "Zamanlayici guncellendi"}

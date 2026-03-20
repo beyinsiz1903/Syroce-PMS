@@ -12,10 +12,18 @@ import {
 } from '@/components/ui/select';
 import {
   Ban, CheckCircle, Lock, Unlock, Loader2, AlertTriangle,
-  Calendar, RefreshCw, BedDouble, Globe
+  Calendar, RefreshCw, BedDouble, Globe, Clock, Trash2,
+  CalendarRange, Palmtree, Star, Snowflake, Sun
 } from 'lucide-react';
 
 const API = process.env.REACT_APP_BACKEND_URL;
+
+// Category icons & colors
+const CATEGORY_STYLE = {
+  turkey: { icon: Star, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200', label: 'Turk Tatili' },
+  international: { icon: Globe, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', label: 'Uluslararasi' },
+  season: { icon: Sun, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', label: 'Sezon' },
+};
 
 export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parentLoading }) => {
   const token = localStorage.getItem('token');
@@ -30,6 +38,17 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
   const [saving, setSaving] = useState(false);
   const [activeStopSales, setActiveStopSales] = useState([]);
   const [loadingActive, setLoadingActive] = useState(true);
+
+  // Holidays
+  const [holidays, setHolidays] = useState([]);
+  const [selectedHoliday, setSelectedHoliday] = useState('');
+  const [loadingHolidays, setLoadingHolidays] = useState(false);
+
+  // Scheduler
+  const [schedules, setSchedules] = useState([]);
+  const [loadingSchedules, setLoadingSchedules] = useState(false);
+  const [scheduleName, setScheduleName] = useState('');
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   // Operator-level stop sale
   const [operatorStatus, setOperatorStatus] = useState({});
@@ -66,10 +85,47 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
     }
   }, []);
 
+  const loadHolidays = useCallback(async () => {
+    setLoadingHolidays(true);
+    try {
+      const { data } = await axios.get(`${API}/api/channel-manager/rate-manager/holidays`, { headers });
+      setHolidays(data.holidays || []);
+    } catch {
+      console.error('Tatil verileri yuklenemedi');
+    }
+    setLoadingHolidays(false);
+  }, []);
+
+  const loadSchedules = useCallback(async () => {
+    setLoadingSchedules(true);
+    try {
+      const { data } = await axios.get(`${API}/api/channel-manager/rate-manager/stop-sale-schedules`, { headers });
+      setSchedules(data.schedules || []);
+    } catch {
+      console.error('Zamanlayicilar yuklenemedi');
+    }
+    setLoadingSchedules(false);
+  }, []);
+
   useEffect(() => {
     loadActiveStopSales();
     loadOperatorStatus();
-  }, [loadActiveStopSales, loadOperatorStatus]);
+    loadHolidays();
+    loadSchedules();
+  }, [loadActiveStopSales, loadOperatorStatus, loadHolidays, loadSchedules]);
+
+  const handleHolidaySelect = (key) => {
+    setSelectedHoliday(key);
+    if (key === 'manual') {
+      return;
+    }
+    const h = holidays.find(h => h.key === key);
+    if (h) {
+      setDateFrom(h.start_date);
+      setDateTo(h.end_date);
+      setScheduleName(h.name);
+    }
+  };
 
   const toggleRoomType = (code) => {
     setSelectedRoomTypes(prev => {
@@ -123,11 +179,10 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
         toast.success(`${data.saved} kayit icin satis acildi`);
       }
       if (data.background_push) {
-        toast.info('Exely güncellemesi arka planda gönderiliyor...');
+        toast.info('Exely guncellemesi arka planda gonderiliyor...');
       }
 
       loadActiveStopSales();
-      // Delay grid refresh slightly so it doesn't block
       if (fetchGrid) setTimeout(() => fetchGrid(), 500);
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Stop sale isleminde hata olustu');
@@ -159,15 +214,190 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
     setOperatorLoading(prev => ({ ...prev, [operatorId]: false }));
   };
 
-  // Active stops come pre-grouped from the summary endpoint
+  const saveSchedule = async () => {
+    if (selectedRoomTypes.size === 0) {
+      toast.error('Lutfen en az bir oda tipi secin');
+      return;
+    }
+    if (!dateFrom || !dateTo) {
+      toast.error('Lutfen tarih araligi secin');
+      return;
+    }
+    const name = scheduleName.trim() || `Stop Sale ${dateFrom} - ${dateTo}`;
+
+    setSavingSchedule(true);
+    try {
+      await axios.post(`${API}/api/channel-manager/rate-manager/stop-sale-schedules`, {
+        name,
+        holiday_key: selectedHoliday !== 'manual' ? selectedHoliday : null,
+        start_date: dateFrom,
+        end_date: dateTo,
+        room_type_codes: Array.from(selectedRoomTypes),
+        auto_apply: true,
+      }, { headers });
+      toast.success('Zamanlayici olusturuldu ve stop sale uygulandi');
+      loadSchedules();
+      loadActiveStopSales();
+      setScheduleName('');
+      if (fetchGrid) setTimeout(() => fetchGrid(), 500);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Zamanlayici olusturulamadi');
+    }
+    setSavingSchedule(false);
+  };
+
+  const deleteSchedule = async (scheduleId, removeStopSale) => {
+    try {
+      await axios.delete(
+        `${API}/api/channel-manager/rate-manager/stop-sale-schedules/${scheduleId}?remove_stop_sale=${removeStopSale}`,
+        { headers }
+      );
+      toast.success(removeStopSale ? 'Zamanlayici silindi ve stop sale kaldirildi' : 'Zamanlayici silindi');
+      loadSchedules();
+      if (removeStopSale) {
+        loadActiveStopSales();
+        if (fetchGrid) setTimeout(() => fetchGrid(), 500);
+      }
+    } catch {
+      toast.error('Zamanlayici silinemedi');
+    }
+  };
+
+  // Active stops pre-grouped
   const groupedStops = {};
   for (const s of activeStopSales) {
     groupedStops[s.room_type_code] = { name: s.room_type_name, dates: new Set(s.dates) };
   }
 
+  // Group holidays by category
+  const holidaysByCategory = {};
+  for (const h of holidays) {
+    const cat = h.category || 'other';
+    if (!holidaysByCategory[cat]) holidaysByCategory[cat] = [];
+    holidaysByCategory[cat].push(h);
+  }
+
+  const formatDateRange = (start, end) => {
+    const s = new Date(start + 'T00:00:00');
+    const e = new Date(end + 'T00:00:00');
+    const opts = { day: 'numeric', month: 'short' };
+    return `${s.toLocaleDateString('tr-TR', opts)} - ${e.toLocaleDateString('tr-TR', opts)}`;
+  };
+
   return (
     <div className="space-y-6" data-testid="stop-sale-panel">
-      {/* Quick Stop Sale Controls */}
+      {/* Holiday Quick Select + Date Range */}
+      <Card className="border-indigo-200 bg-gradient-to-br from-indigo-50/50 to-white">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2" data-testid="holiday-selector-title">
+            <Palmtree className="w-4 h-4 text-indigo-600" />
+            Tatil Donemi Hizli Secim
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Tatil donemi secin, tarihler otomatik dolsun. Isterseniz tarihleri manuel duzenleyebilirsiniz.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Holiday Grid */}
+          {loadingHolidays ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {Object.entries(holidaysByCategory).map(([cat, items]) => {
+                const style = CATEGORY_STYLE[cat] || CATEGORY_STYLE.turkey;
+                const Icon = style.icon;
+                return (
+                  <div key={cat}>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <Icon className={`w-3.5 h-3.5 ${style.color}`} />
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{style.label}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5" data-testid={`holiday-category-${cat}`}>
+                      {items.map(h => {
+                        const isSelected = selectedHoliday === h.key;
+                        return (
+                          <button
+                            key={h.key}
+                            onClick={() => handleHolidaySelect(h.key)}
+                            className={`
+                              inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
+                              transition-all duration-200 border cursor-pointer
+                              ${isSelected
+                                ? `${style.bg} ${style.border} ${style.color} ring-2 ring-offset-1 ring-indigo-300`
+                                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
+                              }
+                            `}
+                            data-testid={`holiday-btn-${h.key}`}
+                          >
+                            <span>{h.name}</span>
+                            <span className="text-[10px] opacity-70">
+                              {formatDateRange(h.start_date, h.end_date)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+              {/* Manual option */}
+              <button
+                onClick={() => handleHolidaySelect('manual')}
+                className={`
+                  inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
+                  transition-all duration-200 border cursor-pointer
+                  ${selectedHoliday === 'manual'
+                    ? 'bg-gray-100 border-gray-400 text-gray-800 ring-2 ring-offset-1 ring-gray-300'
+                    : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                  }
+                `}
+                data-testid="holiday-btn-manual"
+              >
+                <CalendarRange className="w-3 h-3" />
+                Manuel Tarih Gir
+              </button>
+            </div>
+          )}
+
+          {/* Date Fields (always editable) */}
+          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-gray-100">
+            <div>
+              <Label className="text-xs text-gray-500">Baslangic</Label>
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={e => { setDateFrom(e.target.value); setSelectedHoliday('manual'); }}
+                className="mt-1 h-9"
+                data-testid="stop-sale-date-from"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-gray-500">Bitis</Label>
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={e => { setDateTo(e.target.value); setSelectedHoliday('manual'); }}
+                className="mt-1 h-9"
+                data-testid="stop-sale-date-to"
+              />
+            </div>
+          </div>
+
+          {selectedHoliday && selectedHoliday !== 'manual' && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-indigo-700">
+              <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>
+                <strong>{holidays.find(h => h.key === selectedHoliday)?.name}</strong> tarihleri secildi. 
+                Tarihleri manuel olarak degistirebilirsiniz.
+              </span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Main Controls Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Left: Room Type Selection */}
         <Card>
@@ -211,47 +441,24 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
           </CardContent>
         </Card>
 
-        {/* Center: Date Range + Actions */}
+        {/* Center: Actions + Scheduler Save */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Calendar className="w-4 h-4" />
-              Tarih Araligi & Islem
+              Islem & Zamanlayici
             </CardTitle>
             <CardDescription className="text-xs">
-              Tarih araligini secin ve satisi durdur/ac
+              Satisi durdur/ac veya zamanlayici olarak kaydet
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs text-gray-500">Baslangic</Label>
-                <Input
-                  type="date"
-                  value={dateFrom}
-                  onChange={e => setDateFrom(e.target.value)}
-                  className="mt-1 h-9"
-                  data-testid="stop-sale-date-from"
-                />
-              </div>
-              <div>
-                <Label className="text-xs text-gray-500">Bitis</Label>
-                <Input
-                  type="date"
-                  value={dateTo}
-                  onChange={e => setDateTo(e.target.value)}
-                  className="mt-1 h-9"
-                  data-testid="stop-sale-date-to"
-                />
-              </div>
-            </div>
-
             {/* Summary */}
             <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
               <span className="font-medium">{selectedRoomTypes.size}</span> oda tipi secili
-              {selectedRoomTypes.size > 0 && (
+              {dateFrom && dateTo && (
                 <span className="text-gray-400 ml-1">
-                  ({Array.from(selectedRoomTypes).map(c => roomTypes.find(rt => rt.code === c)?.name).filter(Boolean).join(', ')})
+                  | {formatDateRange(dateFrom, dateTo)}
                 </span>
               )}
             </div>
@@ -275,6 +482,31 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <Unlock className="w-4 h-4 mr-1.5" />}
                 Satisi Ac
+              </Button>
+            </div>
+
+            {/* Scheduler Save */}
+            <div className="border-t border-gray-100 pt-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                <span className="text-xs font-semibold text-gray-700">Zamanlayici Olarak Kaydet</span>
+              </div>
+              <Input
+                placeholder="Zamanlayici adi (opsiyonel)"
+                value={scheduleName}
+                onChange={e => setScheduleName(e.target.value)}
+                className="h-8 text-sm"
+                data-testid="schedule-name-input"
+              />
+              <Button
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+                size="sm"
+                onClick={saveSchedule}
+                disabled={savingSchedule || selectedRoomTypes.size === 0}
+                data-testid="save-schedule-btn"
+              >
+                {savingSchedule ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Clock className="w-3.5 h-3.5 mr-1.5" />}
+                Zamanlayici Olustur & Uygula
               </Button>
             </div>
 
@@ -335,6 +567,106 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
           </CardContent>
         </Card>
       </div>
+
+      {/* Saved Schedules */}
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Clock className="w-4 h-4 text-indigo-500" />
+                Kayitli Zamanlayicilar
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Olusturulmus stop sale zamanlayicilari
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadSchedules}
+              disabled={loadingSchedules}
+              data-testid="refresh-schedules"
+            >
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${loadingSchedules ? 'animate-spin' : ''}`} />
+              Yenile
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loadingSchedules ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+            </div>
+          ) : schedules.length === 0 ? (
+            <div className="text-center py-6 text-gray-400">
+              <Clock className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+              <p className="text-sm">Henuz zamanlayici yok</p>
+              <p className="text-xs mt-1">Tatil donemi secip zamanlayici olusturun</p>
+            </div>
+          ) : (
+            <div className="space-y-2" data-testid="schedules-list">
+              {schedules.map(s => {
+                const isPast = s.end_date < today;
+                return (
+                  <div
+                    key={s.id}
+                    className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
+                      isPast ? 'bg-gray-50 border-gray-200 opacity-60' : 'bg-indigo-50/50 border-indigo-200'
+                    }`}
+                    data-testid={`schedule-item-${s.id}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-800 truncate">{s.name}</span>
+                        {s.applied && (
+                          <Badge className="bg-green-100 text-green-700 border-0 text-[10px]">Uygulandi</Badge>
+                        )}
+                        {isPast && (
+                          <Badge variant="outline" className="text-[10px]">Gecmis</Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {formatDateRange(s.start_date, s.end_date)}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <BedDouble className="w-3 h-3" />
+                          {s.room_type_codes?.length || 0} oda tipi
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 ml-3">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-red-500 hover:text-red-700 hover:bg-red-50"
+                        onClick={() => deleteSchedule(s.id, true)}
+                        title="Sil ve stop sale'i kaldir"
+                        data-testid={`schedule-delete-restore-${s.id}`}
+                      >
+                        <Unlock className="w-3.5 h-3.5 mr-1" />
+                        <span className="text-xs">Kaldir</span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-gray-400 hover:text-gray-600"
+                        onClick={() => deleteSchedule(s.id, false)}
+                        title="Sadece zamanlayiciyi sil"
+                        data-testid={`schedule-delete-${s.id}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Active Stop Sales Overview */}
       <Card>
