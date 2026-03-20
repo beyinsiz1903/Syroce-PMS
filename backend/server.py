@@ -58,7 +58,7 @@ from models.schemas import User  # noqa: E402
 from models.enums import ChannelType  # noqa: E402
 
 # Backward compat alias
-require_super_admin = require_super_admin_guard
+require_super_admin = require_super_admin_guard()
 
 # Expose db on app.state early
 app.state.db = db

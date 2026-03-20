@@ -13,8 +13,9 @@ from core.security import (
     get_current_user,
 )
 from core.helpers import (
-    require_super_admin_guard as require_super_admin, get_tenant_modules,
+    require_super_admin_guard, get_tenant_modules,
 )
+require_super_admin = require_super_admin_guard()
 from models.schemas import User, Tenant, TenantRegister, UpdateUserRoleRequest
 from models.enums import UserRole
 from subscription_models import SubscriptionTier, SUBSCRIPTION_PLANS, get_plan_default_modules, PLAN_MODULE_DEFAULTS, get_all_module_keys, get_feature_comparison
