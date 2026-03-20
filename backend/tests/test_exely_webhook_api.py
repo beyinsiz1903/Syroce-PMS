@@ -22,6 +22,11 @@ from datetime import datetime, timedelta
 # Use external URL for testing
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://reservation-debug.preview.emergentagent.com')
 
+pytestmark = pytest.mark.skipif(
+    not BASE_URL,
+    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
+)
+
 # Test credentials from review request
 DEMO_EMAIL = "demo@hotel.com"
 DEMO_PASSWORD = "demo123"

@@ -20,6 +20,9 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+    pytest.skip("Integration tests require running server - skip in CI", allow_module_level=True)
+
 BASE_URL = os.environ.get("TEST_API_URL", "")
 if not BASE_URL:
     env_path = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", ".env")

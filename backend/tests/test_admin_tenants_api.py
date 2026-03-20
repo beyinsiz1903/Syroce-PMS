@@ -22,6 +22,11 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 
+pytestmark = pytest.mark.skipif(
+    not BASE_URL,
+    reason="REACT_APP_BACKEND_URL not set – integration tests require a running server"
+)
+
 
 class TestAdminTenantsAPI:
     """Admin Tenants API Tests - requires super_admin role"""

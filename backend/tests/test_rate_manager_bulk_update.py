@@ -9,6 +9,11 @@ from datetime import date, timedelta
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
+pytestmark = pytest.mark.skipif(
+    not BASE_URL,
+    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
+)
+
 
 class TestRateManagerBulkUpdate:
     """Tests for the new Rate Manager Bulk Update functionality"""
