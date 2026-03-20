@@ -170,6 +170,13 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] P2 Refactoring: ReservationDetailModal.js (1385 -> 183 lines + 6 sub-files)
 - [x] P2 Refactoring: RateManager.jsx (1034 -> 296 lines + 4 sub-files)
 
+## Completed (Session 50 - Mar 2026)
+- [x] P0: Fixed CI test `test_checkin_stale_occupied_room` failure (400 "Room is occupied by another guest")
+  - Root cause: Test state pollution — CI'da başka testlerden kalan stale `checked_in` booking'ler, geniş `bookings.find_one(room_id, status: checked_in)` sorgusu ile yakalanıyordu
+  - Fix: `frontdesk_service.py`'deki occupied oda kontrolünü `current_booking_id` bazlı yaptık. Artık odanın kendi `current_booking_id` alanına bakılıyor (check-in/checkout sırasında düzgünce yönetilen alandır), tüm bookings koleksiyonunu taramak yerine
+  - Bu daha doğru bir iş mantığı: gerçek occupancy sadece odanın kendi tracking'i ile belirlenmeli
+  - Verified: Stale-occupied checkin → 200, real occupancy → hala engelleniyor
+
 ## Completed (Session 49 - Mar 2026)
 - [x] P0: Fixed CI test `test_webhook_successful_reservation_creation` failure (hotel_code 404)
   - Root cause: `test_exely_api.py::test_disconnect_requires_existing` runs BEFORE webhook tests (alphabetical order), calls DELETE /disconnect which sets `is_active: False` for hotel_code 501694. Webhook router queried `{"hotel_code": "501694", "is_active": True}` → got None → "Unknown hotel code" error
