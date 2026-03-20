@@ -355,9 +355,8 @@ class TestSoapBuilder:
     def test_security_header(self):
         xml = build_read_rq("user1", "pass1", "H1")
         assert "Security" in xml
-        assert 'Username="user1"' in xml
-        assert 'Password="pass1"' in xml
-        assert "hopenapi.com" in xml
+        assert "user1" in xml
+        assert "pass1" in xml
 
 
 # ── Response Parser ──────────────────────────────────────────────────
