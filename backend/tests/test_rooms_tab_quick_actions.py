@@ -197,9 +197,9 @@ class TestGuestEndpoints:
             }
         )
         
-        # Document the issue - this returns 404
-        assert response.status_code == 404, "Endpoint exists now!"
-        print(f"⚠️ ISSUE: PUT /api/pms/guests/{{id}} returns 404 - endpoint is MISSING")
+        # Endpoint now exists and works correctly
+        assert response.status_code == 200, f"PUT /api/pms/guests/{{id}} should return 200, got {response.status_code}"
+        print(f"✅ PUT /api/pms/guests/{{id}} returns {response.status_code} - endpoint is working")
 
 
 class TestBookingsData:
