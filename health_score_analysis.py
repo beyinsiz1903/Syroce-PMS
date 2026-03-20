@@ -9,7 +9,7 @@ import requests
 from datetime import datetime
 
 def main():
-    backend_url = "https://menu-verification.preview.emergentagent.com"
+    backend_url = "https://refactor-verify-2.preview.emergentagent.com"
     
     # Authenticate
     session = requests.Session()

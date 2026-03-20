@@ -84,6 +84,16 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
 
+## Completed (Session 33 - Feb 2026)
+- [x] P0: User verified refactoring of RateManager and ReservationDetailModal - confirmed working
+- [x] P3: Added unit tests for refactored components (32 tests, 3 test suites, 100% pass)
+  - `reservation-detail/__tests__/helpers.test.js` - fmtDate, fmtTs, fmtTL, statusLabel
+  - `reservation-detail/__tests__/components.test.js` - InfoField, Avatar, EmptyState, SummaryCard, FormField
+  - `rate-manager/__tests__/constants.test.js` - DAYS, UPDATE_FIELDS, CHANNELS
+- [x] P3: soap_builder.py cleanup reviewed - no commented-out code found, file is clean
+- [x] Installed @testing-library/react, @testing-library/jest-dom, @testing-library/dom, @testing-library/user-event
+- [x] Configured Jest moduleNameMapper for @/ alias in package.json
+
 ## Completed (Session 32 - Feb 2026)
 - [x] Fixed CI test failure in `test_p6_readiness_rollout.py::TestAPIEndpoints::test_all_p6_endpoints` - removed hardcoded `localhost:8001`, added skipif guard for CI
 - [x] P2 Refactoring: ReservationDetailModal.js (1385 → 183 lines + 6 sub-files in `reservation-detail/`)
@@ -108,7 +118,4 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] Investigated React "duplicate key" warning - confirmed resolved, no warnings across all pages
 
 ## Backlog (Future Tasks)
-- [ ] P2: Refactor ReservationDetailModal.js (1400+ lines -> smaller components)
-- [ ] P3: Refactor RateManager.jsx (1000+ lines -> smaller components)
-- [ ] P3: Clean up soap_builder.py (commented-out code from SOAP debugging)
 - [ ] P4: Quick reservation - existing guest search
