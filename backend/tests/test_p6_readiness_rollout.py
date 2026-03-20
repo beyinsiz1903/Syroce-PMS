@@ -8,9 +8,12 @@ Tests for:
   3. Rollout Framework (phase gate state machine)
   4. API endpoints for all three
 """
+import os
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 from datetime import datetime, timezone
+
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
 
 
 # ══════════════════════════════════════════════════════════════
@@ -449,6 +452,10 @@ class TestRolloutFramework:
 # 4. API ENDPOINT TESTS
 # ══════════════════════════════════════════════════════════════
 
+@pytest.mark.skipif(
+    not BASE_URL,
+    reason="REACT_APP_BACKEND_URL not set — skipping live API tests"
+)
 class TestAPIEndpoints:
     """Test the API endpoints via httpx."""
 
@@ -457,7 +464,7 @@ class TestAPIEndpoints:
         """Test all P6 API endpoints in a single async context."""
         import httpx
 
-        async with httpx.AsyncClient(base_url="http://localhost:8001", timeout=15) as client:
+        async with httpx.AsyncClient(base_url=BASE_URL, timeout=15) as client:
             # Login
             login_resp = await client.post("/api/auth/login", json={
                 "email": "demo@hotel.com", "password": "demo123",

@@ -84,6 +84,10 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
 
+## Completed (Session 32 - Feb 2026)
+- [x] Fixed CI test failure in `test_p6_readiness_rollout.py::TestAPIEndpoints::test_all_p6_endpoints` - removed hardcoded `localhost:8001`, added skipif guard for CI
+- [x] No more hardcoded localhost references remain in test suite
+
 ## Completed (Session 31 - Feb 2026)
 - [x] Fixed CI test failure in `test_exely_webhook_api.py` - removed hardcoded fallback URL from BASE_URL
 - [x] Fixed same issue in `test_session_calendar_bugs.py` and `test_bug_fixes_cancel_availability.py`
