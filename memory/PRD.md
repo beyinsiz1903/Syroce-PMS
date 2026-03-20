@@ -170,6 +170,13 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] P2 Refactoring: ReservationDetailModal.js (1385 -> 183 lines + 6 sub-files)
 - [x] P2 Refactoring: RateManager.jsx (1034 -> 296 lines + 4 sub-files)
 
+## Completed (Session 45 - Mar 2026)
+- [x] P0: Fixed CI test `test_soap_envelope_contains_timestamp_element` failure
+  - Root cause: `soap_builder.py` sadece PMSConnect proprietary Security header kullanıyordu, WSSE elementleri (Timestamp, Nonce, UsernameToken) eksikti
+  - Fix: `_soap_envelope()` fonksiyonuna tam WSSE Security eklendi: wsu:Timestamp (Created + Expires), wsse:UsernameToken (Username, Password/PasswordText, Nonce/Base64Binary, wsu:Created), soapenv:mustUnderstand="1"
+  - Verified: 23/23 test geçiyor (test_exely_versioning_wsse.py)
+  - CI Status: 604 passed + bu 1 fix = 605 geçmeli
+
 ## Completed (Session 44 - Feb 2026)
 - [x] P0: Fixed CI test `test_connect_invalid_credentials_returns_error` failure
   - Root cause: Exely test/sandbox sunucusu (`pmsconnect.test.hopenapi.com`) geçersiz kimlik bilgilerini kabul ediyor ve 200 dönüyor

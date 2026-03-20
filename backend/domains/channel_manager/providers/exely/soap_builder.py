@@ -12,6 +12,8 @@ Supported messages:
   - OTA_HotelRateAmountNotifRQ (ARI push — rates)
   - OTA_NotifReportRQ        (delivery confirmation)
 """
+import base64
+import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from lxml import etree
@@ -19,6 +21,8 @@ from lxml import etree
 SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/"
 OTA_NS = "http://www.opentravel.org/OTA/2003/05"
 SEC_NS = "https://www.hopenapi.com/Api/PMSConnect"
+WSSE_NS = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
+WSU_NS = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"
 
 # SOAPAction URIs from WSDL
 SOAP_ACTIONS = {
@@ -39,15 +43,51 @@ def get_soap_action_uri(operation: str) -> str:
 
 
 def _soap_envelope(username: str, password: str, hotel_code: str, body_element: etree._Element) -> str:
-    """Wrap an OTA body element in a SOAP envelope with the PMSConnect Security header."""
-    env = etree.Element(f"{{{SOAP_NS}}}Envelope", nsmap={"s": SOAP_NS})
+    """Wrap an OTA body element in a SOAP envelope with WSSE Security + PMSConnect header."""
+    env = etree.Element(
+        f"{{{SOAP_NS}}}Envelope",
+        nsmap={
+            "soapenv": SOAP_NS,
+            "wsse": WSSE_NS,
+            "wsu": WSU_NS,
+        },
+    )
 
-    # Header — simple Security element per WSDL xsd1
     header = etree.SubElement(env, f"{{{SOAP_NS}}}Header")
-    etree.SubElement(header, f"{{{SEC_NS}}}Security", attrib={
-        "Username": username,
-        "Password": password,
+
+    # WSSE Security element with mustUnderstand
+    wsse_security = etree.SubElement(header, f"{{{WSSE_NS}}}Security", attrib={
+        f"{{{SOAP_NS}}}mustUnderstand": "1",
     })
+
+    # Timestamp (replay attack protection)
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(minutes=5)
+    timestamp = etree.SubElement(wsse_security, f"{{{WSU_NS}}}Timestamp")
+    created_el = etree.SubElement(timestamp, f"{{{WSU_NS}}}Created")
+    created_el.text = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    expires_el = etree.SubElement(timestamp, f"{{{WSU_NS}}}Expires")
+    expires_el.text = expires.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # UsernameToken
+    username_token = etree.SubElement(wsse_security, f"{{{WSSE_NS}}}UsernameToken")
+    username_el = etree.SubElement(username_token, f"{{{WSSE_NS}}}Username")
+    username_el.text = username
+    password_el = etree.SubElement(username_token, f"{{{WSSE_NS}}}Password", attrib={
+        "Type": "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText",
+    })
+    password_el.text = password
+
+    # Nonce (16 random bytes, Base64 encoded)
+    nonce_bytes = os.urandom(16)
+    nonce_el = etree.SubElement(username_token, f"{{{WSSE_NS}}}Nonce", attrib={
+        "EncodingType": "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary",
+    })
+    nonce_el.text = base64.b64encode(nonce_bytes).decode("ascii")
+
+    # Created inside UsernameToken
+    token_created = etree.SubElement(username_token, f"{{{WSU_NS}}}Created")
+    token_created.text = now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # Body
     body = etree.SubElement(env, f"{{{SOAP_NS}}}Body")
