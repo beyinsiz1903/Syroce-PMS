@@ -85,6 +85,13 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
 
+## Completed (Session 36 - Mar 2026)
+- [x] Bug Fix: Guest search field missing in Calendar "Hızlı Rezervasyon" dialog
+  - Root cause: NewBookingDialog in CalendarDialogs.js used plain <select> dropdown instead of search input
+  - Fix: Added debounced guest search with autocomplete in CalendarDialogs.js (same UX as RoomsTab.js)
+  - Features: Search input with icon, debounced API call (300ms), dropdown results, selected guest blue card, clear button, "new guest" hint
+  - Tested: Backend 3/3 (100%) + Frontend 100% (iteration_110.json)
+
 ## Completed (Session 35 - Feb 2026)
 - [x] Bug Fix: ResizeObserver error overlay in "Create New Booking" dialog
   - Root cause: CRA error overlay capturing benign ResizeObserver loop errors triggered by Radix UI Select
@@ -112,7 +119,7 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] P2 Refactoring: RateManager.jsx (1034 -> 296 lines + 4 sub-files)
 
 ## Backlog (Future Tasks)
-- [ ] P1: Enhance "New Reservation" dialog on calendar with guest search (consistency with quick reservation)
+- [x] P1: Enhance "Hızlı Rezervasyon" dialog on calendar with guest search (consistency with quick reservation) - DONE Session 36
 - [ ] P1: Mapping UI Improvement (PMS room/rate <-> Provider mapping interface)
 - [ ] P1: Test booking creation via Exely booking link + OTA_ReadRQ verification
 - [ ] P1: Reservation lineage - duplicate/stale detection
