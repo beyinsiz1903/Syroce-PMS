@@ -54,6 +54,7 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - POST /api/auth/login
 - GET/POST /api/pms/bookings
 - PUT /api/pms/bookings/{id}
+- GET /api/pms/guests/search?q=...
 - GET /api/pms/reservations/{id}/full-detail
 - POST /api/pms/reservations/{id}/record-payment
 - POST /api/pms/reservations/{id}/cancel
@@ -83,6 +84,14 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
+
+## Completed (Session 34 - Feb 2026)
+- [x] P4: Quick reservation - existing guest search
+  - Backend: `GET /api/pms/guests/search?q=...` endpoint (name, email, phone, id_number search)
+  - Backend: `QuickBookingCreate` now accepts optional `guest_id` to use existing guest
+  - Frontend: Guest search field with debounced autocomplete in quick reservation dialog
+  - Frontend: Selected guest display with blue info box and clear button
+  - Tested: Backend 10/10 (100%) + Frontend 100% (iteration_109.json)
 
 ## Completed (Session 33 - Feb 2026)
 - [x] P0: User verified refactoring of RateManager and ReservationDetailModal - confirmed working
@@ -118,4 +127,9 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] Investigated React "duplicate key" warning - confirmed resolved, no warnings across all pages
 
 ## Backlog (Future Tasks)
-- [ ] P4: Quick reservation - existing guest search
+- [ ] P1: Mapping UI Improvement (PMS room/rate ↔ Provider mapping interface)
+- [ ] P1: Test booking creation via Exely booking link + OTA_ReadRQ verification
+- [ ] P1: Reservation lineage - duplicate/stale detection
+- [ ] P2: Legacy collection cleanup
+- [ ] P2: Deprecation cleanup (remove old files)
+- [ ] P3: Service Wiring, Schema Completion, Frontend Role-Based Views
