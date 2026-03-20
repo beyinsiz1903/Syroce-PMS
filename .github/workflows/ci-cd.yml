@@ -94,6 +94,7 @@ jobs:
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
           JWT_SECRET: ${{ env.JWT_SECRET }}
+          REACT_APP_BACKEND_URL: http://localhost:8001
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
