@@ -1,7 +1,7 @@
 import React from "react";
 import { Calendar as CalendarIcon, Plus } from "lucide-react";
 import {
-  toDateStringUTC, isBookingOnDate, isBookingStart, isWeekend, isToday,
+  toDateStringUTC, isBookingOnDate, isBookingStart, isWeekend, isToday, isPastDate,
   formatDateWithDay, getBookingForRoomOnDate, getRoomBlockForDate,
   isBlockStart, calculateBlockSpan, calculateBookingSpan,
   getBookingStatusColor, getBookingStatus,
@@ -120,18 +120,19 @@ const CalendarGrid = ({
               const { dayName, dayNum } = formatDateWithDay(date);
               const weekend = isWeekend(date);
               const today = isToday(date);
+              const past = isPastDate(date);
               return (
                 <div
                   key={idx}
                   className={`w-24 flex-shrink-0 py-1.5 border-r text-center ${
-                    today ? 'bg-blue-50 border-blue-200' : weekend ? 'bg-orange-50 border-gray-200' : 'bg-white border-gray-200'
+                    today ? 'bg-blue-50 border-blue-200' : past ? 'bg-gray-200/70 border-gray-300' : weekend ? 'bg-orange-50 border-gray-200' : 'bg-white border-gray-200'
                   }`}
                   data-testid={`date-header-${dayNum}`}
                 >
-                  <div className={`text-[10px] font-semibold tracking-wide ${today ? 'text-blue-600' : 'text-gray-500'}`}>
+                  <div className={`text-[10px] font-semibold tracking-wide ${today ? 'text-blue-600' : past ? 'text-gray-400' : 'text-gray-500'}`}>
                     {dayName}
                   </div>
-                  <div className={`text-base font-bold ${today ? 'text-blue-600' : 'text-gray-800'}`}>
+                  <div className={`text-base font-bold ${today ? 'text-blue-600' : past ? 'text-gray-400' : 'text-gray-800'}`}>
                     {dayNum}
                   </div>
                 </div>
@@ -166,6 +167,7 @@ const CalendarGrid = ({
                       </div>
                       {dateRange.map((date, idx) => {
                         const weekend = isWeekend(date);
+                        const past = isPastDate(date);
                         const typeBookings = bookings.filter(b => {
                           if (b.status === 'cancelled' || b.status === 'checked_out' || b.status === 'no_show') return false;
                           const room = rooms.find(r => r.id === b.room_id);
@@ -186,10 +188,10 @@ const CalendarGrid = ({
                           <div
                             key={idx}
                             className={`w-24 flex-shrink-0 px-1 py-1.5 border-r text-center text-[10px] ${
-                              weekend ? 'bg-amber-100/60 border-amber-200' : 'bg-amber-50 border-amber-200'
+                              past ? 'bg-gray-200/50 border-gray-300' : weekend ? 'bg-amber-100/60 border-amber-200' : 'bg-amber-50 border-amber-200'
                             }`}
                           >
-                            <div className="text-gray-700 font-medium truncate">
+                            <div className={`font-medium truncate ${past ? 'text-gray-400' : 'text-gray-700'}`}>
                               {avgPrice > 0 ? `${avgPrice.toLocaleString('tr-TR')} TL` : '-'}
                             </div>
                             <div className="flex items-center justify-center gap-0.5 mt-0.5">
@@ -299,15 +301,19 @@ const CalendarGrid = ({
                             const bBlockIsStart = roomBlock && isBlockStart(roomBlock, date);
                             const isDragOver = dragOverCell?.roomId === room.id &&
                               new Date(dragOverCell.date).toDateString() === date.toDateString();
+                            const past = isPastDate(date);
 
                             return (
                               <div
                                 key={idx}
                                 className={`w-24 flex-shrink-0 border-r border-gray-100 relative cursor-pointer transition-all ${
-                                  isToday(date) ? 'bg-blue-50/60' : isWeekend(date) ? 'bg-orange-50/50' : 'bg-white hover:bg-gray-50'
+                                  past ? 'bg-gray-200/60' : isToday(date) ? 'bg-blue-50/60' : isWeekend(date) ? 'bg-orange-50/50' : 'bg-white hover:bg-gray-50'
                                 } ${isDragOver ? 'bg-emerald-50 ring-1 ring-emerald-400' : ''}
                                 ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''}`}
-                                style={{ height: '52px', minHeight: '52px', overflow: 'visible' }}
+                                style={{
+                                  height: '52px', minHeight: '52px', overflow: 'visible',
+                                  ...(past && !roomBlock ? { backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 8px, rgba(0,0,0,0.03) 8px, rgba(0,0,0,0.03) 9px)' } : {})
+                                }}
                                 onClick={() => !booking && !roomBlock && onCellClick(room.id, date)}
                                 onDragOver={(e) => onDragOver(e, room.id, date)}
                                 onDragLeave={onDragLeave}

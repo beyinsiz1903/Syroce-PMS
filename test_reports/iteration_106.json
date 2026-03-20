@@ -1,0 +1,85 @@
+{
+  "summary": "Tested P1 fixes for calendar past date styling and /api/pms/guests 500 error. All tests passed - guests endpoint returns 200 with walk-in placeholder emails, calendar displays past dates with gray styling, no React duplicate key warnings.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_calendar_past_dates_and_guests_api.py",
+    "/app/test_reports/pytest/pytest_calendar_past_dates_guests.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_calendar_past_dates_and_guests_api.py"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7 tests passed)",
+    "frontend": "100% - All visual tests verified"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123"
+  },
+  "seed_data_creation": "None - used existing test data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "P1 fixes verified working: (1) Guest.email changed from EmailStr to str in schemas.py - allows walk-in-xxx@placeholder.local emails (2) isPastDate() function added to calendarHelpers.js and used in CalendarGrid.js for gray styling on past dates",
+  "verified_features": {
+    "backend_apis": {
+      "GET /api/pms/guests": "PASS - Returns 200 with all guests including walk-in guests with placeholder.local emails",
+      "GET /api/pms/rooms": "PASS - Returns room list for calendar",
+      "GET /api/pms/bookings": "PASS - Returns bookings with date range filter",
+      "GET /api/pms/room-blocks": "PASS - Returns active room blocks",
+      "GET /api/night-audit/business-date": "PASS - Returns business date"
+    },
+    "frontend_features": {
+      "Calendar past date styling": "PASS - Dates 17,18,19 show rgba(229,231,235,0.7) gray background vs white for future dates",
+      "Today highlight (blue)": "PASS - Date 20 shows rgb(239,246,255) blue-50 background",
+      "Weekend orange tint": "PASS - Dates 21,22 (Cts,Paz) show rgb(255,247,237) orange-50 background",
+      "Diagonal stripe pattern on past cells": "PASS - Visible in room cells for past dates",
+      "No duplicate key warnings": "PASS - Console shows 0 duplicate key warnings",
+      "Booking bars render": "PASS - Found 9 booking bars in calendar view"
+    }
+  },
+  "bug_fix_verification": {
+    "guests_500_error": {
+      "issue": "/api/pms/guests returned 500 due to Pydantic EmailStr rejecting walk-in-xxx@placeholder.local emails",
+      "fix_applied": "Changed Guest.email from EmailStr to str in /app/backend/models/schemas.py line 808",
+      "status": "VERIFIED FIXED - endpoint returns 200 with 42+ guests including walk-in guests"
+    },
+    "calendar_past_date_styling": {
+      "issue": "Past dates in calendar were not visually distinguished",
+      "fix_applied": "Added isPastDate() function to calendarHelpers.js (line 225) and used in CalendarGrid.js (lines 124, 171, 305)",
+      "status": "VERIFIED FIXED - past dates show gray background with diagonal stripe pattern"
+    },
+    "react_duplicate_key_warning": {
+      "issue": "Console showed duplicate key warnings in React",
+      "fix_applied": "Fixed key prop assignments in CalendarGrid.js",
+      "status": "VERIFIED FIXED - 0 duplicate key warnings in console"
+    }
+  },
+  "styling_verification": {
+    "past_dates": {
+      "date_header_bg": "rgba(229, 231, 235, 0.7) - gray-200/70",
+      "room_type_summary_bg": "bg-gray-200/50",
+      "room_cell_bg": "bg-gray-200/60 with diagonal stripe pattern",
+      "text_color": "text-gray-400"
+    },
+    "today": {
+      "date_header_bg": "rgb(239, 246, 255) - blue-50",
+      "text_color": "text-blue-600"
+    },
+    "weekend_future": {
+      "date_header_bg": "rgb(255, 247, 237) - orange-50"
+    },
+    "weekday_future": {
+      "date_header_bg": "rgb(255, 255, 255) - white"
+    }
+  }
+}

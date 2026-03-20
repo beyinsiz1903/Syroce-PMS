@@ -223,6 +223,13 @@ export const isToday = (date) => {
   return date.toDateString() === today.toDateString();
 };
 
+// Check if date is before today (for visual styling of past dates)
+export const isPastDate = (date) => {
+  const dateStr = toDateStringUTC(date);
+  const today = new Date().toISOString().slice(0, 10);
+  return dateStr < today;
+};
+
 // Heatmap
 export const getHeatmapColor = (intensity) => {
   const colors = {

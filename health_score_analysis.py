@@ -9,7 +9,7 @@ import requests
 from datetime import datetime
 
 def main():
-    backend_url = "https://exely-delivery-fix.preview.emergentagent.com"
+    backend_url = "https://hotel-admin-panel-5.preview.emergentagent.com"
     
     # Authenticate
     session = requests.Session()

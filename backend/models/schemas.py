@@ -805,7 +805,7 @@ class Guest(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     name: str
-    email: EmailStr
+    email: str = ""
     phone: str
     id_number: str
     nationality: Optional[str] = None
