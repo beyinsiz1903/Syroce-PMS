@@ -61,7 +61,7 @@ jobs:
       - name: Install backend dependencies
         run: |
           cd backend
-          pip install -r requirements.txt
+          pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
           pip install pytest pytest-asyncio httpx pytest-cov
 
       - name: Seed test database
@@ -162,7 +162,7 @@ jobs:
         run: |
           pip install pip-audit
           cd backend
-          pip-audit -r requirements.txt --desc --output=security-report.txt 2>&1 || true
+          pip-audit -r requirements.txt --desc --output=security-report.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ 2>&1 || true
           cat security-report.txt || echo "No security report generated"
 
       - name: Node.js dependency security audit

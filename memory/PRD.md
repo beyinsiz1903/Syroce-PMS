@@ -170,6 +170,12 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] P2 Refactoring: ReservationDetailModal.js (1385 -> 183 lines + 6 sub-files)
 - [x] P2 Refactoring: RateManager.jsx (1034 -> 296 lines + 4 sub-files)
 
+## Completed (Session 40 - Feb 2026)
+- [x] P0: Fixed CI/CD pipeline `emergentintegrations` package installation error
+  - Added `--extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/` to all pip install commands
+  - Fixed files: `.github/workflows/ci-cd.yml`, `.github/workflows/ci.yml`, `backend/Dockerfile`
+  - Also fixed pip-audit commands in both CI files
+
 ## Backlog (Future Tasks)
 - [x] P1: Enhance "Hızlı Rezervasyon" dialog on calendar with guest search (consistency with quick reservation) - DONE Session 36
 - [x] P1: Guest search in BookingDialog.js (PMS > Bookings > New Booking) - DONE Session 37

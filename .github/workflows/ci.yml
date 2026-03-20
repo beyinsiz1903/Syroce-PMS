@@ -36,7 +36,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd backend
-          pip install -r requirements.txt
+          pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
           pip install ruff pytest pytest-asyncio
 
       - name: Lint
@@ -100,7 +100,7 @@ jobs:
       - name: Python Security Audit
         run: |
           pip install pip-audit safety
-          cd backend && pip-audit -r requirements.txt || true
+          cd backend && pip-audit -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ || true
 
       - name: Trivy Container Scan
         uses: aquasecurity/trivy-action@master
