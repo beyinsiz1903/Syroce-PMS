@@ -250,9 +250,10 @@ async def receive_reservation(request: Request):
     hotel_code = data["hotel_code"]
     echo_token = data["echo_token"]
 
-    # Resolve tenant by hotel_code
+    # Resolve tenant by hotel_code (no is_active filter — inbound webhooks
+    # should always be accepted regardless of connection status)
     conn = await db.exely_connections.find_one(
-        {"hotel_code": hotel_code, "is_active": True}, {"_id": 0}
+        {"hotel_code": hotel_code}, {"_id": 0}
     )
     if not conn:
         return _xml_response(

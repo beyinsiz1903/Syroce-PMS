@@ -170,6 +170,12 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] P2 Refactoring: ReservationDetailModal.js (1385 -> 183 lines + 6 sub-files)
 - [x] P2 Refactoring: RateManager.jsx (1034 -> 296 lines + 4 sub-files)
 
+## Completed (Session 49 - Mar 2026)
+- [x] P0: Fixed CI test `test_webhook_successful_reservation_creation` failure (hotel_code 404)
+  - Root cause: `test_exely_api.py::test_disconnect_requires_existing` runs BEFORE webhook tests (alphabetical order), calls DELETE /disconnect which sets `is_active: False` for hotel_code 501694. Webhook router queried `{"hotel_code": "501694", "is_active": True}` → got None → "Unknown hotel code" error
+  - Fix: Removed `is_active: True` filter from webhook endpoint's hotel_code lookup in `exely_webhook_router.py`. Inbound webhooks should always be accepted regardless of connection status (is_active controls outbound API calls only)
+  - Verified: Disconnect → webhook still returns `<Success/>` (tested locally)
+
 ## Completed (Session 48 - Mar 2026)
 - [x] P0: Fixed CI test `test_rooms_discover_requires_connection` PERSISTENT failure (500)
   - Root cause (deeper): Previous session fixed `conn["username"]` → `conn.get("username", "")` but this still returned empty string → `ExelyProvider("", "", "501694")` → `validate_credentials()` raised `ExelyValidationError` (NOT HTTPException) → FastAPI returned 500
