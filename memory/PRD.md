@@ -48,7 +48,7 @@ Kullanıcının birincil hedefi kararlı, tamamen geçen bir CI/CD pipeline'ı e
 ### P2
 - [ ] `reconciliation_engine` modül yapısının düzeltilmesi
 - [ ] Monolitik `router.py`'den yinelenen route'ların temizlenmesi
-- [ ] CI/CD dosyalarının birleştirilmesi (`ci.yml` + `ci-cd.yml`)
+- [x] CI/CD dosyalarının birleştirilmesi (`ci.yml` + `ci-cd.yml`) — v3.0: Redis servisi eklendi, Trivy scan, secrets check, Worker build, artifact upload birleştirildi. `ci.yml` silindi.
 - [ ] `pms.py` lint hatalarının giderilmesi (F821 Undefined name)
 
 ### P3

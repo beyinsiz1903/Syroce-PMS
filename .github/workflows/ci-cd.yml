@@ -1,4 +1,4 @@
-name: RoomOps PMS CI/CD Pipeline  # v2.0 - Updated 2026-02-24 15:20 UTC
+name: RoomOps PMS CI/CD Pipeline  # v3.0 - Consolidated from ci.yml + ci-cd.yml
 
 on:
   push:
@@ -10,6 +10,7 @@ env:
   PYTHON_VERSION: '3.11'
   NODE_VERSION: '20'
   MONGO_URL: mongodb://localhost:27017/hotel_pms_test
+  DB_NAME: hotel_pms_test
   JWT_SECRET: ci-test-secret-key-do-not-use-in-production
 
 jobs:
@@ -48,6 +49,15 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
@@ -70,6 +80,7 @@ jobs:
           python create_test_user.py || python create_demo_users.py || echo "Seed script not found - will create user in test"
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
 
       - name: Start backend server
         run: |
@@ -85,15 +96,19 @@ jobs:
           done
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
+          REDIS_URL: redis://localhost:6379/0
           JWT_SECRET: ${{ env.JWT_SECRET }}
           TESTING: "1"
 
-      - name: Run comprehensive tests
+      - name: Run tests
         run: |
           cd backend
           python -m pytest tests/ -v --tb=short -q --junitxml=test-results.xml 2>&1 || true
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
+          REDIS_URL: redis://localhost:6379/0
           JWT_SECRET: ${{ env.JWT_SECRET }}
           REACT_APP_BACKEND_URL: http://localhost:8001
 
@@ -175,12 +190,19 @@ jobs:
       - name: Check for hardcoded secrets
         run: |
           echo "Scanning for potential secrets..."
-          # Check for common secret patterns (exclude test files and .env)
           grep -rn "password\s*=\s*['\"]" backend/ --include="*.py" \
             --exclude="*test*" --exclude="*demo*" --exclude="*seed*" \
             --exclude="*create_*" --exclude="requirements.txt" || echo "No hardcoded passwords found"
           grep -rn "secret\s*=\s*['\"]sk-\|api_key\s*=\s*['\"]" backend/ --include="*.py" \
             --exclude="*test*" --exclude="*.env" || echo "No hardcoded API keys found"
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: 0
 
       - name: Upload security report
         uses: actions/upload-artifact@v4
@@ -201,16 +223,13 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build backend image
-        run: |
-          echo "Building backend Docker image..."
-          # docker build -t roomops-backend:${{ github.sha }} ./backend
-          echo "Backend image built successfully (dry run)"
+        run: docker build -t roomops-backend:${{ github.sha }} ./backend
 
       - name: Build frontend image
-        run: |
-          echo "Building frontend Docker image..."
-          # docker build -t roomops-frontend:${{ github.sha }} ./frontend
-          echo "Frontend image built successfully (dry run)"
+        run: docker build -t roomops-frontend:${{ github.sha }} --build-arg REACT_APP_BACKEND_URL=${{ secrets.REACT_APP_BACKEND_URL }} ./frontend
+
+      - name: Build worker image
+        run: docker build -t roomops-worker:${{ github.sha }} -f ./worker/Dockerfile .
 
   # ============ DEPLOY STAGING ============
   deploy-staging:
@@ -223,8 +242,6 @@ jobs:
         run: |
           echo "Deploying to staging environment..."
           echo "SHA: ${{ github.sha }}"
-          # kubectl set image deployment/roomops-backend roomops-backend=roomops-backend:${{ github.sha }}
-          # kubectl set image deployment/roomops-frontend roomops-frontend=roomops-frontend:${{ github.sha }}
           echo "Staging deployment complete (dry run)"
 
   # ============ DEPLOY PRODUCTION ============
@@ -238,15 +255,11 @@ jobs:
         run: |
           echo "Deploying to production environment..."
           echo "SHA: ${{ github.sha }}"
-          # kubectl set image deployment/roomops-backend roomops-backend=roomops-backend:${{ github.sha }}
-          # kubectl set image deployment/roomops-frontend roomops-frontend=roomops-frontend:${{ github.sha }}
           echo "Production deployment complete (dry run)"
 
       - name: Notify deployment
         run: |
-          echo "✅ Production deployment notification sent"
+          echo "Production deployment notification sent"
           echo "Version: ${{ github.sha }}"
           echo "Branch: ${{ github.ref_name }}"
           echo "Actor: ${{ github.actor }}"
-
-# CI/CD v2.1 - Fixed emergentintegrations and litellm filtering for GitHub Actions
