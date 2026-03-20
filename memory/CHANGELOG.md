@@ -1,28 +1,62 @@
-# CHANGELOG
+# Syroce PMS - Changelog
 
-## 2026-03-17 — Real Exely Test Environment Integration
-- **SOAP Builder Rewrite**: Replaced WSSE UsernameToken with WSDL-defined PMSConnect Security header (`Username`/`Password` attributes in `https://www.hopenapi.com/Api/PMSConnect` namespace)
-- **SOAPAction URIs**: All operations now use full WSDL-defined URIs (e.g., `https://www.hopenapi.com/Api/PMSConnect/HotelAvailRQ`)
-- **ARI Push Fix**: BookingLimit moved from child element to attribute on AvailStatusMessage; Rate element now includes Start/End dates
-- **Currency Default**: Changed from TRY to USD across all Exely operations
-- **New Function**: `build_rate_amount_notif_rq` for OTA_HotelRateAmountNotifRQ (rate-only push)
-- **Vault Integration**: `/connect` endpoint now stores credentials in encrypted vault; `_get_client` reads from vault first
-- **Response Parser**: Updated to handle HopenAPI's `RoomDescription Name=` attribute format
-- **Credential Security**: Connection status endpoint no longer exposes username/credentials_ref
-- **Test Results**: 14/14 real API tests pass (testing agent), 77/77 unit tests pass, 14/14 integration tests pass
+### Session 27 (Mar 20, 2026)
+- [x] **Kiracı Yönetimi Sayfası Tam İyileştirme (Tenant Management Overhaul)**
+  - **Yeni Otel Ekleme**: "Yeni Otel Ekle" butonu ile modal form (ad, e-posta, şifre, telefon, adres, konum, açıklama, plan, süre)
+  - **Otel Bilgi Düzenleme**: Kalem ikonuyla edit modal (ad, e-posta, telefon, adres, konum, oda sayısı, açıklama)
+  - **Ekip Yönetimi**: Her otel için "Ekip" butonu ile kullanıcı listesi, üye ekleme formu, rol değiştirme (inline dropdown), üye silme
+  - **Tüm Kullanıcılar Görünümü**: "Tüm Kullanıcılar" butonu ile tablo görünüm, rol filtresi, arama, otel adı eşleştirmesi
+  - **İstatistik Paneli**: Otel genişletildiğinde oda, kullanıcı, misafir, toplam/bu ay rezervasyon, check-in sayıları
+  - **Sıralama**: Ada göre A-Z / Z-A sıralama
+  - **Refactoring**: AdminTenants.js 740 satırdan ~300 satıra düşürüldü, 6 alt bileşene ayrıldı
+  - Backend: 7 yeni endpoint (info, team CRUD, role, stats)
+  - Backend Bug Fix: `create_tenant` duplicate email check artık `contact_email` ve `email` alanlarını kontrol ediyor, kullanıcı email çakışması da kontrol ediliyor
+  - Modified: `AdminTenants.js`, `admin/router.py`, `admin/schemas.py`
+  - New: `admin/tenantConstants.js`, `CreateTenantModal.js`, `EditTenantModal.js`, `TeamManagementModal.js`, `AllUsersView.js`, `TenantStatsPanel.js`
+  - Tested: Backend 18/20 (90%) + Frontend 100% (iteration_105.json)
 
-## 2026-03-14 — Production-Grade Exely SOAP Adapter
-- Created multi-module adapter at `/app/backend/domains/channel_manager/providers/exely/`
-- Implemented facade, SOAP client, error hierarchy, schemas
-- Refactored all legacy call sites to use new ExelyProvider
-- 77 unit + 14 integration tests (100% pass)
-- CI pipeline fix: pytest.mark.skipif for tests requiring live server
+### Session 26 (Mar 20, 2026)
+- [x] **Feature: Rooms Tab Hizli Rezervasyon (Quick Booking)**
+- [x] Tested: Backend 7/7 + Frontend 100% (iteration_104.json)
 
-## 2026-03-12 — Production-Grade HotelRunner REST Adapter
-- Created `/app/backend/domains/channel_manager/providers/hotelrunner/`
-- 80+ tests with production patterns
-- Rate limiter, retry logic, observability
+### Session 25 (Mar 20, 2026)
+- [x] **Feature: Otel İş Günü Bazlı Rezervasyon (Business Date Validation)**
+- [x] **Feature: Takvim 3 Gün Geriden Başlıyor**
+- [x] Tested: Backend 6/6 + Frontend 100% (iteration_103.json)
 
-## Earlier
-- Phase 1-5: PMS core, Front Desk, Night Audit, Revenue Engine, Channel Manager
-- Slack integration, Dashboard, Calendar, PMS Operations
+### Session 24 (Mar 20, 2026)
+- [x] **Bug Fix: ReservationDetailModal Check-in/Checkout Bypass**
+- [x] Tested: Backend 11/12 + Frontend verified
+
+### Session 23 (Mar 19, 2026)
+- [x] **Hızlı Ödeme Modalı (Quick Payment from Rooms Tab)**
+
+### Session 22 (Mar 19, 2026)
+- [x] **Misafir Adına Tıklama → Rezervasyon Detay Modalı**
+- [x] **Misafir Durumuna Göre Renkli Oda Kartları**
+
+### Session 21 (Mar 19, 2026)
+- [x] **Feature: Kirli Oda Check-in Uyarısı**
+
+### Session 20 (Mar 19, 2026)
+- [x] **P0 FIX: Checkout with Outstanding Balance Prevention**
+
+### Session 19 (Mar 19, 2026)
+- [x] **Odalar Sekmesi Hızlı İşlemler (Quick Room Actions)**
+
+### Session 18 (Mar 19, 2026)
+- [x] **P0: Oda Yönetimi Erişim Kontrolü**
+
+### Session 17 (Mar 19, 2026)
+- [x] **Bug Fix: Rate Manager Para Birimi Sembolü**
+- [x] **Odalar Sekmesinde Misafir Bilgisi**
+
+### Session 16 (Mar 19, 2026)
+- [x] **P0 FIX: Exely Reservation Delivery Confirmation (Critical)**
+- [x] **Exely Webhook Endpoint**
+
+### Session 15 (Mar 19, 2026)
+- [x] **Bug Fix: /api/invoices/stats 500 Error**
+- [x] **Bug Fix: Exely Currency USD→TRY**
+- [x] **Feature: Configurable Currency per Hotel**
+- [x] **Performance: Rate Manager Bulk Update ~6.5x Faster**

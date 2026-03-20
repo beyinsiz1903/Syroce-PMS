@@ -192,40 +192,38 @@ async def create_tenant(
     """Create a new hotel/tenant (SUPER ADMIN only)"""
     
     # Check if tenant with same email already exists
-    existing = await db.tenants.find_one({"email": payload.email})
+    existing = await db.tenants.find_one({
+        "$or": [{"contact_email": payload.email}, {"email": payload.email}]
+    })
     if existing:
         raise HTTPException(status_code=400, detail="Bu email adresi ile kayıtlı bir otel zaten var")
-    
+
+    # Also check if user email is taken
+    existing_user = await db.users.find_one({"email": payload.email})
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Bu email adresi zaten bir kullanıcı tarafından kullanılıyor")
+
     # Calculate subscription dates
     start_date = datetime.now(timezone.utc)
     end_date = None
-    
+
     if payload.subscription_days:
         end_date = start_date + timedelta(days=payload.subscription_days)
-    # If None, unlimited subscription
-    
-    # Determine subscription plan (core_small_hotel by default, or pms_lite etc.)
-    normalized_plan = (
-        payload.subscription_plan
-        or "core_small_hotel"
-    )
 
-    # Determine subscription tier
+    normalized_plan = payload.subscription_plan or "core_small_hotel"
+
     tier = (payload.subscription_tier or "basic").lower()
     if tier not in ("basic", "professional", "enterprise"):
         tier = "basic"
 
-    # Get default modules for the selected tier
     tier_modules = get_plan_default_modules(tier)
 
-    # Create new tenant
     new_tenant = Tenant(
         property_name=payload.property_name,
-        email=payload.email,
-        phone=payload.phone,
+        contact_email=payload.email,
+        contact_phone=payload.phone,
         address=payload.address,
         location=payload.location or "",
-        description=payload.description or "",
         subscription_tier=tier,
         subscription_start_date=start_date.isoformat(),
         subscription_end_date=end_date.isoformat() if end_date else None,
@@ -233,9 +231,13 @@ async def create_tenant(
         subscription_plan=normalized_plan,
         modules=tier_modules,
     )
-    
+
     tenant_dict = new_tenant.model_dump()
     tenant_dict['created_at'] = tenant_dict['created_at'].isoformat()
+    # Store email/phone/description for backward compatibility
+    tenant_dict['email'] = payload.email
+    tenant_dict['phone'] = payload.phone
+    tenant_dict['description'] = payload.description or ""
     await db.tenants.insert_one(tenant_dict)
     
     # Create admin user for this tenant
