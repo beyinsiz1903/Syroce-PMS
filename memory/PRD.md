@@ -85,6 +85,25 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
 
+## Completed (Session 38 - Mar 2026)
+- [x] P5: Rate Manager "Stop Sale" functionality
+  - New StopSalePanel.jsx component with 3-panel layout: room type selection, date range + actions, channel-level stop sales
+  - Room-type-level stop sale: select room types, date range, apply/remove stop sale via bulk-grid-update API
+  - Channel-level stop sale: toggle stop sale per operator (Booking.com, Expedia, etc.) via /api/rates/stop-sale/toggle
+  - Active stop sales overview showing grouped stop sale status by room type
+  - Added "Stop Sale" tab to RateManager.jsx (3rd tab alongside Toplu Guncelle and Takvim Gorunumu)
+  - Tested: Backend 100% + Frontend 100% (iteration_112.json)
+
+- [x] P5: Folio Management - Deposit/refund flows and invoice generation
+  - Rewrote DepositTracking.js with full deposit management UI:
+    - Summary cards: Active deposits, refunded, total transactions
+    - Search and status filter (Aktif/Kismi Iade/Iade Edildi)
+    - New Deposit dialog: booking search with debounce, amount, method, reference
+    - Refund dialog: amount validation (max = deposit balance), method, reason
+    - Invoice generation: calls /api/pms/reservations/{id}/generate-invoice, HTML preview + print
+  - Backend: Added search parameter to GET /api/pms/bookings for booking lookup in deposit dialog
+  - Tested: Backend 100% + Frontend 100% (iteration_112.json)
+
 ## Completed (Session 37 - Mar 2026)
 - [x] P1: Guest search in "Yeni Rezervasyon Olustur" (BookingDialog.js - PMS module)
   - Replaced static dropdown with debounced search input (same UX as CalendarDialogs.js)
@@ -134,5 +153,5 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [ ] P2: Legacy collection cleanup
 - [ ] P2: Deprecation cleanup (remove old files)
 - [ ] P3: Service Wiring, Schema Completion, Frontend Role-Based Views
-- [ ] P5: Rate Manager: "Stop Sale" functionality
-- [ ] P5: Folio Management: Deposit/refund flows and invoice generation
+- [x] P5: Rate Manager: "Stop Sale" functionality - DONE Session 38
+- [x] P5: Folio Management: Deposit/refund flows and invoice generation - DONE Session 38
