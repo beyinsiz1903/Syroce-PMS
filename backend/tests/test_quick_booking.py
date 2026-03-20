@@ -54,14 +54,14 @@ class TestQuickBookingAPI:
     
     def test_quick_booking_success(self, auth_headers, available_room):
         """Test successful quick booking creation"""
-        today = datetime.now().strftime('%Y-%m-%d')
-        tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+        check_in = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+        check_out = (datetime.now() + timedelta(days=8)).strftime('%Y-%m-%d')
         
         payload = {
             "guest_name": "TEST_QuickBooking Guest",
             "room_id": available_room['id'],
-            "check_in": f"{today}T14:00:00+00:00",
-            "check_out": f"{tomorrow}T11:00:00+00:00",
+            "check_in": f"{check_in}T14:00:00+00:00",
+            "check_out": f"{check_out}T11:00:00+00:00",
             "total_amount": 500.00
         }
         
@@ -84,14 +84,14 @@ class TestQuickBookingAPI:
     
     def test_quick_booking_missing_guest_name(self, auth_headers, available_room):
         """Test validation: empty guest name should fail"""
-        today = datetime.now().strftime('%Y-%m-%d')
-        tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+        check_in = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+        check_out = (datetime.now() + timedelta(days=8)).strftime('%Y-%m-%d')
         
         payload = {
             "guest_name": "",
             "room_id": available_room['id'],
-            "check_in": f"{today}T14:00:00+00:00",
-            "check_out": f"{tomorrow}T11:00:00+00:00",
+            "check_in": f"{check_in}T14:00:00+00:00",
+            "check_out": f"{check_out}T11:00:00+00:00",
             "total_amount": 500.00
         }
         
@@ -109,14 +109,14 @@ class TestQuickBookingAPI:
     
     def test_quick_booking_invalid_room(self, auth_headers):
         """Test validation: non-existent room should fail"""
-        today = datetime.now().strftime('%Y-%m-%d')
-        tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+        check_in = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+        check_out = (datetime.now() + timedelta(days=8)).strftime('%Y-%m-%d')
         
         payload = {
             "guest_name": "TEST_InvalidRoom Guest",
             "room_id": "non-existent-room-id",
-            "check_in": f"{today}T14:00:00+00:00",
-            "check_out": f"{tomorrow}T11:00:00+00:00",
+            "check_in": f"{check_in}T14:00:00+00:00",
+            "check_out": f"{check_out}T11:00:00+00:00",
             "total_amount": 500.00
         }
         
@@ -133,14 +133,14 @@ class TestQuickBookingAPI:
     
     def test_quick_booking_checkout_before_checkin(self, auth_headers, available_room):
         """Test validation: check-out before check-in should fail"""
-        today = datetime.now().strftime('%Y-%m-%d')
-        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        check_in = (datetime.now() + timedelta(days=8)).strftime('%Y-%m-%d')
+        check_out = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
         
         payload = {
             "guest_name": "TEST_InvalidDates Guest",
             "room_id": available_room['id'],
-            "check_in": f"{today}T14:00:00+00:00",
-            "check_out": f"{yesterday}T11:00:00+00:00",  # checkout before checkin
+            "check_in": f"{check_in}T14:00:00+00:00",
+            "check_out": f"{check_out}T11:00:00+00:00",  # checkout before checkin
             "total_amount": 500.00
         }
         
@@ -158,14 +158,14 @@ class TestQuickBookingAPI:
     
     def test_quick_booking_zero_price(self, auth_headers, available_room):
         """Test validation: zero total amount"""
-        today = datetime.now().strftime('%Y-%m-%d')
-        tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+        check_in = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+        check_out = (datetime.now() + timedelta(days=8)).strftime('%Y-%m-%d')
         
         payload = {
             "guest_name": "TEST_ZeroPrice Guest",
             "room_id": available_room['id'],
-            "check_in": f"{today}T14:00:00+00:00",
-            "check_out": f"{tomorrow}T11:00:00+00:00",
+            "check_in": f"{check_in}T14:00:00+00:00",
+            "check_out": f"{check_out}T11:00:00+00:00",
             "total_amount": 0  # zero price
         }
         
@@ -184,14 +184,14 @@ class TestQuickBookingAPI:
     
     def test_quick_booking_negative_price(self, auth_headers, available_room):
         """Test validation: negative total amount should fail"""
-        today = datetime.now().strftime('%Y-%m-%d')
-        tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+        check_in = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+        check_out = (datetime.now() + timedelta(days=8)).strftime('%Y-%m-%d')
         
         payload = {
             "guest_name": "TEST_NegativePrice Guest",
             "room_id": available_room['id'],
-            "check_in": f"{today}T14:00:00+00:00",
-            "check_out": f"{tomorrow}T11:00:00+00:00",
+            "check_in": f"{check_in}T14:00:00+00:00",
+            "check_out": f"{check_out}T11:00:00+00:00",
             "total_amount": -100.00  # negative price
         }
         
