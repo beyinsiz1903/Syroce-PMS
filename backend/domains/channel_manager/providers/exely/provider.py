@@ -22,7 +22,6 @@ from .soap_builder import (
     build_read_rq,
     build_hotel_avail_rq,
     build_notif_report_rq,
-    build_hotel_res_notif_rq,
     build_ari_update_rq,
     build_rate_amount_notif_rq,
     get_soap_action_uri,
@@ -307,21 +306,21 @@ class ExelyProvider:
         last_modify_datetime: str = None,
         res_status: str = "Reserved",
     ) -> ProviderResult:
-        """Confirm reservation delivery via OTA_HotelResNotifRQ.
-        Falls back to OTA_NotifReportRQ if HotelResNotifRQ fails."""
+        """Confirm reservation delivery via OTA_NotifReportRQ.
+        Exely accepts ResStatus='Reserved' for delivery confirmation."""
         start = time.time()
-
-        # Try OTA_HotelResNotifRQ first (PMS sending reservation confirmation)
-        operation = "OTA_HotelResNotifRQ"
+        operation = "OTA_NotifReportRQ"
         soap_action = get_soap_action_uri(operation)
         try:
-            xml = build_hotel_res_notif_rq(
+            xml = build_notif_report_rq(
                 self._username, self._password, self._hotel_code,
                 reservation_id, confirmation_number,
                 create_datetime=create_datetime,
                 last_modify_datetime=last_modify_datetime,
                 res_status=res_status,
             )
+
+            logger.info(f"[EXELY] Confirming delivery for {reservation_id} with ResStatus={res_status}")
 
             async def _call():
                 return await self._transport.send_soap(xml, soap_action)
@@ -338,45 +337,13 @@ class ExelyProvider:
             )
 
             if result["success"]:
+                logger.info(f"[EXELY] Delivery confirmed OK for {reservation_id}")
                 return ProviderResult(success=True, data=result, duration_ms=duration_ms)
 
-            # If HotelResNotifRQ fails, fallback to NotifReportRQ
-            logger.info(f"[EXELY] HotelResNotifRQ failed ({result.get('error')}), falling back to NotifReportRQ")
-        except ExelyError as e:
-            logger.info(f"[EXELY] HotelResNotifRQ error ({e}), falling back to NotifReportRQ")
-
-        # Fallback: OTA_NotifReportRQ
-        start2 = time.time()
-        operation2 = "OTA_NotifReportRQ"
-        soap_action2 = get_soap_action_uri(operation2)
-        try:
-            xml = build_notif_report_rq(
-                self._username, self._password, self._hotel_code,
-                reservation_id, confirmation_number,
-                create_datetime=create_datetime,
-                last_modify_datetime=last_modify_datetime,
-                res_status=res_status,
-            )
-
-            async def _call2():
-                return await self._transport.send_soap(xml, soap_action2)
-
-            raw = await self._retry.execute(_call2)
-            result = parse_notif_report_rs(raw)
-            duration_ms = int((time.time() - start2) * 1000)
-
-            obs.record_provider_call(
-                soap_action=operation2,
-                duration_ms=duration_ms,
-                success=result["success"],
-                connection_id=self._connection_id,
-            )
-
-            if result["success"]:
-                return ProviderResult(success=True, data=result, duration_ms=duration_ms)
+            logger.warning(f"[EXELY] Delivery confirm failed for {reservation_id}: {result.get('error')}")
             return ProviderResult(success=False, error=result.get("error", "Confirm failed"), duration_ms=duration_ms)
         except ExelyError as e:
-            return self._handle_error(e, start2, operation2)
+            return self._handle_error(e, start, operation)
 
     # ── Canonical helpers (for snapshot collectors & ingest) ───────────
 
@@ -439,7 +406,7 @@ class ExelyProvider:
             return {"success": True, **(result.data or {}), "duration_ms": result.duration_ms}
         return {"success": False, "error": result.error, "duration_ms": result.duration_ms}
 
-    async def legacy_confirm_delivery(self, reservation_id: str, confirmation_number: str, create_datetime: str = None, last_modify_datetime: str = None, res_status: str = "Book") -> Dict[str, Any]:
+    async def legacy_confirm_delivery(self, reservation_id: str, confirmation_number: str, create_datetime: str = None, last_modify_datetime: str = None, res_status: str = "Reserved") -> Dict[str, Any]:
         """Legacy: returns dict like the old ExelyClient."""
         result = await self.confirm_delivery(reservation_id, confirmation_number, create_datetime=create_datetime, last_modify_datetime=last_modify_datetime, res_status=res_status)
         if result.success:

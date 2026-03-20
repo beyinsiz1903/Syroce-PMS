@@ -331,7 +331,7 @@ class ExelyPullScheduler:
                         ext_id, pms_id,
                         create_datetime=create_dt,
                         last_modify_datetime=modify_dt,
-                        res_status="Book",
+                        res_status="Reserved",
                     )
                     if result.success:
                         await db.exely_reservations.update_one(

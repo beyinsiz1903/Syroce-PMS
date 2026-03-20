@@ -128,14 +128,15 @@ def build_notif_report_rq(
     username: str, password: str, hotel_code: str,
     reservation_id: str, confirmation_number: str,
     create_datetime: str = None, last_modify_datetime: str = None,
-    res_status: str = "Book",
+    res_status: str = "Reserved",
 ) -> str:
-    """Build OTA_NotifReportRQ to confirm reservation delivery.
-    
-    res_status values:
-      - "Book"   → new reservation confirmed  (CreateDateTime mandatory)
-      - "Modify" → modification confirmed      (LastModifyDateTime mandatory)
-      - "Cancel" → cancellation confirmed       (LastModifyDateTime mandatory)
+    """Build OTA_NotifReportRQ to confirm reservation delivery to Exely.
+
+    Per WSDL schema:
+      - HotelCode belongs on NotifDetails only (NOT on HotelNotifReport)
+      - HotelReservation carries ResStatus, CreateDateTime, LastModifyDateTime
+
+    Exely accepts ResStatus="Reserved" for delivery confirmation.
     """
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     rq = etree.Element(f"{{{OTA_NS}}}OTA_NotifReportRQ", attrib={
@@ -145,38 +146,35 @@ def build_notif_report_rq(
 
     etree.SubElement(rq, f"{{{OTA_NS}}}Success")
 
-    notif_report = etree.SubElement(rq, f"{{{OTA_NS}}}NotifDetails", attrib={
+    # NotifDetails carries HotelCode per WSDL
+    notif_details = etree.SubElement(rq, f"{{{OTA_NS}}}NotifDetails", attrib={
         "HotelCode": hotel_code,
     })
-    hotel_notif = etree.SubElement(notif_report, f"{{{OTA_NS}}}HotelNotifReport", attrib={
-        "HotelCode": hotel_code,
-    })
+    # HotelNotifReport has NO attributes per WSDL schema
+    hotel_notif = etree.SubElement(notif_details, f"{{{OTA_NS}}}HotelNotifReport")
 
-    notif_item = etree.SubElement(hotel_notif, f"{{{OTA_NS}}}HotelReservations")
+    reservations_el = etree.SubElement(hotel_notif, f"{{{OTA_NS}}}HotelReservations")
 
-    # Build attributes based on res_status type
-    res_attrib = {"ResStatus": res_status}
-    # Exely requires both CreateDateTime and LastModifyDateTime regardless of res_status
+    # Build HotelReservation attributes
+    # Exely requires BOTH CreateDateTime and LastModifyDateTime
+    res_attrib = {}
+    if res_status:
+        res_attrib["ResStatus"] = res_status
     res_attrib["CreateDateTime"] = create_datetime or now_str
     res_attrib["LastModifyDateTime"] = last_modify_datetime or create_datetime or now_str
 
-    hotel_res = etree.SubElement(notif_item, f"{{{OTA_NS}}}HotelReservation", attrib=res_attrib)
+    hotel_res = etree.SubElement(reservations_el, f"{{{OTA_NS}}}HotelReservation", attrib=res_attrib)
 
     etree.SubElement(hotel_res, f"{{{OTA_NS}}}UniqueID", attrib={
         "Type": "14",
         "ID": reservation_id,
     })
 
-    res_id = etree.SubElement(hotel_res, f"{{{OTA_NS}}}ResGlobalInfo")
-    hotel_res_ids = etree.SubElement(res_id, f"{{{OTA_NS}}}HotelReservationIDs")
-    etree.SubElement(hotel_res_ids, f"{{{OTA_NS}}}HotelReservationID", attrib={
-        "ResID_Type": "14",
-        "ResID_Value": reservation_id,
-    })
+    res_info = etree.SubElement(hotel_res, f"{{{OTA_NS}}}ResGlobalInfo")
+    hotel_res_ids = etree.SubElement(res_info, f"{{{OTA_NS}}}HotelReservationIDs")
     etree.SubElement(hotel_res_ids, f"{{{OTA_NS}}}HotelReservationID", attrib={
         "ResID_Type": "14",
         "ResID_Value": confirmation_number,
-        "ResID_Source": "PMS",
     })
 
     return _soap_envelope(username, password, hotel_code, rq)
