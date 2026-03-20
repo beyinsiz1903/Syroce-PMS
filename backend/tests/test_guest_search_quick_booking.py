@@ -9,6 +9,11 @@ import os
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
+pytestmark = pytest.mark.skipif(
+    not BASE_URL,
+    reason="REACT_APP_BACKEND_URL not set – skipping integration tests in CI"
+)
+
 class TestGuestSearchAPI:
     """Guest search endpoint tests for quick reservation"""
     
