@@ -13,7 +13,7 @@ import os
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
-    BASE_URL = "https://channel-sync-13.preview.emergentagent.com"
+    BASE_URL = "https://exely-delivery-fix.preview.emergentagent.com"
 
 
 class TestCheckoutBalanceFix:
