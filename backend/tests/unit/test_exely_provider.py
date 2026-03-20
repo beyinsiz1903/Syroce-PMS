@@ -307,7 +307,7 @@ class TestSoapBuilder:
         assert "OTA_ReadRQ" in xml
         assert "H1" in xml
         assert "2025-01-01" in xml
-        assert 'Username="u"' in xml
+        assert 'Username>u</wsse:Username>' in xml or 'Username="u"' in xml
 
     def test_build_read_rq_by_id(self):
         xml = build_read_rq("u", "p", "H1", reservation_id="RES123")
