@@ -65,8 +65,8 @@ class TestRedisEndpoints:
         data = resp.json()
         assert "status" in data
         assert "mode" in data
-        # In fallback mode, status should be disconnected
-        assert data["status"] in ("connected", "disconnected")
+        # Status depends on Redis availability: healthy, unhealthy, or disconnected
+        assert data["status"] in ("healthy", "unhealthy", "disconnected")
     
     def test_redis_metrics_returns_connection_metrics(self, auth_headers):
         resp = requests.get(f"{BASE_URL}/api/infra/redis/metrics", headers=auth_headers)
