@@ -85,6 +85,13 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
 
+## Completed (Session 37 - Mar 2026)
+- [x] P1: Guest search in "Yeni Rezervasyon Olustur" (BookingDialog.js - PMS module)
+  - Replaced static dropdown with debounced search input (same UX as CalendarDialogs.js)
+  - Features: Search input, debounced API call (300ms), dropdown results, selected guest blue card, clear button, "no results" hint
+  - Turkish localization: Dialog title, labels, placeholders, buttons all in Turkish
+  - Tested: Frontend 100% (iteration_111.json)
+
 ## Completed (Session 36 - Mar 2026)
 - [x] Bug Fix: Guest search field missing in Calendar "Hızlı Rezervasyon" dialog
   - Root cause: NewBookingDialog in CalendarDialogs.js used plain <select> dropdown instead of search input
@@ -120,6 +127,7 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 
 ## Backlog (Future Tasks)
 - [x] P1: Enhance "Hızlı Rezervasyon" dialog on calendar with guest search (consistency with quick reservation) - DONE Session 36
+- [x] P1: Guest search in BookingDialog.js (PMS > Bookings > New Booking) - DONE Session 37
 - [ ] P1: Mapping UI Improvement (PMS room/rate <-> Provider mapping interface)
 - [ ] P1: Test booking creation via Exely booking link + OTA_ReadRQ verification
 - [ ] P1: Reservation lineage - duplicate/stale detection
