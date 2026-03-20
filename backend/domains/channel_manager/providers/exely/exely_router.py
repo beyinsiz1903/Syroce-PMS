@@ -82,9 +82,9 @@ async def _get_client(tenant_id: str) -> tuple:
             kwargs["endpoint_url"] = creds["endpoint_url"]
     else:
         kwargs = {
-            "username": conn["username"],
-            "password": conn["password"],
-            "hotel_code": conn["hotel_code"],
+            "username": conn.get("username", ""),
+            "password": conn.get("password", ""),
+            "hotel_code": conn.get("hotel_code", ""),
         }
         if conn.get("endpoint_url"):
             kwargs["endpoint_url"] = conn["endpoint_url"]

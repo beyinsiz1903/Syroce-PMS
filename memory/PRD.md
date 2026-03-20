@@ -170,6 +170,13 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] P2 Refactoring: ReservationDetailModal.js (1385 -> 183 lines + 6 sub-files)
 - [x] P2 Refactoring: RateManager.jsx (1034 -> 296 lines + 4 sub-files)
 
+## Completed (Session 47 - Mar 2026)
+- [x] P0: Fixed CI test `test_rooms_discover_requires_connection` failure (500)
+  - Root cause: `_get_client()` in `exely_router.py` used `conn["username"]`/`conn["password"]` direct dict access, but seeded CI connection (hotel_code: 501694) has no username/password fields → KeyError → 500
+  - Fix: Changed to `conn.get("username", "")` / `conn.get("password", "")` for safe access
+  - Result: Endpoint now returns 502 (SOAP fails with empty creds) instead of 500, which is accepted by the test assertion `[200, 404, 502]`
+  - All 4 TestExelyRequireConnection tests verified locally
+
 ## Completed (Session 46 - Mar 2026)
 - [x] P0: Fixed CI test `test_webhook_health_endpoint` + `test_webhook_successful_reservation_creation` failures
   - Root cause 1: `/api/webhooks/exely/*` endpoint'leri yoktu (404)
