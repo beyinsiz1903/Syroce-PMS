@@ -91,7 +91,7 @@ async def auto_seed_if_empty(db):
         "agency_id": None,
         "email": DEMO_EMAIL,
         "name": "Demo Admin",
-        "role": "admin",
+        "role": "super_admin",
         "phone": "+905551234567",
         "is_active": True,
         "email_verified": True,
