@@ -76,6 +76,24 @@ class PmsLiteLeadAdminUpdateRequest(BaseModel):
     note: Optional[str] = None
 
 
+class AdminUpdateTenantInfoRequest(BaseModel):
+    property_name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    location: Optional[str] = None
+    description: Optional[str] = None
+    total_rooms: Optional[int] = None
+
+
+class AdminCreateTeamMemberRequest(BaseModel):
+    email: EmailStr
+    name: str
+    phone: Optional[str] = None
+    role: str = "front_desk"
+    password: str
+
+
 class PmsLiteLeadContact(BaseModel):
     full_name: str
     phone: str

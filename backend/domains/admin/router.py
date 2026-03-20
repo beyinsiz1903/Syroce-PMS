@@ -15,9 +15,9 @@ from core.security import (
 from core.helpers import (
     require_super_admin_guard as require_super_admin, get_tenant_modules,
 )
-from models.schemas import User, TenantRegister, UpdateUserRoleRequest
+from models.schemas import User, Tenant, TenantRegister, UpdateUserRoleRequest
 from models.enums import UserRole
-from subscription_models import SubscriptionTier, SUBSCRIPTION_PLANS
+from subscription_models import SubscriptionTier, SUBSCRIPTION_PLANS, get_plan_default_modules, PLAN_MODULE_DEFAULTS, get_all_module_keys, get_feature_comparison
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +28,19 @@ ROLES_BY_TIER = {
 }
 
 
+def is_role_allowed_for_tier(role: str, tier: str) -> bool:
+    allowed = ROLES_BY_TIER.get(tier, ROLES_BY_TIER["basic"])
+    return role in allowed
+
+
 from domains.admin.schemas import (  # noqa: E402
     PermissionCheckRequest, TenantModulesUpdate, SubscriptionUpdateRequest,
     ChangePlanRequest, UpdateHotelInfoRequest, CreateTeamMemberRequest,
     UpdateTeamMemberRoleRequest, SLAConfig, DemoRequest,
     PmsLiteLeadStatus, PmsLiteLeadAdminUpdateRequest,
+    AdminUpdateTenantInfoRequest, AdminCreateTeamMemberRequest,
 )
+from core.security import hash_password
 
 
 router = APIRouter(prefix="/api", tags=["Admin / Operations"])
@@ -543,6 +550,198 @@ async def update_tenant_tier(
         "message": f"Plan {new_tier} olarak güncellendi",
         "tenant": updated_tenant,
     }
+
+
+
+# ============= ADMIN TENANT INFO & TEAM MANAGEMENT =============
+
+
+@router.patch("/admin/tenants/{tenant_id}/info")
+async def admin_update_tenant_info(
+    tenant_id: str,
+    payload: AdminUpdateTenantInfoRequest,
+    current_user: User = Depends(require_super_admin),
+):
+    """Update any tenant's info (SUPER ADMIN only)"""
+    tenant = await db.tenants.find_one({"id": tenant_id})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+
+    update_data = {}
+    for field in ("property_name", "phone", "email", "address", "location", "description", "total_rooms"):
+        val = getattr(payload, field, None)
+        if val is not None:
+            update_data[field] = val
+            if field == "phone":
+                update_data["contact_phone"] = val
+            if field == "email":
+                update_data["contact_email"] = val
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Güncellenecek alan bulunamadı")
+
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.tenants.update_one({"id": tenant_id}, {"$set": update_data})
+
+    updated = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+    return {"success": True, "message": "Otel bilgileri güncellendi", "tenant": updated}
+
+
+@router.get("/admin/tenants/{tenant_id}/team")
+async def admin_list_tenant_team(
+    tenant_id: str,
+    current_user: User = Depends(require_super_admin),
+):
+    """List team members for a specific tenant (SUPER ADMIN only)"""
+    tenant = await db.tenants.find_one({"id": tenant_id})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+
+    users = await db.users.find(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "hashed_password": 0, "password_hash": 0, "password": 0},
+    ).to_list(200)
+
+    return {"users": users, "count": len(users), "tenant_id": tenant_id}
+
+
+@router.post("/admin/tenants/{tenant_id}/team")
+async def admin_add_tenant_team_member(
+    tenant_id: str,
+    payload: AdminCreateTeamMemberRequest,
+    current_user: User = Depends(require_super_admin),
+):
+    """Add a team member to a specific tenant (SUPER ADMIN only)"""
+    tenant = await db.tenants.find_one({"id": tenant_id})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+
+    existing = await db.users.find_one({"email": payload.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Bu email adresi zaten kayıtlı")
+
+    tier = (tenant.get("subscription_tier", "basic")).lower()
+    if tier == "pro":
+        tier = "professional"
+    if tier == "ultra":
+        tier = "enterprise"
+
+    if not is_role_allowed_for_tier(payload.role, tier):
+        allowed = ROLES_BY_TIER.get(tier, ROLES_BY_TIER["basic"])
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bu plan ({tier}) için '{payload.role}' rolü kullanılamaz. İzin verilen: {', '.join(allowed)}",
+        )
+
+    hashed = hash_password(payload.password)
+    new_user = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "email": payload.email,
+        "name": payload.name,
+        "phone": payload.phone or "",
+        "role": payload.role,
+        "is_active": True,
+        "hashed_password": hashed,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.users.insert_one(new_user)
+
+    return {
+        "success": True,
+        "message": f"{payload.name} başarıyla eklendi ({payload.role})",
+        "user_id": new_user["id"],
+    }
+
+
+@router.delete("/admin/tenants/{tenant_id}/team/{user_id}")
+async def admin_remove_tenant_team_member(
+    tenant_id: str,
+    user_id: str,
+    current_user: User = Depends(require_super_admin),
+):
+    """Remove a team member from a specific tenant (SUPER ADMIN only)"""
+    target = await db.users.find_one({"id": user_id, "tenant_id": tenant_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="Ekip üyesi bulunamadı")
+
+    if target.get("role") == "super_admin":
+        raise HTTPException(status_code=400, detail="Super Admin silinemez")
+
+    await db.users.delete_one({"id": user_id, "tenant_id": tenant_id})
+    return {"success": True, "message": "Ekip üyesi silindi"}
+
+
+@router.patch("/admin/tenants/{tenant_id}/team/{user_id}/role")
+async def admin_update_tenant_team_role(
+    tenant_id: str,
+    user_id: str,
+    payload: UpdateTeamMemberRoleRequest,
+    current_user: User = Depends(require_super_admin),
+):
+    """Update a team member's role (SUPER ADMIN only)"""
+    target = await db.users.find_one({"id": user_id, "tenant_id": tenant_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="Ekip üyesi bulunamadı")
+
+    if target.get("role") == "super_admin":
+        raise HTTPException(status_code=400, detail="Super Admin rolü değiştirilemez")
+
+    tier_doc = await db.tenants.find_one({"id": tenant_id})
+    tier = (tier_doc.get("subscription_tier", "basic") if tier_doc else "basic").lower()
+    if tier == "pro":
+        tier = "professional"
+    if tier == "ultra":
+        tier = "enterprise"
+
+    if not is_role_allowed_for_tier(payload.role, tier):
+        allowed = ROLES_BY_TIER.get(tier, ROLES_BY_TIER["basic"])
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bu plan ({tier}) için '{payload.role}' rolü kullanılamaz. İzin verilen: {', '.join(allowed)}",
+        )
+
+    await db.users.update_one({"id": user_id}, {"$set": {"role": payload.role}})
+    return {"success": True, "message": f"Rol güncellendi: {payload.role}"}
+
+
+@router.get("/admin/tenants/{tenant_id}/stats")
+async def admin_get_tenant_stats(
+    tenant_id: str,
+    current_user: User = Depends(require_super_admin),
+):
+    """Get detailed stats for a specific tenant (SUPER ADMIN only)"""
+    tenant = await db.tenants.find_one({"id": tenant_id})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+
+    rooms = await db.rooms.count_documents({"tenant_id": tenant_id})
+    users = await db.users.count_documents({"tenant_id": tenant_id})
+    guests = await db.guests.count_documents({"tenant_id": tenant_id})
+    bookings = await db.bookings.count_documents({"tenant_id": tenant_id})
+
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    bookings_this_month = await db.bookings.count_documents({
+        "tenant_id": tenant_id,
+        "created_at": {"$gte": month_start},
+    })
+
+    checked_in = await db.bookings.count_documents({
+        "tenant_id": tenant_id,
+        "status": "checked_in",
+    })
+
+    return {
+        "tenant_id": tenant_id,
+        "rooms": rooms,
+        "users": users,
+        "guests": guests,
+        "total_bookings": bookings,
+        "bookings_this_month": bookings_this_month,
+        "checked_in": checked_in,
+    }
+
 
 
 
