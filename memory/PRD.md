@@ -24,12 +24,13 @@ Kullanıcının birincil hedefi kararlı, tamamen geçen bir CI/CD pipeline'ı e
 | Şubat 2026 | `channel_manager/interfaces/routers/alert_router.py` | `get_cross_property_issues` → `get_issues`, `get_health_overview` → `get_health` — MultiPropertyService'te var olmayan metot çağrıları düzeltildi | 1096 geçen test |
 | Mart 2026 | `auto_seed.py` | `provider_connections`, `room_mappings`, `rate_plan_mappings` koleksiyonları için seed data eklendi — CI'da `test_get_connections` boş liste dönüyordu | 874 geçen test (kullanıcı onayladı) |
 | Mart 2026 | `ingest/pipeline.py` | `existing_lineage` değişkeni `try` bloğu dışına taşındı — Stage 2/3 erken dönüşlerinde `finally` bloğunda `NameError` oluşuyordu → `test_duplicate_provider_event_id_skipped` 500 hatası | ✅ 1355 test geçti |
-| Mart 2026 | `tests/test_p5_stop_sale_deposits.py` | `test_get_rate_manager_grid`: CI'da Exely bağlantısı yokken 404 dönüyordu → 200 ve 404 her ikisi de geçerli yanıt olarak kabul edildi | Doğrulama bekliyor |
+| Mart 2026 | `tests/test_p5_stop_sale_deposits.py` | `test_get_rate_manager_grid`: CI'da Exely bağlantısı yokken 404 dönüyordu → 200 ve 404 her ikisi de geçerli yanıt olarak kabul edildi | ✅ 1356 test geçti |
+| Mart 2026 | `tests/test_p5_stop_sale_deposits.py` | `test_bulk_grid_update_structure`: Aynı Exely 404 sorunu → kabul edilen durum kodlarına 404 eklendi | Doğrulama bekliyor |
 
 ## Öncelikli Backlog
 
 ### P0
-- [ ] CI/CD pipeline kararlılığı — `test_get_rate_manager_grid` düzeltmesi doğrulama bekliyor
+- [ ] CI/CD pipeline kararlılığı — `test_bulk_grid_update_structure` düzeltmesi doğrulama bekliyor
 
 ### P1
 - [ ] `@cached` decorator refaktörü (`cache_manager.py`) — Redis + Pydantic serializasyon sorunu

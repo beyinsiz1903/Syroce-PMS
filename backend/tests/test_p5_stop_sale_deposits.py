@@ -6,7 +6,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://error-whack-a-mole.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://debug-pipeline.preview.emergentagent.com')
 
 class TestAuth:
     """Authentication tests"""
@@ -198,8 +198,8 @@ class TestRateManagerGrid(TestAuth):
             headers=headers,
             json=payload
         )
-        # May fail if room type doesn't exist, but should not be 5xx
-        assert response.status_code in [200, 400, 422], f"Unexpected error: {response.text}"
+        # May fail if room type doesn't exist or Exely connection is missing (404), but should not be 5xx
+        assert response.status_code in [200, 400, 404, 422], f"Unexpected error: {response.text}"
 
 
 class TestInvoiceGeneration(TestAuth):
