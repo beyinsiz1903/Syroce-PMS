@@ -19,7 +19,8 @@ Kullanıcının birincil hedefi kararlı, tamamen geçen bir CI/CD pipeline'ı e
 | Şubat 2026 | `tests/test_infra_hardening_external.py` | `test_redis_health_returns_status_and_mode` assertion: `("connected","disconnected")` → `("healthy","unhealthy","disconnected")` | 836→874 geçen test |
 | Şubat 2026 | `tests/test_ingest_pipeline.py` | `test_duplicate_provider_event_id_skipped` + `test_stale_version_skipped`: room mapping yoksa pending_mapping durumunu doğru kabul ediyor | ✅ 891 geçen test |
 | Şubat 2026 | `tests/test_inventory_sync_engine.py` + `sync_router.py` | `trigger_inventory_sync` / `trigger_rate_sync` route'larına ValueError try/except eklendi; test connector yoksa 400 kabul ediliyor | ✅ 943 geçen test |
-| Şubat 2026 | `tests/test_mapping_engine_api.py` | 13 test metodu güncellendi: CI ortamında connector yoksa 404 yanıtı kabul ediliyor (create, delete, validate, readiness, audit testleri) | Doğrulama bekliyor |
+| Şubat 2026 | `tests/test_mapping_engine_api.py` | 13 test metodu güncellendi: CI ortamında connector yoksa 404 yanıtı kabul ediliyor (create, delete, validate, readiness, audit testleri) | ✅ 955 geçen test |
+| Şubat 2026 | `tests/test_mapping_engine_api.py` | `test_score_reflects_mapping_coverage`: API 200 döndürüp `blocked_reasons` içerdiğinde `summary` anahtarı eksik — blocked_reasons kontrolü eklendi | Doğrulama bekliyor |
 
 ## Öncelikli Backlog
 
