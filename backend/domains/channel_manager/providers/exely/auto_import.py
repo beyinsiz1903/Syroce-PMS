@@ -335,6 +335,10 @@ async def auto_import_pending(tenant_id: str, provider=None) -> Dict[str, Any]:
                     pms_booking_id = result["pms_booking_id"]
                     confirm_result = await provider.confirm_delivery(external_id, pms_booking_id)
                     if confirm_result.success:
+                        await db.exely_reservations.update_one(
+                            {"tenant_id": tenant_id, "external_id": external_id},
+                            {"$set": {"delivery_confirmed": True, "delivery_confirmed_at": datetime.now(timezone.utc).isoformat()}},
+                        )
                         logger.info(f"[EXELY-IMPORT] Delivery confirmed for {external_id} -> PMS {pms_booking_id}")
                     else:
                         logger.warning(f"[EXELY-IMPORT] Delivery confirm failed for {external_id}: {confirm_result.error}")

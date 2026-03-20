@@ -326,12 +326,14 @@ class ExelyPullScheduler:
                 pms_id = res.get("pms_booking_id", ext_id)
                 try:
                     result = await provider.confirm_delivery(ext_id, pms_id)
-                    if result.get("success"):
+                    if result.success:
                         await db.exely_reservations.update_one(
                             {"tenant_id": tenant_id, "external_id": ext_id},
                             {"$set": {"delivery_confirmed": True, "delivery_confirmed_at": datetime.now(timezone.utc).isoformat()}},
                         )
                         confirmed += 1
+                    else:
+                        logger.warning(f"[EXELY-PULL] Delivery confirm failed for {ext_id}: {result.error}")
                 except Exception as e:
                     logger.warning(f"[EXELY-PULL] Delivery confirm error for {ext_id}: {e}")
 
