@@ -9,7 +9,7 @@ import requests
 from datetime import datetime
 
 def main():
-    backend_url = "https://pydantic-cache-debug.preview.emergentagent.com"
+    backend_url = "https://ci-hardening-fix.preview.emergentagent.com"
     
     # Authenticate
     session = requests.Session()
