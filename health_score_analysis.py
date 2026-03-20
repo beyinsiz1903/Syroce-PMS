@@ -9,7 +9,7 @@ import requests
 from datetime import datetime
 
 def main():
-    backend_url = "https://error-500-debug.preview.emergentagent.com"
+    backend_url = "https://exely-error-patch.preview.emergentagent.com"
     
     # Authenticate
     session = requests.Session()
