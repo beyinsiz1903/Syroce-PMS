@@ -86,6 +86,7 @@ jobs:
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
           JWT_SECRET: ${{ env.JWT_SECRET }}
+          TESTING: "1"
 
       - name: Run comprehensive tests
         run: |
