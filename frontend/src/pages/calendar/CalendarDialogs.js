@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
+import axios from "axios";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Search, CheckCircle, AlertCircle, Clock } from "lucide-react";
+import { Search, CheckCircle, AlertCircle, Clock, UserCheck, UserPlus } from "lucide-react";
 import { getSegmentColor, getStatusColor, getStatusLabel } from "./calendarHelpers";
 
 // New Booking Dialog
@@ -14,6 +15,71 @@ export const NewBookingDialog = ({
 }) => {
   const roomTypes = rooms ? [...new Set(rooms.map(r => r.room_type).filter(Boolean))] : [];
   const effectiveMinDate = minDate || new Date().toISOString().split('T')[0];
+
+  // Guest search state
+  const [guestSearchQuery, setGuestSearchQuery] = useState('');
+  const [guestSearchResults, setGuestSearchResults] = useState([]);
+  const [guestSearchLoading, setGuestSearchLoading] = useState(false);
+  const [selectedGuest, setSelectedGuest] = useState(null);
+  const [showGuestDropdown, setShowGuestDropdown] = useState(false);
+  const guestSearchTimerRef = useRef(null);
+
+  // Reset guest search state when dialog opens/closes
+  useEffect(() => {
+    if (!open) {
+      setGuestSearchQuery('');
+      setGuestSearchResults([]);
+      setSelectedGuest(null);
+      setShowGuestDropdown(false);
+    }
+  }, [open]);
+
+  // Guest search with debounce
+  const handleGuestSearch = useCallback((query) => {
+    setGuestSearchQuery(query);
+    setSelectedGuest(null);
+    // Also update newBooking for new guest creation fallback
+    setNewBooking(prev => ({ ...prev, guest_id: '', guest_name: query }));
+
+    if (guestSearchTimerRef.current) clearTimeout(guestSearchTimerRef.current);
+
+    if (query.trim().length < 2) {
+      setGuestSearchResults([]);
+      setShowGuestDropdown(false);
+      return;
+    }
+
+    setGuestSearchLoading(true);
+    guestSearchTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await axios.get(`/pms/guests/search?q=${encodeURIComponent(query.trim())}&limit=8`);
+        setGuestSearchResults(res.data || []);
+        setShowGuestDropdown(true);
+      } catch {
+        setGuestSearchResults([]);
+      } finally {
+        setGuestSearchLoading(false);
+      }
+    }, 300);
+  }, [setNewBooking]);
+
+  // Select an existing guest from search results
+  const handleSelectGuest = useCallback((guest) => {
+    setSelectedGuest(guest);
+    setGuestSearchQuery(guest.name);
+    setShowGuestDropdown(false);
+    setGuestSearchResults([]);
+    setNewBooking(prev => ({ ...prev, guest_id: guest.id, guest_name: guest.name }));
+  }, [setNewBooking]);
+
+  // Clear selected guest
+  const handleClearGuest = useCallback(() => {
+    setSelectedGuest(null);
+    setGuestSearchQuery('');
+    setGuestSearchResults([]);
+    setShowGuestDropdown(false);
+    setNewBooking(prev => ({ ...prev, guest_id: '', guest_name: '' }));
+  }, [setNewBooking]);
 
   return (
   <Dialog open={open} onOpenChange={onOpenChange}>
@@ -67,51 +133,94 @@ export const NewBookingDialog = ({
             </div>
           </div>
         )}
+
+        {/* Guest search field */}
         <div>
           <Label>Misafir *</Label>
-          <div className="flex gap-2">
-            <select
-              className="flex-1 border rounded-md p-2"
-              value={newBooking.guest_id}
-              onChange={(e) => {
-                if (e.target.value === 'NEW') {
-                  setNewBooking({...newBooking, guest_id: '', guest_name: '', guest_email: '', guest_phone: ''});
-                } else {
-                  setNewBooking({...newBooking, guest_id: e.target.value});
-                }
-              }}
-            >
-              <option value="">Misafir secin...</option>
-              <option value="NEW" className="font-bold text-blue-600">+ Yeni Misafir Ekle</option>
-              {guests.map(guest => (
-                <option key={guest.id} value={guest.id}>{guest.name}</option>
-              ))}
-            </select>
-          </div>
-          {newBooking.guest_id === '' && newBooking.guest_name !== undefined && (
-            <div className="mt-3 p-3 border rounded-md bg-blue-50 space-y-2">
-              <div className="text-sm font-semibold text-blue-900 mb-2">Yeni Misafir Bilgileri</div>
-              <Input
-                placeholder="Isim Soyisim *"
-                value={newBooking.guest_name || ''}
-                onChange={(e) => setNewBooking({...newBooking, guest_name: e.target.value})}
-                required
-              />
-              <Input
-                type="email"
-                placeholder="E-posta"
-                value={newBooking.guest_email || ''}
-                onChange={(e) => setNewBooking({...newBooking, guest_email: e.target.value})}
-              />
-              <Input
-                type="tel"
-                placeholder="Telefon"
-                value={newBooking.guest_phone || ''}
-                onChange={(e) => setNewBooking({...newBooking, guest_phone: e.target.value})}
-              />
+          {selectedGuest ? (
+            <div className="mt-1 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-md p-2.5" data-testid="new-booking-selected-guest">
+              <UserCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-blue-900 truncate">{selectedGuest.name}</p>
+                <p className="text-xs text-blue-600 truncate">
+                  {selectedGuest.email && !selectedGuest.email.includes('placeholder') ? selectedGuest.email : ''}
+                  {selectedGuest.phone ? (selectedGuest.email && !selectedGuest.email.includes('placeholder') ? ' | ' : '') + selectedGuest.phone : ''}
+                  {selectedGuest.total_stays > 0 && ` | ${selectedGuest.total_stays} konaklama`}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0 text-blue-400 hover:text-blue-600 hover:bg-blue-100"
+                onClick={handleClearGuest}
+                data-testid="new-booking-clear-guest"
+              >
+                &times;
+              </Button>
+            </div>
+          ) : (
+            <div className="relative mt-1">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  value={guestSearchQuery}
+                  onChange={(e) => handleGuestSearch(e.target.value)}
+                  onFocus={() => { if (guestSearchResults.length > 0) setShowGuestDropdown(true); }}
+                  placeholder="Misafir ara veya yeni isim gir..."
+                  className="pl-9"
+                  data-testid="new-booking-guest-search"
+                />
+                {guestSearchLoading && (
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                )}
+              </div>
+
+              {/* Search results dropdown */}
+              {showGuestDropdown && guestSearchResults.length > 0 && (
+                <div
+                  className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto"
+                  data-testid="new-booking-guest-dropdown"
+                >
+                  {guestSearchResults.map((g) => (
+                    <button
+                      key={g.id}
+                      type="button"
+                      className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-50 last:border-b-0 transition-colors"
+                      onClick={() => handleSelectGuest(g)}
+                      data-testid={`new-booking-guest-option-${g.id}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <UserCheck className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {g.name}
+                            {g.vip_status && <span className="ml-1 text-amber-500 text-xs">VIP</span>}
+                          </p>
+                          <p className="text-xs text-gray-500 truncate">
+                            {g.email && !g.email.includes('placeholder') ? g.email : ''}
+                            {g.phone ? (g.email && !g.email.includes('placeholder') ? ' | ' : '') + g.phone : ''}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* "New guest" hint when typing but no match selected */}
+              {guestSearchQuery.trim().length >= 2 && !guestSearchLoading && showGuestDropdown && guestSearchResults.length === 0 && (
+                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg px-3 py-2">
+                  <div className="flex items-center gap-2 text-gray-500">
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span className="text-sm">"{guestSearchQuery.trim()}" yeni misafir olarak eklenecek</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <Label>Check-in</Label>
@@ -195,7 +304,7 @@ export const NewBookingDialog = ({
           </select>
         </div>
         <div className="flex space-x-2 pt-4">
-          <Button type="submit" className="flex-1">Rezervasyon Olustur</Button>
+          <Button type="submit" className="flex-1" data-testid="new-booking-submit">Rezervasyon Olustur</Button>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Iptal</Button>
         </div>
       </form>
