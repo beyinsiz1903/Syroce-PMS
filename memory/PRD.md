@@ -84,6 +84,11 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
 
+## Completed (Session 31 - Feb 2026)
+- [x] Fixed CI test failure in `test_exely_webhook_api.py` - removed hardcoded fallback URL from BASE_URL
+- [x] Fixed same issue in `test_session_calendar_bugs.py` and `test_bug_fixes_cancel_availability.py`
+- [x] CI result: 786 passed, 1640 skipped, 0 failed, 0 errors (verified)
+
 ## Completed (Session 30 - Mar 20, 2026)
 - [x] Fixed CI test failures: added `pytestmark` skipif to 24 integration test files missing `REACT_APP_BACKEND_URL`
 - [x] Added CI guard to `test_p5_cockpit_notifications.py`, `test_production_hardening_v2.py`, `test_production_hardening_v3.py` (event loop conflict)
