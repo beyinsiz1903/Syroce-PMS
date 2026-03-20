@@ -1,5 +1,9 @@
 # Syroce PMS - Changelog
 
+### Session 29 (Mar 20, 2026)
+- [x] **Fix: requirements.txt emergentintegrations install error** - Added `--extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/` to requirements.txt
+- [x] **Investigation: React "duplicate key" warning** - Comprehensive navigation through all 8 major pages + code scan of all .map() calls. Warning confirmed NOT present (0 occurrences). Issue closed.
+
 ### Session 28 (Mar 20, 2026)
 - [x] **Bug Fix: /api/pms/guests 500 Error** - Guest.email changed from EmailStr to str in schemas.py to allow walk-in placeholder emails (walk-in-xxx@placeholder.local)
 - [x] **Feature: Calendar Past Date Styling** - Added isPastDate() helper, past dates now show gray background (bg-gray-200/70), lighter text (text-gray-400), and diagonal stripe pattern in room cells

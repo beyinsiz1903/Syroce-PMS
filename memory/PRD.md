@@ -84,6 +84,10 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 ## Credentials
 - Demo Admin: demo@hotel.com / demo123
 
+## Completed (Session 29 - Mar 20, 2026)
+- [x] Fixed emergentintegrations install error in requirements.txt (added --extra-index-url)
+- [x] Investigated React "duplicate key" warning - confirmed resolved, no warnings across all pages
+
 ## Backlog (Future Tasks)
 - [ ] P2: Refactor ReservationDetailModal.js (1400+ lines -> smaller components)
 - [ ] P3: Refactor RateManager.jsx (1000+ lines -> smaller components)
