@@ -88,6 +88,8 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] Fixed CI test failure in `test_exely_webhook_api.py` - removed hardcoded fallback URL from BASE_URL
 - [x] Fixed same issue in `test_session_calendar_bugs.py` and `test_bug_fixes_cancel_availability.py`
 - [x] CI result: 786 passed, 1640 skipped, 0 failed, 0 errors (verified)
+- [x] Fixed missing navigation modules - Demo tenant had only 2 modules (pms, reports) instead of all 22
+- [x] Updated MongoDB tenant modules and auto_seed.py to include all module keys (reservation_calendar, channel_manager, night_audit, etc.)
 
 ## Completed (Session 30 - Mar 20, 2026)
 - [x] Fixed CI test failures: added `pytestmark` skipif to 24 integration test files missing `REACT_APP_BACKEND_URL`

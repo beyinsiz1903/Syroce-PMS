@@ -73,6 +73,9 @@ async def auto_seed_if_empty(db):
             "gm_dashboards": True,
             "mobile_housekeeping": True,
             "rate_management": True,
+            "basic_reporting": True,
+            "revenue_management": True,
+            "advanced_analytics": True,
         },
         "features": {
             "hidden_rms": True,
