@@ -436,7 +436,32 @@ async def auto_seed_if_empty(db):
     if tasks:
         await db.housekeeping_tasks.insert_many(tasks)
 
-    # ── 8. Summary ─────────────────────────────────────────
+    # ── 8. Exely Connection (for webhook tests) ──────────
+    exely_conn = {
+        "id": _uuid(),
+        "tenant_id": tenant_id,
+        "hotel_code": "501694",
+        "credentials_ref": "",
+        "endpoint_url": "",
+        "property_name": "Syroce Demo Hotel (Exely)",
+        "auto_sync_reservations": True,
+        "sync_interval_minutes": 15,
+        "mode": "sandbox",
+        "currency": "TRY",
+        "is_active": True,
+        "room_types": [],
+        "rate_plans": [],
+        "connected_at": _now().isoformat(),
+        "last_sync_at": None,
+        "created_by": "auto_seed",
+    }
+    await db.exely_connections.update_one(
+        {"hotel_code": "501694"},
+        {"$set": exely_conn},
+        upsert=True,
+    )
+
+    # ── 9. Summary ─────────────────────────────────────────
     print("✅ Demo data seeded successfully!")
     print(f"   👤 Users: {1 + len(staff_users)} (admin: {DEMO_EMAIL} / {DEMO_PASSWORD})")
     print(f"   🏨 Tenant: {DEMO_HOTEL_NAME} (tier: enterprise)")

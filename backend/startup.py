@@ -24,6 +24,35 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Auto-seed error: {e}")
 
+    # ── Ensure Exely webhook test connection exists ──────────────────
+    try:
+        existing = await db.exely_connections.find_one({"hotel_code": "501694"}, {"_id": 1})
+        if not existing:
+            tenant = await db.tenants.find_one({}, {"_id": 0, "id": 1})
+            tid = tenant["id"] if tenant else "demo"
+            from datetime import datetime, timezone
+            await db.exely_connections.insert_one({
+                "id": str(__import__("uuid").uuid4()),
+                "tenant_id": tid,
+                "hotel_code": "501694",
+                "credentials_ref": "",
+                "endpoint_url": "",
+                "property_name": "Exely Webhook Connection",
+                "auto_sync_reservations": True,
+                "sync_interval_minutes": 15,
+                "mode": "sandbox",
+                "currency": "TRY",
+                "is_active": True,
+                "room_types": [],
+                "rate_plans": [],
+                "connected_at": datetime.now(timezone.utc).isoformat(),
+                "last_sync_at": None,
+                "created_by": "startup_ensure",
+            })
+            logger.info("Exely webhook connection (501694) ensured on startup")
+    except Exception as e:
+        logger.warning(f"Exely connection ensure error: {e}")
+
     # ── Agency booking indexes ──────────────────────────────────────
     try:
         col = db.agency_booking_requests
