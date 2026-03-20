@@ -86,7 +86,9 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 
 ## Completed (Session 32 - Feb 2026)
 - [x] Fixed CI test failure in `test_p6_readiness_rollout.py::TestAPIEndpoints::test_all_p6_endpoints` - removed hardcoded `localhost:8001`, added skipif guard for CI
-- [x] No more hardcoded localhost references remain in test suite
+- [x] P2 Refactoring: ReservationDetailModal.js (1385 → 183 lines + 6 sub-files in `reservation-detail/`)
+- [x] P2 Refactoring: RateManager.jsx (1034 → 296 lines + 4 sub-files in `rate-manager/`)
+- [x] Testing: Frontend refactoring validated - all tabs render, no runtime errors (100% pass rate)
 
 ## Completed (Session 31 - Feb 2026)
 - [x] Fixed CI test failure in `test_exely_webhook_api.py` - removed hardcoded fallback URL from BASE_URL
