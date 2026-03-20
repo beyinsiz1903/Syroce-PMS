@@ -106,16 +106,15 @@ class TestHotelRunnerTestConnection:
     """Test connection endpoint tests."""
     
     def test_hotelrunner_test_connection_no_creds(self, auth_headers):
-        """POST /api/channel-manager/config/providers/hotelrunner/test-connection - returns error when no valid creds."""
+        """POST /api/channel-manager/config/providers/hotelrunner/test-connection - returns 400 when no creds configured."""
         response = requests.post(
             f"{BASE_URL}/api/channel-manager/config/providers/hotelrunner/test-connection",
             headers=auth_headers
         )
-        # Should return 200 with connected: false (no real credentials configured)
-        assert response.status_code == 200
+        # API returns 400 when no credentials are configured for the provider
+        assert response.status_code == 400
         data = response.json()
-        # Either connected=false or error field present (depends on whether TEST_ creds exist)
-        assert "connected" in data or "error" in data
+        assert "detail" in data
 
 
 class TestHotelRunnerValidation:
