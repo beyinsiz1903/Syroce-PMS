@@ -170,6 +170,13 @@ Turkish hotel Property Management System (PMS) for managing reservations, rooms,
 - [x] P2 Refactoring: ReservationDetailModal.js (1385 -> 183 lines + 6 sub-files)
 - [x] P2 Refactoring: RateManager.jsx (1034 -> 296 lines + 4 sub-files)
 
+## Completed (Session 43 - Feb 2026)
+- [x] P0: Fixed CI test `test_housekeeping_mobile_sla_delayed` failure (500)
+  - Root cause: `@cached` decorator on endpoint interfering with FastAPI's `Depends(security)` when Redis is available in CI
+  - Fix: Removed `@cached` decorator from `get_sla_delayed_rooms_mobile` and `get_filtered_tasks_mobile` in `domains/pms/mobile_router.py`
+  - Also added defensive datetime handling (naive/aware, string parsing) for `started_at` field
+  - Verified: 117 tests pass (4 test files) including `test_domain_routers_phase_b_batch2_3.py`
+
 ## Completed (Session 42 - Feb 2026)
 - [x] P0: Fixed CI test `test_log_sales_activity` rate limit failure (429)
   - Root cause: `EnhancedRateLimitMiddleware` only raised `auth` limit in CI, but `write` limit (120/min) was unchanged → 438+ tests exhausted write limit

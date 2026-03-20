@@ -590,7 +590,6 @@ async def get_frontdesk_notifications_mobile(
 # --------------------------------------------------------------------------
 
 @router.get("/housekeeping/mobile/sla-delayed-rooms")
-@cached(ttl=120, key_prefix="mobile_hk_delayed_rooms")  # Cache for 2 min
 async def get_sla_delayed_rooms_mobile(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -601,6 +600,7 @@ async def get_sla_delayed_rooms_mobile(
     sla_threshold = timedelta(minutes=30)
     delayed_rooms = []
     
+    now_utc = datetime.now(timezone.utc)
     async for task in db.housekeeping_tasks.find({
         'tenant_id': current_user.tenant_id,
         'task_type': 'cleaning',
@@ -608,7 +608,14 @@ async def get_sla_delayed_rooms_mobile(
     }):
         started_at = task.get('started_at')
         if started_at:
-            duration = datetime.now(timezone.utc) - started_at
+            if isinstance(started_at, str):
+                try:
+                    started_at = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                except (ValueError, TypeError):
+                    continue
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+            duration = now_utc - started_at
             if duration > sla_threshold:
                 room = await db.rooms.find_one({
                     'id': task.get('room_id'),
@@ -2022,7 +2029,6 @@ async def get_planned_maintenance_mobile(
 
 
 @router.get("/maintenance/mobile/tasks/filtered")
-@cached(ttl=120, key_prefix="mobile_maintenance_tasks")  # Cache for 2 min
 async def get_filtered_tasks_mobile(
     status: Optional[str] = None,
     priority: Optional[str] = None,
