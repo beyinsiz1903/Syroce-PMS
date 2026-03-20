@@ -27,7 +27,7 @@ class TestLoginAPI:
         data = response.json()
         assert "access_token" in data
         assert data["user"]["email"] == "demo@hotel.com"
-        assert data["user"]["role"] == "admin"
+        assert data["user"]["role"] == "super_admin"
     
     def test_login_invalid_credentials(self):
         """Test login with wrong credentials."""
