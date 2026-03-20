@@ -9,7 +9,7 @@ import requests
 from datetime import datetime
 
 def main():
-    backend_url = "https://ci-pipeline-fix-2.preview.emergentagent.com"
+    backend_url = "https://inventory-test-1.preview.emergentagent.com"
     
     # Authenticate
     session = requests.Session()
