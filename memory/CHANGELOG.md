@@ -1,5 +1,58 @@
 # Syroce PMS — Changelog
 
+## 2026-03-21: OTA-002 Outbox Pattern Implementation (P0 — Guaranteed Delivery)
+
+### Core: Outbox Service (`core/outbox_service.py`)
+- `enqueue_outbox_event()` helper with transaction session support
+- Idempotency key generation (tenant:event_type:entity:payload_hash)
+- Error classification: retryable (timeout, 5xx, network) vs permanent (mapping, auth, schema)
+- Exponential backoff: 0s → 30s → 2min → 10min → 30min
+- 8 OTA event type constants (booking.created/cancelled/modified, inventory.blocked/released/updated, restriction.updated, rate.updated)
+
+### Core: Outbox Worker (`core/outbox_worker.py`)
+- Production async background worker with poll + claim loop
+- Atomic claim pattern (find_one_and_update) prevents duplicate processing
+- `max_attempts` field filter ensures legacy migration events are untouched
+- Stuck processing recovery (events in "processing" > 120s reset to "retry")
+- Worker metrics: processed/failed/retry counts, last processed timestamp
+
+### Core: Outbox Dispatcher (`core/outbox_dispatcher.py`)
+- Routes outbox events to EventSyncService for per-connector dispatch
+- Maps OTA event types to channel manager operations
+- Fallback dispatch via webhook when EventSyncService unavailable
+
+### Admin Endpoints (`routers/outbox_admin.py`)
+- `GET /api/outbox/status` — Queue health + worker metrics
+- `GET /api/outbox/events?status=&provider=` — List events with filters
+- `POST /api/outbox/{id}/requeue` — Requeue single failed event
+- `POST /api/outbox/replay?provider=&tenant_id=` — Replay all failed events
+
+### Business Flow Patches (4 flows)
+- `create_reservation_service.py`: Removed `cm_push_event` fire-and-forget, replaced with `enqueue_outbox_event(BOOKING_CREATED)`
+- `reservation_state_machine.py`: Added outbox event on booking cancellation (`BOOKING_CANCELLED`)
+- `create_room_block_service.py`: Replaced legacy outbox insert with `enqueue_outbox_event(INVENTORY_BLOCKED)`
+- `release_room_block_service.py`: Replaced legacy outbox insert with `enqueue_outbox_event(INVENTORY_RELEASED)`
+
+### Health Check Enhanced
+- `/health/deep` now includes: pending, processing, retry, failed, processed_24h, oldest_pending_seconds, last_processed_at, provider_failures
+
+### Indexes (5 new)
+- `idx_outbox_worker_claim`: (tenant_id, status, available_at, created_at)
+- `idx_outbox_provider_status`: (tenant_id, provider, status, created_at)
+- `idx_outbox_idempotency`: (idempotency_key) unique partial
+- `idx_outbox_correlation`: (correlation_id)
+- `idx_outbox_entity_event`: (entity_type, entity_id, event_type)
+
+### Testing
+- 17 pytest tests in `tests/test_outbox_pattern.py` — all passing
+- Testing agent validation: 100% success (iteration_117)
+- Covers: enqueue, idempotency, transaction safety, claim protection, retry, max-retry→failed, permanent error, rollback, requeue, replay, backoff, error classification, worker metrics
+
+---
+
+
+# Syroce PMS — Changelog
+
 ## 2026-03-21: Day 2-3 Implementation (BOOK-002, TI-001, PERF-001, OBS-001)
 
 ### BOOK-002: Atomic Check-in/Check-out (P0)
