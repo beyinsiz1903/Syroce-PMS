@@ -219,6 +219,10 @@ class CreateReservationService:
             await self.repository.fail_idempotency_lock(lock["lock_id"], exc.detail if isinstance(exc.detail, str) else str(exc.detail))
             raise
         except Exception as exc:
+            from core.atomic_booking import BookingConflictError
+            if isinstance(exc, BookingConflictError):
+                await self.repository.fail_idempotency_lock(lock["lock_id"], str(exc))
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
             await self.repository.fail_idempotency_lock(lock["lock_id"], str(exc))
             raise
 

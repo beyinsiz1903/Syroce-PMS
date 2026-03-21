@@ -729,7 +729,11 @@ class FrontdeskServiceV2:
             "checked_in_by": ctx.actor_id,
             "created_at": now.isoformat(),
         }
-        await self._db.bookings.insert_one(booking_doc)
+        from core.atomic_booking import create_booking_atomic, BookingConflictError
+        try:
+            await create_booking_atomic(booking_doc)
+        except BookingConflictError as e:
+            return ServiceResult.fail(str(e), "ROOM_CONFLICT")
 
         # Create folio
         folio_doc = {

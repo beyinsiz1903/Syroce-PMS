@@ -729,8 +729,12 @@ async def approve_booking_request(
         "agency_request_id": request_id
     }
     
-    # Insert booking
-    await db.bookings.insert_one(booking_doc)
+    # Insert booking (atomic overbooking check)
+    from core.atomic_booking import create_booking_atomic, BookingConflictError
+    try:
+        await create_booking_atomic(booking_doc)
+    except BookingConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     
     # Update request to approved
     await db.agency_booking_requests.update_one(

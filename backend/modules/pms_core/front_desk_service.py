@@ -300,29 +300,33 @@ class FrontDeskService:
         booking_id = str(uuid.uuid4())
         total_amount = rate * nights
 
-        await db.bookings.insert_one({
-            "id": booking_id,
-            "tenant_id": tenant_id,
-            "guest_id": guest_id,
-            "room_id": room_id,
-            "check_in": check_in,
-            "check_out": check_out,
-            "adults": guest_data.get("adults", 1),
-            "children": 0,
-            "guests_count": guest_data.get("adults", 1),
-            "total_amount": total_amount,
-            "base_rate": rate,
-            "paid_amount": 0.0,
-            "status": "checked_in",
-            "channel": "direct",
-            "source_channel": "walk_in",
-            "origin": "ui",
-            "rate_plan": "Walk-in",
-            "market_segment": "leisure",
-            "checked_in_at": now.isoformat(),
-            "checked_in_by": user_name,
-            "created_at": now.isoformat(),
-        })
+        from core.atomic_booking import create_booking_atomic, BookingConflictError
+        try:
+            await create_booking_atomic({
+                "id": booking_id,
+                "tenant_id": tenant_id,
+                "guest_id": guest_id,
+                "room_id": room_id,
+                "check_in": check_in,
+                "check_out": check_out,
+                "adults": guest_data.get("adults", 1),
+                "children": 0,
+                "guests_count": guest_data.get("adults", 1),
+                "total_amount": total_amount,
+                "base_rate": rate,
+                "paid_amount": 0.0,
+                "status": "checked_in",
+                "channel": "direct",
+                "source_channel": "walk_in",
+                "origin": "ui",
+                "rate_plan": "Walk-in",
+                "market_segment": "leisure",
+                "checked_in_at": now.isoformat(),
+                "checked_in_by": user_name,
+                "created_at": now.isoformat(),
+            })
+        except BookingConflictError as e:
+            return {"success": False, "error": str(e)}
 
         # Room occupied
         await db.rooms.update_one(

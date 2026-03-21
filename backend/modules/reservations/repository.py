@@ -92,7 +92,8 @@ class ReservationsRepository:
         )
 
     async def insert_booking(self, booking_doc: Dict[str, Any]) -> None:
-        await db.bookings.insert_one(booking_doc)
+        from core.atomic_booking import create_booking_atomic
+        await create_booking_atomic(booking_doc)
 
     async def insert_rate_override_log(self, override_doc: Dict[str, Any]) -> None:
         await db.rate_override_logs.insert_one(override_doc)

@@ -127,7 +127,16 @@ async def auto_import_reservation(tenant_id: str, channel_res: Dict[str, Any]) -
         "created_at": now,
     }
 
-    await db.bookings.insert_one({**booking})
+    from core.atomic_booking import create_booking_atomic, BookingConflictError
+    try:
+        await create_booking_atomic({**booking})
+    except BookingConflictError:
+        logger.warning("OTA import conflict for %s room=%s, creating as unassigned", external_id, booking.get("room_id"))
+        booking["room_id"] = None
+        booking["status"] = "confirmed"
+        booking["allocation_source"] = "pending_assignment"
+        await db.bookings.insert_one({**booking})
+        booking.pop("_id", None)
 
     # Update channel reservation
     await db.exely_reservations.update_one(

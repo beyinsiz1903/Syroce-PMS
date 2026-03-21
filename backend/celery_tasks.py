@@ -113,7 +113,14 @@ async def _booking_pull_async(tenant_id: str):
 
             if guest_id and room_id:
                 booking_payload = mapper.to_booking_payload(reservation, guest_id, room_id)
-                await db.bookings.insert_one(booking_payload)
+                from core.atomic_booking import create_booking_atomic, BookingConflictError
+                try:
+                    await create_booking_atomic(booking_payload)
+                except BookingConflictError:
+                    booking_payload["room_id"] = None
+                    booking_payload["allocation_source"] = "pending_assignment"
+                    await db.bookings.insert_one(booking_payload)
+                    booking_payload.pop("_id", None)
                 await db.ota_reservations.update_one(
                     {'tenant_id': tenant_id, 'channel_booking_id': ota_record['channel_booking_id']},
                     {'$set': {

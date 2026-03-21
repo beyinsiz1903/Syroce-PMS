@@ -2413,7 +2413,11 @@ async def create_multi_room_booking(
         booking_dict["check_in"] = booking_dict["check_in"].isoformat()
         booking_dict["check_out"] = booking_dict["check_out"].isoformat()
         booking_dict["created_at"] = booking_dict["created_at"].isoformat()
-        await db.bookings.insert_one(booking_dict)
+        from core.atomic_booking import create_booking_atomic, BookingConflictError
+        try:
+            await create_booking_atomic(booking_dict)
+        except BookingConflictError as e:
+            raise HTTPException(status_code=409, detail=str(e))
 
         folio_number = await generate_folio_number(current_user.tenant_id)
         folio = Folio(

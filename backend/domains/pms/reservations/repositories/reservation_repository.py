@@ -56,7 +56,8 @@ class ReservationRepository:
 
     @classmethod
     async def insert(cls, booking_dict: Dict[str, Any]) -> None:
-        await cls.collection.insert_one(booking_dict)
+        from core.atomic_booking import create_booking_atomic
+        await create_booking_atomic(booking_dict)
 
     @classmethod
     async def update(cls, tenant_id: str, booking_id: str, update_data: Dict[str, Any]) -> bool:

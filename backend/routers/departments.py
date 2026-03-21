@@ -2582,19 +2582,23 @@ async def create_walk_in_booking(data: dict, current_user: User = Depends(get_cu
     if not available_room:
         raise HTTPException(status_code=400, detail='No rooms available')
     
-    # Create booking
-    await db.bookings.insert_one({
-        'id': booking_id,
-        'tenant_id': current_user.tenant_id,
-        'guest_id': guest_id,
-        'room_id': available_room['id'],
-        'check_in': data['check_in'],
-        'check_out': data['check_out'],
-        'adults': data['adults'],
-        'status': 'confirmed',
-        'source': 'walk-in',
-        'created_at': datetime.now(timezone.utc).isoformat()
-    })
+    # Create booking (atomic overbooking check)
+    from core.atomic_booking import create_booking_atomic, BookingConflictError
+    try:
+        await create_booking_atomic({
+            'id': booking_id,
+            'tenant_id': current_user.tenant_id,
+            'guest_id': guest_id,
+            'room_id': available_room['id'],
+            'check_in': data['check_in'],
+            'check_out': data['check_out'],
+            'adults': data['adults'],
+            'status': 'confirmed',
+            'source': 'walk-in',
+            'created_at': datetime.now(timezone.utc).isoformat()
+        })
+    except BookingConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     
     return {'booking_id': booking_id, 'room_number': available_room['room_number']}
 

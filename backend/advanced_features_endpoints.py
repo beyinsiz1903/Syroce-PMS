@@ -218,7 +218,11 @@ async def create_multi_room_booking(
             'created_at': datetime.now()
         }
         
-        await db.bookings.insert_one(new_booking)
+        from core.atomic_booking import create_booking_atomic, BookingConflictError
+        try:
+            await create_booking_atomic(new_booking)
+        except BookingConflictError as e:
+            raise HTTPException(status_code=409, detail=str(e))
         bookings_created.append(booking_id)
     
     return {

@@ -53,6 +53,14 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Exely connection ensure error: {e}")
 
+    # ── Booking overbooking prevention indexes ────────────────────────
+    try:
+        from core.atomic_booking import ensure_booking_indexes
+        await ensure_booking_indexes()
+        logger.info("Booking overlap prevention indexes ensured")
+    except Exception as e:
+        logger.warning(f"Booking index creation error: {e}")
+
     # ── Agency booking indexes ──────────────────────────────────────
     try:
         col = db.agency_booking_requests

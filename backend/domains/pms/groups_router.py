@@ -272,7 +272,12 @@ async def upload_rooming_list(
                 'created_by': current_user.id
             }
             
-            await db.bookings.insert_one(booking)
+            from core.atomic_booking import create_booking_atomic, BookingConflictError
+            try:
+                await create_booking_atomic(booking)
+            except BookingConflictError as e:
+                errors.append(f"Row {idx+1}: {str(e)}")
+                continue
             created_bookings.append({
                 'booking_id': booking['id'],
                 'guest_name': entry.guest_name,
@@ -522,7 +527,11 @@ async def assign_group_rooms(
             'created_at': datetime.now(timezone.utc).isoformat()
         }
         
-        await db.bookings.insert_one(booking)
+        from core.atomic_booking import create_booking_atomic, BookingConflictError
+        try:
+            await create_booking_atomic(booking)
+        except BookingConflictError as e:
+            raise HTTPException(status_code=409, detail=str(e))
         created_bookings.append(booking)
     
     # Update group reservation
@@ -618,7 +627,11 @@ async def use_block_room(
         'created_at': datetime.now(timezone.utc).isoformat()
     }
     
-    await db.bookings.insert_one(booking.copy())
+    from core.atomic_booking import create_booking_atomic, BookingConflictError
+    try:
+        await create_booking_atomic(booking.copy())
+    except BookingConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     
     # Update block availability
     await db.block_reservations.update_one(

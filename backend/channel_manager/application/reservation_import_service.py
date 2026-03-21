@@ -529,7 +529,15 @@ class ReservationImportService:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "created_by": "channel_manager",
         }
-        await db.bookings.insert_one(booking)
+        from core.atomic_booking import create_booking_atomic, BookingConflictError
+        try:
+            await create_booking_atomic(booking)
+        except BookingConflictError:
+            logger.warning("OTA import conflict for %s, creating without room assignment", canonical.external_id)
+            booking["room_id"] = None
+            booking["allocation_source"] = "pending_assignment"
+            await db.bookings.insert_one(booking)
+            booking.pop("_id", None)
         logger.info("Created PMS booking %s from external %s", booking_id, canonical.external_id)
         return booking_id
 

@@ -308,7 +308,11 @@ async def create_walk_in_booking(
         
         booking_dict = new_booking.model_dump()
         booking_dict['created_at'] = booking_dict['created_at'].isoformat()
-        await db.bookings.insert_one(booking_dict)
+        from core.atomic_booking import create_booking_atomic, BookingConflictError
+        try:
+            await create_booking_atomic(booking_dict)
+        except BookingConflictError as e:
+            raise HTTPException(status_code=409, detail=str(e))
         
         # 5. Auto check-in
         await db.bookings.update_one(
