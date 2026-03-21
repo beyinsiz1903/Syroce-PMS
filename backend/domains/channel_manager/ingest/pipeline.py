@@ -178,6 +178,19 @@ async def process_event(event: Dict[str, Any]) -> PipelineResult:
             result.lineage_id = lineage_id
             result.status = "processed"
 
+            # ── DATA-001: Trigger import bridge for new reservations ──
+            try:
+                await _trigger_import_bridge(
+                    tenant_id, property_id, provider, lineage_id,
+                    canonical, room_mapping, rate_mapping,
+                    event.get("connection_id", ""),
+                )
+            except Exception as e:
+                logger.warning(
+                    "[%s] Import bridge trigger failed (non-blocking): %s",
+                    event["id"], e,
+                )
+
         elif decision == IngestDecision.UPDATE:
             lineage_id = await _update_lineage(
                 existing_lineage, canonical, canonical_hash,
@@ -442,6 +455,68 @@ async def _cancel_lineage(existing: Dict, canonical: Dict) -> str:
 # ══════════════════════════════════════════════════════════════════════
 # Reconciliation Case Creation
 # ══════════════════════════════════════════════════════════════════════
+
+async def _trigger_import_bridge(
+    tenant_id: str, property_id: str, provider: str,
+    lineage_id: str, canonical: Dict, room_mapping, rate_mapping,
+    connector_id: str,
+) -> None:
+    """
+    DATA-001: After a new lineage record is created, classify and enqueue
+    for PMS booking import.
+    """
+    from core.import_decision import classify_for_import, check_already_imported
+    from core.import_bridge_service import create_import_record
+
+    ext_res_id = canonical.get("external_reservation_id", "")
+
+    # Check if already imported
+    already = await check_already_imported(tenant_id, connector_id, ext_res_id)
+    if already:
+        logger.info(
+            "Import bridge: already imported ext=%s, skipping", ext_res_id,
+        )
+        return
+
+    # Build lineage-like dict for classification
+    lineage_data = {
+        "id": lineage_id,
+        "tenant_id": tenant_id,
+        "property_id": property_id,
+        "provider": provider,
+        "external_reservation_id": ext_res_id,
+        "connection_id": connector_id,
+        "payload_hash": canonical.get("payload_hash", ""),
+        "guest_name": canonical.get("guest_name", ""),
+        "guest_email": canonical.get("guest_email", ""),
+        "guest_phone": canonical.get("guest_phone", ""),
+        "arrival_date": canonical.get("check_in", ""),
+        "departure_date": canonical.get("check_out", ""),
+        "room_type_code": canonical.get("room_type_code", ""),
+        "rate_plan_code": canonical.get("rate_plan_code", ""),
+        "adults": canonical.get("adults", 1),
+        "children": canonical.get("children", 0),
+        "total_amount": canonical.get("total_amount", 0.0),
+        "currency": canonical.get("currency", "TRY"),
+        "status": canonical.get("status", "confirmed"),
+        "source_system": canonical.get("source_system", ""),
+    }
+
+    import_status, review_reason = classify_for_import(
+        lineage_data, room_mapping, rate_mapping,
+    )
+
+    await create_import_record(
+        lineage_data,
+        import_status=import_status,
+        review_reason=review_reason,
+        connector_id=connector_id,
+    )
+    logger.info(
+        "Import bridge: enqueued ext=%s status=%s reason=%s",
+        ext_res_id, import_status, review_reason,
+    )
+
 
 async def _create_recon_case(
     tenant_id: str, property_id: str, provider: str,

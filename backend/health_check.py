@@ -395,6 +395,67 @@ async def deep_health_check(request: Request):
     except Exception:
         result["night_audit"] = {"last_run": None}
 
+    # ── DATA-001: Import bridge metrics ──
+    try:
+        db_inst = request.app.state.db
+        imp_coll = db_inst.imported_reservations
+        imp_pending = await imp_coll.count_documents({"import_status": "pending_auto_import"})
+        imp_processing = await imp_coll.count_documents({"import_status": "processing"})
+        imp_retry = await imp_coll.count_documents({"import_status": "retry"})
+        imp_review = await imp_coll.count_documents({"import_status": "review_required"})
+        imp_failed = await imp_coll.count_documents({"import_status": "failed"})
+
+        imp_oldest = await imp_coll.find_one(
+            {"import_status": {"$in": ["pending_auto_import", "retry"]}},
+            {"_id": 0, "created_at": 1},
+            sort=[("created_at", 1)],
+        )
+        imp_oldest_seconds = None
+        if imp_oldest and imp_oldest.get("created_at"):
+            try:
+                from datetime import timezone as _tz2
+                cr = datetime.fromisoformat(imp_oldest["created_at"])
+                if cr.tzinfo is None:
+                    cr = cr.replace(tzinfo=_tz2.utc)
+                imp_oldest_seconds = round((datetime.now(_tz2.utc) - cr).total_seconds(), 1)
+            except Exception:
+                pass
+
+        imp_last = await imp_coll.find_one(
+            {"import_status": "imported"},
+            {"_id": 0, "imported_at": 1},
+            sort=[("imported_at", -1)],
+        )
+
+        imp_pipeline = [
+            {"$match": {"import_status": {"$in": ["failed", "review_required"]}}},
+            {"$group": {"_id": "$provider", "count": {"$sum": 1}}},
+        ]
+        imp_provider_failures = {}
+        async for doc in imp_coll.aggregate(imp_pipeline):
+            imp_provider_failures[doc["_id"] or "unknown"] = doc["count"]
+
+        imp_status = "ok"
+        if imp_failed >= 50:
+            imp_status = "critical"
+            overall_ok = False
+        elif imp_failed >= 5 or imp_review >= 20 or (imp_oldest_seconds and imp_oldest_seconds > 600):
+            imp_status = "degraded"
+
+        result["import_bridge"] = {
+            "status": imp_status,
+            "pending_auto_import": imp_pending,
+            "processing": imp_processing,
+            "retry": imp_retry,
+            "review_required": imp_review,
+            "failed": imp_failed,
+            "oldest_pending_seconds": imp_oldest_seconds,
+            "last_imported_at": imp_last.get("imported_at") if imp_last else None,
+            "provider_failures": imp_provider_failures,
+        }
+    except Exception as e:
+        result["import_bridge"] = {"status": "unknown", "error": str(e)}
+
     result["overall"] = "ok" if overall_ok else "degraded"
     sc = status.HTTP_200_OK if overall_ok else status.HTTP_503_SERVICE_UNAVAILABLE
     return ORJSONResponse(status_code=sc, content=result)

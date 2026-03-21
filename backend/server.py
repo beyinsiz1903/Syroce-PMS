@@ -240,6 +240,14 @@ try:
 except Exception:
     pass
 
+# DATA-001: Import Admin endpoints (review queue, retry, approve, dismiss)
+try:
+    from routers.import_admin import import_admin_router
+    app.include_router(import_admin_router, prefix="/api", tags=["Import Admin"])
+    print("Import Admin router included (DATA-001 review queue/retry)")
+except Exception:
+    pass
+
 # ── Lifecycle events ────────────────────────────────────────────────
 from startup import on_startup, on_shutdown  # noqa: E402
 

@@ -183,6 +183,22 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"OTA Outbox Worker startup warning: {e}")
 
+    # ── DATA-001: Import bridge indexes + worker ─────────────────────
+    try:
+        from core.import_bridge_service import ensure_import_indexes
+        await ensure_import_indexes()
+        print("Import bridge indexes ensured (DATA-001)")
+    except Exception as e:
+        logger.warning(f"Import bridge index creation error: {e}")
+
+    try:
+        from core.import_retry_worker import import_retry_worker
+        await import_retry_worker.start()
+        app.state.import_retry_worker = import_retry_worker
+        print("Import Retry Worker started (DATA-001)")
+    except Exception as e:
+        logger.warning(f"Import Retry Worker startup warning: {e}")
+
     # ── Legacy outbox lifecycle worker (migration events only) ──────
     try:
         from shared_kernel.outbox_lifecycle import outbox_lifecycle_worker
@@ -347,6 +363,14 @@ async def on_shutdown(app):
             await ota_worker.stop()
         except Exception as e:
             logger.warning(f"OTA Outbox Worker shutdown warning: {e}")
+
+    # DATA-001: Stop import retry worker
+    import_worker = getattr(app.state, "import_retry_worker", None)
+    if import_worker is not None:
+        try:
+            await import_worker.stop()
+        except Exception as e:
+            logger.warning(f"Import Retry Worker shutdown warning: {e}")
 
     # Outbox lifecycle worker
     worker = getattr(app.state, "outbox_lifecycle_worker", None)
