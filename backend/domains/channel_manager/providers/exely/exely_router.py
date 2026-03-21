@@ -722,6 +722,148 @@ async def import_reservation_to_pms(
     }
 
 
+# ── Test Booking Verification ────────────────────────────────────────
+
+class TestBookingVerifyRequest(BaseModel):
+    reservation_id: Optional[str] = None
+    guest_name: Optional[str] = None
+
+
+@router.post("/test-booking/verify")
+async def verify_test_booking(
+    payload: TestBookingVerifyRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Verify a test booking via OTA_ReadRQ.
+
+    Flow:
+    1. Snapshot current reservation count
+    2. Trigger OTA_ReadRQ pull (optionally by reservation_id)
+    3. Compare before/after
+    4. Return verification report
+    """
+    tenant_id = current_user.tenant_id
+    conn = await db.exely_connections.find_one(
+        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0},
+    )
+    if not conn:
+        raise HTTPException(status_code=404, detail="Exely bağlantısı bulunamadı")
+
+    # Snapshot current state
+    before_count = await db.exely_reservations.count_documents({"tenant_id": tenant_id})
+    before_ids = set()
+    existing = await db.exely_reservations.find(
+        {"tenant_id": tenant_id}, {"_id": 0, "external_id": 1},
+    ).to_list(500)
+    before_ids = {r["external_id"] for r in existing if r.get("external_id")}
+
+    # Get credentials
+    creds = await get_decrypted_credentials(tenant_id, PROVIDER, conn.get("hotel_code", ""))
+    if creds:
+        username = creds.get("username", "")
+        password = creds.get("password", "")
+        hotel_code = creds.get("hotel_code", "")
+        endpoint_url = creds.get("endpoint_url", "")
+    else:
+        username = conn.get("username", "")
+        password = conn.get("password", "")
+        hotel_code = conn.get("hotel_code", "")
+        endpoint_url = conn.get("endpoint_url", "")
+
+    verification = {
+        "session_id": str(uuid.uuid4()),
+        "before_count": before_count,
+        "pull_result": None,
+        "new_reservations": [],
+        "verification_status": "pending",
+        "errors": [],
+    }
+
+    try:
+        # If specific reservation_id provided, do targeted pull
+        if payload.reservation_id:
+            provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
+            if endpoint_url:
+                provider_kwargs["endpoint_url"] = endpoint_url
+            provider = ExelyProvider(**provider_kwargs)
+            pull = await provider.legacy_pull_reservations(reservation_id=payload.reservation_id)
+            if pull.get("success") and pull.get("reservations"):
+                for raw_res in pull["reservations"]:
+                    ingest_result = await ingest_reservation(
+                        provider=PROVIDER,
+                        tenant_id=tenant_id,
+                        raw_payload=raw_res,
+                        normalizer=normalize_reservation,
+                        event_type="new_booking",
+                        source="test_booking_verify",
+                    )
+                    verification["new_reservations"].append({
+                        "external_id": raw_res.get("reservation_id", ""),
+                        "guest_name": raw_res.get("guest_name", ""),
+                        "ingest_action": ingest_result.get("action", "unknown"),
+                        "status": raw_res.get("status", ""),
+                    })
+            else:
+                verification["errors"].append(f"OTA_ReadRQ: {pull.get('error', 'unknown')}")
+        else:
+            # Do a general pull for new undelivered reservations
+            result = await exely_pull_scheduler.pull_for_tenant(
+                tenant_id=tenant_id,
+                username=username,
+                password=password,
+                hotel_code=hotel_code,
+                endpoint_url=endpoint_url,
+            )
+            verification["pull_result"] = {
+                "success": result.get("success", False),
+                "processed": result.get("processed", 0),
+                "error": result.get("error"),
+            }
+
+    except Exception as e:
+        verification["errors"].append(str(e))
+
+    # After state
+    after_count = await db.exely_reservations.count_documents({"tenant_id": tenant_id})
+    after_existing = await db.exely_reservations.find(
+        {"tenant_id": tenant_id}, {"_id": 0, "external_id": 1, "guest_name": 1, "state": 1, "synced_at": 1},
+    ).to_list(500)
+    after_ids = {r["external_id"] for r in after_existing if r.get("external_id")}
+    new_ids = after_ids - before_ids
+
+    # Get details for newly discovered reservations
+    if new_ids and not verification["new_reservations"]:
+        new_res = await db.exely_reservations.find(
+            {"tenant_id": tenant_id, "external_id": {"$in": list(new_ids)}},
+            {"_id": 0, "external_id": 1, "guest_name": 1, "state": 1, "checkin_date": 1, "checkout_date": 1},
+        ).to_list(50)
+        verification["new_reservations"] = [
+            {"external_id": r.get("external_id"), "guest_name": r.get("guest_name"), "state": r.get("state")}
+            for r in new_res
+        ]
+
+    # Filter by guest name if provided
+    if payload.guest_name and verification["new_reservations"]:
+        search = payload.guest_name.lower()
+        verification["new_reservations"] = [
+            r for r in verification["new_reservations"]
+            if search in (r.get("guest_name", "") or "").lower()
+        ]
+
+    verification["after_count"] = after_count
+    verification["new_count"] = len(new_ids)
+
+    if verification["errors"]:
+        verification["verification_status"] = "error"
+    elif new_ids or verification["new_reservations"]:
+        verification["verification_status"] = "found"
+    else:
+        verification["verification_status"] = "not_found"
+
+    return verification
+
+
 # ── Sync Status & Scheduler ─────────────────────────────────────────
 
 @router.get("/sync/status")

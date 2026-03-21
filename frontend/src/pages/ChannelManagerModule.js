@@ -656,72 +656,28 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
             <Card>
               <CardHeader className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Room Mappings</CardTitle>
+                  <CardTitle>Room & Rate Mappings</CardTitle>
                   <CardDescription>
-                    Eşleştirilmiş PMS oda tiplerinizi Booking.com ve diğer OTA oda tipleriyle yönetin.
+                    PMS varlıklarınızı provider varlıkları ile eşleştirin. Detaylı mapping yönetimi için aşağıdaki butonu kullanın.
                   </CardDescription>
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setShowAddMapping(true)}
-                >
-                  <Plus className="w-4 h-4 mr-1" /> Eşleme Ekle
-                </Button>
               </CardHeader>
-              <CardContent>
-                {roomMappings.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    Henüz bir oda eşlemesi yok.
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="border-b bg-gray-50">
-                          <th className="text-left p-2">Channel</th>
-                          <th className="text-left p-2">PMS Room Type</th>
-                          <th className="text-left p-2">Channel Room Type</th>
-                          <th className="text-left p-2">Channel Room ID</th>
-                          <th className="text-left p-2">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {roomMappings.map((mapping) => {
-                          const connection = connections.find(
-                            (c) => c.id === mapping.channel_id
-                          );
-                          return (
-                            <tr key={mapping.id} className="border-b hover:bg-gray-50">
-                              <td className="p-2">
-                                <div className="flex items-center gap-2">
-                                  <Badge variant="outline">
-                                    {connection?.channel_type === 'booking_com'
-                                      ? 'Booking.com'
-                                      : connection?.channel_name || 'Unknown'}
-                                  </Badge>
-                                </div>
-                              </td>
-                              <td className="p-2">{mapping.pms_room_type}</td>
-                              <td className="p-2">{mapping.channel_room_type}</td>
-                              <td className="p-2">{mapping.channel_room_id || '-'}</td>
-                              <td className="p-2">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                                  onClick={() => handleDeleteRoomMapping(mapping.id)}
-                                >
-                                  Sil
-                                </Button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+              <CardContent className="text-center py-8">
+                <div className="flex flex-col items-center gap-4">
+                  <Network className="w-12 h-12 text-blue-500" />
+                  <p className="text-gray-600 text-sm max-w-md">
+                    Mapping yönetimi artık geliştirilmiş arayüzde mevcut. Oda tipi, fiyat planı ve diğer tüm eşlemeleri
+                    readiness skoru ve doğrulama kontrolleri ile yönetebilirsiniz.
+                  </p>
+                  <Button
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                    onClick={() => window.location.href = '/mapping-manager'}
+                    data-testid="go-to-mapping-manager"
+                  >
+                    <Settings className="w-4 h-4 mr-2" />
+                    Mapping Yönetimine Git
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -867,6 +823,14 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
                     </CardDescription>
                   </div>
                   <div className="flex space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.location.href = '/reservation-lineage'}
+                      data-testid="go-to-lineage"
+                    >
+                      Lineage & Geçmiş
+                    </Button>
                     <Button
                       variant={reservationFilter === 'pending' ? 'default' : 'outline'}
                       size="sm"

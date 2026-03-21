@@ -12,8 +12,9 @@ import { Switch } from '@/components/ui/switch';
 import {
   Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink,
   Building2, ArrowDownUp, CalendarCheck, Activity,
-  AlertTriangle, Loader2, Search, Download, ExternalLink
+  AlertTriangle, Loader2, Search, Download, ExternalLink, FlaskConical
 } from 'lucide-react';
+import TestBookingVerification from '@/components/TestBookingVerification';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -151,10 +152,11 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid grid-cols-5 w-full max-w-2xl">
+          <TabsList className="grid grid-cols-6 w-full max-w-3xl">
             <TabsTrigger value="connection" data-testid="exely-tab-connection"><Link2 className="w-4 h-4 mr-1" /> Baglanti</TabsTrigger>
             <TabsTrigger value="rooms" data-testid="exely-tab-rooms" disabled={!isConnected}><Building2 className="w-4 h-4 mr-1" /> Odalar</TabsTrigger>
             <TabsTrigger value="reservations" data-testid="exely-tab-reservations" disabled={!isConnected}><CalendarCheck className="w-4 h-4 mr-1" /> Rezervasyonlar</TabsTrigger>
+            <TabsTrigger value="test-booking" data-testid="exely-tab-test-booking" disabled={!isConnected}><FlaskConical className="w-4 h-4 mr-1" /> Test Booking</TabsTrigger>
             <TabsTrigger value="mappings" data-testid="exely-tab-mappings" disabled={!isConnected}><ArrowDownUp className="w-4 h-4 mr-1" /> Eslemeler</TabsTrigger>
             <TabsTrigger value="logs" data-testid="exely-tab-logs" disabled={!isConnected}><Activity className="w-4 h-4 mr-1" /> Loglar</TabsTrigger>
           </TabsList>
@@ -442,6 +444,11 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Test Booking Tab */}
+          <TabsContent value="test-booking" className="space-y-4 mt-4">
+            <TestBookingVerification />
           </TabsContent>
 
           {/* Mappings Tab */}

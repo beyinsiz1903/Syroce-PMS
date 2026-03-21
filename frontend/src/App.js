@@ -22,6 +22,8 @@ const PMSModule = lazy(() => import("@/pages/PMSModule"));
 const InvoiceModule = lazy(() => import("@/pages/InvoiceModule"));
 const RMSModule = lazy(() => import("@/pages/RMSModule"));
 const ChannelManagerModule = lazy(() => import("@/pages/ChannelManagerModule"));
+const MappingManager = lazy(() => import("@/pages/MappingManager"));
+const ReservationLineage = lazy(() => import("@/pages/ReservationLineage"));
 const ReservationCalendar = lazy(() => import("@/pages/ReservationCalendar"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const PendingAR = lazy(() => import("@/pages/PendingAR"));
@@ -722,6 +724,26 @@ function App() {
             element={
               isAuthenticated ? (
                 <ChannelManagerModule user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/mapping-manager"
+            element={
+              isAuthenticated ? (
+                <MappingManager user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/reservation-lineage"
+            element={
+              isAuthenticated ? (
+                <ReservationLineage user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )

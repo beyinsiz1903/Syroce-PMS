@@ -174,6 +174,39 @@ async def retry_failed_acks(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/reservations/lineage/{reservation_id}")
+async def get_reservation_lineage(
+    reservation_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Get the full lineage/history of a reservation by its external ID."""
+    svc = ReservationImportService()
+    detail = await svc.get_imported_reservation_detail(current_user.tenant_id, reservation_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Imported reservation not found")
+
+    external_id = detail.get("external_reservation_id")
+    connector_id = detail.get("connector_id")
+    if not external_id:
+        return {"reservation": detail, "lineage": [detail]}
+
+    from core.database import db
+    lineage_docs = await db["cm_imported_reservations"].find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "connector_id": connector_id,
+            "external_reservation_id": external_id,
+        },
+        {"_id": 0},
+    ).sort("created_at", 1).to_list(50)
+
+    return {
+        "reservation": detail,
+        "lineage": lineage_docs,
+        "lineage_count": len(lineage_docs),
+    }
+
+
 @router.get("/reservations/audit-trail")
 async def get_reservation_audit_trail(
     connector_id: Optional[str] = None,
