@@ -41,36 +41,50 @@ Kullanıcının birincil hedefi kararlı, tamamen geçen bir CI/CD pipeline'ı e
 || Mart 2026 | `routers/pms.py` | 9 F821 lint hatası düzeltildi: `UPLOAD_DIR`, `REJECTED_STATUS`, `get_guest_name` eklendi, dead code silindi, `import os` eklendi | 0 lint hatası |
 || Mart 2026 | `tests/test_helpers.py`, 5 test dosyası | Paylaşılan `skip_if_no_exely()`, `skip_if_unavailable()`, `skip_if_ci_error()` yardımcı fonksiyonları oluşturuldu; 5 test dosyasında tekrarlanan mantık birleştirildi | 39 test geçti |
 
-## Öncelikli Backlog
+## Go-Live Execution Blueprint — Delivered Feb 2026
+Full blueprint document: `/app/GO_LIVE_EXECUTION_BLUEPRINT.md`
 
-### P0
-- [x] CI/CD pipeline kararlılığı — `worker/Dockerfile`'da `--extra-index-url` eksikliği düzeltildi. Kullanıcı doğruladı, pipeline yeşil.
+### P0 — Booking Integrity & Channel Safety (14-Day War Plan)
+- [ ] **BOOK-001**: Atomic availability check + booking create (distributed lock around room-date)
+- [ ] **BOOK-002**: MongoDB transaction wrapper for check-in/check-out
+- [ ] **OTA-001**: OTA → PMS automatic booking import (pipeline Stage 10 bridge)
+- [ ] **OTA-002**: PMS → OTA guaranteed delivery via outbox (replace fire-and-forget)
+- [ ] **TI-001**: Tenant isolation enforcement middleware (query-level auto-injection)
+- [ ] **NA-001**: Night audit folio validation before charge posting
+- [ ] **NA-002**: Transactional charge posting in night audit
+- [ ] **OBS-001**: Deep health check endpoint (MongoDB, Redis, outbox, workers)
+- [ ] **PERF-001**: Compound indexes for hot queries (bookings, rooms, folios, outbox)
 
-### P1
-- [x] `@cached` decorator refaktörü (`cache_manager.py`) — Pydantic serializasyon, deterministik cache key, tenant_id çıkarımı düzeltildi
-- [x] Mapping UI İyileştirmesi — Geliştirilmiş MappingManager sayfası: readiness skoru, engelleme nedenleri, 5 entity type tab, aktif eşlemeler tablosu, eşlenmemiş varlıklar paneli, v2 API entegrasyonu
-- [x] Reservation Lineage — Import edilmiş rezervasyonların geçmişi ve durumu: stats kartları, arama/filtreleme, lineage timeline, durum/ACK badge'leri
-- [x] Test Booking Doğrulama — Exely OTA_ReadRQ ile test rezervasyon doğrulama: 3 adımlı wizard, hedefli/genel pull, sonuç raporlama
+### P1 — Completed (Previous Sessions)
+- [x] CI/CD pipeline stability
+- [x] `@cached` decorator refactoring
+- [x] Mapping UI Improvement
+- [x] Reservation Lineage
+- [x] Test Booking Verification
 
-### P2
-- [x] `reconciliation_engine` modül yapısının düzeltilmesi
-- [x] Monolitik `router.py`'den yinelenen route'ların temizlenmesi
-- [x] CI/CD dosyalarının birleştirilmesi (`ci.yml` + `ci-cd.yml`) — v3.0: Redis servisi eklendi, Trivy scan, secrets check, Worker build, artifact upload birleştirildi. `ci.yml` silindi.
-- [x] `pms.py` lint hatalarının giderilmesi (F821 Undefined name)
-- [x] Rate Manager & Reconciliation testlerinde tekrarlanan pytest.skip mantığının birleştirilmesi
-- [x] `test_pms_finance_reports_routers.py` proaktif refaktörü
+### P2 — Completed (Previous Sessions)
+- [x] `reconciliation_engine` module structure fix
+- [x] Monolithic `router.py` cleanup
+- [x] CI/CD file consolidation
+- [x] `pms.py` lint error fixes
+- [x] Test skip logic consolidation
 
-### P3
-- [ ] Legacy collection temizliği
-- [ ] Deprecation temizliği (exely_client_legacy.py, eski hotelrunner.py)
-- [ ] Multi-day ARI push (tarih aralığı, availability, kısıtlamalar)
+### P3 — Backlog (Post Go-Live)
+- [ ] pms.py decomposition (2714 lines → modular services)
+- [ ] Collection registry (centralize all `db.<name>` references)
+- [ ] Legacy collection cleanup
+- [ ] Deprecation cleanup (exely_client_legacy.py, old hotelrunner.py)
 - [ ] Service Wiring: Router → Service → Repository pattern
-- [ ] Schema Completion: inline model'ler → shared schema'lar
-- [ ] Frontend Role-Based Views: GM, Admin, Superadmin dashboard'ları
-- [ ] Frontend Stabilization: dependency audit, code splitting, error boundaries
-- [ ] Stress Testing: 24h soak test, reservation burst, ARI storm
-- [ ] HotelRunner gerçek credential entegrasyonu
-- [ ] İki provider reconciliation doğrulaması
+- [ ] Frontend Role-Based Views
+- [ ] Frontend Stabilization
+- [ ] Stress Testing
+
+### Removed from Scope
+- `graphql_schema.py` — No consumer
+- `ml_models/`, `ml_trainers.py` — Not production-ready
+- `dynamic_pricing_engine.py`, `revenue_autopilot.py` — Dangerous without validation
+- `social_media_radar.py`, `reputation_manager.py` — Not core PMS
+- `world_class_features.py` — Premature
 
 ## Kimlik Bilgileri
 | Kullanıcı | E-posta | Şifre | Rol |

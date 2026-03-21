@@ -1,27 +1,28 @@
 <analysis>**original_problem_statement:**
-The user, taking on the persona of a world-class SaaS architect and hotel technology expert, has issued a comprehensive directive for the agent. The core task is to perform a deep and brutally honest analysis of the entire project to transform it into an enterprise-grade, global PMS and Channel Manager platform. The user has provided a detailed structure for this analysis, covering product positioning, architecture, channel manager audit, operational readiness, scalability, security, technical debt, product gaps, and a prioritized roadmap. The ultimate goal is to define the steps needed to make the system operationally bulletproof and ready for a market comparable to Cloudbeds, Mews, and Opera Cloud.
+The user, assuming the persona of a CTO/CPO/Hotel Operations Director, has mandated a deep, brutally honest architectural and product analysis of the existing system. The goal is to transform the project into a production-safe, enterprise-grade, globally scalable PMS and Channel Manager platform capable of generating 00M ARR and competing with industry leaders. The user has provided a detailed, multi-point Upgraded Analysis Framework focusing on failure analysis, booking lifecycle integrity, overbooking protection, data consistency, real-time vs. cron dependencies, multi-tenant safety, channel manager audit, performance bottlenecks, and a target architectural plan. The final deliverable must be a hard-priority execution plan with the top 10 fixes, a verdict on go-live readiness, and a 14-day go-live plan.
 
-**User's preferred language**: Turkish
+**User's preferred language**: Turkish.
+**Note for the next agent:** The user's core language is Turkish. However, the most recent and critical set of instructions for the architectural analysis was provided in English. You should deliver the response to this specific analysis task in **English**. For subsequent feature work or general communication, you must revert to **Turkish**.
 
 **what currently exists?**
-The agent has paused its previous task list to address the user's new, high-priority request for a deep architectural analysis. The agent has performed an extensive information-gathering phase, systematically reviewing the entire codebase, including backend architecture, frontend structure, key logic files, and infrastructure configuration. It has also quantified the codebase by counting lines of code, file numbers, API routes, and the number of MongoDB collections used. This data has been collected in preparation for delivering the full, structured analysis requested by the user.
+The agent has completed an exhaustive information-gathering phase in response to the user's demanding new request. It has performed a deep dive into the entire backend codebase, using various commands to inspect the architecture, business logic, data models, background jobs, and infrastructure configurations. This investigation has yielded significant data on the system's complexity, including the identification of approximately 489 MongoDB collections, a sprawling service layer, and a mix of real-time and asynchronous processing. The agent has now collected all the necessary context to construct the comprehensive analysis report requested by the user.
 
 **Last working item**:
-    - Last item agent was working: Delivering the comprehensive codebase analysis to the user. The agent completed the deep dive into the code, gathering metrics and context, and then packaged this into a response for the user.
-    - Status: IN PROGRESS (The agent has called  to present its findings, and is awaiting the user's review and further direction).
+    - Last item agent was working: Synthesizing the findings from the deep codebase investigation into a comprehensive analysis report, as per the user's Upgraded Analysis Framework. The agent has completed the data gathering and has just called  to present this report to the user.
+    - Status: IN PROGRESS
     - Agent Testing Done: N/A
     - Which testing method agent to use? N/A
-    - User Testing Done: N
+    - User Testing Done: N/A
 
 **All Pending/In progress Issue list**:
   - Issue 1: Pre-existing test failures in the test suite (P2).
   
   Issues Detail:
   - Issue 1: 
-     - Attempted fixes: None in this session. These were identified in a previous session and were deferred to avoid scope creep from feature work.
+     - Attempted fixes: None. This is known technical debt from a previous session.
      - Next debug checklist: 
-       - Investigate  failure (), which points to an authentication issue. The test likely needs a valid token or proper mocking.
-       - Systematically investigate and fix the other failing tests reported by ============================= test session starts ==============================
+       - Investigate the  failure in . This suggests an authentication issue where a test is not being supplied with a valid token.
+       - Systematically run ============================= test session starts ==============================
 platform linux -- Python 3.11.14, pytest-8.4.2, pluggy-1.6.0
 rootdir: /app
 plugins: locust-2.43.3, asyncio-1.3.0, anyio-4.11.0
@@ -523,7 +524,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -927,7 +928,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -1329,7 +1330,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -1731,7 +1732,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -2133,7 +2134,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -2535,7 +2536,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -2937,7 +2938,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -3339,7 +3340,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -3741,7 +3742,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -4143,7 +4144,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -4545,7 +4546,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -4947,7 +4948,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -5349,7 +5350,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -5751,7 +5752,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -6153,7 +6154,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -6555,7 +6556,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -6957,7 +6958,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -7359,7 +7360,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -7761,7 +7762,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -8163,7 +8164,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -8565,7 +8566,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -8967,7 +8968,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -9369,7 +9370,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -9771,7 +9772,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -10173,7 +10174,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -10575,7 +10576,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -10977,7 +10978,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-client = <httpx.AsyncClient object at 0xfed548143690>
+client = <httpx.AsyncClient object at 0xfc837cc11c50>
 
     @pytest_asyncio.fixture(scope="module")
     async def auth_headers(client):
@@ -18285,7 +18286,7 @@ RuntimeError: Event loop is closed
 
 During handling of the above exception, another exception occurred:
 
-self = <tests.test_p5_cockpit_notifications.TestAllAPIs object at 0xfed54a7f6250>
+self = <tests.test_p5_cockpit_notifications.TestAllAPIs object at 0xfc8380253950>
 
     @pytest.mark.asyncio
     async def test_all_api_endpoints(self):
@@ -18404,9 +18405,9 @@ E           RuntimeError: Event loop is closed
 WARNING  observability.error_tracker:error_tracker.py:49 Error persistence failed: Event loop is closed
 ________________ TestFrontdeskServiceV2.test_checkin_not_found _________________
 
-self = <tests.test_phase5_hardening.TestFrontdeskServiceV2 object at 0xfed54a57b7d0>
-service = <domains.pms.frontdesk_service_v2.FrontdeskServiceV2 object at 0xfed53ab7bf90>
-ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='test@hotel.com', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:50:05.976223+00:00')
+self = <tests.test_phase5_hardening.TestFrontdeskServiceV2 object at 0xfc837ff398d0>
+service = <domains.pms.frontdesk_service_v2.FrontdeskServiceV2 object at 0xfc839aa86890>
+ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='test@hotel.com', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:59:25.956081+00:00')
 
     @pytest.mark.asyncio
     async def test_checkin_not_found(self, service, ctx):
@@ -18436,9 +18437,9 @@ E           RuntimeError: Event loop is closed
 /usr/local/lib/python3.11/asyncio/base_events.py:520: RuntimeError
 ________ TestFrontdeskServiceV2.test_walk_in_creates_booking_and_folio _________
 
-self = <tests.test_phase5_hardening.TestFrontdeskServiceV2 object at 0xfed54a47c4d0>
-service = <domains.pms.frontdesk_service_v2.FrontdeskServiceV2 object at 0xfed53b775d90>
-ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='test@hotel.com', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:50:06.008227+00:00')
+self = <tests.test_phase5_hardening.TestFrontdeskServiceV2 object at 0xfc8380097d90>
+service = <domains.pms.frontdesk_service_v2.FrontdeskServiceV2 object at 0xfc837f802e50>
+ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='test@hotel.com', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:59:25.987611+00:00')
 
     @pytest.mark.asyncio
     async def test_walk_in_creates_booking_and_folio(self, service, ctx):
@@ -18473,9 +18474,9 @@ E           RuntimeError: Event loop is closed
 /usr/local/lib/python3.11/asyncio/base_events.py:520: RuntimeError
 _________ TestFrontdeskServiceV2.test_void_charge_requires_permission __________
 
-self = <tests.test_phase5_hardening.TestFrontdeskServiceV2 object at 0xfed54a467f90>
-service = <domains.pms.frontdesk_service_v2.FrontdeskServiceV2 object at 0xfed548141610>
-ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='test@hotel.com', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:50:06.039933+00:00')
+self = <tests.test_phase5_hardening.TestFrontdeskServiceV2 object at 0xfc83800ca550>
+service = <domains.pms.frontdesk_service_v2.FrontdeskServiceV2 object at 0xfc837c0facd0>
+ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='test@hotel.com', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:59:26.020071+00:00')
 
     @pytest.mark.asyncio
     async def test_void_charge_requires_permission(self, service, ctx):
@@ -18512,9 +18513,9 @@ E           RuntimeError: Event loop is closed
 /usr/local/lib/python3.11/asyncio/base_events.py:520: RuntimeError
 ________________ TestPosFnbServiceV2.test_create_order_success _________________
 
-self = <tests.test_phase5_hardening.TestPosFnbServiceV2 object at 0xfed54a464910>
-service = <domains.pms.pos_fnb.pos_fnb_service_v2.PosFnbServiceV2 object at 0xfed549ca6e10>
-ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='test@hotel.com', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:50:06.072478+00:00')
+self = <tests.test_phase5_hardening.TestPosFnbServiceV2 object at 0xfc837ff10f10>
+service = <domains.pms.pos_fnb.pos_fnb_service_v2.PosFnbServiceV2 object at 0xfc837f8fbdd0>
+ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='test@hotel.com', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:59:26.052463+00:00')
 
     @pytest.mark.asyncio
     async def test_create_order_success(self, service, ctx):
@@ -18549,9 +18550,9 @@ E           RuntimeError: Event loop is closed
 /usr/local/lib/python3.11/asyncio/base_events.py:520: RuntimeError
 ___________ TestPosFnbServiceV2.test_void_order_requires_permission ____________
 
-self = <tests.test_phase5_hardening.TestPosFnbServiceV2 object at 0xfed54a464d50>
-service = <domains.pms.pos_fnb.pos_fnb_service_v2.PosFnbServiceV2 object at 0xfed5825ac910>
-ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='test@hotel.com', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:50:06.271260+00:00')
+self = <tests.test_phase5_hardening.TestPosFnbServiceV2 object at 0xfc837ff10950>
+service = <domains.pms.pos_fnb.pos_fnb_service_v2.PosFnbServiceV2 object at 0xfc8367bb7010>
+ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='test@hotel.com', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:59:26.087322+00:00')
 
     @pytest.mark.asyncio
     async def test_void_order_requires_permission(self, service, ctx):
@@ -18587,9 +18588,9 @@ E           RuntimeError: Event loop is closed
 /usr/local/lib/python3.11/asyncio/base_events.py:520: RuntimeError
 _____________ TestPosFnbServiceV2.test_stock_adjust_negative_fails _____________
 
-self = <tests.test_phase5_hardening.TestPosFnbServiceV2 object at 0xfed54a465fd0>
-service = <domains.pms.pos_fnb.pos_fnb_service_v2.PosFnbServiceV2 object at 0xfed53b5d0250>
-ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='test@hotel.com', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:50:06.302734+00:00')
+self = <tests.test_phase5_hardening.TestPosFnbServiceV2 object at 0xfc837ff11910>
+service = <domains.pms.pos_fnb.pos_fnb_service_v2.PosFnbServiceV2 object at 0xfc837c59cdd0>
+ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='test@hotel.com', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:59:26.118859+00:00')
 
     @pytest.mark.asyncio
     async def test_stock_adjust_negative_fails(self, service, ctx):
@@ -18619,9 +18620,9 @@ E           RuntimeError: Event loop is closed
 /usr/local/lib/python3.11/asyncio/base_events.py:520: RuntimeError
 ______________ TestPosFnbServiceV2.test_stock_adjust_invalid_type ______________
 
-self = <tests.test_phase5_hardening.TestPosFnbServiceV2 object at 0xfed54a466650>
-service = <domains.pms.pos_fnb.pos_fnb_service_v2.PosFnbServiceV2 object at 0xfed549d00410>
-ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='test@hotel.com', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:50:06.333815+00:00')
+self = <tests.test_phase5_hardening.TestPosFnbServiceV2 object at 0xfc837ff123d0>
+service = <domains.pms.pos_fnb.pos_fnb_service_v2.PosFnbServiceV2 object at 0xfc8367ea4ed0>
+ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='test@hotel.com', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:59:26.149904+00:00')
 
     @pytest.mark.asyncio
     async def test_stock_adjust_invalid_type(self, service, ctx):
@@ -18651,9 +18652,9 @@ E           RuntimeError: Event loop is closed
 /usr/local/lib/python3.11/asyncio/base_events.py:520: RuntimeError
 _____________ TestAlertEnrichment.test_evaluate_fires_on_threshold _____________
 
-self = <tests.test_phase5_hardening.TestAlertEnrichment object at 0xfed54a621090>
-engine = <modules.observability.alert_enrichment.AlertEnrichmentEngine object at 0xfed53b0fa310>
-ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:50:06.366228+00:00')
+self = <tests.test_phase5_hardening.TestAlertEnrichment object at 0xfc837ff13890>
+engine = <modules.observability.alert_enrichment.AlertEnrichmentEngine object at 0xfc8399f848d0>
+ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:59:26.181810+00:00')
 
     @pytest.mark.asyncio
     async def test_evaluate_fires_on_threshold(self, engine, ctx):
@@ -18692,9 +18693,9 @@ E           RuntimeError: Event loop is closed
 WARNING  modules.observability.alert_enrichment:alert_enrichment.py:334 Failed to persist alert: Event loop is closed
 _________________ TestIncidentResponse.test_incident_lifecycle _________________
 
-self = <tests.test_phase5_hardening.TestIncidentResponse object at 0xfed54a6218d0>
-service = <modules.incident.incident_service.IncidentResponseService object at 0xfed53b251f10>
-ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:50:06.397195+00:00')
+self = <tests.test_phase5_hardening.TestIncidentResponse object at 0xfc8380272690>
+service = <modules.incident.incident_service.IncidentResponseService object at 0xfc838036c890>
+ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:59:26.376230+00:00')
 
     @pytest.mark.asyncio
     async def test_incident_lifecycle(self, service, ctx):
@@ -18730,9 +18731,9 @@ E           RuntimeError: Event loop is closed
 /usr/local/lib/python3.11/asyncio/base_events.py:520: RuntimeError
 _______________ TestIncidentResponse.test_service_health_matrix ________________
 
-self = <tests.test_phase5_hardening.TestIncidentResponse object at 0xfed54a6221d0>
-service = <modules.incident.incident_service.IncidentResponseService object at 0xfed54a9f8b90>
-ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:50:06.431891+00:00')
+self = <tests.test_phase5_hardening.TestIncidentResponse object at 0xfc8380103850>
+service = <modules.incident.incident_service.IncidentResponseService object at 0xfc837c0fb290>
+ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:59:26.410390+00:00')
 
     @pytest.mark.asyncio
     async def test_service_health_matrix(self, service, ctx):
@@ -18762,9 +18763,9 @@ E           RuntimeError: Event loop is closed
 /usr/local/lib/python3.11/asyncio/base_events.py:520: RuntimeError
 _________ TestTenantIsolation.test_isolation_validation_returns_score __________
 
-self = <tests.test_phase5_hardening.TestTenantIsolation object at 0xfed54a467e50>
-service = <security.tenant_isolation_service.TenantIsolationService object at 0xfed549e32a90>
-ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:50:06.464930+00:00')
+self = <tests.test_phase5_hardening.TestTenantIsolation object at 0xfc8380103f50>
+service = <security.tenant_isolation_service.TenantIsolationService object at 0xfc837f545a10>
+ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:59:26.442063+00:00')
 
     @pytest.mark.asyncio
     async def test_isolation_validation_returns_score(self, service, ctx):
@@ -18795,9 +18796,9 @@ E           RuntimeError: Event loop is closed
 /usr/local/lib/python3.11/asyncio/base_events.py:520: RuntimeError
 ____________ TestPilotReadiness.test_readiness_check_returns_score _____________
 
-self = <tests.test_phase5_hardening.TestPilotReadiness object at 0xfed54a465450>
-service = <ops.pilot_readiness.PilotReadinessService object at 0xfed54a825e50>
-ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:50:06.498095+00:00')
+self = <tests.test_phase5_hardening.TestPilotReadiness object at 0xfc837ff13210>
+service = <ops.pilot_readiness.PilotReadinessService object at 0xfc837c4c2910>
+ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:59:26.474815+00:00')
 
     @pytest.mark.asyncio
     async def test_readiness_check_returns_score(self, service, ctx):
@@ -18830,9 +18831,9 @@ E           RuntimeError: Event loop is closed
 /usr/local/lib/python3.11/asyncio/base_events.py:520: RuntimeError
 ___________________ TestPilotReadiness.test_feature_toggles ____________________
 
-self = <tests.test_phase5_hardening.TestPilotReadiness object at 0xfed54a467b90>
-service = <ops.pilot_readiness.PilotReadinessService object at 0xfed53b1c59d0>
-ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:50:06.531824+00:00')
+self = <tests.test_phase5_hardening.TestPilotReadiness object at 0xfc837ff13590>
+service = <ops.pilot_readiness.PilotReadinessService object at 0xfc837c422c90>
+ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:59:26.507634+00:00')
 
     @pytest.mark.asyncio
     async def test_feature_toggles(self, service, ctx):
@@ -18869,9 +18870,9 @@ E           RuntimeError: Event loop is closed
 /usr/local/lib/python3.11/asyncio/base_events.py:520: RuntimeError
 ____________________ TestPilotReadiness.test_sign_off_check ____________________
 
-self = <tests.test_phase5_hardening.TestPilotReadiness object at 0xfed54a569e50>
-service = <ops.pilot_readiness.PilotReadinessService object at 0xfed53ad64250>
-ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:50:06.578215+00:00')
+self = <tests.test_phase5_hardening.TestPilotReadiness object at 0xfc837ff12050>
+service = <ops.pilot_readiness.PilotReadinessService object at 0xfc837f544b10>
+ctx = OperationContext(tenant_id='test-tenant-001', actor_id='test-user-001', actor_email='', actor_role='admin', property_id=None, idempotency_key=None, correlation_id=None, timestamp='2026-03-21T14:59:26.552576+00:00')
 
     @pytest.mark.asyncio
     async def test_sign_off_check(self, service, ctx):
@@ -18901,7 +18902,7 @@ E           RuntimeError: Event loop is closed
 /usr/local/lib/python3.11/asyncio/base_events.py:520: RuntimeError
 _________________ TestMetricsCollector.test_histogram_summary __________________
 
-self = <tests.test_platform_hardening.TestMetricsCollector object at 0xfed54a452350>
+self = <tests.test_platform_hardening.TestMetricsCollector object at 0xfc837ffa5cd0>
 
     def test_histogram_summary(self):
         from modules.observability.metrics_collector import MetricsCollector
@@ -18915,7 +18916,7 @@ E       AttributeError: 'MetricsCollector' object has no attribute '_summarize_h
 backend/tests/test_platform_hardening.py:187: AttributeError
 _________________ TestMetricsCollector.test_dashboard_metrics __________________
 
-self = <tests.test_platform_hardening.TestMetricsCollector object at 0xfed54a452990>
+self = <tests.test_platform_hardening.TestMetricsCollector object at 0xfc837ffa6310>
 
     def test_dashboard_metrics(self):
         from modules.observability.metrics_collector import MetricsCollector
@@ -18927,7 +18928,7 @@ E       AttributeError: 'MetricsCollector' object has no attribute 'record_autop
 backend/tests/test_platform_hardening.py:196: AttributeError
 _________________ TestDistributedTracing.test_trace_lifecycle __________________
 
-self = <tests.test_platform_hardening.TestDistributedTracing object at 0xfed54a4537d0>
+self = <tests.test_platform_hardening.TestDistributedTracing object at 0xfc837ffa7110>
 
     def test_trace_lifecycle(self):
         from modules.observability.distributed_tracing import TracingService
@@ -18940,7 +18941,7 @@ E       AttributeError: 'TracingService' object has no attribute 'add_span'
 backend/tests/test_platform_hardening.py:219: AttributeError
 _______________ TestDistributedTracing.test_slow_trace_detection _______________
 
-self = <tests.test_platform_hardening.TestDistributedTracing object at 0xfed54a453dd0>
+self = <tests.test_platform_hardening.TestDistributedTracing object at 0xfc837ffa7710>
 
     def test_slow_trace_detection(self):
         from modules.observability.distributed_tracing import TracingService
@@ -18954,7 +18955,7 @@ E       KeyError: 'start_time'
 backend/tests/test_platform_hardening.py:230: KeyError
 _________________ TestErrorTracker.test_error_severity_levels __________________
 
-self = <tests.test_platform_hardening.TestErrorTracker object at 0xfed54a4f8650>
+self = <tests.test_platform_hardening.TestErrorTracker object at 0xfc837ffa7f90>
 
     def test_error_severity_levels(self):
 >       from modules.observability.error_tracker import ErrorSeverity
@@ -19456,115 +19457,110 @@ ERROR backend/tests/test_hardening_comprehensive.py::test_audit_metrics_endpoint
 ERROR backend/tests/test_hardening_comprehensive.py::test_audit_metrics_recon
 ERROR backend/tests/test_hardening_comprehensive.py::test_live_status - Runti...
 ERROR backend/tests/test_hardening_comprehensive.py::test_live_events - Runti...
-= 96 failed, 1132 passed, 1673 skipped, 81 warnings, 27 errors in 149.66s (0:02:29) =.
-     - Why fix this issue and what will be achieved with the fix? A fully green test suite is a primary project goal (from ). Fixing these tests will stabilize the CI/CD pipeline, provide a reliable baseline for future development, and increase confidence in the system's stability.
+= 96 failed, 1132 passed, 1673 skipped, 81 warnings, 27 errors in 141.84s (0:02:21) = and address each failure.
+     - Why fix this issue and what will be achieved with the fix? Achieving a green test suite is a core project goal. Fixing these tests is essential for production safety, providing a stable baseline for development, and preventing regressions.
      - Status:  NOT STARTED
      - Is recurring issue? Y
      - Should Test frontend/backend/both after fix? backend
-     - Blocked on other issue: None
+     - Blocked on other issue: None.
 
 **In progress Task List**:
-  - Task 1: Complete the Strategic Project Analysis and Roadmap (P0)
+  - Task 1: Deliver the Upgraded Analysis and Strategic Roadmap (P0)
   
  Task Detail:
   - Task 1: 
-     - Where to resume: The agent has sent its findings to the user via . The next step is to process the user's feedback and then present the full, structured analysis as per the user's detailed prompt. This will involve synthesizing all the gathered information into the 10-point structure provided by the user, culminating in a prioritized roadmap and a 5 things to do next list.
-     - What will be achieved with this? This will fulfill the user's primary request and establish a new, expert-validated strategic direction for the project. It will define clear, actionable phases for transforming the application into an enterprise-grade platform.
+     - Where to resume: The agent has just called  to present its findings. The next step is to await the user's response to view the analysis that has been prepared.
+     - What will be achieved with this? This will fulfill the user's primary, high-priority request and establish a new, expert-validated strategic direction for the project. It will define clear, actionable steps to make the application enterprise-grade.
      - Status:  IN PROGRESS
      - Should Test frontend/backend/both after fix? N/A
-     - Blocked on something: User response to the analysis delivered via .
+     - Blocked on something: User response.
 
 **Upcoming and Future Tasks**
-The user's request for a full analysis and new roadmap supersedes the previous task list. The following tasks from the previous plan should be re-prioritized after the new roadmap is established.
+The user's request for a full analysis and a new roadmap supersedes all previous plans. The new roadmap will be derived from the analysis.
 
 **Upcoming Tasks**:
-*   **(P0)**: Formulate and present the prioritized roadmap (Phase 1, 2, 3) as the primary output of the ongoing analysis.
+*   **(P0)**: Formulate and present the HARD PRIORITY EXECUTION PLAN (Top 10 fixes) and the 14-day go-live plan as the primary output of the ongoing analysis.
 
-**Future Tasks (To be re-evaluated)**:
-*   **(P1 - From PRD)**: Refactor  decorator ().
-*   **(P2)**: Address the pre-existing test failures.
-*   **(P3)**: Legacy collection cleanup.
-*   **(P3)**: Refactor to a Service Wiring dependency injection pattern.
-*   **(P3)**: Security Enhancements: Dependency audit, code splitting, error boundaries.
-*   **(P3)**: Stress Testing and real-world credential integration.
+**Future Tasks (To be re-evaluated and integrated into the new roadmap)**:
+*   Refactor  decorator ().
+*   Address the pre-existing test failures.
+*   Legacy collection cleanup (~489 collections identified).
+*   Refactor to a Service Wiring dependency injection pattern.
+*   Security Enhancements: Dependency audit, code splitting, error boundaries.
+*   Stress Testing and real-world credential integration.
 
 **Completed work in this session**
-- **Deep Codebase Analysis:** Performed a comprehensive review of the project's structure, including backend, frontend, channel manager, and infrastructure components.
-- **Codebase Quantification:** Gathered key metrics on the project's scale, including lines of code (~224k backend, ~116k frontend), file counts, API routes, and an extensive list of MongoDB collections.
+- **Deep Architectural Investigation:** The agent performed a massive, wide-ranging review of the backend codebase to prepare for the user's analysis request. This included examining core architecture (, ), business logic (reservation ingest, inventory management, night audit), data access patterns, and background task processing (Celery, Redis).
+- **Codebase Quantification:** Gathered critical metrics, including ~489 unique MongoDB collection names, ~2100 API route handlers, and file sizes of major components, to understand the system's scale and complexity.
 
 **Earlier issues found/mentioned but not fixed**
-   - The pre-existing test failures identified in the previous session remain unfixed. This is now a known piece of technical debt that should be factored into the new strategic roadmap.
+   - The pre-existing test failures, which are a critical piece of technical debt that must be addressed in the new roadmap for production stability.
 
 **Known issue recurrence from previous fork**
   - None.
 
 **Code Architecture**
-The architecture is unchanged from the previous session. The agent conducted a deep review of the following structure:
+The agent has performed a deep analysis of the existing architecture:
 
 
 **Key Technical Concepts**
-- **Architectural Review**: Analyzing a complex codebase against enterprise-grade standards.
-- **Codebase Quantification**: Using command-line tools to gather metrics (LOC, file counts) to understand the scale of the project.
-- **React & FastAPI**: The core technologies of the stack.
-- **MongoDB**: The primary database.
-- **Multi-Tenant Architecture**: A key concept under review for scalability and security.
+- **System Architecture Analysis:** The core activity of the session, evaluating an existing system against enterprise-grade criteria like reliability, scalability, and security.
+- **Failure Mode Analysis:** The agent's investigation was guided by the user's prompt to identify potential production failures (race conditions, data loss, performance bottlenecks).
+- **Distributed Systems:** The investigation touched on locking (), caching (Redis), and asynchronous processing (Celery, FastAPI BackgroundTasks).
+- **Multi-Tenancy:** A key architectural concern, with  as a central file of interest.
+- **Data Model Complexity:** The discovery of ~489 MongoDB collections is a critical finding indicating significant technical debt and a need for data model refactoring.
 
 **key DB schema**
-  - No changes were made to the database schema. The agent performed an analysis and found a large number of collections (~488 referenced in the code), indicating significant data complexity.
+  - No changes were made.
+  - **Critical Finding:** The codebase references approximately **489 unique MongoDB collections**, signaling extreme data model complexity and a prime target for simplification and refactoring.
 
 **changes in tech stack**
   - None.
 
 **All files of reference**
 The agent performed a wide-ranging analysis. Key files inspected include:
-- 
-- 
-- 
-- 
-- 
-- 
-- 
-- 
-- 
-- 
-- 
+- **Core Architecture:** , , , , 
+- **Business Logic:** , , , 
+- **Inventory & Concurrency:** , , investigation of locking mechanisms.
+- **Supporting Docs:** , 
 
 **Areas that need refactoring**:
-- The failing test suite is a known area requiring immediate attention.
-- The user's prompt explicitly asks for an identification of architectural weaknesses, security flaws, and scalability issues. The full analysis will produce a detailed list of areas needing refactoring.
+The user's prompt is a direct request to identify these areas. The upcoming analysis report will detail these, but initial findings strongly suggest:
+1.  **Data Model:** The ~489 collections are unsustainable and must be consolidated.
+2.  **Concurrency and Transaction Management:** The current optimistic lock in the ingest pipeline is likely insufficient. A robust, system-wide strategy is needed to prevent overbooking and data corruption.
+3.  **Task Processing:** A clear strategy is needed to move dangerous cron-based flows to a more reliable event-driven model.
+4.  **Service Boundaries:** Large, monolithic routers (, ) must be broken down into well-defined, modular services.
+5.  **Test Suite:** The existing test failures must be fixed to establish a reliable quality gate.
 
 **key api endpoints**
--   
--   
+- The investigation focused on underlying logic rather than specific endpoints. Key flows analyzed were reservation creation, inventory updates, and the channel manager ingest pipeline.
 
 **Critical Info for New Agent**
-1.  **Dil Türkçe'dir.** All user-facing communication must be strictly in Turkish.
-2.  **New Top Priority:** The user has provided a new, overarching objective: conduct a deep architectural and product analysis and produce a strategic roadmap. This task supersedes all previously planned work.
-3.  **Current State:** The information-gathering phase for the analysis is complete. The agent has sent its findings to the user via  and is awaiting feedback before synthesizing the final, structured report.
-4.  **Next Action:** The next agent must wait for the user's response, then generate the full analysis following the 10-point structure from the user's prompt. The main deliverable is a new, prioritized roadmap.
-5.  **Technical Debt:** Remember the pre-existing test failures. This is a critical piece of technical debt that must be addressed in the new roadmap.
+1.  **New Mandate: You are the CTO.** Your top and only priority is to deliver the brutally honest architectural analysis detailed in the user's last message. All other tasks are secondary.
+2.  **Mindset is Critical:** Adopt the user's perspective. Think about revenue risk, production failures, and real-world hotel operations. Your analysis must be concrete, actionable, and devoid of theory.
+3.  **Data Gathering is Complete:** The previous agent did an exhaustive scan of the codebase. You have all the information you need. Your task is to synthesize this into the structured report the user demanded.
+4.  **Next Action:** The agent has already called  to present the analysis. Await the user's response, then deliver the full report as constructed.
 
 **documents and test reports created in this job**
   - None.
 
 **Last 10 User Messages and any pending HUMAN messages** 
- -  **User Message 2:** A comprehensive, detailed prompt asking the agent to act as a top-tier SaaS architect and hotel technology expert. The user has requested a deep analysis of the project's architecture, product-market fit, and operational readiness, and to produce a new, prioritized roadmap. This is the current, active task. **(In Progress)**
- -  **User Message 1:** Please use ask_human tool and confirm your plan now. This request was superseded by the user's subsequent, more detailed message. **(Superseded)**
+ - **User (Latest):** A comprehensive, detailed prompt demanding the agent act as a CTO and perform a deep architectural analysis of the project against a new, upgraded framework. This is the current, active task. **(In Progress)**
+ - **User (Previous):** Please use ask_human tool and confirm your plan now. This request was superseded by the user's subsequent, more detailed message. **(Superseded)**
 
 **Project Health Check:**
-**ANALYSIS IN PROGRESS.** The underlying code is unchanged from the last session, which was considered healthy but with known test failures. The current task is a deep assessment of the project's health, scalability, and security, which will result in a more definitive health check.
+**ANALYSIS IN PROGRESS.** While the application is demonstrably functional, the agent's investigation has revealed significant underlying complexity and architectural risks (e.g., 489 DB collections, potential race conditions). The system is **not production-ready**. The purpose of the current task is to create a formal health assessment and a remediation plan.
 
 **3rd Party Integrations**
--   Exely (Channel Manager)
--   HotelRunner (Channel Manager)
--   Redis (Caching)
--    (Internal library)
+- Exely (Channel Manager)
+- HotelRunner (Channel Manager)
+- Redis (Caching)
+- 
 
 **Testing status**
-  - Testing agent used after significant changes: NO (The current task is analysis, not implementation).
-  - Troubleshoot agent used after agent stuck in loop: NO
+  - Testing agent used after significant changes: NO (Current task is analysis, not implementation).
   - Test files created: None
-  - Known regressions: None. The known pre-existing test failures persist.
+  - Known regressions: The known pre-existing test failures persist.
 
 **Credentials to test flow:**
 | User | E-posta | Şifre | Role |
@@ -19572,4 +19568,4 @@ The agent performed a wide-ranging analysis. Key files inspected include:
 | **Demo Admin** |  |  |  |
 
 **What agent forgot to execute**
-- Nothing. The agent correctly prioritized the user's new, detailed request and immediately began the analysis task as instructed.</analysis>
+- Nothing. The agent correctly identified the user's new prompt as the absolute priority and immediately pivoted to the required analysis, abandoning its previous plan as instructed.</analysis>
