@@ -6,10 +6,8 @@ from typing import Dict, Optional
 
 from fastapi import HTTPException, Request, status
 
-from modules.inventory.events import INVENTORY_RELEASED_EVENT
 from modules.inventory.repository import InventoryRepository
 from shared_kernel.audit_helper import audit_log
-from shared_kernel.event_envelope import build_event_envelope
 from shared_kernel.idempotency import ensure_idempotent_request
 from shared_kernel.tenancy_context import build_property_context, build_tenant_context
 
@@ -95,40 +93,32 @@ class ReleaseRoomBlockService:
                 **update_doc,
             }
 
-            event_envelope = build_event_envelope(
-                event_type=INVENTORY_RELEASED_EVENT,
+            # OTA-002: Enqueue outbox event for guaranteed OTA delivery
+            from core.outbox_service import enqueue_outbox_event, INVENTORY_RELEASED
+            from core.database import db as _outbox_db
+
+            await enqueue_outbox_event(
+                _outbox_db,
                 tenant_id=tenant_context.tenant_id,
+                event_type=INVENTORY_RELEASED,
+                entity_type="room_block",
+                entity_id=released_block["id"],
+                property_id=property_context.property_id or tenant_context.tenant_id,
                 correlation_id=correlation_id,
                 payload={
-                    "release_scope": {
-                        "property_id": property_context.property_id or tenant_context.tenant_id,
-                        "room_id": released_block["room_id"],
-                        "room_type": room.get("room_type"),
-                    },
-                    "effective_date_range": {
-                        "start_date": released_block.get("start_date"),
-                        "end_date": released_block.get("end_date"),
-                    },
-                    "actor_reference": {
-                        "actor_id": current_user.id,
-                        "actor_name": current_user.name,
-                        "actor_role": tenant_context.role,
-                    },
-                    "reason": reason or "Released by user",
-                    "source": "semantic_inventory_service",
+                    "room_block_id": released_block["id"],
+                    "room_id": released_block["room_id"],
+                    "room_type": room.get("room_type"),
+                    "start_date": released_block.get("start_date"),
+                    "end_date": released_block.get("end_date"),
+                    "date_start": released_block.get("start_date"),
+                    "date_end": released_block.get("end_date"),
+                    "property_id": property_context.property_id or tenant_context.tenant_id,
                     "block_type": str(released_block.get("type")),
                     "allow_sell": released_block.get("allow_sell", False),
+                    "reason": reason or "Released by user",
                 },
-            ).model_dump()
-            outbox_doc = {
-                **event_envelope,
-                "property_id": property_context.property_id or tenant_context.tenant_id,
-                "room_block_id": released_block["id"],
-                "released_at": released_at,
-                "status": "pending",
-                "created_at": event_envelope["timestamp"],
-            }
-            await self.repository.insert_outbox_event(outbox_doc)
+            )
 
             await audit_log(
                 actor_id=current_user.id,

@@ -315,18 +315,69 @@ async def deep_health_check(request: Request):
         result["redis"] = {"status": "fail", "error": str(e)}
         overall_ok = False
 
-    # ── Outbox queue depth ──
+    # ── Outbox queue depth (OTA-002 enhanced) ──
     try:
         db_inst = request.app.state.db
         pending = await db_inst.outbox_events.count_documents({"status": "pending"})
+        processing = await db_inst.outbox_events.count_documents({"status": "processing"})
+        retry = await db_inst.outbox_events.count_documents({"status": "retry"})
         failed = await db_inst.outbox_events.count_documents({"status": "failed"})
-        result["outbox"] = {
-            "status": "ok" if failed < 100 else "degraded",
-            "pending": pending,
-            "failed": failed,
-        }
+
+        cutoff_24h = (datetime.utcnow() - __import__("datetime").timedelta(hours=24)).isoformat()
+        processed_24h = await db_inst.outbox_events.count_documents({
+            "status": "processed",
+            "processed_at": {"$gte": cutoff_24h},
+        })
+
+        oldest_pending = await db_inst.outbox_events.find_one(
+            {"status": {"$in": ["pending", "retry"]}},
+            {"_id": 0, "created_at": 1},
+            sort=[("created_at", 1)],
+        )
+        oldest_seconds = None
+        if oldest_pending and oldest_pending.get("created_at"):
+            try:
+                from datetime import timezone as _tz
+                created = datetime.fromisoformat(oldest_pending["created_at"])
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=_tz.utc)
+                oldest_seconds = round((datetime.now(_tz.utc) - created).total_seconds(), 1)
+            except Exception:
+                pass
+
+        last_processed = await db_inst.outbox_events.find_one(
+            {"status": "processed"},
+            {"_id": 0, "processed_at": 1},
+            sort=[("processed_at", -1)],
+        )
+
+        # Provider failure breakdown
+        pipeline = [
+            {"$match": {"status": "failed"}},
+            {"$group": {"_id": "$provider", "count": {"$sum": 1}}},
+        ]
+        provider_failures = {}
+        async for doc in db_inst.outbox_events.aggregate(pipeline):
+            provider_failures[doc["_id"] or "fan-out"] = doc["count"]
+
+        outbox_status = "ok"
         if failed >= 100:
+            outbox_status = "critical"
             overall_ok = False
+        elif failed >= 10 or (oldest_seconds and oldest_seconds > 600):
+            outbox_status = "degraded"
+
+        result["outbox"] = {
+            "status": outbox_status,
+            "pending": pending,
+            "processing": processing,
+            "retry": retry,
+            "failed": failed,
+            "processed_24h": processed_24h,
+            "oldest_pending_seconds": oldest_seconds,
+            "last_processed_at": last_processed.get("processed_at") if last_processed else None,
+            "provider_failures": provider_failures,
+        }
     except Exception as e:
         result["outbox"] = {"status": "unknown", "error": str(e)}
 

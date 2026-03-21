@@ -2,10 +2,13 @@
 Reservation State Machine - Enforces valid state transitions for the reservation lifecycle.
 Hospitality-standard states: pending, confirmed, guaranteed, checked_in, checked_out, no_show, cancelled
 """
+import logging
 from datetime import datetime, timezone
 from typing import Dict, Optional, List, Tuple
 
 from core.database import db
+
+logger = logging.getLogger("pms_core.reservation_state_machine")
 
 # Valid state transitions
 VALID_TRANSITIONS: Dict[str, List[str]] = {
@@ -159,6 +162,31 @@ class ReservationStateMachine:
             "reason": reason,
             "timestamp": now.isoformat(),
         })
+
+        # OTA-002: Enqueue outbox event for guaranteed OTA delivery on cancellation
+        try:
+            from core.outbox_service import enqueue_outbox_event, BOOKING_CANCELLED
+            await enqueue_outbox_event(
+                db,
+                tenant_id=tenant_id,
+                event_type=BOOKING_CANCELLED,
+                entity_type="booking",
+                entity_id=booking["id"],
+                property_id=tenant_id,
+                payload={
+                    "booking_id": booking["id"],
+                    "guest_id": booking.get("guest_id"),
+                    "room_id": booking.get("room_id"),
+                    "check_in": booking.get("check_in"),
+                    "check_out": booking.get("check_out"),
+                    "property_id": tenant_id,
+                    "previous_status": current_status,
+                    "cancellation_reason": reason or "No reason provided",
+                    "cancelled_by": cancelled_by,
+                },
+            )
+        except Exception as cancel_outbox_err:
+            logger.warning("Outbox enqueue failed for cancellation %s: %s", booking["id"], cancel_outbox_err)
 
         return {"success": True, "booking_id": booking["id"], "previous_status": current_status}
 

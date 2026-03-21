@@ -232,6 +232,14 @@ try:
 except Exception:
     pass
 
+# OTA-002: Outbox Admin endpoints (requeue, replay, status)
+try:
+    from routers.outbox_admin import outbox_admin_router
+    app.include_router(outbox_admin_router, prefix="/api", tags=["Outbox Admin"])
+    print("OTA Outbox Admin router included (requeue/replay/status)")
+except Exception:
+    pass
+
 # ── Lifecycle events ────────────────────────────────────────────────
 from startup import on_startup, on_shutdown  # noqa: E402
 

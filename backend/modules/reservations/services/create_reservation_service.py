@@ -9,10 +9,8 @@ from fastapi import HTTPException, Request, status
 from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
 from models.enums import FolioType
 from models.schemas import BookingCreate, Folio, RateOverrideLog
-from modules.reservations.events import RESERVATION_CREATED_EVENT
 from modules.reservations.repository import ReservationsRepository
 from shared_kernel.audit_helper import audit_log
-from shared_kernel.event_envelope import build_event_envelope
 from shared_kernel.idempotency import ensure_idempotent_request
 from shared_kernel.tenancy_context import build_property_context, build_tenant_context
 
@@ -152,48 +150,31 @@ class CreateReservationService:
             folio_dict['created_at'] = folio_dict['created_at'].isoformat()
             await self.repository.insert_folio(folio_dict)
 
-            try:
-                from server import cm_push_event as _cm_push
+            # OTA-002: Enqueue outbox event for guaranteed delivery
+            # No more fire-and-forget cm_push_event — the outbox worker handles dispatch
+            from core.outbox_service import enqueue_outbox_event, BOOKING_CREATED
+            from core.database import db as _outbox_db
 
-                await _cm_push({
-                    "type": "booking.created",
-                    "tenant_id": tenant_context.tenant_id,
-                    "booking_id": booking_id,
-                    "room_id": booking_data.room_id,
-                    "check_in": booking_data.check_in,
-                    "check_out": booking_data.check_out,
-                    "status": booking_dict.get('status', 'confirmed'),
-                    "source_channel": booking_data.source_channel or "direct",
-                    "origin": booking_data.origin or "ui",
-                    "hold_status": booking_data.hold_status or "none",
-                    "allocation_source": booking_data.allocation_source or "manual",
-                    "created_at": booking_dict['created_at'],
-                })
-            except Exception:
-                pass
-
-            event_envelope = build_event_envelope(
-                event_type=RESERVATION_CREATED_EVENT,
+            await enqueue_outbox_event(
+                _outbox_db,
                 tenant_id=tenant_context.tenant_id,
+                event_type=BOOKING_CREATED,
+                entity_type="booking",
+                entity_id=booking_id,
+                property_id=property_context.property_id or tenant_context.tenant_id,
                 correlation_id=correlation_id,
                 payload={
-                    "reservation_id": booking_id,
+                    "booking_id": booking_id,
                     "guest_id": booking_data.guest_id,
                     "room_id": booking_data.room_id,
                     "check_in": booking_dict['check_in'],
                     "check_out": booking_dict['check_out'],
-                    "status": booking_dict['status'],
-                    "source": "semantic_reservations_service",
+                    "status": booking_dict.get('status', 'confirmed'),
+                    "property_id": property_context.property_id or tenant_context.tenant_id,
+                    "source_channel": booking_data.source_channel or "direct",
+                    "origin": booking_data.origin or "ui",
                 },
-            ).model_dump()
-            outbox_doc = {
-                **event_envelope,
-                "property_id": property_context.property_id or tenant_context.tenant_id,
-                "reservation_id": booking_id,
-                "status": "pending",
-                "created_at": event_envelope["timestamp"],
-            }
-            await self.repository.insert_outbox_event(outbox_doc)
+            )
 
             await audit_log(
                 actor_id=current_user.id,

@@ -166,12 +166,29 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Index creation warning: {e}")
 
-    # ── Outbox lifecycle worker ─────────────────────────────────────
+    # ── OTA-002: Outbox Pattern indexes ─────────────────────────────
+    try:
+        from core.outbox_service import ensure_outbox_indexes
+        await ensure_outbox_indexes(db)
+        print("Outbox pattern indexes ensured (OTA-002)")
+    except Exception as e:
+        logger.warning(f"Outbox index creation error: {e}")
+
+    # ── OTA-002: Start production outbox worker ─────────────────────
+    try:
+        from core.outbox_worker import outbox_ota_worker
+        await outbox_ota_worker.start()
+        app.state.outbox_ota_worker = outbox_ota_worker
+        print("OTA Outbox Worker started (guaranteed delivery)")
+    except Exception as e:
+        logger.warning(f"OTA Outbox Worker startup warning: {e}")
+
+    # ── Legacy outbox lifecycle worker (migration events only) ──────
     try:
         from shared_kernel.outbox_lifecycle import outbox_lifecycle_worker
         await outbox_lifecycle_worker.start()
         app.state.outbox_lifecycle_worker = outbox_lifecycle_worker
-        print("✅ Temporary operational outbox worker started")
+        print("Legacy outbox lifecycle worker started")
     except Exception as e:
         logger.warning(f"Outbox lifecycle worker startup warning: {e}")
 
@@ -322,6 +339,14 @@ async def on_shutdown(app):
         await redis_cluster.close()
     except Exception as e:
         logger.warning(f"Infrastructure shutdown warning: {e}")
+
+    # OTA-002: Stop production outbox worker
+    ota_worker = getattr(app.state, "outbox_ota_worker", None)
+    if ota_worker is not None:
+        try:
+            await ota_worker.stop()
+        except Exception as e:
+            logger.warning(f"OTA Outbox Worker shutdown warning: {e}")
 
     # Outbox lifecycle worker
     worker = getattr(app.state, "outbox_lifecycle_worker", None)
