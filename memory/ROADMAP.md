@@ -1,46 +1,34 @@
-# ROADMAP
+# Syroce PMS — Roadmap
 
-## P0 — Go-Live Critical (14-Day War Plan)
-- [x] BOOK-001: Atomic availability check + booking create (Day 1) ✅
-- [ ] BOOK-002: MongoDB transactions for check-in/check-out (Day 2)
-- [ ] TI-001: Tenant isolation enforcement middleware (Day 3)
-- [ ] OTA-001: OTA → PMS automatic booking import (Day 4)
-- [ ] OTA-002: PMS → OTA guaranteed delivery via outbox (Day 5)
-- [ ] OTA-003: ARI push persistence (Day 6)
-- [ ] NA-001 + NA-002: Night audit hardening (Day 7)
-- [ ] OBS-001: Deep health checks + alerting (Day 8)
-- [ ] PERF-001: Compound indexes for hot queries (Day 1)
-- [ ] Concurrency test suite (Day 9)
-- [ ] E2E OTA sync test (Day 10)
-- [ ] Night audit + financial reconciliation test (Day 11)
-- [ ] Performance baseline (Day 12)
-- [ ] Staging dry run (Day 13)
-- [ ] Go/No-Go decision (Day 14)
+## Completed (P0)
+- [x] BOOK-001: Atomic Booking / Overbooking Prevention
+- [x] BOOK-002: Atomic Check-in/Check-out Transactions
+- [x] TI-001: Tenant Isolation Enforcement (TenantScopedDB)
+- [x] TI-002: Tenant Isolation Proof Test Suite
+- [x] PERF-001: Compound Indexes for Hot Queries
+- [x] OBS-001: Deep Health Check Endpoint
 
-## P0 — Complete (Previous)
-- [x] HotelRunner REST adapter (production-grade)
-- [x] Exely SOAP adapter (production-grade)
-- [x] Real Exely test environment integration
-- [x] Encrypted credential vault for provider secrets
-- [x] CI pipeline test stability
+## Next Up (P0)
+- [ ] OTA-001: OTA → PMS Automatic Booking Import Reliability
+- [ ] OTA-002: PMS → OTA Guaranteed Delivery (Outbox Pattern)
+- [ ] NA-001: Night Audit Hardening — Folio validation before charge posting
+- [ ] NA-002: Night Audit Hardening — Transactional charge posting
 
-## P1 — Complete
-- [x] Mapping UI Improvement
-- [x] Test booking creation + OTA_ReadRQ verification
-- [x] Reservation lineage: duplicate/stale detection
+## P1 — Architecture
+- [ ] INFRA-002: Collection Registry (centralize db references)
+- [ ] PERF-002: Availability Query Optimization (aggregation pipeline)
+- [ ] SEC-001: PII Masking in Logs
+- [ ] pms.py decomposition (2714 lines → modular services)
 
-## P2 — Post Go-Live
-- [ ] pms.py decomposition (2714 lines)
-- [ ] Collection registry (centralize db references)
-- [ ] Legacy collection cleanup
-- [ ] Deprecation cleanup (exely_client_legacy.py, old hotelrunner.py)
-- [ ] Multi-day ARI push
+## P2 — Technical Debt
+- [ ] Legacy collection cleanup (~489 collections)
+- [ ] Fix pre-existing test failures (test_hardening_comprehensive.py)
+- [ ] Refactor @cached decorator (cache_manager.py)
+- [ ] Frontend role-based views
+- [ ] Data Model Repair Plan (reduce collection sprawl)
 
-## P3 — Backlog
-- [ ] Service Wiring: Router → Service → Repository pattern
-- [ ] Schema Completion: inline models → shared schemas
-- [ ] Frontend Role-Based Views
-- [ ] Frontend Stabilization
-- [ ] Stress Testing (24h soak)
-- [ ] HotelRunner real credential integration
+## Future
+- [ ] Stress testing
+- [ ] Security audit & dependency updates
+- [ ] OBS-002: Outbox Dashboard Metrics
 - [ ] Two-provider reconciliation verification

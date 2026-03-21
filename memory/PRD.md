@@ -1,92 +1,52 @@
-# Otel Yönetim Sistemi — PRD
+# Syroce PMS — Product Requirements Document
 
-## Orijinal Problem
-Kullanıcının birincil hedefi kararlı, tamamen geçen bir CI/CD pipeline'ı elde etmektir. Ardışık test hataları gelişimi engellemektedir.
+## Overview
+Enterprise-grade hospitality SaaS platform (Property Management System) for multi-hotel operations.
 
-## Mimari
-- **Backend**: FastAPI (Python)
-- **Veritabanı**: MongoDB
-- **Cache**: Redis
-- **CI/CD**: GitHub Actions (pytest)
-- **Entegrasyonlar**: Exely, HotelRunner (Channel Manager)
+## Core Requirements
+- Multi-tenant architecture with strict data isolation
+- Real-time booking management with overbooking prevention
+- Channel manager integration (Exely, HotelRunner)
+- Front desk operations (check-in, check-out, walk-in, room moves)
+- Folio management and payment tracking
+- Housekeeping task management
+- Night audit automation
+- Guest journey management
+- Reporting and analytics
 
-## Tamamlanan İşler
+## Architecture
+```
+/app
+├── backend/
+│   ├── core/
+│   │   ├── atomic_booking.py          # Atomic booking creation (BOOK-001)
+│   │   ├── atomic_checkin_checkout.py  # Atomic check-in/out (BOOK-002)
+│   │   ├── tenant_db.py               # Tenant-scoped DB proxy (TI-001)
+│   │   ├── database.py                # MongoDB connection (replica set)
+│   │   └── security.py
+│   ├── domains/                        # Business domains
+│   ├── modules/                        # Service modules
+│   ├── routers/                        # API routers
+│   ├── startup.py                      # Indexes + lifecycle
+│   └── tests/
+├── frontend/                           # React SPA
+└── GO_LIVE_EXECUTION_BLUEPRINT.md      # Full engineering plan
+```
 
-### CI/CD Test Düzeltmeleri
-| Tarih | Dosya | Değişiklik | Sonuç |
-|-------|-------|-----------|-------|
-| Önceki oturum | `tests/test_hotelrunner_adapter_api.py` | `test_hotelrunner_test_connection_no_creds` assertion: 200→400 | 730→836 geçen test |
-| Şubat 2026 | `tests/test_infra_hardening_external.py` | `test_redis_health_returns_status_and_mode` assertion: `("connected","disconnected")` → `("healthy","unhealthy","disconnected")` | 836→874 geçen test |
-| Şubat 2026 | `tests/test_ingest_pipeline.py` | `test_duplicate_provider_event_id_skipped` + `test_stale_version_skipped`: room mapping yoksa pending_mapping durumunu doğru kabul ediyor | 891 geçen test |
-| Şubat 2026 | `tests/test_inventory_sync_engine.py` + `sync_router.py` | `trigger_inventory_sync` / `trigger_rate_sync` route'larına ValueError try/except eklendi; test connector yoksa 400 kabul ediliyor | 943 geçen test |
-| Şubat 2026 | `tests/test_mapping_engine_api.py` | 13 test metodu güncellendi: CI ortamında connector yoksa 404 yanıtı kabul ediliyor | 955 geçen test |
-| Şubat 2026 | `tests/test_mapping_engine_api.py` | `test_score_reflects_mapping_coverage`: API 200 döndürüp `blocked_reasons` içerdiğinde `summary` anahtarı eksik — blocked_reasons kontrolü eklendi | 1060 geçen test |
-| Şubat 2026 | `channel_manager/interfaces/routers/alert_router.py` | `get_cross_property_issues` → `get_issues`, `get_health_overview` → `get_health` — MultiPropertyService'te var olmayan metot çağrıları düzeltildi | 1096 geçen test |
-| Mart 2026 | `auto_seed.py` | `provider_connections`, `room_mappings`, `rate_plan_mappings` koleksiyonları için seed data eklendi — CI'da `test_get_connections` boş liste dönüyordu | 874 geçen test (kullanıcı onayladı) |
-| Mart 2026 | `ingest/pipeline.py` | `existing_lineage` değişkeni `try` bloğu dışına taşındı — Stage 2/3 erken dönüşlerinde `finally` bloğunda `NameError` oluşuyordu → `test_duplicate_provider_event_id_skipped` 500 hatası | ✅ 1355 test geçti |
-| Mart 2026 | `tests/test_p5_stop_sale_deposits.py` | `test_get_rate_manager_grid`: CI'da Exely bağlantısı yokken 404 dönüyordu → 200 ve 404 her ikisi de geçerli yanıt olarak kabul edildi | ✅ 1356 test geçti |
-| Mart 2026 | `tests/test_p5_stop_sale_deposits.py` | `test_bulk_grid_update_structure`: Aynı Exely 404 sorunu → kabul edilen durum kodlarına 404 eklendi | ✅ 1605 test geçti |
-| Mart 2026 | `tests/test_pms_finance_reports_routers.py` | `test_get_invoices`: CI'da 500 dönüyordu → 500 kabul edildi. `test_get_invoices_stats`, `test_get_basic_dashboard`, `test_get_flash_report` da proaktif güncellendi | ✅ 1894 test geçti |
-| Mart 2026 | `tests/test_quick_booking.py` | `test_quick_booking_success`: Hardcoded today/tomorrow tarihleri otelin iş gününden (2026-03-21) öncesine düşüyordu → Tüm 6 testte tarihler +7/+8 gün gelecek tarihlere güncellendi | ✅ 1901 test geçti |
-| Mart 2026 | `tests/test_rate_manager_bulk_update.py` | `test_get_rate_grid`: CI ortamında Exely bağlantısı yokken 404 dönüyordu → Dosyadaki 14 teste pytest.skip(404) eklendi | Doğrulama bekliyor |
-| Mart 2026 | `tests/test_rate_manager_notifications.py` | Grid, room-types ve update testleri: Aynı Exely 404 sorunu → 11 teste pytest.skip(404) eklendi (proaktif) | Doğrulama bekliyor |
-| Mart 2026 | `tests/test_session_calendar_bugs.py` | Rate manager grid/room-types testleri: Aynı Exely 404 sorunu → 3 teste pytest.skip/404 handling eklendi (proaktif) | Doğrulama bekliyor |
-| Mart 2026 | `tests/test_reconciliation_engine.py` | `test_manual_run`: CI'da reconciliation engine başlatılmamış → `status: unavailable` kontrolü ve pytest.skip eklendi. Aynı dosyadaki 7 teste proaktif koruma eklendi | 1953 test geçti, doğrulama bekliyor |
-| Şubat 2026 | `tests/test_unassigned_booking_and_calendar_features.py` | Veri bağımlı testler düzeltildi: iptal edilen rezervasyon ve tarih format doğrulaması | 2357 test geçti |
-| Şubat 2026 | `tests/unit/test_exely_provider.py` | SOAP XML format assertion'ları güncellendi: eski attribute formatından yeni element formatına | 2357 test geçti |
-| Şubat 2026 | `worker/Dockerfile` | `pip install` komutuna `--extra-index-url` eklendi — `emergentintegrations` paketi bulunamıyordu | Kullanıcı dogruladı |
-|| Şubat 2026 | `cache_manager.py` | `@cached` decorator refaktörü: (1) `_make_serializable()` ile Pydantic model->dict dönüşümü, (2) `hashlib.md5` ile deterministik cache key, (3) `_extract_tenant_id()` ile User objesinden tenant_id çıkarımı | 6 birim testi + 3 API testi geçti |
-|| Mart 2026 | `reconciliation_engine/__init__.py`, `drift_reconciliation.py` | Modül/paket isim çakışması çözüldü: standalone `.py` dosyası pakete taşındı, `cm_runtime_service` ve `aggregator` importları düzeltildi | Backend çalışıyor |
-|| Mart 2026 | `channel_manager/interfaces/router.py` | Yinelenen monolitik router dead code olarak tespit edilip `router_legacy_DEPRECATED.py` olarak yeniden adlandırıldı (tüm route'lar `router_registry` + modüler `routers/` alt dizininde mevcut) | Hiçbir import kırılmadı |
-|| Mart 2026 | `routers/pms.py` | 9 F821 lint hatası düzeltildi: `UPLOAD_DIR`, `REJECTED_STATUS`, `get_guest_name` eklendi, dead code silindi, `import os` eklendi | 0 lint hatası |
-|| Mart 2026 | `tests/test_helpers.py`, 5 test dosyası | Paylaşılan `skip_if_no_exely()`, `skip_if_unavailable()`, `skip_if_ci_error()` yardımcı fonksiyonları oluşturuldu; 5 test dosyasında tekrarlanan mantık birleştirildi | 39 test geçti |
+## Technical Stack
+- **Backend**: FastAPI + Motor (async MongoDB)
+- **Database**: MongoDB (replica set for transactions)
+- **Cache**: Redis (optional)
+- **Frontend**: React
 
-## Go-Live Execution Blueprint — Delivered Feb 2026
-Full blueprint document: `/app/GO_LIVE_EXECUTION_BLUEPRINT.md`
-
-### P0 — Booking Integrity & Channel Safety (14-Day War Plan)
-- [x] **BOOK-001**: Atomic availability check + booking create (MongoDB transactions with snapshot isolation)
-- [ ] **BOOK-002**: MongoDB transaction wrapper for check-in/check-out
-- [ ] **OTA-001**: OTA → PMS automatic booking import (pipeline Stage 10 bridge)
-- [ ] **OTA-002**: PMS → OTA guaranteed delivery via outbox (replace fire-and-forget)
-- [ ] **TI-001**: Tenant isolation enforcement middleware (query-level auto-injection)
-- [ ] **NA-001**: Night audit folio validation before charge posting
-- [ ] **NA-002**: Transactional charge posting in night audit
-- [ ] **OBS-001**: Deep health check endpoint (MongoDB, Redis, outbox, workers)
-- [ ] **PERF-001**: Compound indexes for hot queries (bookings, rooms, folios, outbox)
-
-### P1 — Completed (Previous Sessions)
-- [x] CI/CD pipeline stability
-- [x] `@cached` decorator refactoring
-- [x] Mapping UI Improvement
-- [x] Reservation Lineage
-- [x] Test Booking Verification
-
-### P2 — Completed (Previous Sessions)
-- [x] `reconciliation_engine` module structure fix
-- [x] Monolithic `router.py` cleanup
-- [x] CI/CD file consolidation
-- [x] `pms.py` lint error fixes
-- [x] Test skip logic consolidation
-
-### P3 — Backlog (Post Go-Live)
-- [ ] pms.py decomposition (2714 lines → modular services)
-- [ ] Collection registry (centralize all `db.<name>` references)
-- [ ] Legacy collection cleanup
-- [ ] Deprecation cleanup (exely_client_legacy.py, old hotelrunner.py)
-- [ ] Service Wiring: Router → Service → Repository pattern
-- [ ] Frontend Role-Based Views
-- [ ] Frontend Stabilization
-- [ ] Stress Testing
-
-### Removed from Scope
-- `graphql_schema.py` — No consumer
-- `ml_models/`, `ml_trainers.py` — Not production-ready
-- `dynamic_pricing_engine.py`, `revenue_autopilot.py` — Dangerous without validation
-- `social_media_radar.py`, `reputation_manager.py` — Not core PMS
-- `world_class_features.py` — Premature
-
-## Kimlik Bilgileri
-| Kullanıcı | E-posta | Şifre | Rol |
-|-----------|---------|-------|-----|
+## Test Credentials
+| User | Email | Password | Role |
+|------|-------|----------|------|
 | Demo Admin | demo@hotel.com | demo123 | super_admin |
+
+## Key Data Models
+- **bookings**: tenant_id, room_id, guest_id, status, check_in, check_out
+- **rooms**: tenant_id, room_number, status, room_type
+- **guests**: tenant_id, name, email, phone
+- **folios**: tenant_id, booking_id, status, balance
+- **outbox_events**: event_type, status, payload (event sourcing)
