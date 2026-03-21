@@ -7,10 +7,11 @@
 - [x] TI-002: Tenant Isolation Proof Test Suite
 - [x] PERF-001: Compound Indexes for Hot Queries
 - [x] OBS-001: Deep Health Check Endpoint
+- [x] OTA-002: PMS → OTA Guaranteed Delivery (Outbox Pattern)
+- [x] DATA-001: OTA → PMS Automatic Booking Import Reliability
 
 ## Next Up (P0)
-- [ ] OTA-001: OTA → PMS Automatic Booking Import Reliability
-- [ ] OTA-002: PMS → OTA Guaranteed Delivery (Outbox Pattern)
+- [ ] TI-003: Integrate TenantScopedDB proxy across application (service layer refactor)
 - [ ] NA-001: Night Audit Hardening — Folio validation before charge posting
 - [ ] NA-002: Night Audit Hardening — Transactional charge posting
 

@@ -1,5 +1,50 @@
 # Syroce PMS — Changelog
 
+
+## 2026-03-21: DATA-001 OTA → PMS Import Bridge (P0 — Automatic Booking Import)
+
+### Core: Import Bridge Service (`core/import_bridge_service.py`)
+- `auto_import_reservation_to_pms()` with atomic claim, 3-layer duplicate prevention
+- Uses `create_booking_atomic` as single booking creation path (no direct inserts)
+- Error classification: retryable (timeout, network, write conflict) vs permanent (mapping, validation)
+- Exponential backoff: 30s → 2min → 10min → 30min → 2hr
+
+### Core: Import Decision (`core/import_decision.py`)
+- `classify_for_import()` classifies lineage records for import eligibility
+- Detects: unmapped room/rate, invalid dates, cancelled status, missing guest identity
+
+### Core: Import Retry Worker (`core/import_retry_worker.py`)
+- Background async worker polling for pending/retry import records
+- Stuck processing recovery (records in "processing" > 120s reset)
+- Worker metrics: imported/failed/retry counts
+
+### Admin Endpoints (`routers/import_admin.py`)
+- `GET /api/imports/status` — Import bridge health + worker metrics
+- `GET /api/imports/review-queue` — Paginated review queue with filters
+- `GET /api/imports/events` — List imports with status/provider/tenant_id filters
+- `POST /api/imports/{id}/retry` — Reset failed/review to pending
+- `POST /api/imports/{id}/approve-and-import` — Approve and trigger auto-import
+- `POST /api/imports/{id}/dismiss` — Dismiss review item
+
+### Pipeline Integration
+- Modified `ingest/pipeline.py`: triggers import bridge on CREATE decision
+- Classifies new lineage → creates `imported_reservations` record → worker processes
+
+### Health & Observability
+- Enhanced `/health/deep` with import_bridge metrics (pending, retry, review, failed, oldest_pending_seconds, provider_failures)
+
+### MongoDB Indexes (5 new)
+- `(tenant_id, connector_id, external_reservation_id)` UNIQUE — duplicate prevention
+- `(tenant_id, import_status, next_retry_at, created_at)` — worker claim
+- `(tenant_id, provider, import_status, created_at)` — provider monitoring
+- `(correlation_id)` — event tracing
+- `bookings.(tenant_id, source.provider, source.external_reservation_id)` — source lookup
+
+### Tests
+- 22 unit tests (pytest) + 16 API tests — 38 total, all passing
+- Covers: decision classification, record creation, auto-import, duplicate prevention, review required, retry scheduling, max retries, concurrent claim, admin actions, lineage linking, error classification
+
+
 ## 2026-03-21: OTA-002 Outbox Pattern Implementation (P0 — Guaranteed Delivery)
 
 ### Core: Outbox Service (`core/outbox_service.py`)
