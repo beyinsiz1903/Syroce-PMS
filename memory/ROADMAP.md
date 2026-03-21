@@ -1,7 +1,7 @@
 # ROADMAP
 
 ## P0 — Go-Live Critical (14-Day War Plan)
-- [ ] BOOK-001: Atomic availability check + booking create (Day 1)
+- [x] BOOK-001: Atomic availability check + booking create (Day 1) ✅
 - [ ] BOOK-002: MongoDB transactions for check-in/check-out (Day 2)
 - [ ] TI-001: Tenant isolation enforcement middleware (Day 3)
 - [ ] OTA-001: OTA → PMS automatic booking import (Day 4)

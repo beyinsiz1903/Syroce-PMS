@@ -45,7 +45,7 @@ Kullanıcının birincil hedefi kararlı, tamamen geçen bir CI/CD pipeline'ı e
 Full blueprint document: `/app/GO_LIVE_EXECUTION_BLUEPRINT.md`
 
 ### P0 — Booking Integrity & Channel Safety (14-Day War Plan)
-- [ ] **BOOK-001**: Atomic availability check + booking create (distributed lock around room-date)
+- [x] **BOOK-001**: Atomic availability check + booking create (MongoDB transactions with snapshot isolation)
 - [ ] **BOOK-002**: MongoDB transaction wrapper for check-in/check-out
 - [ ] **OTA-001**: OTA → PMS automatic booking import (pipeline Stage 10 bridge)
 - [ ] **OTA-002**: PMS → OTA guaranteed delivery via outbox (replace fire-and-forget)
