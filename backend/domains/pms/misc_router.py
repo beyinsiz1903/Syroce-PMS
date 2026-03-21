@@ -768,40 +768,23 @@ async def mobile_quick_checkin(
     booking_id: str,
     current_user: User = Depends(get_current_user)
 ):
-    """Quick check-in from mobile"""
-    # Reuse existing check-in logic
-    booking = await db.bookings.find_one({
-        'id': booking_id,
-        'tenant_id': current_user.tenant_id
-    })
-    
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
-    
-    # Update booking
-    await db.bookings.update_one(
-        {'id': booking_id},
-        {'$set': {
-            'status': BookingStatus.CHECKED_IN.value,
-            'checked_in_at': datetime.now(timezone.utc).isoformat()
-        }}
-    )
-    
-    # Update room
-    await db.rooms.update_one(
-        {'id': booking.get('room_id')},
-        {'$set': {
-            'status': RoomStatus.OCCUPIED.value,
-            'current_booking_id': booking_id
-        }}
-    )
-    
-    return {
-        'success': True,
-        'message': 'Guest checked in successfully',
-        'booking_id': booking_id,
-        'checked_in_at': datetime.now(timezone.utc).isoformat()
-    }
+    """Quick check-in from mobile — atomic transaction."""
+    from core.atomic_checkin_checkout import check_in_booking_atomic, CheckInError
+    try:
+        result = await check_in_booking_atomic(
+            booking_id=booking_id,
+            tenant_id=current_user.tenant_id,
+            actor_id=current_user.id,
+            actor_name=current_user.name,
+        )
+        return {
+            'success': True,
+            'message': 'Guest checked in successfully',
+            'booking_id': booking_id,
+            'checked_in_at': result.get('checked_in_at'),
+        }
+    except CheckInError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/properties/quick-list")

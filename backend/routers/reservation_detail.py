@@ -688,30 +688,28 @@ async def early_checkin(
     data: EarlyCheckinRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """Process early check-in with optional extra charge."""
+    """Process early check-in with optional extra charge — atomic transaction."""
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
-    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
-    if not booking:
-        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    from core.atomic_checkin_checkout import check_in_booking_atomic, CheckInError
 
-    now = datetime.now(timezone.utc).isoformat()
-    updates = {
-        "status": "checked_in",
-        "checked_in_at": data.checkin_time or now,
-        "early_checkin": True,
-    }
-    await db.bookings.update_one({"id": booking_id, "tenant_id": tid}, {"$set": updates})
+    extra_fields = {"early_checkin": True}
+    if data.checkin_time:
+        extra_fields["checked_in_at"] = data.checkin_time
 
-    # Update room status
-    if booking.get("room_id"):
-        await db.rooms.update_one(
-            {"id": booking["room_id"], "tenant_id": tid},
-            {"$set": {"status": "occupied", "current_booking_id": booking_id}},
+    try:
+        result = await check_in_booking_atomic(
+            booking_id=booking_id,
+            tenant_id=tid,
+            actor_id=current_user.id,
+            actor_name=current_user.name,
+            extra_fields=extra_fields,
         )
+    except CheckInError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # Add extra charge if any
+    # Add extra charge if any (outside transaction — non-critical)
     if data.extra_charge > 0:
         charge = {
             "id": str(uuid.uuid4()),
@@ -720,12 +718,12 @@ async def early_checkin(
             "charge_name": "Erken Giriş Ücreti",
             "charge_amount": data.extra_charge,
             "category": "room",
-            "created_at": now,
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await db.extra_charges.insert_one({**charge})
 
     await _log_activity(tid, booking_id, "early_checkin", current_user.name, {
-        "checkin_time": data.checkin_time or now,
+        "checkin_time": data.checkin_time or result.get("checked_in_at"),
         "extra_charge": data.extra_charge,
     })
 
@@ -1323,7 +1321,7 @@ async def group_check_in_all(
     group_id: str,
     current_user: User = Depends(get_current_user),
 ):
-    """Check-in all reservations in a group."""
+    """Check-in all reservations in a group — each via atomic transaction."""
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1331,24 +1329,23 @@ async def group_check_in_all(
     if not group:
         raise HTTPException(status_code=404, detail="Grup bulunamadi")
 
-    now = datetime.now(timezone.utc).isoformat()
-    checked_in = 0
-    for bid in group.get("booking_ids", []):
-        result = await db.bookings.update_one(
-            {"id": bid, "tenant_id": tid, "status": {"$in": ["confirmed", "pending"]}},
-            {"$set": {"status": "checked_in", "checked_in_at": now}},
-        )
-        if result.modified_count > 0:
-            checked_in += 1
-            booking = await db.bookings.find_one({"id": bid, "tenant_id": tid}, {"_id": 0})
-            if booking and booking.get("room_id"):
-                await db.rooms.update_one(
-                    {"id": booking["room_id"], "tenant_id": tid},
-                    {"$set": {"status": "occupied", "current_booking_id": bid}},
-                )
-            await _log_activity(tid, bid, "group_checkin", current_user.name, {"group_id": group_id})
+    from core.atomic_checkin_checkout import check_in_booking_atomic, CheckInError
 
-    return {"success": True, "checked_in_count": checked_in}
+    checked_in = 0
+    errors = []
+    for bid in group.get("booking_ids", []):
+        try:
+            await check_in_booking_atomic(
+                booking_id=bid,
+                tenant_id=tid,
+                actor_id=current_user.id,
+                actor_name=current_user.name,
+            )
+            checked_in += 1
+        except CheckInError as e:
+            errors.append({"booking_id": bid, "error": str(e)})
+
+    return {"success": True, "checked_in_count": checked_in, "errors": errors}
 
 
 @router.post("/group-bookings/{group_id}/check-out-all")
@@ -1356,7 +1353,7 @@ async def group_check_out_all(
     group_id: str,
     current_user: User = Depends(get_current_user),
 ):
-    """Check-out all reservations in a group."""
+    """Check-out all reservations in a group — each via atomic transaction."""
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1364,30 +1361,24 @@ async def group_check_out_all(
     if not group:
         raise HTTPException(status_code=404, detail="Grup bulunamadi")
 
-    now = datetime.now(timezone.utc).isoformat()
-    checked_out = 0
-    for bid in group.get("booking_ids", []):
-        result = await db.bookings.update_one(
-            {"id": bid, "tenant_id": tid, "status": "checked_in"},
-            {"$set": {"status": "checked_out", "checked_out_at": now}},
-        )
-        if result.modified_count > 0:
-            checked_out += 1
-            booking = await db.bookings.find_one({"id": bid, "tenant_id": tid}, {"_id": 0})
-            if booking and booking.get("room_id"):
-                await db.rooms.update_one(
-                    {"id": booking["room_id"], "tenant_id": tid},
-                    {"$set": {
-                        "status": "available",
-                        "current_booking_id": None,
-                        "housekeeping_status": "dirty",
-                        "housekeeping_updated_at": now,
-                        "housekeeping_updated_by": "Sistem (Grup Cikis)",
-                    }},
-                )
-            await _log_activity(tid, bid, "group_checkout", current_user.name, {"group_id": group_id})
+    from core.atomic_checkin_checkout import check_out_booking_atomic, CheckOutError
 
-    return {"success": True, "checked_out_count": checked_out}
+    checked_out = 0
+    errors = []
+    for bid in group.get("booking_ids", []):
+        try:
+            await check_out_booking_atomic(
+                booking_id=bid,
+                tenant_id=tid,
+                actor_id=current_user.id,
+                actor_name=current_user.name,
+                force=True,  # Group checkout forces past balance blockers
+            )
+            checked_out += 1
+        except CheckOutError as e:
+            errors.append({"booking_id": bid, "error": str(e)})
+
+    return {"success": True, "checked_out_count": checked_out, "errors": errors}
 
 
 # ── Communication Log Endpoints ──

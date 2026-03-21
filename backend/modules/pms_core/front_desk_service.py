@@ -18,108 +18,44 @@ class FrontDeskService:
     # ── CHECK-IN ──
 
     async def check_in(self, tenant_id: str, booking_id: str, user_id: str, user_name: str, override_reason: str = None) -> Dict:
-        """Full check-in flow with room readiness validation."""
-        booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
-        if not booking:
-            return {"success": False, "error": "Booking not found"}
-
-        # State validation
-        valid, msg = rsm.validate_transition(booking["status"], "checked_in")
-        if not valid:
-            return {"success": False, "error": msg}
-
-        room_id = booking.get("room_id")
-        if not room_id:
-            return {"success": False, "error": "No room assigned to this booking"}
-
-        room = await db.rooms.find_one({"id": room_id, "tenant_id": tenant_id}, {"_id": 0})
-        if not room:
-            return {"success": False, "error": "Assigned room not found"}
-
-        # Room readiness check - room must be available or inspected
-        allowed_room_statuses = {"available", "inspected"}
-        if room["status"] not in allowed_room_statuses:
-            if not override_reason:
-                return {
-                    "success": False,
-                    "error": f"Room {room['room_number']} is not ready (status: {room['status']}). Provide override_reason to force check-in.",
-                    "blocker": "room_not_ready",
-                    "room_status": room["status"],
-                }
-            # Log override
-            await self._log_audit(tenant_id, "reservation", booking_id, "check_in_override",
-                                  user_id, {"room_status": room["status"], "override_reason": override_reason})
-
-        # Overbooking check
-        has_conflict, conflicts = await rsm.check_overbooking(
-            tenant_id, room_id, booking["check_in"], booking["check_out"], exclude_booking_id=booking_id)
-        if has_conflict:
-            checked_in_conflicts = [c for c in conflicts if c.get("status") == "checked_in"]
-            if checked_in_conflicts:
-                return {"success": False, "error": "Room already has a checked-in guest", "conflicts": checked_in_conflicts}
-
-        now = datetime.now(timezone.utc)
-        # Update booking status
-        await db.bookings.update_one(
-            {"id": booking_id, "tenant_id": tenant_id},
-            {"$set": {
-                "status": "checked_in",
-                "checked_in_at": now.isoformat(),
-                "checked_in_by": user_name,
-                "updated_at": now.isoformat(),
-            }}
-        )
-
-        # Update room status to occupied
-        await db.rooms.update_one(
-            {"id": room_id, "tenant_id": tenant_id},
-            {"$set": {"status": "occupied", "current_booking_id": booking_id}}
-        )
-
-        await self._log_audit(tenant_id, "reservation", booking_id, "check_in", user_id, {"room_id": room_id})
-
-        return {"success": True, "booking_id": booking_id, "room_number": room["room_number"], "checked_in_at": now.isoformat()}
+        """Full check-in flow — delegates to atomic transaction."""
+        from core.atomic_checkin_checkout import check_in_booking_atomic, CheckInError
+        try:
+            result = await check_in_booking_atomic(
+                booking_id=booking_id,
+                tenant_id=tenant_id,
+                actor_id=user_id,
+                actor_name=user_name,
+                override_reason=override_reason,
+            )
+            return result
+        except CheckInError as e:
+            error_msg = str(e)
+            resp = {"success": False, "error": error_msg}
+            if "not ready" in error_msg:
+                resp["blocker"] = "room_not_ready"
+            return resp
 
     # ── CHECKOUT ──
 
     async def checkout(self, tenant_id: str, booking_id: str, user_id: str, user_name: str, force: bool = False) -> Dict:
-        """Full checkout flow with folio balance check."""
-        booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
-        if not booking:
-            return {"success": False, "error": "Booking not found"}
-
-        valid, msg = rsm.validate_transition(booking["status"], "checked_out")
-        if not valid:
-            return {"success": False, "error": msg}
-
-        # Folio balance check
-        blockers = await self.get_checkout_blockers(tenant_id, booking_id)
-        if blockers and not force:
-            return {"success": False, "error": "Checkout blocked", "blockers": blockers}
-
-        now = datetime.now(timezone.utc)
-        room_id = booking.get("room_id")
-
-        await db.bookings.update_one(
-            {"id": booking_id, "tenant_id": tenant_id},
-            {"$set": {
-                "status": "checked_out",
-                "checked_out_at": now.isoformat(),
-                "checked_out_by": user_name,
-                "updated_at": now.isoformat(),
-            }}
-        )
-
-        # Room goes to dirty after checkout
-        if room_id:
-            await db.rooms.update_one(
-                {"id": room_id, "tenant_id": tenant_id},
-                {"$set": {"status": "dirty", "current_booking_id": None}}
+        """Full checkout flow — delegates to atomic transaction."""
+        from core.atomic_checkin_checkout import check_out_booking_atomic, CheckOutError
+        try:
+            result = await check_out_booking_atomic(
+                booking_id=booking_id,
+                tenant_id=tenant_id,
+                actor_id=user_id,
+                actor_name=user_name,
+                force=force,
             )
-
-        await self._log_audit(tenant_id, "reservation", booking_id, "checkout", user_id, {"room_id": room_id, "forced": force})
-
-        return {"success": True, "booking_id": booking_id, "checked_out_at": now.isoformat()}
+            return result
+        except CheckOutError as e:
+            error_msg = str(e)
+            resp = {"success": False, "error": error_msg}
+            if "unpaid balance" in error_msg:
+                resp["blockers"] = [{"type": "unpaid_balance", "message": error_msg}]
+            return resp
 
     async def get_checkout_blockers(self, tenant_id: str, booking_id: str) -> List[Dict]:
         """Check for conditions that block checkout."""
@@ -266,7 +202,7 @@ class FrontDeskService:
     # ── WALK-IN ──
 
     async def walk_in(self, tenant_id: str, guest_data: Dict, room_id: str, nights: int, rate: float, user_id: str, user_name: str) -> Dict:
-        """Create a walk-in reservation with immediate check-in."""
+        """Create a walk-in reservation with immediate check-in (atomic)."""
         room = await db.rooms.find_one({"id": room_id, "tenant_id": tenant_id}, {"_id": 0})
         if not room:
             return {"success": False, "error": "Room not found"}
@@ -300,6 +236,7 @@ class FrontDeskService:
         booking_id = str(uuid.uuid4())
         total_amount = rate * nights
 
+        # Create booking atomically (overbooking prevention)
         from core.atomic_booking import create_booking_atomic, BookingConflictError
         try:
             await create_booking_atomic({
@@ -315,45 +252,36 @@ class FrontDeskService:
                 "total_amount": total_amount,
                 "base_rate": rate,
                 "paid_amount": 0.0,
-                "status": "checked_in",
+                "status": "confirmed",
                 "channel": "direct",
                 "source_channel": "walk_in",
                 "origin": "ui",
                 "rate_plan": "Walk-in",
                 "market_segment": "leisure",
-                "checked_in_at": now.isoformat(),
-                "checked_in_by": user_name,
                 "created_at": now.isoformat(),
             })
         except BookingConflictError as e:
             return {"success": False, "error": str(e)}
 
-        # Room occupied
-        await db.rooms.update_one(
-            {"id": room_id, "tenant_id": tenant_id},
-            {"$set": {"status": "occupied", "current_booking_id": booking_id}}
-        )
+        # Atomic check-in (booking + room + folio + audit + outbox in one transaction)
+        from core.atomic_checkin_checkout import check_in_booking_atomic, CheckInError
+        try:
+            result = await check_in_booking_atomic(
+                booking_id=booking_id,
+                tenant_id=tenant_id,
+                actor_id=user_id,
+                actor_name=user_name,
+            )
+        except CheckInError as e:
+            return {"success": False, "error": f"Walk-in booking created but check-in failed: {e}"}
 
-        # Create folio
-        from core.utils import generate_folio_number
-        folio_id = str(uuid.uuid4())
-        folio_number = await generate_folio_number(tenant_id)
-        await db.folios.insert_one({
-            "id": folio_id,
-            "tenant_id": tenant_id,
+        return {
+            "success": True,
             "booking_id": booking_id,
-            "folio_number": folio_number,
-            "folio_type": "guest",
-            "status": "open",
+            "folio_id": result.get("folio_id"),
+            "room_number": room["room_number"],
             "guest_id": guest_id,
-            "balance": 0.0,
-            "created_at": now.isoformat(),
-        })
-
-        await self._log_audit(tenant_id, "reservation", booking_id, "walk_in", user_id,
-                              {"room_id": room_id, "guest_id": guest_id})
-
-        return {"success": True, "booking_id": booking_id, "folio_id": folio_id, "room_number": room["room_number"], "guest_id": guest_id}
+        }
 
     # ── EARLY CHECK-IN / LATE CHECKOUT ──
 

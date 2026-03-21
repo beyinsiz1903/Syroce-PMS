@@ -314,63 +314,28 @@ async def create_walk_in_booking(
         except BookingConflictError as e:
             raise HTTPException(status_code=409, detail=str(e))
         
-        # 5. Auto check-in
-        await db.bookings.update_one(
-            {'id': new_booking.id},
-            {'$set': {
-                'status': BookingStatus.CHECKED_IN.value,
-                'checked_in_at': datetime.now(timezone.utc).isoformat()
-            }}
-        )
-        
-        # 6. Update room status
-        await db.rooms.update_one(
-            {'id': request.room_id},
-            {'$set': {
-                'status': RoomStatus.OCCUPIED.value,
-                'current_booking_id': new_booking.id
-            }}
-        )
-        
-        # 7. Create guest folio
-        folio = Folio(
-            tenant_id=current_user.tenant_id,
-            booking_id=new_booking.id,
-            folio_number=f"F-{datetime.now().year}-{uuid.uuid4().hex[:5].upper()}",
-            folio_type=FolioType.GUEST,
-            guest_id=guest_id
-        )
-        
-        folio_dict = folio.model_dump()
-        folio_dict['created_at'] = folio_dict['created_at'].isoformat()
-        await db.folios.insert_one(folio_dict)
-        
-        # 8. Create audit log
-        await create_audit_log(
-            tenant_id=current_user.tenant_id,
-            user=current_user,
-            action="WALK_IN_CHECKIN",
-            entity_type="booking",
-            entity_id=new_booking.id,
-            changes={
-                'guest_name': request.guest_name,
-                'room': room.get('room_number'),
-                'nights': request.nights,
-                'total_amount': total_amount
-            }
-        )
+        # 5. Atomic check-in (booking + room + folio + audit + outbox in one transaction)
+        from core.atomic_checkin_checkout import check_in_booking_atomic, CheckInError
+        try:
+            checkin_result = await check_in_booking_atomic(
+                booking_id=new_booking.id,
+                tenant_id=current_user.tenant_id,
+                actor_id=current_user.id,
+                actor_name=current_user.name,
+            )
+        except CheckInError as e:
+            raise HTTPException(status_code=400, detail=f"Walk-in booking created but check-in failed: {e}")
         
         return {
             'success': True,
             'message': "Walk-in booking created and checked in successfully",
             'booking_id': new_booking.id,
             'guest_id': guest_id,
-            'folio_id': folio.id,
             'room_number': room.get('room_number'),
             'check_in': check_in.isoformat(),
             'check_out': check_out.isoformat(),
             'total_amount': total_amount,
-            'folio_number': folio.folio_number
+            'checked_in_at': checkin_result.get('checked_in_at'),
         }
     
     except HTTPException:

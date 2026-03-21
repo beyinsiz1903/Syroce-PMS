@@ -61,6 +61,21 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Booking index creation error: {e}")
 
+    # ── Check-in/Check-out transaction indexes ─────────────────────
+    try:
+        from core.atomic_checkin_checkout import ensure_checkin_checkout_indexes
+        await ensure_checkin_checkout_indexes()
+        logger.info("Check-in/check-out indexes ensured")
+    except Exception as e:
+        logger.warning(f"Check-in/check-out index creation error: {e}")
+
+    # ── PERF-001: Compound indexes for hot queries ─────────────────
+    try:
+        await _ensure_performance_indexes()
+        logger.info("Performance indexes ensured")
+    except Exception as e:
+        logger.warning(f"Performance index creation error: {e}")
+
     # ── Agency booking indexes ──────────────────────────────────────
     try:
         col = db.agency_booking_requests
@@ -347,3 +362,39 @@ async def on_shutdown(app):
 
     # Close MongoDB client
     client.close()
+
+
+async def _ensure_performance_indexes():
+    """PERF-001: Create compound indexes for hot query patterns."""
+    indexes = [
+        # Bookings: availability check, calendar, status queries
+        ("bookings", [("tenant_id", 1), ("status", 1), ("check_in", 1)], "idx_booking_status_checkin", {}),
+        ("bookings", [("tenant_id", 1), ("room_id", 1), ("check_in", 1), ("check_out", 1)], "idx_booking_room_dates", {}),
+        ("bookings", [("tenant_id", 1), ("guest_id", 1), ("status", 1)], "idx_booking_guest_status", {}),
+        ("bookings", [("tenant_id", 1), ("created_at", -1)], "idx_booking_created", {}),
+        # Rooms: listing, availability
+        ("rooms", [("tenant_id", 1), ("is_active", 1), ("room_type", 1)], "idx_room_type_active", {}),
+        ("rooms", [("tenant_id", 1), ("status", 1)], "idx_room_status", {}),
+        # Folios: lookup by booking
+        ("folios", [("tenant_id", 1), ("booking_id", 1), ("status", 1)], "idx_folio_booking_status", {}),
+        # Folio charges
+        ("folio_charges", [("folio_id", 1), ("tenant_id", 1), ("voided", 1)], "idx_charge_folio", {}),
+        # Payments
+        ("payments", [("folio_id", 1), ("tenant_id", 1), ("voided", 1)], "idx_payment_folio", {}),
+        # Guests: search
+        ("guests", [("tenant_id", 1), ("name", 1)], "idx_guest_name", {}),
+        # Outbox events: processing queue
+        ("outbox_events", [("status", 1), ("event_type", 1), ("created_at", 1)], "idx_outbox_queue", {}),
+        # Housekeeping
+        ("housekeeping_tasks", [("tenant_id", 1), ("status", 1), ("room_id", 1)], "idx_hk_status_room", {}),
+        # Audit trail
+        ("pms_audit_trail", [("tenant_id", 1), ("entity_id", 1), ("timestamp", -1)], "idx_audit_entity", {}),
+    ]
+    for coll_name, keys, name, kwargs in indexes:
+        try:
+            await db[coll_name].create_index(keys, name=name, background=True, **kwargs)
+        except Exception as e:
+            if "already exists" in str(e) or "IndexOptionsConflict" in str(e):
+                pass
+            else:
+                logger.warning(f"Index {name} on {coll_name} failed: {e}")

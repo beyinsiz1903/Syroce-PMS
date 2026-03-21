@@ -265,3 +265,85 @@ async def startup_probe():
         status_code=status.HTTP_200_OK,
         media_type="text/plain"
     )
+
+
+@health_router.get("/deep")
+async def deep_health_check(request: Request):
+    """
+    OBS-001: Deep Health Check — production readiness probe.
+    Returns status of MongoDB, Redis, outbox queue, and background workers.
+    """
+    import time
+    from fastapi.responses import ORJSONResponse
+
+    result = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "service": "hotel_pms",
+    }
+    overall_ok = True
+
+    # ── MongoDB ──
+    t0 = time.time()
+    try:
+        db_inst = request.app.state.db
+        await db_inst.command("ping")
+        rs_status = await db_inst.client.admin.command("replSetGetStatus")
+        members = rs_status.get("members", [])
+        primary_ok = any(m.get("stateStr") == "PRIMARY" for m in members)
+        result["mongo"] = {
+            "status": "ok" if primary_ok else "degraded",
+            "latency_ms": int((time.time() - t0) * 1000),
+            "replica_set": rs_status.get("set", "unknown"),
+            "primary": primary_ok,
+        }
+        if not primary_ok:
+            overall_ok = False
+    except Exception as e:
+        result["mongo"] = {"status": "fail", "error": str(e)}
+        overall_ok = False
+
+    # ── Redis ──
+    try:
+        r = redis.Redis(host="localhost", port=6379, socket_timeout=2)
+        r.ping()
+        info = r.info("memory")
+        result["redis"] = {
+            "status": "ok",
+            "used_memory": info.get("used_memory_human", "?"),
+        }
+    except Exception as e:
+        result["redis"] = {"status": "fail", "error": str(e)}
+        overall_ok = False
+
+    # ── Outbox queue depth ──
+    try:
+        db_inst = request.app.state.db
+        pending = await db_inst.outbox_events.count_documents({"status": "pending"})
+        failed = await db_inst.outbox_events.count_documents({"status": "failed"})
+        result["outbox"] = {
+            "status": "ok" if failed < 100 else "degraded",
+            "pending": pending,
+            "failed": failed,
+        }
+        if failed >= 100:
+            overall_ok = False
+    except Exception as e:
+        result["outbox"] = {"status": "unknown", "error": str(e)}
+
+    # ── Night audit ──
+    try:
+        db_inst = request.app.state.db
+        last_audit = await db_inst.night_audit_logs.find_one(
+            {}, {"_id": 0, "business_date": 1, "completed_at": 1},
+            sort=[("completed_at", -1)],
+        )
+        result["night_audit"] = {
+            "last_run": last_audit.get("completed_at") if last_audit else None,
+            "last_date": last_audit.get("business_date") if last_audit else None,
+        }
+    except Exception:
+        result["night_audit"] = {"last_run": None}
+
+    result["overall"] = "ok" if overall_ok else "degraded"
+    sc = status.HTTP_200_OK if overall_ok else status.HTTP_503_SERVICE_UNAVAILABLE
+    return ORJSONResponse(status_code=sc, content=result)

@@ -107,40 +107,63 @@ class UpdateReservationService:
 
             room_changed = update_data.get("room_id") and update_data["room_id"] != existing_booking.get("room_id")
             effective_status = update_data.get("status", existing_booking.get("status"))
-
-            if room_changed and existing_booking.get("room_id"):
-                await self.repository.update_room_for_tenant(
-                    tenant_context.tenant_id,
-                    existing_booking["room_id"],
-                    {"status": "available", "current_booking_id": None},
-                )
-
-            if room_changed and effective_status == "checked_in":
-                await self.repository.update_room_for_tenant(
-                    tenant_context.tenant_id,
-                    update_data["room_id"],
-                    {"status": "occupied", "current_booking_id": booking_id},
-                )
-
-            # Auto-mark room as dirty on checkout
             old_status = existing_booking.get("status")
             new_status = update_data.get("status")
-            if new_status == "checked_out" and old_status != "checked_out":
-                room_id = existing_booking.get("room_id")
-                if room_id:
+
+            # ── If status is transitioning to checked_in → use atomic check-in ──
+            if new_status == "checked_in" and old_status != "checked_in":
+                from core.atomic_checkin_checkout import check_in_booking_atomic, CheckInError
+                status_fields = {k: v for k, v in update_data.items() if k != "status"}
+                try:
+                    await check_in_booking_atomic(
+                        booking_id=booking_id,
+                        tenant_id=tenant_context.tenant_id,
+                        actor_id=str(getattr(current_user, "id", "system")),
+                        actor_name=str(getattr(current_user, "name", "system")),
+                        extra_fields={k: v for k, v in status_fields.items() if k not in ("room_id",)},
+                    )
+                except CheckInError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+                # Remove status/room keys from update_data so they aren't double-written
+                update_data.pop("status", None)
+                # Handle room change if also requested
+                if room_changed:
+                    update_data.pop("room_id", None)
+
+            # ── If status is transitioning to checked_out → use atomic check-out ──
+            elif new_status == "checked_out" and old_status != "checked_out":
+                from core.atomic_checkin_checkout import check_out_booking_atomic, CheckOutError
+                try:
+                    await check_out_booking_atomic(
+                        booking_id=booking_id,
+                        tenant_id=tenant_context.tenant_id,
+                        actor_id=str(getattr(current_user, "id", "system")),
+                        actor_name=str(getattr(current_user, "name", "system")),
+                        force=True,
+                    )
+                except CheckOutError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+                update_data.pop("status", None)
+
+            else:
+                # Non-check-in/check-out status changes: handle room updates manually
+                if room_changed and existing_booking.get("room_id"):
                     await self.repository.update_room_for_tenant(
                         tenant_context.tenant_id,
-                        room_id,
-                        {
-                            "status": "available",
-                            "current_booking_id": None,
-                            "housekeeping_status": "dirty",
-                            "housekeeping_updated_at": datetime.now(timezone.utc).isoformat(),
-                            "housekeeping_updated_by": "Sistem (Otomatik Cikis)",
-                        },
+                        existing_booking["room_id"],
+                        {"status": "available", "current_booking_id": None},
                     )
 
-            await self.repository.update_booking(tenant_context.tenant_id, booking_id, update_data)
+                if room_changed and effective_status == "checked_in":
+                    await self.repository.update_room_for_tenant(
+                        tenant_context.tenant_id,
+                        update_data["room_id"],
+                        {"status": "occupied", "current_booking_id": booking_id},
+                    )
+
+            # Apply remaining field updates (if any left after atomic handled status)
+            if update_data:
+                await self.repository.update_booking(tenant_context.tenant_id, booking_id, update_data)
             updated_booking = await self.repository.get_booking_for_tenant(tenant_context.tenant_id, booking_id)
 
             if not updated_booking:
