@@ -1,5 +1,32 @@
 # Syroce PMS - Changelog
 
+### Session 31 (Mar 21, 2026) — P1 Features: Mapping UI, Reservation Lineage, Test Booking
+- [x] **Mapping UI Improvement** — New `/mapping-manager` page with v2 API integration:
+  - Readiness score gauge (0-100) with color-coded status
+  - Blocked reasons display
+  - 5 entity type tabs (Oda Tipi, Fiyat Planı, Doluluk, Yemek Planı, Vergi Modu)
+  - Active mappings table with validation status and delete action
+  - Unmapped entities panel (PMS + External)
+  - Connector selector for multi-connector support
+  - "Tümünü Doğrula" (Validate All) bulk action
+  - "Yeni Eşleme" (Add Mapping) dialog with smart selects
+- [x] **Reservation Lineage** — New `/reservation-lineage` page:
+  - Stats cards (Toplam, Başarı Oranı, İnceleme Kuyruğu, ACK Başarısız, Durum Dağılımı)
+  - Search by guest name, external ID, PMS ID
+  - Status and connector filters
+  - Lineage detail modal with timeline visualization
+  - Status badges (created, modified, cancelled, duplicate, conflict, review, etc.)
+  - ACK status tracking
+  - Backend: GET `/api/channel-manager/v2/reservations/lineage/{id}` endpoint
+- [x] **Test Booking Verification** — Exely OTA_ReadRQ verification workflow:
+  - 3-step wizard UI (create booking → enter info → verify)
+  - POST `/api/channel-manager/exely/test-booking/verify` endpoint
+  - Targeted pull (by reservation ID) or general pull
+  - Before/after comparison with verification report
+  - Integrated as new tab in Exely Integration page
+- [x] **Channel Manager Integration** — Updated Room Mappings tab to redirect to MappingManager, added "Lineage & Geçmiş" button to OTA Reservations tab
+- [x] Tested: Backend 15/15 (100%), Frontend 100% (iteration_114.json)
+
 ### Session 30 (Mar 21, 2026) — P2 Refactoring Batch
 - [x] **Fix: reconciliation_engine module structure** — Standalone `.py` file was shadowed by the package directory (Python naming conflict). Moved `ReconciliationEngine` class into `reconciliation_engine/drift_reconciliation.py` and updated `__init__.py` to re-export the singleton. Both `cm_runtime_service` and `monitoring/aggregator` imports now resolve correctly.
 - [x] **Cleanup: Monolithic router.py** — `channel_manager/interfaces/router.py` (1827 lines) was dead code; all routes duplicated in modular `routers/` directory. Renamed to `router_legacy_DEPRECATED.py`. `server.py` uses `router_registry.py` only.

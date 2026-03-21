@@ -48,6 +48,9 @@ Kullanıcının birincil hedefi kararlı, tamamen geçen bir CI/CD pipeline'ı e
 
 ### P1
 - [x] `@cached` decorator refaktörü (`cache_manager.py`) — Pydantic serializasyon, deterministik cache key, tenant_id çıkarımı düzeltildi
+- [x] Mapping UI İyileştirmesi — Geliştirilmiş MappingManager sayfası: readiness skoru, engelleme nedenleri, 5 entity type tab, aktif eşlemeler tablosu, eşlenmemiş varlıklar paneli, v2 API entegrasyonu
+- [x] Reservation Lineage — Import edilmiş rezervasyonların geçmişi ve durumu: stats kartları, arama/filtreleme, lineage timeline, durum/ACK badge'leri
+- [x] Test Booking Doğrulama — Exely OTA_ReadRQ ile test rezervasyon doğrulama: 3 adımlı wizard, hedefli/genel pull, sonuç raporlama
 
 ### P2
 - [x] `reconciliation_engine` modül yapısının düzeltilmesi
@@ -59,6 +62,15 @@ Kullanıcının birincil hedefi kararlı, tamamen geçen bir CI/CD pipeline'ı e
 
 ### P3
 - [ ] Legacy collection temizliği
+- [ ] Deprecation temizliği (exely_client_legacy.py, eski hotelrunner.py)
+- [ ] Multi-day ARI push (tarih aralığı, availability, kısıtlamalar)
+- [ ] Service Wiring: Router → Service → Repository pattern
+- [ ] Schema Completion: inline model'ler → shared schema'lar
+- [ ] Frontend Role-Based Views: GM, Admin, Superadmin dashboard'ları
+- [ ] Frontend Stabilization: dependency audit, code splitting, error boundaries
+- [ ] Stress Testing: 24h soak test, reservation burst, ARI storm
+- [ ] HotelRunner gerçek credential entegrasyonu
+- [ ] İki provider reconciliation doğrulaması
 
 ## Kimlik Bilgileri
 | Kullanıcı | E-posta | Şifre | Rol |
