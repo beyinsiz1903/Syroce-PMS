@@ -18,7 +18,7 @@ pytestmark = pytest.mark.skipif(
     reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
 )
 if not BASE_URL:
-    BASE_URL = "https://enterprise-pms.preview.emergentagent.com"
+    BASE_URL = "https://booking-safety-1.preview.emergentagent.com"
 
 
 class TestCheckoutBalanceFix:
