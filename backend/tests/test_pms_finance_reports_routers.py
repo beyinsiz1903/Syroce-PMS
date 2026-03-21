@@ -10,6 +10,7 @@ Previous routers already tested: auth.py, housekeeping.py, departments.py
 import pytest
 import requests
 import os
+from test_helpers import skip_if_ci_error
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
@@ -343,31 +344,20 @@ class TestFinanceRouter:
     def test_get_invoices(self, auth_headers):
         """GET /api/invoices - should return invoices (requires invoices module)"""
         response = requests.get(f"{BASE_URL}/api/invoices", headers=auth_headers)
-        # May require invoices module permission
-        if response.status_code == 200:
-            data = response.json()
-            assert isinstance(data, list), f"Expected list, got {type(data)}"
-            print(f"✅ GET /api/invoices works - {len(data)} invoices")
-        elif response.status_code == 403:
-            print("⚠️ GET /api/invoices - requires invoices module permission (403)")
-        elif response.status_code == 500:
-            print("⚠️ GET /api/invoices - internal server error (500) - may be due to cache/module config in CI")
-        else:
-            assert False, f"/invoices failed: {response.status_code} - {response.text}"
+        skip_if_ci_error(response, "GET /api/invoices")
+        assert response.status_code == 200, f"/invoices failed: {response.status_code} - {response.text}"
+        data = response.json()
+        assert isinstance(data, list), f"Expected list, got {type(data)}"
+        print(f"GET /api/invoices works - {len(data)} invoices")
     
     def test_get_invoices_stats(self, auth_headers):
         """GET /api/invoices/stats - should return invoice statistics"""
         response = requests.get(f"{BASE_URL}/api/invoices/stats", headers=auth_headers)
-        if response.status_code == 200:
-            data = response.json()
-            assert "total_invoices" in data, "Response missing total_invoices"
-            print(f"✅ GET /api/invoices/stats works - {data.get('total_invoices')} invoices")
-        elif response.status_code == 403:
-            print("⚠️ GET /api/invoices/stats - requires permission (403)")
-        elif response.status_code == 500:
-            print("⚠️ GET /api/invoices/stats - internal server error (500) - may be due to cache/module config in CI")
-        else:
-            assert False, f"/invoices/stats failed: {response.status_code}"
+        skip_if_ci_error(response, "GET /api/invoices/stats")
+        assert response.status_code == 200, f"/invoices/stats failed: {response.status_code}"
+        data = response.json()
+        assert "total_invoices" in data, "Response missing total_invoices"
+        print(f"GET /api/invoices/stats works - {data.get('total_invoices')} invoices")
 
 
 # ============================================
@@ -455,31 +445,19 @@ class TestReportsRouter:
     def test_get_basic_dashboard(self, auth_headers):
         """GET /api/reports/basic-dashboard - should return basic reporting dashboard"""
         response = requests.get(f"{BASE_URL}/api/reports/basic-dashboard", headers=auth_headers)
-        # May require basic_reporting module
-        if response.status_code == 200:
-            data = response.json()
-            assert "summary" in data or "date" in data, "Response missing summary/date"
-            print("✅ GET /api/reports/basic-dashboard works")
-        elif response.status_code == 403:
-            print("⚠️ GET /api/reports/basic-dashboard - requires basic_reporting module (403)")
-        elif response.status_code == 500:
-            print("⚠️ GET /api/reports/basic-dashboard - internal server error (500) - may be due to module config in CI")
-        else:
-            assert False, f"/reports/basic-dashboard failed: {response.status_code}"
+        skip_if_ci_error(response, "GET /api/reports/basic-dashboard")
+        assert response.status_code == 200, f"/reports/basic-dashboard failed: {response.status_code}"
+        data = response.json()
+        assert "summary" in data or "date" in data, "Response missing summary/date"
+        print("GET /api/reports/basic-dashboard works")
     
     def test_get_flash_report(self, auth_headers):
         """GET /api/reports/flash-report - should return flash report"""
         response = requests.get(f"{BASE_URL}/api/reports/flash-report", headers=auth_headers)
-        # May require reports module
-        if response.status_code == 200:
-            response.json()
-            print("✅ GET /api/reports/flash-report works")
-        elif response.status_code == 403:
-            print("⚠️ GET /api/reports/flash-report - requires reports module (403)")
-        elif response.status_code == 500:
-            print("⚠️ GET /api/reports/flash-report - internal server error (500) - may be due to module config in CI")
-        else:
-            assert False, f"/reports/flash-report failed: {response.status_code}"
+        skip_if_ci_error(response, "GET /api/reports/flash-report")
+        assert response.status_code == 200, f"/reports/flash-report failed: {response.status_code}"
+        response.json()
+        print("GET /api/reports/flash-report works")
 
 
 # ============================================

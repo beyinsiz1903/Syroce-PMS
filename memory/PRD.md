@@ -36,6 +36,10 @@ Kullanıcının birincil hedefi kararlı, tamamen geçen bir CI/CD pipeline'ı e
 | Şubat 2026 | `tests/unit/test_exely_provider.py` | SOAP XML format assertion'ları güncellendi: eski attribute formatından yeni element formatına | 2357 test geçti |
 | Şubat 2026 | `worker/Dockerfile` | `pip install` komutuna `--extra-index-url` eklendi — `emergentintegrations` paketi bulunamıyordu | Kullanıcı dogruladı |
 || Şubat 2026 | `cache_manager.py` | `@cached` decorator refaktörü: (1) `_make_serializable()` ile Pydantic model->dict dönüşümü, (2) `hashlib.md5` ile deterministik cache key, (3) `_extract_tenant_id()` ile User objesinden tenant_id çıkarımı | 6 birim testi + 3 API testi geçti |
+|| Mart 2026 | `reconciliation_engine/__init__.py`, `drift_reconciliation.py` | Modül/paket isim çakışması çözüldü: standalone `.py` dosyası pakete taşındı, `cm_runtime_service` ve `aggregator` importları düzeltildi | Backend çalışıyor |
+|| Mart 2026 | `channel_manager/interfaces/router.py` | Yinelenen monolitik router dead code olarak tespit edilip `router_legacy_DEPRECATED.py` olarak yeniden adlandırıldı (tüm route'lar `router_registry` + modüler `routers/` alt dizininde mevcut) | Hiçbir import kırılmadı |
+|| Mart 2026 | `routers/pms.py` | 9 F821 lint hatası düzeltildi: `UPLOAD_DIR`, `REJECTED_STATUS`, `get_guest_name` eklendi, dead code silindi, `import os` eklendi | 0 lint hatası |
+|| Mart 2026 | `tests/test_helpers.py`, 5 test dosyası | Paylaşılan `skip_if_no_exely()`, `skip_if_unavailable()`, `skip_if_ci_error()` yardımcı fonksiyonları oluşturuldu; 5 test dosyasında tekrarlanan mantık birleştirildi | 39 test geçti |
 
 ## Öncelikli Backlog
 
@@ -46,10 +50,12 @@ Kullanıcının birincil hedefi kararlı, tamamen geçen bir CI/CD pipeline'ı e
 - [x] `@cached` decorator refaktörü (`cache_manager.py`) — Pydantic serializasyon, deterministik cache key, tenant_id çıkarımı düzeltildi
 
 ### P2
-- [ ] `reconciliation_engine` modül yapısının düzeltilmesi
-- [ ] Monolitik `router.py`'den yinelenen route'ların temizlenmesi
+- [x] `reconciliation_engine` modül yapısının düzeltilmesi
+- [x] Monolitik `router.py`'den yinelenen route'ların temizlenmesi
 - [x] CI/CD dosyalarının birleştirilmesi (`ci.yml` + `ci-cd.yml`) — v3.0: Redis servisi eklendi, Trivy scan, secrets check, Worker build, artifact upload birleştirildi. `ci.yml` silindi.
-- [ ] `pms.py` lint hatalarının giderilmesi (F821 Undefined name)
+- [x] `pms.py` lint hatalarının giderilmesi (F821 Undefined name)
+- [x] Rate Manager & Reconciliation testlerinde tekrarlanan pytest.skip mantığının birleştirilmesi
+- [x] `test_pms_finance_reports_routers.py` proaktif refaktörü
 
 ### P3
 - [ ] Legacy collection temizliği

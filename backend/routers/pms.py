@@ -2,6 +2,7 @@
 PMS Router - Extracted from server.py
 """
 import asyncio
+import os
 import uuid
 import io
 import csv
@@ -36,6 +37,9 @@ except ImportError:
     RoomBlockCreate = None
     QueueRoom = None
 
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/app/backend/uploads"))
+REJECTED_STATUS = "rejected"
+
 from core.utils import (
     generate_folio_number, generate_qr_code, generate_time_based_qr_token,
     get_cancellation_policy_details,
@@ -64,6 +68,19 @@ release_room_block_service = ReleaseRoomBlockService()
 reservation_read_service = ReservationReadService()
 update_reservation_service = UpdateReservationService()
 availability_read_service = AvailabilityReadService()
+
+
+async def get_guest_name(guest_id: str, tenant_id: str) -> str:
+    """Look up guest name by ID."""
+    guest = await db.guests.find_one(
+        {"id": guest_id, "tenant_id": tenant_id},
+        {"_id": 0, "first_name": 1, "last_name": 1, "name": 1},
+    )
+    if not guest:
+        return "Unknown Guest"
+    if guest.get("name"):
+        return guest["name"]
+    return f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip() or "Unknown Guest"
 
 # ── Local models ──
 
@@ -590,15 +607,6 @@ async def import_rooms_csv(
         skipped_room_numbers=skipped_numbers,
         error_rows=error_rows[:50],
     )
-
-
-    return RoomBulkCreateResponse(
-        created=len(created_rooms),
-        skipped=len(skipped),
-        rooms=created_rooms,
-        skipped_room_numbers=skipped,
-    )
-
 
 
 @router.post("/pms/rooms/{room_id}/images")

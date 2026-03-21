@@ -11,6 +11,7 @@ import os
 import pytest
 import requests
 import uuid
+from test_helpers import skip_if_no_exely
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
@@ -50,8 +51,7 @@ class TestRateManagerGrid:
             f"{BASE_URL}/api/channel-manager/rate-manager/grid",
             params={"start_date": "2026-01-21", "end_date": "2026-01-27"}
         )
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         assert response.status_code == 200
         
     def test_grid_has_required_fields(self, api_client):
@@ -60,8 +60,7 @@ class TestRateManagerGrid:
             f"{BASE_URL}/api/channel-manager/rate-manager/grid",
             params={"start_date": "2026-01-21", "end_date": "2026-01-27"}
         )
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         data = response.json()
         
         assert "grid" in data
@@ -76,8 +75,7 @@ class TestRateManagerGrid:
             f"{BASE_URL}/api/channel-manager/rate-manager/grid",
             params={"start_date": "2026-01-21", "end_date": "2026-01-27"}
         )
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         data = response.json()
         
         assert len(data["grid"]) > 0, "Grid should have at least one row"
@@ -96,8 +94,7 @@ class TestRateManagerGrid:
             f"{BASE_URL}/api/channel-manager/rate-manager/grid",
             params={"start_date": "2026-01-21", "end_date": "2026-01-27"}
         )
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         data = response.json()
         
         row = data["grid"][0]
@@ -116,15 +113,13 @@ class TestRateManagerRoomTypes:
     def test_room_types_returns_200(self, api_client):
         """Test room-types endpoint returns 200"""
         response = api_client.get(f"{BASE_URL}/api/channel-manager/rate-manager/room-types")
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         assert response.status_code == 200
         
     def test_room_types_has_data(self, api_client):
         """Test room-types returns expected data from Exely connection"""
         response = api_client.get(f"{BASE_URL}/api/channel-manager/rate-manager/room-types")
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         data = response.json()
         
         assert "room_types" in data
@@ -135,8 +130,7 @@ class TestRateManagerRoomTypes:
     def test_room_type_structure(self, api_client):
         """Test room type has code and name"""
         response = api_client.get(f"{BASE_URL}/api/channel-manager/rate-manager/room-types")
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         data = response.json()
         
         rt = data["room_types"][0]
@@ -166,8 +160,7 @@ class TestRateManagerUpdate:
             f"{BASE_URL}/api/channel-manager/rate-manager/update",
             json=test_update
         )
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         assert response.status_code == 200
         
     def test_update_saves_to_db(self, api_client):
@@ -189,8 +182,7 @@ class TestRateManagerUpdate:
             f"{BASE_URL}/api/channel-manager/rate-manager/update",
             json=test_update
         )
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         data = response.json()
         
         assert data["saved"] == 1, "Should have saved 1 date record"
@@ -230,8 +222,7 @@ class TestRateManagerUpdate:
             f"{BASE_URL}/api/channel-manager/rate-manager/update",
             json=test_update
         )
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         data = response.json()
         
         assert "push_results" in data
@@ -258,8 +249,7 @@ class TestRateManagerUpdate:
             f"{BASE_URL}/api/channel-manager/rate-manager/update",
             json=test_update
         )
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         data = response.json()
         
         assert data["saved"] == 3, "Should have saved 3 date records"

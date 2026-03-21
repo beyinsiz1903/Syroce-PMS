@@ -1,11 +1,12 @@
 """
-Test Rate Manager Bulk Update API (Toplu Güncellemeler)
+Test Rate Manager Bulk Update API (Toplu Guncellemeler)
 Tests the HotelRunner-style bulk update interface with day-of-week filtering
 """
 import os
 import pytest
 import requests
 from datetime import date, timedelta
+from test_helpers import skip_if_no_exely
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
@@ -49,8 +50,7 @@ class TestRateManagerBulkUpdate:
             params={"start_date": today, "end_date": end}
         )
         
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -71,8 +71,7 @@ class TestRateManagerBulkUpdate:
             params={"start_date": today, "end_date": end}
         )
         
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -87,8 +86,7 @@ class TestRateManagerBulkUpdate:
         """Test GET /api/channel-manager/rate-manager/room-types"""
         response = self.session.get(f"{BASE_URL}/api/channel-manager/rate-manager/room-types")
         
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -118,8 +116,7 @@ class TestRateManagerBulkUpdate:
             }
         )
         
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -148,8 +145,7 @@ class TestRateManagerBulkUpdate:
             }
         )
         
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -177,8 +173,7 @@ class TestRateManagerBulkUpdate:
             }
         )
         
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -206,8 +201,7 @@ class TestRateManagerBulkUpdate:
             }
         )
         
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -234,8 +228,7 @@ class TestRateManagerBulkUpdate:
             }
         )
         
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -260,8 +253,7 @@ class TestRateManagerBulkUpdate:
             }
         )
         
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -284,8 +276,7 @@ class TestRateManagerBulkUpdate:
             }
         )
         
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -317,8 +308,7 @@ class TestRateManagerBulkUpdate:
             }
         )
         
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -344,8 +334,7 @@ class TestRateManagerBulkUpdate:
             }
         )
         
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -390,8 +379,7 @@ class TestRateManagerGridData:
             params={"start_date": today, "end_date": end}
         )
         
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -415,8 +403,7 @@ class TestRateManagerGridData:
             params={"start_date": today, "end_date": end}
         )
         
-        if response.status_code == 404:
-            pytest.skip("No Exely connection in test environment")
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()

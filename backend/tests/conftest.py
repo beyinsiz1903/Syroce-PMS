@@ -2,11 +2,38 @@ import sys
 from pathlib import Path
 import pytest
 import asyncio
+import os
+import requests
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
+TESTS_DIR = Path(__file__).resolve().parent
 
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
+if str(TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(TESTS_DIR))
+
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+
+
+@pytest.fixture(scope="session")
+def demo_auth_token():
+    """Shared demo admin auth token for all tests."""
+    if not BASE_URL:
+        pytest.skip("REACT_APP_BACKEND_URL not set")
+    resp = requests.post(
+        f"{BASE_URL}/api/auth/login",
+        json={"email": "demo@hotel.com", "password": "demo123"},
+    )
+    if resp.status_code != 200:
+        pytest.skip("Authentication failed for demo@hotel.com")
+    return resp.json()["access_token"]
+
+
+@pytest.fixture(scope="session")
+def demo_auth_headers(demo_auth_token):
+    """Shared auth headers dict."""
+    return {"Authorization": f"Bearer {demo_auth_token}", "Content-Type": "application/json"}
 
 
 @pytest.fixture(scope="session")

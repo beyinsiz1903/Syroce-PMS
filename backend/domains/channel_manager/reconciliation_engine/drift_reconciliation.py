@@ -1,6 +1,9 @@
 """
-Channel Manager — Reconciliation Engine
+Channel Manager — Drift-Based Reconciliation Engine
 Auto-reconciles inventory discrepancies between PMS and OTA channels.
+
+Moved from the standalone reconciliation_engine.py to resolve the
+file/package naming conflict (Python package shadows the .py file).
 """
 import logging
 from datetime import datetime, timezone
@@ -18,7 +21,6 @@ class ReconciliationEngine:
     @staticmethod
     async def reconcile(tenant_id: str, *, auto_fix: bool = True) -> Dict[str, Any]:
         """Run drift scan and optionally auto-reconcile discrepancies."""
-        # First, detect drifts
         scan = await drift_detector.scan_drift(tenant_id)
         drifts = scan.get("drifts", [])
 
@@ -43,7 +45,6 @@ class ReconciliationEngine:
                     "status": "pending",
                 }
                 if auto_fix:
-                    # Mark as fixed (the actual push happens via sync scheduler)
                     action["status"] = "queued_for_sync"
                 actions.append(action)
 
@@ -74,7 +75,6 @@ class ReconciliationEngine:
             "reconciled_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        # Store reconciliation result
         await db.reconciliation_results.insert_one({
             **result,
             "timestamp": datetime.now(timezone.utc).isoformat(),

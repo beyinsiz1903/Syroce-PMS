@@ -22,6 +22,7 @@ import requests
 import os
 import uuid
 from datetime import datetime, timezone
+from test_helpers import skip_if_unavailable
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
@@ -259,9 +260,7 @@ class TestReconciliationRun:
         assert response.status_code == 200, f"Manual run failed: {response.text}"
         data = response.json()
         
-        # CI ortamında reconciliation engine başlatılmamış olabilir
-        if data.get("status") == "unavailable":
-            pytest.skip(f"Reconciliation engine not available in CI: {data.get('message')}")
+        skip_if_unavailable(data)
         
         assert "message" in data
         assert "result" in data
@@ -322,9 +321,7 @@ class TestReconciliationRunWithSnapshots:
         assert response.status_code == 200, f"Run with snapshots failed: {response.text}"
         data = response.json()
         
-        # CI ortamında reconciliation engine başlatılmamış olabilir
-        if data.get("status") == "unavailable":
-            pytest.skip(f"Reconciliation engine not available in CI: {data.get('message')}")
+        skip_if_unavailable(data)
         
         result = data.get("result", {})
         
@@ -348,7 +345,7 @@ class TestReconciliationRunWithSnapshots:
         )
         assert response.status_code == 200
         lineages = response.json().get("lineages", [])
-        hotelrunner_lineages = [l for l in lineages if l.get("provider") == "hotelrunner"]
+        _hr_lineages = [lg for lg in lineages if lg.get("provider") == "hotelrunner"]
         
         # Run with empty snapshots - PMS has reservations but provider doesn't
         response = requests.post(
@@ -363,9 +360,7 @@ class TestReconciliationRunWithSnapshots:
         assert response.status_code == 200, f"Ghost test failed: {response.text}"
         data = response.json()
         
-        # CI ortamında reconciliation engine başlatılmamış olabilir
-        if data.get("status") == "unavailable":
-            pytest.skip(f"Reconciliation engine not available in CI: {data.get('message')}")
+        skip_if_unavailable(data)
         
         result = data.get("result", {})
         
@@ -385,7 +380,7 @@ class TestReconciliationRunWithSnapshots:
             headers=headers
         )
         lineages = response.json().get("lineages", [])
-        hr_lineages = [l for l in lineages if l.get("provider") == "hotelrunner"]
+        hr_lineages = [lg for lg in lineages if lg.get("provider") == "hotelrunner"]
         
         if hr_lineages:
             existing = hr_lineages[0]
@@ -416,9 +411,7 @@ class TestReconciliationRunWithSnapshots:
             assert response.status_code == 200
             data = response.json()
             
-            # CI ortamında reconciliation engine başlatılmamış olabilir
-            if data.get("status") == "unavailable":
-                pytest.skip(f"Reconciliation engine not available in CI: {data.get('message')}")
+            skip_if_unavailable(data)
             
             result = data.get("result", {})
             
@@ -468,9 +461,7 @@ class TestReconciliationAutoResolution:
         assert response.status_code == 200
         data = response.json()
         
-        # CI ortamında reconciliation engine başlatılmamış olabilir
-        if data.get("status") == "unavailable":
-            pytest.skip(f"Reconciliation engine not available in CI: {data.get('message')}")
+        skip_if_unavailable(data)
         
         result = data.get("result", {})
         
@@ -561,7 +552,6 @@ class TestReconciliationCaseActions:
     
     def _create_test_case(self, headers) -> str:
         """Helper to create a test case and return its ID."""
-        test_ext_id = f"RECON-ACTION-{uuid.uuid4().hex[:8]}"
         
         # First get existing lineage to create amount_mismatch (not auto-resolved)
         response = requests.get(
@@ -569,7 +559,7 @@ class TestReconciliationCaseActions:
             headers=headers
         )
         lineages = response.json().get("lineages", [])
-        hr_lineages = [l for l in lineages if l.get("provider") == "hotelrunner"]
+        hr_lineages = [lg for lg in lineages if lg.get("provider") == "hotelrunner"]
         
         if hr_lineages:
             existing = hr_lineages[0]
@@ -791,7 +781,7 @@ class TestReconciliationCaseDetail:
             headers=headers
         )
         assert response.status_code == 404
-        print(f"[PASS] Nonexistent case returns 404")
+        print("[PASS] Nonexistent case returns 404")
 
 
 if __name__ == "__main__":
