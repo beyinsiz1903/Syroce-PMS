@@ -1,5 +1,39 @@
 # Syroce PMS — Changelog
 
+## 2026-03-22: P1 Hardening — Folio Ledger, Learning Loop, Battle Tests
+
+### Immutable Folio Ledger Service
+- New collection `folio_ledger` with append-only entries (charges, payments, voids, transfers)
+- Unique compound index on `(tenant_id, folio_id, sequence_number)`
+- Idempotency key with unique sparse index prevents duplicate entries
+- Payments stored with negative amounts for correct balance computation
+- Void entries create a new entry with `-original_amount` (never modify original)
+- Transfer creates paired entries: `transfer_out` (negative) and `transfer_in` (positive)
+- Reconciliation engine compares ledger balance vs stored folio balance
+- Files: `core/folio_ledger_service.py`, `routers/folio_ledger.py`
+- 8/8 tests passing
+
+### Learning Loop System
+- IncidentClassifier: auto-classifies incidents based on keyword matching against 10 classification rules
+- RecurrenceDetector: uses pattern signature (SHA256 of category:subcategory:service) to find similar past incidents
+- RCAEngine: tracks full postmortem workflow: create_rca → track_fix → create_never_again_rule
+- LearningDashboard: aggregates metrics (MTTR, recurrence rate, rule stats)
+- Files: `core/learning_loop.py`, `controlplane/learning_loop_router.py`
+- 6/6 tests passing
+
+### PMS Battle Tests (Cancellation Edges)
+- Cancel confirmed booking: status=cancelled, room released
+- Double cancel: idempotent (second cancel succeeds gracefully)
+- Cancel checked-out: handled gracefully
+- Files: `tests/battle/test_cancellation_edges.py`, `tests/battle/test_folio_ledger.py`, `tests/battle/test_learning_loop.py`
+- 3/3 tests passing
+
+### Testing
+- 17/17 battle tests pass + 9/9 E2E tests pass + 6/6 atomic booking tests pass
+- Testing agent verification: 100% success (iteration_133)
+
+
+
 ## 2026-03-22: Overbooking Prevention — Room-Night Locking
 
 ### Implementation

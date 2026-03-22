@@ -290,10 +290,11 @@ Frontend operations screen that turns developer APIs into a self-service debuggi
 - Reference customer evidence template UI
 
 ### P1 — Hardening (from Blueprint Week 2)
-- Implement immutable folio_ledger + reconciliation engine
+- ~~Implement immutable folio_ledger + reconciliation engine~~ **DONE (2026-03-22)** — 8/8 tests passing
+- ~~Implement Learning Loop (IncidentClassifier, recurrence detection, never-again rules)~~ **DONE (2026-03-22)** — 6/6 tests passing
+- ~~PMS battle tests (cancellation edge cases)~~ **DONE (2026-03-22)** — 3/3 tests passing
 - Implement key rotation (data model + API + ReEncryptionWorker)
-- PMS battle tests (split reservation, no-show, room change, ~~overbooking~~, cancellation)
-- Implement Learning Loop (IncidentClassifier, recurrence detection, never-again rules)
+- PMS battle tests (split reservation, no-show, room change)
 
 ### P1 — Stress + Exposure (from Blueprint Week 3)
 - Reservation Burst test (15K reservations)
