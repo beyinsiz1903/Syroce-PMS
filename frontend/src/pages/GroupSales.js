@@ -39,6 +39,7 @@ const StatusBadge = ({ status }) => {
 };
 
 const GroupSales = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(false);

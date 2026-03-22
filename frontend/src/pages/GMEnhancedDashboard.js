@@ -342,7 +342,7 @@ const GMEnhancedDashboard = ({ user }) => {
               </Card>
               <Card className="bg-gradient-to-r from-red-500 to-pink-500 text-white">
                 <CardContent className="p-4">
-                  <div className="text-sm opacity-90">Acil (>2 gün)</div>
+                  <div className="text-sm opacity-90">Acil (&gt;2 gün)</div>
                   <div className="text-4xl font-bold mt-1">{complaintManagement.urgent_complaints}</div>
                 </CardContent>
               </Card>

@@ -1,4 +1,4 @@
-name: Deploy Pipeline
+name: Deploy Pipeline (Manual)
 
 on:
   workflow_dispatch:
@@ -74,15 +74,17 @@ jobs:
 
       - name: Deploy to Staging
         run: |
-          echo "Deploying to staging..."
+          echo "TODO: Configure kubectl or deployment mechanism"
           echo "Image tag: ${{ github.sha }}"
-          # kubectl set image deployment/backend backend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
-          # kubectl set image deployment/frontend frontend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
-          # kubectl set image deployment/worker worker=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-worker:${{ github.sha }}
+          exit 1
+        # kubectl set image deployment/backend backend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
+        # kubectl set image deployment/frontend frontend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
+        # kubectl set image deployment/worker worker=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-worker:${{ github.sha }}
 
-      - name: Verify Staging
+      - name: Verify Staging Health
+        if: success()
         run: |
-          echo "Running health checks on staging..."
+          echo "TODO: Configure staging health check"
           # curl -f https://staging.syroce.com/api/health/
 
   # ── Deploy to Production ───────────────────────────────────────
@@ -95,18 +97,25 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Create DB Backup
-        run: echo "Triggering pre-deploy backup..."
+        run: |
+          echo "TODO: Configure pre-deploy backup mechanism"
+          exit 1
 
       - name: Deploy to Production
         run: |
-          echo "Deploying to production..."
+          echo "TODO: Configure production deployment"
           echo "Image tag: ${{ github.sha }}"
+          exit 1
 
-      - name: Verify Production
+      - name: Verify Production Health
+        if: success()
         run: |
-          echo "Running production health checks..."
+          echo "TODO: Configure production health check"
+          # curl -f https://app.syroce.com/api/health/
 
       - name: Notify
         if: always()
         run: |
           echo "Deploy status: ${{ job.status }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Environment: ${{ github.event.inputs.environment }}"

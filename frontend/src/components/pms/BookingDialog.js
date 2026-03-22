@@ -580,7 +580,7 @@ const BookingDialog = ({
       </div>
 
       {/* Override Reason - Show if rate is different from base */}
-      {false && newBooking.base_rate > 0 && newBooking.base_rate !== newBooking.total_amount && (
+      {newBooking.base_rate > 0 && newBooking.base_rate !== newBooking.total_amount && (
         <div className="bg-yellow-50 border border-yellow-200 p-4 rounded">
           <Label className="text-yellow-800">Override Reason * (Required for rate change)</Label>
           <Textarea 

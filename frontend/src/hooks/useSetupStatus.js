@@ -23,7 +23,6 @@ export function useSetupStatus({ enabled = true } = {}) {
         if (!mounted) return;
         setError(e);
       } finally {
-        if (!mounted) return;
         setLoading(false);
       }
     })();

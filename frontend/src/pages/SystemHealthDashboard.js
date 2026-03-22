@@ -67,7 +67,7 @@ function PanelCard({ title, icon: Icon, children, status, onAction, actionLabel,
         <div className="flex items-center gap-2">
           {status && <StatusBadge status={status} />}
           {onAction && !permissionGated && (
-            <Button data-testid={`${testId}-action` || `action-${title.toLowerCase().replace(/\s+/g, "-")}`}
+            <Button data-testid={testId ? `${testId}-action` : `action-${title.toLowerCase().replace(/\s+/g, "-")}`}
               size="sm" variant="outline"
               className="h-7 text-xs border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
               onClick={onAction} disabled={actionLoading}>

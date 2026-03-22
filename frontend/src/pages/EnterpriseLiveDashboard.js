@@ -595,7 +595,7 @@ export default function EnterpriseLiveDashboard({ user }) {
           if (msg.type !== "heartbeat_ack" && msg.type !== "connection_established") {
             loadLiveData();
           }
-        } catch (e) {}
+        } catch (e) { /* WebSocket parse error */ }
       };
     } catch (e) { console.error("WS connection failed:", e); }
 

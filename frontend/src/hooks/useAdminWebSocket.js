@@ -38,7 +38,7 @@ export function useAdminWebSocket(tenantId) {
           if (data.type === 'pong') return;
           setLastEvent(data);
           setEvents(prev => [data, ...prev].slice(0, 100));
-        } catch {}
+        } catch (e) { /* JSON parse error, ignore non-JSON messages */ }
       };
 
       ws.onclose = () => {

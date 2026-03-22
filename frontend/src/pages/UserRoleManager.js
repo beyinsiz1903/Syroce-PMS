@@ -13,7 +13,7 @@ const DEFAULT_ROLE_OPTIONS = [
   { value: 'admin', label: 'Yönetici' },
   { value: 'supervisor', label: 'Supervisor' },
   { value: 'front_desk', label: 'Resepsiyon' },
-  { value: 'housekeeping', label: t('nav.housekeeping') },
+  { value: 'housekeeping', label: 'Housekeeping' },
 ];
 const UserRoleManager = ({ user, tenant, onLogout, roleOptions }) => {
   const { t } = useTranslation();

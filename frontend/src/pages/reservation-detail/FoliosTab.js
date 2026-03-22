@@ -24,7 +24,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [reconcileForm, setReconcileForm] = useState({ cari_account_id: '', amount: '', description: '' });
   const [loading, setLoading] = useState(false);
 
-  const loadCari = async () => { try { const r = await axios.get(`${API}/api/pms/cari-accounts`); setCariAccounts(r.data.accounts || []); } catch {} };
+  const loadCari = async () => { try { const r = await axios.get(`${API}/api/pms/cari-accounts`); setCariAccounts(r.data.accounts || []); } catch { /* fetch error */ } };
 
   const exec = async (fn) => { setLoading(true); try { await fn(); onRefresh?.(); } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); } setLoading(false); };
 

@@ -40,6 +40,7 @@ import FloatingActionButton from '@/components/FloatingActionButton';
 import ExpenseSummaryCard from '@/components/ExpenseSummaryCard';
 import TrendChart from '@/components/TrendChart';
 import SLAConfigCard from '@/components/SLAConfigCard';
+import { toast } from 'sonner';
 
 const GMDashboard = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -907,7 +908,7 @@ const GMDashboard = ({ user, tenant, onLogout }) => {
                 <div>
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-sm text-gray-600">Revenue</span>
-                    <Badge variant={-2.3 < 0 ? "destructive" : "default"}>
+                    <Badge variant="destructive">
                       -2.3%
                     </Badge>
                   </div>

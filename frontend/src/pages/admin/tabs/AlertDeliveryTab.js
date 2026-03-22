@@ -85,10 +85,10 @@ const AlertDeliveryTab = () => {
   const [view, setView] = useState('channels');
 
   const fetchChannels = useCallback(async () => {
-    try { const { data } = await axios.get(`${API}/delivery/channels`); setChannels(data.channels || []); } catch {}
+    try { const { data } = await axios.get(`${API}/delivery/channels`); setChannels(data.channels || []); } catch { /* fetch error */ }
   }, []);
   const fetchLogs = useCallback(async () => {
-    try { const { data } = await axios.get(`${API}/delivery/log?limit=50`); setLogs(data.logs || []); } catch {}
+    try { const { data } = await axios.get(`${API}/delivery/log?limit=50`); setLogs(data.logs || []); } catch { /* fetch error */ }
   }, []);
 
   useEffect(() => { Promise.all([fetchChannels(), fetchLogs()]).finally(() => setLoading(false)); }, [fetchChannels, fetchLogs]);

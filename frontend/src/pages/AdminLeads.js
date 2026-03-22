@@ -82,7 +82,17 @@ Not: ${lead.note || '-'}
   }
 };
 
+const copyLeadId = async (id) => {
+  try {
+    await navigator.clipboard.writeText(id);
+    toast.success('Lead ID kopyalandı');
+  } catch {
+    toast.error('Kopyalanamadı');
+  }
+};
+
 const AdminLeads = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");

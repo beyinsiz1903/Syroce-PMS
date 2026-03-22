@@ -17,6 +17,7 @@ markers = [
 target-version = "py311"
 line-length = 200
 exclude = [
+    "_legacy/",
     "accounting_endpoints.py",
     "create_*.py",
     "seed_*.py",
