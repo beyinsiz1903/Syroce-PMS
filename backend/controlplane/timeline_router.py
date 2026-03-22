@@ -12,6 +12,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Query
 
+from core.database import db
 from .timeline_reader import get_timeline_reader
 
 logger = logging.getLogger("controlplane.timeline_router")
@@ -85,6 +86,41 @@ async def get_external_timeline(
     """
     reader = get_timeline_reader()
     return await reader.get_by_external_id(external_id, tenant_id=tenant_id)
+
+
+@router.get("/raw-payload/{correlation_id}")
+async def get_raw_payload(
+    correlation_id: str,
+):
+    """Retrieve the raw webhook payload for a given correlation_id.
+
+    This is the exact bytes/JSON that the OTA sent, stored at webhook entry.
+    Essential for debugging mapping errors, validation failures, and provider bugs.
+    """
+    doc = await db.webhook_raw_payloads.find_one(
+        {"correlation_id": correlation_id},
+        {"_id": 0},
+    )
+    if not doc:
+        return {"error": "Raw payload not found", "correlation_id": correlation_id}
+    return doc
+
+
+@router.get("/raw-payloads/by-external/{external_id}")
+async def get_raw_payloads_by_external_id(
+    external_id: str,
+    limit: int = Query(10, ge=1, le=50),
+):
+    """Retrieve all raw webhook payloads for a given OTA reservation ID.
+
+    Useful when multiple webhooks arrive for the same reservation
+    (create, modify, cancel).
+    """
+    docs = await db.webhook_raw_payloads.find(
+        {"external_id": external_id},
+        {"_id": 0},
+    ).sort("received_at", -1).to_list(limit)
+    return {"payloads": docs, "count": len(docs), "external_id": external_id}
 
 
 # ── Catch-all route last ───────────────────────────────────────────

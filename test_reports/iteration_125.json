@@ -1,0 +1,61 @@
+{
+  "summary": "Webhook Timeline Integration testing complete. All 18 tests pass. Verified end-to-end webhook traceability for both Exely (SOAP XML) and HotelRunner (JSON) webhooks. Timeline events are correctly written at webhook_received, normalized, deduplicated stages for Exely and webhook_received, deduplicated, normalized, validated stages for HotelRunner. Raw payload storage working for both providers. Duplicate detection correctly marks is_duplicate=true on second webhook. Correlation ID propagation verified across all events.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_webhook_timeline_integration.py",
+    "/app/test_reports/pytest/pytest_webhook_timeline_integration.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Exely webhook correctly writes 3 timeline events: webhook_received (with raw_payload_id, hotel_code, source_ip, payload_size_bytes), normalized (with guest_name, checkin, checkout, room_type_code, total_amount, currency, canonical_status), deduplicated (with is_duplicate, is_new, decision)",
+    "HotelRunner webhook correctly writes 4 timeline events via ingest pipeline: webhook_received, deduplicated, normalized, validated (with room_mapped, rate_mapped status)",
+    "Raw payload storage working correctly - stores full SOAP XML for Exely (text/xml) and full JSON for HotelRunner (application/json)",
+    "Duplicate detection working - second webhook for same reservation shows is_duplicate=true, is_new=false in deduplicated stage",
+    "Correlation ID propagation verified - all events from single webhook share same correlation_id",
+    "Timeline API endpoints working: /external/{id}, /raw-payloads/by-external/{id}, /raw-payload/{correlation_id}, /search, /gaps, /correlation/{id}",
+    "HotelRunner uses background_tasks for processing, requires 2-3s sleep before checking timeline",
+    "Exely webhook processes synchronously, timeline events available immediately"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_webhook_timeline_integration.py"
+  ],
+  "success_rate": {
+    "backend": "100% (18/18 tests passed)",
+    "frontend": "N/A (backend-only testing)"
+  },
+  "test_credentials": "No auth required for webhook endpoints. Exely uses hotel_code=501694 (demo connection). HotelRunner requires X-Tenant-ID header.",
+  "seed_data_creation": "Test data created during tests: EXELY-TL-*, EXELY-RAW-*, EXELY-DUP-*, HR-TL-*, HR-RAW-*, HR-DUP-* reservations with timeline events and raw payloads",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Webhook Timeline Integration (Phase 5 extension) is complete and tested. 18 API tests in test_webhook_timeline_integration.py cover: Exely webhook (6 tests: health, info, new reservation timeline, raw payload storage, duplicate detection, metadata), HotelRunner webhook (3 tests: new reservation timeline, raw payload storage, duplicate detection), Timeline API endpoints (6 tests: external_id lookup, raw payloads by external_id, raw payload by correlation_id, search with stage filter, search with provider filter, gaps detection), Correlation ID propagation (2 tests: Exely, HotelRunner), Validated stage metadata (1 test). Key tenant_id for testing: 044f122b-87b5-480a-88b4-b9534b0c8c90. Exely hotel_code: 501694.",
+  "verified_endpoints": [
+    "GET /api/webhooks/exely/health - SOAP PingRS health check",
+    "GET /api/webhooks/exely/info - Webhook configuration info (JSON)",
+    "POST /api/webhooks/exely/reservations - OTA_HotelResNotifRQ ingest with timeline",
+    "POST /api/channel-manager/hotelrunner/webhooks/reservations - JSON reservation webhook with timeline",
+    "GET /api/ops/timeline/external/{external_id} - Primary debug entry point (returns timeline array)",
+    "GET /api/ops/timeline/raw-payloads/by-external/{external_id} - All raw payloads for reservation",
+    "GET /api/ops/timeline/raw-payload/{correlation_id} - Single raw payload by correlation",
+    "GET /api/ops/timeline/search?stage=X&provider=Y - Search with filters",
+    "GET /api/ops/timeline/gaps - Stuck event detection",
+    "GET /api/ops/timeline/correlation/{correlation_id} - Full flow trace"
+  ],
+  "timeline_stages_verified": {
+    "exely": ["webhook_received", "normalized", "deduplicated"],
+    "hotelrunner": ["webhook_received", "deduplicated", "normalized", "validated"]
+  },
+  "metadata_fields_verified": {
+    "webhook_received": ["raw_payload_id", "hotel_code/hr_number", "source_ip", "payload_size_bytes", "content_type"],
+    "normalized": ["guest_name", "checkin", "checkout", "room_type_code", "total_amount", "currency", "canonical_status"],
+    "deduplicated": ["is_duplicate", "is_new", "decision", "matched_count", "modified_count"],
+    "validated": ["room_type_code", "room_mapped", "room_mapping_target", "rate_plan_code", "rate_mapped", "rate_mapping_target"]
+  }
+}

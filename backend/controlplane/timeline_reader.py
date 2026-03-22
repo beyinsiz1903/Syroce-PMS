@@ -15,7 +15,7 @@ COLL_TIMELINE = "event_timeline"
 # Expected stage sequences for gap detection
 EXPECTED_SEQUENCES = {
     "reservation": [
-        "received", "validated", "normalized", "deduped",
+        "webhook_received", "deduplicated", "normalized", "validated",
         "import_decided", "stored", "queued", "dispatched", "confirmed",
     ],
     "ari_update": ["queued", "dispatched", "pushed", "confirmed"],

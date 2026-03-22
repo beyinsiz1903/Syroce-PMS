@@ -13,6 +13,8 @@ Unified ingest pipeline with full traceability and hardening:
   Stage 7 → Decision engine + mutation detection
   Stage 8 → Concurrency control (reservation-scoped optimistic lock)
   Stage 9 → Execute decision (lineage update + trace enrichment)
+
+TIMELINE: Writes normalized, deduplicated, validated stages for end-to-end traceability.
 """
 import logging
 import uuid
@@ -36,6 +38,18 @@ LOCK_TTL_SECONDS = 30
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _timeline_append(**kwargs):
+    """Fire-and-forget timeline write. Returns a coroutine."""
+    try:
+        from controlplane.timeline_writer import get_timeline_writer
+        return get_timeline_writer().append(**kwargs)
+    except Exception:
+        import asyncio
+        async def _noop():
+            return None
+        return _noop()
 
 
 class PipelineResult:
@@ -68,6 +82,11 @@ async def process_event(event: Dict[str, Any]) -> PipelineResult:
     """
     Process a single raw_channel_event through the full pipeline.
     The event must already be persisted in raw_channel_events.
+
+    Timeline stages written:
+      - deduplicated — after dedup check (Stage 2/3/4)
+      - normalized — after payload normalization (Stage 5)
+      - validated — after mapping resolution (Stage 6)
     """
     result = PipelineResult(event["id"])
     result.trace_id = event.get("trace_id") or event.get("correlation_id", "")
@@ -75,6 +94,8 @@ async def process_event(event: Dict[str, Any]) -> PipelineResult:
     property_id = event["property_id"]
     provider = event["provider"]
     existing_lineage = None
+    correlation_id = event.get("correlation_id", "")
+    ext_res_id = event.get("external_reservation_id", "")
 
     try:
         # ── Stage 2: Duplicate Detection ──────────────────────────
@@ -88,11 +109,27 @@ async def process_event(event: Dict[str, Any]) -> PipelineResult:
                 result.reason = f"Duplicate provider_event_id: {provider_event_id}"
                 result.status = "duplicate"
                 await _finalize_event(event["id"], "duplicate", result)
+                # Timeline: deduplicated (duplicate detected)
+                await _timeline_append(
+                    tenant_id=tenant_id,
+                    correlation_id=correlation_id,
+                    entity_type="reservation",
+                    external_id=ext_res_id,
+                    stage="deduplicated",
+                    status="duplicate",
+                    source="ingest_pipeline",
+                    provider=provider,
+                    metadata={
+                        "duplicate_type": "provider_event_id",
+                        "provider_event_id": provider_event_id,
+                        "decision": "skip",
+                        "reason": result.reason,
+                    },
+                )
                 logger.info(f"[{event['id']}] DUPLICATE: {provider_event_id}")
                 return result
 
         # ── Stage 3: Payload Hash Check ───────────────────────────
-        ext_res_id = event.get("external_reservation_id", "")
         payload_hash = event.get("payload_hash", "")
         if payload_hash and ext_res_id:
             hash_exists = await repo.check_payload_hash_exists(
@@ -103,6 +140,23 @@ async def process_event(event: Dict[str, Any]) -> PipelineResult:
                 result.reason = f"Same payload hash already processed: {payload_hash}"
                 result.status = "duplicate"
                 await _finalize_event(event["id"], "duplicate", result)
+                # Timeline: deduplicated (hash duplicate)
+                await _timeline_append(
+                    tenant_id=tenant_id,
+                    correlation_id=correlation_id,
+                    entity_type="reservation",
+                    external_id=ext_res_id,
+                    stage="deduplicated",
+                    status="duplicate",
+                    source="ingest_pipeline",
+                    provider=provider,
+                    metadata={
+                        "duplicate_type": "payload_hash",
+                        "payload_hash": payload_hash,
+                        "decision": "skip",
+                        "reason": result.reason,
+                    },
+                )
                 logger.info(f"[{event['id']}] HASH_DUP: {payload_hash}")
                 return result
 
@@ -120,13 +174,70 @@ async def process_event(event: Dict[str, Any]) -> PipelineResult:
                 result.reason = f"Stale: {incoming_version} <= {existing_version}"
                 result.status = "stale"
                 await _finalize_event(event["id"], "stale", result)
+                # Timeline: deduplicated (stale version)
+                await _timeline_append(
+                    tenant_id=tenant_id,
+                    correlation_id=correlation_id,
+                    entity_type="reservation",
+                    external_id=ext_res_id,
+                    stage="deduplicated",
+                    status="stale",
+                    source="ingest_pipeline",
+                    provider=provider,
+                    metadata={
+                        "duplicate_type": "stale_version",
+                        "incoming_version": incoming_version,
+                        "existing_version": existing_version,
+                        "decision": "skip",
+                    },
+                )
                 logger.info(f"[{event['id']}] STALE: {incoming_version}")
                 return result
+
+        # ── Timeline: deduplicated (passed — unique event) ────────
+        await _timeline_append(
+            tenant_id=tenant_id,
+            correlation_id=correlation_id,
+            entity_type="reservation",
+            external_id=ext_res_id,
+            stage="deduplicated",
+            status="success",
+            source="ingest_pipeline",
+            provider=provider,
+            metadata={
+                "is_duplicate": False,
+                "has_existing_lineage": existing_lineage is not None,
+                "decision": "proceed",
+            },
+        )
 
         # ── Stage 5: Normalize Payload ────────────────────────────
         raw_payload = event.get("raw_payload", {})
         canonical = normalize(provider, raw_payload)
         canonical_hash = compute_canonical_hash(canonical)
+
+        # ── Timeline: normalized ──────────────────────────────────
+        await _timeline_append(
+            tenant_id=tenant_id,
+            correlation_id=correlation_id,
+            entity_type="reservation",
+            external_id=ext_res_id,
+            stage="normalized",
+            status="success",
+            source="ingest_pipeline",
+            provider=provider,
+            metadata={
+                "guest_name": canonical.get("guest_name", ""),
+                "check_in": canonical.get("check_in", ""),
+                "check_out": canonical.get("check_out", ""),
+                "room_type_code": canonical.get("room_type_code", ""),
+                "rate_plan_code": canonical.get("rate_plan_code", ""),
+                "total_amount": canonical.get("total_amount", 0.0),
+                "currency": canonical.get("currency", ""),
+                "canonical_status": canonical.get("status", ""),
+                "canonical_hash": canonical_hash,
+            },
+        )
 
         # ── Stage 6: Mapping Resolution (HARD FAIL) ──────────────
         room_code = canonical.get("room_type_code", "")
@@ -143,6 +254,29 @@ async def process_event(event: Dict[str, Any]) -> PipelineResult:
             rate_mapping = await repo.find_rate_plan_mapping_by_provider(
                 tenant_id, property_id, provider, rate_code,
             )
+
+        # ── Timeline: validated (mapping result) ──────────────────
+        room_mapped = room_mapping is not None if room_code else True
+        rate_mapped = rate_mapping is not None if rate_code else True
+        mapping_status = "success" if (room_mapped and rate_mapped) else "warning"
+        await _timeline_append(
+            tenant_id=tenant_id,
+            correlation_id=correlation_id,
+            entity_type="reservation",
+            external_id=ext_res_id,
+            stage="validated",
+            status=mapping_status,
+            source="ingest_pipeline",
+            provider=provider,
+            metadata={
+                "room_type_code": room_code,
+                "room_mapped": room_mapped,
+                "room_mapping_target": room_mapping.get("pms_room_type_id", "") if room_mapping else None,
+                "rate_plan_code": rate_code,
+                "rate_mapped": rate_mapped,
+                "rate_mapping_target": rate_mapping.get("pms_rate_plan_id", "") if rate_mapping else None,
+            },
+        )
 
         # ── Stage 7: Decision Engine + Mutation Detection ────────
         decision, reason = decide(

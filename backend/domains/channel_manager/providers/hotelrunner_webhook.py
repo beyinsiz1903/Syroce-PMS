@@ -5,8 +5,10 @@ Webhook: Lightweight receiver → raw_channel_events → async process via inges
 Pull Job: Cursor-based fetch every N minutes → diff check → ingest
 
 UPDATED: Now feeds into the unified 9-collection ingest pipeline.
+TIMELINE: Every webhook writes received → normalized → deduplicated stages.
 """
 import asyncio
+import json
 import logging
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -26,6 +28,46 @@ from domains.channel_manager.ingest.pipeline import process_event
 
 logger = logging.getLogger(__name__)
 
+
+def _timeline_append(**kwargs):
+    """Fire-and-forget timeline write. Returns a coroutine."""
+    try:
+        from controlplane.timeline_writer import get_timeline_writer
+        return get_timeline_writer().append(**kwargs)
+    except Exception:
+        async def _noop():
+            return None
+        return _noop()
+
+
+async def _store_raw_payload(
+    tenant_id: str, correlation_id: str, provider: str,
+    external_id: str, event_type: str, payload: dict,
+    source_ip: str,
+) -> str:
+    """Store raw webhook JSON payload for debugging. Returns payload_id."""
+    payload_id = str(uuid.uuid4())
+    try:
+        raw_str = json.dumps(payload, default=str, ensure_ascii=False)
+        await db.webhook_raw_payloads.insert_one({
+            "id": payload_id,
+            "tenant_id": tenant_id,
+            "correlation_id": correlation_id,
+            "provider": provider,
+            "external_id": external_id,
+            "event_type": event_type,
+            "content_type": "application/json",
+            "raw_payload": raw_str,
+            "payload_size_bytes": len(raw_str.encode("utf-8")),
+            "source_ip": source_ip,
+            "received_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as e:
+        logger.warning("Raw payload storage failed (non-blocking): %s", e)
+    return payload_id
+
+logger = logging.getLogger(__name__)
+
 router = APIRouter(
     prefix="/api/channel-manager/hotelrunner",
     tags=["HotelRunner Webhooks & Sync"],
@@ -36,12 +78,53 @@ router = APIRouter(
 
 async def _persist_and_process(
     tenant_id: str, property_id: str, payload: Dict[str, Any], event_type: str,
+    source_ip: str = "system",
 ):
-    """Persist raw event and process through the unified ingest pipeline."""
+    """Persist raw event and process through the unified ingest pipeline.
+
+    Timeline stages written:
+      1. webhook_received — raw payload stored
+      2. (normalized, deduplicated, validated — written by pipeline.process_event)
+    """
+    t_start = datetime.now(timezone.utc)
+    correlation_id = str(uuid.uuid4())
     identity = extract_hotelrunner_identity(payload)
     hr_number = identity.get("external_reservation_id", "")
     last_mod = identity.get("provider_last_modified_at", "")
     identity["provider_event_id"] = f"{hr_number}_{event_type}_{last_mod}"
+
+    # ── Store raw payload ─────────────────────────────────────────
+    raw_payload_id = await _store_raw_payload(
+        tenant_id=tenant_id,
+        correlation_id=correlation_id,
+        provider="hotelrunner",
+        external_id=hr_number,
+        event_type=event_type,
+        payload=payload,
+        source_ip=source_ip,
+    )
+
+    # ── Timeline: webhook_received ────────────────────────────────
+    t_received = datetime.now(timezone.utc)
+    recv_duration_ms = int((t_received - t_start).total_seconds() * 1000)
+    await _timeline_append(
+        tenant_id=tenant_id,
+        correlation_id=correlation_id,
+        entity_type="reservation",
+        external_id=hr_number,
+        stage="webhook_received",
+        status="success",
+        source="hotelrunner_webhook",
+        provider="hotelrunner",
+        duration_ms=recv_duration_ms,
+        metadata={
+            "raw_payload_id": raw_payload_id,
+            "event_type": event_type,
+            "hr_number": hr_number,
+            "source_ip": source_ip,
+            "content_type": "application/json",
+        },
+    )
 
     payload_hash = RawChannelEvent.compute_payload_hash(payload)
 
@@ -58,12 +141,13 @@ async def _persist_and_process(
         payload_hash=payload_hash,
         received_via=RawEventSource.WEBHOOK,
         processing_status=ProcessingStatus.PENDING,
+        correlation_id=correlation_id,
     )
     event_doc = event.to_doc()
     event_id = await repo.insert_raw_event(event_doc)
     event_doc["id"] = event_id
 
-    # Process through pipeline
+    # Process through pipeline (pipeline writes normalized/deduplicated/validated stages)
     result = await process_event(event_doc)
     logger.info(f"[WEBHOOK] {event_type}: {event_id} → {result.decision} ({result.reason})")
     return result
@@ -71,11 +155,12 @@ async def _persist_and_process(
 
 async def _process_webhook_batch(
     tenant_id: str, property_id: str, reservations: list, event_type: str,
+    source_ip: str = "system",
 ):
     """Background task: process webhook reservations through ingest pipeline."""
     for res in reservations:
         try:
-            await _persist_and_process(tenant_id, property_id, res, event_type)
+            await _persist_and_process(tenant_id, property_id, res, event_type, source_ip)
         except Exception as e:
             logger.error(f"[WEBHOOK] Error processing {event_type}: {e}")
 
@@ -104,9 +189,10 @@ async def webhook_reservations(request: Request, background_tasks: BackgroundTas
 
     property_id = _resolve_property_id(body)
     reservations = body.get("reservations", [body] if "hr_number" in body else [])
+    source_ip = request.client.host if request.client else "unknown"
 
     background_tasks.add_task(
-        _process_webhook_batch, tenant_id, property_id, reservations, "reservation_create",
+        _process_webhook_batch, tenant_id, property_id, reservations, "reservation_create", source_ip,
     )
 
     return {
@@ -132,9 +218,10 @@ async def webhook_modifications(request: Request, background_tasks: BackgroundTa
 
     property_id = _resolve_property_id(body)
     reservations = body.get("reservations", [body] if "hr_number" in body else [])
+    source_ip = request.client.host if request.client else "unknown"
 
     background_tasks.add_task(
-        _process_webhook_batch, tenant_id, property_id, reservations, "reservation_modify",
+        _process_webhook_batch, tenant_id, property_id, reservations, "reservation_modify", source_ip,
     )
     return {"status": "accepted", "count": len(reservations)}
 
@@ -155,6 +242,7 @@ async def webhook_cancellations(request: Request, background_tasks: BackgroundTa
 
     property_id = _resolve_property_id(body)
     reservations = body.get("reservations", [body] if "hr_number" in body else [])
+    source_ip = request.client.host if request.client else "unknown"
 
     # Set status to cancelled for the decision engine
     for res in reservations:
@@ -162,7 +250,7 @@ async def webhook_cancellations(request: Request, background_tasks: BackgroundTa
             res["status"] = "cancelled"
 
     background_tasks.add_task(
-        _process_webhook_batch, tenant_id, property_id, reservations, "reservation_cancel",
+        _process_webhook_batch, tenant_id, property_id, reservations, "reservation_cancel", source_ip,
     )
     return {"status": "accepted", "count": len(reservations)}
 

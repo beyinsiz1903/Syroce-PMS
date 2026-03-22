@@ -69,6 +69,29 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Event timeline index creation error: {e}")
 
+    # ── Webhook Raw Payload indexes ───────────────────────────────────
+    try:
+        await db.webhook_raw_payloads.create_index(
+            [("correlation_id", 1)],
+            name="idx_raw_payload_correlation",
+        )
+        await db.webhook_raw_payloads.create_index(
+            [("tenant_id", 1), ("external_id", 1), ("received_at", -1)],
+            name="idx_raw_payload_tenant_ext",
+        )
+        await db.webhook_raw_payloads.create_index(
+            [("tenant_id", 1), ("provider", 1), ("received_at", -1)],
+            name="idx_raw_payload_provider",
+        )
+        await db.webhook_raw_payloads.create_index(
+            [("received_at", 1)],
+            name="idx_raw_payload_ttl",
+            expireAfterSeconds=7776000,  # 90 days
+        )
+        print("Webhook raw payload indexes ensured")
+    except Exception as e:
+        logger.warning(f"Webhook raw payload index creation error: {e}")
+
     # ── Dashboard snapshot indexes + worker ────────────────────────
     try:
         from controlplane.dashboard_aggregator import (
