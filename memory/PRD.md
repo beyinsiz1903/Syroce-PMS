@@ -20,6 +20,45 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 
 ## Completed Features
 
+### Deploy Pipeline — Hard Gate CI/CD & Progressive Deploy (2026-03-22) — Phase 2
+Production-grade deployment pipeline with hard gates, auto-rollback, migration verification, smoke tests, and canary analysis.
+
+#### 1. Hard Gate CI/CD Pipeline
+- **File**: `ops/deploy_pipeline.py`
+- 6 sequential blocking gates: lint → unit_test → security_audit → migration_check → build → smoke_test
+- Each gate MUST pass before the next runs (no `|| true`)
+- Pipeline state persisted in MongoDB `deploy_pipelines` collection
+- Gate runners execute real checks: ruff lint, pytest, security scan, schema drift, dependency validation, HTTP smoke tests
+
+#### 2. Migration Verification System
+- **File**: `ops/migration_verification.py`
+- Schema drift detection against expected indexes (`REQUIRED_INDEXES`)
+- Required collection existence check (`REQUIRED_COLLECTIONS`)
+- Oversized collection warnings (>10M docs)
+- Collection statistics: document counts, index counts
+
+#### 3. Smoke Test Suite
+- **File**: `ops/smoke_test_runner.py`
+- 8 real HTTP tests: health (liveness, basic, db), auth login, rooms list, bookings list, guests list, settings
+- Token extraction from login for authenticated endpoint testing
+- Critical/non-critical classification
+- Duration tracking per test
+
+#### 4. Auto-Rollback Engine
+- **File**: `ops/auto_rollback_engine.py`
+- 5 real metric triggers: 5xx error rate (APM), health endpoint, DB ping, outbox backlog, import failures
+- Threshold-based evaluation: `continue` / `pause` / `rollback` recommendations
+- Rollback execution with post-rollback smoke test verification
+- Evaluation and rollback history in MongoDB
+
+#### 5. Deploy Dashboard (Frontend)
+- 5th tab "Deploy" added to Governance Panel at `/admin/governance`
+- Pipeline gate status visualization with per-gate timing and errors
+- Auto-rollback trigger cards showing real metric values vs thresholds
+- Smoke test runner button with inline results
+- Pipeline history view with status badges
+- All elements with data-testid for automation
+
 ### Governance & Metering Layer (2026-03-22) — Phase 1
 Full production governance stack: entitlement enforcement, usage metering, dynamic feature flags, and onboarding automation.
 

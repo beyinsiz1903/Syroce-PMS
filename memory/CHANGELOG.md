@@ -1,5 +1,39 @@
 # Syroce PMS — Changelog
 
+## 2026-03-22: Deploy Pipeline — Hard Gate CI/CD (Phase 2)
+
+### Hard Gate CI/CD Pipeline
+- `deploy_pipeline.py` — 6 blocking gates: lint, unit_test, security_audit, migration_check, build, smoke_test
+- Pipeline persisted in MongoDB, stops on first failure
+- No `|| true` — real hard gates
+
+### Migration Verification
+- `migration_verification.py` — Schema drift detection, index validation, collection stats
+- Checks against `REQUIRED_INDEXES` and `REQUIRED_COLLECTIONS`
+
+### Smoke Test Suite
+- `smoke_test_runner.py` — 8 real HTTP tests (health, auth, rooms, bookings, guests, settings)
+- Token-based auth for protected endpoints
+
+### Auto-Rollback Engine
+- `auto_rollback_engine.py` — 5 real metric triggers (5xx error rate, health, DB, outbox, imports)
+- Threshold-based recommendations: continue/pause/rollback
+- Post-rollback smoke test verification
+
+### Deploy Dashboard
+- 5th tab "Deploy" in Governance Panel (`/admin/governance`)
+- Pipeline gate visualization, trigger cards, smoke test results, pipeline history
+
+### API Endpoints Added
+- `POST /api/deploy/pipeline/run-all` — Full pipeline execution
+- `POST /api/deploy/pipeline/start`, `POST /api/deploy/pipeline/gate`
+- `GET /api/deploy/pipelines`, `GET /api/deploy/pipeline/{id}`
+- `GET /api/deploy/migration/verify`, `GET /api/deploy/migration/stats`
+- `POST /api/deploy/smoke-tests/run`
+- `GET /api/deploy/rollback/evaluate`, `POST /api/deploy/rollback/execute`
+- `GET /api/deploy/rollback/triggers`, `GET /api/deploy/rollback/history`
+- `GET /api/deploy/analysis/overview`
+
 ## 2026-03-22: Governance & Metering Layer — Phase 1
 
 ### Entitlement Enforcement
