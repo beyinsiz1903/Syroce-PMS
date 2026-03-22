@@ -1,5 +1,30 @@
 # Syroce PMS — Changelog
 
+## 2026-03-22: Overbooking Prevention — Room-Night Locking
+
+### Implementation
+- Rewrote `core/atomic_booking.py` from MongoDB transactions to room-night locking pattern
+- New collection `room_night_locks` with unique compound index `(tenant_id, room_id, night_date)`
+- Each booking claims one lock document per night (check_in date to check_out date - 1)
+- DuplicateKeyError on any night = room already booked = BookingConflictError (409)
+- Adjacent bookings allowed: checkout day is NOT claimed as a night
+
+### Cancel Integration
+- `release_booking_nights()` function removes all lock docs for a cancelled booking
+- Wired into `reservation_state_machine.handle_cancellation()` (pms-core cancel endpoint)
+- Wired into `update_reservation_service.py` for status→cancelled/no_show transitions
+
+### README Update
+- Rewrote root `/app/README.md`: "RoomOps" → "Syroce PMS", full module listing, CI/CD docs
+- Created `/app/backend/README.md` with directory structure and development commands
+- Version: 2.0.0
+
+### Testing
+- 6/6 atomic booking tests pass (test_atomic_booking.py)
+- 6/6 e2e overbooking tests pass (test_overbooking_prevention_e2e.py)
+- Concurrent: 10 parallel → exactly 1 success, 9 conflict
+- All existing features verified: login, dashboard, navigation, past-date rejection
+
 ## 2026-03-22: GitHub Actions CI/CD — Hard Gate Conversion
 
 ### ci-cd.yml Overhaul

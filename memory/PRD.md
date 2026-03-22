@@ -222,6 +222,14 @@ Frontend operations screen that turns developer APIs into a self-service debuggi
 
 ## Bug Fixes
 
+### Overbooking Prevention — Room-Night Locking (2026-03-22)
+- **Root Cause**: MongoDB transaction snapshot isolation allowed concurrent bookings to pass overlap check before any committed, resulting in multiple bookings for the same room+dates.
+- **Fix**: Replaced transaction-based approach with room-night locking. Each booking inserts one document per night into `room_night_locks` collection with a unique index on `(tenant_id, room_id, night_date)`. DuplicateKeyError = 409 Conflict.
+- **Files Modified**:
+  - `/app/backend/core/atomic_booking.py` — Complete rewrite with room-night locking
+  - `/app/backend/modules/pms_core/reservation_state_machine.py` — Added `release_booking_nights()` on cancellation
+  - `/app/backend/modules/reservations/services/update_reservation_service.py` — Added lock release on status→cancelled
+
 ### Navigation Module Visibility Bug (2026-03-22)
 - **Root Cause**: `isModuleEnabled()` in `Layout.js` treated undefined module keys as disabled. Login response `tenant.modules` only contained `{"pms": true, "reports": true}`, causing all other modules (reservation_calendar, channel_manager, night_audit, etc.) to be hidden from navigation.
 - **Fix**: Changed logic to `modules[moduleKey] !== false` — only explicitly disabled modules are hidden; undefined keys are treated as enabled.
@@ -236,6 +244,20 @@ Frontend operations screen that turns developer APIs into a self-service debuggi
   - `/app/frontend/src/components/calendar/CalendarDialogs.js` — `min` attribute on check-in date input
   - `/app/backend/modules/reservations/services/create_reservation_service.py` — Backend date validation
 
+
+### Overbooking Prevention — Room-Night Locking (2026-03-22)
+- **Pattern**: Room-night locking via `room_night_locks` collection with unique compound index `(tenant_id, room_id, night_date)`
+- **How it works**: Each booking claims N lock documents (one per night). DuplicateKeyError → 409 Conflict
+- **Concurrent safety**: 10 parallel bookings → exactly 1 succeeds, 9 get 409
+- **Overlap rules**: Adjacent dates allowed (checkout day ≠ claimed night), partial/full overlap blocked
+- **Cancel flow**: `release_booking_nights()` called from `reservation_state_machine.handle_cancellation()` and `update_reservation_service` on status→cancelled
+- **Files**: `core/atomic_booking.py`, `modules/pms_core/reservation_state_machine.py`, `modules/reservations/services/update_reservation_service.py`
+- **Test coverage**: 6/6 tests in `tests/test_atomic_booking.py` + 6/6 e2e tests
+
+### README Documentation Update (2026-03-22)
+- Root `README.md` rewritten: "RoomOps" → "Syroce PMS", comprehensive module listing, CI/CD docs, architecture, DB collections
+- `backend/README.md` created: Full directory structure, tech stack, development commands
+- Frontend `README.md` was already up-to-date
 
 ### Enterprise Codebase Cleanup (2026-03-22)
 - **Root-level junk files:** 10 empty files deleted (`1000`, `99%`, `=`, `NOT`, `READY`, `processing`, `repository`, `service`, `confirm`, `Payment button in the Rooms tab.`)
@@ -270,7 +292,7 @@ Frontend operations screen that turns developer APIs into a self-service debuggi
 ### P1 — Hardening (from Blueprint Week 2)
 - Implement immutable folio_ledger + reconciliation engine
 - Implement key rotation (data model + API + ReEncryptionWorker)
-- PMS battle tests (split reservation, no-show, room change, overbooking, cancellation)
+- PMS battle tests (split reservation, no-show, room change, ~~overbooking~~, cancellation)
 - Implement Learning Loop (IncidentClassifier, recurrence detection, never-again rules)
 
 ### P1 — Stress + Exposure (from Blueprint Week 3)
@@ -280,10 +302,12 @@ Frontend operations screen that turns developer APIs into a self-service debuggi
 - Pilot hotel shadow mode + canary rollout
 
 ### P2 — Tech Debt
-- ~~Fix pre-existing test failures~~ **DONE (2026-03-22)** — Converted 3 middleware to pure ASGI, rewrote hardening tests, curated CI suite (304 tests)
-- ~~Fix pre-existing lint errors~~ **DONE (2026-03-22)** — Pipeline lint gate uses project's pyproject.toml ruff config, passes clean
-- ~~Legacy file cleanup (~80 files in backend/ root)~~ **DONE (2026-03-22)** — 67 files moved to `_legacy/`, 18 legacy router refs removed from `router_registry.py`
-- ~~GitHub Actions CI/CD hard gate conversion~~ **DONE (2026-03-22)** — Removed all `|| true`, expanded lint scope, frontend ESLint v9 flat config, curated test suite, deploy placeholders explicit
+- ~~Fix pre-existing test failures~~ **DONE (2026-03-22)**
+- ~~Fix pre-existing lint errors~~ **DONE (2026-03-22)**
+- ~~Legacy file cleanup~~ **DONE (2026-03-22)**
+- ~~GitHub Actions CI/CD hard gate conversion~~ **DONE (2026-03-22)**
+- ~~Overbooking prevention~~ **DONE (2026-03-22)** — Room-night locking, 6/6 tests passing
+- ~~README documentation update~~ **DONE (2026-03-22)** — Root and backend READMEs rewritten
 - ~264 legacy db imports to tenant-scoped access
 
 ### P2 — Enhancements
