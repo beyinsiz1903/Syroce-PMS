@@ -12,13 +12,13 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 
 from core.database import db
 from core.security import get_current_user
+from core.secrets import get_secrets_manager
 from models.schemas import User
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
 from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
 from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
 from domains.channel_manager.providers.exely.errors import ExelyError
-from domains.channel_manager.credential_vault import store_secret, get_decrypted_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -71,17 +71,21 @@ async def _get_client(tenant_id: str) -> tuple:
     if not conn:
         raise HTTPException(status_code=404, detail="Exely baglantisi bulunamadi. Lutfen once baglanti kurun.")
 
-    # Try vault first, then fall back to connection doc
-    creds = await get_decrypted_credentials(tenant_id, PROVIDER, conn.get("hotel_code", ""))
+    # Resolve credentials via secrets manager (with legacy fallback)
+    sm = get_secrets_manager()
+    hotel_code = conn.get("hotel_code", "")
+    creds = await sm.get_provider_credentials(tenant_id, PROVIDER, hotel_code)
+
     if creds:
         kwargs = {
             "username": creds.get("username", ""),
             "password": creds.get("password", ""),
-            "hotel_code": creds.get("hotel_code", ""),
+            "hotel_code": creds.get("hotel_code", hotel_code),
         }
         if creds.get("endpoint_url"):
             kwargs["endpoint_url"] = creds["endpoint_url"]
     else:
+        # Final fallback: read from connection doc (pre-migration data)
         kwargs = {
             "username": conn.get("username", ""),
             "password": conn.get("password", ""),
@@ -89,6 +93,8 @@ async def _get_client(tenant_id: str) -> tuple:
         }
         if conn.get("endpoint_url"):
             kwargs["endpoint_url"] = conn["endpoint_url"]
+        if kwargs.get("username"):
+            logger.warning("Using legacy connection doc credentials for Exely tenant=%s — migrate ASAP", tenant_id)
     try:
         return ExelyProvider(**kwargs), conn
     except ExelyError as exc:
@@ -119,7 +125,8 @@ async def setup_connection(
     if not test_result["connected"]:
         raise HTTPException(status_code=400, detail=f"Exely baglanti hatasi: {test_result['error']}")
 
-    # Store credentials in encrypted vault
+    # Store credentials in secrets manager (encrypted, audited)
+    sm = get_secrets_manager()
     vault_payload = {
         "username": payload.username,
         "password": payload.password,
@@ -127,11 +134,12 @@ async def setup_connection(
         "endpoint_url": payload.endpoint_url or "",
         "currency": payload.currency,
     }
-    credentials_ref = await store_secret(
+    credentials_ref = await sm.store_provider_credentials(
         tenant_id=current_user.tenant_id,
         provider=PROVIDER,
         property_id=payload.hotel_code,
         credentials=vault_payload,
+        actor=current_user.name,
     )
 
     connection = {
@@ -375,8 +383,9 @@ async def manual_pull(current_user: User = Depends(get_current_user)):
     if not conn:
         raise HTTPException(status_code=404, detail="Exely baglantisi bulunamadi")
 
-    # Get credentials from vault
-    creds = await get_decrypted_credentials(current_user.tenant_id, PROVIDER, conn.get("hotel_code", ""))
+    # Get credentials from secrets manager
+    sm = get_secrets_manager()
+    creds = await sm.get_provider_credentials(current_user.tenant_id, PROVIDER, conn.get("hotel_code", ""))
     if creds:
         username = creds.get("username", "")
         password = creds.get("password", "")
@@ -758,8 +767,9 @@ async def verify_test_booking(
     ).to_list(500)
     before_ids = {r["external_id"] for r in existing if r.get("external_id")}
 
-    # Get credentials
-    creds = await get_decrypted_credentials(tenant_id, PROVIDER, conn.get("hotel_code", ""))
+    # Get credentials from secrets manager
+    sm = get_secrets_manager()
+    creds = await sm.get_provider_credentials(tenant_id, PROVIDER, conn.get("hotel_code", ""))
     if creds:
         username = creds.get("username", "")
         password = creds.get("password", "")

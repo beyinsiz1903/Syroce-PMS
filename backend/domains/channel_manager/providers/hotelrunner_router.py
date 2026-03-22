@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Depends
 
 from core.database import db
 from core.security import get_current_user
+from core.secrets import get_secrets_manager
 from models.schemas import User
 
 logger = logging.getLogger(__name__)
@@ -61,18 +62,35 @@ class HRReservationFilter(BaseModel):
 # ── Helper: Get provider instance ────────────────────────────────────
 
 async def _get_provider(tenant_id: str):
-    """Get HotelRunner provider instance for a tenant."""
+    """Get HotelRunner provider instance for a tenant via secrets manager."""
     from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
 
     conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": tenant_id, "is_active": True},
-        {"_id": 0},
+        {"_id": 0, "token": 0},  # Never load raw token from connection doc
     )
     if not conn:
         raise HTTPException(status_code=404, detail="HotelRunner baglantisi bulunamadi. Lutfen once baglanti kurun.")
 
+    # Resolve credentials via secrets manager (with legacy fallback)
+    sm = get_secrets_manager()
+    property_id = conn.get("hr_id", conn.get("property_id", "default"))
+    creds = await sm.get_provider_credentials(tenant_id, "hotelrunner", property_id)
+
+    if not creds or not creds.get("token"):
+        # Final fallback: read from connection doc (pre-migration data)
+        fallback_conn = await db.hotelrunner_connections.find_one(
+            {"tenant_id": tenant_id, "is_active": True},
+            {"_id": 0, "token": 1, "hr_id": 1},
+        )
+        if fallback_conn and fallback_conn.get("token"):
+            creds = {"token": fallback_conn["token"], "hr_id": fallback_conn.get("hr_id", "")}
+            logger.warning("Using legacy plaintext credentials for HotelRunner tenant=%s — migrate ASAP", tenant_id)
+        else:
+            raise HTTPException(status_code=502, detail="HotelRunner kimlik bilgileri bulunamadi")
+
     try:
-        return HotelRunnerProvider(token=conn.get("token", ""), hr_id=conn.get("hr_id", "")), conn
+        return HotelRunnerProvider(token=creds["token"], hr_id=creds.get("hr_id", "")), conn
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"HotelRunner kimlik bilgileri gecersiz: {exc}")
 
@@ -110,11 +128,22 @@ async def setup_connection(
         raise HTTPException(status_code=400, detail=f"HotelRunner baglanti hatasi: {test_result.error}")
 
     result_data = test_result.data or {}
+
+    # Store credentials in secrets manager (encrypted, never in connection doc)
+    sm = get_secrets_manager()
+    await sm.store_provider_credentials(
+        tenant_id=current_user.tenant_id,
+        provider="hotelrunner",
+        property_id=payload.hr_id,
+        credentials={"token": payload.token, "hr_id": payload.hr_id},
+        actor=current_user.name,
+    )
+
     connection = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
-        "token": payload.token,
         "hr_id": payload.hr_id,
+        "credentials_ref": f"secrets_manager::hotelrunner::{payload.hr_id}",
         "property_name": payload.property_name or "HotelRunner Property",
         "auto_sync_reservations": payload.auto_sync_reservations,
         "auto_confirm_delivery": payload.auto_confirm_delivery,
@@ -130,6 +159,12 @@ async def setup_connection(
         {"tenant_id": current_user.tenant_id},
         {"$set": connection},
         upsert=True,
+    )
+
+    # Remove any legacy plaintext token from the connection doc
+    await db.hotelrunner_connections.update_one(
+        {"tenant_id": current_user.tenant_id},
+        {"$unset": {"token": ""}},
     )
 
     await _log_sync(current_user.tenant_id, "connection", "success",
@@ -148,7 +183,7 @@ async def get_connection_status(current_user: User = Depends(get_current_user)):
     """Get current HotelRunner connection status."""
     conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": current_user.tenant_id},
-        {"_id": 0, "token": 0},
+        {"_id": 0, "token": 0, "credentials_ref": 0},
     )
     if not conn:
         return {"connected": False, "message": "HotelRunner baglantisi kurulmamis"}

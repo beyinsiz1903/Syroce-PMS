@@ -5,6 +5,7 @@ Startup and shutdown events for the FastAPI application.
 Called by server.py during bootstrap orchestration.
 """
 import logging
+import os
 
 from core.database import db, client
 
@@ -16,6 +17,18 @@ async def on_startup(app):
 
     # Expose db via app.state for health checks
     app.state.db = db
+
+    # ── Secrets Manager Validation ───────────────────────────────────
+    try:
+        from core.secrets import get_secrets_manager, get_secrets_config
+        config = get_secrets_config()  # Validates config, fails loudly if invalid
+        sm = get_secrets_manager()
+        await sm.ensure_indexes()
+        logger.info("Secrets manager initialized: provider=%s env=%s", config.provider, config.app_env)
+    except Exception as e:
+        logger.error(f"Secrets manager startup validation failed: {e}")
+        if os.environ.get("APP_ENV") in ("production", "staging"):
+            raise  # Hard fail in production
 
     # ── Auto-seed demo data ─────────────────────────────────────────
     try:
