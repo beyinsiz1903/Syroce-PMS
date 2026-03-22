@@ -75,7 +75,7 @@
       "webhook_url_card": {
         "status": "PASS",
         "visible_when_connected": true,
-        "url_displayed": "https://ops-visibility-1.preview.emergentagent.com/api/webhooks/exely/reservations",
+        "url_displayed": "https://trace-reality.preview.emergentagent.com/api/webhooks/exely/reservations",
         "copy_button": "PASS - visible and functional",
         "setup_instructions": "PASS - displayed below URL"
       },
