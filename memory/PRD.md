@@ -20,6 +20,68 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 
 ## Completed Features
 
+### Governance & Metering Layer (2026-03-22) — Phase 1
+Full production governance stack: entitlement enforcement, usage metering, dynamic feature flags, and onboarding automation.
+
+#### 1. Entitlement Enforcement Middleware
+- **File**: `core/entitlement.py`
+- Global ASGI middleware intercepting all `/api/*` requests
+- Route-to-module mapping (`ROUTE_MODULE_MAP`): channel_manager, night_audit, invoices, revenue_management, ai, sales_crm, group_sales, loyalty_program, gm_dashboards
+- Hard 403 block with `ENTITLEMENT_DENIED` error code + upgrade URL
+- Exempt routes for auth, health, admin, settings, system endpoints
+- Quota enforcement: `check_quota(tenant_id, "rooms"|"users")`
+- Full entitlement view: `get_tenant_entitlements(tenant_id)` returns modules, quotas, plan limits, subscription status
+
+#### 2. Usage Metering Service
+- **File**: `core/metering.py`
+- In-memory buffer with periodic flush (60s) to `usage_daily` collection
+- 15 event types: `api_call`, `reservation_created`, `login`, `guest_created`, `channel_sync`, `report_generated`, `invoice_created`, `ai_request`, `webhook_received`, `night_audit_run`, etc.
+- Tenant usage summary: daily/monthly aggregation with pipeline queries
+- System-wide overview: today/month totals, active tenants (7d), top 10 tenants
+- Metering hooks wired into: login endpoint, reservation creation service
+
+#### 3. Dynamic Feature Flag Service
+- **File**: `core/feature_flags.py`
+- In-memory cache with 30s TTL, MongoDB-backed `feature_flags` collection
+- Resolution order: kill_switch → expiry → tenant_override → rollout_percentage → enabled
+- Deterministic hash-based percentage rollout per tenant
+- Full CRUD: create, update, delete flags
+- Tenant-specific overrides: set/remove per flag
+
+#### 4. Onboarding Automation Engine
+- **File**: `core/onboarding.py`
+- 12-step default checklist covering: setup, operations, team, channels, finance, reports
+- Auto-detection from MongoDB collections (rooms, guests, bookings, users, provider_configs, invoices, etc.)
+- Module-aware: steps requiring disabled modules are excluded
+- Manual step completion + progress reset
+- System-wide onboarding overview for admin
+
+#### 5. Admin API — 16 Endpoints
+- **File**: `domains/admin/entitlement_router.py`
+- Entitlements: overview, tenant detail, quota check
+- Metering: system overview, tenant summary, tenant timeline
+- Feature Flags: list, get, create/update, delete, tenant override, check
+- Onboarding: overview, tenant progress, mark complete, reset
+
+#### 6. Frontend — Governance Panel
+- **File**: `pages/GovernancePanel.js`
+- Route: `/admin/governance` (super_admin only)
+- 4-tab interface: Entitlement, Metering, Feature Flags, Onboarding
+- Entitlement tab: tier summary cards, tenant list with drill-down dialog (quotas, active/inactive modules)
+- Metering tab: today/monthly usage, active tenants, top tenants leaderboard
+- Feature Flags tab: flag CRUD, toggle, kill switch, rollout percentage, tenant overrides
+- Onboarding tab: progress bars per tenant, drill-down checklist with circular progress indicator
+- All elements have data-testid attributes
+
+#### 7. Documentation
+- **File**: `backend/docs/ONBOARDING_PLAYBOOK.md`
+- Structured onboarding playbook: 5-10 day timeline, role assignments, success criteria
+- Pilot KPI metrics: DAU, reservations/day, check-in time, error rate, channel sync, NPS
+- Reference customer template with 30-day metrics format
+
+**Test Coverage**: 28/28 backend tests passing, 4/4 frontend tabs verified
+**Collections Created**: `usage_daily` (3 indexes), `feature_flags` (unique key), `onboarding_progress`
+
 ### OPS-001: Production-Grade Control Plane
 - Core module at `/app/backend/controlplane/`
 - Failure taxonomy (5 types: RETRYABLE, PERMANENT, PROVIDER_ERROR, DATA_ERROR, SECURITY_ERROR)
@@ -146,6 +208,25 @@ Frontend operations screen that turns developer APIs into a self-service debuggi
 - **Router registry cleanup:** 18 dead `_OPTIONAL_ROUTERS` entries removed from `bootstrap/router_registry.py`
 
 ## Pending Tasks
+
+### P0 — Governance Layer Phase 2 (Feature Flag Governance)
+- Dynamic Feature Flags with percentage rollout ~~(DONE in Phase 1)~~
+- Flag Admin API + UI ~~(DONE in Phase 1)~~
+- Middleware integration with entitlement ~~(DONE in Phase 1)~~
+
+### P0 — Governance Layer Phase 3 (Support Tooling)
+- Support Dashboard: tenant health overview, quick actions (extend sub, toggle module, view logs)
+- Impersonate tenant (view-as-tenant for debugging)
+- Audit log viewer per tenant
+- Ticket/note system per tenant
+
+### P0 — Governance Layer Phase 4 (Pilot KPI Dashboard)
+- Adoption rate tracking per tenant (DAU, feature usage)
+- Feature usage heatmap
+- Error rate per tenant timeline
+- Response time percentiles per tenant
+- Export/report generation
+- Reference customer evidence template UI
 
 ### P1 — Hardening (from Blueprint Week 2)
 - Implement immutable folio_ledger + reconciliation engine

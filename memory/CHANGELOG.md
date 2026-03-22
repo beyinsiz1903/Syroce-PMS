@@ -1,5 +1,40 @@
 # Syroce PMS — Changelog
 
+## 2026-03-22: Governance & Metering Layer — Phase 1
+
+### Entitlement Enforcement
+- `EntitlementMiddleware` — Global ASGI middleware with route-to-module mapping
+- Plan-based 403 blocking for unauthorized module access (channel_manager, revenue, AI, etc.)
+- Quota enforcement (rooms, users per plan)
+- Exempt routes for auth, admin, health, settings
+
+### Usage Metering
+- `usage_daily` collection with in-memory buffer + periodic flush
+- 15 event types tracked (API calls, reservations, logins, etc.)
+- System-wide and per-tenant usage overview APIs
+- Metering hooks in login and reservation creation
+
+### Dynamic Feature Flags
+- `feature_flags` collection with in-memory cache (30s TTL)
+- Percentage rollout, tenant overrides, kill switch, expiry
+- Full CRUD API + tenant-specific override management
+
+### Onboarding Automation
+- 12-step checklist with auto-detection from MongoDB collections
+- Module-aware (steps requiring disabled modules are excluded)
+- Progress tracking with circular visualizer
+
+### Admin UI — Governance Panel
+- `/admin/governance` route with 4 tabs (Entitlement, Metering, Feature Flags, Onboarding)
+- Navigation: Super Admin sidebar → Governance
+- All tabs with tenant drill-down dialogs
+
+### Documentation
+- `ONBOARDING_PLAYBOOK.md` — Structured 5-10 day onboarding process
+- Pilot KPI metrics + Reference customer template
+
+
+
 ## 2026-03-22: Control Plane UI — Operations Weapon
 
 ### Reservation Trace (Trace tab)
