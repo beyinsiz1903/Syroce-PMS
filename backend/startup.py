@@ -18,6 +18,22 @@ async def on_startup(app):
     # Expose db via app.state for health checks
     app.state.db = db
 
+    # ── Crypto Service Validation ────────────────────────────────────
+    try:
+        from core.crypto import get_crypto_service
+        crypto_svc = get_crypto_service()
+        health = crypto_svc.health()
+        logger.info(
+            "Crypto service initialized: v2=%s kid=%s bypass=%s",
+            health["v2_enabled"], health["current_kid"], health["bypass_active"],
+        )
+        if health["bypass_active"]:
+            logger.critical("CRYPTO_BYPASS_ALLOWED=true — ENCRYPTION IS DISABLED")
+    except Exception as e:
+        logger.error(f"Crypto service startup failed: {e}")
+        if os.environ.get("APP_ENV") in ("production", "staging"):
+            raise
+
     # ── Secrets Manager Validation ───────────────────────────────────
     try:
         from core.secrets import get_secrets_manager, get_secrets_config

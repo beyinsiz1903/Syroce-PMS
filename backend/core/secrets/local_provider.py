@@ -1,19 +1,19 @@
 """
 Local development secrets backend.
 
-Stores secrets in MongoDB collection `_dev_secrets` with AES-256-GCM encryption.
-Explicitly gated: only usable when APP_ENV != production/staging.
-Clearly marked as NON-PRODUCTION in all outputs.
+Stores secrets in MongoDB collection `_dev_secrets` with AES-256-GCM encryption
+via core.crypto.CredentialEncryptionService.
 
-This backend exists for developer ergonomics. It must NEVER silently become
-the production default.
+Explicitly gated: only usable when APP_ENV != production/staging.
 """
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from .provider import SecretsProviderBase, SecretPayload, SecretMetadata
+from core.crypto import get_crypto_service, AADContext
 
 logger = logging.getLogger("core.secrets.local_dev")
 
@@ -25,13 +25,14 @@ class LocalDevSecretsProvider(SecretsProviderBase):
     """
     MongoDB-backed development secrets store with AES-256-GCM encryption at rest.
 
+    Delegates all encryption to core.crypto.CredentialEncryptionService.
     NOT FOR PRODUCTION. Gated by SecretsConfig.validate() at startup.
     """
 
-    def __init__(self, encryption_key: str):
-        from channel_manager.infrastructure.encryption_service import EncryptionService, KeyManagementService
-        kms = KeyManagementService(raw_key=encryption_key or "dev-local-key-not-for-production")
-        self._enc = EncryptionService(kms=kms)
+    def __init__(self, encryption_key: str = ""):
+        # encryption_key parameter kept for backward compat but ignored —
+        # all encryption now handled by core.crypto
+        self._svc = get_crypto_service()
         logger.warning(
             "LocalDevSecretsProvider initialized — THIS IS NOT A PRODUCTION SECRETS BACKEND"
         )
@@ -40,14 +41,27 @@ class LocalDevSecretsProvider(SecretsProviderBase):
         from core.database import db
         return db
 
-    def _encrypt_payload(self, data: Dict[str, str]) -> str:
+    def _build_aad(self, path: str) -> AADContext:
+        """Build AAD from secret path for context binding."""
+        parts = path.split("/")
+        return AADContext(
+            tenant_id=parts[3] if len(parts) > 3 else "",
+            provider=parts[4] if len(parts) > 4 else "",
+            property_id=parts[5] if len(parts) > 5 else "",
+            environment=os.environ.get("APP_ENV", "development"),
+            context_type="secret",
+        )
+
+    def _encrypt_payload(self, data: Dict[str, str], path: str) -> str:
         """Encrypt the entire payload as a single JSON blob."""
         plaintext = json.dumps(data)
-        return self._enc.encrypt(plaintext)
+        aad = self._build_aad(path)
+        return self._svc.encrypt(plaintext, aad=aad)
 
-    def _decrypt_payload(self, encrypted: str) -> Dict[str, str]:
+    def _decrypt_payload(self, encrypted: str, path: str) -> Dict[str, str]:
         """Decrypt a JSON blob back to dict."""
-        plaintext = self._enc.decrypt(encrypted)
+        aad = self._build_aad(path)
+        plaintext = self._svc.decrypt(encrypted, aad=aad)
         return json.loads(plaintext)
 
     async def create_secret(
@@ -64,9 +78,10 @@ class LocalDevSecretsProvider(SecretsProviderBase):
         now = datetime.now(timezone.utc).isoformat()
         doc = {
             "path": path,
-            "encrypted_payload": self._encrypt_payload(payload),
+            "encrypted_payload": self._encrypt_payload(payload, path),
             "field_names": list(payload.keys()),
             "version": "1",
+            "key_version": self._svc._keyring.current_kid,
             "rotation_count": 0,
             "tags": tags or {},
             "created_at": now,
@@ -93,7 +108,7 @@ class LocalDevSecretsProvider(SecretsProviderBase):
         if not doc:
             return None
 
-        data = self._decrypt_payload(doc["encrypted_payload"])
+        data = self._decrypt_payload(doc["encrypted_payload"], path)
         return SecretPayload(
             data=data,
             version=doc.get("version", "1"),
@@ -116,8 +131,9 @@ class LocalDevSecretsProvider(SecretsProviderBase):
         await db[COLL_DEV_SECRETS].update_one(
             {"path": path},
             {"$set": {
-                "encrypted_payload": self._encrypt_payload(payload),
+                "encrypted_payload": self._encrypt_payload(payload, path),
                 "field_names": list(payload.keys()),
+                "key_version": self._svc._keyring.current_kid,
                 "updated_at": now,
             }},
         )
@@ -159,9 +175,10 @@ class LocalDevSecretsProvider(SecretsProviderBase):
         await db[COLL_DEV_SECRETS].update_one(
             {"path": path},
             {"$set": {
-                "encrypted_payload": self._encrypt_payload(new_payload),
+                "encrypted_payload": self._encrypt_payload(new_payload, path),
                 "field_names": list(new_payload.keys()),
                 "version": new_version,
+                "key_version": self._svc._keyring.current_kid,
                 "rotation_count": new_count,
                 "updated_at": now,
             }},
@@ -183,7 +200,7 @@ class LocalDevSecretsProvider(SecretsProviderBase):
         db = self._get_db()
         doc = await db[COLL_DEV_SECRETS].find_one(
             {"path": path},
-            {"_id": 0, "encrypted_payload": 0},  # Never return payload
+            {"_id": 0, "encrypted_payload": 0},
         )
         if not doc:
             return None
@@ -207,6 +224,7 @@ class LocalDevSecretsProvider(SecretsProviderBase):
                 "provider": "local_dev",
                 "status": "healthy",
                 "mode": "NON-PRODUCTION",
+                "crypto": self._svc.health(),
             }
         except Exception as e:
             return {

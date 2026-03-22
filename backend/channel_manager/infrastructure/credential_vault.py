@@ -1,12 +1,8 @@
 """
-Credential Vault - AES-256-GCM encryption at rest for connector credentials.
+Credential Vault - REFACTORED to use core.crypto.
 
-Features:
-  - AES-256-GCM encryption with secure random IV and auth tag (tamper detection)
-  - Legacy XOR migration support
-  - Secret rotation support
-  - Masked display for UI
-  - Audit trail for all credential operations
+Manages encrypted credential storage for connector accounts.
+All encryption delegates to CredentialEncryptionService.
 """
 import logging
 from datetime import datetime, timezone
@@ -14,38 +10,33 @@ from typing import Dict, Any, Optional
 
 from ..domain.models.audit import IntegrationAuditLog, AuditAction
 from ..infrastructure.repository import ChannelManagerRepository
-from ..infrastructure.encryption_service import EncryptionService
+from core.crypto import get_crypto_service
 
 logger = logging.getLogger("channel_manager.infrastructure.credential_vault")
 
 
 class CredentialVault:
-    """Manages AES-256-GCM encrypted credential storage with audit trail."""
+    """Manages encrypted credential storage with audit trail."""
 
     def __init__(self, repo: Optional[ChannelManagerRepository] = None):
         self._repo = repo or ChannelManagerRepository()
-        self._encryption = EncryptionService()
+        self._svc = get_crypto_service()
 
     def encrypt_credentials(self, credentials: Dict[str, str]) -> Dict[str, str]:
-        """Encrypt credential values using AES-256-GCM."""
-        return self._encryption.encrypt_credentials(credentials)
+        """Encrypt credential values."""
+        return self._svc.encrypt_dict(credentials)
 
     def decrypt_credentials(self, encrypted: Dict[str, str]) -> Dict[str, str]:
-        """Decrypt credential values (supports both AES-GCM and legacy XOR)."""
-        return self._encryption.decrypt_credentials(encrypted)
+        """Decrypt credential values (supports all formats)."""
+        return self._svc.decrypt_dict(encrypted)
 
     @staticmethod
     def mask_credentials(credentials: Dict[str, Any]) -> Dict[str, str]:
         """Mask credential values for UI display."""
-        masked = {}
-        for k, v in credentials.items():
-            if isinstance(v, str) and len(v) > 4:
-                masked[k] = v[:4] + "*" * (len(v) - 4)
-            elif isinstance(v, str):
-                masked[k] = "****"
-            else:
-                masked[k] = "****"
-        return masked
+        svc = get_crypto_service()
+        return svc.mask_credentials(
+            {k: str(v) for k, v in credentials.items()}
+        )
 
     async def store_credentials(
         self,
@@ -55,7 +46,7 @@ class CredentialVault:
         actor_id: Optional[str] = None,
         is_rotation: bool = False,
     ) -> None:
-        """Encrypt and store credentials using AES-256-GCM."""
+        """Encrypt and store credentials."""
         encrypted = self.encrypt_credentials(credentials)
 
         connector = await self._repo.get_connector(tenant_id, connector_id)
@@ -65,6 +56,7 @@ class CredentialVault:
         connector["credentials"] = encrypted
         connector["credentials_encrypted"] = True
         connector["encryption_algorithm"] = "AES-256-GCM"
+        connector["key_version"] = self._svc._keyring.current_kid
         connector["credentials_updated_at"] = datetime.now(timezone.utc).isoformat()
         if is_rotation:
             connector["credentials_rotated_at"] = datetime.now(timezone.utc).isoformat()
@@ -74,7 +66,12 @@ class CredentialVault:
         await self._audit(
             tenant_id, connector.get("property_id", ""), connector_id,
             action, actor_id,
-            {"keys_updated": list(credentials.keys()), "encrypted": True, "algorithm": "AES-256-GCM"},
+            {
+                "keys_updated": list(credentials.keys()),
+                "encrypted": True,
+                "algorithm": "AES-256-GCM",
+                "key_version": self._svc._keyring.current_kid,
+            },
         )
 
     async def retrieve_credentials(
@@ -108,7 +105,7 @@ class CredentialVault:
         connector_id: str,
         actor_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Migrate XOR-encrypted credentials to AES-256-GCM."""
+        """Re-encrypt credentials to current format."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
         if not connector:
             raise ValueError("Connector not found")
@@ -117,28 +114,39 @@ class CredentialVault:
         if not creds:
             return {"migrated": False, "reason": "No credentials found"}
 
-        already_aes = all(
-            self._encryption.is_aes_encrypted(v)
+        # Check if already in current format
+        all_current = all(
+            self._svc.is_current_format(v)
             for v in creds.values()
             if isinstance(v, str) and v
         )
-        if already_aes:
-            return {"migrated": False, "reason": "Already AES-256-GCM encrypted"}
+        if all_current:
+            return {"migrated": False, "reason": "Already in current format"}
 
-        migrated = self._encryption.migrate_credentials(creds)
+        migrated = self._svc.re_encrypt_dict(creds)
         connector["credentials"] = migrated
         connector["credentials_encrypted"] = True
         connector["encryption_algorithm"] = "AES-256-GCM"
+        connector["key_version"] = self._svc._keyring.current_kid
         connector["credentials_updated_at"] = datetime.now(timezone.utc).isoformat()
         await self._repo.upsert_connector(connector)
 
         await self._audit(
             tenant_id, connector.get("property_id", ""), connector_id,
             AuditAction.CREDENTIAL_CHANGED, actor_id,
-            {"migration": "XOR->AES-256-GCM", "keys_migrated": list(creds.keys())},
+            {
+                "migration": "legacy->SYR1",
+                "keys_migrated": list(creds.keys()),
+                "key_version": self._svc._keyring.current_kid,
+            },
         )
 
-        return {"migrated": True, "keys_migrated": list(creds.keys()), "algorithm": "AES-256-GCM"}
+        return {
+            "migrated": True,
+            "keys_migrated": list(creds.keys()),
+            "algorithm": "AES-256-GCM",
+            "key_version": self._svc._keyring.current_kid,
+        }
 
     async def _audit(self, tenant_id, property_id, connector_id, action, actor_id=None, metadata=None):
         log = IntegrationAuditLog(

@@ -1,63 +1,44 @@
 """
-Channel Manager — Credential Encryption at Rest
-Encrypts and decrypts OTA provider credentials stored in MongoDB.
+Channel Manager — Credential Encryption at Rest (REFACTORED)
+
+Delegates ALL encryption to core.crypto.CredentialEncryptionService.
+This module is a thin backward-compatible wrapper.
+
+Legacy callers that import encrypt_credential / decrypt_credential / mask_credential
+continue to work without changes.
 """
-import base64
-import hashlib
 import logging
 import os
-import secrets
+
+from core.crypto import get_crypto_service, AADContext, mask_value
 
 logger = logging.getLogger(__name__)
 
-# Derive encryption key from environment or generate a deterministic one
-_ENCRYPTION_KEY = os.environ.get("CM_ENCRYPTION_KEY", "")
 
-
-def _get_key() -> bytes:
-    """Get 32-byte encryption key."""
-    if _ENCRYPTION_KEY:
-        return hashlib.sha256(_ENCRYPTION_KEY.encode()).digest()
-    # Fallback: derive from JWT_SECRET if available
-    jwt_secret = os.environ.get("JWT_SECRET", "default-hotel-pms-secret")
-    return hashlib.sha256(f"cm-cred:{jwt_secret}".encode()).digest()
-
-
-def _xor_bytes(data: bytes, key: bytes) -> bytes:
-    """XOR-based encryption (lightweight, suitable for credential storage)."""
-    return bytes(d ^ key[i % len(key)] for i, d in enumerate(data))
+def _build_aad() -> AADContext:
+    """Build AAD context for channel manager credentials."""
+    return AADContext(
+        environment=os.environ.get("APP_ENV", "development"),
+        context_type="credential",
+    )
 
 
 def encrypt_credential(plaintext: str) -> str:
     """Encrypt a credential string for storage."""
     if not plaintext:
         return ""
-    key = _get_key()
-    salt = secrets.token_bytes(16)
-    derived = hashlib.sha256(key + salt).digest()
-    encrypted = _xor_bytes(plaintext.encode("utf-8"), derived)
-    # salt (16) + encrypted
-    return base64.urlsafe_b64encode(salt + encrypted).decode("ascii")
+    svc = get_crypto_service()
+    return svc.encrypt(plaintext, aad=_build_aad())
 
 
 def decrypt_credential(ciphertext: str) -> str:
-    """Decrypt a stored credential string."""
+    """Decrypt a stored credential string. Raises on failure — never returns empty."""
     if not ciphertext:
         return ""
-    try:
-        raw = base64.urlsafe_b64decode(ciphertext)
-        salt = raw[:16]
-        encrypted = raw[16:]
-        key = _get_key()
-        derived = hashlib.sha256(key + salt).digest()
-        return _xor_bytes(encrypted, derived).decode("utf-8")
-    except Exception as e:
-        logger.error(f"Credential decryption failed: {e}")
-        return ""
+    svc = get_crypto_service()
+    return svc.decrypt(ciphertext, aad=_build_aad())
 
 
 def mask_credential(value: str, visible_chars: int = 4) -> str:
     """Mask a credential for display, showing only last N chars."""
-    if not value or len(value) <= visible_chars:
-        return "****"
-    return "*" * (len(value) - visible_chars) + value[-visible_chars:]
+    return mask_value(value, visible_suffix=visible_chars)
