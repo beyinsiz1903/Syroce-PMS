@@ -381,19 +381,20 @@ async def deep_health_check(request: Request):
     except Exception as e:
         result["outbox"] = {"status": "unknown", "error": str(e)}
 
-    # ── Night audit ──
+    # ── NA-001/NA-002: Night audit (hardened) ──
     try:
-        db_inst = request.app.state.db
-        last_audit = await db_inst.night_audit_logs.find_one(
-            {}, {"_id": 0, "business_date": 1, "completed_at": 1},
-            sort=[("completed_at", -1)],
-        )
-        result["night_audit"] = {
-            "last_run": last_audit.get("completed_at") if last_audit else None,
-            "last_date": last_audit.get("business_date") if last_audit else None,
-        }
-    except Exception:
-        result["night_audit"] = {"last_run": None}
+        from core.night_audit_hardened import get_health_metrics
+        na_metrics = await get_health_metrics()
+        na_status = "ok"
+        if na_metrics.get("blocked_count", 0) > 0 or na_metrics.get("partial_recovery_count", 0) > 0:
+            na_status = "degraded"
+        if na_metrics.get("stale_running_count", 0) > 0:
+            na_status = "critical"
+            overall_ok = False
+        na_metrics["status"] = na_status
+        result["night_audit"] = na_metrics
+    except Exception as e:
+        result["night_audit"] = {"status": "unknown", "error": str(e)}
 
     # ── DATA-001: Import bridge metrics ──
     try:

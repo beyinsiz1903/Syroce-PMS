@@ -10,10 +10,21 @@ from enum import Enum
 class NightAuditStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
+    BLOCKED = "blocked"
     COMPLETED = "completed"
     COMPLETED_WITH_EXCEPTIONS = "completed_with_exceptions"
     FAILED = "failed"
+    PARTIAL_RECOVERY_REQUIRED = "partial_recovery_required"
     ROLLED_BACK = "rolled_back"
+
+
+class NightAuditStage(str, Enum):
+    VALIDATING = "validating"
+    CANDIDATE_BUILD = "candidate_build"
+    POSTING_CHARGES = "posting_charges"
+    RECONCILING = "reconciling"
+    ROLLING_DATE = "rolling_date"
+    COMPLETED = "completed"
 
 
 class AuditExceptionSeverity(str, Enum):
@@ -25,6 +36,8 @@ class AuditExceptionSeverity(str, Enum):
 
 class RunNightAuditRequest(BaseModel):
     business_date: Optional[str] = None
+    property_id: Optional[str] = None
+    trigger_source: str = "manual"
     force_rerun: bool = False
     skip_validations: bool = False
     dry_run: bool = False

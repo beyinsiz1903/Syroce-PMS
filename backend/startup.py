@@ -333,11 +333,19 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Cockpit snapshot worker init warning: {e}")
 
+    # ── NA-001/NA-002: Night Audit Hardening indexes ─────────────────
+    try:
+        from core.night_audit_hardened import ensure_night_audit_indexes
+        await ensure_night_audit_indexes()
+        print("✅ Night audit hardening indexes ensured (NA-001/NA-002)")
+    except Exception as e:
+        logger.warning(f"Night audit hardening indexes error: {e}")
+
     # ── Night Audit Scheduler ─────────────────────────────────────────
     try:
         from domains.pms.night_audit.scheduler import start_scheduler
         start_scheduler()
-        print("✅ Night Audit Scheduler started (60s check interval)")
+        print("✅ Night Audit Scheduler started (60s check interval, hardened)")
     except Exception as e:
         logger.warning(f"Night Audit Scheduler init warning: {e}")
 
