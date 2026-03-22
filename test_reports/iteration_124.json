@@ -1,0 +1,56 @@
+{
+  "summary": "Event Timeline & Dashboard API testing complete. All 21 tests pass. New 'minimum battle loop' features verified: Timeline system traces reservations from OTA webhook to PMS booking in <1s (goal was <5s), Dashboard provides health score, failure counts, pipeline depth, connector status. FailureTracker and Timeline wiring verified in import_bridge_service and outbox_worker.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_timeline_dashboard_api.py",
+    "/app/test_reports/pytest/pytest_timeline_dashboard_api.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Timeline Writer uses fire-and-forget pattern correctly - write failures logged but never block main flow",
+    "FailureTracker properly wired into import_bridge_service.py and outbox_worker.py",
+    "Dashboard snapshot worker runs every 60s storing health trends in cp_health_snapshots collection",
+    "Health score algorithm uses weighted factors: critical failures (30%), high failures (20%), outbox health (15%), import health (15%), sync health (10%), ARI freshness (5%), security (5%)",
+    "Timeline indexes properly created on startup for entity, correlation, external_id, and stage_health queries",
+    "All three new routers registered in router_registry.py: ops_router, timeline_router, dashboard_router"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_timeline_dashboard_api.py"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "N/A (backend-only testing)"
+  },
+  "test_credentials": "No auth required for /api/ops/* endpoints",
+  "seed_data_creation": "Used existing simulated timeline data: EXELY-TEST-98765 (9 events, full pipeline), EXELY-STUCK-54321 (4 events, stuck at import_decided)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Event Timeline & Dashboard (Phase 5) is complete and tested. 21 API tests in test_timeline_dashboard_api.py cover: Dashboard API (5 tests: main, tenant-scoped, trends, connectors, pipeline), Timeline API (8 tests: external_id lookup success/stuck/not_found, correlation trace, search, search with filters, gaps detection, entity timeline), Existing Ops API regression (5 tests: overview, failures, outbox, imports, sync), Integration tests (3 tests: trace under 5s, dashboard consistency, tenant isolation). Test data: EXELY-TEST-98765 has 9 events (full pipeline received->confirmed), EXELY-STUCK-54321 has 4 events (stuck at import_decided with failure). Correlation ID 393fde19-3d64-469e-bdad-d2117f05ec49 traces the successful flow. Tenant ID 044f122b-87b5-480a-88b4-b9534b0c8c90 for tenant-scoped tests.",
+  "verified_endpoints": [
+    "GET /api/ops/dashboard - Full system dashboard with health_score, health_grade, metrics, connector_status, pipeline, recent_failures",
+    "GET /api/ops/dashboard/tenant/{tenant_id} - Tenant-scoped dashboard",
+    "GET /api/ops/dashboard/trends?hours=24 - Historical trends with timestamps, health_scores, failure_counts, outbox_depths",
+    "GET /api/ops/dashboard/connectors - Connector health list",
+    "GET /api/ops/dashboard/pipeline - Pipeline stages and total_in_flight",
+    "GET /api/ops/timeline/external/{external_id} - Primary debug entry point (traces OTA reservation in <1s)",
+    "GET /api/ops/timeline/correlation/{correlation_id} - Full flow trace with entity_map",
+    "GET /api/ops/timeline/search - Search with filters (tenant_id, provider, entity_type, stage, status, from, to)",
+    "GET /api/ops/timeline/gaps - Stuck event detection with threshold_minutes",
+    "GET /api/ops/timeline/{entity_type}/{entity_id} - Entity timeline with gap_warnings",
+    "GET /api/ops/overview - System health overview (regression test)",
+    "GET /api/ops/failures - List failures (regression test)"
+  ],
+  "performance_metrics": {
+    "trace_reservation_time": "<1 second (goal was <5 seconds)",
+    "dashboard_response_time": "<500ms",
+    "trend_data_points": "5 snapshots in 24h window"
+  }
+}

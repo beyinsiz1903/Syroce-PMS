@@ -61,6 +61,28 @@ async def on_startup(app):
         if os.environ.get("APP_ENV") in ("production", "staging"):
             raise
 
+    # ── Event Timeline indexes ───────────────────────────────────────
+    try:
+        from controlplane.timeline_writer import ensure_timeline_indexes
+        await ensure_timeline_indexes()
+        print("Event timeline indexes ensured")
+    except Exception as e:
+        logger.warning(f"Event timeline index creation error: {e}")
+
+    # ── Dashboard snapshot indexes + worker ────────────────────────
+    try:
+        from controlplane.dashboard_aggregator import (
+            ensure_snapshot_indexes,
+            get_snapshot_worker,
+        )
+        await ensure_snapshot_indexes()
+        snapshot_worker = get_snapshot_worker()
+        await snapshot_worker.start()
+        app.state.dashboard_snapshot_worker = snapshot_worker
+        print("Dashboard snapshot worker started (60s interval)")
+    except Exception as e:
+        logger.warning(f"Dashboard snapshot worker startup error: {e}")
+
     # ── Auto-seed demo data ─────────────────────────────────────────
     try:
         from auto_seed import auto_seed_if_empty
@@ -407,6 +429,14 @@ async def on_shutdown(app):
         await redis_cluster.close()
     except Exception as e:
         logger.warning(f"Infrastructure shutdown warning: {e}")
+
+    # Dashboard snapshot worker
+    snapshot_worker = getattr(app.state, "dashboard_snapshot_worker", None)
+    if snapshot_worker is not None:
+        try:
+            await snapshot_worker.stop()
+        except Exception as e:
+            logger.warning(f"Dashboard snapshot worker shutdown warning: {e}")
 
     # OTA-002: Stop production outbox worker
     ota_worker = getattr(app.state, "outbox_ota_worker", None)

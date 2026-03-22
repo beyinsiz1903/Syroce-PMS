@@ -28,6 +28,31 @@ from core.atomic_booking import create_booking_atomic, BookingConflictError
 
 logger = logging.getLogger("core.import_bridge_service")
 
+
+def _timeline_append(**kwargs):
+    """Fire-and-forget timeline write. Returns a coroutine."""
+    try:
+        from controlplane.timeline_writer import get_timeline_writer
+        return get_timeline_writer().append(**kwargs)
+    except Exception:
+        import asyncio
+        async def _noop():
+            return None
+        return _noop()
+
+
+def _failure_record(**kwargs):
+    """Fire-and-forget failure recording. Returns a coroutine."""
+    try:
+        from controlplane.failure_tracker import get_failure_tracker
+        return get_failure_tracker().record(**kwargs)
+    except Exception:
+        import asyncio
+        async def _noop():
+            return None
+        return _noop()
+
+
 # ── Status constants ─────────────────────────────────────────────────
 STATUS_PENDING = "pending_auto_import"
 STATUS_PROCESSING = "processing"
@@ -183,6 +208,19 @@ async def auto_import_reservation_to_pms(
     tenant_id = record["tenant_id"]
     provider = record.get("provider", "")
     ext_res_id = record["external_reservation_id"]
+    correlation_id = record.get("correlation_id", str(uuid.uuid4()))
+
+    # Timeline: import processing started
+    await _timeline_append(
+        tenant_id=tenant_id,
+        correlation_id=correlation_id,
+        entity_type="reservation",
+        external_id=ext_res_id,
+        stage="import_decided",
+        source="import_bridge",
+        provider=provider,
+        metadata={"import_id": imported_reservation_id, "decision": "auto_import"},
+    )
 
     try:
         # ── 2. Duplicate check (booking source) ─────────────────
@@ -340,6 +378,23 @@ async def auto_import_reservation_to_pms(
                 {"$set": {"reservation_id": booking_id, "updated_at": imported_at}},
             )
 
+        # Timeline: booking stored
+        await _timeline_append(
+            tenant_id=tenant_id,
+            correlation_id=correlation_id,
+            entity_type="reservation",
+            entity_id=booking_id,
+            external_id=ext_res_id,
+            stage="stored",
+            source="import_bridge",
+            provider=provider,
+            metadata={
+                "booking_id": booking_id,
+                "room_id": booking_doc.get("room_id", ""),
+                "import_id": imported_reservation_id,
+            },
+        )
+
         # ── 9. Audit log ─────────────────────────────────────────
         await db.pms_audit_trail.insert_one({
             "id": str(uuid.uuid4()),
@@ -376,6 +431,18 @@ async def auto_import_reservation_to_pms(
                 property_id=property_id,
                 correlation_id=record.get("correlation_id"),
             )
+            # Timeline: queued for outbox delivery
+            await _timeline_append(
+                tenant_id=tenant_id,
+                correlation_id=correlation_id,
+                entity_type="reservation",
+                entity_id=booking_id,
+                external_id=ext_res_id,
+                stage="queued",
+                source="outbox_service",
+                provider=provider,
+                metadata={"booking_id": booking_id},
+            )
         except Exception as e:
             logger.warning("Outbox enqueue for import failed (non-critical): %s", e)
 
@@ -391,6 +458,31 @@ async def auto_import_reservation_to_pms(
             "Import bridge error for %s: %s", imported_reservation_id, error_msg,
         )
         await _handle_import_failure(record, error_msg)
+
+        # Timeline: failure
+        await _timeline_append(
+            tenant_id=tenant_id,
+            correlation_id=correlation_id,
+            entity_type="reservation",
+            external_id=ext_res_id,
+            stage="stored",
+            status="failure",
+            source="import_bridge",
+            provider=provider,
+            metadata={"error_message": error_msg[:500], "import_id": imported_reservation_id},
+        )
+
+        # FailureTracker: record structured failure
+        await _failure_record(
+            tenant_id=tenant_id,
+            provider=provider,
+            operation_type="reservation_import",
+            error_code="IMPORT_ERROR",
+            error_message=error_msg,
+            correlation_id=correlation_id,
+            context={"import_id": imported_reservation_id, "external_reservation_id": ext_res_id},
+        )
+
         return False, f"Import error: {error_msg[:200]}"
 
 

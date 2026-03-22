@@ -37,6 +37,30 @@ from core.outbox_service import (
 logger = logging.getLogger("core.outbox_worker")
 
 
+def _timeline_append(**kwargs):
+    """Fire-and-forget timeline write. Returns a coroutine."""
+    try:
+        from controlplane.timeline_writer import get_timeline_writer
+        return get_timeline_writer().append(**kwargs)
+    except Exception:
+        import asyncio
+        async def _noop():
+            return None
+        return _noop()
+
+
+def _failure_record(**kwargs):
+    """Fire-and-forget failure recording. Returns a coroutine."""
+    try:
+        from controlplane.failure_tracker import get_failure_tracker
+        return get_failure_tracker().record(**kwargs)
+    except Exception:
+        import asyncio
+        async def _noop():
+            return None
+        return _noop()
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -188,6 +212,22 @@ class OutboxWorker:
     async def _process_event(self, event: Dict[str, Any]) -> None:
         """Dispatch event and handle result."""
         event_id = event.get("id", "unknown")
+        tenant_id = event.get("tenant_id", "")
+        provider = event.get("provider", "")
+        correlation_id = event.get("correlation_id", "")
+        entity_id = event.get("entity_id", "")
+
+        # Timeline: dispatched
+        await _timeline_append(
+            tenant_id=tenant_id,
+            correlation_id=correlation_id,
+            entity_type=event.get("entity_type", "reservation"),
+            entity_id=entity_id,
+            stage="dispatched",
+            source="outbox_worker",
+            provider=provider,
+            metadata={"outbox_event_id": event_id, "worker_id": self.worker_id},
+        )
 
         try:
             from core.outbox_dispatcher import dispatch_outbox_event
@@ -224,6 +264,19 @@ class OutboxWorker:
         )
         self._processed_count += 1
         self._last_processed_at = now
+
+        # Timeline: confirmed
+        await _timeline_append(
+            tenant_id=event.get("tenant_id", ""),
+            correlation_id=event.get("correlation_id", ""),
+            entity_type=event.get("entity_type", "reservation"),
+            entity_id=event.get("entity_id", ""),
+            stage="confirmed",
+            source="outbox_worker",
+            provider=event.get("provider", ""),
+            metadata={"outbox_event_id": event.get("id", ""), "message": message[:200]},
+        )
+
         logger.info(
             "Outbox event processed: %s type=%s msg=%s",
             event.get("id"), event.get("event_type"), message[:100],
@@ -235,6 +288,9 @@ class OutboxWorker:
         attempt_count = event.get("attempt_count", 1)
         max_attempts = event.get("max_attempts", 5)
         is_permanent = message.startswith("permanent:")
+        tenant_id = event.get("tenant_id", "")
+        provider = event.get("provider", "")
+        correlation_id = event.get("correlation_id", "")
 
         if is_permanent or attempt_count >= max_attempts:
             # Permanently failed
@@ -250,6 +306,37 @@ class OutboxWorker:
                 },
             )
             self._failed_count += 1
+
+            # Timeline: failed
+            await _timeline_append(
+                tenant_id=tenant_id,
+                correlation_id=correlation_id,
+                entity_type=event.get("entity_type", "reservation"),
+                entity_id=event.get("entity_id", ""),
+                stage="dispatched",
+                status="failure",
+                source="outbox_worker",
+                provider=provider,
+                metadata={
+                    "outbox_event_id": event.get("id", ""),
+                    "error_message": message[:500],
+                    "attempt_count": attempt_count,
+                    "permanent": True,
+                },
+            )
+
+            # FailureTracker: record structured failure
+            await _failure_record(
+                tenant_id=tenant_id,
+                provider=provider,
+                operation_type="outbox_dispatch",
+                error_code="DISPATCH_FAILED",
+                error_message=message,
+                retry_count=attempt_count,
+                correlation_id=correlation_id,
+                context={"outbox_event_id": event.get("id", ""), "event_type": event.get("event_type", "")},
+            )
+
             logger.error(
                 "Outbox event FAILED (permanent): %s type=%s attempts=%d error=%s",
                 event.get("id"), event.get("event_type"), attempt_count, message[:200],

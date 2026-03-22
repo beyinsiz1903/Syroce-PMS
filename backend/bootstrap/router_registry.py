@@ -141,6 +141,10 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("domains.channel_manager.notification_events_router", "router", ["Notification Events"], None, None),
     # Control Plane — Operational Visibility & Reliability
     ("controlplane.ops_router", "router", ["Control Plane"], None, None),
+    # Event Timeline — Trace any reservation in seconds
+    ("controlplane.timeline_router", "router", ["Event Timeline"], None, None),
+    # Dashboard — Single pane of glass health view
+    ("controlplane.dashboard_router", "router", ["Control Plane Dashboard"], None, None),
 ]
 
 # Optional routers with special import paths
