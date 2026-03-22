@@ -23,7 +23,7 @@ import pytest
 import httpx
 
 # Use the public API URL from environment
-API_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://production-ready-119.preview.emergentagent.com")
+API_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://room-night-locks.preview.emergentagent.com")
 AUTH_CREDS = {"email": "demo@hotel.com", "password": "demo123"}
 
 
