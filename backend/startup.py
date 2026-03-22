@@ -158,6 +158,20 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Check-in/check-out index creation error: {e}")
 
+    # ── Folio Ledger indexes ─────────────────────────────────────────
+    try:
+        from core.folio_ledger_service import ensure_folio_ledger_indexes
+        await ensure_folio_ledger_indexes()
+    except Exception as e:
+        logger.warning(f"Folio ledger index creation error: {e}")
+
+    # ── Learning Loop indexes ────────────────────────────────────────
+    try:
+        from core.learning_loop import ensure_learning_loop_indexes
+        await ensure_learning_loop_indexes()
+    except Exception as e:
+        logger.warning(f"Learning loop index creation error: {e}")
+
     # ── PERF-001: Compound indexes for hot queries ─────────────────
     try:
         await _ensure_performance_indexes()
