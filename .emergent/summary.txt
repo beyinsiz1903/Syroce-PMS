@@ -1,35 +1,38 @@
 <analysis>**original_problem_statement:**
-The user's primary objective is to build a production-grade, battle-visible hotel operations platform. The initial broad blueprint was superseded by a sharp focus on a Week 1 MVP for system visibility.
+The user's primary objective is to build a production-grade, battle-visible hotel operations platform. The initial focus was on creating end-to-end observability for webhook data ingestion. The current focus is on creating a Control Plane frontend for non-technical users, which includes a Reservation Lookup, a simple System Health screen, and a Live Event Feed.
 
-In this session, the user provided a new, overriding priority for Week 2: **Connect the timeline to reality.** This required extending the previously built event tracing system to the absolute entry point of the application—the webhook handlers that receive reservation data from external OTAs (Online Travel Agencies) like Exely and HotelRunner.
-
-**PRODUCT REQUIREMENTS (Current Focus):**
-1.  **Webhook Ingest Timeline:** The Event Timeline must begin the moment a webhook is received. It needs to trace the payload through normalization, validation, and deduplication stages.
-2.  **Raw Payload Storage:** Every incoming webhook's raw payload (XML or JSON) must be stored and linked to the event timeline via a  for complete debugging context.
-3.  **Deduplication & Mapping Visibility:** The timeline must explicitly show the outcome of deduplication checks (e.g., , ) and mapping lookups (e.g., ).
-4.  **End-to-End Traceability:** The ultimate goal is to enable a developer or support agent to trace a reservation from the initial OTA notification to the final PMS booking in under 5 seconds.
+In this session, the user reported a critical regression: they were able to book reservations for past dates, a bug that had been fixed previously.
 
 **User's preferred language**: Turkish. The user provides all critical direction and feedback in Turkish. The next agent **MUST** respond in Turkish.
 
 **what currently exists?**
-The Core Battle Loop MVP from the previous session has been significantly enhanced. The system now has true end-to-end visibility. The Event Timeline is fully integrated into the webhook ingestion pipeline for both Exely (SOAP/XML) and HotelRunner (JSON) providers.
+A full-stack application with a FastAPI backend and a React frontend. The backend handles webhook data ingestion and provides core PMS functionalities. A Control Plane UI exists with several operational modules.
 
-This integration captures the entire lifecycle of an incoming reservation notification, including , , , and  stages. Raw webhook payloads are archived in a separate collection and linked to the main trace, making them available for deep debugging via a new API endpoint.
+In this session, a critical regression was fixed. This bug allowed users to create reservations for past dates due to the system relying on a stale business date from a blocked  process. The fix involved hardening both the frontend UI and the backend API to use the current date as the minimum allowable booking date, bypassing the stale data.
 
 **Last working item**:
-    - Last item agent was working: Implementing the Webhook to Timeline Integration as directed by the user. This involved modifying the webhook routers for Exely and HotelRunner, enhancing the core ingest pipeline to write timeline events at each processing step, and adding a new API to retrieve raw payloads.
+    - Last item agent was working: Fixing a regression bug that allowed creating reservations for past dates.
     - Status: USER VERIFICATION PENDING
     - Agent Testing Done: Y
-    - Which testing method agent to use? NA
+    - Which testing method agent to use? The agent has tested the fix using  for the backend and  for the frontend. The next agent should confirm the fix with the user.
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  - Issue 1: Pre-existing test failures (P2)
-  - Issue 2: Pre-existing linting errors (P2)
-
+  - Issue 1: Regression: Past Date Booking (P0)
+  - Issue 2: Pre-existing test failures (P2)
+  - Issue 3: Pre-existing linting errors (P2)
+  
   Issues Detail:
   - Issue 1: 
-     - Attempted fixes: None. This is known technical debt from before the last few sessions.
+     - Attempted fixes: The agent identified that a stale  from a blocked night audit was the root cause. A fix was implemented across both the frontend and backend to enforce the *current date* as the validation floor, instead of relying on the potentially stale .
+     - Next debug checklist: Confirm with the user that they can no longer create reservations for past dates.
+     - Why fix this issue and what will be achieved with the fix? This is a critical bug that affects core business logic and data integrity.
+     - Status:  USER VERIFICATION PENDING
+     - Is recurring issue? Y
+     - Should Test frontend/backend/both after fix? Both have been tested by the agent; awaiting user confirmation.
+     - Blocked on other issue: None
+  - Issue 2: 
+     - Attempted fixes: None. This is known technical debt.
      - Next debug checklist: Run ============================= test session starts ==============================
 platform linux -- Python 3.11.14, pytest-8.4.2, pluggy-1.6.0
 rootdir: /app
@@ -37,13 +40,13 @@ plugins: locust-2.43.3, asyncio-1.3.0, anyio-4.11.0
 asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
 collected 0 items
 
-============================ no tests ran in 0.01s ============================= and investigate likely authentication-related failures.
+============================ no tests ran in 0.01s ============================= and investigate failures.
      - Why fix this issue and what will be achieved with the fix? To establish a stable, reliable CI pipeline and prevent future regressions.
      - Status:  NOT STARTED
      - Is recurring issue? Y
      - Should Test frontend/backend/both after fix? backend
      - Blocked on other issue: None
-  - Issue 2: 
+  - Issue 3: 
      - Attempted fixes: None. Pre-existing issues.
      - Next debug checklist: Run ./backend/accounting_endpoints.py:2:1: F401 'fastapi.HTTPException' imported but unused
 ./backend/accounting_endpoints.py:3:1: F401 'datetime.timedelta' imported but unused
@@ -15814,34 +15817,34 @@ collected 0 items
 ./backend/modules/reservations/services/create_reservation_service.py:58:80: E501 line too long (111 > 79 characters)
 ./backend/modules/reservations/services/create_reservation_service.py:62:80: E501 line too long (94 > 79 characters)
 ./backend/modules/reservations/services/create_reservation_service.py:63:80: E501 line too long (96 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:65:80: E501 line too long (105 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:73:80: E501 line too long (95 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:77:80: E501 line too long (99 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:98:80: E501 line too long (92 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:104:80: E501 line too long (80 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:106:80: E501 line too long (112 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:107:80: E501 line too long (94 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:108:80: E501 line too long (109 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:109:80: E501 line too long (124 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:113:80: E501 line too long (100 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:120:80: E501 line too long (127 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:131:80: E501 line too long (83 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:134:80: E501 line too long (80 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:141:80: E501 line too long (80 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:154:80: E501 line too long (88 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:155:80: E501 line too long (81 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:164:80: E501 line too long (85 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:173:80: E501 line too long (92 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:182:80: E501 line too long (85 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:197:80: E501 line too long (103 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:200:80: E501 line too long (136 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:205:80: E501 line too long (86 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:206:80: E501 line too long (90 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:207:80: E501 line too long (82 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:210:80: E501 line too long (86 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:212:80: E501 line too long (106 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:215:80: E501 line too long (90 > 79 characters)
-./backend/modules/reservations/services/create_reservation_service.py:220:14: W292 no newline at end of file
+./backend/modules/reservations/services/create_reservation_service.py:65:80: E501 line too long (95 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:75:80: E501 line too long (93 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:79:80: E501 line too long (97 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:100:80: E501 line too long (92 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:106:80: E501 line too long (80 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:108:80: E501 line too long (112 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:109:80: E501 line too long (94 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:110:80: E501 line too long (109 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:111:80: E501 line too long (124 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:115:80: E501 line too long (100 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:122:80: E501 line too long (127 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:133:80: E501 line too long (83 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:136:80: E501 line too long (80 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:143:80: E501 line too long (80 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:156:80: E501 line too long (88 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:157:80: E501 line too long (81 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:166:80: E501 line too long (85 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:175:80: E501 line too long (92 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:184:80: E501 line too long (85 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:199:80: E501 line too long (103 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:202:80: E501 line too long (136 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:207:80: E501 line too long (86 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:208:80: E501 line too long (90 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:209:80: E501 line too long (82 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:212:80: E501 line too long (86 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:214:80: E501 line too long (106 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:217:80: E501 line too long (90 > 79 characters)
+./backend/modules/reservations/services/create_reservation_service.py:222:14: W292 no newline at end of file
 ./backend/modules/reservations/services/reservation_read_service.py:33:80: E501 line too long (116 > 79 characters)
 ./backend/modules/reservations/services/reservation_read_service.py:36:80: E501 line too long (95 > 79 characters)
 ./backend/modules/reservations/services/reservation_read_service.py:38:80: E501 line too long (120 > 79 characters)
@@ -21820,7 +21823,7 @@ collected 0 items
 ./backend/tests/test_atomic_booking.py:310:80: E501 line too long (99 > 79 characters)
 ./backend/tests/test_atomic_booking_overbooking.py:20:1: F401 'datetime.datetime' imported but unused
 ./backend/tests/test_atomic_booking_overbooking.py:20:1: F401 'datetime.timezone' imported but unused
-./backend/tests/test_atomic_booking_overbooking.py:26:80: E501 line too long (100 > 79 characters)
+./backend/tests/test_atomic_booking_overbooking.py:26:80: E501 line too long (103 > 79 characters)
 ./backend/tests/test_atomic_booking_overbooking.py:70:80: E501 line too long (80 > 79 characters)
 ./backend/tests/test_atomic_booking_overbooking.py:84:80: E501 line too long (82 > 79 characters)
 ./backend/tests/test_atomic_booking_overbooking.py:91:80: E501 line too long (100 > 79 characters)
@@ -22870,6 +22873,65 @@ collected 0 items
 ./backend/tests/test_controlplane_api.py:562:1: W293 blank line contains whitespace
 ./backend/tests/test_controlplane_api.py:566:1: W293 blank line contains whitespace
 ./backend/tests/test_controlplane_api.py:568:80: E501 line too long (89 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:15:80: E501 line too long (104 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:22:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:24:80: E501 line too long (86 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:25:80: E501 line too long (89 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:27:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:34:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:38:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:41:80: E501 line too long (88 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:42:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:47:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:50:80: E501 line too long (90 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:52:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:56:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:59:80: E501 line too long (88 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:61:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:68:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:71:80: E501 line too long (115 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:73:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:77:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:80:80: E501 line too long (117 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:82:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:86:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:89:80: E501 line too long (109 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:91:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:97:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:99:80: E501 line too long (82 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:101:80: E501 line too long (98 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:103:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:107:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:108:80: E501 line too long (92 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:110:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:120:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:125:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:127:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:133:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:141:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:147:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:150:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:153:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:158:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:161:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:166:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:170:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:173:80: E501 line too long (89 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:175:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:186:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:189:80: E501 line too long (105 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:191:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:197:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:201:80: E501 line too long (98 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:203:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:207:80: E501 line too long (114 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:210:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:211:80: E501 line too long (96 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:213:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:221:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:224:80: E501 line too long (88 > 79 characters)
+./backend/tests/test_controlplane_ui_api.py:226:1: W293 blank line contains whitespace
+./backend/tests/test_controlplane_ui_api.py:231:1: W293 blank line contains whitespace
 ./backend/tests/test_core_lockdown.py:16:1: F401 'asyncio' imported but unused
 ./backend/tests/test_core_lockdown.py:18:1: F401 'hashlib' imported but unused
 ./backend/tests/test_core_lockdown.py:19:1: F401 'datetime.datetime' imported but unused
@@ -26175,7 +26237,7 @@ collected 0 items
 ./backend/tests/test_p1_features_mapping_lineage_testbooking.py:2:80: E501 line too long (88 > 79 characters)
 ./backend/tests/test_p1_features_mapping_lineage_testbooking.py:4:80: E501 line too long (83 > 79 characters)
 ./backend/tests/test_p1_features_mapping_lineage_testbooking.py:5:80: E501 line too long (81 > 79 characters)
-./backend/tests/test_p1_features_mapping_lineage_testbooking.py:13:80: E501 line too long (101 > 79 characters)
+./backend/tests/test_p1_features_mapping_lineage_testbooking.py:13:80: E501 line too long (104 > 79 characters)
 ./backend/tests/test_p1_features_mapping_lineage_testbooking.py:43:80: E501 line too long (88 > 79 characters)
 ./backend/tests/test_p1_features_mapping_lineage_testbooking.py:48:1: W293 blank line contains whitespace
 ./backend/tests/test_p1_features_mapping_lineage_testbooking.py:51:80: E501 line too long (93 > 79 characters)
@@ -26651,7 +26713,7 @@ collected 0 items
 ./backend/tests/test_p5_cockpit_notifications.py:422:80: E501 line too long (81 > 79 characters)
 ./backend/tests/test_p5_cockpit_notifications.py:439:80: E501 line too long (85 > 79 characters)
 ./backend/tests/test_p5_stop_sale_deposits.py:3:80: E501 line too long (86 > 79 characters)
-./backend/tests/test_p5_stop_sale_deposits.py:9:80: E501 line too long (101 > 79 characters)
+./backend/tests/test_p5_stop_sale_deposits.py:9:80: E501 line too long (104 > 79 characters)
 ./backend/tests/test_p5_stop_sale_deposits.py:11:1: E302 expected 2 blank lines, found 1
 ./backend/tests/test_p5_stop_sale_deposits.py:13:1: W293 blank line contains whitespace
 ./backend/tests/test_p5_stop_sale_deposits.py:25:1: W293 blank line contains whitespace
@@ -28753,7 +28815,7 @@ collected 0 items
 ./backend/tests/test_refactor_validation.py:309:1: W293 blank line contains whitespace
 ./backend/tests/test_refactor_validation.py:324:1: W293 blank line contains whitespace
 ./backend/tests/test_refactor_validation.py:330:1: W293 blank line contains whitespace
-./backend/tests/test_refactor_validation.py:335:80: E501 line too long (81 > 79 characters)
+./backend/tests/test_refactor_validation.py:335:80: E501 line too long (84 > 79 characters)
 ./backend/tests/test_refactor_validation.py:339:80: E501 line too long (99 > 79 characters)
 ./backend/tests/test_refactor_validation.py:341:80: E501 line too long (86 > 79 characters)
 ./backend/tests/test_release_room_block_bridge.py:8:1: F811 redefinition of unused 'os' from line 1
@@ -29122,7 +29184,7 @@ collected 0 items
 ./backend/tests/test_router_modularization.py:254:1: W293 blank line contains whitespace
 ./backend/tests/test_router_modularization.py:258:80: E501 line too long (82 > 79 characters)
 ./backend/tests/test_router_modularization.py:261:80: E501 line too long (105 > 79 characters)
-./backend/tests/test_sec001_secrets_api.py:17:80: E501 line too long (101 > 79 characters)
+./backend/tests/test_sec001_secrets_api.py:17:80: E501 line too long (104 > 79 characters)
 ./backend/tests/test_sec001_secrets_api.py:24:80: E501 line too long (96 > 79 characters)
 ./backend/tests/test_sec001_secrets_api.py:63:80: E501 line too long (86 > 79 characters)
 ./backend/tests/test_sec001_secrets_api.py:70:1: W293 blank line contains whitespace
@@ -31775,7 +31837,7 @@ collected 0 items
 ./backend_test.py:724:1: W293 blank line contains whitespace
 ./backend_test.py:731:11: W292 no newline at end of file
 ./detailed_migration_observability_inspection.py:7:1: F401 'json' imported but unused
-./detailed_migration_observability_inspection.py:11:80: E501 line too long (113 > 79 characters)
+./detailed_migration_observability_inspection.py:11:80: E501 line too long (116 > 79 characters)
 ./detailed_migration_observability_inspection.py:13:1: E302 expected 2 blank lines, found 1
 ./detailed_migration_observability_inspection.py:16:1: W293 blank line contains whitespace
 ./detailed_migration_observability_inspection.py:20:1: W293 blank line contains whitespace
@@ -32194,7 +32256,7 @@ collected 0 items
 ./load_tests/soak_test_staging.py:308:80: E501 line too long (106 > 79 characters)
 ./load_tests/soak_test_staging.py:337:80: E501 line too long (98 > 79 characters)
 ./load_tests/soak_test_staging.py:347:80: E501 line too long (89 > 79 characters)
-./load_tests/soak_test_staging.py:366:80: E501 line too long (107 > 79 characters) or a similar linter on  and .
+./load_tests/soak_test_staging.py:366:80: E501 line too long (107 > 79 characters) on the backend codebase, specifically  and .
      - Why fix this issue and what will be achieved with the fix? Improves code quality and maintainability.
      - Status:  NOT STARTED
      - Is recurring issue? Y
@@ -32206,46 +32268,53 @@ collected 0 items
 
 **Upcoming and Future Tasks**
 **Upcoming Tasks:**
-*   **(P0) Frontend for Control Plane:** The backend now provides complete end-to-end tracing data via APIs. The immediate next step is to build a simple, read-only frontend dashboard. This will expose the power of the timeline to non-technical users (e.g., hotel operations staff), allowing them to self-serve debug reservation issues without developer intervention.
-*   **(P1) Fix Pre-existing Test & Lint Issues:** Address the long-standing technical debt to improve CI stability.
+*   **(P0) Confirm Past-Date Booking Fix:** Your first action MUST be to ask the user to verify the fix for the past-date booking regression.
+*   **(P0) Confirm Navigation Bug Fix:** The original plan from the previous session's handoff was to confirm a fix for a navigation bug. This was interrupted. Confirm this with the user as well.
+*   **(P1) User Verification of Control Plane:** The plan to get user approval for the Control Plane was interrupted by the bug report. This needs to be re-initiated after the bug fixes are verified.
+*   **(P1) Keyboard Shortcut for Trace:** A previous agent suggested adding a  shortcut to the lookup functionality. This is pending user approval.
+*   **(P2) Stale Business Date Alert:** The agent suggested adding a UI alert (e.g., a banner) to warn users when the  is stale due to a failed night audit. This would prevent similar issues in the future.
+*   **(P2) Fix Pre-existing Test & Lint Issues:** Address the long-standing technical debt.
 
 **Future Tasks (From Blueprint & Backlog):**
+*   Prepare for a Pilot Hotel launch.
 *   Implement remaining sections of the  (Security, IaC, etc.).
 *   Execute Crypto Migration (SEC-002) and Secrets Management Rollout (SEC-001).
 *   Enable Strict Tenant Mode ().
 *   Gradual Refactoring of Legacy DB Imports.
 
 **Completed work in this session**
-- **Webhook Timeline Integration (Implemented & Tested):**
-  - Modified  and  to write a  event to the timeline at the very start of the request.
-  - Enhanced  to add , , and  stages to the timeline, capturing critical metadata like mapping results and duplication decisions.
-- **Raw Payload Storage (Implemented & Tested):**
-  - Webhook handlers now archive the raw incoming payload into a new  collection, linked via .
-- **New Debugging API Endpoint (Implemented & Tested):**
-  - Added  to retrieve stored raw payloads for a trace.
-- **Full System Verification:**
-  - Successfully tested Exely (new and duplicate), and HotelRunner webhook flows, confirming the timeline correctly traces all new stages.
-  - The testing agent passed **18/18 tests**, confirming the new features work and no regressions were introduced.
+- **Past-Date Booking Regression Fix (RESOLVED & AGENT-TESTED):**
+  - Identified that a stale  (stuck on ) was causing the issue.
+  - **Backend Fix:** Updated  to hard-code the validation check against the current date ().
+  - **Frontend Fix:** Updated , , and  to add a  attribute to all check-in date inputs, enforcing the current date as the floor in the UI.
+  - Verified backend endpoints (, ) reject past dates via .
+  - Verified frontend UI prevents selection via screenshots and log analysis.
 
 **Earlier issues found/mentioned but not fixed**
-   - **Pre-existing Test Failures:** Known failures in  were not addressed.
-   - **Pre-existing Lint Errors:** Lint errors in  and  were not addressed.
+   - **Pre-existing Test Failures:** Known failures in .
+   - **Pre-existing Lint Errors:** Lint errors in various backend files.
 
 **Known issue recurrence from previous fork**
-  - **Pre-existing Test/Lint issues:** These issues have been carried over for several sessions and were correctly de-prioritized in favor of the user's main request.
+  - **Past Date Booking:** The user explicitly stated this was a recurring issue. The implemented fix is more robust and should prevent future recurrence from the same cause.
+    - Recurrence count: 1+
+    - Status: USER VERIFICATION PENDING
+  - **Test/Lint issues:** These issues have been carried over for several sessions.
+    - Recurrence count: 4+
+    - Status: NOT STARTED
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **End-to-End Observability:** Extending the tracing system to the absolute edge of the system (webhook ingestion) to capture the full lifecycle of an external event.
-- **Raw Payload Archiving:** Storing the original, unmodified data from external systems for debugging, auditing, and non-repudiation. This is critical for resolving disputes with providers.
-- **Declarative Timeline Stages:** The  modifications show a clear, declarative approach to instrumenting a business process by adding timeline events at each significant step.
+- **Regression Bug:** A previously fixed issue (preventing past-date bookings) reappeared, highlighting a gap in the original fix.
+- **Stale State as Root Cause:** The core problem was the system relying on a stale  from a blocked  process. The fix involved defensively coding against this state by using the real-time current date for validation.
+- **Defense in Depth:** The fix was applied at multiple layers: backend API validation () and frontend UI controls ( attribute on date inputs).
 
 **key DB schema**
-- **timeline_events:**  (Existing)
-- **dashboard_snapshots:**  (Existing)
-- **webhook_raw_payloads:**  (New)
+  - No changes were made to the database schema. The agent inspected the , , and  collections to diagnose the problem.
+
+**changes in tech stack**
+  - None.
 
 **All files of reference**
 - **Modified:**
@@ -32253,47 +32322,42 @@ collected 0 items
     - 
     - 
     - 
+- **Updated:**
     - 
-    - 
-    - 
-- **Updated Memory:**
-    - 
-    - 
+
+**Areas that need refactoring**:
+- The root cause is the blocked night audit. The agent proposed a proactive enhancement: adding a user-facing alert when the business date is stale. This would be a valuable operational improvement to prevent future confusion.
 
 **key api endpoints**
-- **GET /api/ops/timeline/raw_payload/{correlation_id}:** (NEW) Retrieve stored raw webhook payloads for a given trace.
-- **GET /api/ops/dashboard:** Get the latest system health snapshot.
-- **GET /api/ops/timeline/external/{external_id}:** Trace a reservation using its OTA booking ID.
+- : The primary endpoint for creating reservations, now with hardened date validation.
+- : An alternative booking endpoint, also hardened.
+- : The endpoint that was returning the stale date, which prompted the investigation.
 
 **Critical Info for New Agent**
-1.  **User Language is Turkish:** The user's most important feedback is in Turkish. You **MUST** continue the conversation in Turkish.
-2.  **Focus on Battle Visibility:** The user's highest priority is making the system battle-visible. The backend foundation for this is now complete and tested. Do not get sidetracked by infrastructure or other blueprint items.
-3.  **Next Action is Frontend:** The logical and highest-value next step is to build a simple UI for the control plane. The backend is ready to be consumed. The goal is to empower non-technical users to trace reservations themselves.
-4.  **The System is Debuggable:** The core user requirement (debug a reservation in 5 seconds) is now achievable via the API. The next task is to expose this power through a user interface.
+1.  **User Language is Turkish:** You **MUST** continue the conversation in Turkish.
+2.  **Confirm Fix First:** Your first and highest priority is to confirm with the user that the past-date booking bug is resolved on their end.
+3.  **Resume Interrupted Plan:** The agent's original plan (confirming a different navigation bug, getting Control Plane approval) was cut short by the user's bug report. After confirming the new fix, you must re-propose the original plan.
+4.  **Operational Health:** The root cause was a blocked . This indicates a potential fragility in the system's operational health. The proposed enhancement to alert on a stale business date is highly recommended.
 
 **documents and test reports created in this job**
-  - 
-  - 
-  - 
+  -  was updated to reflect the fix.
+  - Console logs from  were saved to .
 
 **Last 10 User Messages and any pending HUMAN messages** 
-- The user provided extremely detailed and positive feedback in Turkish, praising the agent for achieving a debuggable system. They confirmed the Core Battle Loop was a textbook-perfect implementation for Week 1.
-- They then gave a very clear and forceful directive for Week 2: **connect the timeline to reality.** They explicitly warned against moving on to other tasks like infrastructure (Terraform, Vault) or a fancy dashboard.
-- The user laid out a precise plan: implement timeline events for webhook ingestion, store raw payloads, and ensure deduplication and mapping steps are visible in the trace.
-- Their final instruction was that the system's interior is now visible, and the next critical step is to **bring the outside world into the system.**
+- User:  (I can still make reservations for a past date, this was fixed before). This was the single bug report that drove the entire session's work.
 
 **Project Health Check:**
-- **Broken:** None
-- **Mocked:** None. The system is now processing simulated real-world webhook data end-to-end.
+- **Broken:** None. A critical regression that allowed invalid data was fixed.
+- **Mocked:** None.
 
 **3rd Party Integrations**
 - No new integrations were added.
 
 **Testing status**
-  - Testing agent used after significant changes: YES
+  - Testing agent used after significant changes: NO (Agent self-tested with  and ).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: []
-  - Known regressions: None. The testing agent passed 18/18 tests.
+  - Known regressions: A critical regression regarding past-date bookings was identified and fixed during this session.
 
 **Credentials to test flow:**
 | User | E-posta | Şifre | Role |
@@ -32301,4 +32365,6 @@ collected 0 items
 | **Demo Admin** |  |  |  |
 
 **What agent forgot to execute**
-- Nothing. The agent perfectly understood the user's critical pivot, adjusted the plan accordingly, and executed the high-priority Week 2 task flawlessly. It correctly de-prioritized all other work to focus on the user's explicit instructions.</analysis>
+- The agent was interrupted by the user's critical bug report. It correctly prioritized the fix but did not get to execute its initial plan from . The next agent must circle back to that plan, which included:
+    1.  Confirming the fix for the *previous* navigation bug.
+    2.  Getting user approval for the Control Plane MVP.</analysis>
