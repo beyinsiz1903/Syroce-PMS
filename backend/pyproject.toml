@@ -2,6 +2,16 @@
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
+markers = [
+    "chaos_l1: Level 1 unit chaos tests (fast, every PR)",
+    "chaos_l2: Level 2 integration resilience tests (nightly)",
+    "chaos_l3: Level 3 end-to-end chaos flows (weekly)",
+    "chaos_l4: Level 4 soak/burst tests (weekly/pre-pilot)",
+    "chaos_crypto: Crypto-specific resilience tests",
+    "chaos_tenant: Multi-tenant safety tests",
+    "chaos_provider: Provider failure tests",
+    "chaos_outbox: Outbox/worker resilience tests",
+]
 
 [tool.ruff]
 target-version = "py311"

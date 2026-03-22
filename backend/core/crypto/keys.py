@@ -73,6 +73,21 @@ class KeyRing:
     def has_previous(self) -> bool:
         return self._previous_key is not None
 
+    @classmethod
+    def _from_test(
+        cls,
+        current_key: bytes,
+        kid: str = "test-v1",
+        previous_key: Optional[bytes] = None,
+        previous_kid: Optional[str] = None,
+    ) -> "KeyRing":
+        """Create a KeyRing with raw key bytes for testing. NOT for production use."""
+        return cls(
+            current_kid=kid,
+            _current_key=current_key,
+            _previous_key=previous_key,
+        )
+
 
 def load_keyring() -> KeyRing:
     """Load keyring from environment variables. Fails loudly in production."""
