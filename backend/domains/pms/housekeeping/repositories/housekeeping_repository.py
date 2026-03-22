@@ -5,13 +5,13 @@ Data access layer for housekeeping tasks. No FastAPI dependencies.
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
-from core.database import db
+from core.tenant_db import LazyCollection
 
 
 class HousekeepingRepository:
     """MongoDB operations for housekeeping tasks."""
 
-    collection = db.tasks
+    collection = LazyCollection("tasks")
 
     @classmethod
     async def find_by_tenant(

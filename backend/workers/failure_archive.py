@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
-from core.database import db
+from core.tenant_db import LazyCollection
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class FailureArchive:
     """Dead letter archive for tasks that failed all retries."""
 
-    collection = db.dead_letter_tasks
+    collection = LazyCollection("dead_letter_tasks")
 
     @classmethod
     async def archive(

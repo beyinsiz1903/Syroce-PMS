@@ -4,13 +4,13 @@ Data access layer for guest profile and journey operations. No FastAPI dependenc
 """
 from typing import Optional, List, Dict, Any
 
-from core.database import db
+from core.tenant_db import LazyCollection
 
 
 class GuestRepository:
     """MongoDB operations for guest profiles."""
 
-    collection = db.guests
+    collection = LazyCollection("guests")
 
     @classmethod
     async def find_by_tenant(

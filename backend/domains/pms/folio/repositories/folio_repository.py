@@ -4,13 +4,13 @@ Data access layer for folios, charges, and payments. No FastAPI dependencies.
 """
 from typing import Optional, List, Dict, Any
 
-from core.database import db
+from core.tenant_db import LazyCollection
 
 
 class FolioRepository:
     """MongoDB operations for folios."""
 
-    collection = db.folios
+    collection = LazyCollection("folios")
 
     @classmethod
     async def find_by_tenant(
@@ -73,7 +73,7 @@ class FolioRepository:
 class ChargeRepository:
     """MongoDB operations for standalone charges."""
 
-    collection = db.charges
+    collection = LazyCollection("charges")
 
     @classmethod
     async def find_by_folio(cls, tenant_id: str, folio_id: str) -> List[Dict[str, Any]]:
@@ -89,7 +89,7 @@ class ChargeRepository:
 class PaymentRepository:
     """MongoDB operations for payments."""
 
-    collection = db.payments
+    collection = LazyCollection("payments")
 
     @classmethod
     async def find_by_folio(cls, tenant_id: str, folio_id: str) -> List[Dict[str, Any]]:

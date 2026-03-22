@@ -1,6 +1,11 @@
 """
 Syroce PMS - Database Connection
 Centralized MongoDB connection management.
+
+TI-003: The `db` object is a TenantAwareDBProxy that auto-scopes
+queries based on the current request's tenant context (set by middleware).
+
+For system operations (startup, health), use `_raw_db` directly.
 """
 import os
 from pathlib import Path
@@ -27,4 +32,9 @@ client = AsyncIOMotorClient(
     maxConnecting=10,
 )
 
-db = client[db_name]
+# Raw database — use ONLY for system operations (startup, health, auth bootstrap)
+_raw_db = client[db_name]
+
+# Tenant-aware proxy — auto-injects tenant_id when context is available
+from core.tenant_db import TenantAwareDBProxy  # noqa: E402
+db = TenantAwareDBProxy(_raw_db)

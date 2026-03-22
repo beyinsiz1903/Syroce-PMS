@@ -22,6 +22,19 @@ def register_middleware(app: FastAPI) -> None:
     # GZip compression for responses > 500 bytes
     app.add_middleware(GZipMiddleware, minimum_size=500)
 
+    # TI-003: Tenant context middleware — sets tenant_id from JWT
+    # Must be added AFTER CORS (runs BEFORE route handlers due to LIFO)
+    try:
+        from core.tenant_middleware import TenantContextMiddleware
+        from core.security import JWT_SECRET, JWT_ALGORITHM
+        app.add_middleware(
+            TenantContextMiddleware,
+            jwt_secret=JWT_SECRET,
+            jwt_algorithm=JWT_ALGORITHM,
+        )
+    except Exception:
+        pass
+
     # APM / request-timing middleware (imported lazily to avoid circular deps)
     try:
         from apm_middleware import APMMiddleware

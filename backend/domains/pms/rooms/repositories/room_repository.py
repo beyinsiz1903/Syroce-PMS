@@ -5,13 +5,13 @@ Data access layer for room operations. No FastAPI dependencies.
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
-from core.database import db
+from core.tenant_db import LazyCollection
 
 
 class RoomRepository:
     """MongoDB operations for rooms."""
 
-    collection = db.rooms
+    collection = LazyCollection("rooms")
 
     @classmethod
     async def find_by_tenant(

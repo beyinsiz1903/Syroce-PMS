@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
-from core.database import db
+from core.tenant_db import LazyCollection
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class TenantGuard:
     """Validates and enforces tenant-scoped data access."""
 
-    _violation_log_collection = db.tenant_guard_violations
+    _violation_log_collection = LazyCollection("tenant_guard_violations")
 
     @classmethod
     async def validate_query(

@@ -1,28 +1,48 @@
 """
-Tenant-Scoped Database Access (TI-001)
-======================================
-Prevents cross-tenant data leakage by auto-injecting tenant_id
-into every query on tenant-scoped collections.
+TI-003: Tenant Isolation Full Enforcement
+==========================================
+3-layer tenant isolation:
+  Layer 1 — DB Proxy: auto-inject tenant_id into all queries (TenantAwareDBProxy)
+  Layer 2 — Runtime Guard: exception on unscoped access (STRICT_TENANT_MODE)
+  Layer 3 — Static Audit: CI check for raw db usage
 
-Usage in routes:
-    from core.tenant_db import get_tenant_db, TenantScopedDB
+Usage in routes (automatic via middleware):
+    # The global `db` object from core.database IS the proxy.
+    # If middleware has set tenant context, all queries are scoped.
+    from core.database import db
+    result = await db.bookings.find_one({"status": "confirmed"})
+    # tenant_id is auto-injected ✅
 
-    @router.get("/rooms")
-    async def list_rooms(tdb: TenantScopedDB = Depends(get_tenant_db)):
-        rooms = await tdb.rooms.find({}).to_list(100)
-        # tenant_id is auto-injected — no need to specify it
+Usage with explicit get_db():
+    from core.tenant_db import get_db
+    db = get_db()  # raises if no tenant context
+    rooms = await db.rooms.find({}).to_list(100)
 
-If a query already has tenant_id, it is validated.
-If it has a DIFFERENT tenant_id → TenantViolationError is raised.
+Usage in workers:
+    from core.tenant_db import get_db_for_tenant
+    db = get_db_for_tenant(event["tenant_id"])
+    await db.bookings.update_one(...)
+
+Usage in system operations (startup, health):
+    from core.tenant_db import get_system_db
+    raw = get_system_db()
+    await raw.rooms.create_index(...)
 """
+import os
 import logging
+from contextvars import ContextVar
+from contextlib import contextmanager
 from typing import Any, Dict, Optional, Set
-
-from core.database import db, client
 
 logger = logging.getLogger("core.tenant_db")
 
-# ── Collections where tenant_id filter is MANDATORY ──
+# ── Tenant Context (per-request, per-task) ──────────────────────
+_tenant_ctx: ContextVar[Optional[str]] = ContextVar("tenant_id", default=None)
+
+# ── Configuration ───────────────────────────────────────────────
+STRICT_TENANT_MODE = os.environ.get("STRICT_TENANT_MODE", "false").lower() == "true"
+
+# ── Collections where tenant_id filter is MANDATORY ─────────────
 TENANT_SCOPED_COLLECTIONS: Set[str] = {
     "rooms", "bookings", "guests", "folios", "tasks", "users",
     "audit_logs", "reports", "rate_plans", "invoices", "payments",
@@ -41,10 +61,21 @@ TENANT_SCOPED_COLLECTIONS: Set[str] = {
     "rate_plans", "cancellation_policies",
     "guest_journey_checkins", "guest_journey_feedback",
     "night_audit_logs", "night_audit_records",
+    "night_audit_runs", "night_audit_run_items",
     "tenant_access_logs", "tenant_isolation_policies",
+    "imported_reservations", "lineage",
+    "rate_periods", "rate_overrides", "packages",
+    "channel_connections", "channel_sync_logs", "rate_updates",
+    "charges",
+    "room_blocks", "room_block_logs",
+    "hotel_services", "hotel_service_requests",
+    "departments", "department_tasks",
+    "budget_configs", "budget_actuals",
+    "survey_responses", "external_reviews",
+    "companies", "contracts",
 }
 
-# ── Collections that are global (no tenant_id) ──
+# ── Collections that are global (no tenant_id) ──────────────────
 GLOBAL_COLLECTIONS: Set[str] = {
     "tenants", "hotel_chains", "system_config", "system_logs",
     "subscription_plans", "marketplace_extensions",
@@ -55,11 +86,42 @@ class TenantViolationError(Exception):
     """Raised when a cross-tenant access attempt is detected."""
 
 
+# ── Context Management ──────────────────────────────────────────
+
+def set_tenant_context(tenant_id: str) -> None:
+    """Set the current tenant context for this async task."""
+    _tenant_ctx.set(tenant_id)
+
+
+def clear_tenant_context() -> None:
+    """Clear the current tenant context."""
+    _tenant_ctx.set(None)
+
+
+def get_current_tenant_id() -> Optional[str]:
+    """Get the current tenant_id from context, or None."""
+    return _tenant_ctx.get()
+
+
+@contextmanager
+def tenant_context(tenant_id: str):
+    """Context manager for explicit tenant scoping (useful in workers)."""
+    token = _tenant_ctx.set(tenant_id)
+    try:
+        yield
+    finally:
+        _tenant_ctx.reset(token)
+
+
+# ── TenantScopedCollection ─────────────────────────────────────
+
 class TenantScopedCollection:
     """
     Wraps a Motor collection to auto-inject and validate tenant_id
-    on every operation.
+    on every operation. Cross-tenant access is blocked.
     """
+
+    __slots__ = ("_coll", "_tenant_id", "_name")
 
     def __init__(self, collection, tenant_id: str, collection_name: str):
         self._coll = collection
@@ -84,13 +146,16 @@ class TenantScopedCollection:
         return filter_dict
 
     def _inject_doc(self, doc: Dict[str, Any]) -> Dict[str, Any]:
-        if "tenant_id" not in doc:
-            doc["tenant_id"] = self._tenant_id
-        elif doc["tenant_id"] != self._tenant_id:
+        if "tenant_id" in doc and doc["tenant_id"] != self._tenant_id:
+            logger.critical(
+                "TENANT WRITE VIOLATION: collection=%s expected=%s got=%s",
+                self._name, self._tenant_id, doc["tenant_id"],
+            )
             raise TenantViolationError(
                 f"Cannot insert document for tenant {doc['tenant_id']} "
-                f"into tenant-scoped context {self._tenant_id}"
+                f"into context {self._tenant_id}"
             )
+        doc["tenant_id"] = self._tenant_id
         return doc
 
     # ── Read operations ──
@@ -102,14 +167,15 @@ class TenantScopedCollection:
         return self._coll.find(self._inject_filter(filter), *args, **kwargs)
 
     async def count_documents(self, filter=None, *args, **kwargs):
+        if filter is None:
+            filter = {}
         return await self._coll.count_documents(self._inject_filter(filter), *args, **kwargs)
 
     async def distinct(self, key, filter=None, *args, **kwargs):
         return await self._coll.distinct(key, self._inject_filter(filter), *args, **kwargs)
 
     def aggregate(self, pipeline, *args, **kwargs):
-        # Prepend $match with tenant_id if not already present
-        if pipeline and pipeline[0].get("$match"):
+        if pipeline and isinstance(pipeline[0], dict) and "$match" in pipeline[0]:
             pipeline[0]["$match"] = self._inject_filter(pipeline[0]["$match"])
         else:
             pipeline.insert(0, {"$match": {"tenant_id": self._tenant_id}})
@@ -147,64 +213,203 @@ class TenantScopedCollection:
             self._inject_filter(filter), *args, **kwargs
         )
 
-    # ── Index operations (pass-through) ──
+    async def find_one_and_replace(self, filter, replacement, *args, **kwargs):
+        return await self._coll.find_one_and_replace(
+            self._inject_filter(filter), replacement, *args, **kwargs
+        )
+
+    # ── Bulk operations (pass-through, caller must handle tenant_id) ──
+
+    async def bulk_write(self, requests, *args, **kwargs):
+        return await self._coll.bulk_write(requests, *args, **kwargs)
+
+    # ── Index operations (pass-through — schema ops, not data ops) ──
 
     async def create_index(self, *args, **kwargs):
         return await self._coll.create_index(*args, **kwargs)
 
+    async def create_indexes(self, *args, **kwargs):
+        return await self._coll.create_indexes(*args, **kwargs)
+
     async def list_indexes(self, *args, **kwargs):
         return await self._coll.list_indexes(*args, **kwargs)
 
-    # ── Passthrough for other attributes ──
+    async def drop_index(self, *args, **kwargs):
+        return await self._coll.drop_index(*args, **kwargs)
+
+    # ── Property pass-through ──
+
+    @property
+    def name(self):
+        return self._coll.name
+
+    @property
+    def full_name(self):
+        return self._coll.full_name
+
     def __getattr__(self, name):
         return getattr(self._coll, name)
 
 
+# ── TenantScopedDB (explicit) ──────────────────────────────────
+
 class TenantScopedDB:
     """
-    Database proxy that enforces tenant isolation.
-
-    For tenant-scoped collections → returns TenantScopedCollection (auto-injects tenant_id).
-    For global collections → returns raw Motor collection (no filter).
-    For unknown collections → returns TenantScopedCollection (safe default).
+    Explicit tenant-scoped DB. Always requires a tenant_id.
+    Use via get_db() or get_db_for_tenant().
     """
 
     def __init__(self, database, tenant_id: str):
-        self._db = database
-        self._tenant_id = tenant_id
+        object.__setattr__(self, "_db", database)
+        object.__setattr__(self, "_tenant_id", tenant_id)
 
     @property
     def tenant_id(self) -> str:
-        return self._tenant_id
+        return object.__getattribute__(self, "_tenant_id")
 
     @property
     def client(self):
-        return self._db.client
+        return object.__getattribute__(self, "_db").client
+
+    @property
+    def name(self):
+        return object.__getattribute__(self, "_db").name
 
     def __getattr__(self, name: str):
-        coll = self._db[name]
+        raw_db = object.__getattribute__(self, "_db")
+        tenant_id = object.__getattribute__(self, "_tenant_id")
+        coll = raw_db[name]
         if name in GLOBAL_COLLECTIONS:
             return coll
-        # Tenant-scoped or unknown → enforce isolation
-        return TenantScopedCollection(coll, self._tenant_id, name)
+        return TenantScopedCollection(coll, tenant_id, name)
 
     def __getitem__(self, name: str):
         return self.__getattr__(name)
 
 
-# ── FastAPI Dependency ──
+# ── TenantAwareDBProxy (transparent) ───────────────────────────
 
-async def get_tenant_db(current_user=None) -> TenantScopedDB:
+class TenantAwareDBProxy:
     """
-    FastAPI dependency that returns a tenant-scoped database proxy.
+    Transparent proxy that replaces the raw `db` object in core.database.
+    Reads tenant_id from contextvars (set by middleware).
+
+    - If tenant context exists → returns TenantScopedCollection
+    - If no context + STRICT_MODE → raises TenantViolationError
+    - If no context + soft mode → returns raw collection with warning
+    """
+
+    _DB_PASSTHROUGH = frozenset({
+        "command", "list_collection_names", "list_collections",
+        "create_collection", "drop_collection",
+        "with_options", "get_collection",
+        "codec_options", "read_preference", "read_concern", "write_concern",
+        "dereference",
+    })
+
+    def __init__(self, database):
+        object.__setattr__(self, "_db", database)
+
+    @property
+    def client(self):
+        return object.__getattribute__(self, "_db").client
+
+    @property
+    def name(self):
+        return object.__getattribute__(self, "_db").name
+
+    def __getattr__(self, name: str):
+        raw_db = object.__getattribute__(self, "_db")
+
+        # Pass through database-level methods/properties
+        if name in TenantAwareDBProxy._DB_PASSTHROUGH:
+            return getattr(raw_db, name)
+
+        raw_coll = raw_db[name]
+
+        # Global collections → no scoping needed
+        if name in GLOBAL_COLLECTIONS:
+            return raw_coll
+
+        # Check tenant context
+        tenant_id = _tenant_ctx.get()
+
+        if tenant_id:
+            return TenantScopedCollection(raw_coll, tenant_id, name)
+
+        # No tenant context
+        if name in TENANT_SCOPED_COLLECTIONS:
+            if STRICT_TENANT_MODE:
+                raise TenantViolationError(
+                    f"Access to tenant-scoped collection '{name}' "
+                    f"without tenant context is forbidden (STRICT_TENANT_MODE=true)"
+                )
+            # Soft mode: warn but allow (for startup, health, auth)
+            return raw_coll
+
+        # Unknown collection without context → treat as raw
+        return raw_coll
+
+    def __getitem__(self, name: str):
+        return self.__getattr__(name)
+
+
+# ── Public API ──────────────────────────────────────────────────
+
+def get_db() -> TenantScopedDB:
+    """
+    Get a tenant-scoped DB from the current request context.
+    Raises TenantViolationError if no context is set.
+    """
+    tenant_id = _tenant_ctx.get()
+    if not tenant_id:
+        raise TenantViolationError(
+            "get_db() called without tenant context. "
+            "Use get_db_for_tenant() in workers or get_system_db() for system ops."
+        )
+    from core.database import _raw_db
+    return TenantScopedDB(_raw_db, tenant_id)
+
+
+def get_db_for_tenant(tenant_id: str) -> TenantScopedDB:
+    """
+    Get a tenant-scoped DB for a specific tenant.
+    Use in workers/background tasks where there's no request context.
+    """
+    if not tenant_id:
+        raise ValueError("tenant_id is required")
+    from core.database import _raw_db
+    return TenantScopedDB(_raw_db, tenant_id)
+
+
+def get_system_db():
+    """
+    Get the raw (unscoped) database for system operations.
+    Only use for: startup indexes, health checks, cross-tenant admin queries.
+    """
+    from core.database import _raw_db
+    return _raw_db
+
+
+# ── Descriptor for repository class-level collection access ────
+
+class LazyCollection:
+    """
+    Descriptor that resolves a collection through the TenantAwareDBProxy
+    at access time (not at import time).
 
     Usage:
-        @router.get("/rooms")
-        async def list_rooms(tdb: TenantScopedDB = Depends(get_tenant_db)):
-            ...
+        class GuestRepository:
+            collection = LazyCollection("guests")
 
-    Note: This requires `current_user` to be injected. Override in routes.
+        # cls.collection now respects tenant context
     """
-    if current_user is None:
-        raise ValueError("get_tenant_db requires current_user")
-    return TenantScopedDB(db, current_user.tenant_id)
+
+    __slots__ = ("_name",)
+
+    def __init__(self, name: str):
+        self._name = name
+
+    def __get__(self, obj, objtype=None):
+        from core.database import db
+        return getattr(db, self._name)

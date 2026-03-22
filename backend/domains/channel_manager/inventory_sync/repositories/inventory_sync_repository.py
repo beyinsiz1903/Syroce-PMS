@@ -4,15 +4,15 @@ Data access layer for channel inventory sync operations. No FastAPI dependencies
 """
 from typing import Optional, List, Dict, Any
 
-from core.database import db
+from core.tenant_db import LazyCollection
 
 
 class InventorySyncRepository:
     """MongoDB operations for channel inventory sync."""
 
-    connections = db.channel_connections
-    sync_logs = db.channel_sync_logs
-    rate_updates = db.rate_updates
+    connections = LazyCollection("channel_connections")
+    sync_logs = LazyCollection("channel_sync_logs")
+    rate_updates = LazyCollection("rate_updates")
 
     @classmethod
     async def get_connections(cls, tenant_id: str, *, active_only: bool = True) -> List[Dict[str, Any]]:

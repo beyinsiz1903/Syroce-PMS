@@ -4,15 +4,15 @@ Data access layer for pricing and rate management. No FastAPI dependencies.
 """
 from typing import Optional, List, Dict, Any
 
-from core.database import db
+from core.tenant_db import LazyCollection
 
 
 class PricingRepository:
     """MongoDB operations for rate plans and pricing."""
 
-    rate_plans = db.rate_plans
-    rate_periods = db.rate_periods
-    rate_overrides = db.rate_overrides
+    rate_plans = LazyCollection("rate_plans")
+    rate_periods = LazyCollection("rate_periods")
+    rate_overrides = LazyCollection("rate_overrides")
 
     @classmethod
     async def get_rate_plans(cls, tenant_id: str) -> List[Dict[str, Any]]:

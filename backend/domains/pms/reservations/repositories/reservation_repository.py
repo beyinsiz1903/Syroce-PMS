@@ -5,13 +5,13 @@ Data access layer for bookings/reservations. No FastAPI dependencies.
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
-from core.database import db
+from core.tenant_db import LazyCollection
 
 
 class ReservationRepository:
     """MongoDB operations for bookings/reservations."""
 
-    collection = db.bookings
+    collection = LazyCollection("bookings")
 
     @classmethod
     async def find_by_tenant(

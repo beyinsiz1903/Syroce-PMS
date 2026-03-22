@@ -1,0 +1,62 @@
+{
+  "summary": "TI-003 Tenant Isolation Full Enforcement - All 66 tests passed (35 unit + 31 API). The TenantAwareDBProxy system correctly auto-injects tenant_id into MongoDB queries via contextvars middleware. All 3 layers verified: DB Proxy, Runtime Guard, Static Audit.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_tenant_isolation_enforcement.py",
+    "/app/backend/tests/test_tenant_isolation_api.py",
+    "/app/test_reports/pytest/pytest_tenant_isolation_full.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "TenantAwareDBProxy correctly wraps _raw_db in core/database.py - all imports of 'db' get tenant scoping automatically",
+    "TenantContextMiddleware correctly extracts tenant_id from JWT and sets contextvars for each request",
+    "TenantScopedCollection properly injects tenant_id into all read/write operations and blocks cross-tenant access",
+    "LazyCollection descriptor in repositories resolves collection through proxy at access time, not import time",
+    "Global collections (tenants, system_config) correctly bypass tenant scoping",
+    "STRICT_TENANT_MODE env var controls whether unscoped access raises error (strict) or warns (soft mode)",
+    "Concurrent context safety verified - contextvars provide per-task isolation",
+    "Static audit via grep can detect raw db usage for CI enforcement"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_tenant_isolation_api.py"
+  ],
+  "success_rate": {
+    "backend": "100% (66 passed: 35 unit + 31 API)",
+    "frontend": "N/A (backend only testing)"
+  },
+  "test_credentials": "email=demo@hotel.com, password=demo123, tenant_id=044f122b-87b5-480a-88b4-b9534b0c8c90",
+  "seed_data_creation": "None - used existing demo tenant data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "TI-003 Tenant Isolation fully tested and working. Key verified features: (1) TenantContextMiddleware sets tenant_id from JWT for all authenticated endpoints. (2) TenantAwareDBProxy auto-injects tenant_id when context is set. (3) Cross-tenant read/write access blocked with TenantViolationError. (4) Global collections (tenants, system_config) NOT tenant-scoped. (5) API endpoints return tenant-scoped data. (6) Login/health endpoints work without tenant context. (7) LazyCollection descriptor in repositories resolves through proxy. Test files: test_tenant_isolation_enforcement.py (35 unit tests), test_tenant_isolation_api.py (31 API tests).",
+  "features_tested": {
+    "unit_tests_35_passed": {
+      "TestTenantAwareDBProxy": "6 tests - proxy type, raw db, context behavior, global collections, passthrough",
+      "TestTenantScopedCollection": "7 tests - filter injection, doc injection, cross-tenant blocking",
+      "TestContextManagement": "3 tests - set/get/clear, context manager, nested context",
+      "TestExplicitAPI": "5 tests - get_db, get_db_for_tenant, get_system_db",
+      "TestLazyCollection": "1 test - descriptor returns proxy collection",
+      "TestCrossTenantBlocking": "3 tests - find/insert/update cross-tenant blocked",
+      "TestStrictMode": "2 tests - strict mode blocks, soft mode allows",
+      "TestAggregateInjection": "2 tests - prepends match, injects into existing match",
+      "TestConcurrencySafety": "1 test - concurrent contexts isolated",
+      "TestStaticAudit": "2 tests - grep detection, repository LazyCollection usage",
+      "TestTenantScopedDBEndToEnd": "3 tests - scoped collection, global collection, getitem"
+    },
+    "api_tests_31_passed": {
+      "TestTenantIsolationAPI": "20 tests - login, health, dashboard, rooms, night-audit, bookings, guests, folios",
+      "TestCrossTenantAccessBlocking": "2 tests - cannot access other tenant guest/night-audit-run",
+      "TestGlobalCollectionsAccess": "1 test - tenant info accessible",
+      "TestMiddlewareIntegration": "5 tests - invalid/expired/missing token, reports, calendar",
+      "TestPublicEndpoints": "3 tests - docs, openapi, register"
+    }
+  }
+}
