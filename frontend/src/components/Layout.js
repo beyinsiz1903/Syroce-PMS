@@ -97,7 +97,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
   const isModuleEnabled = (moduleKey) => {
     if (!moduleKey) return true;
     if (!modules || Object.keys(modules).length === 0) return true;
-    return modules[moduleKey] !== false && modules[moduleKey] !== undefined ? !!modules[moduleKey] : false;
+    // Only hide if explicitly set to false; treat missing/undefined as enabled
+    return modules[moduleKey] !== false;
   };
 
   const normalizeKey = (key) => key ? key.replace(/-/g, '_') : '';

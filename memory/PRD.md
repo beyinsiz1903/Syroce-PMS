@@ -138,3 +138,10 @@ Frontend operations screen that turns developer APIs into a self-service debuggi
 - Fix pre-existing lint errors
 - Legacy file cleanup (~80 files in backend/ root)
 - ~264 legacy db imports to tenant-scoped access
+
+## Bug Fixes
+
+### Navigation Module Visibility Bug (2026-03-22)
+- **Root Cause**: `isModuleEnabled()` in `Layout.js` treated undefined module keys as disabled. Login response `tenant.modules` only contained `{"pms": true, "reports": true}`, causing all other modules (reservation_calendar, channel_manager, night_audit, etc.) to be hidden from navigation.
+- **Fix**: Changed logic to `modules[moduleKey] !== false` — only explicitly disabled modules are hidden; undefined keys are treated as enabled.
+- **File**: `/app/frontend/src/components/Layout.js`
