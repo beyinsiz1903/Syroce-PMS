@@ -1,5 +1,41 @@
 # Syroce PMS — Changelog
 
+## 2026-03-22: Webhook Timeline Integration — End-to-End Traceability
+
+### Exely Webhook Timeline
+- Modified `providers/exely/exely_webhook_router.py` — Added timeline stages: webhook_received, normalized, deduplicated
+- Raw SOAP XML payload stored in `webhook_raw_payloads` collection with correlation_id linkage
+- Metadata includes: raw_payload_id, hotel_code, echo_token, source_ip, payload_size_bytes, content_type
+- Duplicate detection writes: is_duplicate, is_new, matched_count, decision
+
+### HotelRunner Webhook Timeline
+- Modified `providers/hotelrunner_webhook.py` — Added timeline stage: webhook_received + raw payload storage
+- Raw JSON payload stored in `webhook_raw_payloads` collection
+- Correlation_id generated at webhook entry and propagated to ingest pipeline
+
+### Ingest Pipeline Timeline
+- Modified `domains/channel_manager/ingest/pipeline.py` — Added timeline stages at 4 key points:
+  - Stage 2/3: `deduplicated` (provider_event_id duplicate, payload hash duplicate, or unique)
+  - Stage 4: `deduplicated` (stale version detection)
+  - Stage 5: `normalized` (canonical form with guest/room/rate/amount metadata)
+  - Stage 6: `validated` (room_mapped, rate_mapped, mapping_target)
+- Correlation_id propagation from webhook through all pipeline stages
+
+### Raw Payload Storage & API
+- New collection `webhook_raw_payloads` with 4 indexes (correlation, tenant+ext, provider, TTL 90d)
+- New endpoints in timeline_router.py:
+  - `GET /api/ops/timeline/raw-payload/{correlation_id}` — Single raw payload
+  - `GET /api/ops/timeline/raw-payloads/by-external/{external_id}` — All payloads for a reservation
+- Updated gap detection stages in timeline_reader.py
+
+### Testing
+- 18 API tests all passing (test_webhook_timeline_integration.py)
+- Full end-to-end trace verified: webhook_received → normalized → deduplicated → validated
+- Duplicate detection verified for both providers
+- Raw payload storage verified for SOAP XML and JSON
+
+---
+
 ## 2026-03-22: Core Battle Loop — Week 1 MVP
 
 ### Event Timeline System

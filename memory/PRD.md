@@ -48,62 +48,95 @@ Implementation of the "minimum battle loop" — the three systems that make the 
 - **Collection**: `event_timeline` with 5 indexes (entity, correlation, external_id, stage_health, TTL 90d)
 - **TimelineWriter** (`controlplane/timeline_writer.py`): Fire-and-forget event appender, never blocks main flow
 - **TimelineReader** (`controlplane/timeline_reader.py`): Read + gap detection + stuck event finder
-- **Timeline API** (`controlplane/timeline_router.py`): 5 endpoints under `/api/ops/timeline/*`
-  - `GET /api/ops/timeline/external/{external_id}` — Primary debug entry point (OTA reservation → full trace)
-  - `GET /api/ops/timeline/correlation/{correlation_id}` — Full flow trace with entity map
-  - `GET /api/ops/timeline/{entity_type}/{entity_id}` — Entity timeline with gap warnings
+- **Timeline API** (`controlplane/timeline_router.py`): 7 endpoints under `/api/ops/timeline/*`
+  - `GET /api/ops/timeline/external/{external_id}` — Primary debug entry point
+  - `GET /api/ops/timeline/correlation/{correlation_id}` — Full flow trace
+  - `GET /api/ops/timeline/{entity_type}/{entity_id}` — Entity timeline
   - `GET /api/ops/timeline/search` — Search with filters
   - `GET /api/ops/timeline/gaps` — Stuck event detection
+  - `GET /api/ops/timeline/raw-payload/{correlation_id}` — Raw webhook payload
+  - `GET /api/ops/timeline/raw-payloads/by-external/{external_id}` — All raw payloads for a reservation
 - **Performance**: Traces reservation in <1 second (goal was <5 seconds)
 
 #### 2. FailureTracker Wiring
-- **import_bridge_service.py**: On failure → records structured failure to `cp_failures` + timeline event
-- **outbox_worker.py**: On permanent failure → records to `cp_failures` + timeline event
-- **Timeline events**: Written at `import_decided`, `stored`, `queued`, `dispatched`, `confirmed` stages
+- **import_bridge_service.py**: On failure records structured failure to `cp_failures` + timeline event
+- **outbox_worker.py**: On permanent failure records to `cp_failures` + timeline event
 
 #### 3. Minimal Dashboard (Read-Only)
 - **DashboardAggregator** (`controlplane/dashboard_aggregator.py`): 8 parallel queries, health score algorithm
 - **DashboardSnapshotWorker**: Stores time-series snapshots every 60s in `cp_health_snapshots`
 - **Dashboard API** (`controlplane/dashboard_router.py`): 5 endpoints under `/api/ops/dashboard/*`
-  - `GET /api/ops/dashboard` — Full system dashboard (score, grade, metrics, connectors, pipeline)
-  - `GET /api/ops/dashboard/tenant/{id}` — Tenant-scoped dashboard
-  - `GET /api/ops/dashboard/trends` — Historical health score trends
-  - `GET /api/ops/dashboard/connectors` — Connector health
-  - `GET /api/ops/dashboard/pipeline` — Pipeline depth
-- **Health Score**: 0-100 weighted (critical failures 30%, high 20%, outbox 15%, import 15%, sync 10%, ARI 5%, security 5%)
-- **Grades**: A (90-100), B (75-89), C (60-74), D (40-59), F (0-39)
 
-## Pending Tasks (from Blueprint)
+### WEBHOOK TIMELINE INTEGRATION (2026-03-22) — End-to-End Traceability
+Completed the "last 20%" — wiring the Event Timeline into OTA webhook entry points for true end-to-end tracing:
 
-### P0 — Week 2: Hardening
+#### 1. Exely Webhook Timeline
+- **Modified**: `providers/exely/exely_webhook_router.py`
+- Timeline stages: `webhook_received` → `normalized` → `deduplicated`
+- Raw SOAP XML payload stored in `webhook_raw_payloads` collection
+- Metadata: raw_payload_id, hotel_code, source_ip, payload_size_bytes, content_type
+- Duplicate detection visible: is_duplicate, is_new, decision
+
+#### 2. HotelRunner Webhook Timeline
+- **Modified**: `providers/hotelrunner_webhook.py`
+- Timeline stages: `webhook_received` → `deduplicated` → `normalized` → `validated`
+- Raw JSON payload stored in `webhook_raw_payloads` collection
+- Mapping debug visible: room_mapped, rate_mapped, mapping_target
+
+#### 3. Ingest Pipeline Timeline
+- **Modified**: `domains/channel_manager/ingest/pipeline.py`
+- Timeline stages written at: duplicate detection (Stage 2/3), stale detection (Stage 4), normalization (Stage 5), mapping validation (Stage 6)
+- Each stage includes detailed metadata for debugging
+
+#### 4. Raw Payload Storage
+- **Collection**: `webhook_raw_payloads` with 4 indexes (correlation, tenant+ext, provider, TTL 90d)
+- Stores exact bytes received from OTA (SOAP XML or JSON)
+- Linked via correlation_id to timeline events
+- Supports debugging mapping errors, validation failures, and provider bugs
+
+#### Full End-to-End Trace (Complete):
+```
+[OTA WEBHOOK RECEIVED]
+    ↓ raw payload stored
+[NORMALIZED]
+    ↓ XML/JSON → canonical format
+[DEDUPLICATED]
+    ↓ new/duplicate/stale decision
+[VALIDATED]
+    ↓ room/rate mapping check
+[IMPORT_DECIDED]
+    ↓ auto-import or review
+[STORED]
+    ↓ PMS booking created
+[QUEUED]
+    ↓ outbox event enqueued
+[DISPATCHED]
+    ↓ sent to provider
+[CONFIRMED]
+    ↓ provider acknowledged
+```
+
+## Pending Tasks
+
+### P0 — Frontend Control Plane Dashboard
+- Build frontend to visualize `/api/ops/dashboard` and `/api/ops/timeline` data
+- Reservation trace UI: enter external_id → see full timeline
+- Health score dashboard with trends
+
+### P1 — Hardening (from Blueprint Week 2)
 - Implement immutable folio_ledger + reconciliation engine
 - Implement key rotation (data model + API + ReEncryptionWorker)
 - PMS battle tests (split reservation, no-show, room change, overbooking, cancellation)
 - Implement Learning Loop (IncidentClassifier, recurrence detection, never-again rules)
 
-### P0 — Week 3: Stress + Exposure
+### P1 — Stress + Exposure (from Blueprint Week 3)
 - Reservation Burst test (15K reservations)
 - ARI Storm test (120K updates)
 - Provider Downtime simulation
 - Pilot hotel shadow mode + canary rollout
 
-### P0 — Week 4: Production
-- Ramp pilot to 100%
-- Secrets management rollout (SEC-001)
-- Multi-hotel onboarding
-- 48-hour soak test
-- Go/No-Go decision
-
-### P1 — Important
-- Frontend control plane dashboard UI
-- Grafana dashboards
-- Full breach simulation suite
-- Terraform modules for production
-- Execute Crypto Migration (SEC-002)
-- Execute Secrets Management Rollout (SEC-001)
-
 ### P2 — Tech Debt
 - Fix pre-existing test failures
 - Fix pre-existing lint errors
 - Legacy file cleanup (~80 files in backend/ root)
-- ~264 legacy db imports → tenant-scoped access
+- ~264 legacy db imports to tenant-scoped access
