@@ -1,5 +1,43 @@
 # Syroce PMS — Changelog
 
+## 2026-03-22: GitHub Actions CI/CD — Hard Gate Conversion
+
+### ci-cd.yml Overhaul
+- Removed ALL `|| true` from test, lint, and security audit steps
+- Backend lint: `ruff check .` using `pyproject.toml` config (was: hardcoded narrow file list excluding server.py/routers/)
+- Backend tests: Curated suite of 10 test paths (was: `pytest tests/ || true`)
+- Frontend lint: New dedicated `frontend-lint` job with `npx eslint src/ --quiet` (was: `yarn lint || true`)
+- Security audit: `pip-audit` and `yarn audit --level critical` as proper checks (was: `|| true`)
+- Deploy steps: Explicit `exit 1` TODO placeholders (was: silent echo "dry run" that pretended to succeed)
+
+### Frontend ESLint v9 Setup
+- Created `frontend/eslint.config.js` — ESLint v9 flat config for React/JSX
+- Fixed 32 lint errors across 13 files:
+  - Missing imports: `toast` (GMDashboard, DynamicPricing), `t` (AdminLeads, GroupSales)
+  - Module-scope hook violation: `t('nav.housekeeping')` in UserRoleManager DEFAULT_ROLE_OPTIONS
+  - Undefined function: `copyLeadId` in AdminLeads (added missing function)
+  - JSX parsing: `>` → `&gt;` in GMEnhancedDashboard
+  - Dead code: `false &&` removed from BookingDialog
+  - Constant truthiness: Fixed template literal fallback in SystemHealthDashboard
+  - Constant condition: Hardcoded `-2.3 < 0` simplified in GMDashboard
+  - Empty catch blocks: Added comments in 5 files
+  - Unsafe finally: Removed `return` in finally block (useSetupStatus)
+- Added `"lint"` script to `package.json`
+
+### deploy.yml Cleanup
+- Removed commented-out kubectl commands
+- Deploy/backup steps now `exit 1` with clear TODO instructions
+- No more silent success on unconfigured deploys
+
+### pyproject.toml Update
+- Added `_legacy/` to ruff exclude list
+
+### Verification
+- `ruff check .` → All checks passed
+- `npx eslint src/ --quiet` → 0 errors
+- In-app pipeline → 6/6 gates passed (ALL_GATES_PASSED)
+- Testing agent → 100% pass rate (iteration_130.json)
+
 ## 2026-03-22: P2 Technical Debt — Green Pipeline
 
 ### Middleware Conversion (BaseHTTPMiddleware → Pure ASGI)

@@ -283,8 +283,29 @@ Frontend operations screen that turns developer APIs into a self-service debuggi
 - ~~Fix pre-existing test failures~~ **DONE (2026-03-22)** — Converted 3 middleware to pure ASGI, rewrote hardening tests, curated CI suite (304 tests)
 - ~~Fix pre-existing lint errors~~ **DONE (2026-03-22)** — Pipeline lint gate uses project's pyproject.toml ruff config, passes clean
 - ~~Legacy file cleanup (~80 files in backend/ root)~~ **DONE (2026-03-22)** — 67 files moved to `_legacy/`, 18 legacy router refs removed from `router_registry.py`
+- ~~GitHub Actions CI/CD hard gate conversion~~ **DONE (2026-03-22)** — Removed all `|| true`, expanded lint scope, frontend ESLint v9 flat config, curated test suite, deploy placeholders explicit
 - ~264 legacy db imports to tenant-scoped access
 
 ### P2 — Enhancements
 - Ctrl+K shortcut for quick Trace lookup
 - Login endpoint to return full module list (prevent future nav bugs)
+
+### Files Modified (2026-03-22 — Hard Gate Session)
+- `/app/.github/workflows/ci-cd.yml` — Complete rewrite
+- `/app/.github/workflows/deploy.yml` — Cleaned up
+- `/app/frontend/eslint.config.js` — NEW (ESLint v9 flat config)
+- `/app/frontend/package.json` — Added lint script
+- `/app/backend/pyproject.toml` — Added _legacy/ to excludes
+- `/app/frontend/src/pages/AdminLeads.js` — Added copyLeadId + t
+- `/app/frontend/src/pages/GMDashboard.js` — Added toast import, fixed constant condition
+- `/app/frontend/src/pages/DynamicPricing.js` — Added toast import
+- `/app/frontend/src/pages/GroupSales.js` — Added t to component scope
+- `/app/frontend/src/pages/UserRoleManager.js` — Fixed module-scope hook
+- `/app/frontend/src/pages/GMEnhancedDashboard.js` — Fixed JSX parsing
+- `/app/frontend/src/pages/SystemHealthDashboard.js` — Fixed constant truthiness
+- `/app/frontend/src/components/pms/BookingDialog.js` — Removed dead code
+- `/app/frontend/src/hooks/useAdminWebSocket.js` — Fixed empty catch
+- `/app/frontend/src/hooks/useSetupStatus.js` — Fixed unsafe finally
+- `/app/frontend/src/pages/EnterpriseLiveDashboard.js` — Fixed empty catch
+- `/app/frontend/src/pages/admin/tabs/AlertDeliveryTab.js` — Fixed empty catches
+- `/app/frontend/src/pages/reservation-detail/FoliosTab.js` — Fixed empty catch
