@@ -13,6 +13,8 @@ import {
   Shield, Activity, Flag, BarChart3, RefreshCw,
   Plus, Trash2, Settings2, ChevronRight, AlertTriangle,
   CheckCircle2, XCircle, Gauge, Users, Building2, Zap,
+  Rocket, Play, RotateCcw, Server, ShieldAlert, Loader2,
+  CircleDot, ArrowRight, Timer, Database, TestTube2,
 } from 'lucide-react';
 
 /* ================================================================
@@ -597,6 +599,236 @@ const OnboardingTab = () => {
 };
 
 /* ================================================================
+   TAB 5 — Deploy Pipeline
+   ================================================================ */
+const GATE_ICONS = { lint: ShieldAlert, unit_test: TestTube2, security_audit: Shield, migration_check: Database, build: Server, smoke_test: Rocket };
+const GATE_COLORS = { passed: 'bg-green-500', failed: 'bg-red-500', running: 'bg-amber-500 animate-pulse', pending: 'bg-slate-300' };
+
+const DeployTab = () => {
+  const [pipelines, setPipelines] = useState([]);
+  const [triggers, setTriggers] = useState(null);
+  const [canaryStatus, setCanaryStatus] = useState(null);
+  const [smokeResult, setSmokeResult] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [runningSmoke, setRunningSmoke] = useState(false);
+  const [activePipeline, setActivePipeline] = useState(null);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [pRes, tRes, cRes] = await Promise.all([
+        axios.get('/deploy/pipelines?limit=5'),
+        axios.get('/deploy/rollback/evaluate'),
+        axios.get('/deploy/canary/status'),
+      ]);
+      setPipelines(pRes.data?.data?.pipelines || []);
+      setTriggers(tRes.data?.data || null);
+      setCanaryStatus(cRes.data?.data || null);
+    } catch { /* skip */ } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const runPipeline = async () => {
+    setRunning(true);
+    try {
+      const res = await axios.post('/deploy/pipeline/run-all', { version_tag: 'latest' });
+      setActivePipeline(res.data?.data || null);
+      await loadData();
+    } catch { /* skip */ } finally { setRunning(false); }
+  };
+
+  const runSmoke = async () => {
+    setRunningSmoke(true);
+    try {
+      const res = await axios.post('/deploy/smoke-tests/run');
+      setSmokeResult(res.data?.data || null);
+    } catch { /* skip */ } finally { setRunningSmoke(false); }
+  };
+
+  if (loading) return <div className="flex justify-center py-12"><RefreshCw className="w-5 h-5 animate-spin text-slate-400" /></div>;
+
+  const latestPipeline = activePipeline || (pipelines.length > 0 ? pipelines[0] : null);
+
+  return (
+    <div className="space-y-6" data-testid="deploy-tab">
+      {/* Action Bar */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <p className="text-sm text-slate-500">{pipelines.length} pipeline kaydi</p>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={runSmoke} disabled={runningSmoke} data-testid="run-smoke-btn">
+            {runningSmoke ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <TestTube2 className="w-4 h-4 mr-1" />}
+            Smoke Test
+          </Button>
+          <Button size="sm" onClick={runPipeline} disabled={running} data-testid="run-pipeline-btn">
+            {running ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Play className="w-4 h-4 mr-1" />}
+            Pipeline Calistir
+          </Button>
+        </div>
+      </div>
+
+      {/* Pipeline Gate Status */}
+      {latestPipeline && (
+        <Card data-testid="pipeline-status-card">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Rocket className="w-4 h-4" /> Pipeline: {latestPipeline.pipeline_id?.slice(0, 16)}
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Badge className={latestPipeline.status === 'passed' ? 'bg-green-100 text-green-700' : latestPipeline.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}>
+                  {latestPipeline.status?.toUpperCase()}
+                </Badge>
+                <span className="text-xs text-slate-400">{latestPipeline.passed_gates}/{latestPipeline.total_gates} gate</span>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2.5">
+              {Object.entries(latestPipeline.gates || {}).map(([gateId, gate]) => {
+                const Icon = GATE_ICONS[gateId] || CircleDot;
+                return (
+                  <div key={gateId} className="flex items-center gap-3 p-2.5 rounded-lg border bg-white" data-testid={`gate-${gateId}`}>
+                    <div className={`w-2.5 h-2.5 rounded-full ${GATE_COLORS[gate.status] || 'bg-slate-300'}`} />
+                    <Icon className="w-4 h-4 text-slate-500" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium capitalize">{gateId.replace(/_/g, ' ')}</p>
+                      {gate.errors?.length > 0 && (
+                        <p className="text-xs text-red-500 truncate mt-0.5">{gate.errors[0]}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                      {gate.duration_ms != null && <span className="font-mono">{gate.duration_ms}ms</span>}
+                      {gate.status === 'passed' && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                      {gate.status === 'failed' && <XCircle className="w-4 h-4 text-red-500" />}
+                      {gate.status === 'running' && <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {latestPipeline.verdict && (
+              <div className={`mt-3 p-2 rounded text-xs font-mono text-center ${latestPipeline.verdict === 'ALL_GATES_PASSED' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                {latestPipeline.verdict}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Rollback Triggers — Real Metrics */}
+      {triggers && (
+        <Card data-testid="triggers-card">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2"><ShieldAlert className="w-4 h-4" /> Auto-Rollback Trigger'lari</CardTitle>
+              <Badge className={triggers.recommendation === 'continue' ? 'bg-green-100 text-green-700' : triggers.recommendation === 'rollback' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}>
+                {triggers.recommendation === 'continue' ? 'SAGLAM' : triggers.recommendation === 'rollback' ? 'ROLLBACK' : 'DIKKAT'}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {triggers.triggers?.map((t) => (
+                <div key={t.trigger_id} className={`flex items-center justify-between p-2.5 rounded-lg border ${t.triggered ? 'bg-red-50 border-red-200' : 'bg-white'}`}
+                     data-testid={`trigger-${t.trigger_id}`}>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{t.name}</p>
+                    <p className="text-xs text-slate-400">{t.description}</p>
+                  </div>
+                  <div className="flex items-center gap-3 text-right">
+                    <div>
+                      <p className={`text-sm font-mono font-bold ${t.triggered ? 'text-red-600' : 'text-green-600'}`}>{t.current_value}</p>
+                      <p className="text-[10px] text-slate-400">esik: {t.threshold} {t.unit}</p>
+                    </div>
+                    {t.triggered ? <XCircle className="w-4 h-4 text-red-500" /> : <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Canary Status */}
+      {canaryStatus && canaryStatus.current_stage_id && (
+        <Card data-testid="canary-status-card">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2"><CircleDot className="w-4 h-4" /> Canary Deploy Durumu</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">{canaryStatus.current_stage_name || canaryStatus.current_stage_id}</p>
+                <p className="text-xs text-slate-400">Trafik: %{canaryStatus.traffic_percent || 0}</p>
+              </div>
+              <Badge className={canaryStatus.status === 'active' ? 'bg-blue-100 text-blue-700' : canaryStatus.status === 'rolled_back' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'}>
+                {canaryStatus.status?.toUpperCase()}
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Smoke Test Results */}
+      {smokeResult && (
+        <Card data-testid="smoke-results-card">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2"><TestTube2 className="w-4 h-4" /> Smoke Test Sonuclari</CardTitle>
+              <Badge className={smokeResult.verdict === 'PASS' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}>
+                {smokeResult.passed}/{smokeResult.total} GECTI
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1.5">
+              {smokeResult.results?.map((t) => (
+                <div key={t.id} className={`flex items-center justify-between py-1.5 px-2 rounded ${t.passed ? '' : 'bg-red-50'}`} data-testid={`smoke-${t.id}`}>
+                  <div className="flex items-center gap-2">
+                    {t.passed ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> : <XCircle className="w-3.5 h-3.5 text-red-500" />}
+                    <span className="text-sm">{t.name}</span>
+                  </div>
+                  <span className="text-xs font-mono text-slate-400">{t.duration_ms}ms</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Pipeline History */}
+      {pipelines.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Timer className="w-4 h-4" /> Son Pipeline'lar</CardTitle></CardHeader>
+          <CardContent>
+            <div className="divide-y">
+              {pipelines.map((p) => (
+                <div key={p.pipeline_id} className="flex items-center justify-between py-2 px-1">
+                  <div>
+                    <p className="text-sm font-mono">{p.pipeline_id?.slice(0, 16)}</p>
+                    <p className="text-xs text-slate-400">{p.triggered_by} — {new Date(p.started_at).toLocaleString('tr-TR')}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono">{p.passed_gates}/{p.total_gates}</span>
+                    <Badge variant="outline" className={`text-xs ${p.status === 'passed' ? 'border-green-300 text-green-700' : p.status === 'failed' ? 'border-red-300 text-red-700' : 'border-amber-300 text-amber-700'}`}>
+                      {p.status}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+};
+
+/* ================================================================
    MAIN PAGE — Governance Panel
    ================================================================ */
 const GovernancePanel = ({ user, tenant, onLogout }) => {
@@ -608,7 +840,7 @@ const GovernancePanel = ({ user, tenant, onLogout }) => {
             <Settings2 className="w-6 h-6 text-indigo-600" />
             Governance & Metering
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Entitlement, kullanim olcumu ve feature flag yonetimi.</p>
+          <p className="text-sm text-gray-500 mt-1">Entitlement, kullanim olcumu, feature flag ve deploy pipeline yonetimi.</p>
         </div>
 
         <Tabs defaultValue="entitlements">
@@ -617,12 +849,14 @@ const GovernancePanel = ({ user, tenant, onLogout }) => {
             <TabsTrigger value="metering" className="gap-1.5"><Gauge className="w-3.5 h-3.5" /> Metering</TabsTrigger>
             <TabsTrigger value="flags" className="gap-1.5"><Flag className="w-3.5 h-3.5" /> Feature Flags</TabsTrigger>
             <TabsTrigger value="onboarding" className="gap-1.5"><Zap className="w-3.5 h-3.5" /> Onboarding</TabsTrigger>
+            <TabsTrigger value="deploy" className="gap-1.5"><Rocket className="w-3.5 h-3.5" /> Deploy</TabsTrigger>
           </TabsList>
 
           <TabsContent value="entitlements"><EntitlementsTab /></TabsContent>
           <TabsContent value="metering"><MeteringTab /></TabsContent>
           <TabsContent value="flags"><FeatureFlagsTab /></TabsContent>
           <TabsContent value="onboarding"><OnboardingTab /></TabsContent>
+          <TabsContent value="deploy"><DeployTab /></TabsContent>
         </Tabs>
       </div>
     </Layout>

@@ -264,6 +264,14 @@ try:
 except Exception as _e:
     logger.warning(f"Entitlement admin router skipped: {_e}")
 
+# Deploy Pipeline — Hard Gate CI/CD, Progressive Deploy, Auto-Rollback
+try:
+    from ops.deploy_router import router as deploy_router
+    app.include_router(deploy_router, tags=["Deploy Pipeline"])
+    logger.info("  ✅ Deploy Pipeline router loaded")
+except Exception as _dep_err:
+    logger.warning(f"Deploy Pipeline router skipped: {_dep_err}")
+
 # ── Lifecycle events ────────────────────────────────────────────────
 from startup import on_startup, on_shutdown  # noqa: E402
 

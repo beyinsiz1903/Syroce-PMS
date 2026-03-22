@@ -270,6 +270,16 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Feature flag index creation: {e}")
 
+    # ── Deploy Pipeline indexes ──────────────────────────────────────
+    try:
+        await db.deploy_pipelines.create_index([("pipeline_id", 1)], unique=True, name="idx_pipeline_id")
+        await db.deploy_pipelines.create_index([("started_at", -1)], name="idx_pipeline_started")
+        await db.rollback_evaluations.create_index([("evaluated_at", -1)], name="idx_rollback_eval_time")
+        await db.rollback_history.create_index([("executed_at", -1)], name="idx_rollback_history_time")
+        print("✅ Deploy pipeline indexes ensured")
+    except Exception as e:
+        logger.warning(f"Deploy pipeline index creation: {e}")
+
     # ── OTA-002: Outbox Pattern indexes ─────────────────────────────
     try:
         from core.outbox_service import ensure_outbox_indexes
