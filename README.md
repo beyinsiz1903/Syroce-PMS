@@ -65,7 +65,7 @@ Password: demo123
 ## 🛠️ Tech Stack
 
 ### Frontend
-- **React 18** - UI framework
+- **React 19** - UI framework
 - **Tailwind CSS** - Styling
 - **Axios** - API calls
 - **React i18next** - Internationalization
@@ -86,9 +86,9 @@ Password: demo123
 ## 📦 Installation
 
 ### Prerequisites
-- Python 3.8+
-- Node.js 16+
-- MongoDB
+- Python 3.11+
+- Node.js 20+
+- MongoDB 7.0+
 
 ### Local Development
 ```bash

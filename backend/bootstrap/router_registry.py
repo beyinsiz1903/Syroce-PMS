@@ -148,25 +148,8 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
 ]
 
 # Optional routers with special import paths
+# Legacy routers (moved to _legacy/) removed — active modules live in domains/ and routers/
 _OPTIONAL_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[str]]] = [
-    ("desktop_enhancements_endpoints", "desktop_router", ["desktop-enhancements"], "/api", None),
-    ("world_class_features", "world_class_router", ["world-class-features"], None, "super_admin"),
-    ("advanced_features_endpoints", "advanced_router", ["advanced-features"], "/api", "super_admin"),
-    ("comprehensive_modules_endpoints", "router", ["comprehensive-modules"], "/api", "super_admin"),
-    ("finance_endpoints", "finance_router", ["finance"], "/api", None),
-    ("notification_endpoints", "notification_router", ["notifications"], "/api", None),
-    ("media_endpoints", "media_router", ["media"], "/api", None),
-    ("faz2_endpoints", "faz2_router", ["faz2"], "/api", None),
-    ("agency_endpoints", "agency_router", ["agency-booking"], None, None),
-    ("security_2fa", "twofa_router", ["2FA Security"], None, None),
-    ("ip_access_control", "ip_router", ["IP Access Control"], None, None),
-    ("gdpr_compliance", "gdpr_router", ["GDPR/KVKK Compliance"], None, None),
-    ("central_office_endpoints", "co_router", ["Central Office Dashboard"], None, None),
-    ("central_pricing_endpoints", "cp_router", ["Central Pricing"], None, None),
-    ("cross_property_guests", "cpg_router", ["Cross-Property Guests"], None, None),
-    ("ml_real_models", "ml_router", ["ML/AI Models"], None, None),
-    ("tenant_isolation", "ti_router", ["Tenant Isolation"], None, None),
-    ("pci_dss_compliance", "pci_router", ["PCI DSS Compliance"], None, None),
     ("channel_manager.interfaces.router_registry", "router", ["Channel Manager v2"], None, None),
 ]
 

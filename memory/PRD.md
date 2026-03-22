@@ -135,6 +135,16 @@ Frontend operations screen that turns developer APIs into a self-service debuggi
   - `/app/frontend/src/components/calendar/CalendarDialogs.js` — `min` attribute on check-in date input
   - `/app/backend/modules/reservations/services/create_reservation_service.py` — Backend date validation
 
+
+### Enterprise Codebase Cleanup (2026-03-22)
+- **Root-level junk files:** 10 empty files deleted (`1000`, `99%`, `=`, `NOT`, `READY`, `processing`, `repository`, `service`, `confirm`, `Payment button in the Rooms tab.`)
+- **Orphan test scripts:** 7 files deleted from `/app/` root (moved to proper test infrastructure)
+- **Version drift fixed:** README.md updated — React 18→19, Python 3.8→3.11, Node.js 16→20, MongoDB→7.0+
+- **Frontend README:** CRA boilerplate replaced with proper project documentation
+- **Unused dependencies removed:** `@apollo/client`, `graphql`, `file-saver`, `react-is`, `cra-template`
+- **Legacy backend files:** 67 orphan `.py` files quarantined to `/app/backend/_legacy/`
+- **Router registry cleanup:** 18 dead `_OPTIONAL_ROUTERS` entries removed from `bootstrap/router_registry.py`
+
 ## Pending Tasks
 
 ### P1 — Hardening (from Blueprint Week 2)
@@ -152,7 +162,7 @@ Frontend operations screen that turns developer APIs into a self-service debuggi
 ### P2 — Tech Debt
 - Fix pre-existing test failures
 - Fix pre-existing lint errors
-- Legacy file cleanup (~80 files in backend/ root)
+- ~~Legacy file cleanup (~80 files in backend/ root)~~ **DONE (2026-03-22)** — 67 files moved to `_legacy/`, 18 legacy router refs removed from `router_registry.py`
 - ~264 legacy db imports to tenant-scoped access
 
 ### P2 — Enhancements
