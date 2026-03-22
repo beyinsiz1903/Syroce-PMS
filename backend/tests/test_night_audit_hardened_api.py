@@ -24,7 +24,7 @@ from datetime import datetime, timezone, timedelta
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
     # Fallback for local testing
-    BASE_URL = "https://ota-booking-sync.preview.emergentagent.com"
+    BASE_URL = "https://night-audit-engine.preview.emergentagent.com"
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
