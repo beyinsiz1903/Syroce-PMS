@@ -9,11 +9,11 @@
 - [x] OBS-001: Deep Health Check Endpoint
 - [x] OTA-002: PMS → OTA Guaranteed Delivery (Outbox Pattern)
 - [x] DATA-001: OTA → PMS Automatic Booking Import Reliability
+- [x] NA-001: Night Audit Hardening — Folio validation before charge posting
+- [x] NA-002: Night Audit Hardening — Transactional charge posting
 
 ## Next Up (P0)
 - [ ] TI-003: Integrate TenantScopedDB proxy across application (service layer refactor)
-- [ ] NA-001: Night Audit Hardening — Folio validation before charge posting
-- [ ] NA-002: Night Audit Hardening — Transactional charge posting
 
 ## P1 — Architecture
 - [ ] INFRA-002: Collection Registry (centralize db references)

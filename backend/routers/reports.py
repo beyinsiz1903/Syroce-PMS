@@ -1619,12 +1619,12 @@ async def handle_no_shows(
     }
 
 
-@router.get("/night-audit/status")
-async def get_night_audit_status(
+@router.get("/night-audit/legacy-status")
+async def get_night_audit_status_legacy(
     audit_date: Optional[str] = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    """Get night audit status for date"""
+    """Legacy night audit status (use /api/night-audit/status for hardened version)"""
     current_user = await get_current_user(credentials)
     
     if not audit_date:

@@ -1,5 +1,16 @@
 # Syroce PMS — Changelog
 
+## 2026-03-22: NA-001/NA-002 Night Audit Hardening (Financial Close Engine)
+- Implemented state-machine driven financial close engine (core/night_audit_hardened.py)
+- Created night_audit_runs + night_audit_run_items collections with proper indexes
+- Unique index on folio_charges for duplicate charge prevention
+- Pipeline: validating → candidate_build → posting_charges → reconciling → rolling_date → completed
+- Item-level MongoDB transactions with stale detection, resume/abort flows
+- Admin API: POST /run, GET /status, GET /runs, GET /runs/{id}/items, POST /resume, POST /abort
+- Enhanced /health/deep with night_audit metrics
+- 44 passing tests (23 unit + 21 API)
+
+
 
 ## 2026-03-21: DATA-001 OTA → PMS Import Bridge (P0 — Automatic Booking Import)
 
