@@ -11,6 +11,7 @@ audit requirements, and operational reliability.
 - Secure credential storage for provider APIs
 - Enterprise-grade security architecture
 - Production-ready deployment model
+- **Operational control plane for system visibility and reliability**
 
 ## Security Architecture (Completed)
 
@@ -32,20 +33,37 @@ audit requirements, and operational reliability.
 - Complete backward compatibility with all legacy formats
 - 59 tests (41 unit + 18 API integration)
 
+## Control Plane (Completed - 2026-03-22)
+
+### OPS-001: Production-Grade Control Plane
+A system behavior layer providing:
+- **Failure Model**: Strict 5-type taxonomy (RETRYABLE, PERMANENT, PROVIDER_ERROR, DATA_ERROR, SECURITY_ERROR) with 4-level severity (info, warning, high, critical)
+- **15 API endpoints** under `/api/ops/*` for operational visibility
+- **Failure Tracker**: Centralized recording, querying, and resolution
+- **Retry Engine**: Idempotent retry/replay with dry-run mode, duplicate-safe
+- **Secret Access Control**: Policy enforcement, tenant isolation at query level, anomaly detection
+- **Alerting**: Threshold-based with log + generic HTTP webhook (Slack-compatible)
+- **Runbooks**: 14 structured operational runbooks
+- **Startup Validation**: Crypto keys, secrets, indexes, env vars
+- **67 tests** (38 unit + 29 API integration)
+
 ## Architecture
 ```
 backend/
 ├── core/
 │   ├── crypto/           # SEC-002: Encryption engine
-│   │   ├── engine.py     # AES-256-GCM with AAD
-│   │   ├── envelope.py   # SYR1 versioned format
-│   │   ├── keys.py       # HKDF key derivation + KeyRing
-│   │   ├── masking.py    # Display masking (NOT crypto)
-│   │   ├── migration.py  # Legacy format detection
-│   │   ├── service.py    # Single encryption boundary
-│   │   └── errors.py     # Typed exceptions
 │   ├── secrets/          # SEC-001: Secrets management
 │   └── database.py
+├── controlplane/         # OPS-001: Control Plane
+│   ├── failure_model.py  # Taxonomy + event schema
+│   ├── failure_tracker.py # Central failure service
+│   ├── retry_engine.py   # Idempotent retry/replay
+│   ├── ops_router.py     # 15 /api/ops/* endpoints
+│   ├── secret_audit.py   # Access control + audit
+│   ├── alerting.py       # Threshold alerts + webhook
+│   ├── runbooks.py       # 14 operational runbooks
+│   ├── indexes.py        # MongoDB indexes
+│   └── startup_validator.py # Startup checks
 ├── domains/channel_manager/
 ├── channel_manager/infrastructure/
 └── modules/security_hardening/

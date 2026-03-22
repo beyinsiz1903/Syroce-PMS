@@ -1,58 +1,53 @@
 # Syroce PMS — Changelog
 
-## [2026-03-22] SEC-002: Production-Grade Encryption Refactor
+## 2026-03-22: OPS-001 — Production-Grade Control Plane
 
-### Added
-- `core/crypto/` module — complete AES-256-GCM encryption engine
-  - HKDF-SHA256 key derivation (RFC 5869)
-  - SYR1: versioned envelope format with compact JSON
-  - AAD context binding (tenant_id|provider|property_id|env|context_type)
-  - Dual-key KeyRing for seamless key rotation
-  - LegacyDecryptor for all historical formats (XOR, old AES-GCM, base64)
-  - Feature flags: CRYPTO_V2_ENABLED, CRYPTO_BYPASS_ALLOWED
-  - CredentialEncryptionService — single encryption boundary
-  - Typed exceptions: DecryptionError, TamperDetectedError, KeyNotFoundError
-  - Display masking separated from encryption
-- `scripts/migrate_crypto.py` — bulk re-encryption migration script
-- `docs/ENCRYPTION_ARCHITECTURE.md` — algorithm, envelope, key management docs
-- `docs/CRYPTO_ROLLOUT.md` — phased rollout plan
-- `docs/CRYPTO_SECURITY_REVIEW.md` — risk assessment and compliance notes
-- `tests/test_crypto_engine.py` — 41 unit tests
-- `tests/test_crypto_refactor_api.py` — 18 API integration tests (by testing agent)
+### New Module: `backend/controlplane/`
+- **Failure Model** (`failure_model.py`): Strict 5-type failure taxonomy with auto-classification via keyword matching. 4-level severity system. Structured failure event schema with sanitization (no plaintext leak).
+- **Failure Tracker** (`failure_tracker.py`): Central service for recording, querying, resolving, and ignoring failures. Aggregation queries by severity, type, and operation.
+- **Retry Engine** (`retry_engine.py`): Idempotent retry/replay with dry-run mode. Dispatch handlers for reservation import, outbox events, ARI push, and sync jobs. Duplicate-safe.
+- **Ops Router** (`ops_router.py`): 15 API endpoints under `/api/ops/*`:
+  - System overview, failure CRUD, retry/resolve/ignore
+  - Outbox/import/sync monitors
+  - Secret access audit + anomalies
+  - Runbooks (14 entries), alerts
+- **Secret Access Control** (`secret_audit.py`): Service-level ACL, strict tenant isolation at query level, security alert emission on denied access.
+- **Alerting** (`alerting.py`): 7 trigger types with configurable thresholds, 15-min cooldown dedup, log-based + generic HTTP webhook (Slack Block Kit format).
+- **Runbooks** (`runbooks.py`): 14 operational runbooks covering all user-specified scenarios.
+- **Startup Validation** (`startup_validator.py`): Validates crypto, secrets, indexes, and env vars at boot.
+- **Indexes** (`indexes.py`): MongoDB compound indexes for all control plane collections.
 
-### Changed (Refactored — backward compatible)
-- `domains/channel_manager/encryption.py` → delegates to core.crypto
-- `domains/channel_manager/credential_vault.py` → delegates to core.crypto
-- `channel_manager/infrastructure/encryption_service.py` → delegates to core.crypto
-- `channel_manager/infrastructure/credential_vault.py` → delegates to core.crypto
-- `modules/security_hardening/credential_vault.py` → real encryption (was base64)
-- `core/secrets/local_provider.py` → uses core.crypto
+### Documentation
+- `docs/CONTROLPLANE_ARCHITECTURE.md` — Full architecture document
+- `docs/CONTROLPLANE_ROLLOUT.md` — Safe deployment plan
 
-### Security Improvements
-- Eliminated XOR obfuscation used as "encryption"
-- Eliminated base64 encoding used as "encryption"
-- Added AAD context binding (cross-tenant credential theft prevented)
-- Added key versioning in ciphertext (rotation support)
-- Added HKDF key derivation (replaces raw SHA-256)
-- Decryption failures now always raise (never return empty string)
-- Production startup fails loudly if no master key configured
+### Tests
+- `tests/test_controlplane.py` — 38 unit tests
+- `tests/test_controlplane_api.py` — 29 API integration tests (created by testing agent)
 
-### Environment
-- Added: CM_MASTER_KEY_CURRENT, CM_KEY_VERSION, CRYPTO_V2_ENABLED, CRYPTO_BYPASS_ALLOWED
-- Preserved: CM_CREDENTIAL_KEY (for legacy decryption during migration)
+### Modified Files
+- `startup.py` — Added control plane startup validation
+- `bootstrap/router_registry.py` — Registered controlplane.ops_router
 
 ---
 
-## [2026-03-22] SEC-001: Secrets Management Architecture
+## 2026-03-21: SEC-002 — Production-Grade Encryption Refactor
 
-### Added
-- `core/secrets/` module with provider abstraction
-- AWS Secrets Manager backend, Local Dev backend, Vault placeholder
-- Secrets naming convention, access audit logging
-- Migration script `scripts/migrate_secrets.py`
-- Documentation: SECRETS_ARCHITECTURE.md, SECRETS_ROLLOUT.md, SECRETS_SECURITY_CHECKLIST.md
-- 35 unit tests + 11 API integration tests
+### New Module: `backend/core/crypto/`
+- AES-256-GCM with HKDF-SHA256 key derivation
+- SYR1: versioned envelope format with AAD context binding
+- Dual-key rotation model, feature-flagged migration
+- 41 unit tests + 18 API integration tests
 
-### Changed
-- hotelrunner_router.py, exely_router.py → use SecretsManager
-- startup.py → secrets validation on boot
+### Refactored (5 legacy modules → wrappers)
+- `domains/channel_manager/encryption.py`
+- `domains/channel_manager/credential_vault.py`
+- `channel_manager/infrastructure/encryption_service.py`
+- `channel_manager/infrastructure/credential_vault.py`
+- `modules/security_hardening/credential_vault.py`
+
+---
+
+## Earlier: SEC-001 — Secrets Management Architecture
+- Provider abstraction (AWS, local_dev, Vault)
+- Tenant-aware naming, dual-read migration, access audit logging
