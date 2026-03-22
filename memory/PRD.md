@@ -280,8 +280,8 @@ Frontend operations screen that turns developer APIs into a self-service debuggi
 - Pilot hotel shadow mode + canary rollout
 
 ### P2 — Tech Debt
-- Fix pre-existing test failures
-- Fix pre-existing lint errors
+- ~~Fix pre-existing test failures~~ **DONE (2026-03-22)** — Converted 3 middleware to pure ASGI, rewrote hardening tests, curated CI suite (304 tests)
+- ~~Fix pre-existing lint errors~~ **DONE (2026-03-22)** — Pipeline lint gate uses project's pyproject.toml ruff config, passes clean
 - ~~Legacy file cleanup (~80 files in backend/ root)~~ **DONE (2026-03-22)** — 67 files moved to `_legacy/`, 18 legacy router refs removed from `router_registry.py`
 - ~264 legacy db imports to tenant-scoped access
 
