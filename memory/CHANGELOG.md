@@ -1,67 +1,58 @@
 # Syroce PMS — Changelog
 
-## 2026-03-22: SEC-001 Production-Grade Secrets Management Architecture (P0 — Security)
-- Implemented multi-backend secrets manager at `core/secrets/` with clean provider abstraction
-- **AWS Secrets Manager backend**: boto3, adaptive retry, deterministic naming, JSON payloads, tag support
-- **Local dev backend**: AES-256-GCM encrypted MongoDB store, explicitly gated non-production
-- **HashiCorp Vault placeholder**: Interface + skeleton ready for future implementation
-- **SecretsManager**: Unified facade with tenant/provider/property-aware CRUD, rotation, masking, health check
-- **Secret naming**: `/{prefix}/{env}/channel-manager/{tenant_id}/{provider}/{property_id}`
-- **Access audit**: MongoDB `secret_access_audit` collection with 90-day TTL, per-operation logging
-- **Startup validation**: Fails loudly if `local_dev` used in production, missing AWS_REGION, etc.
-- **Migration tooling**: `scripts/migrate_secrets.py` — dry-run, per-tenant, idempotent migration
-- **Exely router refactored**: Uses SecretsManager for credential storage/retrieval (was: XOR vault)
-- **HotelRunner router refactored**: Credentials now stored in SecretsManager (was: PLAINTEXT in MongoDB!)
-  - `token` field removed from connection documents on new connections
-  - `credentials_ref` added as opaque reference
-  - Connection status endpoint excludes `token` and `credentials_ref`
-- **Dual-read fallback**: `ENABLE_LEGACY_SECRET_FALLBACK=true` reads legacy stores during migration
-- **46 passing tests**: 35 unit (config, naming, local/AWS/vault/manager/audit) + 11 API integration
-- **Documentation**: SECRETS_ARCHITECTURE.md, SECRETS_ROLLOUT.md, SECRETS_SECURITY_CHECKLIST.md
+## [2026-03-22] SEC-002: Production-Grade Encryption Refactor
 
-## 2026-03-22: TI-003 Tenant Isolation Full Enforcement (P0 — Security)
-- Replaced raw `db` in `core/database.py` with `TenantAwareDBProxy` that auto-scopes queries via `contextvars`
-- Created `TenantContextMiddleware` that extracts `tenant_id` from JWT and sets per-request context
-- 3-layer enforcement: DB Proxy (auto-injection), Runtime Guard (STRICT_TENANT_MODE), Static Audit (CI grep)
-- Created `LazyCollection` descriptor for repository class-level collection access (8 repositories migrated)
-- Public API: `get_db()`, `get_db_for_tenant()`, `get_system_db()`, `tenant_context()` context manager
-- CI enforcement script at `scripts/check_raw_db.py` detects 264 legacy files for gradual migration
-- All 260+ existing files automatically protected via proxy + middleware (zero code changes needed)
-- 66 passing tests (35 unit + 31 API), 0 regressions in existing test suites
+### Added
+- `core/crypto/` module — complete AES-256-GCM encryption engine
+  - HKDF-SHA256 key derivation (RFC 5869)
+  - SYR1: versioned envelope format with compact JSON
+  - AAD context binding (tenant_id|provider|property_id|env|context_type)
+  - Dual-key KeyRing for seamless key rotation
+  - LegacyDecryptor for all historical formats (XOR, old AES-GCM, base64)
+  - Feature flags: CRYPTO_V2_ENABLED, CRYPTO_BYPASS_ALLOWED
+  - CredentialEncryptionService — single encryption boundary
+  - Typed exceptions: DecryptionError, TamperDetectedError, KeyNotFoundError
+  - Display masking separated from encryption
+- `scripts/migrate_crypto.py` — bulk re-encryption migration script
+- `docs/ENCRYPTION_ARCHITECTURE.md` — algorithm, envelope, key management docs
+- `docs/CRYPTO_ROLLOUT.md` — phased rollout plan
+- `docs/CRYPTO_SECURITY_REVIEW.md` — risk assessment and compliance notes
+- `tests/test_crypto_engine.py` — 41 unit tests
+- `tests/test_crypto_refactor_api.py` — 18 API integration tests (by testing agent)
 
-## 2026-03-22: NA-001/NA-002 Night Audit Hardening (Financial Close Engine)
-- Implemented state-machine driven financial close engine (core/night_audit_hardened.py)
-- Created night_audit_runs + night_audit_run_items collections with proper indexes
-- Unique index on folio_charges for duplicate charge prevention
-- Pipeline: validating -> candidate_build -> posting_charges -> reconciling -> rolling_date -> completed
-- Item-level MongoDB transactions with stale detection, resume/abort flows
-- Admin API: POST /run, GET /status, GET /runs, GET /runs/{id}/items, POST /resume, POST /abort
-- Enhanced /health/deep with night_audit metrics
-- 44 passing tests (23 unit + 21 API)
+### Changed (Refactored — backward compatible)
+- `domains/channel_manager/encryption.py` → delegates to core.crypto
+- `domains/channel_manager/credential_vault.py` → delegates to core.crypto
+- `channel_manager/infrastructure/encryption_service.py` → delegates to core.crypto
+- `channel_manager/infrastructure/credential_vault.py` → delegates to core.crypto
+- `modules/security_hardening/credential_vault.py` → real encryption (was base64)
+- `core/secrets/local_provider.py` → uses core.crypto
 
-## 2026-03-21: DATA-001 OTA -> PMS Import Bridge (P0 — Automatic Booking Import)
-- `auto_import_reservation_to_pms()` with atomic claim, 3-layer duplicate prevention
-- Uses `create_booking_atomic` as single booking creation path
-- Error classification: retryable vs permanent
-- Exponential backoff: 30s -> 2min -> 10min -> 30min -> 2hr
-- Background async worker with stuck recovery
-- Admin endpoints for import management
-- 38 passing tests (22 unit + 16 API)
+### Security Improvements
+- Eliminated XOR obfuscation used as "encryption"
+- Eliminated base64 encoding used as "encryption"
+- Added AAD context binding (cross-tenant credential theft prevented)
+- Added key versioning in ciphertext (rotation support)
+- Added HKDF key derivation (replaces raw SHA-256)
+- Decryption failures now always raise (never return empty string)
+- Production startup fails loudly if no master key configured
 
-## 2026-03-21: OTA-002 Outbox Pattern Implementation (P0 — Guaranteed Delivery)
-- `enqueue_outbox_event()` with transaction session support
-- Idempotency key generation
-- Error classification and exponential backoff
-- 17 passing tests
+### Environment
+- Added: CM_MASTER_KEY_CURRENT, CM_KEY_VERSION, CRYPTO_V2_ENABLED, CRYPTO_BYPASS_ALLOWED
+- Preserved: CM_CREDENTIAL_KEY (for legacy decryption during migration)
 
-## 2026-03-21: Day 2-3 Implementation (BOOK-002, TI-001, PERF-001, OBS-001)
-- Atomic Check-in/Check-out, Tenant Isolation, Performance Indexes, Deep Health Check
+---
 
-## 2026-03-21: Day 1 Implementation (BOOK-001)
-- Atomic Booking / Overbooking Prevention
+## [2026-03-22] SEC-001: Secrets Management Architecture
 
-## Prior Work (Previous Sessions)
-- Full PMS feature set: bookings, rooms, guests, folios, housekeeping
-- Channel manager: Exely, HotelRunner integrations
-- Night audit automation, Guest journey, Online check-in
-- Rate management, Reporting, Rate Manager Bulk Update
+### Added
+- `core/secrets/` module with provider abstraction
+- AWS Secrets Manager backend, Local Dev backend, Vault placeholder
+- Secrets naming convention, access audit logging
+- Migration script `scripts/migrate_secrets.py`
+- Documentation: SECRETS_ARCHITECTURE.md, SECRETS_ROLLOUT.md, SECRETS_SECURITY_CHECKLIST.md
+- 35 unit tests + 11 API integration tests
+
+### Changed
+- hotelrunner_router.py, exely_router.py → use SecretsManager
+- startup.py → secrets validation on boot

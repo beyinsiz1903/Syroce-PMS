@@ -1,82 +1,63 @@
 # Syroce PMS — Product Requirements Document
 
 ## Original Problem Statement
-Build a production-safe, enterprise-grade hospitality SaaS platform (PMS) with reliable data flows, multi-tenant isolation, and auditable financial operations.
+Hotel PMS + Channel Manager platform with FastAPI, MongoDB, multi-tenant architecture.
+The platform manages provider integrations (Exely, HotelRunner), credential storage,
+audit requirements, and operational reliability.
 
-## Core System
-- **Stack**: React frontend + FastAPI backend + MongoDB
-- **Architecture**: Multi-tenant with tenant_id scoping, async Motor MongoDB, channel manager integrations (Exely, HotelRunner)
+## Core Requirements
+- Multi-tenant hotel property management
+- Channel manager for OTA integrations
+- Secure credential storage for provider APIs
+- Enterprise-grade security architecture
+- Production-ready deployment model
 
-## Test Credentials
-| User | Email | Password | Role |
-|------|-------|----------|------|
-| Demo Admin | demo@hotel.com | demo123 | super_admin |
+## Security Architecture (Completed)
 
-## Completed Features (Chronological)
+### SEC-001: Secrets Management Architecture
+- Provider abstraction for secret operations (create, get, update, delete, rotate)
+- Multiple backends: AWS Secrets Manager, Local Dev (AES-GCM/MongoDB), Vault placeholder
+- Deterministic resolution via SECRETS_PROVIDER env var
+- Tenant-aware secret naming convention
+- Migration script + dual-read fallback
+- Access audit logging
 
-### Phase 1: Core PMS
-- Room management, booking lifecycle, guest management
-- Folio management with charge posting
-- Night audit (legacy version)
-- Rate management, housekeeping, reporting
-- Channel manager integration (Exely, HotelRunner)
+### SEC-002: Production-Grade Encryption (AES-256-GCM)
+- Replaced XOR obfuscation, base64 encoding, and flawed AES-GCM with proper AEAD
+- HKDF-SHA256 key derivation (RFC 5869)
+- SYR1: versioned envelope format with AAD context binding
+- Dual-key rotation model (current + previous)
+- Feature flags: CRYPTO_V2_ENABLED, CRYPTO_BYPASS_ALLOWED
+- Single encryption boundary: CredentialEncryptionService
+- Complete backward compatibility with all legacy formats
+- 59 tests (41 unit + 18 API integration)
 
-### Phase 2: Production Hardening
-- **TI-001**: Tenant isolation proof-of-concept (TenantScopedDB proxy)
-- **TI-002**: Tenant isolation proof test suite (11 tests)
-- **TI-003**: Tenant Isolation Full Enforcement (3-layer system)
-  - Layer 1: TenantAwareDBProxy replaces raw `db` in core/database.py
-  - Layer 2: Runtime Guard with STRICT_TENANT_MODE env flag
-  - Layer 3: Static Audit via CI script (scripts/check_raw_db.py)
-  - TenantContextMiddleware sets tenant from JWT on every request
-  - LazyCollection descriptor for class-level repository access
-  - 66 passing tests (35 unit + 31 API)
-- **SEC-001**: Production-Grade Secrets Management Architecture
-  - Multi-backend secrets manager (AWS Secrets Manager + local dev + Vault placeholder)
-  - Tenant-aware, provider-aware, property-aware secret resolution
-  - AES-256-GCM encrypted local dev backend
-  - Deterministic naming: /{prefix}/{env}/channel-manager/{tenant}/{provider}/{property}
-  - Access audit logging with 90-day TTL
-  - Legacy dual-read fallback during migration
-  - Refactored Exely + HotelRunner routers (no more plaintext credentials)
-  - Migration script for legacy provider_secrets and plaintext HotelRunner tokens
-  - 46 passing tests (35 unit + 11 API)
-- **Atomic Booking**: Transaction-safe booking creation
-- **Atomic Check-in/Checkout**: Transaction-safe check-in and checkout
-- **OTA Outbox Pattern**: Reliable outbound OTA sync with retry
-- **Folio Hardening**: Validated charge posting with balance recalculation
+## Architecture
+```
+backend/
+├── core/
+│   ├── crypto/           # SEC-002: Encryption engine
+│   │   ├── engine.py     # AES-256-GCM with AAD
+│   │   ├── envelope.py   # SYR1 versioned format
+│   │   ├── keys.py       # HKDF key derivation + KeyRing
+│   │   ├── masking.py    # Display masking (NOT crypto)
+│   │   ├── migration.py  # Legacy format detection
+│   │   ├── service.py    # Single encryption boundary
+│   │   └── errors.py     # Typed exceptions
+│   ├── secrets/          # SEC-001: Secrets management
+│   └── database.py
+├── domains/channel_manager/
+├── channel_manager/infrastructure/
+└── modules/security_hardening/
+```
 
-### Phase 3: Data Integrity
-- **DATA-001**: Guaranteed Inbound Booking Import Bridge
-- **NA-001/NA-002**: Night Audit Hardening (state-machine financial close engine)
-  - 44 passing tests (23 unit + 21 API)
+## Tech Stack
+- FastAPI + Motor (async MongoDB)
+- cryptography (AESGCM, HKDF)
+- boto3 (AWS Secrets Manager)
+- Redis (caching)
 
-## Key Technical Patterns
-- **TenantAwareDBProxy**: Transparent proxy on `db` object — auto-scopes queries from contextvars
-- **TenantContextMiddleware**: Extracts tenant_id from JWT, sets it in contextvars per-request
-- **LazyCollection**: Descriptor for repository classes that resolves collection through proxy at access time
-- **SecretsManager**: Unified multi-backend secrets manager with provider abstraction, audit, and migration
-- **SecretIdentity**: Deterministic naming model for secret paths across environments
-- **State Machine**: Used for import bridge and night audit runs
-- **Atomic Claims**: find_one_and_update for safe concurrent processing
-- **Transactional Posting**: MongoDB transactions for financial operations
-- **Idempotency**: Unique indexes prevent duplicate data
-
-## Pending Work
-### P1
-- Gradual migration: Replace `from core.database import db` with `get_db()` in 264 legacy files
-- Fix pre-existing test failures in test_hardening_comprehensive.py
-- Fix lint errors in frontdesk_router.py and misc_router.py
-- Enable STRICT_TENANT_MODE once all files are migrated
-- Run secrets migration script for existing tenants
-- Disable ENABLE_LEGACY_SECRET_FALLBACK after full migration
-
-### P2 (Backlog)
-- Data Model Repair (reduce collection sprawl)
-- pms.py decomposition (2714 lines -> modular services)
-- OBS-002: Outbox Dashboard Metrics (frontend)
-- Import Bridge Review Queue Dashboard (frontend)
-- Night Audit Run Dashboard (frontend)
-- Stress testing, security audit, PII masking
-- Legacy collection cleanup
-- Refactor @cached decorator
+## Users
+| Role | Email | Purpose |
+|------|-------|---------|
+| Demo Admin | demo@hotel.com / demo123 | super_admin |
