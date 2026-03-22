@@ -31,6 +31,16 @@ Build a production-safe, enterprise-grade hospitality SaaS platform (PMS) with r
   - TenantContextMiddleware sets tenant from JWT on every request
   - LazyCollection descriptor for class-level repository access
   - 66 passing tests (35 unit + 31 API)
+- **SEC-001**: Production-Grade Secrets Management Architecture
+  - Multi-backend secrets manager (AWS Secrets Manager + local dev + Vault placeholder)
+  - Tenant-aware, provider-aware, property-aware secret resolution
+  - AES-256-GCM encrypted local dev backend
+  - Deterministic naming: /{prefix}/{env}/channel-manager/{tenant}/{provider}/{property}
+  - Access audit logging with 90-day TTL
+  - Legacy dual-read fallback during migration
+  - Refactored Exely + HotelRunner routers (no more plaintext credentials)
+  - Migration script for legacy provider_secrets and plaintext HotelRunner tokens
+  - 46 passing tests (35 unit + 11 API)
 - **Atomic Booking**: Transaction-safe booking creation
 - **Atomic Check-in/Checkout**: Transaction-safe check-in and checkout
 - **OTA Outbox Pattern**: Reliable outbound OTA sync with retry
@@ -45,6 +55,8 @@ Build a production-safe, enterprise-grade hospitality SaaS platform (PMS) with r
 - **TenantAwareDBProxy**: Transparent proxy on `db` object — auto-scopes queries from contextvars
 - **TenantContextMiddleware**: Extracts tenant_id from JWT, sets it in contextvars per-request
 - **LazyCollection**: Descriptor for repository classes that resolves collection through proxy at access time
+- **SecretsManager**: Unified multi-backend secrets manager with provider abstraction, audit, and migration
+- **SecretIdentity**: Deterministic naming model for secret paths across environments
 - **State Machine**: Used for import bridge and night audit runs
 - **Atomic Claims**: find_one_and_update for safe concurrent processing
 - **Transactional Posting**: MongoDB transactions for financial operations
@@ -56,10 +68,12 @@ Build a production-safe, enterprise-grade hospitality SaaS platform (PMS) with r
 - Fix pre-existing test failures in test_hardening_comprehensive.py
 - Fix lint errors in frontdesk_router.py and misc_router.py
 - Enable STRICT_TENANT_MODE once all files are migrated
+- Run secrets migration script for existing tenants
+- Disable ENABLE_LEGACY_SECRET_FALLBACK after full migration
 
 ### P2 (Backlog)
 - Data Model Repair (reduce collection sprawl)
-- pms.py decomposition (2714 lines → modular services)
+- pms.py decomposition (2714 lines -> modular services)
 - OBS-002: Outbox Dashboard Metrics (frontend)
 - Import Bridge Review Queue Dashboard (frontend)
 - Night Audit Run Dashboard (frontend)

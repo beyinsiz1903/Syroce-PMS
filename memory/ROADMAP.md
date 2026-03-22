@@ -6,14 +6,17 @@
 - [x] TI-001: Tenant Isolation Enforcement (TenantScopedDB)
 - [x] TI-002: Tenant Isolation Proof Test Suite
 - [x] TI-003: Tenant Isolation Full Enforcement (3-layer: Proxy + Runtime + Static)
+- [x] SEC-001: Production-Grade Secrets Management Architecture
 - [x] PERF-001: Compound Indexes for Hot Queries
 - [x] OBS-001: Deep Health Check Endpoint
-- [x] OTA-002: PMS → OTA Guaranteed Delivery (Outbox Pattern)
-- [x] DATA-001: OTA → PMS Automatic Booking Import Reliability
+- [x] OTA-002: PMS -> OTA Guaranteed Delivery (Outbox Pattern)
+- [x] DATA-001: OTA -> PMS Automatic Booking Import Reliability
 - [x] NA-001: Night Audit Hardening — Folio validation before charge posting
 - [x] NA-002: Night Audit Hardening — Transactional charge posting
 
 ## Next Up (P1)
+- [ ] SEC-001b: Run secrets migration for existing tenants (scripts/migrate_secrets.py)
+- [ ] SEC-001c: Disable ENABLE_LEGACY_SECRET_FALLBACK after migration
 - [ ] TI-003b: Gradual migration of 264 legacy files to get_db() pattern
 - [ ] TI-003c: Enable STRICT_TENANT_MODE after full migration
 - [ ] Fix pre-existing test failures (test_hardening_comprehensive.py)
@@ -22,8 +25,8 @@
 ## P1 — Architecture
 - [ ] INFRA-002: Collection Registry (centralize db references)
 - [ ] PERF-002: Availability Query Optimization (aggregation pipeline)
-- [ ] SEC-001: PII Masking in Logs
-- [ ] pms.py decomposition (2714 lines → modular services)
+- [ ] SEC-002: PII Masking in Logs
+- [ ] pms.py decomposition (2714 lines -> modular services)
 
 ## P2 — Technical Debt
 - [ ] Legacy collection cleanup (~489 collections)
@@ -38,3 +41,4 @@
 - [ ] Import Bridge Review Queue Dashboard (frontend)
 - [ ] Night Audit Run Dashboard (frontend)
 - [ ] Two-provider reconciliation verification
+- [ ] HashiCorp Vault backend implementation (SEC-001 vault_provider.py ready)
