@@ -32,7 +32,7 @@
     "backend": "100% (66 passed: 35 unit + 31 API)",
     "frontend": "N/A (backend only testing)"
   },
-  "test_credentials": "email=demo@hotel.com, password=demo123, tenant_id=044f122b-87b5-480a-88b4-b9534b0c8c90",
+  "test_credentials": "email=demo@hotel.com, password=demo123, tenant_id=multi-tenant-safety",
   "seed_data_creation": "None - used existing demo tenant data",
   "retest_needed": false,
   "should_main_agent_self_test": false,
