@@ -46,6 +46,21 @@ async def on_startup(app):
         if os.environ.get("APP_ENV") in ("production", "staging"):
             raise  # Hard fail in production
 
+    # ── Control Plane Startup Validation ────────────────────────────
+    try:
+        from controlplane.startup_validator import validate_startup
+        strict = os.environ.get("APP_ENV") in ("production", "staging")
+        cp_report = await validate_startup(strict=strict)
+        logger.info(
+            "Control plane validation: %s (%d issues)",
+            cp_report.get("overall", "unknown"),
+            len(cp_report.get("failures", [])),
+        )
+    except Exception as e:
+        logger.error(f"Control plane startup validation failed: {e}")
+        if os.environ.get("APP_ENV") in ("production", "staging"):
+            raise
+
     # ── Auto-seed demo data ─────────────────────────────────────────
     try:
         from auto_seed import auto_seed_if_empty
