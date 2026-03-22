@@ -200,3 +200,4 @@ zipp==3.23.0
 zope.event==6.1
 zope.interface==8.2
 zopfli==0.4.1
+pytest-timeout==2.4.0

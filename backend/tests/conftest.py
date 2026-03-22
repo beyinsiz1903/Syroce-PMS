@@ -16,6 +16,11 @@ if str(TESTS_DIR) not in sys.path:
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 
 
+# Ensure REACT_APP_BACKEND_URL is set for test files that read it directly
+if not os.environ.get("REACT_APP_BACKEND_URL"):
+    os.environ["REACT_APP_BACKEND_URL"] = "http://localhost:8001"
+
+
 @pytest.fixture(scope="session")
 def demo_auth_token():
     """Shared demo admin auth token for all tests."""

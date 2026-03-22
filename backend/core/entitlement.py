@@ -2,13 +2,16 @@
 Entitlement Enforcement Middleware
 Intercepts API requests and enforces plan-based access + quota limits.
 Integrates with metering to record usage events.
+
+Uses pure ASGI middleware (not BaseHTTPMiddleware) to avoid event-loop
+conflicts in async test runners and improve performance.
 """
 import logging
 import time
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.datastructures import MutableHeaders
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -18,8 +21,6 @@ from core.metering import record_usage, UsageEventType
 logger = logging.getLogger(__name__)
 
 # ─── Route → Required Module Mapping ───
-# Routes that require specific modules to be enabled.
-# If a route prefix matches and the tenant doesn't have the module, return 403.
 ROUTE_MODULE_MAP: Dict[str, str] = {
     "/api/channel-manager": "channel_manager",
     "/api/cm/": "channel_manager",
@@ -58,11 +59,13 @@ EXEMPT_PREFIXES = [
 ]
 
 
-def _get_token_from_request(request: Request) -> Optional[str]:
-    """Extract JWT token from Authorization header."""
-    auth = request.headers.get("authorization", "")
-    if auth.startswith("Bearer "):
-        return auth[7:]
+def _get_token_from_headers(headers: list) -> Optional[str]:
+    """Extract JWT token from raw ASGI headers."""
+    for key, value in headers:
+        if key == b"authorization":
+            val = value.decode("latin-1")
+            if val.startswith("Bearer "):
+                return val[7:]
     return None
 
 
@@ -78,32 +81,68 @@ def _decode_tenant_from_token(token: str) -> Optional[str]:
         return None
 
 
-class EntitlementMiddleware(BaseHTTPMiddleware):
-    """Global middleware that:
+def _match_route_module(path: str) -> Optional[str]:
+    """Find the required module for a given route path."""
+    for prefix, module in ROUTE_MODULE_MAP.items():
+        if path.startswith(prefix):
+            return module
+    return None
+
+
+async def _check_module_access(tenant_id: str, module: str) -> bool:
+    """Check if tenant has access to the required module."""
+    try:
+        tenant_doc = await db.tenants.find_one(
+            {"id": tenant_id}, {"_id": 0, "modules": 1, "subscription_tier": 1}
+        )
+        if not tenant_doc:
+            return True
+
+        from core.helpers import get_tenant_modules
+        modules = get_tenant_modules(tenant_doc)
+        return bool(modules.get(module, False))
+    except Exception as e:
+        logger.warning(f"Entitlement check error: {e}")
+        return True  # Fail open on errors
+
+
+class EntitlementMiddleware:
+    """Pure ASGI middleware for entitlement enforcement.
     1. Records API usage per tenant (metering)
     2. Enforces module-level access based on tenant plan
-    3. Checks quota limits (rooms, users)
+    3. Adds X-Tenant-ID and X-Response-Time-Ms headers
     """
 
-    async def dispatch(self, request: Request, call_next):
-        path = request.url.path
-        method = request.method
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        method = scope.get("method", "GET")
 
         # Skip non-API routes
         if not path.startswith("/api/"):
-            return await call_next(request)
+            await self.app(scope, receive, send)
+            return
 
         # Skip exempt routes
         for prefix in EXEMPT_PREFIXES:
             if path.startswith(prefix):
-                return await call_next(request)
+                await self.app(scope, receive, send)
+                return
 
         # Skip OPTIONS
         if method == "OPTIONS":
-            return await call_next(request)
+            await self.app(scope, receive, send)
+            return
 
         # Extract tenant from token
-        token = _get_token_from_request(request)
+        raw_headers = scope.get("headers", [])
+        token = _get_token_from_headers(raw_headers)
         tenant_id = None
         if token:
             tenant_id = _decode_tenant_from_token(token)
@@ -117,11 +156,11 @@ class EntitlementMiddleware(BaseHTTPMiddleware):
 
         # Module enforcement
         if tenant_id:
-            required_module = self._match_route_module(path)
+            required_module = _match_route_module(path)
             if required_module:
-                allowed = await self._check_module_access(tenant_id, required_module)
+                allowed = await _check_module_access(tenant_id, required_module)
                 if not allowed:
-                    return JSONResponse(
+                    resp = JSONResponse(
                         status_code=403,
                         content={
                             "detail": f"Bu ozellik planınıza dahil degil: {required_module}",
@@ -130,38 +169,22 @@ class EntitlementMiddleware(BaseHTTPMiddleware):
                             "upgrade_url": "/settings?tab=subscription",
                         },
                     )
+                    await resp(scope, receive, send)
+                    return
 
+        # Wrap send to inject response headers
         start = time.time()
-        response = await call_next(request)
-        elapsed_ms = (time.time() - start) * 1000
 
-        # Add entitlement headers
-        if tenant_id:
-            response.headers["X-Tenant-ID"] = tenant_id
-        response.headers["X-Response-Time-Ms"] = f"{elapsed_ms:.1f}"
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                if tenant_id:
+                    headers.append("X-Tenant-ID", tenant_id)
+                elapsed_ms = (time.time() - start) * 1000
+                headers.append("X-Response-Time-Ms", f"{elapsed_ms:.1f}")
+            await send(message)
 
-        return response
-
-    def _match_route_module(self, path: str) -> Optional[str]:
-        """Find the required module for a given route path."""
-        for prefix, module in ROUTE_MODULE_MAP.items():
-            if path.startswith(prefix):
-                return module
-        return None
-
-    async def _check_module_access(self, tenant_id: str, module: str) -> bool:
-        """Check if tenant has access to the required module."""
-        try:
-            tenant_doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "modules": 1, "subscription_tier": 1})
-            if not tenant_doc:
-                return True  # Let downstream handle missing tenant
-
-            from core.helpers import get_tenant_modules
-            modules = get_tenant_modules(tenant_doc)
-            return bool(modules.get(module, False))
-        except Exception as e:
-            logger.warning(f"Entitlement check error: {e}")
-            return True  # Fail open on errors
+        await self.app(scope, receive, send_with_headers)
 
 
 async def check_quota(tenant_id: str, resource: str) -> Dict[str, Any]:
