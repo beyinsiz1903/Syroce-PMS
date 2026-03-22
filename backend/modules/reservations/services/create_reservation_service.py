@@ -194,6 +194,13 @@ class CreateReservationService:
                 },
             )
 
+            # Usage metering
+            try:
+                from core.metering import record_usage, UsageEventType
+                await record_usage(tenant_context.tenant_id, UsageEventType.RESERVATION_CREATED)
+            except Exception:
+                pass
+
             response_body = dict(booking_dict)
             response_body.pop('_id', None)
             await self.repository.complete_idempotency_lock(lock["lock_id"], booking_id, response_body)

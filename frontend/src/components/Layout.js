@@ -44,6 +44,7 @@ const ICON_BY_KEY = {
   admin_tenants: Shield,
   admin_module_report: FileText,
   admin_leads: Users,
+  governance: SettingsIcon,
   revenue_engine: TrendingUp,
   operational_events: Zap,
   guest_journey: Users,

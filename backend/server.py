@@ -116,6 +116,14 @@ except Exception:
     apm_store = _FallbackStore()
     def get_rate_limit_stats(): return {}
 
+# Entitlement enforcement
+try:
+    from core.entitlement import EntitlementMiddleware
+    app.add_middleware(EntitlementMiddleware)
+    logger.info("Entitlement enforcement middleware activated")
+except Exception as _ent_err:
+    logger.warning(f"Entitlement middleware skipped: {_ent_err}")
+
 # Request tracing
 try:
     from modules.observability.request_tracing_middleware import RequestTracingMiddleware
@@ -247,6 +255,14 @@ try:
     print("Import Admin router included (DATA-001 review queue/retry)")
 except Exception:
     pass
+
+# Entitlement, Metering & Feature Flags Admin API
+try:
+    from domains.admin.entitlement_router import router as entitlement_admin_router
+    app.include_router(entitlement_admin_router, tags=["Entitlement & Metering"])
+    logger.info("  ✅ Entitlement & Metering admin router loaded")
+except Exception as _e:
+    logger.warning(f"Entitlement admin router skipped: {_e}")
 
 # ── Lifecycle events ────────────────────────────────────────────────
 from startup import on_startup, on_shutdown  # noqa: E402

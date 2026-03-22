@@ -255,6 +255,21 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Index creation warning: {e}")
 
+    # ── Entitlement, Metering & Feature Flag indexes ───────────────
+    try:
+        from core.metering import ensure_metering_indexes
+        await ensure_metering_indexes()
+        print("✅ Usage metering indexes ensured")
+    except Exception as e:
+        logger.warning(f"Metering index creation: {e}")
+
+    try:
+        from core.feature_flags import ensure_feature_flag_indexes
+        await ensure_feature_flag_indexes()
+        print("✅ Feature flag indexes ensured")
+    except Exception as e:
+        logger.warning(f"Feature flag index creation: {e}")
+
     # ── OTA-002: Outbox Pattern indexes ─────────────────────────────
     try:
         from core.outbox_service import ensure_outbox_indexes

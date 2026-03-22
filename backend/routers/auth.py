@@ -289,6 +289,14 @@ async def login(data: UserLogin):
     token = create_token(user.id, user.tenant_id)
     response = TokenResponse(access_token=token, user=user, tenant=tenant)
 
+    # Usage metering
+    if user.tenant_id:
+        try:
+            from core.metering import record_usage, UsageEventType
+            await record_usage(user.tenant_id, UsageEventType.LOGIN)
+        except Exception:
+            pass
+
     # Cache the response for 5 minutes (avoids bcrypt on repeat logins)
     _login_cache.set(cache_key, {
         "access_token": response.access_token,

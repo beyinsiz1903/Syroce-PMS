@@ -50,6 +50,7 @@ const BasicReports = lazy(() => import("@/pages/BasicReports"));
 const ReportBuilder = lazy(() => import("@/pages/ReportBuilder"));
 const PmsLiteLanding = lazy(() => import("@/pages/PmsLiteLanding"));
 const AdminLeads = lazy(() => import("@/pages/AdminLeads"));
+const GovernancePanel = lazy(() => import("@/pages/GovernancePanel"));
 const OfficialGuestList = lazy(() => import("@/pages/OfficialGuestList"));
 const MobileDashboard = lazy(() => import("@/pages/MobileDashboard"));
 const MobileHousekeeping = lazy(() => import("@/pages/MobileHousekeeping"));
@@ -1878,6 +1879,18 @@ function App() {
               isAuthenticated && user?.role === 'super_admin' ? (
                 <Suspense fallback={<LoadingFallback />}>
                   <AdminLeads user={user} tenant={tenant} onLogout={handleLogout} />
+                </Suspense>
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/governance"
+            element={
+              isAuthenticated && user?.role === 'super_admin' ? (
+                <Suspense fallback={<LoadingFallback />}>
+                  <GovernancePanel user={user} tenant={tenant} onLogout={handleLogout} />
                 </Suspense>
               ) : (
                 <Navigate to="/auth" replace />

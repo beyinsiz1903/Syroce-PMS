@@ -548,6 +548,14 @@ export const NAV_ITEMS = [
     group: "admin",
     navGroup: null,
   },
+  {
+    key: "governance",
+    label: "Governance",
+    path: "/admin/governance",
+    requireSuperAdmin: true,
+    group: "admin",
+    navGroup: null,
+  },
 ];
 
 // Legacy compatibility
