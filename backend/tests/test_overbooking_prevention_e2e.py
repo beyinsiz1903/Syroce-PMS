@@ -1,26 +1,31 @@
 """
-Test: Atomic Booking — Overbooking Prevention
-=============================================
+E2E Test: Overbooking Prevention via Public API
+================================================
+Tests the room-night locking pattern through the public API endpoints.
+Uses far-future dates (2050+) to avoid collisions with existing data.
+
 Tests:
-  1. Concurrent same-room booking (10 parallel) → exactly 1 wins
-  2. Adjacent dates (allowed)
-  3. Partial overlap (blocked)
-  4. Full overlap (blocked)
-  5. Cancelled booking doesn't block new booking
-  6. Different rooms both succeed
+  1. Concurrent booking (10 parallel) → exactly 1 wins, 9 get 409
+  2. Adjacent dates allowed (checkout day = next checkin day)
+  3. Partial overlap blocked
+  4. Full overlap blocked
+  5. Cancel then rebook same dates → should succeed
+  6. Different rooms same dates → both succeed
 """
 import asyncio
+import os
 import random
 import uuid
 
 import pytest
 import httpx
 
-API_URL = "http://localhost:8001"
+# Use public URL from environment
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://production-ready-119.preview.emergentagent.com").rstrip("/")
 AUTH_CREDS = {"email": "demo@hotel.com", "password": "demo123"}
 
-# Use unique year range per run to avoid collisions with leftover data
-_RUN_TAG = random.randint(2040, 2090)
+# Use unique year range per run to avoid collisions
+_RUN_TAG = random.randint(2050, 2090)
 
 
 @pytest.fixture(scope="module")
@@ -32,17 +37,22 @@ def event_loop():
 
 @pytest.fixture(scope="module")
 async def auth_headers():
-    async with httpx.AsyncClient(base_url=API_URL) as client:
+    """Get auth token from public API."""
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
         resp = await client.post("/api/auth/login", json=AUTH_CREDS)
-        token = resp.json().get("token") or resp.json().get("access_token")
+        assert resp.status_code == 200, f"Login failed: {resp.text}"
+        data = resp.json()
+        token = data.get("token") or data.get("access_token")
+        assert token, f"No token in response: {data}"
         return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture(scope="module")
 async def test_room(auth_headers):
     """Get first available room for testing."""
-    async with httpx.AsyncClient(base_url=API_URL) as client:
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
         resp = await client.get("/api/pms/rooms", headers=auth_headers)
+        assert resp.status_code == 200, f"Failed to get rooms: {resp.text}"
         rooms = resp.json()
         if isinstance(rooms, dict) and "rooms" in rooms:
             rooms = rooms["rooms"]
@@ -57,8 +67,9 @@ async def test_room(auth_headers):
 @pytest.fixture(scope="module")
 async def two_rooms(auth_headers):
     """Get two different rooms."""
-    async with httpx.AsyncClient(base_url=API_URL) as client:
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
         resp = await client.get("/api/pms/rooms", headers=auth_headers)
+        assert resp.status_code == 200
         rooms = resp.json()
         if isinstance(rooms, dict) and "rooms" in rooms:
             rooms = rooms["rooms"]
@@ -70,8 +81,9 @@ async def two_rooms(auth_headers):
 @pytest.fixture(scope="module")
 async def test_guest(auth_headers):
     """Get or create a test guest."""
-    async with httpx.AsyncClient(base_url=API_URL) as client:
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
         resp = await client.get("/api/pms/guests?limit=1", headers=auth_headers)
+        assert resp.status_code == 200
         guests = resp.json()
         if isinstance(guests, dict) and "guests" in guests:
             guests = guests["guests"]
@@ -81,6 +93,7 @@ async def test_guest(auth_headers):
 
 
 async def _book(client, auth_headers, room_id, guest_id, check_in, check_out, amount=500.0, name="Test"):
+    """Helper to create a booking via quick-booking endpoint."""
     return await client.post(
         "/api/pms/quick-booking",
         headers={**auth_headers, "Idempotency-Key": str(uuid.uuid4())},
@@ -99,7 +112,7 @@ async def _cancel(auth_headers, booking_id):
     """Cancel a test booking via the PMS cancel endpoint."""
     if not booking_id:
         return
-    async with httpx.AsyncClient(base_url=API_URL, timeout=10) as client:
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=15) as client:
         # Use the proper pms-core cancel endpoint
         resp = await client.post(
             "/api/pms-core/cancel",
@@ -129,7 +142,7 @@ async def test_concurrent_booking_only_one_wins(auth_headers, test_room, test_gu
     async def attempt(client, i):
         return await _book(client, auth_headers, room_id, guest_id, ci, co, name=f"Concurrent {i}")
 
-    async with httpx.AsyncClient(base_url=API_URL, timeout=30) as client:
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=60) as client:
         results = await asyncio.gather(*[attempt(client, i) for i in range(10)], return_exceptions=True)
 
     successes, conflicts, errors = [], [], []
@@ -143,11 +156,14 @@ async def test_concurrent_booking_only_one_wins(auth_headers, test_room, test_gu
         else:
             errors.append(f"status={r.status_code} body={r.text}")
 
-    print(f"\nConcurrency: {len(successes)} success, {len(conflicts)} conflict, {len(errors)} error")
+    print(f"\nConcurrency Test: {len(successes)} success, {len(conflicts)} conflict, {len(errors)} error")
 
-    assert len(successes) == 1, f"Expected 1 success but got {len(successes)}"
+    # Exactly 1 should succeed
+    assert len(successes) == 1, f"Expected 1 success but got {len(successes)}: {successes}"
+    # The rest should be 409 conflicts
     assert len(conflicts) == 9, f"Expected 9 conflicts but got {len(conflicts)}"
 
+    # Cleanup
     await _cancel(auth_headers, successes[0].get("id"))
 
 
@@ -160,7 +176,7 @@ async def test_adjacent_dates_allowed(auth_headers, test_room, test_guest):
     room_id = test_room["id"]
     guest_id = test_guest["id"]
 
-    async with httpx.AsyncClient(base_url=API_URL, timeout=15) as client:
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
         resp1 = await _book(client, auth_headers, room_id, guest_id,
                             f"{_RUN_TAG}-02-10T14:00:00+00:00", f"{_RUN_TAG}-02-12T11:00:00+00:00",
                             name="Adjacent 1")
@@ -173,6 +189,7 @@ async def test_adjacent_dates_allowed(auth_headers, test_room, test_guest):
         assert resp2.status_code == 200, f"Adjacent booking should succeed: {resp2.text}"
         b2 = resp2.json().get("id")
 
+    # Cleanup
     await _cancel(auth_headers, b1)
     await _cancel(auth_headers, b2)
 
@@ -186,7 +203,7 @@ async def test_partial_overlap_blocked(auth_headers, test_room, test_guest):
     room_id = test_room["id"]
     guest_id = test_guest["id"]
 
-    async with httpx.AsyncClient(base_url=API_URL, timeout=15) as client:
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
         resp1 = await _book(client, auth_headers, room_id, guest_id,
                             f"{_RUN_TAG}-03-15T14:00:00+00:00", f"{_RUN_TAG}-03-18T11:00:00+00:00",
                             name="Overlap 1")
@@ -198,6 +215,7 @@ async def test_partial_overlap_blocked(auth_headers, test_room, test_guest):
                             name="Overlap 2")
         assert resp2.status_code == 409, f"Overlapping booking should fail: status={resp2.status_code}"
 
+    # Cleanup
     await _cancel(auth_headers, b1)
 
 
@@ -210,7 +228,7 @@ async def test_full_overlap_blocked(auth_headers, test_room, test_guest):
     room_id = test_room["id"]
     guest_id = test_guest["id"]
 
-    async with httpx.AsyncClient(base_url=API_URL, timeout=15) as client:
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
         resp1 = await _book(client, auth_headers, room_id, guest_id,
                             f"{_RUN_TAG}-04-20T14:00:00+00:00", f"{_RUN_TAG}-04-25T11:00:00+00:00",
                             name="Full Overlap 1")
@@ -222,6 +240,7 @@ async def test_full_overlap_blocked(auth_headers, test_room, test_guest):
                             name="Full Overlap 2")
         assert resp2.status_code == 409, f"Full overlap should fail: status={resp2.status_code}"
 
+    # Cleanup
     await _cancel(auth_headers, b1)
 
 
@@ -236,18 +255,24 @@ async def test_cancelled_booking_doesnt_block(auth_headers, test_room, test_gues
     ci = f"{_RUN_TAG}-05-05T14:00:00+00:00"
     co = f"{_RUN_TAG}-05-07T11:00:00+00:00"
 
-    async with httpx.AsyncClient(base_url=API_URL, timeout=15) as client:
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
         resp1 = await _book(client, auth_headers, room_id, guest_id, ci, co, name="Cancel Test 1")
-        assert resp1.status_code == 200
+        assert resp1.status_code == 200, f"First booking failed: {resp1.text}"
         b1 = resp1.json().get("id")
 
+    # Cancel the booking
     await _cancel(auth_headers, b1)
 
-    async with httpx.AsyncClient(base_url=API_URL, timeout=15) as client:
+    # Wait a moment for cancellation to process
+    await asyncio.sleep(0.5)
+
+    # Now book the same dates again - should succeed
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
         resp2 = await _book(client, auth_headers, room_id, guest_id, ci, co, name="Cancel Test 2")
         assert resp2.status_code == 200, f"Booking after cancellation should succeed: {resp2.text}"
         b2 = resp2.json().get("id")
 
+    # Cleanup
     await _cancel(auth_headers, b2)
 
 
@@ -262,12 +287,13 @@ async def test_different_rooms_both_succeed(auth_headers, two_rooms, test_guest)
     ci = f"{_RUN_TAG}-06-01T14:00:00+00:00"
     co = f"{_RUN_TAG}-06-03T11:00:00+00:00"
 
-    async with httpx.AsyncClient(base_url=API_URL, timeout=15) as client:
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
         resp1 = await _book(client, auth_headers, room1["id"], guest_id, ci, co, name="Room1 Guest")
         assert resp1.status_code == 200, f"Room1 booking failed: {resp1.text}"
 
         resp2 = await _book(client, auth_headers, room2["id"], guest_id, ci, co, name="Room2 Guest")
         assert resp2.status_code == 200, f"Room2 booking failed: {resp2.text}"
 
+    # Cleanup
     await _cancel(auth_headers, resp1.json().get("id"))
     await _cancel(auth_headers, resp2.json().get("id"))

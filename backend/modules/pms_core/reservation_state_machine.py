@@ -88,6 +88,13 @@ class ReservationStateMachine:
             {"$set": update_fields}
         )
 
+        # Release room-night locks for overbooking prevention
+        try:
+            from core.atomic_booking import release_booking_nights
+            await release_booking_nights(tenant_id, booking["id"])
+        except Exception as e:
+            logger.warning("Failed to release night locks for %s: %s", booking["id"], e)
+
         # Release the room if it was assigned
         room_id = booking.get("room_id")
         if room_id:

@@ -161,6 +161,14 @@ class UpdateReservationService:
                         {"status": "occupied", "current_booking_id": booking_id},
                     )
 
+            # Release room-night locks when status transitions to cancelled/no_show
+            if new_status in ("cancelled", "no_show") and old_status not in ("cancelled", "no_show"):
+                try:
+                    from core.atomic_booking import release_booking_nights
+                    await release_booking_nights(tenant_context.tenant_id, booking_id)
+                except Exception:
+                    pass
+
             # Apply remaining field updates (if any left after atomic handled status)
             if update_data:
                 await self.repository.update_booking(tenant_context.tenant_id, booking_id, update_data)
