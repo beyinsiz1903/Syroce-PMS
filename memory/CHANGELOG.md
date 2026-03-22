@@ -1,5 +1,38 @@
 # Syroce PMS — Changelog
 
+## 2026-03-22: Control Plane UI — Operations Weapon
+
+### Reservation Trace (Trace tab)
+- Created `/app/frontend/src/pages/ControlPlane.jsx` — Single page with 3 tabs
+- Search by external_id or correlation_id with instant timeline trace
+- Status badge: PROCESSING / CONFIRMED / FAILED / DUPLICATE
+- Expandable timeline events with full metadata JSON
+- ROOM OK / ROOM FAIL badges on validated events
+- Gap warnings section showing missing pipeline stages
+- Raw Payload viewer for webhook_received events
+
+### System Health (Saglik tab)
+- Health grade (A-F) with numeric score from /api/ops/dashboard
+- Metric cards: Import Basari, Sync Basari, Outbox Bekleyen, Hatalar
+- Pipeline depth visualization: ingest → import → outbox
+- Recent failures list; auto-refresh every 30s
+
+### Live Feed (Canli tab)
+- Last 50 events table with auto-refresh (10s)
+- Columns: Zaman, Stage, External ID, Provider, Durum
+- Failure events highlighted; toggle between Canli/Durduruldu
+
+### Route & Nav
+- Route: `/control-plane`; lazy-loaded in App.js
+- Nav: Kanallar dropdown → Control Plane
+
+### Testing
+- 14 backend API tests all passing (test_controlplane_ui_api.py)
+- All frontend UI components verified working
+- 100% pass rate across backend and frontend
+
+---
+
 ## 2026-03-22: Webhook Timeline Integration — End-to-End Traceability
 
 ### Exely Webhook Timeline

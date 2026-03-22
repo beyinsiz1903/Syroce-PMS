@@ -11,6 +11,7 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 - `/app/backend/workers/` — Background workers (ARI push, retry, etc.)
 - `/app/backend/tests/resilience/` — Chaos testing and resilience validation suite
 - `/app/backend/docs/BATTLE_READINESS_BLUEPRINT.md` — Battle-grade execution blueprint
+- `/app/frontend/src/pages/ControlPlane.jsx` — Control Plane UI (ops weapon)
 
 ## Credentials
 | User | Email | Password | Role |
@@ -74,54 +75,51 @@ Completed the "last 20%" — wiring the Event Timeline into OTA webhook entry po
 - **Modified**: `providers/exely/exely_webhook_router.py`
 - Timeline stages: `webhook_received` → `normalized` → `deduplicated`
 - Raw SOAP XML payload stored in `webhook_raw_payloads` collection
-- Metadata: raw_payload_id, hotel_code, source_ip, payload_size_bytes, content_type
-- Duplicate detection visible: is_duplicate, is_new, decision
 
 #### 2. HotelRunner Webhook Timeline
 - **Modified**: `providers/hotelrunner_webhook.py`
 - Timeline stages: `webhook_received` → `deduplicated` → `normalized` → `validated`
 - Raw JSON payload stored in `webhook_raw_payloads` collection
-- Mapping debug visible: room_mapped, rate_mapped, mapping_target
 
 #### 3. Ingest Pipeline Timeline
 - **Modified**: `domains/channel_manager/ingest/pipeline.py`
-- Timeline stages written at: duplicate detection (Stage 2/3), stale detection (Stage 4), normalization (Stage 5), mapping validation (Stage 6)
-- Each stage includes detailed metadata for debugging
+- Timeline stages written at: duplicate detection, stale detection, normalization, mapping validation
 
 #### 4. Raw Payload Storage
 - **Collection**: `webhook_raw_payloads` with 4 indexes (correlation, tenant+ext, provider, TTL 90d)
-- Stores exact bytes received from OTA (SOAP XML or JSON)
-- Linked via correlation_id to timeline events
-- Supports debugging mapping errors, validation failures, and provider bugs
 
-#### Full End-to-End Trace (Complete):
-```
-[OTA WEBHOOK RECEIVED]
-    ↓ raw payload stored
-[NORMALIZED]
-    ↓ XML/JSON → canonical format
-[DEDUPLICATED]
-    ↓ new/duplicate/stale decision
-[VALIDATED]
-    ↓ room/rate mapping check
-[IMPORT_DECIDED]
-    ↓ auto-import or review
-[STORED]
-    ↓ PMS booking created
-[QUEUED]
-    ↓ outbox event enqueued
-[DISPATCHED]
-    ↓ sent to provider
-[CONFIRMED]
-    ↓ provider acknowledged
-```
+### CONTROL PLANE UI (2026-03-22) — Operations Weapon
+Frontend operations screen that turns developer APIs into a self-service debugging tool:
+
+#### 1. Reservation Trace (Trace tab)
+- **File**: `/app/frontend/src/pages/ControlPlane.jsx` — `ReservationLookup` component
+- Input: external_id or correlation_id
+- Output: Status badge (PROCESSING/CONFIRMED/FAILED/DUPLICATE), full timeline, gap warnings
+- Timeline events expandable with metadata JSON
+- ROOM OK/ROOM FAIL badges on validated events
+- Raw Payload viewer for webhook_received events
+- Copy-to-clipboard for IDs
+
+#### 2. System Health (Saglik tab)
+- **Component**: `SystemHealth`
+- Health grade (A-F) with score
+- Metric cards: Import Basari, Sync Basari, Outbox Bekleyen, Hatalar (24s)
+- Pipeline depth: ingest_pending → import_pending → outbox_pending
+- Recent failures list
+- Auto-refresh every 30 seconds
+
+#### 3. Live Feed (Canli tab)
+- **Component**: `LiveFeed`
+- Last 50 events in table: Zaman, Stage, External ID, Provider, Durum
+- Auto-refresh toggle (10s interval)
+- Failure events highlighted in red
+- Manual refresh button
+
+#### Route & Navigation
+- Route: `/control-plane`
+- Nav: Kanallar dropdown → Control Plane
 
 ## Pending Tasks
-
-### P0 — Frontend Control Plane Dashboard
-- Build frontend to visualize `/api/ops/dashboard` and `/api/ops/timeline` data
-- Reservation trace UI: enter external_id → see full timeline
-- Health score dashboard with trends
 
 ### P1 — Hardening (from Blueprint Week 2)
 - Implement immutable folio_ledger + reconciliation engine
