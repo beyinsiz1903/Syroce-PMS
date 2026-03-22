@@ -177,6 +177,7 @@ const DataModelDashboard = lazy(() => import("@/pages/DataModelDashboard"));
 const LockdownDashboard = lazy(() => import("@/pages/LockdownDashboard"));
 const OperatorIncidentPanel = lazy(() => import("@/pages/OperatorIncidentPanel"));
 const RuntimeCockpitPage = lazy(() => import("@/pages/RuntimeCockpitPage"));
+const ControlPlane = lazy(() => import("@/pages/ControlPlane"));
 const GroupBookingsPage = lazy(() => import("@/pages/GroupBookings"));
 const DepositTrackingPage = lazy(() => import("@/pages/DepositTracking"));
 
@@ -1612,6 +1613,18 @@ function App() {
             element={
               isAuthenticated ? (
                 <RuntimeCockpitPage user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/control-plane"
+            element={
+              isAuthenticated ? (
+                <Suspense fallback={<LoadingFallback />}>
+                  <ControlPlane user={user} tenant={tenant} onLogout={handleLogout} />
+                </Suspense>
               ) : (
                 <Navigate to="/auth" replace />
               )

@@ -270,6 +270,15 @@ export const NAV_ITEMS = [
     navGroup: "channels",
   },
   {
+    key: "control_plane",
+    label: "Control Plane",
+    path: "/control-plane",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+    navGroup: "channels",
+  },
+  {
     key: "data_model",
     label: "Data Model",
     path: "/data-model",

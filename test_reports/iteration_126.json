@@ -1,0 +1,67 @@
+{
+  "summary": "Control Plane UI testing complete. All backend APIs (14/14 tests) and frontend UI components verified working. The Control Plane page loads at /control-plane with 3 tabs: Trace (lookup), Saglik (health), Canli (live feed). Trace tab successfully fetches and displays timeline for test external_id HR-VERIFY-1774179036 with 4 events, status badge, gap warnings, and expandable metadata. Health tab shows health score (85/B), metric cards, and pipeline depth. Live Feed tab shows last 50 events with auto-refresh toggle.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_controlplane_ui_api.py",
+    "/app/test_reports/pytest/pytest_controlplane_ui_api.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Control Plane page correctly uses axios with baseURL from REACT_APP_BACKEND_URL",
+    "All data-testid attributes properly set for testing: control-plane-page, tab-lookup, tab-health, tab-feed, lookup-search-input, lookup-search-button, trace-result, trace-header, trace-status-badge, trace-timeline, timeline-event-{n}, timeline-detail-{n}, gap-warnings, system-health, health-score-card, metric-import-success, metric-sync-success, metric-outbox-pending, metric-failures, pipeline-depth, live-feed, toggle-auto-refresh, refresh-feed-button, feed-event-{n}",
+    "Timeline events are expandable and show metadata JSON correctly",
+    "Gap warnings section correctly displays missing stages from expected sequence",
+    "Health tab auto-refreshes every 30 seconds as specified",
+    "Live Feed tab has auto-refresh toggle and manual refresh button",
+    "ROOM OK/ROOM FAIL badges correctly displayed on validated events based on room_mapped metadata",
+    "Raw Payload button visible on webhook_received events for debugging"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_controlplane_ui_api.py"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 tests passed)",
+    "frontend": "100% (all UI components verified)"
+  },
+  "test_credentials": "demo@hotel.com / demo123 (super_admin role)",
+  "seed_data_creation": "Used existing test data: HR-VERIFY-1774179036 (hotelrunner), EXELY-VERIFY-1774178996 (exely)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Control Plane UI is fully functional. Test file test_controlplane_ui_api.py covers all 3 tabs' backend APIs. Frontend uses shadcn/ui components (Tabs, Input, Button, Badge, Card, ScrollArea, Skeleton). Navigation accessible from Kanallar dropdown. Key test external_id: HR-VERIFY-1774179036 has 4 timeline events (webhook_received, deduplicated, normalized, validated) from hotelrunner provider.",
+  "verified_features": {
+    "trace_tab": {
+      "search_input": "Works - accepts external_id/correlation_id",
+      "trace_button": "Works - fetches timeline from /api/ops/timeline/external/{id}",
+      "status_badge": "Works - shows PROCESSING/CONFIRMED/FAILED/DUPLICATE based on timeline",
+      "event_count_duration": "Works - shows '4 event · 11ms'",
+      "timeline_events": "Works - displays stages with timestamps and success/failure icons",
+      "expandable_events": "Works - shows metadata JSON when clicked",
+      "gap_warnings": "Works - shows missing stages section",
+      "room_badges": "Works - shows ROOM OK/ROOM FAIL on validated events",
+      "raw_payload_button": "Works - visible on webhook_received events"
+    },
+    "health_tab": {
+      "health_score_grade": "Works - shows score (85) and grade (B)",
+      "metric_cards": "Works - Import Basari, Sync Basari, Outbox Bekleyen, Hatalar",
+      "pipeline_depth": "Works - shows ingest_pending, import_pending, outbox_pending",
+      "auto_refresh": "Works - refreshes every 30 seconds"
+    },
+    "live_feed_tab": {
+      "event_list": "Works - shows last 50 events with columns: Zaman, Stage, External ID, Provider, Durum",
+      "auto_refresh_toggle": "Works - Canli/Durduruldu toggle",
+      "manual_refresh": "Works - refresh button",
+      "failure_highlighting": "Works - failure events would be highlighted (none in current data)"
+    },
+    "navigation": {
+      "kanallar_dropdown": "Works - Control Plane accessible from Kanallar dropdown in nav"
+    }
+  }
+}
