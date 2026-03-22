@@ -520,6 +520,7 @@ export const FindRoomDialog = ({
             <Input
               type="date"
               value={findRoomCriteria.check_in}
+              min={new Date().toISOString().split('T')[0]}
               onChange={(e) => {
                 const newCi = e.target.value;
                 const updates = { ...findRoomCriteria, check_in: newCi };

@@ -119,6 +119,22 @@ Frontend operations screen that turns developer APIs into a self-service debuggi
 - Route: `/control-plane`
 - Nav: Kanallar dropdown → Control Plane
 
+## Bug Fixes
+
+### Navigation Module Visibility Bug (2026-03-22)
+- **Root Cause**: `isModuleEnabled()` in `Layout.js` treated undefined module keys as disabled. Login response `tenant.modules` only contained `{"pms": true, "reports": true}`, causing all other modules (reservation_calendar, channel_manager, night_audit, etc.) to be hidden from navigation.
+- **Fix**: Changed logic to `modules[moduleKey] !== false` — only explicitly disabled modules are hidden; undefined keys are treated as enabled.
+- **File**: `/app/frontend/src/components/Layout.js`
+
+### Past Date Reservation Bug (2026-03-22)
+- **Root Cause**: `tenant_settings.business_date` was stuck at `2026-03-14` because the night audit was blocked. Both frontend and backend used this stale business date as the minimum allowed reservation date, allowing bookings for past dates (March 14-21).
+- **Fix**: Changed validation to use `max(business_date, today)` — ensures past dates are always blocked even when business date is stale.
+- **Files Modified**:
+  - `/app/frontend/src/pages/ReservationCalendar.js` — `handleCellClick` and `handleCreateBooking` functions
+  - `/app/frontend/src/pages/calendar/CalendarDialogs.js` — `min` attribute on check-in date inputs
+  - `/app/frontend/src/components/calendar/CalendarDialogs.js` — `min` attribute on check-in date input
+  - `/app/backend/modules/reservations/services/create_reservation_service.py` — Backend date validation
+
 ## Pending Tasks
 
 ### P1 — Hardening (from Blueprint Week 2)
@@ -139,9 +155,6 @@ Frontend operations screen that turns developer APIs into a self-service debuggi
 - Legacy file cleanup (~80 files in backend/ root)
 - ~264 legacy db imports to tenant-scoped access
 
-## Bug Fixes
-
-### Navigation Module Visibility Bug (2026-03-22)
-- **Root Cause**: `isModuleEnabled()` in `Layout.js` treated undefined module keys as disabled. Login response `tenant.modules` only contained `{"pms": true, "reports": true}`, causing all other modules (reservation_calendar, channel_manager, night_audit, etc.) to be hidden from navigation.
-- **Fix**: Changed logic to `modules[moduleKey] !== false` — only explicitly disabled modules are hidden; undefined keys are treated as enabled.
-- **File**: `/app/frontend/src/components/Layout.js`
+### P2 — Enhancements
+- Ctrl+K shortcut for quick Trace lookup
+- Login endpoint to return full module list (prevent future nav bugs)

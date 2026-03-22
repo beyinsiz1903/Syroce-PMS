@@ -51,7 +51,7 @@ export function NewBookingDialog({ open, onOpenChange, newBooking, setNewBooking
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Giris</Label>
-              <Input type="date" value={newBooking.check_in} onChange={(e) => setNewBooking({...newBooking, check_in: e.target.value})} required />
+              <Input type="date" value={newBooking.check_in} min={new Date().toISOString().split('T')[0]} onChange={(e) => setNewBooking({...newBooking, check_in: e.target.value})} required />
             </div>
             <div>
               <Label>Cikis</Label>

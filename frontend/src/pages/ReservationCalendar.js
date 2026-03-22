@@ -315,11 +315,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     const room = rooms.find(r => r.id === roomId);
     if (!room) return;
 
-    // Otel iş günü bazlı kontrol (gün sonu yapılmadıysa önceki güne izin verir)
-    const minDate = hotelBusinessDate || new Date().toISOString().split('T')[0];
+    // Geçmiş tarih kontrolü: bugün veya business_date'den hangisi ilerdeyse onu kullan
+    const today = new Date().toISOString().split('T')[0];
+    const minDate = hotelBusinessDate && hotelBusinessDate > today ? hotelBusinessDate : today;
     const clickedDateStr = new Date(date).toISOString().split('T')[0];
     if (clickedDateStr < minDate) {
-      toast.error(`Otel is gununden (${minDate}) oncesine rezervasyon yapilamaz`);
+      toast.error(`Gecmis tarihe rezervasyon yapilamaz (minimum: ${minDate})`);
       return;
     }
 
@@ -346,10 +347,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const handleCreateBooking = async (e) => {
     e.preventDefault();
 
-    // Otel iş günü bazlı kontrol
-    const minDate = hotelBusinessDate || new Date().toISOString().split('T')[0];
+    // Geçmiş tarih kontrolü: bugün veya business_date'den hangisi ilerdeyse onu kullan
+    const today = new Date().toISOString().split('T')[0];
+    const minDate = hotelBusinessDate && hotelBusinessDate > today ? hotelBusinessDate : today;
     if (newBooking.check_in < minDate) {
-      toast.error(`Otel is gununden (${minDate}) oncesine rezervasyon yapilamaz`);
+      toast.error(`Gecmis tarihe rezervasyon yapilamaz (minimum: ${minDate})`);
       return;
     }
 
@@ -736,7 +738,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         guests={guests}
         rooms={rooms}
         onSubmit={handleCreateBooking}
-        minDate={hotelBusinessDate}
+        minDate={(() => { const t = new Date().toISOString().split('T')[0]; return hotelBusinessDate && hotelBusinessDate > t ? hotelBusinessDate : t; })()}
       />
 
       <BookingDetailsDialog
