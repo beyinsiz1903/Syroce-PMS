@@ -1,128 +1,156 @@
 # Syroce PMS — Product Requirements Document
 
 ## Original Problem Statement
-Full-stack hotel PMS (Property Management System) application with multi-tenant architecture, booking management, room inventory, channel management, and CI/CD pipeline.
+Enterprise-grade hotel management platform (PMS) with multi-tenant architecture, channel management, CI/CD observability, and operational intelligence capabilities.
 
-## Architecture
-- **Frontend:** React (Vite 8 + Rolldown) with Shadcn/UI, TailwindCSS, Recharts
-- **Backend:** FastAPI (Python) with MongoDB (motor async driver)
-- **Database:** MongoDB
-- **CI/CD:** GitHub Actions with curated test suite
+## Core Architecture
+- **Backend**: FastAPI + MongoDB (motor async) + Redis
+- **Frontend**: React (Vite) + Recharts + Shadcn/UI
+- **CI/CD**: GitHub Actions with standardized notifications and smoke tests
+- **Multi-tenant**: Organization-based tenant isolation
 
-## Core Features Implemented
-- Multi-tenant booking management with atomic room-night locking
-- Room type system with inventory management
-- Channel manager integration (Exely, HotelRunner)
-- Hold/OOO (Out of Order) room management
-- AI Chatbot for hotel operations
-- Audit trail & timeline events
-- Crypto engine for sensitive data
-- Outbox pattern for reliable event publishing
-- Comprehensive battle test suite (540+ tests)
-- Channel Health Management Dashboard (with historical trends + field KPIs)
-- Production-grade CI/CD with rollback, smoke tests, notifications
-- Quarantine Burn-Down Dashboard (tech debt tracking)
-- Weekly Proof Dashboard (week-over-week improvement tracking)
-- **Deploy Dashboard — CI/CD → Control Plane integration (deploy event recording + trend visualization)**
-
-## What's Been Completed
-
-### P0 Closure — CI/CD Hardening & Deploy Evidence (2026-03-23)
-- **CHANGELOG Cleanup**: Historical `REACT_APP_BACKEND_URL` references annotated with migration context
-- **Slack Fallback Standardization**: All CI/CD workflows now use `::notice` annotations when Slack webhook is unavailable, making fallback behavior visible instead of silent
-- **Smoke Test Standardization**: deploy.yml staging upgraded from 2 to 4 endpoints, matching ci-cd.yml (Health API, Frontend, API Docs, Channel Health)
-- **Notification Standardization**: deploy.yml staging/production notifications upgraded to rich format (table summary + branch/environment fields + GitHub annotations)
-- **Deploy Trend Chart**: New Recharts BarChart in DeployDashboard showing daily success/failure/rollback over 14 days
-- **Deploy Trend API**: New `GET /api/ops/dashboard/deploy-trend` endpoint aggregating daily deploy counts
-- **Smoke Test Badge**: Deploy history rows now show inline smoke test pass/total badge
-- **booking_adapter.py Fix**: Fixed `ModuleNotFoundError` by updating import from `booking_availability` to `_legacy.booking_availability`
-
-### Production Deployment Pipeline (2026-03-23)
-- **CI/CD (`ci-cd.yml`):** Full deployment chain with Docker build/push to GHCR, rollout status wait, post-deploy smoke tests, automatic rollback on failure, Slack notifications
-- **Manual Deploy (`deploy.yml`):** Build/push with cache, DB backup pre-deploy, rollback on failure, smoke tests, notifications, skip-backup option
-- **Frontend K8s Manifest:** `infra/k8s/frontend-deployment.yml` — Deployment, Service, HPA with rolling update strategy, health probes
-
-### Quarantine Burn-Down Dashboard (2026-03-23)
-- **Backend:** `/api/ops/dashboard/tech-debt` endpoint reading quarantine manifest
-- **Frontend:** `TechDebtDashboard.jsx` — "Teknik Borc" tab in Control Plane
-
-### Weekly Proof Dashboard (2026-03-23)
-- **Backend:** `/api/ops/dashboard/channel-health/weekly-proof` endpoint
-- **Frontend:** `WeeklyProofDashboard.jsx` — "Deger Kaniti" tab in Control Plane
-
-### Channel Health Management Dashboard v2 (2026-03-23)
-- Historical Trends API + Field KPIs API + Recharts trend charts
-
-### Environment Variable Unification (2026-03-23)
-- Replaced all `REACT_APP_*` → `VITE_*` (CRA → Vite migration complete)
-
-## P0 — Completed
-- [x] Frontend production build (Vite 8/Rolldown compatibility)
-- [x] Flaky backend test stabilization
-- [x] CI/CD pipeline reliability
-- [x] Quarantine test restoration
-- [x] CI/CD deployment jobs (graceful-skip pattern)
-- [x] Documentation drift resolution
-- [x] Channel Health Dashboard v1 (KPI strip + detail)
-- [x] Channel Health Management Dashboard v2 (historical trends + field KPIs)
-- [x] Environment variable unification
-- [x] Production deployment pipeline (rollback + smoke test + notification)
-- [x] Quarantine burn-down dashboard (tech debt tracking)
-- [x] Weekly proof dashboard (week-over-week improvement)
-- [x] CI/CD → Control Plane integration (deploy event dashboard + trend chart)
-- [x] CI/CD structured smoke test output (table with endpoint/status/latency/result)
-- [x] CI/CD enhanced notifications (GitHub annotations + GITHUB_STEP_SUMMARY + Slack)
-- [x] CHANGELOG truth cleanup (historical migration context annotated)
-- [x] Slack fallback standardization (::notice when webhook unavailable)
-- [x] Smoke test endpoint standardization (4 endpoints across all workflows)
-- [x] Deploy trend visualization (Recharts BarChart in Control Plane)
-- [x] booking_adapter.py ModuleNotFoundError fix
-
-## P1 — Upcoming
-- [ ] Fix remaining quarantined tests: stale_fixtures (rate_manager, 10 tests)
-- [ ] Fix remaining quarantined tests: changed_api (10 tests)
-- [ ] Fix remaining quarantined tests: changed_implementation (13 tests)
-- [ ] Channel manager inventory ledger alignment with room-type system
-- [ ] Exely/HotelRunner sandbox testing (per capability matrix gaps)
-
-## P2 — Backlog
-- [ ] Fix remaining quarantined tests: external_dependency (3 tests)
-- [ ] Crypto Migration (SEC-002)
-- [ ] Secrets Management Rollout (SEC-001)
-- [ ] Enable Strict Tenant Mode
-- [ ] motor -> pymongo native async migration
-- [ ] Production build with Nginx static serving
-- [ ] ~264 legacy DB import cleanup
-- [ ] Governance Phase 3-4 (Support/KPI Dashboard)
-- [ ] Push latency SLO monitoring (per capability matrix)
-- [ ] Rate parity monitoring dashboard
-- [ ] Pilot hotel onboarding (per KPI framework)
-- [ ] Unified "Channel Health + Deploy + KPI" dashboard screen
-
-## Key Technical Decisions
-- **Vite 8 `.jsx` Convention:** All React component files use `.jsx` extension
-- **Test Isolation:** Battle tests use `random.randint(2100, 9999)` for date ranges
-- **Quarantine Fix Pattern:** Far-future dates (3000-6000 day offsets), sync pymongo for DB verification
-- **yarn audit CI Gate:** Uses bitmask check `(exit_code & 24) != 0` for HIGH/CRITICAL only
-- **Deploy graceful-skip:** All deploy jobs check for secrets existence before deployment
-- **Deployment Rollback:** `kubectl rollout undo` on failure with rollout status wait
-- **Tech Debt Tracking:** Direct import from quarantine_manifest.py, no DB dependency
-- **Weekly Proof:** MongoDB aggregation with week-based date windowing
-- **Deploy Event Bridge:** CI/CD workflows POST deploy results to backend; Control Plane renders deploy history with smoke test details, rollback events, trend charts, and per-environment success rates
-- **Notification Fallback:** All CI/CD notification steps use `::notice` annotation when Slack webhook unavailable
-
-## Key API Endpoints
-- `GET /api/ops/dashboard/channel-health` — Current period health metrics
-- `GET /api/ops/dashboard/channel-health/trends` — Historical time-series data
-- `GET /api/ops/dashboard/channel-health/field-kpis` — Operational field KPIs
-- `GET /api/ops/dashboard/channel-health/weekly-proof` — Week-over-week improvement
-- `GET /api/ops/dashboard/tech-debt` — Quarantine burn-down tracking
-- `POST /api/ops/deploys` — Record deploy event (CI/CD → Control Plane)
-- `GET /api/ops/dashboard/deploys` — Deploy history (newest first, env filter, limit)
-- `GET /api/ops/dashboard/deploy-stats` — Deploy statistics per environment
-- `GET /api/ops/dashboard/deploy-trend` — Daily deploy trend chart data (success/failure/rollback)
+## User Personas
+| Role | Access |
+|------|--------|
+| super_admin | Full system access, Control Plane, Ops |
+| property_manager | Property-level operations |
+| front_desk | Booking, check-in/out |
+| guest | Self-service portal |
 
 ## Test Credentials
 | User | Email | Password | Role |
-|:---|:---|:---|:---|
+|------|-------|----------|------|
 | Demo Admin | demo@hotel.com | demo123 | super_admin |
+
+---
+
+## Completed Features
+
+### Phase A: Core PMS
+- Multi-tenant auth (JWT)
+- Room management with room types
+- Booking engine with availability checks
+- Guest management
+- Rate plans and pricing
+
+### Phase B: Channel Manager
+- Provider connectors (Exely, HotelRunner)
+- Inventory sync service
+- Rate sync service
+- Reservation import
+- Reconciliation service
+
+### Phase C: Room Night Locks & Inventory
+- C.1: `room_type_inventory` materialized view from `room_night_locks`
+- Accounts for: booking, hold, OOO, OOS locks
+- Sellable formula: `total - locked_booking - locked_hold - locked_ooo - locked_oos`
+- Auto-reconciliation every 5 minutes
+
+### Phase D: CI/CD Observability (P0 — COMPLETE)
+- Standardized GitHub Actions workflows (ci-cd.yml, deploy.yml)
+- Rich notifications with GitHub annotations + job summaries
+- Consistent smoke tests (4 key endpoints, formatted table)
+- Deploy event tracking + deploy trend endpoint
+- Deploy Dashboard with Recharts trend chart
+
+### Phase E: Inventory Ledger Alignment (P0 — COMPLETE, 2026-03-23)
+**Critical change**: Channel manager's `_detect_inventory_deltas()` now reads exclusively from `room_type_inventory` materialized view.
+- **Old**: Computed availability from `db.rooms` count - `db.bookings` count (missed holds, OOO, OOS)
+- **New**: Reads `sellable` from `room_type_inventory` (authoritative, lock-aware)
+- **No fallback**: If view is stale → reconcile first, never fall back to old computation
+- **Freshness check**: fresh (<5min), recent (<15min), stale (>15min), empty
+- **Stale behavior**: Deterministic — triggers reconciliation, reports degraded status
+- **Source tagging**: All availability changes tagged with `source: "room_type_inventory"`
+
+### Phase F: DORA Metrics (COMPLETE, 2026-03-23)
+- 4 DORA metrics: deployment_frequency, change_failure_rate, MTTR, lead_time
+- Rating system: elite/high/medium/low/no_data
+- Daily trend breakdown
+- **Correlation layer**: DORA × Channel Health cross-reference
+  - deploy frequency vs drift events
+  - change failure rate vs sync success
+  - MTTR vs import failures
+- Time window, tenant, and provider filters
+
+### Phase G: Unified Ops View (COMPLETE, 2026-03-23)
+**Decision console** (not just dashboard) — single screen for operational intelligence:
+- Inventory Alignment block (status, drift count, provider breakdown)
+- Deploy Health block (per-environment success rates)
+- DORA Metrics block (4 metrics + mini trend chart)
+- Provider Health block (per-provider drift status)
+- Correlation block (DORA × Channel Health inferences)
+- Reconciliation Queue block (freshness, room-type-night count)
+- Drill-down from each block to detailed views
+- Auto-refresh every 60 seconds
+
+---
+
+## API Endpoints
+
+### Control Plane / Ops
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/ops/deploys | Record deploy event |
+| GET | /api/ops/dashboard/deploys | Deploy history |
+| GET | /api/ops/dashboard/deploy-stats | Deploy statistics |
+| GET | /api/ops/dashboard/deploy-trend | Daily deploy trend |
+| GET | /api/ops/dashboard/inventory-alignment | Inventory ledger alignment status |
+| GET | /api/ops/dashboard/dora-metrics | DORA release metrics |
+| GET | /api/ops/dashboard/dora-correlation | DORA × Channel Health correlation |
+| GET | /api/ops/dashboard/channel-health | Channel health dashboard |
+| GET | /api/ops/dashboard/tech-debt | Tech debt tracking |
+
+---
+
+## Key DB Collections
+
+### deploy_events
+```json
+{
+  "sha": "string",
+  "environment": "string",
+  "status": "string",
+  "triggered_by": "string",
+  "started_at": "datetime",
+  "finished_at": "datetime",
+  "duration_seconds": "float",
+  "commit_message": "string",
+  "rollback_of": "string | null"
+}
+```
+
+### room_type_inventory (materialized view)
+```json
+{
+  "tenant_id": "string",
+  "date": "string (YYYY-MM-DD)",
+  "room_type": "string",
+  "total": "int",
+  "locked_booking": "int",
+  "locked_hold": "int",
+  "locked_ooo": "int",
+  "locked_oos": "int",
+  "sellable": "int",
+  "last_computed_at": "datetime ISO"
+}
+```
+
+---
+
+## Prioritized Backlog
+
+### P1 — Next
+- **Sandbox Testing**: Exely/HotelRunner real-world simulation
+- **SEC-001**: Secrets Management Rollout
+- **SEC-002**: Crypto Migration
+
+### P2 — Future
+- Enable Strict Tenant Mode (`STRICT_TENANT_MODE=true`)
+- Migrate `motor` → `pymongo` native async
+- Production build with `vite build` + Nginx static serving
+- Quarantine burn-down (engineering hygiene)
+
+### P3 — Vision
+- Unified "Channel Health + Deploy + KPI" dashboard (extended version)
+- Real-time alerting on drift detection
+- Automated rollback on drift threshold
