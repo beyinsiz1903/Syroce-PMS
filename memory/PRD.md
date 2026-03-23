@@ -45,6 +45,7 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - [x] Docker build fix: yarn.lock regenerated (was out of sync with package.json resolutions/overrides)
 - [x] Dockerfile env var fix: REACT_APP_BACKEND_URL → VITE_BACKEND_URL
 - [x] CI workflow fix: Docker build ARG updated to VITE_BACKEND_URL
+- [x] CI/CD deployment fix: Removed `exit 1` from deploy-staging/deploy-production, added KUBECONFIG guard
 
 ## P1 — Upcoming
 - [ ] Address quarantined tests in `tests/_quarantine/` (7 directories)
