@@ -12,12 +12,15 @@ Endpoints:
   GET  /api/ops/dashboard/channel-health — Channel Health Dashboard
   GET  /api/ops/dashboard/channel-health/weekly-proof — Weekly improvement proof
   GET  /api/ops/dashboard/tech-debt    — Quarantine burn-down tracking
+  POST /api/ops/deploys                — Record deploy event (CI/CD → Control Plane)
+  GET  /api/ops/dashboard/deploys      — Deploy history
+  GET  /api/ops/dashboard/deploy-stats — Deploy statistics
 """
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Body
 
 from .dashboard_aggregator import (
     get_dashboard_aggregator,
@@ -161,3 +164,37 @@ async def get_tech_debt():
     weekly targets, effort estimates, and health score."""
     from .tech_debt_aggregator import compute_tech_debt
     return compute_tech_debt()
+
+
+@router.get("/deploys")
+async def get_deploys(
+    environment: Optional[str] = Query(None, description="Filter by environment"),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """Recent deployment events — CI/CD history in Control Plane."""
+    from .deploy_tracker import get_deploy_history
+    deploys = await get_deploy_history(environment=environment, limit=limit)
+    return {"deploys": deploys, "count": len(deploys)}
+
+
+@router.get("/deploy-stats")
+async def get_deploy_stats_endpoint():
+    """Deploy statistics — success rates, rollback counts per environment."""
+    from .deploy_tracker import get_deploy_stats
+    return await get_deploy_stats()
+
+
+# ── Deploy event ingestion (separate prefix for CI/CD webhook) ───
+deploy_router = APIRouter(prefix="/api/ops", tags=["Deploy Events"])
+
+
+@deploy_router.post("/deploys")
+async def record_deploy(event: dict = Body(...)):
+    """Record a deployment event from CI/CD pipeline.
+
+    Called by GitHub Actions after each deploy attempt.
+    Captures: sha, environment, status, actor, smoke_test results, rollback info.
+    """
+    from .deploy_tracker import record_deploy_event
+    result = await record_deploy_event(event)
+    return result

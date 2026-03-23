@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
-import { Search, Activity, Radio, ArrowLeft, RefreshCw, AlertTriangle, CheckCircle, XCircle, Clock, ChevronRight, ChevronDown, Copy, ExternalLink, Gauge, Flame, Award } from "lucide-react";
+import { Search, Activity, Radio, ArrowLeft, RefreshCw, AlertTriangle, CheckCircle, XCircle, Clock, ChevronRight, ChevronDown, Copy, ExternalLink, Gauge, Flame, Award, Rocket } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
@@ -13,6 +13,7 @@ import Layout from "../components/Layout";
 import { ChannelHealth } from "../components/ChannelHealthDashboard";
 import { TechDebtDashboard } from "../components/TechDebtDashboard";
 import { WeeklyProof } from "../components/WeeklyProofDashboard";
+import { DeployDashboard } from "../components/DeployDashboard";
 
 // ─── Reservation Lookup ──────────────────────────────────────────
 function ReservationLookup() {
@@ -630,7 +631,7 @@ export default function ControlPlane({ user, tenant, onLogout }) {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">Control Plane</h1>
-              <p className="text-xs text-zinc-500 mt-0.5">Operasyon gorulumu · Kanal sagligi · Deger kaniti · Teknik borc</p>
+              <p className="text-xs text-zinc-500 mt-0.5">Operasyon gorulumu · Kanal sagligi · Deploy · Deger kaniti · Teknik borc</p>
             </div>
           </div>
 
@@ -678,6 +679,14 @@ export default function ControlPlane({ user, tenant, onLogout }) {
                 Deger Kaniti
               </TabsTrigger>
               <TabsTrigger
+                value="deploys"
+                className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100 text-zinc-500 text-sm px-4"
+                data-testid="tab-deploys"
+              >
+                <Rocket className="h-3.5 w-3.5 mr-2" />
+                Deploy
+              </TabsTrigger>
+              <TabsTrigger
                 value="tech-debt"
                 className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100 text-zinc-500 text-sm px-4"
                 data-testid="tab-tech-debt"
@@ -701,6 +710,9 @@ export default function ControlPlane({ user, tenant, onLogout }) {
             </TabsContent>
             <TabsContent value="weekly-proof">
               <WeeklyProof />
+            </TabsContent>
+            <TabsContent value="deploys">
+              <DeployDashboard />
             </TabsContent>
             <TabsContent value="tech-debt">
               <TechDebtDashboard />

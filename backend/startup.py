@@ -106,6 +106,14 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Dashboard snapshot worker startup error: {e}")
 
+    # ── Deploy event indexes ────────────────────────────────────────
+    try:
+        from controlplane.deploy_tracker import ensure_deploy_indexes
+        await ensure_deploy_indexes()
+        print("Deploy event indexes ensured")
+    except Exception as e:
+        logger.warning(f"Deploy event index creation error: {e}")
+
     # ── Auto-seed demo data ─────────────────────────────────────────
     try:
         from auto_seed import auto_seed_if_empty

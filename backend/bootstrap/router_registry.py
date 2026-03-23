@@ -145,6 +145,8 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("controlplane.timeline_router", "router", ["Event Timeline"], None, None),
     # Dashboard — Single pane of glass health view
     ("controlplane.dashboard_router", "router", ["Control Plane Dashboard"], None, None),
+    # Deploy Events — CI/CD → Control Plane bridge
+    ("controlplane.dashboard_router", "deploy_router", ["Deploy Events"], None, None),
     # Folio Ledger — Immutable append-only ledger
     ("routers.folio_ledger", "router", ["Folio Ledger"], None, None),
     # Learning Loop — Incident classification, RCA, never-again rules

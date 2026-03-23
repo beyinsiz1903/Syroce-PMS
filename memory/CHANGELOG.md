@@ -471,7 +471,7 @@
 ### Pipeline Fixes
 - Fixed Python venv path in subprocess calls (lint, unit_test, build gates)
 - Lint gate now uses project's `pyproject.toml` ruff config
-- Unit test gate runs curated test suite with `REACT_APP_BACKEND_URL` env var
+- Unit test gate runs curated test suite with `VITE_BACKEND_URL` env var
 - Removed recursive `test_deploy_pipeline_api.py` from CI suite
 - Removed flaky `test_mapping_engine.py` (stale DB data) from CI suite
 - Added `pytest-timeout` dependency

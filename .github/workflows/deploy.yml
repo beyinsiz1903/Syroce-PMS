@@ -114,22 +114,48 @@ jobs:
 
       - name: Smoke test
         if: steps.pre_deploy.outputs.skip != 'true'
+        id: smoke_test
         run: |
           if [ -z "${{ secrets.STAGING_URL }}" ]; then
             echo "::warning::Staging smoke test skipped — STAGING_URL not configured"
             exit 0
           fi
-          HEALTH=$(curl -sf "${{ secrets.STAGING_URL }}/api/health/" -o /dev/null -w "%{http_code}" --max-time 15) || HEALTH="000"
-          if [ "$HEALTH" != "200" ]; then
-            echo "::error::Staging health check failed (HTTP $HEALTH)"
+
+          echo "## Smoke Test — Staging (Manual Deploy)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Endpoint | Status | Latency | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|:---------|:-------|:--------|:-------|" >> $GITHUB_STEP_SUMMARY
+
+          FAIL=0
+          SMOKE_JSON='{"endpoints":['
+          FIRST=true
+
+          smoke_check() {
+            local NAME="$1" EP="$2"
+            local URL="${{ secrets.STAGING_URL }}${EP}"
+            local T0=$(date +%s%N)
+            local CODE=$(curl -sf "$URL" -o /dev/null -w "%{http_code}" --max-time 15 2>/dev/null) || CODE="000"
+            local T1=$(date +%s%N)
+            local MS=$(( (T1 - T0) / 1000000 ))
+            local RES=$( [ "$CODE" = "200" ] && echo "OK" || echo "FAIL" )
+            echo "| \`${EP}\` | ${CODE} | ${MS}ms | ${RES} |" >> $GITHUB_STEP_SUMMARY
+            if [ "$FIRST" = "true" ]; then FIRST=false; else SMOKE_JSON="${SMOKE_JSON},"; fi
+            SMOKE_JSON="${SMOKE_JSON}{\"name\":\"${NAME}\",\"path\":\"${EP}\",\"status\":${CODE},\"latency_ms\":${MS},\"result\":\"${RES}\"}"
+            [ "$CODE" = "200" ] && return 0 || return 1
+          }
+
+          smoke_check "Health API" "/api/health/" || FAIL=1
+          smoke_check "Frontend" "/" || FAIL=1
+
+          SMOKE_JSON="${SMOKE_JSON}]}"
+          echo "$SMOKE_JSON" > /tmp/smoke_results.json
+
+          if [ "$FAIL" -eq 0 ]; then
+            echo "> All smoke tests passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "> **CRITICAL: Smoke test failed**" >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
-          FRONTEND=$(curl -sf "${{ secrets.STAGING_URL }}/" -o /dev/null -w "%{http_code}" --max-time 15) || FRONTEND="000"
-          if [ "$FRONTEND" != "200" ]; then
-            echo "::error::Staging frontend failed (HTTP $FRONTEND)"
-            exit 1
-          fi
-          echo "Staging smoke tests passed"
 
       - name: Rollback on failure
         if: failure() && steps.pre_deploy.outputs.skip != 'true'
@@ -142,6 +168,22 @@ jobs:
           kubectl -n syroce rollout undo deployment/syroce-worker
           kubectl -n syroce rollout status deployment/syroce-backend --timeout=180s
 
+          echo "## Rollback — Staging" >> $GITHUB_STEP_SUMMARY
+          echo "All deployments rolled back due to failure." >> $GITHUB_STEP_SUMMARY
+
+      - name: Record deploy event
+        if: always() && steps.pre_deploy.outputs.skip != 'true'
+        run: |
+          if [ -z "${{ secrets.BACKEND_API_URL }}" ]; then
+            echo "::notice title=Deploy Event::Recording skipped — BACKEND_API_URL not configured"
+            exit 0
+          fi
+          SMOKE=$(cat /tmp/smoke_results.json 2>/dev/null || echo '{}')
+          IS_ROLLBACK=$( [ "${{ job.status }}" != "success" ] && echo "true" || echo "false" )
+          curl -sf -X POST "${{ secrets.BACKEND_API_URL }}/api/ops/deploys" \
+            -H "Content-Type: application/json" \
+            -d "{\"sha\":\"${{ github.sha }}\",\"environment\":\"staging\",\"status\":\"${{ job.status }}\",\"actor\":\"${{ github.actor }}\",\"branch\":\"${{ github.ref_name }}\",\"smoke_test\":$SMOKE,\"rollback\":$IS_ROLLBACK}" || true
+
       - name: Cleanup
         if: always()
         run: rm -f /tmp/kubeconfig
@@ -150,15 +192,31 @@ jobs:
         if: always() && steps.pre_deploy.outputs.skip != 'true'
         run: |
           STATUS="${{ job.status }}"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:8}"
+
+          echo "## Deploy Result — Staging (Manual)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|:------|:------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | **${STATUS}** |" >> $GITHUB_STEP_SUMMARY
+          echo "| SHA | \`${SHORT_SHA}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Actor | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$STATUS" = "success" ]; then
+            echo "::notice title=Staging Deploy OK::${SHORT_SHA} by ${{ github.actor }}"
+          else
+            echo "::error title=Staging Deploy FAIL::${SHORT_SHA} by ${{ github.actor }}"
+          fi
+
           if [ -z "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" ]; then
-            echo "Deploy result: status=$STATUS sha=${{ github.sha }} env=staging"
             exit 0
           fi
           COLOR=$( [ "$STATUS" = "success" ] && echo "#36a64f" || echo "#ff0000" )
           TITLE=$( [ "$STATUS" = "success" ] && echo "Staging Deploy OK" || echo "Staging Deploy FAIL — Rollback" )
           curl -sf -X POST "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" \
             -H "Content-Type: application/json" \
-            -d "{\"attachments\":[{\"color\":\"$COLOR\",\"title\":\"$TITLE\",\"fields\":[{\"title\":\"SHA\",\"value\":\"${{ github.sha }}\",\"short\":true},{\"title\":\"Actor\",\"value\":\"${{ github.actor }}\",\"short\":true}]}]}" || true
+            -d "{\"attachments\":[{\"color\":\"$COLOR\",\"title\":\"$TITLE\",\"fields\":[{\"title\":\"SHA\",\"value\":\"$SHORT_SHA\",\"short\":true},{\"title\":\"Actor\",\"value\":\"${{ github.actor }}\",\"short\":true}]}]}" || true
 
   # ── Deploy to Production ───────────────────────────────────────
   deploy-production:
@@ -211,23 +269,45 @@ jobs:
             echo "::warning::Production smoke test skipped — PRODUCTION_URL not configured"
             exit 0
           fi
-          echo "Running production smoke tests..."
-          HEALTH=$(curl -sf "${{ secrets.PRODUCTION_URL }}/api/health/" -o /dev/null -w "%{http_code}" --max-time 15) || HEALTH="000"
-          if [ "$HEALTH" != "200" ]; then
-            echo "::error::Production health check failed (HTTP $HEALTH)"
+
+          echo "## Smoke Test — Production (Manual Deploy)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Endpoint | Status | Latency | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|:---------|:-------|:--------|:-------|" >> $GITHUB_STEP_SUMMARY
+
+          FAIL=0
+          SMOKE_JSON='{"endpoints":['
+          FIRST=true
+
+          smoke_check() {
+            local NAME="$1" EP="$2"
+            local URL="${{ secrets.PRODUCTION_URL }}${EP}"
+            local T0=$(date +%s%N)
+            local CODE=$(curl -sf "$URL" -o /dev/null -w "%{http_code}" --max-time 15 2>/dev/null) || CODE="000"
+            local T1=$(date +%s%N)
+            local MS=$(( (T1 - T0) / 1000000 ))
+            local RES=$( [ "$CODE" = "200" ] && echo "OK" || echo "FAIL" )
+            echo "| \`${EP}\` | ${CODE} | ${MS}ms | ${RES} |" >> $GITHUB_STEP_SUMMARY
+            if [ "$FIRST" = "true" ]; then FIRST=false; else SMOKE_JSON="${SMOKE_JSON},"; fi
+            SMOKE_JSON="${SMOKE_JSON}{\"name\":\"${NAME}\",\"path\":\"${EP}\",\"status\":${CODE},\"latency_ms\":${MS},\"result\":\"${RES}\"}"
+            [ "$CODE" = "200" ] && return 0 || return 1
+          }
+
+          smoke_check "Health API" "/api/health/" || FAIL=1
+          smoke_check "Frontend" "/" || FAIL=1
+          smoke_check "Channel Health" "/api/ops/dashboard/channel-health" || echo "::warning::Channel Health not reachable"
+
+          SMOKE_JSON="${SMOKE_JSON}]}"
+          echo "$SMOKE_JSON" > /tmp/smoke_results.json
+
+          if [ "$FAIL" -eq 0 ]; then
+            echo "> All production smoke tests passed" >> $GITHUB_STEP_SUMMARY
+            echo "smoke_ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "> **CRITICAL: Production smoke test failed**" >> $GITHUB_STEP_SUMMARY
             echo "smoke_ok=false" >> "$GITHUB_OUTPUT"
             exit 1
           fi
-          FRONTEND=$(curl -sf "${{ secrets.PRODUCTION_URL }}/" -o /dev/null -w "%{http_code}" --max-time 15) || FRONTEND="000"
-          if [ "$FRONTEND" != "200" ]; then
-            echo "::error::Production frontend failed (HTTP $FRONTEND)"
-            echo "smoke_ok=false" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-          CH=$(curl -sf "${{ secrets.PRODUCTION_URL }}/api/ops/dashboard/channel-health" -o /dev/null -w "%{http_code}" --max-time 15) || CH="000"
-          echo "Channel Health API: HTTP $CH"
-          echo "Production smoke tests passed"
-          echo "smoke_ok=true" >> "$GITHUB_OUTPUT"
 
       - name: Rollback on failure
         if: failure() && steps.pre_deploy.outputs.skip != 'true'
@@ -241,6 +321,22 @@ jobs:
           kubectl -n syroce rollout status deployment/syroce-backend --timeout=300s
           echo "Rollback complete"
 
+          echo "## Rollback — Production" >> $GITHUB_STEP_SUMMARY
+          echo "All deployments rolled back due to failure." >> $GITHUB_STEP_SUMMARY
+
+      - name: Record deploy event
+        if: always() && steps.pre_deploy.outputs.skip != 'true'
+        run: |
+          if [ -z "${{ secrets.BACKEND_API_URL }}" ]; then
+            echo "::notice title=Deploy Event::Recording skipped — BACKEND_API_URL not configured"
+            exit 0
+          fi
+          SMOKE=$(cat /tmp/smoke_results.json 2>/dev/null || echo '{}')
+          IS_ROLLBACK=$( [ "${{ job.status }}" != "success" ] && echo "true" || echo "false" )
+          curl -sf -X POST "${{ secrets.BACKEND_API_URL }}/api/ops/deploys" \
+            -H "Content-Type: application/json" \
+            -d "{\"sha\":\"${{ github.sha }}\",\"environment\":\"production\",\"status\":\"${{ job.status }}\",\"actor\":\"${{ github.actor }}\",\"branch\":\"${{ github.ref_name }}\",\"smoke_test\":$SMOKE,\"rollback\":$IS_ROLLBACK}" || true
+
       - name: Cleanup
         if: always()
         run: rm -f /tmp/kubeconfig
@@ -249,12 +345,28 @@ jobs:
         if: always() && steps.pre_deploy.outputs.skip != 'true'
         run: |
           STATUS="${{ job.status }}"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:8}"
+
+          echo "## Deploy Result — Production (Manual)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|:------|:------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | **${STATUS}** |" >> $GITHUB_STEP_SUMMARY
+          echo "| SHA | \`${SHORT_SHA}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Actor | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$STATUS" = "success" ]; then
+            echo "::notice title=PROD Deploy OK::${SHORT_SHA} by ${{ github.actor }}"
+          else
+            echo "::error title=PROD Deploy FAIL::${SHORT_SHA} by ${{ github.actor }}"
+          fi
+
           if [ -z "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" ]; then
-            echo "Deploy result: status=$STATUS sha=${{ github.sha }} env=production"
             exit 0
           fi
           COLOR=$( [ "$STATUS" = "success" ] && echo "#36a64f" || echo "#ff0000" )
           TITLE=$( [ "$STATUS" = "success" ] && echo "PROD Deploy OK" || echo "PROD Deploy FAIL — Rollback" )
           curl -sf -X POST "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" \
             -H "Content-Type: application/json" \
-            -d "{\"attachments\":[{\"color\":\"$COLOR\",\"title\":\"$TITLE\",\"fields\":[{\"title\":\"SHA\",\"value\":\"${{ github.sha }}\",\"short\":true},{\"title\":\"Actor\",\"value\":\"${{ github.actor }}\",\"short\":true}]}]}" || true
+            -d "{\"attachments\":[{\"color\":\"$COLOR\",\"title\":\"$TITLE\",\"fields\":[{\"title\":\"SHA\",\"value\":\"$SHORT_SHA\",\"short\":true},{\"title\":\"Actor\",\"value\":\"${{ github.actor }}\",\"short\":true}]}]}" || true
