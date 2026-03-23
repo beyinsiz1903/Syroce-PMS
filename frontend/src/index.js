@@ -3,11 +3,9 @@ import ReactDOM from "react-dom/client";
 import "@/index.css";
 import App from "@/App";
 // Import i18n with error handling
-try {
-  require("./i18n");
-} catch (error) {
+import("./i18n").catch((error) => {
   console.warn("i18n initialization failed:", error);
-}
+});
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(

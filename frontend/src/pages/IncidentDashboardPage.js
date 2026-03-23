@@ -9,7 +9,7 @@ import {
   RefreshCw, Loader2, Shield, Activity, Eye, Check
 } from "lucide-react";
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 function AlertCard({ alert, onAck, onResolve }) {
   const sevMap = {

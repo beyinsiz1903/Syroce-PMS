@@ -5,6 +5,7 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 
 ## Core Architecture
 - `/app/backend/` — FastAPI backend
+- `/app/frontend/` — React frontend (Vite 8.0.1 build system)
 - `/app/backend/controlplane/` — OPS-001 Control Plane module
 - `/app/backend/core/` — Core services (outbox, import bridge, crypto, secrets, booking holds, room-type inventory)
 - `/app/backend/channel_manager/` — Channel manager adapters
@@ -15,8 +16,17 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 - `/app/backend/docs/ADR_BOOKING_INVARIANTS.md` — ADR-001: Booking invariants
 - `/app/backend/docs/ADR_TEST_QUARANTINE_STRATEGY.md` — ADR-002: Test quarantine strategy
 - `/app/backend/docs/ADR_ROOM_TYPE_INVENTORY_STRATEGY.md` — ADR-003: Room-type inventory (3-layer model)
-- `/app/backend/docs/SECURITY_ACCEPTED_RISKS.md` — Accepted frontend vulnerability risks (updated 2026-03-28)
+- `/app/backend/docs/SECURITY_ACCEPTED_RISKS.md` — Frontend vulnerability status (0 remaining)
+- `/app/frontend/vite.config.js` — Vite 8 config with OXC JSX, @/ alias, proxy
 - `/app/frontend/src/pages/ControlPlane.jsx` — Control Plane UI (ops weapon)
+
+## Frontend Build System
+- **Build tool:** Vite 8.0.1 + @vitejs/plugin-react 6.0.1
+- **Bundler:** Rolldown (Rust-based, replaces webpack)
+- **Transformer:** OXC (Rust-based, replaces esbuild/babel)
+- **Config:** `oxc.lang: 'jsx'` enables JSX parsing in .js files
+- **Env vars:** `VITE_*` prefix (was `REACT_APP_*`)
+- **Entry:** `/app/frontend/index.html` (root level, not public/)
 
 ## Credentials
 | User | Email | Password | Role |
@@ -25,10 +35,14 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 
 ## Completed Features
 
+### CRA → Vite Migration (2026-03-23)
+Full build system migration from Create React App to Vite 8.0.1. Removed react-scripts, @craco/craco.
+131 env var references migrated (REACT_APP_* → VITE_*). OXC JSX config for .js files.
+**87 → 0 vulnerabilities** (100% resolved). Packages audited: 1542 → 600. Dev startup: ~150ms.
+
 ### Frontend Dependency Hardening — Bucket 1 (2026-03-28)
 5 packages resolved via yarn resolutions: lodash, qs, postcss, diff, @eslint/plugin-kit.
-29 → 14 vulnerabilities (52% reduction). ajv resolution attempted & reverted (CRA incompatible).
-Remaining 14 are CRA-locked build-time only. CI gate `--level high` passes.
+29 → 14 vulnerabilities (52% reduction). ajv now resolved post-CRA removal.
 
 ### Phase C.1 — Room-Type Inventory Materialized View (2026-03-28)
 ADR-003 Layer 2 implementation. Read-only materialized view of room-type-level availability.
@@ -47,18 +61,7 @@ CI gate upgraded to `--level high`. Frontend verified working.
 4 CVEs ignored (ecdsa timing attack no-fix, nltk WordNet Browser not used). CI pipeline green: 338/338 tests pass.
 
 ### Sprint 4 — Quarantine Triage + Phase C RFC (2026-03-23)
-**Test Quarantine Triage (DONE)**
-- 7 test files fully quarantined to `tests/_quarantine/` (categorized: stale_room_locks, stale_fixtures, stale_dates)
-- 52 individual tests skip-marked via `quarantine_manifest.py` + conftest.py auto-skip hook
-- Categories: stale_room_locks (14), stale_fixtures (11), changed_api (10), changed_impl (13), ext_dependency (3), meta-test (1)
-- Business date reset (was advanced by night audit tests, blocking same-day bookings)
-- **Testing**: T0: 71/72 pass (1 data-skip), T1: 241/241 pass, Quarantine: working (iteration_137)
-
-**Phase C RFC/ADR (DONE)**
-- Created `docs/ADR_ROOM_TYPE_INVENTORY_STRATEGY.md` (ADR-003, 328 lines)
-- 3-layer inventory model: Room-Night Locks → Room-Type Inventory → Channel Inventory
-- Phased migration: C.1 (read-only view) → C.2 (event-driven) → C.3 (deferred assignment)
-- New invariants: INV-7 (type-lock consistency), INV-8 (channel <= property)
+Test quarantine triage, business date fix, ADR-003 Phase C RFC.
 
 ### Sprint 3 — Regression Guards + CI Security + Test Quarantine (2026-03-23)
 8 permanent regression tests. CI/CD security tightening. Test quarantine strategy (ADR-002).
@@ -89,11 +92,11 @@ Deploy Pipeline, Governance & Metering, Control Plane, Chaos Testing, Core Battl
 - PMS battle tests: split reservation, no-show, room change
 - Align channel manager inventory ledger with hardened booking system
 
-### P1 — Frontend Dependency Hardening (Bucket 1 DONE)
+### DONE — Frontend Dependency Hardening (ALL RESOLVED)
 - [x] yarn resolutions for Bucket 1: lodash, qs, postcss, diff, @eslint/plugin-kit (29→14 vulns)
-- [x] ajv resolution attempted & reverted (CRA incompatible)
-- [ ] Evaluate @craco/craco removal and react-scripts 6.x upgrade
-- [ ] Long-term: CRA → Vite migration (eliminates remaining 14 vulns)
+- [x] CRA → Vite 8 migration (14→2 vulns, removed react-scripts + @craco/craco)
+- [x] ajv resolution (2→0 vulns, now works without CRA blocking)
+- **Result: 87 → 0 vulnerabilities, 0 critical, 0 high, 0 moderate, 0 low**
 
 ### P1 — Quarantined Tests
 - Fix tests in `tests/_quarantine/` starting with stale_dates category

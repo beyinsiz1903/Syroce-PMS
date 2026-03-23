@@ -17,7 +17,7 @@ import {
   Search, X, ArrowDownCircle, ArrowUpCircle, Receipt
 } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 export default function DepositTracking({ user, tenant, onLogout }) {
   const [deposits, setDeposits] = useState([]);

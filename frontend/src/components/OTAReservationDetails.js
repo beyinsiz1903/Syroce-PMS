@@ -24,7 +24,7 @@ const OTAReservationDetails = ({ bookingId }) => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/reservations/${bookingId}/ota-details`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/reservations/${bookingId}/ota-details`,
         {
           headers: {
             'Authorization': `Bearer ${token}`
@@ -47,7 +47,7 @@ const OTAReservationDetails = ({ bookingId }) => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/reservations/${bookingId}/extra-charges`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/reservations/${bookingId}/extra-charges`,
         {
           method: 'POST',
           headers: {

@@ -22,7 +22,7 @@ const RevenueManagementAdvanced = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/rms/price-recommendation-slider?room_type=${roomType}&check_in_date=${checkInDate}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/rms/price-recommendation-slider?room_type=${roomType}&check_in_date=${checkInDate}`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }
@@ -45,7 +45,7 @@ const RevenueManagementAdvanced = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/rms/demand-heatmap`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/rms/demand-heatmap`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }
@@ -67,7 +67,7 @@ const RevenueManagementAdvanced = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/rms/compset-analysis`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/rms/compset-analysis`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }

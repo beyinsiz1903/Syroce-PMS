@@ -20,7 +20,7 @@ const SecurityGDPRModule = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/security/audit-logs?days=7`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/security/audit-logs?days=7`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       const data = await response.json();
@@ -34,7 +34,7 @@ const SecurityGDPRModule = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/gdpr/data-requests`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/gdpr/data-requests`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       const data = await response.json();
@@ -48,7 +48,7 @@ const SecurityGDPRModule = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/compliance/certifications`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/compliance/certifications`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       const data = await response.json();

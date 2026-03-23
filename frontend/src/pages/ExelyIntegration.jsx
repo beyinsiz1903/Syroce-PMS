@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import TestBookingVerification from '@/components/TestBookingVerification';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 const ExelyIntegration = ({ user, tenant, onLogout }) => {
   const [activeTab, setActiveTab] = useState('connection');

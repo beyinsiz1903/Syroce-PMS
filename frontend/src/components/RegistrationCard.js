@@ -20,7 +20,7 @@ const RegistrationCard = ({ bookingId, onClose }) => {
       
       // Fetch booking details
       const bookingResponse = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/bookings/${bookingId}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/bookings/${bookingId}`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }
@@ -29,7 +29,7 @@ const RegistrationCard = ({ bookingId, onClose }) => {
       
       // Fetch guest details
       const guestResponse = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/guests/${bookingData.booking.guest_id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/guests/${bookingData.booking.guest_id}`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }
@@ -38,7 +38,7 @@ const RegistrationCard = ({ bookingId, onClose }) => {
       
       // Fetch room details
       const roomsResponse = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/rooms`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/rooms`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }

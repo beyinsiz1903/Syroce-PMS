@@ -11,7 +11,7 @@ import {
   Eye, Sparkles, Filter, RefreshCw, ChevronDown
 } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 const STATUS_CONFIG = {
   clean: { label: 'Temiz', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: CheckCircle, dot: 'bg-emerald-500' },

@@ -171,7 +171,7 @@ const Settings = ({ user, tenant, onLogout }) => {
   const loadInvoiceSettings = useCallback(async () => {
     setInvoiceLoading(true);
     try {
-      const API = process.env.REACT_APP_BACKEND_URL;
+      const API = import.meta.env.VITE_BACKEND_URL;
       const res = await axios.get(`${API}/api/pms/hotel-settings`);
       setInvoiceSettings(res.data || {});
     } catch (err) { console.error('Invoice settings load failed', err); }
@@ -182,7 +182,7 @@ const Settings = ({ user, tenant, onLogout }) => {
     if (!isSuperAdmin) return;
     setRoomsLoading(true);
     try {
-      const API = process.env.REACT_APP_BACKEND_URL;
+      const API = import.meta.env.VITE_BACKEND_URL;
       const res = await axios.get(`${API}/api/pms/rooms?limit=500`);
       setRoomsList(res.data || []);
     } catch (err) { console.error('Rooms load failed', err); }
@@ -287,7 +287,7 @@ const Settings = ({ user, tenant, onLogout }) => {
   const handleSaveInvoiceSettings = async () => {
     setInvoiceSaving(true);
     try {
-      const API = process.env.REACT_APP_BACKEND_URL;
+      const API = import.meta.env.VITE_BACKEND_URL;
       const res = await axios.put(`${API}/api/pms/hotel-settings`, invoiceSettings);
       toast.success('Fatura ayarları kaydedildi');
       setInvoiceSettings(res.data?.settings || invoiceSettings);
@@ -315,7 +315,7 @@ const Settings = ({ user, tenant, onLogout }) => {
     e.preventDefault();
     setRoomSaving(true);
     try {
-      const API = process.env.REACT_APP_BACKEND_URL;
+      const API = import.meta.env.VITE_BACKEND_URL;
       await axios.post(`${API}/api/pms/rooms`, newRoom);
       toast.success('Oda oluşturuldu');
       setShowAddRoomDialog(false);
@@ -329,7 +329,7 @@ const Settings = ({ user, tenant, onLogout }) => {
   const handleDeleteRoom = async (roomId, roomNumber) => {
     if (!window.confirm(`${roomNumber} numaralı odayı silmek istediğinize emin misiniz?`)) return;
     try {
-      const API = process.env.REACT_APP_BACKEND_URL;
+      const API = import.meta.env.VITE_BACKEND_URL;
       await axios.post(`${API}/api/pms/rooms/bulk/delete`, {
         ids: [roomId],
         confirm_text: 'DELETE'

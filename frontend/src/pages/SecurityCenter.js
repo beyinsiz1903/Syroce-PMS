@@ -9,7 +9,7 @@ import Layout from '@/components/Layout';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
-const BACKEND = process.env.REACT_APP_BACKEND_URL;
+const BACKEND = import.meta.env.VITE_BACKEND_URL;
 
 export default function SecurityCenter({ user, tenant, onLogout }) {
   const { t } = useTranslation();

@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { io } from "socket.io-client";
 
-const RAW_URL = process.env.REACT_APP_BACKEND_URL || "";
+const RAW_URL = import.meta.env.VITE_BACKEND_URL || "";
 const WS_URL = RAW_URL.replace(/\/api$/, "");
 
 export function useOperationalSocket(namespace = "/", events = {}) {

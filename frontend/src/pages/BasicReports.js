@@ -19,7 +19,7 @@ import {
   ComposedChart, LineChart, Line
 } from 'recharts';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16', '#F97316', '#14B8A6'];
 const ROOM_STATUS_COLORS = { available: '#10B981', occupied: '#3B82F6', dirty: '#F59E0B', maintenance: '#EF4444', out_of_order: '#6B7280' };
 

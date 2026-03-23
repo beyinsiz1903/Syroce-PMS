@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { PlayCircle, RefreshCw, Clock, CheckCircle, XCircle, AlertTriangle, RotateCcw, Server, Settings } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 const STATUS_STYLES = {
   completed: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', icon: CheckCircle },

@@ -18,7 +18,7 @@ const CorporateRatesModule = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/corporate/contracts`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/corporate/contracts`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       const data = await response.json();
@@ -34,7 +34,7 @@ const CorporateRatesModule = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/corporate/rate-plans`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/corporate/rate-plans`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       const data = await response.json();

@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Activity, Zap, Shield, Layers, RefreshCw, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 const MiniBarChart = ({ data, maxVal, color = '#22d3ee', height = 48 }) => {
   if (!data || data.length === 0) return <div className="text-xs text-zinc-600">No data</div>;

@@ -21,7 +21,7 @@ const HousekeepingDetailedReports = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/housekeeping/room-status-report`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/housekeeping/room-status-report`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       const data = await response.json();
@@ -37,7 +37,7 @@ const HousekeepingDetailedReports = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/housekeeping/staff-performance-detailed`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/housekeeping/staff-performance-detailed`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       const data = await response.json();

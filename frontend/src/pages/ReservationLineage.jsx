@@ -12,7 +12,7 @@ import {
   AlertTriangle, Clock, Copy, Eye, ArrowRight, Filter
 } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 const STATUS_CONFIG = {
   created: { label: 'Oluşturuldu', color: 'bg-green-100 text-green-800 border-green-300', icon: CheckCircle },

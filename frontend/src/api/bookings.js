@@ -1,7 +1,7 @@
 // frontend/src/api/bookings.js
 
 const DEFAULT_BASE_URL =
-  (typeof process !== "undefined" && process.env && process.env.REACT_APP_BACKEND_URL) ||
+  (typeof process !== "undefined" && process.env && import.meta.env.VITE_BACKEND_URL) ||
   "";
 
 function _joinUrl(baseUrl, path) {

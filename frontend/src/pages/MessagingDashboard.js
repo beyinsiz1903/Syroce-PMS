@@ -10,7 +10,7 @@ import {
   Settings, FileText, BarChart3, Loader2,
 } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 const headers = () => ({
   Authorization: `Bearer ${localStorage.getItem('token')}`,
   'Content-Type': 'application/json',

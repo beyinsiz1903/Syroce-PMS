@@ -37,7 +37,7 @@ const FolioManagementPage = () => {
       
       // Fetch all bookings to get folios
       const bookingsResponse = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/bookings`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/bookings`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }
@@ -55,7 +55,7 @@ const FolioManagementPage = () => {
         // Fetch guest info
         try {
           const guestResponse = await fetch(
-            `${process.env.REACT_APP_BACKEND_URL}/api/guests/${booking.guest_id}`,
+            `${import.meta.env.VITE_BACKEND_URL}/api/guests/${booking.guest_id}`,
             {
               headers: { 'Authorization': `Bearer ${token}` }
             }
@@ -64,7 +64,7 @@ const FolioManagementPage = () => {
           
           // Get room info
           const roomsResponse = await fetch(
-            `${process.env.REACT_APP_BACKEND_URL}/api/rooms`,
+            `${import.meta.env.VITE_BACKEND_URL}/api/rooms`,
             {
               headers: { 'Authorization': `Bearer ${token}` }
             }
@@ -103,7 +103,7 @@ const FolioManagementPage = () => {
       // Try to fetch folio
       try {
         const folioResponse = await fetch(
-          `${process.env.REACT_APP_BACKEND_URL}/api/folio/${bookingId}`,
+          `${import.meta.env.VITE_BACKEND_URL}/api/folio/${bookingId}`,
           {
             headers: { 'Authorization': `Bearer ${token}` }
           }
@@ -151,7 +151,7 @@ const FolioManagementPage = () => {
       
       // First, try to get or create folio
       const folioResponse = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/folio/${selectedFolio.id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/folio/${selectedFolio.id}`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }
@@ -164,7 +164,7 @@ const FolioManagementPage = () => {
       } else {
         // Create folio first
         const createFolioResponse = await fetch(
-          `${process.env.REACT_APP_BACKEND_URL}/api/folio`,
+          `${import.meta.env.VITE_BACKEND_URL}/api/folio`,
           {
             method: 'POST',
             headers: {
@@ -188,7 +188,7 @@ const FolioManagementPage = () => {
       
       // Post charge
       await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/folio/charge`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/folio/charge`,
         {
           method: 'POST',
           headers: {
@@ -217,7 +217,7 @@ const FolioManagementPage = () => {
       
       // Get folio
       const folioResponse = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/folio/${selectedFolio.id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/folio/${selectedFolio.id}`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }
@@ -231,7 +231,7 @@ const FolioManagementPage = () => {
       
       // Post payment
       await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/folio/payment`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/folio/payment`,
         {
           method: 'POST',
           headers: {

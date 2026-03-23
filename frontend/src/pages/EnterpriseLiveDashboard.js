@@ -11,7 +11,7 @@ import {
   ArrowUpDown, Globe, RefreshCw, ChevronRight
 } from "lucide-react";
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 function useAuthHeaders() {
   const token = localStorage.getItem("token");

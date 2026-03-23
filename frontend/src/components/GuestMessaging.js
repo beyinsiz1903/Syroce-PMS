@@ -17,7 +17,7 @@ import {
   Loader2, ArrowLeft, Tag
 } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 const TYPE_LABELS = {
   general: { tr: 'Genel', en: 'General', color: 'bg-blue-100 text-blue-700' },

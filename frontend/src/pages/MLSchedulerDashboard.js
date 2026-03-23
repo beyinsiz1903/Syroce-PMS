@@ -9,7 +9,7 @@ import {
   BarChart3, Loader2, RefreshCw, Timer, Zap, Brain,
 } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 const hdrs = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}`, 'Content-Type': 'application/json' });
 const get = async (p) => (await fetch(`${API}${p}`, { headers: hdrs() })).json();
 const post = async (p, b) => (await fetch(`${API}${p}`, { method: 'POST', headers: hdrs(), body: JSON.stringify(b) })).json();

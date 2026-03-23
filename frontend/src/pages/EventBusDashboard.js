@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Radio, RefreshCw, Zap, ArrowDownToLine, AlertTriangle, Activity } from "lucide-react";
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 function StatusDot({ status }) {
   const color = status === "healthy" ? "bg-emerald-500" : status === "disconnected" ? "bg-red-500" : "bg-amber-500";

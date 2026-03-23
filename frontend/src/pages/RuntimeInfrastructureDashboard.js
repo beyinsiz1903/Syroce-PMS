@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Activity, Database, Radio, Mail, AlertTriangle, Shield, RefreshCw, CheckCircle, XCircle, Clock } from "lucide-react";
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 function StatusIndicator({ status }) {
   const map = {

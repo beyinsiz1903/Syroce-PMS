@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import Layout from "../components/Layout";
 import { Shield, Activity, Server, Database, Radio, Bell, Rocket, RefreshCw, ChevronRight, AlertTriangle, CheckCircle2, XCircle, Clock, Zap, Settings, FileText, Play, Box, GitBranch, HardDrive, Lock, BarChart3, Download } from "lucide-react";
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 const READINESS_COLORS = {
   READY: { bg: "bg-emerald-500/10", border: "border-emerald-500/40", text: "text-emerald-400", ring: "ring-emerald-500/30", gradient: "from-emerald-500/20 to-emerald-500/5" },

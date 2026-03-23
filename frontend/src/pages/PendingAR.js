@@ -156,7 +156,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
   const criticalCount = arData.filter(item => item.days_outstanding > 60).length;
 
   const handleExportCompanyAging = () => {
-    const baseUrl = process.env.REACT_APP_BACKEND_URL || '';
+    const baseUrl = import.meta.env.VITE_BACKEND_URL || '';
     if (!baseUrl) {
       toast.error('Rapor indirilemedi: backend adresi tanımlı değil');
       return;

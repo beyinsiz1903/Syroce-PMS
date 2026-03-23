@@ -13,7 +13,7 @@ import {
   Trash2, Edit2, RefreshCw, PhoneCall, PhoneOff, Repeat
 } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 const STATUS_COLORS = {
   pending: 'bg-amber-100 text-amber-700 border-amber-200',

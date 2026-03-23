@@ -19,7 +19,7 @@ import {
   ArrowRight, CircleDot, Radio
 } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 const SEVERITY_STYLE = {
   info: 'bg-blue-500/15 text-blue-400 border-blue-500/30',

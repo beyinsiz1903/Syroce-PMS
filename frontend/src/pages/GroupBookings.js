@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Users, Plus, LogIn, LogOut, Search, Building2, Calendar, Loader2, ChevronRight, X } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 export default function GroupBookings({ user, tenant, onLogout }) {
   const [groups, setGroups] = useState([]);

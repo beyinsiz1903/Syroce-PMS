@@ -7,22 +7,9 @@
         <meta name="description" content="Syroce - Modern Otel Yönetim Sistemi. AI destekli, ultra hızlı ve kapsamlı hotel PMS çözümü." />
         
         <!-- Favicon & Icons -->
-        <link rel="icon" type="image/svg+xml" href="%PUBLIC_URL%/syroce-icon.svg" />
-        <link rel="apple-touch-icon" href="%PUBLIC_URL%/syroce-icon.svg" />
+        <link rel="icon" type="image/svg+xml" href="/syroce-icon.svg" />
+        <link rel="apple-touch-icon" href="/syroce-icon.svg" />
         
-        <!--
-      manifest.json provides metadata used when your web app is installed on a
-      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
-    -->
-        <!--
-      Notice the use of %PUBLIC_URL% in the tags above.
-      It will be replaced with the URL of the `public` folder during the build.
-      Only files inside the `public` folder can be referenced from the HTML.
-
-      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
-      work correctly both with client-side routing and a non-root public URL.
-      Learn how to configure a non-root public URL by running `npm run build`.
-    -->
         <title>Syroce | Modern Otel Yönetim Sistemi</title>
         <script>
             // Suppress benign ResizeObserver loop error (triggered by Radix UI Select)
@@ -45,7 +32,7 @@
         -->
         <script>
             // Only load visual edit scripts when inside an iframe and visual edits are enabled
-            if (window.self !== window.top && '%REACT_APP_ENABLE_VISUAL_EDITS%' === 'true') {
+            if (window.self !== window.top && '%VITE_ENABLE_VISUAL_EDITS%' === 'true') {
                 // Load debug monitor script
                 var debugScript = document.createElement('script');
                 debugScript.src = 'https://assets.emergent.sh/scripts/debug-monitor.js';
@@ -67,16 +54,7 @@
     <body>
         <noscript>You need to enable JavaScript to run this app.</noscript>
         <div id="root"></div>
-        <!--
-      This HTML file is a template.
-      If you open it directly in the browser, you will see an empty page.
-
-      You can add webfonts, meta tags, or analytics to this file.
-      The build step will place the bundled scripts into the <body> tag.
-
-      To begin the development, run `npm start` or `yarn start`.
-      To create a production bundle, use `npm run build` or `yarn build`.
-    -->
+        <script type="module" src="/src/index.js"></script>
         <!-- Emergent badge removed for production -->
         <script>
             !(function (t, e) {

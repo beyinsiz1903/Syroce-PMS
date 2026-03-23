@@ -7,7 +7,7 @@ import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useTranslation } from 'react-i18next';
 
-const BACKEND = process.env.REACT_APP_BACKEND_URL;
+const BACKEND = import.meta.env.VITE_BACKEND_URL;
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 
 export default function CentralOfficeDashboard({ user, tenant, onLogout }) {

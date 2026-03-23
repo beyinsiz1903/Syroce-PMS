@@ -4,7 +4,7 @@
  */
 import React from 'react';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8001';
 // Construct WebSocket URL from backend URL
 const WEBSOCKET_URL = BACKEND_URL.replace('/api', '').replace(/\/+$/, '');
 
@@ -31,7 +31,7 @@ class WebSocketManager {
 
     try {
       // Lazy import socket.io-client to avoid blocking initial load
-      const { io } = require('socket.io-client');
+      const { io } = await import('socket.io-client');
       
       this.socket = io(WEBSOCKET_URL, {
         transports: ['websocket'],

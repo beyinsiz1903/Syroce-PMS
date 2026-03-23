@@ -10,7 +10,7 @@ import {
   FlaskConical, Loader2, CheckCircle, XCircle, AlertTriangle, Search, ArrowRight
 } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 const STEPS = [
   { id: 1, title: 'Test Rezervasyon Oluşturun', description: 'Exely\'nin bağlı olduğu OTA platformunda (Booking.com vb.) test bir rezervasyon oluşturun.' },

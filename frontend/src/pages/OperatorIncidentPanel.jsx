@@ -12,7 +12,7 @@ import {
   ArrowUpRight, Archive, Search
 } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 // ─── Severity Config ─────────────────────────────────────────
 const SEVERITY_CONFIG = {

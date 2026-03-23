@@ -10,7 +10,7 @@ import {
   Clock, BarChart3, Server
 } from "lucide-react";
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 function ScoreRing({ score, size = 120, label }) {
   const color = score >= 90 ? "#34d399" : score >= 75 ? "#a3e635" : score >= 60 ? "#fbbf24" : "#f87171";

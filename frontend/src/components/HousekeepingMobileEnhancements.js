@@ -21,8 +21,8 @@ const HousekeepingMobileEnhancements = () => {
     try {
       const token = localStorage.getItem('token');
       const url = selectedStaff === 'all' 
-        ? `${process.env.REACT_APP_BACKEND_URL}/api/housekeeping/mobile/room-assignments`
-        : `${process.env.REACT_APP_BACKEND_URL}/api/housekeeping/mobile/room-assignments?staff_name=${selectedStaff}`;
+        ? `${import.meta.env.VITE_BACKEND_URL}/api/housekeeping/mobile/room-assignments`
+        : `${import.meta.env.VITE_BACKEND_URL}/api/housekeeping/mobile/room-assignments?staff_name=${selectedStaff}`;
       
       const response = await fetch(url, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -41,7 +41,7 @@ const HousekeepingMobileEnhancements = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/housekeeping/cleaning-time-statistics`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/housekeeping/cleaning-time-statistics`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }

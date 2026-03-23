@@ -20,7 +20,7 @@ import {
   BarChart3, Table2, ArrowUpDown, Settings2, BookmarkPlus, Eye
 } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 const DATE_PRESETS = [
   { id: 'today', label: 'Bugün', calc: () => { const d = new Date(); const s = d.toISOString().split('T')[0]; return { from: s, to: s }; } },

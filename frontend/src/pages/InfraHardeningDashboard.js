@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useCallback } from "react";
 import Layout from "../components/Layout";
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 // Status badge component
 const StatusBadge = ({ status }) => {

@@ -18,7 +18,7 @@ import {
   ResponsiveContainer, BarChart, Bar, AreaChart, Area
 } from "recharts";
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 /* ─── STAT CARD ─── */
 function StatCard({ title, value, icon: Icon, color = "gray", subtitle, testId }) {

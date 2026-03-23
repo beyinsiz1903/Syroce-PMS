@@ -13,7 +13,7 @@ import {
   MapPin, Calendar, Tag, Archive, CheckCircle, Clock, Send
 } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 const STATUS_CONFIG = {
   found: { label: 'Bulundu', color: 'bg-blue-100 text-blue-700 border-blue-200' },

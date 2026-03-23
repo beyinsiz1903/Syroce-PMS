@@ -27,7 +27,7 @@ import {
   CreditCard, Banknote, TrendingUp, Layers, Clock
 } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 const fmtTL = (v) => (v || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 });
 
 // ─── Summary Stats Card ────────────────────────────

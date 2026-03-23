@@ -21,7 +21,7 @@ const ComprehensiveReportsModule = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/pos/menu-engineering`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/pos/menu-engineering`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       const data = await response.json();
@@ -37,7 +37,7 @@ const ComprehensiveReportsModule = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/marketing/campaigns`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/marketing/campaigns`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       const data = await response.json();
@@ -53,7 +53,7 @@ const ComprehensiveReportsModule = () => {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/rms/compset/real-time-prices?check_in_date=${tomorrow.toISOString().split('T')[0]}&room_type=Standard`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/rms/compset/real-time-prices?check_in_date=${tomorrow.toISOString().split('T')[0]}&room_type=Standard`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       const data = await response.json();

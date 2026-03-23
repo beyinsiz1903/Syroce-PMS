@@ -212,7 +212,7 @@ const PostAuthRedirect = () => {
   return <Navigate to={redirectTarget} replace />;
 };
 
-const RAW_BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '/api';
+const RAW_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '/api';
 // Ensure /api suffix for Kubernetes ingress routing
 const BACKEND_URL = RAW_BACKEND_URL.endsWith('/api')
   ? RAW_BACKEND_URL

@@ -11,7 +11,7 @@ import {
   Database, Radio, Zap, TrendingUp, Users, Building2, Layers
 } from "lucide-react";
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 /* ── Tiny Reusable Components ─────────────────────────── */
 

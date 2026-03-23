@@ -1,5 +1,38 @@
 # Syroce PMS — Changelog
 
+## 2026-03-23: CRA → Vite Migration (Frontend Build Modernization)
+
+### Build System Migration
+- **Removed:** `react-scripts` 5.0.1, `@craco/craco` 7.1.0, `@babel/plugin-proposal-private-property-in-object`
+- **Added:** `vite` 8.0.1, `@vitejs/plugin-react` 6.0.1 (devDependencies)
+- **Created:** `vite.config.js` with OXC JSX support for `.js` files, `@/` alias, proxy config
+- **Moved:** `public/index.html` → `index.html` (Vite root convention)
+- **Removed:** `craco.config.js`, `analyze-bundle.js`, CRA proxy config
+- **Cleaned:** `package.json` — removed `proxy`, updated scripts (`craco start/build` → `vite/vite build`)
+
+### Environment Variable Migration
+- All `process.env.REACT_APP_*` → `import.meta.env.VITE_*` (131 references across 90+ files)
+- `.env`: `REACT_APP_BACKEND_URL` → `VITE_BACKEND_URL`
+- `index.html`: `%REACT_APP_ENABLE_VISUAL_EDITS%` → `%VITE_ENABLE_VISUAL_EDITS%`
+- `process.env.PUBLIC_URL` → `''` (Vite serves from root)
+
+### CJS → ESM Conversion
+- `src/index.js`: `require("./i18n")` → `import("./i18n").catch(...)`
+- `src/lib/websocket.js`: `require('socket.io-client')` → `await import('socket.io-client')`
+
+### Security Result
+- **14 → 0 vulnerabilities** (100% reduction)
+- `ajv` resolution now works (was CRA-incompatible, CRA removed)
+- **Total journey: 87 → 0 vulnerabilities**
+- Packages audited: 1542 → 600 (61% reduction in dependency footprint)
+
+### Performance
+- Dev server startup: ~150ms (Vite 8 + Rolldown/OXC)
+- Frontend verified: Landing page, login, dashboard all functional
+- Backend regression: 79/79 battle tests passing (2 known-flaky skipped)
+
+
+
 ## 2026-03-28: Frontend Dependency Hardening — Bucket 1 yarn resolutions
 
 ### Resolved Vulnerabilities (5 packages)

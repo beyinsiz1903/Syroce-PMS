@@ -13,7 +13,7 @@ import {
   Plus, Trash2, ShieldCheck, ArrowLeft, Loader2, Info
 } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 const ENTITY_TYPE_LABELS = {
   room_type: 'Oda Tipi',

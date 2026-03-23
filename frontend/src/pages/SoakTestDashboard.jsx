@@ -7,7 +7,7 @@ import {
   Gauge, TrendingUp, Zap, Shield
 } from "lucide-react";
 
-const API = process.env.REACT_APP_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL;
 
 function MetricCard({ label, value, unit, icon: Icon, status }) {
   const statusColors = {
