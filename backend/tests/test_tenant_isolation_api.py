@@ -11,7 +11,7 @@ import requests
 # Get BASE_URL from environment
 BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
 if not BASE_URL:
-    BASE_URL = "https://deploy-tracker-30.preview.emergentagent.com"
+    BASE_URL = "https://trend-analytics-6.preview.emergentagent.com"
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
