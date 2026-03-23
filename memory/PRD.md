@@ -20,56 +20,57 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - Outbox pattern for reliable event publishing
 - Comprehensive battle test suite (540+ tests)
 - Channel Health Management Dashboard (with historical trends + field KPIs)
+- Production-grade CI/CD with rollback, smoke tests, notifications
+- Quarantine Burn-Down Dashboard (tech debt tracking)
+- Weekly Proof Dashboard (week-over-week improvement tracking)
 
 ## What's Been Completed
 
+### Production Deployment Pipeline (2026-03-23)
+- **CI/CD (`ci-cd.yml`):** Full deployment chain with Docker build/push to GHCR, rollout status wait, post-deploy smoke tests, automatic rollback on failure, Slack notifications
+- **Manual Deploy (`deploy.yml`):** Build/push with cache, DB backup pre-deploy, rollback on failure, smoke tests, notifications, skip-backup option
+- **Frontend K8s Manifest:** `infra/k8s/frontend-deployment.yml` — Deployment, Service, HPA with rolling update strategy, health probes
+
+### Quarantine Burn-Down Dashboard (2026-03-23)
+- **Backend:** `/api/ops/dashboard/tech-debt` endpoint reading quarantine manifest
+  - 5 categories: stale_fixtures (P1), changed_api (P2), changed_impl (P3), external_dep (P4), meta-test (P5)
+  - Per-category: count, effort hours, weekly target, weeks to clear
+  - Overall: health score (30/100), health grade (D), estimated 3 weeks to zero
+- **Frontend:** `TechDebtDashboard.jsx` — New "Teknik Borc" tab in Control Plane
+  - Summary cards (total, weekly target, weeks remaining, health grade)
+  - Progress bar with gradient
+  - Expandable category cards with priority badges, test lists
+- **Testing:** 26/26 backend + 13/13 frontend tests passed
+
+### Weekly Proof Dashboard (2026-03-23)
+- **Backend:** `/api/ops/dashboard/channel-health/weekly-proof` endpoint
+  - Week-over-week aggregation: sync success, drift count, MTTR, SLA compliance, push p95
+  - Improvement deltas (first week vs last week)
+  - Configurable weeks parameter (2-52)
+- **Frontend:** `WeeklyProofDashboard.jsx` — New "Deger Kaniti" tab in Control Plane
+  - 5 improvement cards with delta/trend indicators
+  - Sync & SLA trend line chart (Recharts)
+  - Drift & MTTR bar chart
+  - Push Latency p95 weekly bar chart
+  - Weeks selector (4h, 8h, 12h)
+
 ### Channel Health Management Dashboard v2 (2026-03-23)
 - **Upgraded from pilot screen to management screen**
-- **Historical Trends API:** New `/api/ops/dashboard/channel-health/trends` endpoint
-  - Time-bucketed push latency (p50/p95/p99) with auto bucket sizing
-  - Sync success rate time series
-  - Drift creation count time series
-  - Retry success rate time series
-  - Failure count time series
-- **Field KPIs API:** New `/api/ops/dashboard/channel-health/field-kpis` endpoint
-  - Sync success rate (period-over-period comparison)
-  - Drift reduction tracking
-  - MTTR (Mean Time To Resolve) for reconciliation issues
-  - Operator intervention count
-  - Push SLA compliance percentage
-- **Frontend:** Complete redesign of `ChannelHealthDashboard.jsx`
-  - Recharts trend line/area/bar charts
-  - 5 field KPI cards with delta/trend indicators
-  - Time period selector (24h, 3d, 7d, 30d)
-  - Auto-refresh every 60s
-- **Testing:** 20/20 backend + 14/14 frontend tests passed
+- **Historical Trends API:** `/api/ops/dashboard/channel-health/trends`
+- **Field KPIs API:** `/api/ops/dashboard/channel-health/field-kpis`
+- **Frontend:** Recharts trend charts, 5 field KPI cards, period selector
 
 ### Environment Variable Unification (2026-03-23)
-- **Replaced all `REACT_APP_BACKEND_URL` → `VITE_BACKEND_URL`**
-  - 123 backend test files updated
-  - 1 ops/deploy_pipeline.py updated
-  - CI/CD workflow (ci-cd.yml) updated
-  - Docker Compose files (3 files) updated
-  - Frontend README.md updated
-  - Zero remaining references in codebase
-
-### Channel Health Dashboard v1 (2026-03-23)
-- **Backend:** `/api/ops/dashboard/channel-health` endpoint with 6 aggregation pipelines
-- **Frontend:** KPI strip, latency bars, failure breakdown, drift cards, provider SLA
+- Replaced all `REACT_APP_BACKEND_URL` → `VITE_BACKEND_URL` (123 files)
 
 ### Documentation & Quality Hardening (2026-03)
 - README drift fixed, Security snapshot, Test health section
 - Channel Capability Matrix, Pilot KPI Framework
 - deploy.yml fixed (graceful-skip pattern)
-- ADR-002 updated, Quarantine README updated
 
 ### Quarantine Test Restoration (2026-03-23)
 - 7 quarantined test files restored, 10 individually skipped tests fixed
 - Test count: 391+ CI tests, 0 failures
-
-### CI/CD Pipeline Stability
-- Frontend build fix (.js -> .jsx for Vite 8/Rolldown)
-- Flaky test fix, yarn audit handling, deployment fix
 
 ## P0 — Completed
 - [x] Frontend production build (Vite 8/Rolldown compatibility)
@@ -80,7 +81,10 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - [x] Documentation drift resolution
 - [x] Channel Health Dashboard v1 (KPI strip + detail)
 - [x] Channel Health Management Dashboard v2 (historical trends + field KPIs)
-- [x] Environment variable unification (REACT_APP_BACKEND_URL → VITE_BACKEND_URL)
+- [x] Environment variable unification
+- [x] Production deployment pipeline (rollback + smoke test + notification)
+- [x] Quarantine burn-down dashboard (tech debt tracking)
+- [x] Weekly proof dashboard (week-over-week improvement)
 
 ## P1 — Upcoming
 - [ ] Fix remaining quarantined tests: stale_fixtures (rate_manager, 10 tests)
@@ -88,7 +92,6 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - [ ] Fix remaining quarantined tests: changed_implementation (13 tests)
 - [ ] Channel manager inventory ledger alignment with room-type system
 - [ ] Exely/HotelRunner sandbox testing (per capability matrix gaps)
-- [ ] CI/CD actual deployment logic (Docker build/push, Kubernetes manifests)
 
 ## P2 — Backlog
 - [ ] Fix remaining quarantined tests: external_dependency (3 tests)
@@ -104,19 +107,21 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - [ ] Pilot hotel onboarding (per KPI framework)
 
 ## Key Technical Decisions
-- **Vite 8 `.jsx` Convention:** All React component files use `.jsx` extension for Rolldown compatibility.
-- **Test Isolation:** Battle tests use `random.randint(2100, 9999)` for date ranges + session-scoped DB cleanup.
-- **Quarantine Fix Pattern:** Far-future dates (3000-6000 day offsets), sync pymongo for DB verification.
-- **yarn audit CI Gate:** Uses bitmask check `(exit_code & 24) != 0` to only fail on HIGH/CRITICAL.
-- **Deploy graceful-skip:** All deploy jobs check for secrets existence before attempting deployment.
-- **Channel Health Aggregator:** MongoDB aggregation pipelines with $lookup, $dateTrunc for time bucketing, linear interpolation for percentiles.
-- **Field KPIs:** Period-over-period comparison (current vs previous period of same length).
-- **Environment Variables:** `VITE_BACKEND_URL` is the single source of truth for backend URL across all environments (frontend, backend tests, CI/CD, Docker).
+- **Vite 8 `.jsx` Convention:** All React component files use `.jsx` extension
+- **Test Isolation:** Battle tests use `random.randint(2100, 9999)` for date ranges
+- **Quarantine Fix Pattern:** Far-future dates (3000-6000 day offsets), sync pymongo for DB verification
+- **yarn audit CI Gate:** Uses bitmask check `(exit_code & 24) != 0` for HIGH/CRITICAL only
+- **Deploy graceful-skip:** All deploy jobs check for secrets existence before deployment
+- **Deployment Rollback:** `kubectl rollout undo` on failure with rollout status wait
+- **Tech Debt Tracking:** Direct import from quarantine_manifest.py, no DB dependency
+- **Weekly Proof:** MongoDB aggregation with week-based date windowing
 
 ## Key API Endpoints
 - `GET /api/ops/dashboard/channel-health` — Current period health metrics
 - `GET /api/ops/dashboard/channel-health/trends` — Historical time-series data
-- `GET /api/ops/dashboard/channel-health/field-kpis` — Operational field KPIs with comparison
+- `GET /api/ops/dashboard/channel-health/field-kpis` — Operational field KPIs
+- `GET /api/ops/dashboard/channel-health/weekly-proof` — Week-over-week improvement
+- `GET /api/ops/dashboard/tech-debt` — Quarantine burn-down tracking
 
 ## Test Credentials
 | User | Email | Password | Role |
