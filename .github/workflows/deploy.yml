@@ -146,14 +146,19 @@ jobs:
 
           smoke_check "Health API" "/api/health/" || FAIL=1
           smoke_check "Frontend" "/" || FAIL=1
+          smoke_check "API Docs" "/api/docs" || echo "::warning::Docs endpoint not reachable"
+          smoke_check "Channel Health" "/api/ops/dashboard/channel-health" || echo "::warning::Channel Health not reachable"
 
           SMOKE_JSON="${SMOKE_JSON}]}"
           echo "$SMOKE_JSON" > /tmp/smoke_results.json
 
+          echo "" >> $GITHUB_STEP_SUMMARY
           if [ "$FAIL" -eq 0 ]; then
             echo "> All smoke tests passed" >> $GITHUB_STEP_SUMMARY
+            echo "smoke_ok=true" >> "$GITHUB_OUTPUT"
           else
             echo "> **CRITICAL: Smoke test failed**" >> $GITHUB_STEP_SUMMARY
+            echo "smoke_ok=false" >> "$GITHUB_OUTPUT"
             exit 1
           fi
 
@@ -194,29 +199,42 @@ jobs:
           STATUS="${{ job.status }}"
           SHA="${{ github.sha }}"
           SHORT_SHA="${SHA:0:8}"
+          ACTOR="${{ github.actor }}"
+          BRANCH="${{ github.ref_name }}"
 
+          # Always write structured summary to GitHub Actions
           echo "## Deploy Result — Staging (Manual)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|:------|:------|" >> $GITHUB_STEP_SUMMARY
           echo "| Status | **${STATUS}** |" >> $GITHUB_STEP_SUMMARY
           echo "| SHA | \`${SHORT_SHA}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Actor | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | \`${BRANCH}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Actor | ${ACTOR} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | staging |" >> $GITHUB_STEP_SUMMARY
 
+          # GitHub annotations for visibility
           if [ "$STATUS" = "success" ]; then
-            echo "::notice title=Staging Deploy OK::${SHORT_SHA} by ${{ github.actor }}"
+            echo "::notice title=Staging Deploy Basarili::${SHORT_SHA} → staging by ${ACTOR} (manual)"
           else
-            echo "::error title=Staging Deploy FAIL::${SHORT_SHA} by ${{ github.actor }}"
+            echo "::error title=Staging Deploy Basarisiz::${SHORT_SHA} → staging by ${ACTOR} — rollback initiated (manual)"
           fi
 
+          # Slack webhook (if configured)
           if [ -z "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" ]; then
+            echo "::notice title=Slack Bildirimi::Slack bildirimi atlanıyor — SLACK_DEPLOY_WEBHOOK yapılandırılmamış. GitHub Actions Summary'de sonuçlar mevcut."
             exit 0
           fi
-          COLOR=$( [ "$STATUS" = "success" ] && echo "#36a64f" || echo "#ff0000" )
-          TITLE=$( [ "$STATUS" = "success" ] && echo "Staging Deploy OK" || echo "Staging Deploy FAIL — Rollback" )
+          if [ "$STATUS" = "success" ]; then
+            COLOR="#36a64f"
+            TITLE="Staging Deploy Basarili (Manual)"
+          else
+            COLOR="#ff0000"
+            TITLE="Staging Deploy Basarisiz — Rollback Yapildi (Manual)"
+          fi
           curl -sf -X POST "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" \
             -H "Content-Type: application/json" \
-            -d "{\"attachments\":[{\"color\":\"$COLOR\",\"title\":\"$TITLE\",\"fields\":[{\"title\":\"SHA\",\"value\":\"$SHORT_SHA\",\"short\":true},{\"title\":\"Actor\",\"value\":\"${{ github.actor }}\",\"short\":true}]}]}" || true
+            -d "{\"attachments\":[{\"color\":\"$COLOR\",\"title\":\"$TITLE\",\"fields\":[{\"title\":\"SHA\",\"value\":\"$SHORT_SHA\",\"short\":true},{\"title\":\"Actor\",\"value\":\"$ACTOR\",\"short\":true},{\"title\":\"Branch\",\"value\":\"$BRANCH\",\"short\":true},{\"title\":\"Environment\",\"value\":\"staging\",\"short\":true}]}]}" || true
 
   # ── Deploy to Production ───────────────────────────────────────
   deploy-production:
@@ -347,26 +365,39 @@ jobs:
           STATUS="${{ job.status }}"
           SHA="${{ github.sha }}"
           SHORT_SHA="${SHA:0:8}"
+          ACTOR="${{ github.actor }}"
+          BRANCH="${{ github.ref_name }}"
 
+          # Always write structured summary to GitHub Actions
           echo "## Deploy Result — Production (Manual)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|:------|:------|" >> $GITHUB_STEP_SUMMARY
           echo "| Status | **${STATUS}** |" >> $GITHUB_STEP_SUMMARY
           echo "| SHA | \`${SHORT_SHA}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Actor | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | \`${BRANCH}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Actor | ${ACTOR} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | **production** |" >> $GITHUB_STEP_SUMMARY
 
+          # GitHub annotations
           if [ "$STATUS" = "success" ]; then
-            echo "::notice title=PROD Deploy OK::${SHORT_SHA} by ${{ github.actor }}"
+            echo "::notice title=PROD Deploy Basarili::${SHORT_SHA} → production by ${ACTOR} (manual)"
           else
-            echo "::error title=PROD Deploy FAIL::${SHORT_SHA} by ${{ github.actor }}"
+            echo "::error title=PROD Deploy BASARISIZ::${SHORT_SHA} → production by ${ACTOR} — rollback initiated (manual)"
           fi
 
+          # Slack webhook (if configured)
           if [ -z "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" ]; then
+            echo "::notice title=Slack Bildirimi::Slack bildirimi atlanıyor — SLACK_DEPLOY_WEBHOOK yapılandırılmamış. GitHub Actions Summary'de sonuçlar mevcut."
             exit 0
           fi
-          COLOR=$( [ "$STATUS" = "success" ] && echo "#36a64f" || echo "#ff0000" )
-          TITLE=$( [ "$STATUS" = "success" ] && echo "PROD Deploy OK" || echo "PROD Deploy FAIL — Rollback" )
+          if [ "$STATUS" = "success" ]; then
+            COLOR="#36a64f"
+            TITLE="PROD Deploy Basarili (Manual)"
+          else
+            COLOR="#ff0000"
+            TITLE="PROD Deploy BASARISIZ — Rollback Yapildi (Manual)"
+          fi
           curl -sf -X POST "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" \
             -H "Content-Type: application/json" \
-            -d "{\"attachments\":[{\"color\":\"$COLOR\",\"title\":\"$TITLE\",\"fields\":[{\"title\":\"SHA\",\"value\":\"$SHORT_SHA\",\"short\":true},{\"title\":\"Actor\",\"value\":\"${{ github.actor }}\",\"short\":true}]}]}" || true
+            -d "{\"attachments\":[{\"color\":\"$COLOR\",\"title\":\"$TITLE\",\"fields\":[{\"title\":\"SHA\",\"value\":\"$SHORT_SHA\",\"short\":true},{\"title\":\"Actor\",\"value\":\"$ACTOR\",\"short\":true},{\"title\":\"Branch\",\"value\":\"$BRANCH\",\"short\":true},{\"title\":\"Environment\",\"value\":\"production\",\"short\":true}]}]}" || true

@@ -12,12 +12,22 @@ import {
   ChevronRight,
   Server,
   Activity,
+  TrendingUp,
 } from "lucide-react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
 import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
 
 function StatCard({ label, value, sub, icon: Icon, color, testId }) {
   const colorMap = {
@@ -39,6 +49,79 @@ function StatCard({ label, value, sub, icon: Icon, color, testId }) {
       </div>
       <div className="text-2xl font-bold font-mono">{value}</div>
       {sub && <div className="text-[10px] text-zinc-600 mt-1">{sub}</div>}
+    </div>
+  );
+}
+
+function DeployTrendChart({ trend }) {
+  if (!trend || trend.length === 0) return null;
+
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+    const d = payload[0]?.payload;
+    return (
+      <div className="bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-xs font-mono shadow-lg">
+        <div className="text-zinc-300 mb-1">{label}</div>
+        <div className="text-emerald-400">Basarili: {d?.success || 0}</div>
+        <div className="text-red-400">Basarisiz: {d?.failure || 0}</div>
+        {d?.rollbacks > 0 && <div className="text-amber-400">Rollback: {d.rollbacks}</div>}
+      </div>
+    );
+  };
+
+  return (
+    <div
+      className="bg-zinc-900 border border-zinc-800 rounded-lg p-4"
+      data-testid="deploy-trend-chart"
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <TrendingUp className="h-3.5 w-3.5 text-zinc-500" />
+        <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+          Deploy Trendi
+        </span>
+        <span className="text-[10px] text-zinc-600">
+          (son {trend.length} gun)
+        </span>
+      </div>
+      <ResponsiveContainer width="100%" height={160}>
+        <BarChart data={trend} barGap={2}>
+          <XAxis
+            dataKey="date"
+            tick={{ fill: "#71717a", fontSize: 10 }}
+            tickFormatter={(v) => v?.slice(5) || ""}
+            axisLine={{ stroke: "#27272a" }}
+            tickLine={false}
+          />
+          <YAxis
+            allowDecimals={false}
+            tick={{ fill: "#52525b", fontSize: 10 }}
+            axisLine={false}
+            tickLine={false}
+            width={24}
+          />
+          <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+          <Bar dataKey="success" stackId="deploys" radius={[0, 0, 0, 0]} maxBarSize={20}>
+            {trend.map((entry, i) => (
+              <Cell key={i} fill="#34d399" fillOpacity={0.7} />
+            ))}
+          </Bar>
+          <Bar dataKey="failure" stackId="deploys" radius={[2, 2, 0, 0]} maxBarSize={20}>
+            {trend.map((entry, i) => (
+              <Cell key={i} fill="#f87171" fillOpacity={0.7} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+      <div className="flex items-center gap-4 mt-2 justify-center">
+        <div className="flex items-center gap-1.5 text-[10px] text-zinc-500">
+          <div className="w-2.5 h-2.5 rounded-sm bg-emerald-400/70" />
+          Basarili
+        </div>
+        <div className="flex items-center gap-1.5 text-[10px] text-zinc-500">
+          <div className="w-2.5 h-2.5 rounded-sm bg-red-400/70" />
+          Basarisiz
+        </div>
+      </div>
     </div>
   );
 }
@@ -84,6 +167,9 @@ function DeployRow({ deploy, isExpanded, onToggle }) {
     }
   };
 
+  const smokePassCount = smokeEndpoints.filter((e) => e.result === "OK").length;
+  const smokeTotal = smokeEndpoints.length;
+
   return (
     <div
       className={`border-b border-zinc-800/50 ${deploy.rollback ? "bg-red-500/5" : ""}`}
@@ -112,6 +198,19 @@ function DeployRow({ deploy, isExpanded, onToggle }) {
           <Badge variant="outline" className="text-[10px] border-red-500/40 text-red-400">
             <RotateCcw className="h-2.5 w-2.5 mr-1" />
             ROLLBACK
+          </Badge>
+        )}
+        {smokeTotal > 0 && (
+          <Badge
+            variant="outline"
+            className={`text-[10px] ${
+              smokePassCount === smokeTotal
+                ? "border-emerald-500/30 text-emerald-400"
+                : "border-red-500/30 text-red-400"
+            }`}
+          >
+            <Activity className="h-2.5 w-2.5 mr-1" />
+            {smokePassCount}/{smokeTotal}
           </Badge>
         )}
         <div className="flex-1" />
@@ -210,17 +309,20 @@ function DeployRow({ deploy, isExpanded, onToggle }) {
 export function DeployDashboard() {
   const [history, setHistory] = useState([]);
   const [stats, setStats] = useState(null);
+  const [trend, setTrend] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedSha, setExpandedSha] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const [histRes, statsRes] = await Promise.all([
+      const [histRes, statsRes, trendRes] = await Promise.all([
         axios.get("/ops/dashboard/deploys"),
         axios.get("/ops/dashboard/deploy-stats"),
+        axios.get("/ops/dashboard/deploy-trend?days=14"),
       ]);
       setHistory(histRes.data.deploys || []);
       setStats(statsRes.data);
+      setTrend(trendRes.data.trend || []);
     } catch (err) {
       toast.error("Deploy verileri yuklenemedi", {
         description: err.response?.data?.detail || err.message,
@@ -244,6 +346,7 @@ export function DeployDashboard() {
             <Skeleton key={i} className="h-24 bg-zinc-800" />
           ))}
         </div>
+        <Skeleton className="h-40 bg-zinc-800" />
         <Skeleton className="h-64 bg-zinc-800" />
       </div>
     );
@@ -304,6 +407,9 @@ export function DeployDashboard() {
           testId="stat-last-deploy"
         />
       </div>
+
+      {/* Deploy Trend Chart */}
+      <DeployTrendChart trend={trend} />
 
       {/* Environment Breakdown */}
       {envStats.length > 0 && (

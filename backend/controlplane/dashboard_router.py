@@ -184,6 +184,16 @@ async def get_deploy_stats_endpoint():
     return await get_deploy_stats()
 
 
+@router.get("/deploy-trend")
+async def get_deploy_trend_endpoint(
+    days: int = Query(14, ge=1, le=90),
+):
+    """Daily deploy activity trend for Control Plane chart."""
+    from .deploy_tracker import get_deploy_trend
+    trend = await get_deploy_trend(days=days)
+    return {"trend": trend, "days": days}
+
+
 # ── Deploy event ingestion (separate prefix for CI/CD webhook) ───
 deploy_router = APIRouter(prefix="/api/ops", tags=["Deploy Events"])
 

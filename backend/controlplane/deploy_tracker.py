@@ -163,3 +163,46 @@ async def get_deploy_stats() -> dict:
             ),
         },
     }
+
+
+
+async def get_deploy_trend(days: int = 14) -> list:
+    """Daily deploy counts for the last N days — feeds the trend chart."""
+    from datetime import timedelta
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    pipeline = [
+        {"$match": {"recorded_at": {"$gte": cutoff}}},
+        {
+            "$addFields": {
+                "day": {"$substr": ["$recorded_at", 0, 10]}
+            }
+        },
+        {
+            "$group": {
+                "_id": "$day",
+                "total": {"$sum": 1},
+                "success": {
+                    "$sum": {"$cond": [{"$eq": ["$status", "success"]}, 1, 0]}
+                },
+                "failure": {
+                    "$sum": {"$cond": [{"$ne": ["$status", "success"]}, 1, 0]}
+                },
+                "rollbacks": {
+                    "$sum": {"$cond": [{"$eq": ["$rollback", True]}, 1, 0]}
+                },
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "date": "$_id",
+                "total": 1,
+                "success": 1,
+                "failure": 1,
+                "rollbacks": 1,
+            }
+        },
+        {"$sort": {"date": 1}},
+    ]
+    return await db[COLL_DEPLOYS].aggregate(pipeline).to_list(days + 1)

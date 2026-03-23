@@ -521,7 +521,7 @@ jobs:
 
           # Slack webhook (if configured)
           if [ -z "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" ]; then
-            echo "Slack notification skipped — SLACK_DEPLOY_WEBHOOK not configured"
+            echo "::notice title=Slack Bildirimi::Slack bildirimi atlanıyor — SLACK_DEPLOY_WEBHOOK yapılandırılmamış. GitHub Actions Summary'de sonuçlar mevcut."
             exit 0
           fi
           if [ "$STATUS" = "success" ]; then
@@ -711,7 +711,7 @@ jobs:
 
           # Slack webhook (if configured)
           if [ -z "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" ]; then
-            echo "Slack notification skipped — SLACK_DEPLOY_WEBHOOK not configured"
+            echo "::notice title=Slack Bildirimi::Slack bildirimi atlanıyor — SLACK_DEPLOY_WEBHOOK yapılandırılmamış. GitHub Actions Summary'de sonuçlar mevcut."
             exit 0
           fi
           if [ "$STATUS" = "success" ]; then

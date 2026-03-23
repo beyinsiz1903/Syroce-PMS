@@ -31,11 +31,12 @@
 - **Removed:** `craco.config.js`, `analyze-bundle.js`, CRA proxy config
 - **Cleaned:** `package.json` — removed `proxy`, updated scripts (`craco start/build` → `vite/vite build`)
 
-### Environment Variable Migration
+### Environment Variable Migration (CRA → Vite)
 - All `process.env.REACT_APP_*` → `import.meta.env.VITE_*` (131 references across 90+ files)
-- `.env`: `REACT_APP_BACKEND_URL` → `VITE_BACKEND_URL`
+- `.env`: CRA-era `REACT_APP_BACKEND_URL` tamamen kaldirildi, yerine `VITE_BACKEND_URL` kullanildi
 - `index.html`: `%REACT_APP_ENABLE_VISUAL_EDITS%` → `%VITE_ENABLE_VISUAL_EDITS%`
 - `process.env.PUBLIC_URL` → `''` (Vite serves from root)
+- **Not:** Bu migrasyondan sonra repo genelinde `REACT_APP_*` prefix'i aktif kullanilmamaktadir
 
 ### CJS → ESM Conversion
 - `src/index.js`: `require("./i18n")` → `import("./i18n").catch(...)`
@@ -677,7 +678,7 @@
 
 ### CI/CD Config Fixes
 - **yarn audit:** Implemented bitmask exit code check — only fails on HIGH/CRITICAL vulnerabilities (8+16), allows moderate (4).
-- **Environment variables:** Fixed `REACT_APP_BACKEND_URL` → `VITE_BACKEND_URL` for Vite 8 compatibility.
+- **Environment variables:** CRA-era `REACT_APP_BACKEND_URL` tamamen kaldirildi, `VITE_BACKEND_URL` ile degistirildi (Vite 8 uyumlulugu).
 - **VITE_ENABLE_VISUAL_EDITS:** Added to frontend `.env` and CI build step to suppress build warning.
 - **Bundle size check:** Updated `find` path from `build/static/js` to `build/` (Rolldown outputs to `build/assets/`).
 
