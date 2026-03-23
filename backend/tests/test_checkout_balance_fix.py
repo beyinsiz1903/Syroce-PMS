@@ -18,7 +18,7 @@ pytestmark = pytest.mark.skipif(
     reason="VITE_BACKEND_URL not set - integration tests require a running server"
 )
 if not BASE_URL:
-    BASE_URL = "https://trend-analytics-6.preview.emergentagent.com"
+    BASE_URL = "https://control-plane-4.preview.emergentagent.com"
 
 
 class TestCheckoutBalanceFix:
