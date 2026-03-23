@@ -14,7 +14,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://control-plane-4.preview.emergentagent.com")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://auto-heal-1.preview.emergentagent.com")
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
