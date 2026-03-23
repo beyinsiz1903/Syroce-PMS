@@ -1,11 +1,23 @@
 # Syroce PMS — Changelog
-## 2026-03-23: ESLint ajv Uyumluluk Düzeltmesi
+## 2026-03-23: ESLint ajv CI/CD Düzeltmesi + websocket.js Lint Fix
+
+### Bug Fix — ajv CI Uyumluluğu
+- **Sorun:** ESLint ajv hatası CI (npm) ortamında devam ediyordu — yarn `resolutions` npm tarafından tanınmıyor
+- **Düzeltme:** `package.json`'a `overrides` alanı eklendi (npm karşılığı). Tüm güvenlik resolution'ları hem `resolutions` (yarn) hem `overrides` (npm) olarak tanımlandı
+- **Sonuç:** ESLint artık hem yarn hem npm ortamlarında hatasız çalışıyor
+
+### Code Quality Fix — websocket.js
+- **Sorun:** `await import('socket.io-client')` async olmayan `connect()` fonksiyonu içinde kullanılıyordu (ESLint parsing error)
+- **Düzeltme:** `connect()` metodu `async` yapıldı, `useWebSocket` hook'u async connect'i doğru handle edecek şekilde güncellendi
+- **Sonuç:** ESLint 0 hata, 0 uyarı (tamamen temiz lint)
+
+## 2026-03-23: ESLint ajv Uyumluluk Düzeltmesi (İlk Fix)
 
 ### Bug Fix
 - **Sorun:** ESLint 9.23.0, `ajv@^6.12.4` gerektiriyor ama `package.json` resolutions `"ajv": ">=6.14.0"` ile `ajv@8.18.0` yükleniyordu
 - **Hata:** `TypeError: Cannot set properties of undefined (setting 'defaultMeta')` — ajv v8 API'si v6 ile uyumsuz
 - **Düzeltme:** Resolution `"ajv": "6.12.6"` olarak değiştirildi (güvenlik yaması dahil, ESLint uyumlu)
-- **Sonuç:** ESLint artık CI/CD pipeline'da hatasız çalışıyor
+- **Sonuç:** ESLint artık lokal ortamda hatasız çalışıyor
 
 
 

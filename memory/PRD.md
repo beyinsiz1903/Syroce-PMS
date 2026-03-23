@@ -27,6 +27,7 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 - **Config:** `oxc.lang: 'jsx'` enables JSX parsing in .js files
 - **Env vars:** `VITE_*` prefix (was `REACT_APP_*`)
 - **Entry:** `/app/frontend/index.html` (root level, not public/)
+- **Dependency overrides:** Both `resolutions` (yarn) and `overrides` (npm) for cross-package-manager CI compatibility
 
 ## Credentials
 | User | Email | Password | Role |
@@ -34,6 +35,11 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 | Demo Admin | demo@hotel.com | demo123 | super_admin |
 
 ## Completed Features
+
+### ESLint ajv CI/CD Fix + websocket.js Lint Fix (2026-03-23)
+- npm `overrides` field added to `package.json` for CI compatibility (ajv v6.12.6 forced in both yarn and npm)
+- `websocket.js` `connect()` method made async, `useWebSocket` hook updated for async compat
+- ESLint: 0 errors, 0 warnings (fully clean)
 
 ### CRA → Vite Migration (2026-03-23)
 Full build system migration from Create React App to Vite 8.0.1. Removed react-scripts, @craco/craco.
@@ -76,11 +82,17 @@ ADR-001 invariants, room-night lock audit trail, cancel/modify race guard, 10-te
 Deploy Pipeline, Governance & Metering, Control Plane, Chaos Testing, Core Battle Loop, Webhook Timeline.
 
 ## Bug Fixes
+### ESLint ajv CI/CD Crash (2026-03-23)
 ### Overbooking Prevention — Room-Night Locking (2026-03-22)
 ### Navigation Module Visibility Bug (2026-03-22)
 ### Past Date Reservation Bug (2026-03-22)
 
 ## Pending Tasks
+
+### P0 — Flaky Backend Tests
+- Fix intermittent 409 Conflict errors in `tests/battle/test_booking_integrity.py` (state pollution)
+- Ensure proper test isolation with database cleanup fixtures
+- Critical for reliable CI/CD pipeline
 
 ### P0 — Sprint 5 (Phase C.2 Implementation)
 - Implement Phase C.2: Event-driven room-type inventory updates (ADR-003)
@@ -96,7 +108,10 @@ Deploy Pipeline, Governance & Metering, Control Plane, Chaos Testing, Core Battl
 - [x] yarn resolutions for Bucket 1: lodash, qs, postcss, diff, @eslint/plugin-kit (29→14 vulns)
 - [x] CRA → Vite 8 migration (14→2 vulns, removed react-scripts + @craco/craco)
 - [x] ajv resolution (2→0 vulns, now works without CRA blocking)
+- [x] npm `overrides` field added for CI compatibility (yarn resolutions + npm overrides)
+- [x] websocket.js ESLint parsing error fixed (async connect)
 - **Result: 87 → 0 vulnerabilities, 0 critical, 0 high, 0 moderate, 0 low**
+- **ESLint: 0 errors, 0 warnings (fully clean)**
 
 ### P1 — Quarantined Tests
 - Fix tests in `tests/_quarantine/` starting with stale_dates category

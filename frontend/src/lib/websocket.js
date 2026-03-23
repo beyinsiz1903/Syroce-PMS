@@ -19,7 +19,7 @@ class WebSocketManager {
     this.disabled = false;
   }
 
-  connect() {
+  async connect() {
     // If disabled after max attempts, return a mock socket
     if (this.disabled) {
       return this._getMockSocket();
@@ -172,27 +172,32 @@ export function useWebSocket(room = null) {
   const [isConnected, setIsConnected] = React.useState(false);
 
   React.useEffect(() => {
-    const socket = websocket.connect();
-    
-    const checkConnection = () => {
-      setIsConnected(websocket.isConnected());
+    let cancelled = false;
+
+    const init = async () => {
+      const socket = await websocket.connect();
+      if (cancelled) return;
+
+      const checkConnection = () => {
+        setIsConnected(websocket.isConnected());
+      };
+
+      socket.on('connect', checkConnection);
+      socket.on('disconnect', checkConnection);
+      checkConnection();
+
+      if (room) {
+        websocket.joinRoom(room);
+      }
     };
 
-    socket.on('connect', checkConnection);
-    socket.on('disconnect', checkConnection);
-
-    checkConnection();
-
-    if (room) {
-      websocket.joinRoom(room);
-    }
+    init();
 
     return () => {
+      cancelled = true;
       if (room) {
         websocket.leaveRoom(room);
       }
-      socket.off('connect', checkConnection);
-      socket.off('disconnect', checkConnection);
     };
   }, [room]);
 
