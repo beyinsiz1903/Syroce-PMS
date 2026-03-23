@@ -245,7 +245,7 @@ class TestRunbooks:
 
     def test_runbook_count(self):
         all_runbooks = list_runbooks()
-        assert len(all_runbooks) == 14
+        assert len(all_runbooks) == 15
 
 
 # ═══════════════════════════════════════════════════════════════════
