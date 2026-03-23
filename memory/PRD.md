@@ -23,6 +23,7 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - Production-grade CI/CD with rollback, smoke tests, notifications
 - Quarantine Burn-Down Dashboard (tech debt tracking)
 - Weekly Proof Dashboard (week-over-week improvement tracking)
+- **Deploy Dashboard — CI/CD → Control Plane integration (deploy event recording + visibility)**
 
 ## What's Been Completed
 
@@ -85,6 +86,10 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - [x] Production deployment pipeline (rollback + smoke test + notification)
 - [x] Quarantine burn-down dashboard (tech debt tracking)
 - [x] Weekly proof dashboard (week-over-week improvement)
+- [x] CI/CD → Control Plane integration (deploy event dashboard)
+- [x] CI/CD structured smoke test output (table with endpoint/status/latency/result)
+- [x] CI/CD enhanced notifications (GitHub annotations + GITHUB_STEP_SUMMARY + Slack)
+- [x] CHANGELOG truth cleanup (stale REACT_APP_BACKEND_URL reference fixed)
 
 ## P1 — Upcoming
 - [ ] Fix remaining quarantined tests: stale_fixtures (rate_manager, 10 tests)
@@ -115,6 +120,7 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - **Deployment Rollback:** `kubectl rollout undo` on failure with rollout status wait
 - **Tech Debt Tracking:** Direct import from quarantine_manifest.py, no DB dependency
 - **Weekly Proof:** MongoDB aggregation with week-based date windowing
+- **Deploy Event Bridge:** CI/CD workflows POST deploy results to backend; Control Plane renders deploy history with smoke test details, rollback events, and per-environment success rates
 
 ## Key API Endpoints
 - `GET /api/ops/dashboard/channel-health` — Current period health metrics
@@ -122,6 +128,9 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - `GET /api/ops/dashboard/channel-health/field-kpis` — Operational field KPIs
 - `GET /api/ops/dashboard/channel-health/weekly-proof` — Week-over-week improvement
 - `GET /api/ops/dashboard/tech-debt` — Quarantine burn-down tracking
+- `POST /api/ops/deploys` — Record deploy event (CI/CD → Control Plane)
+- `GET /api/ops/dashboard/deploys` — Deploy history (newest first, env filter, limit)
+- `GET /api/ops/dashboard/deploy-stats` — Deploy statistics per environment
 
 ## Test Credentials
 | User | Email | Password | Role |
