@@ -19,6 +19,14 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 | Demo Admin | demo@hotel.com | demo123 | super_admin |
 
 ## Completed Features
+### Overbooking Prevention v2 — Booking Integrity Hardening (2026-03-23) — Sprint 1
+ADR-001 invariants, room-night lock audit trail, OOO/OOS/maintenance integration, cancel/modify race guard, 10-test CI hard gate.
+- **Files**: `core/atomic_booking.py`, `routers/room_blocks.py`, `modules/reservations/repository.py`, `docs/ADR_BOOKING_INVARIANTS.md`, `tests/battle/test_booking_integrity.py`
+- **API**: POST/DELETE/GET `/api/room-blocks`
+- **Invariants**: INV-1 (no negative inventory), INV-2 (all-or-nothing), INV-3 (idempotency), INV-4 (version check), INV-5 (OOO same truth), INV-6 (timeline audit)
+- **Testing**: 25/25 pass (iteration_134)
+
+
 
 ### Deploy Pipeline — Hard Gate CI/CD & Progressive Deploy (2026-03-22) — Phase 2
 Production-grade deployment pipeline with hard gates, auto-rollback, migration verification, smoke tests, and canary analysis.

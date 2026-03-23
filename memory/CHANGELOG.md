@@ -1,5 +1,62 @@
 # Syroce PMS — Changelog
 
+## 2026-03-23: Sprint 1 — Overbooking Prevention v2 (Booking Integrity Hardening)
+
+### ADR-001: Booking Invariants Document (Faz 0)
+- Created `/backend/docs/ADR_BOOKING_INVARIANTS.md`
+- Defines 6 non-negotiable invariants: INV-1 through INV-6
+- INV-1: Sellable inventory never negative
+- INV-2: Full-stay all-or-nothing
+- INV-3: Idempotency key consistency
+- INV-4: Cancel/modify/rebook deterministic precedence
+- INV-5: OOO/OOS/maintenance uses same availability truth
+- INV-6: Every conflict/release in event_timeline
+
+### A4+A1: Lock Audit Trail + Full-Stay Atomicity
+- Rewrote `core/atomic_booking.py` with comprehensive timeline integration
+- Every lock_acquired, lock_conflict, lock_compensation, lock_released event writes to event_timeline
+- Conflict events include: conflict_night, conflict_type (booking/ooo/oos/maintenance), conflicting_booking_id
+- Compensation events include: released_nights, failed_night, total_claimed_before_rollback
+- Clear conflict type detection for OOO/OOS/maintenance blocks
+
+### A5: OOO/OOS/Maintenance Integration (INV-5)
+- New `apply_room_block()` function inserts locks into same `room_night_locks` collection
+- Lock booking_id uses prefixes: "OOO:", "OOS:", "MAINT:" to distinguish from guest bookings
+- `release_room_block()` removes operational locks with audit trail
+- `get_room_blocks()` queries operational blocks by type
+- New REST API: `routers/room_blocks.py`
+  - POST /api/room-blocks — Apply block
+  - DELETE /api/room-blocks — Release block
+  - GET /api/room-blocks — List active blocks
+
+### A3: Cancel/Modify Race Guard (INV-4)
+- Added `_version` field to all new bookings (created with _version=1)
+- `repository.update_booking()` now supports optimistic locking via expected_version parameter
+- Version check ensures first-write-wins for concurrent modifications
+- 409 Conflict returned on version mismatch
+
+### Booking Integrity CI Hard Gate
+- Created `tests/battle/test_booking_integrity.py` with 10 tests:
+  1. Same room-night concurrency race (10 concurrent → exactly 1 success)
+  2. Multi-night partial contention (all-or-nothing, no partial locks)
+  3. Cancel then rebook same dates
+  4. Idempotency key no duplicate inventory
+  5. OOO room blocks booking attempt (409)
+  6. Lock audit trail in timeline (lock_acquired + lock_released)
+  7. Double cancel idempotent
+  8. Adjacent dates no conflict (checkout=checkin)
+  9. Different rooms same dates both succeed
+  10. Lock conflict recorded in timeline
+- Added to CI hard gate in `.github/workflows/ci-cd.yml`
+
+### Testing
+- 25/25 tests pass (15 Sprint 1 + 10 booking integrity)
+- Testing agent verification: 100% success (iteration_134)
+- Zero critical issues, zero action items
+
+
+# Syroce PMS — Changelog
+
 ## 2026-03-22: P1 Hardening — Folio Ledger, Learning Loop, Battle Tests
 
 ### Immutable Folio Ledger Service
