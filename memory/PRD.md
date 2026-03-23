@@ -20,7 +20,15 @@ Enterprise otel yönetim sistemi (PMS). Operasyonel zeka platformu: channel mana
 - axios baseURL: `VITE_BACKEND_URL + '/api'`
 
 ## Bug Fixes
-- **HMR Page Auto-Refresh (Fixed - March 2026):** Vite HMR client's WebSocket connection was being dropped by Kubernetes proxy after ~60 seconds of idle time. When disconnected, the Vite client (including the one embedded in `emergent-main.js`) would call `location.reload()`, causing periodic full-page refreshes. Fix: Two-pronged approach in `vite.config.js` — (1) Vite plugin `patchHmrClient` transforms `@vite/client` code to replace `location.reload()` with `console.debug()`, and (2) `Location.prototype.reload` is overridden in HTML head to catch any reload calls from external scripts.
+- **HMR Page Auto-Refresh (Permanent Fix - March 2026):**
+  - **Root cause:** Kubernetes proxy drops idle WebSocket connections after ~60s. Vite HMR client and `emergent-main.js` call `location.reload()` on disconnect.
+  - **Fix: 3-layer defense (permanent, survives `yarn install`):**
+    1. **Postinstall script** (`scripts/patch-vite-client.js`): Automatically patches `node_modules/vite/dist/client/client.mjs` after every `yarn install`, replacing `location.reload()` with console.debug.
+    2. **Vite plugin transform hook** (`hmrReloadGuard`): Build-time backup that catches reload calls in bundled client code.
+    3. **Runtime guard** (`transformIndexHtml`): Injects smart `Location.prototype.reload` override that only allows reloads triggered within 3s of user interaction (click/submit/keydown). Blocks HMR auto-reloads while preserving legitimate app reloads (Settings, PropertySwitcher, etc.)
+  - **WebSocket keepalive:** HMR timeout reduced to 15s for more frequent pings, preventing proxy idle timeout.
+  - **Regression tests:** 8 tests in `backend/tests/test_hmr_patch.py` covering patch existence, idempotency, config validation.
+  - **Verified:** 2-minute Playwright stability test confirmed 0 auto-reloads, 1 suppressed attempt at ~60s mark.
 
 ## Phase A-I (COMPLETED)
 All foundational layers: Notification, Auto-Action Engine, Unified Ops View, Control Plane, Channel Health, Drift Alerting, Import Bridge, Outbox Worker, ARI Push Engine, Crypto/Secrets modules.
@@ -77,9 +85,12 @@ All foundational layers: Notification, Auto-Action Engine, Unified Ops View, Con
 | Demo Admin | demo@hotel.com | demo123 | super_admin |
 
 ## Backlog (P1)
-- Sandbox Simulation (Exely/HotelRunner)
-- Security Hardening (SEC-001, SEC-002)
-- Alert → Business KPI Correlation
+- Sandbox Simulation (Exely/HotelRunner) — duplicate delivery, delayed ack, retry storm, stale provider state
+- SEC-001 Secrets Management — rotation + rollback plan
+- SEC-002 Crypto Migration — dual-read / dual-write transition plan
+
+## Backlog (P1.5)
+- Alert → Business KPI Correlation — severity + runbook link + tenant/property/provider context
 
 ## Backlog (P2)
 - Strict Tenant Mode

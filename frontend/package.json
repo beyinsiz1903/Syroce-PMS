@@ -70,7 +70,8 @@
     "start": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "postinstall": "node scripts/patch-vite-client.js"
   },
   "browserslist": {
     "production": [

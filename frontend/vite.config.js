@@ -2,41 +2,93 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
-// Plugin to patch the Vite HMR client to prevent full-page reloads
-// when the WebSocket connection drops through Kubernetes proxy
-function patchHmrClient() {
+/**
+ * Permanent HMR reload suppression plugin for proxied environments.
+ *
+ * Problem: Kubernetes/reverse-proxy drops idle WebSocket connections after ~60s.
+ *          When Vite's HMR client detects the disconnect, it calls location.reload()
+ *          causing periodic full-page refreshes that destroy form state and UX.
+ *
+ * Solution (3 layers of defense):
+ *   Layer 1 – postinstall script patches node_modules directly (see scripts/patch-vite-client.js)
+ *   Layer 2 – transform hook catches any reload() calls that survive in bundled client code
+ *   Layer 3 – transformIndexHtml injects a smart runtime guard that blocks reloads
+ *             not triggered by user interaction (clicks, submits, keyboard)
+ */
+function hmrReloadGuard() {
   return {
-    name: 'patch-hmr-client',
+    name: 'hmr-reload-guard',
     enforce: 'pre',
+
+    // Layer 2: Transform-time patch of Vite client code
     transform(code, id) {
-      // Patch the @vite/client module to replace location.reload() with no-op
       if (id.includes('vite/dist/client') || id.includes('@vite/client')) {
-        return code.replace(/location\.reload\(\)/g, 'console.debug("[HMR] reload suppressed")');
+        return code.replace(
+          /location\.reload\(\)/g,
+          'console.debug("[HMR] reload suppressed (transform)")'
+        );
       }
     },
+
+    // Layer 3: Runtime guard injected as the FIRST script in <head>
     transformIndexHtml(html) {
-      // Inject a script to intercept Vite client reload behavior
-      const patchScript = `<script>
-(function(){
-  var _orig = HTMLElement.prototype.remove;
-  // Monkey-patch Location.prototype.reload to suppress Vite HMR reloads
+      const guardScript = `<script>
+(function() {
+  // Smart reload guard: allows user-initiated reloads, blocks HMR auto-reloads.
+  // User interactions (click, submit, keydown) set a flag for 3 seconds.
+  // location.reload() is only permitted while that flag is active.
+  var _origReload = location.reload;
+  var _userActive = false;
+  var _activeTimer = null;
+
+  function markActive() {
+    _userActive = true;
+    if (_activeTimer) clearTimeout(_activeTimer);
+    _activeTimer = setTimeout(function() { _userActive = false; }, 3000);
+  }
+
+  document.addEventListener('click', markActive, true);
+  document.addEventListener('submit', markActive, true);
+  document.addEventListener('keydown', markActive, true);
+
+  // Programmatic reload API: window.__syroceReload() always works
+  window.__syroceReload = function() {
+    _origReload.call(location);
+  };
+
   try {
-    var origReload = Location.prototype.reload;
+    Object.defineProperty(Location.prototype, 'reload', {
+      configurable: true,
+      enumerable: true,
+      value: function() {
+        if (_userActive) {
+          _userActive = false;
+          return _origReload.call(this);
+        }
+        console.debug('[Syroce] auto-reload blocked (no user interaction)');
+      }
+    });
+  } catch(e) {
+    // Fallback: simple override if defineProperty fails
     Location.prototype.reload = function() {
-      console.debug('[HMR] page reload suppressed');
+      if (_userActive) {
+        _userActive = false;
+        return _origReload.call(location);
+      }
+      console.debug('[Syroce] auto-reload blocked (fallback)');
     };
-    window.__emergentForceReload = function() { origReload.call(location); };
-  } catch(e) {}
+  }
 })();
 </script>`;
-      return html.replace('<head>', '<head>' + patchScript);
+
+      return html.replace('<head>', '<head>' + guardScript);
     },
   };
 }
 
 export default defineConfig({
   plugins: [
-    patchHmrClient(),
+    hmrReloadGuard(),
     react({
       include: /\.(jsx|tsx)$/,
     }),
@@ -53,6 +105,8 @@ export default defineConfig({
     hmr: {
       clientPort: 443,
       protocol: 'wss',
+      // Shorter timeout = more frequent pings = WebSocket stays alive through proxy
+      timeout: 15000,
     },
     proxy: {
       '/api': {
