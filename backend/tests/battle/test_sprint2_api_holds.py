@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import pytest
 
-API_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://backend-repair-19.preview.emergentagent.com")
+API_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://backend-fixed.preview.emergentagent.com")
 
 # Use unique year range per test run to avoid date collisions
 _RUN_TAG = random.randint(2100, 9999)

@@ -21,7 +21,7 @@ import pytest
 import httpx
 
 # Use public URL from environment
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://backend-repair-19.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://backend-fixed.preview.emergentagent.com").rstrip("/")
 AUTH_CREDS = {"email": "demo@hotel.com", "password": "demo123"}
 
 # Use unique year range per run to avoid collisions

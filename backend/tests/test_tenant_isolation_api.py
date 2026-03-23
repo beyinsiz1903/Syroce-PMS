@@ -11,7 +11,7 @@ import requests
 # Get BASE_URL from environment
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 if not BASE_URL:
-    BASE_URL = "https://backend-repair-19.preview.emergentagent.com"
+    BASE_URL = "https://backend-fixed.preview.emergentagent.com"
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
