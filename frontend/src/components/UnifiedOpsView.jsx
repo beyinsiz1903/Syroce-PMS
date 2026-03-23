@@ -17,6 +17,9 @@ import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
 
+import { SandboxDashboard } from "./SandboxDashboard";
+import { SecurityOpsDashboard } from "./SecurityOpsDashboard";
+
 // ─── Style Maps ─────────────────────────────────────────────────
 const RATING_STYLES = {
   elite: { label: "ELITE", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
@@ -585,6 +588,12 @@ export function UnifiedOpsView() {
 
       {/* BOTTOM: KPI Dashboard */}
       <KpiDashboard kpiData={kpiData} dora={dora} correlation={correlation} onDrillDown={handleDrillDown} />
+
+      {/* SANDBOX: Resilience Dashboard */}
+      <SandboxDashboard />
+
+      {/* SECURITY: SEC-001 + SEC-002 Operations */}
+      <SecurityOpsDashboard />
     </div>
   );
 }

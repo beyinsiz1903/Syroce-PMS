@@ -82,6 +82,10 @@ class AlertingEngine:
         title: str,
         message: str,
         context: Optional[Dict[str, Any]] = None,
+        tenant_id: Optional[str] = None,
+        property_id: Optional[str] = None,
+        provider: Optional[str] = None,
+        runbook_link: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Fire an alert if not in cooldown.
 
@@ -96,6 +100,10 @@ class AlertingEngine:
 
         self._last_fired[trigger] = now
 
+        # Auto-generate runbook link if not provided
+        if not runbook_link:
+            runbook_link = f"/api/ops/runbooks/{trigger}"
+
         # Build alert record
         alert = {
             "trigger": trigger,
@@ -103,6 +111,10 @@ class AlertingEngine:
             "title": title,
             "message": message,
             "context": context or {},
+            "tenant_id": tenant_id,
+            "property_id": property_id,
+            "provider": provider,
+            "runbook_link": runbook_link,
             "fired_at": now.isoformat(),
             "acknowledged": False,
         }
@@ -140,6 +152,14 @@ class AlertingEngine:
             emoji = severity_emoji.get(alert["severity"], ":bell:")
 
             # Slack-compatible payload
+            context_fields = []
+            if alert.get("tenant_id"):
+                context_fields.append({"type": "mrkdwn", "text": f"*Tenant:* {alert['tenant_id']}"})
+            if alert.get("provider"):
+                context_fields.append({"type": "mrkdwn", "text": f"*Provider:* {alert['provider']}"})
+            if alert.get("property_id"):
+                context_fields.append({"type": "mrkdwn", "text": f"*Property:* {alert['property_id']}"})
+
             payload = {
                 "text": f"{emoji} *{alert['title']}*\n{alert['message']}",
                 "blocks": [
@@ -153,7 +173,8 @@ class AlertingEngine:
                             {"type": "mrkdwn", "text": f"*Severity:* {alert['severity']}"},
                             {"type": "mrkdwn", "text": f"*Trigger:* {alert['trigger']}"},
                             {"type": "mrkdwn", "text": f"*Time:* {alert['fired_at']}"},
-                        ],
+                            {"type": "mrkdwn", "text": f"*Runbook:* {alert.get('runbook_link', 'N/A')}"},
+                        ] + context_fields,
                     },
                     {
                         "type": "section",

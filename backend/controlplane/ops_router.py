@@ -21,19 +21,21 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.database import db
 from .failure_tracker import get_failure_tracker
 from .retry_engine import get_retry_engine
 from .runbooks import get_runbook, list_runbooks
-from .alerting import get_alerting_engine
+from .alerting import get_alerting_engine, COLL_ALERTS
 from .secret_audit import get_secret_access_control
+from security.ops_guard import require_ops_access
 
 logger = logging.getLogger("controlplane.ops_router")
 
-router = APIRouter(prefix="/api/ops", tags=["Control Plane"])
+router = APIRouter(prefix="/api/ops", tags=["Control Plane"],
+                   dependencies=[Depends(require_ops_access)])
 
 
 # ── Response Models ────────────────────────────────────────────────
@@ -411,3 +413,99 @@ async def secret_anomalies(
     """Get secret access anomalies (failures, denials)."""
     control = get_secret_access_control()
     return await control.get_anomalies(hours=hours, tenant_id=tenant_id)
+
+
+# ── 11. Alert → Business KPI Correlation ──────────────────────────
+
+@router.get("/alerts/kpi-correlation")
+async def alert_kpi_correlation(
+    hours: int = Query(24, ge=1, le=168),
+    tenant_id: Optional[str] = Query(None),
+):
+    """Correlate alerts with business KPIs.
+
+    Maps alerts to business impact:
+    - Import failures → missed bookings → revenue impact
+    - Outbox stuck → delayed rate pushes → rate parity risk
+    - Secret anomalies → security exposure → compliance risk
+    - Crypto failures → data protection risk
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(hours=hours)).isoformat()
+
+    query = {"fired_at": {"$gte": cutoff}}
+    if tenant_id:
+        query["tenant_id"] = tenant_id
+
+    alerts = await db[COLL_ALERTS].find(
+        query, {"_id": 0},
+    ).sort("fired_at", -1).to_list(500)
+
+    # Compute KPI impact
+    kpi_impact = {
+        "revenue_risk": {"level": "low", "alert_count": 0, "drivers": []},
+        "rate_parity_risk": {"level": "low", "alert_count": 0, "drivers": []},
+        "security_risk": {"level": "low", "alert_count": 0, "drivers": []},
+        "data_protection_risk": {"level": "low", "alert_count": 0, "drivers": []},
+    }
+
+    TRIGGER_KPI_MAP = {
+        "import_failure_spike": "revenue_risk",
+        "high_error_rate": "revenue_risk",
+        "outbox_stuck": "rate_parity_risk",
+        "sync_failure_spike": "rate_parity_risk",
+        "secret_anomaly": "security_risk",
+        "provider_auth_failure": "security_risk",
+        "crypto_failure": "data_protection_risk",
+    }
+
+    for alert in alerts:
+        trigger = alert.get("trigger", "")
+        kpi = TRIGGER_KPI_MAP.get(trigger)
+        if kpi and kpi in kpi_impact:
+            kpi_impact[kpi]["alert_count"] += 1
+            kpi_impact[kpi]["drivers"].append({
+                "trigger": trigger,
+                "severity": alert.get("severity", ""),
+                "title": alert.get("title", ""),
+                "fired_at": alert.get("fired_at", ""),
+                "tenant_id": alert.get("tenant_id"),
+                "provider": alert.get("provider"),
+                "runbook_link": alert.get("runbook_link"),
+            })
+
+    # Compute risk levels
+    for kpi_key, kpi_data in kpi_impact.items():
+        count = kpi_data["alert_count"]
+        has_critical = any(d.get("severity") == "critical" for d in kpi_data["drivers"])
+        if has_critical or count >= 5:
+            kpi_data["level"] = "critical"
+        elif count >= 3:
+            kpi_data["level"] = "high"
+        elif count >= 1:
+            kpi_data["level"] = "medium"
+        else:
+            kpi_data["level"] = "low"
+        # Limit drivers to top 5
+        kpi_data["drivers"] = kpi_data["drivers"][:5]
+
+    # Alert summary by severity and provider
+    by_severity = {}
+    by_provider = {}
+    for alert in alerts:
+        sev = alert.get("severity", "unknown")
+        by_severity[sev] = by_severity.get(sev, 0) + 1
+        prov = alert.get("provider")
+        if prov:
+            by_provider[prov] = by_provider.get(prov, 0) + 1
+
+    return {
+        "kpi_impact": kpi_impact,
+        "alert_summary": {
+            "total_alerts": len(alerts),
+            "by_severity": by_severity,
+            "by_provider": by_provider,
+            "time_window_hours": hours,
+        },
+        "timestamp": now.isoformat(),
+    }

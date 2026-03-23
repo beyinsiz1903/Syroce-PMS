@@ -151,6 +151,10 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("routers.folio_ledger", "router", ["Folio Ledger"], None, None),
     # Learning Loop — Incident classification, RCA, never-again rules
     ("controlplane.learning_loop_router", "router", ["Learning Loop"], None, None),
+    # Security Operations — SEC-001 Secrets + SEC-002 Crypto rollout APIs
+    ("controlplane.security_ops_router", "router", ["Security Operations"], None, None),
+    # Sandbox Dashboard — Visualization of simulation results on ops dashboard
+    ("controlplane.sandbox_dashboard_router", "router", ["Sandbox Dashboard"], None, None),
     # Room Blocks — OOO/OOS/Maintenance (INV-5: same availability truth)
     ("routers.room_blocks", "router", ["Room Blocks"], None, None),
     # Booking Holds — TTL/Hold mechanism for pending bookings
