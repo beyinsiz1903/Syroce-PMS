@@ -42,6 +42,9 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - [x] Frontend production build (Vite 8/Rolldown compatibility)
 - [x] Flaky backend test stabilization
 - [x] CI/CD pipeline reliability (yarn audit, env vars)
+- [x] Docker build fix: yarn.lock regenerated (was out of sync with package.json resolutions/overrides)
+- [x] Dockerfile env var fix: REACT_APP_BACKEND_URL → VITE_BACKEND_URL
+- [x] CI workflow fix: Docker build ARG updated to VITE_BACKEND_URL
 
 ## P1 — Upcoming
 - [ ] Address quarantined tests in `tests/_quarantine/` (7 directories)

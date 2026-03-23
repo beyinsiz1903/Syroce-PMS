@@ -323,7 +323,7 @@ jobs:
         run: docker build -t syroce-backend:${{ github.sha }} ./backend
 
       - name: Build frontend image
-        run: docker build -t syroce-frontend:${{ github.sha }} --build-arg REACT_APP_BACKEND_URL=${{ secrets.REACT_APP_BACKEND_URL }} ./frontend
+        run: docker build -t syroce-frontend:${{ github.sha }} --build-arg VITE_BACKEND_URL=${{ secrets.VITE_BACKEND_URL }} ./frontend
 
       - name: Build worker image
         run: docker build -t syroce-worker:${{ github.sha }} -f ./worker/Dockerfile .
