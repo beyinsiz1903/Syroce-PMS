@@ -19,6 +19,9 @@ Enterprise otel yönetim sistemi (PMS). Operasyonel zeka platformu: channel mana
 - Frontend: `/app/frontend/src/` (React, pages + components)
 - axios baseURL: `VITE_BACKEND_URL + '/api'`
 
+## Bug Fixes
+- **HMR 30-Second Page Refresh (Fixed - March 2026):** Vite HMR WebSocket connection was failing through Kubernetes proxy (WSS), causing full page reload every 30 seconds due to `timeout: 30000`. Fix: Disabled HMR in `vite.config.js` (`hmr: false`) for preview environment.
+
 ## Phase A-I (COMPLETED)
 All foundational layers: Notification, Auto-Action Engine, Unified Ops View, Control Plane, Channel Health, Drift Alerting, Import Bridge, Outbox Worker, ARI Push Engine, Crypto/Secrets modules.
 

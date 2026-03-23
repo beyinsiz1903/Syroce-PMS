@@ -6,7 +6,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://hotel-ops-10.preview.emergentagent.com')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://decision-hub-55.preview.emergentagent.com')
 
 class TestAuth:
     """Authentication tests"""
