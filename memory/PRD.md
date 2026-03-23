@@ -23,9 +23,19 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - Production-grade CI/CD with rollback, smoke tests, notifications
 - Quarantine Burn-Down Dashboard (tech debt tracking)
 - Weekly Proof Dashboard (week-over-week improvement tracking)
-- **Deploy Dashboard — CI/CD → Control Plane integration (deploy event recording + visibility)**
+- **Deploy Dashboard — CI/CD → Control Plane integration (deploy event recording + trend visualization)**
 
 ## What's Been Completed
+
+### P0 Closure — CI/CD Hardening & Deploy Evidence (2026-03-23)
+- **CHANGELOG Cleanup**: Historical `REACT_APP_BACKEND_URL` references annotated with migration context
+- **Slack Fallback Standardization**: All CI/CD workflows now use `::notice` annotations when Slack webhook is unavailable, making fallback behavior visible instead of silent
+- **Smoke Test Standardization**: deploy.yml staging upgraded from 2 to 4 endpoints, matching ci-cd.yml (Health API, Frontend, API Docs, Channel Health)
+- **Notification Standardization**: deploy.yml staging/production notifications upgraded to rich format (table summary + branch/environment fields + GitHub annotations)
+- **Deploy Trend Chart**: New Recharts BarChart in DeployDashboard showing daily success/failure/rollback over 14 days
+- **Deploy Trend API**: New `GET /api/ops/dashboard/deploy-trend` endpoint aggregating daily deploy counts
+- **Smoke Test Badge**: Deploy history rows now show inline smoke test pass/total badge
+- **booking_adapter.py Fix**: Fixed `ModuleNotFoundError` by updating import from `booking_availability` to `_legacy.booking_availability`
 
 ### Production Deployment Pipeline (2026-03-23)
 - **CI/CD (`ci-cd.yml`):** Full deployment chain with Docker build/push to GHCR, rollout status wait, post-deploy smoke tests, automatic rollback on failure, Slack notifications
@@ -34,44 +44,17 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 
 ### Quarantine Burn-Down Dashboard (2026-03-23)
 - **Backend:** `/api/ops/dashboard/tech-debt` endpoint reading quarantine manifest
-  - 5 categories: stale_fixtures (P1), changed_api (P2), changed_impl (P3), external_dep (P4), meta-test (P5)
-  - Per-category: count, effort hours, weekly target, weeks to clear
-  - Overall: health score (30/100), health grade (D), estimated 3 weeks to zero
-- **Frontend:** `TechDebtDashboard.jsx` — New "Teknik Borc" tab in Control Plane
-  - Summary cards (total, weekly target, weeks remaining, health grade)
-  - Progress bar with gradient
-  - Expandable category cards with priority badges, test lists
-- **Testing:** 26/26 backend + 13/13 frontend tests passed
+- **Frontend:** `TechDebtDashboard.jsx` — "Teknik Borc" tab in Control Plane
 
 ### Weekly Proof Dashboard (2026-03-23)
 - **Backend:** `/api/ops/dashboard/channel-health/weekly-proof` endpoint
-  - Week-over-week aggregation: sync success, drift count, MTTR, SLA compliance, push p95
-  - Improvement deltas (first week vs last week)
-  - Configurable weeks parameter (2-52)
-- **Frontend:** `WeeklyProofDashboard.jsx` — New "Deger Kaniti" tab in Control Plane
-  - 5 improvement cards with delta/trend indicators
-  - Sync & SLA trend line chart (Recharts)
-  - Drift & MTTR bar chart
-  - Push Latency p95 weekly bar chart
-  - Weeks selector (4h, 8h, 12h)
+- **Frontend:** `WeeklyProofDashboard.jsx` — "Deger Kaniti" tab in Control Plane
 
 ### Channel Health Management Dashboard v2 (2026-03-23)
-- **Upgraded from pilot screen to management screen**
-- **Historical Trends API:** `/api/ops/dashboard/channel-health/trends`
-- **Field KPIs API:** `/api/ops/dashboard/channel-health/field-kpis`
-- **Frontend:** Recharts trend charts, 5 field KPI cards, period selector
+- Historical Trends API + Field KPIs API + Recharts trend charts
 
 ### Environment Variable Unification (2026-03-23)
-- Replaced all `REACT_APP_BACKEND_URL` → `VITE_BACKEND_URL` (123 files)
-
-### Documentation & Quality Hardening (2026-03)
-- README drift fixed, Security snapshot, Test health section
-- Channel Capability Matrix, Pilot KPI Framework
-- deploy.yml fixed (graceful-skip pattern)
-
-### Quarantine Test Restoration (2026-03-23)
-- 7 quarantined test files restored, 10 individually skipped tests fixed
-- Test count: 391+ CI tests, 0 failures
+- Replaced all `REACT_APP_*` → `VITE_*` (CRA → Vite migration complete)
 
 ## P0 — Completed
 - [x] Frontend production build (Vite 8/Rolldown compatibility)
@@ -86,10 +69,14 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - [x] Production deployment pipeline (rollback + smoke test + notification)
 - [x] Quarantine burn-down dashboard (tech debt tracking)
 - [x] Weekly proof dashboard (week-over-week improvement)
-- [x] CI/CD → Control Plane integration (deploy event dashboard)
+- [x] CI/CD → Control Plane integration (deploy event dashboard + trend chart)
 - [x] CI/CD structured smoke test output (table with endpoint/status/latency/result)
 - [x] CI/CD enhanced notifications (GitHub annotations + GITHUB_STEP_SUMMARY + Slack)
-- [x] CHANGELOG truth cleanup (stale REACT_APP_BACKEND_URL reference fixed)
+- [x] CHANGELOG truth cleanup (historical migration context annotated)
+- [x] Slack fallback standardization (::notice when webhook unavailable)
+- [x] Smoke test endpoint standardization (4 endpoints across all workflows)
+- [x] Deploy trend visualization (Recharts BarChart in Control Plane)
+- [x] booking_adapter.py ModuleNotFoundError fix
 
 ## P1 — Upcoming
 - [ ] Fix remaining quarantined tests: stale_fixtures (rate_manager, 10 tests)
@@ -110,6 +97,7 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - [ ] Push latency SLO monitoring (per capability matrix)
 - [ ] Rate parity monitoring dashboard
 - [ ] Pilot hotel onboarding (per KPI framework)
+- [ ] Unified "Channel Health + Deploy + KPI" dashboard screen
 
 ## Key Technical Decisions
 - **Vite 8 `.jsx` Convention:** All React component files use `.jsx` extension
@@ -120,7 +108,8 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - **Deployment Rollback:** `kubectl rollout undo` on failure with rollout status wait
 - **Tech Debt Tracking:** Direct import from quarantine_manifest.py, no DB dependency
 - **Weekly Proof:** MongoDB aggregation with week-based date windowing
-- **Deploy Event Bridge:** CI/CD workflows POST deploy results to backend; Control Plane renders deploy history with smoke test details, rollback events, and per-environment success rates
+- **Deploy Event Bridge:** CI/CD workflows POST deploy results to backend; Control Plane renders deploy history with smoke test details, rollback events, trend charts, and per-environment success rates
+- **Notification Fallback:** All CI/CD notification steps use `::notice` annotation when Slack webhook unavailable
 
 ## Key API Endpoints
 - `GET /api/ops/dashboard/channel-health` — Current period health metrics
@@ -131,6 +120,7 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - `POST /api/ops/deploys` — Record deploy event (CI/CD → Control Plane)
 - `GET /api/ops/dashboard/deploys` — Deploy history (newest first, env filter, limit)
 - `GET /api/ops/dashboard/deploy-stats` — Deploy statistics per environment
+- `GET /api/ops/dashboard/deploy-trend` — Daily deploy trend chart data (success/failure/rollback)
 
 ## Test Credentials
 | User | Email | Password | Role |
