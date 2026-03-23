@@ -117,6 +117,7 @@ class CreateReservationService:
                 'ota_reference_id': booking_data.ota_reference_id,
                 'commission_pct': booking_data.commission_pct,
                 'created_at': now_ts.isoformat(),
+                '_version': 1,
             }
 
             if booking_data.base_rate and booking_data.base_rate != booking_data.total_amount and booking_data.override_reason:

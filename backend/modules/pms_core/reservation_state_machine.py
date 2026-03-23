@@ -88,10 +88,14 @@ class ReservationStateMachine:
             {"$set": update_fields}
         )
 
-        # Release room-night locks for overbooking prevention
+        # Release room-night locks for overbooking prevention (INV-6: audit trail)
         try:
             from core.atomic_booking import release_booking_nights
-            await release_booking_nights(tenant_id, booking["id"])
+            await release_booking_nights(
+                tenant_id, booking["id"],
+                reason=f"cancelled:{reason or 'no_reason'}",
+                correlation_id=booking.get("correlation_id"),
+            )
         except Exception as e:
             logger.warning("Failed to release night locks for %s: %s", booking["id"], e)
 

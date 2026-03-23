@@ -85,11 +85,28 @@ class ReservationsRepository:
             {"_id": 0},
         )
 
-    async def update_booking(self, tenant_id: str, booking_id: str, update_doc: Dict[str, Any]) -> None:
-        await db.bookings.update_one(
-            {"tenant_id": tenant_id, "id": booking_id},
-            {"$set": update_doc},
-        )
+    async def update_booking(self, tenant_id: str, booking_id: str, update_doc: Dict[str, Any],
+                             expected_version: Optional[int] = None) -> bool:
+        """Update booking with optional optimistic locking (INV-4).
+
+        If expected_version is provided, the update only succeeds if the
+        current _version matches. This prevents lost updates from concurrent
+        modifications (cancel vs modify race).
+
+        Returns True if the update was applied, False if version conflict.
+        """
+        query = {"tenant_id": tenant_id, "id": booking_id}
+        if expected_version is not None:
+            query["_version"] = expected_version
+
+        update_doc["_version"] = (expected_version or 0) + 1
+
+        result = await db.bookings.update_one(query, {"$set": update_doc})
+
+        if result.matched_count == 0 and expected_version is not None:
+            # Version conflict — someone else modified the booking
+            return False
+        return True
 
     async def insert_booking(self, booking_doc: Dict[str, Any]) -> None:
         from core.atomic_booking import create_booking_atomic

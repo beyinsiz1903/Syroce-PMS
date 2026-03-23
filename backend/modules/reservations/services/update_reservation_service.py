@@ -161,17 +161,30 @@ class UpdateReservationService:
                         {"status": "occupied", "current_booking_id": booking_id},
                     )
 
-            # Release room-night locks when status transitions to cancelled/no_show
+            # Release room-night locks when status transitions to cancelled/no_show (INV-6)
             if new_status in ("cancelled", "no_show") and old_status not in ("cancelled", "no_show"):
                 try:
                     from core.atomic_booking import release_booking_nights
-                    await release_booking_nights(tenant_context.tenant_id, booking_id)
+                    await release_booking_nights(
+                        tenant_context.tenant_id, booking_id,
+                        reason=f"{new_status}:update_service",
+                        correlation_id=correlation_id,
+                    )
                 except Exception:
                     pass
 
-            # Apply remaining field updates (if any left after atomic handled status)
+            # Apply remaining field updates with optimistic locking (INV-4)
             if update_data:
-                await self.repository.update_booking(tenant_context.tenant_id, booking_id, update_data)
+                expected_version = existing_booking.get("_version")
+                version_ok = await self.repository.update_booking(
+                    tenant_context.tenant_id, booking_id, update_data,
+                    expected_version=expected_version,
+                )
+                if not version_ok:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Concurrent modification detected. Please retry.",
+                    )
             updated_booking = await self.repository.get_booking_for_tenant(tenant_context.tenant_id, booking_id)
 
             if not updated_booking:
