@@ -16,12 +16,14 @@ import path from 'path';
  *             not triggered by user interaction (clicks, submits, keyboard)
  */
 function hmrReloadGuard() {
+  const enabled = process.env.VITE_HMR_GUARD_ENABLED !== 'false';
   return {
     name: 'hmr-reload-guard',
     enforce: 'pre',
 
     // Layer 2: Transform-time patch of Vite client code
     transform(code, id) {
+      if (!enabled) return;
       if (id.includes('vite/dist/client') || id.includes('@vite/client')) {
         return code.replace(
           /location\.reload\(\)/g,
@@ -32,6 +34,7 @@ function hmrReloadGuard() {
 
     // Layer 3: Runtime guard injected as the FIRST script in <head>
     transformIndexHtml(html) {
+      if (!enabled) return html;
       const guardScript = `<script>
 (function() {
   // Smart reload guard: allows user-initiated reloads, blocks HMR auto-reloads.
