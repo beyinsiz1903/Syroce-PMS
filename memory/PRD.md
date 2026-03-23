@@ -23,6 +23,20 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 
 ## Completed Features
 
+### Sprint 4 — Quarantine Triage + Phase C RFC (2026-03-23)
+**Test Quarantine Triage (DONE)**
+- 7 test files fully quarantined to `tests/_quarantine/` (categorized: stale_room_locks, stale_fixtures, stale_dates)
+- 52 individual tests skip-marked via `quarantine_manifest.py` + conftest.py auto-skip hook
+- Categories: stale_room_locks (14), stale_fixtures (11), changed_api (10), changed_impl (13), ext_dependency (3), meta-test (1)
+- Business date reset (was advanced by night audit tests, blocking same-day bookings)
+- **Testing**: T0: 71/72 pass (1 data-skip), T1: 241/241 pass, Quarantine: working (iteration_137)
+
+**Phase C RFC/ADR (DONE)**
+- Created `docs/ADR_ROOM_TYPE_INVENTORY_STRATEGY.md` (ADR-003, 328 lines)
+- 3-layer inventory model: Room-Night Locks → Room-Type Inventory → Channel Inventory
+- Phased migration: C.1 (read-only view) → C.2 (event-driven) → C.3 (deferred assignment)
+- New invariants: INV-7 (type-lock consistency), INV-8 (channel <= property)
+
 ### Sprint 3 — Regression Guards + CI Security + Test Quarantine (2026-03-23)
 **Regression Guard Tests (DONE)**
 - `tests/battle/test_regression_guards.py`: 8 permanent regression tests
@@ -83,11 +97,15 @@ Frontend operations screen: Reservation Trace, System Health, Live Feed.
 
 ## Pending Tasks
 
-### P0 — Sprint 4 (Room-Type Strategy)
-- RFC/ADR for Phase C "Room-Type Level Strategy"
-- Design room-type strategy from audit trail telemetry
-- Align channel manager inventory ledger with hardened booking system
+### P0 — Sprint 5 (Phase C.1 Implementation)
+- Implement Phase C.1: Read-only room-type inventory materialized view (ADR-003)
+- Create `room_type_inventory` collection with reconciliation worker
+- Add API endpoint `GET /api/inventory/room-types?date=YYYY-MM-DD`
+- Verify accuracy against ad-hoc channel manager calculation
+
+### P0 — Battle Tests Expansion
 - PMS battle tests: split reservation, no-show, room change
+- Align channel manager inventory ledger with hardened booking system
 
 ### P1 — Governance Phase 3 (Support Tooling)
 - Support Dashboard: tenant health, quick actions
@@ -98,7 +116,6 @@ Frontend operations screen: Reservation Trace, System Health, Live Feed.
 
 ### P1 — Hardening (Blueprint Week 2)
 - Key rotation (data model + API + ReEncryptionWorker)
-- PMS battle tests (split reservation, no-show, room change)
 
 ### P1 — Stress & Exposure (Blueprint Week 3)
 - Reservation Burst test (15K reservations)
@@ -107,7 +124,7 @@ Frontend operations screen: Reservation Trace, System Health, Live Feed.
 - Pilot hotel shadow mode + canary rollout
 
 ### P2 — Tech Debt
-- ~403 failing tests → quarantine triage (ADR-002 strategy ready)
+- Quarantine monthly review: fix and restore quarantined tests (52 individual + 7 files)
 - ~264 legacy DB imports to tenant-scoped access
 - README and CI workflow file cleanup
 - Crypto Migration (SEC-002) & Secrets Management (SEC-001)
@@ -116,3 +133,4 @@ Frontend operations screen: Reservation Trace, System Health, Live Feed.
 ### P2 — Enhancements
 - Ctrl+K shortcut for quick Trace lookup
 - Login endpoint to return full module list
+

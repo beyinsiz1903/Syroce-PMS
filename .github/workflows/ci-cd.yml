@@ -125,6 +125,8 @@ jobs:
       - name: Run curated CI test suite (hard gate)
         run: |
           cd backend
+          # NOTE: Only explicitly listed T0+T1 test files run here.
+          # Quarantined tests (tests/_quarantine/) are excluded by design (ADR-002).
           python -m pytest \
             tests/test_hardening_comprehensive.py \
             tests/resilience/ \
