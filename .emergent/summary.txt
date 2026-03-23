@@ -4,35 +4,39 @@ The user has a multi-phase battle plan to harden their core booking engine, aimi
 The user's prioritized sequence is:
 1.  **Phase 0 (ADR):** Document non-negotiable booking system rules. (Completed)
 2.  **Phase B (Test Shield):** Create a hard gate CI test suite to enforce the rules. (Completed)
-3.  **Phase A (Core Implementation):** Implement hardening features like atomicity, audit trails, and race guards. (In Progress - Sprints 1, 2, and 3 are now complete)
-4.  **Future Phases:** Triage failing tests, design a room-type inventory system (Phase C), and align the channel manager.
+3.  **Phase A (Core Implementation):** Implement hardening features like atomicity, audit trails, and race guards. (Completed)
+4.  **Phase Triage (Sprint 4):** Isolate all existing failing tests to unblock CI/CD. (Completed in this session)
+5.  **Future Phases:** Write RFC for Room-Type Inventory (Phase C), implement it, and align the channel manager.
 
 **User's preferred language**: Turkish
 
 **what currently exists?**
-The agent has successfully completed **Sprint 3** of the user's battle plan. This sprint focused on solidifying the test infrastructure and creating permanent safeguards against known issues.
+The agent has successfully completed **Sprint 4** of the user's battle plan. This sprint focused on triaging and quarantining the large suite of failing tests to create a clean CI/CD pipeline, and drafting the RFC for the next major phase.
 
-1.  **Regression Guard Tests:** A new, dedicated test suite () was created to act as a permanent guardrail against historical bugs. It includes 8 passing tests for Past Date Booking, Navigation Bug, and other date-related validation rules.
-2.  **CI/CD Security Hardening:** The CI pipeline () was updated to enforce stricter security scans () and to include the new regression test suite and the Sprint 2 API tests in the hard gate stage, which must pass for any merge.
-3.  **Test Quarantine Strategy:** A formal strategy for handling the ~700 existing failing tests has been documented in . A new  directory was created to house these tests, isolating them from the main CI run.
-4.  **Test Environment Fix:** A rate-limiting issue causing local test failures was identified and resolved by setting the  environment variable in  and .
-5.  **Full Verification:** The  was executed and reported a **100% pass rate across 28 battle suite tests**, confirming that all Sprint 3 additions work correctly and that there are no regressions in Sprint 1 & 2 features.
+1.  **Test Triage & Quarantine:**
+    *   A comprehensive analysis of ~800+ test failures was performed and categorized into groups like , , and .
+    *   7 entire test files with high failure rates were moved into a new  directory, organized by failure category.
+    *   A  was created to dynamically skip ~52 specific, individual failing tests in otherwise healthy files.
+    *   The main  was updated with a  hook to read the manifest and automatically deselect (skip) the quarantined tests during test runs. This ensures they don't block the CI pipeline.
+2.  **Phase C RFC (ADR-003):** A detailed Architecture Decision Record () has been drafted, outlining the plan to move from a per-room locking mechanism to a more efficient room-type level inventory system.
+3.  **Battle Test Suite Fix:** A critical T0 battle test () was failing due to a stale  in the database from previous test runs. The agent diagnosed this state pollution and fixed it by resetting the business date to the current date before re-running the tests.
+4.  **Full Verification:** The  was executed and confirmed that the quarantine was successful. It reported a **100% pass rate** on all active T0 (71 tests) and T1 (241 tests), with quarantined tests being correctly skipped.
 
 **Last working item**:
-    - Last item agent was working: The agent completed the implementation and verification of all Sprint 3 tasks: creating regression tests, tightening CI security, and establishing a test quarantine strategy. The work concluded with a successful run of the  and updating project documentation.
+    - Last item agent was working: The agent finished the complete scope of Sprint 4, which included the test quarantine triage and the creation of the Phase C RFC. The work concluded with a full verification by the testing agent and updates to project documentation (, ).
     - Status: USER VERIFICATION PENDING
     - Agent Testing Done: Y
     - Which testing method agent to use? NA
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  - **Issue 1:** User Verification for Sprint 3 (Priority: P0)
+  - **Issue 1:** User Verification for Sprint 4 (Priority: P0)
 
   **Issues Detail:**
-  - **Issue 1:** User Verification for Sprint 3
+  - **Issue 1:** User Verification for Sprint 4
      - **Attempted fixes:** N/A
-     - **Next debug checklist:** The next agent must present the completed work of Sprint 3 to the user for their review and approval. Use the final summary from the previous agent as a basis for the  message.
-     - **Why fix this issue and what will be achieved with the fix?** To get the user's approval to proceed with Sprint 4 and ensure alignment with the overall project plan.
+     - **Next debug checklist:** The next agent's first action must be to present the completed work of Sprint 4 (Test Triage and Phase C RFC) to the user in Turkish for their review and approval.
+     - **Why fix this issue and what will be achieved with the fix?** To confirm the test quarantine strategy is acceptable and to get the user's go-ahead to begin implementing Phase C.
      - **Status:** NOT STARTED
      - **Is recurring issue?** N
      - **Should Test frontend/backend/both after fix?** N/A
@@ -42,46 +46,44 @@ The agent has successfully completed **Sprint 3** of the user's battle plan. Thi
   - None.
 
 **Upcoming and Future Tasks**
-**Upcoming Tasks (Sprint 4):**
-*   **(P0) Triage Failing Tests:** Begin the process of moving the ~800+ failing tests from the main suite into the  directory, following the plan outlined in .
-*   **(P1) Write RFC/ADR for Phase C:** Draft the design document for the Room-Type Level Strategy.
+**Upcoming Tasks (Phase C - Sprint 5):**
+*   **(P0) Begin Phase C Implementation:** Start implementing the room-type inventory strategy from . The previous agent suggested starting with a shadow mode materialized view to measure performance and drift before a full cutover.
+*   **(P1) Address Quarantined Tests:** Begin the systematic process of fixing the tests in the  directory, starting with the  category, which is likely the easiest to resolve.
 
 **Future Tasks (Backlog):**
-*   Design and implement the room-type strategy based on the RFC and telemetry data.
-*   Align the channel manager's inventory ledger.
-*   Address documentation and repository cleanup (READMEs, CI workflow files).
+*   Align the channel manager's inventory ledger with the new room-type system.
+*   Address remaining documentation and repository cleanup (READMEs, CI workflow files).
 *   Execute Crypto Migration (SEC-002) and Secrets Management Rollout (SEC-001).
 *   Enable Strict Tenant Mode ().
 
 **Completed work in this session**
-- **Regression Guard Tests (DONE):** Created  with 8 passing tests.
-- **CI/CD Hardening (DONE):**
-    - Updated  with .
-    - Added  and  to the CI hard gate stage.
-- **Test Quarantine Strategy (DONE):**
-    - Authored .
+- **Test Quarantine Triage (DONE):**
     - Created  directory structure.
-- **Test Environment Fix (DONE):** Disabled rate limiting for test environments by setting  in  and .
-- **Full Verification via Testing Agent (DONE):** Achieved a 100% pass rate on 28 battle tests, as confirmed by .
-- **Memory Update (DONE):** Updated  and .
+    - Moved 7 test files with high failure rates into quarantine (e.g., , ).
+    - Created  to list ~52 individual tests to be skipped.
+    - Modified  to implement the auto-skip mechanism.
+- **Phase C RFC (DONE):** Created .
+- **Battle Test Suite Fix (DONE):** Diagnosed and fixed a state-pollution issue by resetting the  in the database, allowing  to pass.
+- **Full Verification via Testing Agent (DONE):** Achieved a 100% pass rate on 312 active T0+T1 tests, as confirmed by .
+- **Documentation Updates (DONE):** Updated  and  with Sprint 4 progress.
+- **CI Documentation (DONE):** Added a comment to  clarifying that the quarantine directory is implicitly excluded.
 
 **Earlier issues found/mentioned but not fixed**
-   - **Technical Debt - Failing Tests:** While a *strategy* to deal with the ~800+ failing tests has been created, the actual work of triaging and fixing them is a major upcoming task.
-   - **Repository-Documentation Sync:** This backlog item remains and includes outdated  files and CI/CD workflow file cleanup.
+   - **Technical Debt - Quarantined Tests:** The ~800+ failing tests are no longer blocking CI, but they represent significant technical debt. They are now organized in the  directory and need to be fixed incrementally.
 
 **Known issue recurrence from previous fork**
-  - **Past Date Booking:**
+  - **Date-sensitive Test Failures:**
     - Recurrence count: 1+
-    - Status: RESOLVED (A permanent regression test, , has been added to the CI hard gate to prevent this from recurring.)
+    - Status: RESOLVED (for now). The last session fixed a  failure caused by a stale  in the DB. This highlights a recurring pattern of tests being sensitive to database state left over from previous test runs. The new agent should be mindful of DB state, especially when dealing with dates.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **Regression Guard Tests:** Creating specific, permanent tests for previously fixed bugs to prevent them from recurring. This makes the system more robust over time.
-- **Test Quarantine:** A strategy to isolate a large number of failing or flaky tests from the main CI/CD pipeline, allowing the team to continue shipping while addressing the technical debt incrementally.
-- **CI Hard Gate:** A designated, critical subset of tests that must pass for any code change to be considered valid. This session expanded the hard gate to include new regression and API tests.
-- **Environment-Dependent Configuration:** Using environment variables () to alter application behavior (like disabling rate limits) for specific environments, ensuring consistency between local and CI test runs.
+- **Test Triage & Quarantine:** The core activity of this session. It involved analyzing hundreds of failures, categorizing them, and isolating them from the CI pipeline without deleting the tests. This unblocks development while making the technical debt visible and manageable.
+- **Pytest Deselection Hook ():** The mechanism used in  to programmatically remove tests from a run. The agent implemented this to read a manifest file and skip all tests marked for quarantine, which is more scalable than adding  to each test.
+- **Cascading Test Failures:** The agent correctly identified that some tests depend on the state set up by previous (failing) tests. When this was detected, the agent wisely chose to quarantine the entire test file rather than trying to fix individual tests in a brittle, interdependent suite.
+- **Database State Pollution:** A critical bug in the T0 battle tests was traced back to a stale  in the MongoDB instance. This is a common problem in test suites that are not perfectly isolated.
 
 **key DB schema**
 - No changes were made to the database schema in this session.
@@ -89,26 +91,30 @@ The agent has successfully completed **Sprint 3** of the user's battle plan. Thi
 **All files of reference**
 - **Created:**
     - 
-    - 
+    -  (and all its subdirectories and files)
     - 
 - **Modified:**
     - 
     - 
     - 
-    -  (Updated)
-    -  (Updated)
+    - 
+- **Moved (examples):**
+    -  -> 
+    -  -> 
+    -  -> 
 
 **Areas that need refactoring**:
-- The primary technical debt is the large suite of ~800+ failing tests. The next major task is to begin quarantining them as per the new strategy document.
+- The entire  directory is, by definition, code that needs to be fixed or refactored. The next phase of work will involve incrementally moving these tests back into the main suite after they are repaired.
 
 **key api endpoints**
-- No new API endpoints were created. This session was focused on testing and CI infrastructure.
+- No new API endpoints were created. This session was focused on testing infrastructure.
 
 **Critical Info for New Agent**
 1.  **User Language is Turkish:** You **MUST** continue the conversation in Turkish.
-2.  **Follow the Battle Plan:** The user's plan is the primary guide. You have just completed Sprint 3.
-3.  **Present for Verification First:** Your first action **MUST** be to present the completion of Sprint 3 to the user and receive their approval to continue. Do not start any new coding work.
-4.  **Rate Limiting Fix:** Be aware that test failures at the beginning of the last session were due to rate limiting. This was fixed by setting  in the environment. This context is crucial if similar issues arise.
+2.  **Present for Verification First:** Your first action **MUST** be to present the completion of Sprint 4 to the user and get their approval to continue. Do not start any new work until you receive the Devam et (Continue).
+3.  **The Test Suite is Clean:** All critical (T0 + T1) tests are now passing. Seeing many  tests during a full run is now the *expected behavior* due to the quarantine system. Do not be alarmed by this. The goal was achieved.
+4.  **Next Steps are Clear:** The battle plan dictates the next steps: begin implementing the Phase C RFC and start chipping away at the quarantined tests.
+5.  **Beware of DB State:** The agent had to manually fix the  in the database to get a T0 test to pass. Be aware that test failures might be caused by stale data from previous runs, not just code bugs.
 
 **documents and test reports created in this job**
   - 
@@ -117,22 +123,21 @@ The agent has successfully completed **Sprint 3** of the user's battle plan. Thi
   -  (Updated)
 
 **Last 10 User Messages and any pending HUMAN messages**
-- **User:** Please use ask_human tool and confirm your plan now. (Status: COMPLETED. Agent presented Sprints 1 & 2 for verification).
-- **User:** Devam et (Continue). (Status: COMPLETED. This was the user's approval to begin Sprint 3, which is now finished).
+- **User:** Please use ask_human tool and confirm your plan now. (Status: COMPLETED. The agent presented its plan for Sprint 3 in the previous job).
+- **User:** Devam et (Continue). (Status: COMPLETED. This was the user's approval to begin the work for the current session, which is now finished).
 
 **Project Health Check:**
-- **Broken:** None. The critical battle suite of tests is 100% passing.
-- **Mocked:** None.
+- **Broken:** None. The active, non-quarantined test suite (T0 + T1) is 100% passing.
+- **Mocked:** N/A.
 
 **3rd Party Integrations**
 - No new integrations were added in this session.
 
 **Testing status**
-  - Testing agent used after significant changes: YES. It reported 100% success on 28 battle suite tests.
+  - Testing agent used after significant changes: YES. It confirmed the success of the quarantine strategy, reporting 312 passing tests and correctly identifying skipped tests.
   - Troubleshoot agent used after agent stuck in loop: NO.
-  - Test files created:
-    - 
-  - Known regressions: None. A potential regression was identified and fixed during the session (rate limiting in tests).
+  - Test files created: None. Test files were moved and a manifest () was created.
+  - Known regressions: None. The session's work resolved a regression in a T0 battle test.
 
 **Credentials to test flow:**
 | User | E-posta | Şifre | Role |
@@ -140,4 +145,4 @@ The agent has successfully completed **Sprint 3** of the user's battle plan. Thi
 | **Demo Admin** |  |  |  |
 
 **What agent forgot to execute**
-- The agent successfully executed the full plan for Sprint 3. No tasks were forgotten.</analysis>
+- The agent successfully executed all planned tasks for Sprint 4. No tasks were forgotten. The agent also proactively diagnosed and fixed a critical T0 test failure that was not part of the initial plan.</analysis>

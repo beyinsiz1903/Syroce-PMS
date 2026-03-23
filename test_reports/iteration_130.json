@@ -78,7 +78,7 @@
       "result": "200 OK - returns access_token"
     },
     "frontend_app": {
-      "url": "https://test-shield-verified.preview.emergentagent.com",
+      "url": "https://test-triage.preview.emergentagent.com",
       "landing_page": "Loads correctly with Giriş Yap button",
       "dashboard": "Loads correctly after login at /app/dashboard"
     }

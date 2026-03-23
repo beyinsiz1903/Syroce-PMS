@@ -14,7 +14,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://test-shield-verified.preview.emergentagent.com")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://test-triage.preview.emergentagent.com")
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"

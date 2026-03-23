@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import OperationFailure
 
 from core.outbox_service import (
     BOOKING_CANCELLED,
@@ -95,26 +96,31 @@ async def test_enqueue_with_session_inside_transaction():
     booking_id = f"txn_booking_{uuid.uuid4().hex[:8]}"
     try:
         async with await client.start_session() as session:
-            async with session.start_transaction():
-                await db.bookings.insert_one(
-                    {
-                        "id": booking_id,
-                        "tenant_id": TEST_TENANT,
-                        "status": "confirmed",
-                        "check_in": "2026-05-01",
-                        "check_out": "2026-05-03",
-                    },
-                    session=session,
-                )
-                result = await enqueue_outbox_event(
-                    db,
-                    session=session,
-                    tenant_id=TEST_TENANT,
-                    event_type=BOOKING_CREATED,
-                    entity_type="booking",
-                    entity_id=booking_id,
-                    payload={"check_in": "2026-05-01", "check_out": "2026-05-03", "property_id": TEST_TENANT},
-                )
+            try:
+                async with session.start_transaction():
+                    await db.bookings.insert_one(
+                        {
+                            "id": booking_id,
+                            "tenant_id": TEST_TENANT,
+                            "status": "confirmed",
+                            "check_in": "2026-05-01",
+                            "check_out": "2026-05-03",
+                        },
+                        session=session,
+                    )
+                    result = await enqueue_outbox_event(
+                        db,
+                        session=session,
+                        tenant_id=TEST_TENANT,
+                        event_type=BOOKING_CREATED,
+                        entity_type="booking",
+                        entity_id=booking_id,
+                        payload={"check_in": "2026-05-01", "check_out": "2026-05-03", "property_id": TEST_TENANT},
+                    )
+            except OperationFailure as e:
+                if e.code == 20:
+                    pytest.skip("MongoDB transactions require replica set (standalone mode detected)")
+                raise
 
         booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
         event = await db.outbox_events.find_one({"id": result["id"]}, {"_id": 0})
