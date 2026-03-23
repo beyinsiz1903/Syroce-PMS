@@ -233,6 +233,10 @@ jobs:
             --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ \
             --ignore-vuln PYSEC-2024-62920 \
             --ignore-vuln PYSEC-2024-113 \
+            --ignore-vuln CVE-2024-23342 \
+            --ignore-vuln GHSA-rf74-v2fm-23pw \
+            --ignore-vuln CVE-2026-33230 \
+            --ignore-vuln CVE-2026-33231 \
             || { echo "::error::CRITICAL vulnerabilities found — see security-report.txt"; exit 1; }
 
       - name: Node.js dependency security audit (critical — hard gate)

@@ -1,5 +1,34 @@
 # Syroce PMS — Changelog
 
+## 2026-03-23: CI Fix — pip-audit Security Vulnerability Resolution
+
+### Package Upgrades (19 → 0 unignored vulnerabilities)
+- **black** 25.9.0 → 26.3.1 (CVE-2026-32274)
+- **urllib3** 2.5.0 → 2.6.3 (CVE-2025-66418, CVE-2025-66471, CVE-2026-21441)
+- **cryptography** 46.0.3 → 46.0.5 (CVE-2026-26007)
+- **pillow** 12.0.0 → 12.1.1 (CVE-2026-25990)
+- **pyasn1** 0.6.1 → 0.6.3 (CVE-2026-23490, CVE-2026-30922)
+- **pyjwt** 2.10.1 → 2.12.1 (CVE-2026-32597)
+- **python-multipart** 0.0.20 → 0.0.22 (CVE-2026-24486)
+- **pymongo** 4.5.0 → 4.8.0 (CVE-2024-5629, max 4.8.x for motor 3.3.1 compat)
+- **fastapi** 0.110.1 → 0.135.1 (enables starlette 1.0+)
+- **starlette** 0.37.2 → 1.0.0 (CVE-2024-47874, CVE-2025-54121, CVE-2025-62727)
+- **strawberry-graphql** 0.235.0 → 0.312.0 (PYSEC-2024-171, CVE-2025-22151)
+
+### Ignored Vulnerabilities (no fix available)
+- **ecdsa** 0.19.1 (CVE-2024-23342): Timing attack — maintainers consider out of scope
+- **nltk** 3.9.3 (GHSA-rf74-v2fm-23pw, CVE-2026-33230, CVE-2026-33231): WordNet Browser issues — not used in our app
+
+### CI/CD Update
+- Updated `ci-cd.yml` pip-audit `--ignore-vuln` list with 4 specific CVE ignores
+- Result: **pip-audit passes with 0 unignored vulnerabilities**
+
+### Testing
+- T0 Battle tests: 28/28 passed
+- Full CI curated suite: 338/338 passed
+- Backend server import: OK (all routers loaded)
+- Login flow: OK
+
 ## 2026-03-23: CI Fix — Outbox Transaction Test
 
 ### Bug Fix
