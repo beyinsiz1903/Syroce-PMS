@@ -82,6 +82,31 @@ class CreateRoomBlockService:
             block_with_tenant = {**block_dict, 'tenant_id': tenant_context.tenant_id}
             await self.repository.insert_room_block(block_with_tenant)
 
+            # INV-5: Also write to room_night_locks (single source of truth)
+            if not block_data.allow_sell and block_data.end_date:
+                block_type_map = {
+                    "out_of_order": "ooo",
+                    "out_of_service": "oos",
+                    "maintenance": "maintenance",
+                }
+                lock_block_type = block_type_map.get(block.type.value, "ooo")
+                try:
+                    from core.atomic_booking import apply_room_block as apply_lock
+                    await apply_lock(
+                        tenant_id=tenant_context.tenant_id,
+                        room_id=block_data.room_id,
+                        block_type=lock_block_type,
+                        start_date=block_data.start_date,
+                        end_date=block_data.end_date,
+                        reason=block_data.reason,
+                        actor=current_user.id,
+                    )
+                except Exception as exc:
+                    import logging
+                    logging.getLogger("inventory.create_room_block").warning(
+                        "room_night_locks write failed for block %s: %s", block.id, exc
+                    )
+
             if conflicting_bookings and not block_data.allow_sell:
                 for booking in conflicting_bookings:
                     await self.repository.insert_exception({

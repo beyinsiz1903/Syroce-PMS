@@ -88,6 +88,31 @@ class ReleaseRoomBlockService:
             }
             await self.repository.update_room_block(tenant_context.tenant_id, block_id, update_doc)
 
+            # INV-5: Also release from room_night_locks (single source of truth)
+            block_type_map = {
+                "out_of_order": "ooo",
+                "out_of_service": "oos",
+                "maintenance": "maintenance",
+            }
+            lock_block_type = block_type_map.get(
+                str(existing_block.get("type", "out_of_order")), "ooo"
+            )
+            try:
+                from core.atomic_booking import release_room_block as release_lock
+                await release_lock(
+                    tenant_id=tenant_context.tenant_id,
+                    room_id=existing_block["room_id"],
+                    block_type=lock_block_type,
+                    start_date=existing_block.get("start_date"),
+                    end_date=existing_block.get("end_date"),
+                    actor=current_user.id,
+                )
+            except Exception as exc:
+                import logging
+                logging.getLogger("inventory.release_room_block").warning(
+                    "room_night_locks release failed for block %s: %s", block_id, exc
+                )
+
             released_block = {
                 **existing_block,
                 **update_doc,

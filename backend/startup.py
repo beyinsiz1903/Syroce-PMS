@@ -150,6 +150,14 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Booking index creation error: {e}")
 
+    # ── Booking hold sweeper (TTL auto-release) ──────────────────────
+    try:
+        from core.booking_hold_service import start_hold_sweeper
+        start_hold_sweeper()
+        logger.info("Booking hold sweeper started")
+    except Exception as e:
+        logger.warning(f"Booking hold sweeper start error: {e}")
+
     # ── Check-in/Check-out transaction indexes ─────────────────────
     try:
         from core.atomic_checkin_checkout import ensure_checkin_checkout_indexes

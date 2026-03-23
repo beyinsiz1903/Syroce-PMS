@@ -151,6 +151,8 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("controlplane.learning_loop_router", "router", ["Learning Loop"], None, None),
     # Room Blocks — OOO/OOS/Maintenance (INV-5: same availability truth)
     ("routers.room_blocks", "router", ["Room Blocks"], None, None),
+    # Booking Holds — TTL/Hold mechanism for pending bookings
+    ("routers.booking_holds", "router", ["Booking Holds"], None, None),
 ]
 
 # Optional routers with special import paths
