@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
-import { Search, Activity, Radio, ArrowLeft, RefreshCw, AlertTriangle, CheckCircle, XCircle, Clock, ChevronRight, ChevronDown, Copy, ExternalLink } from "lucide-react";
+import { Search, Activity, Radio, ArrowLeft, RefreshCw, AlertTriangle, CheckCircle, XCircle, Clock, ChevronRight, ChevronDown, Copy, ExternalLink, Gauge } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
@@ -10,6 +10,7 @@ import { ScrollArea } from "../components/ui/scroll-area";
 import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
 import Layout from "../components/Layout";
+import { ChannelHealth } from "../components/ChannelHealthDashboard";
 
 // ─── Reservation Lookup ──────────────────────────────────────────
 function ReservationLookup() {
@@ -627,7 +628,7 @@ export default function ControlPlane({ user, tenant, onLogout }) {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">Control Plane</h1>
-              <p className="text-xs text-zinc-500 mt-0.5">Operasyon gorulumu · Reservation trace · Sistem sagligi</p>
+              <p className="text-xs text-zinc-500 mt-0.5">Operasyon gorulumu · Reservation trace · Sistem sagligi · Kanal sagligi</p>
             </div>
           </div>
 
@@ -651,6 +652,14 @@ export default function ControlPlane({ user, tenant, onLogout }) {
                 Saglik
               </TabsTrigger>
               <TabsTrigger
+                value="channel-health"
+                className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100 text-zinc-500 text-sm px-4"
+                data-testid="tab-channel-health"
+              >
+                <Gauge className="h-3.5 w-3.5 mr-2" />
+                Kanal Sagligi
+              </TabsTrigger>
+              <TabsTrigger
                 value="feed"
                 className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100 text-zinc-500 text-sm px-4"
                 data-testid="tab-feed"
@@ -665,6 +674,9 @@ export default function ControlPlane({ user, tenant, onLogout }) {
             </TabsContent>
             <TabsContent value="health">
               <SystemHealth />
+            </TabsContent>
+            <TabsContent value="channel-health">
+              <ChannelHealth />
             </TabsContent>
             <TabsContent value="feed">
               <LiveFeed />

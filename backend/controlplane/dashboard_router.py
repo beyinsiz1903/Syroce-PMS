@@ -9,6 +9,7 @@ Endpoints:
   GET  /api/ops/dashboard/trends       — Historical trends
   GET  /api/ops/dashboard/connectors   — Connector health
   GET  /api/ops/dashboard/pipeline     — Pipeline depth
+  GET  /api/ops/dashboard/channel-health — Channel Health Dashboard
 """
 import logging
 from datetime import datetime, timedelta, timezone
@@ -104,3 +105,14 @@ async def get_pipeline(
     agg = get_dashboard_aggregator()
     dashboard = await agg.compute_dashboard(tenant_id=tenant_id)
     return dashboard.get("pipeline", {})
+
+
+@router.get("/channel-health")
+async def get_channel_health(
+    tenant_id: Optional[str] = Query(None),
+    hours: int = Query(24, ge=1, le=168),
+):
+    """Channel Health Dashboard — push latency percentiles, sync rates,
+    failure breakdown, reconciliation drift, retry metrics, provider SLA."""
+    from .channel_health_aggregator import compute_channel_health
+    return await compute_channel_health(tenant_id=tenant_id, hours=hours)
