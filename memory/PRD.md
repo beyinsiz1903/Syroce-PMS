@@ -6,14 +6,16 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 ## Core Architecture
 - `/app/backend/` — FastAPI backend
 - `/app/backend/controlplane/` — OPS-001 Control Plane module
-- `/app/backend/core/` — Core services (outbox, import bridge, crypto, secrets, booking holds)
+- `/app/backend/core/` — Core services (outbox, import bridge, crypto, secrets, booking holds, room-type inventory)
 - `/app/backend/channel_manager/` — Channel manager adapters
 - `/app/backend/workers/` — Background workers (ARI push, retry, etc.)
 - `/app/backend/tests/resilience/` — Chaos testing and resilience validation suite
-- `/app/backend/tests/battle/` — CI hard gate battle tests (Sprint 1-3)
+- `/app/backend/tests/battle/` — CI hard gate battle tests (Sprint 1-4, Phase C.1)
 - `/app/backend/docs/BATTLE_READINESS_BLUEPRINT.md` — Battle-grade execution blueprint
 - `/app/backend/docs/ADR_BOOKING_INVARIANTS.md` — ADR-001: Booking invariants
 - `/app/backend/docs/ADR_TEST_QUARANTINE_STRATEGY.md` — ADR-002: Test quarantine strategy
+- `/app/backend/docs/ADR_ROOM_TYPE_INVENTORY_STRATEGY.md` — ADR-003: Room-type inventory (3-layer model)
+- `/app/backend/docs/SECURITY_ACCEPTED_RISKS.md` — Accepted frontend vulnerability risks
 - `/app/frontend/src/pages/ControlPlane.jsx` — Control Plane UI (ops weapon)
 
 ## Credentials
@@ -54,57 +56,16 @@ CI gate upgraded to `--level high`. Frontend verified working.
 - New invariants: INV-7 (type-lock consistency), INV-8 (channel <= property)
 
 ### Sprint 3 — Regression Guards + CI Security + Test Quarantine (2026-03-23)
-**Regression Guard Tests (DONE)**
-- `tests/battle/test_regression_guards.py`: 8 permanent regression tests
-- REG-1 through REG-7: Past date, navigation, date validation guards
-- **Testing**: 28/28 battle tests pass, 338/338 CI suite (iteration_136)
-
-**CI/CD Security Tightening (DONE)**
-- pip-audit: specific vuln ignores (no wildcard), hard gate
-- Trivy CRITICAL: exit-code=1 (hard gate)
-- Hardcoded secrets: exit-code=1 (hard gate)
-
-**Test Quarantine Strategy (DONE)**
-- ADR-002: T0 (battle) / T1 (curated CI) / T2 (quarantine) tiers
-- `tests/_quarantine/` directory created
+8 permanent regression tests. CI/CD security tightening. Test quarantine strategy (ADR-002).
 
 ### Sprint 2 — TTL/Hold Mechanism + OOO/OOS Full Integration (2026-03-23)
-**A2: TTL/Hold Mechanism (DONE)**
-- `core/booking_hold_service.py`: Full hold lifecycle (create, confirm, release, sweep)
-- `routers/booking_holds.py`: REST API for hold management
-- Background sweeper runs every 60s, auto-releases expired holds
-- Default TTL: 15 minutes (configurable via `BOOKING_HOLD_TTL_MINUTES` env var)
-- **Testing**: 32/32 pass (iteration_135)
+Full hold lifecycle, background sweeper, REST API. OOO/OOS integration with room_night_locks.
 
-**A5: OOO/OOS INV-5 Integration (DONE)**
-- PMS room block create/cancel now writes to/releases from `room_night_locks`
-- Type mapping: `out_of_order` → `ooo`, `out_of_service` → `oos`, `maintenance` → `maintenance`
+### Sprint 1 — Overbooking Prevention v2 (2026-03-23)
+ADR-001 invariants, room-night lock audit trail, cancel/modify race guard, 10-test CI hard gate.
 
-### Sprint 1 — Overbooking Prevention v2 (Booking Integrity Hardening) (2026-03-23)
-ADR-001 invariants, room-night lock audit trail, OOO/OOS/maintenance integration, cancel/modify race guard, 10-test CI hard gate.
-- **Invariants**: INV-1 through INV-6
-- **Testing**: 25/25 pass (iteration_134)
-
-### Deploy Pipeline — Hard Gate CI/CD & Progressive Deploy (2026-03-22) — Phase 2
-Production-grade deployment pipeline with hard gates, auto-rollback, migration verification, smoke tests, and canary analysis.
-
-### Governance & Metering Layer (2026-03-22) — Phase 1
-Full production governance stack: entitlement enforcement, usage metering, dynamic feature flags, and onboarding automation.
-
-### OPS-001: Production-Grade Control Plane
-Core module at `/app/backend/controlplane/` with failure taxonomy, 15 API endpoints, idempotent retry engine, alerting engine.
-
-### CHAOS-001: Chaos Testing & Resilience Validation Program
-69 resilience tests across 7 test files.
-
-### CORE BATTLE LOOP (2026-03-22) — Week 1 MVP
-Event Timeline System, FailureTracker Wiring, Minimal Dashboard.
-
-### WEBHOOK TIMELINE INTEGRATION (2026-03-22)
-End-to-end traceability for Exely and HotelRunner webhooks.
-
-### CONTROL PLANE UI (2026-03-22)
-Frontend operations screen: Reservation Trace, System Health, Live Feed.
+### Earlier
+Deploy Pipeline, Governance & Metering, Control Plane, Chaos Testing, Core Battle Loop, Webhook Timeline.
 
 ## Bug Fixes
 ### Overbooking Prevention — Room-Night Locking (2026-03-22)
@@ -122,6 +83,15 @@ Frontend operations screen: Reservation Trace, System Health, Live Feed.
 ### P0 — Battle Tests Expansion
 - PMS battle tests: split reservation, no-show, room change
 - Align channel manager inventory ledger with hardened booking system
+
+### P1 — Frontend Dependency Hardening
+- Add yarn resolutions for Bucket 1 packages (lodash, ajv, qs, postcss, diff)
+- Evaluate @craco/craco removal and react-scripts 6.x upgrade
+- Long-term: CRA → Vite migration
+
+### P1 — Quarantined Tests
+- Fix tests in `tests/_quarantine/` starting with stale_dates category
+- Fix flaky `test_confirm_hold_api` (state pollution in full suite)
 
 ### P1 — Governance Phase 3 (Support Tooling)
 - Support Dashboard: tenant health, quick actions
@@ -149,4 +119,3 @@ Frontend operations screen: Reservation Trace, System Health, Live Feed.
 ### P2 — Enhancements
 - Ctrl+K shortcut for quick Trace lookup
 - Login endpoint to return full module list
-
