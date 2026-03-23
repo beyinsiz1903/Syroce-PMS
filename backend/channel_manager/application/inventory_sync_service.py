@@ -454,75 +454,108 @@ class InventorySyncService:
 
     # ─── Delta Detection ────────────────────────────────────────────────
 
+    async def _check_inventory_freshness(
+        self, tenant_id: str, date: str, stale_threshold_minutes: int = 15,
+    ) -> str:
+        """Check freshness of room_type_inventory materialized view.
+
+        Returns: 'fresh' | 'recent' | 'stale' | 'empty'
+        No fallback — stale means reconcile, not ignore.
+        """
+        latest = await db.room_type_inventory.find_one(
+            {"tenant_id": tenant_id, "date": date},
+            {"_id": 0, "last_computed_at": 1},
+            sort=[("last_computed_at", -1)],
+        )
+        if not latest or not latest.get("last_computed_at"):
+            return "empty"
+
+        try:
+            last_dt = datetime.fromisoformat(latest["last_computed_at"])
+            age_minutes = (datetime.now(timezone.utc) - last_dt).total_seconds() / 60
+            if age_minutes < 5:
+                return "fresh"
+            elif age_minutes < stale_threshold_minutes:
+                return "recent"
+            else:
+                return "stale"
+        except (ValueError, TypeError):
+            return "stale"
+
     async def _detect_inventory_deltas(
         self, tenant_id: str, property_id: str, connector_id: str,
         date_start: str, date_end: str,
         room_type_ids: Optional[List[str]], room_lookup: Dict[str, str],
     ) -> List[Dict[str, Any]]:
-        """Detect inventory changes by comparing PMS state with last synced snapshot."""
+        """Detect inventory changes using room_type_inventory as authoritative truth.
+
+        Authoritative source: room_type_inventory materialized view (from room_night_locks).
+        Accounts for booking + hold + OOO + OOS locks — NOT raw booking counts.
+        NO fallback to booking-based computation. If view is stale, reconcile first.
+        """
+        from core.room_type_inventory_service import (
+            get_room_type_inventory,
+            reconcile_date_range,
+        )
+
         changes: List[Dict[str, Any]] = []
 
-        # Get all rooms for this property
-        room_query: Dict[str, Any] = {"tenant_id": tenant_id}
-        if property_id:
-            room_query["property_id"] = property_id
-        rooms = await db.rooms.find(room_query, {"_id": 0}).to_list(1000)
+        # Step 1: Freshness check — stale view = reconcile, NOT fallback
+        freshness = await self._check_inventory_freshness(tenant_id, date_start)
+        if freshness in ("stale", "empty"):
+            logger.warning(
+                "Inventory view %s for tenant %s — reconciling before sync",
+                freshness, tenant_id,
+            )
+            recon_result = await reconcile_date_range(tenant_id, date_start, date_end)
+            if recon_result.get("drift_detected", 0) > 0:
+                logger.warning(
+                    "Pre-sync reconciliation found %d drifts for tenant %s",
+                    recon_result["drift_detected"], tenant_id,
+                )
 
-        # Group by room type
-        room_type_counts: Dict[str, int] = {}
-        for r in rooms:
-            rt = r.get("room_type", "")
-            if rt and (not room_type_ids or rt in room_type_ids) and rt in room_lookup:
-                room_type_counts[rt] = room_type_counts.get(rt, 0) + 1
-
-        if not room_type_counts:
-            return changes
-
-        # Get bookings in date range
-        bookings = await db.bookings.find({
-            "tenant_id": tenant_id,
-            "check_in": {"$lte": date_end},
-            "check_out": {"$gte": date_start},
-            "status": {"$nin": ["cancelled", "no_show"]},
-        }, {"_id": 0, "room_type": 1, "check_in": 1, "check_out": 1}).to_list(5000)
-
-        # Get restriction data from PMS
+        # Step 2: Get restriction data from PMS (unchanged — restrictions have no alt source)
         restrictions = await db.inventory_restrictions.find({
             "tenant_id": tenant_id,
             "date": {"$gte": date_start, "$lte": date_end},
         }, {"_id": 0}).to_list(5000)
-        restriction_map = {}
+        restriction_map: Dict[str, Dict] = {}
         for r in restrictions:
             key = f"{r.get('room_type_id', '')}_{r.get('date', '')}"
             restriction_map[key] = r
 
-        # Calculate daily values and compare with snapshots
+        # Step 3: Iterate date range, read from AUTHORITATIVE view
         start = datetime.strptime(date_start, "%Y-%m-%d").date()
         end = datetime.strptime(date_end, "%Y-%m-%d").date()
-        current = start
+        current_date = start
 
-        while current <= end:
-            date_str = current.isoformat()
-            for rt, total in room_type_counts.items():
+        while current_date <= end:
+            date_str = current_date.isoformat()
+
+            # Read from room_type_inventory — the SINGLE source of truth
+            inventory_items = await get_room_type_inventory(tenant_id, date_str)
+
+            for item in inventory_items:
+                rt = item.get("room_type", "")
+                if not rt:
+                    continue
+                if room_type_ids and rt not in room_type_ids:
+                    continue
                 ext_code = room_lookup.get(rt)
                 if not ext_code:
                     continue
 
-                # Calculate current availability
-                occupied = sum(
-                    1 for b in bookings
-                    if b.get("room_type") == rt
-                    and b.get("check_in", "") <= date_str
-                    and b.get("check_out", "") > date_str
-                )
-                current_available = max(0, total - occupied)
+                # Authoritative sellable count from room_night_locks
+                current_available = item.get("sellable", 0)
 
-                # Get restriction state
+                # Restriction state
                 restriction_key = f"{rt}_{date_str}"
                 restriction = restriction_map.get(restriction_key, {})
 
-                # Get last synced snapshot
-                snapshot = await self._repo.get_sync_snapshot(tenant_id, connector_id, rt, date_str)
+                # Last synced snapshot (what the channel currently has)
+                snapshot = await self._repo.get_sync_snapshot(
+                    tenant_id, connector_id, rt, date_str,
+                )
                 last_available = snapshot.get("available") if snapshot else None
                 last_stop_sell = snapshot.get("stop_sell", False) if snapshot else None
                 last_cta = snapshot.get("closed_to_arrival", False) if snapshot else None
@@ -541,7 +574,7 @@ class InventorySyncService:
                     "date_end": date_str,
                 }
 
-                # Availability delta
+                # Availability delta (from authoritative view)
                 if last_available is None or current_available != last_available:
                     changes.append({
                         **base_change,
@@ -549,6 +582,7 @@ class InventorySyncService:
                         "old_value": last_available,
                         "new_value": current_available,
                         "available": current_available,
+                        "source": "room_type_inventory",
                     })
 
                 # Stop sell delta
@@ -595,7 +629,7 @@ class InventorySyncService:
                             "min_stay": current_min_stay,
                         })
 
-            current += timedelta(days=1)
+            current_date += timedelta(days=1)
 
         return changes
 

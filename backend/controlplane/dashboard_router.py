@@ -15,6 +15,10 @@ Endpoints:
   POST /api/ops/deploys                — Record deploy event (CI/CD → Control Plane)
   GET  /api/ops/dashboard/deploys      — Deploy history
   GET  /api/ops/dashboard/deploy-stats — Deploy statistics
+  GET  /api/ops/dashboard/deploy-trend — Daily deploy trend chart data
+  GET  /api/ops/dashboard/inventory-alignment — Inventory ledger alignment status
+  GET  /api/ops/dashboard/dora-metrics — DORA release metrics
+  GET  /api/ops/dashboard/dora-correlation — DORA × Channel Health correlation
 """
 import logging
 from datetime import datetime, timedelta, timezone
@@ -192,6 +196,46 @@ async def get_deploy_trend_endpoint(
     from .deploy_tracker import get_deploy_trend
     trend = await get_deploy_trend(days=days)
     return {"trend": trend, "days": days}
+
+
+@router.get("/inventory-alignment")
+async def get_inventory_alignment(
+    tenant_id: Optional[str] = Query(None),
+    days_ahead: int = Query(14, ge=1, le=60),
+):
+    """Inventory ledger alignment status.
+
+    Compares room_type_inventory (authoritative, from room_night_locks)
+    against channel manager sync snapshots.
+
+    Returns: alignment_status, drift_count, drift_nights, provider breakdown.
+    """
+    from .inventory_alignment import compute_inventory_alignment
+    return await compute_inventory_alignment(tenant_id=tenant_id, days_ahead=days_ahead)
+
+
+@router.get("/dora-metrics")
+async def get_dora_metrics(
+    days: int = Query(30, ge=7, le=90),
+    environment: Optional[str] = Query(None),
+):
+    """DORA release metrics — deployment frequency, change failure rate, MTTR, lead time."""
+    from .dora_metrics import compute_dora_metrics
+    return await compute_dora_metrics(days=days, environment=environment)
+
+
+@router.get("/dora-correlation")
+async def get_dora_correlation(
+    days: int = Query(30, ge=14, le=90),
+    tenant_id: Optional[str] = Query(None),
+):
+    """DORA x Channel Health correlation analysis.
+
+    Cross-references deployment behavior with channel health outcomes:
+    deploy frequency vs drift, failure rate vs sync success, MTTR vs import failures.
+    """
+    from .dora_metrics import compute_dora_channel_correlation
+    return await compute_dora_channel_correlation(days=days, tenant_id=tenant_id)
 
 
 # ── Deploy event ingestion (separate prefix for CI/CD webhook) ───

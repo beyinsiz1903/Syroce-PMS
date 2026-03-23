@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
-import { Search, Activity, Radio, ArrowLeft, RefreshCw, AlertTriangle, CheckCircle, XCircle, Clock, ChevronRight, ChevronDown, Copy, ExternalLink, Gauge, Flame, Award, Rocket } from "lucide-react";
+import { Search, Activity, Radio, ArrowLeft, RefreshCw, AlertTriangle, CheckCircle, XCircle, Clock, ChevronRight, ChevronDown, Copy, ExternalLink, Gauge, Flame, Award, Rocket, LayoutDashboard } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
@@ -14,6 +14,7 @@ import { ChannelHealth } from "../components/ChannelHealthDashboard";
 import { TechDebtDashboard } from "../components/TechDebtDashboard";
 import { WeeklyProof } from "../components/WeeklyProofDashboard";
 import { DeployDashboard } from "../components/DeployDashboard";
+import { UnifiedOpsView } from "../components/UnifiedOpsView";
 
 // ─── Reservation Lookup ──────────────────────────────────────────
 function ReservationLookup() {
@@ -631,13 +632,21 @@ export default function ControlPlane({ user, tenant, onLogout }) {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">Control Plane</h1>
-              <p className="text-xs text-zinc-500 mt-0.5">Operasyon gorulumu · Kanal sagligi · Deploy · Deger kaniti · Teknik borc</p>
+              <p className="text-xs text-zinc-500 mt-0.5">Ops merkezi · Kanal sagligi · Deploy · DORA · Envanter hizalama</p>
             </div>
           </div>
 
           {/* Tabs */}
-          <Tabs defaultValue="lookup" className="space-y-4">
+          <Tabs defaultValue="ops" className="space-y-4">
             <TabsList className="bg-zinc-900 border border-zinc-800 p-1">
+              <TabsTrigger
+                value="ops"
+                className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100 text-zinc-500 text-sm px-4"
+                data-testid="tab-ops"
+              >
+                <LayoutDashboard className="h-3.5 w-3.5 mr-2" />
+                Ops Merkezi
+              </TabsTrigger>
               <TabsTrigger
                 value="lookup"
                 className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100 text-zinc-500 text-sm px-4"
@@ -696,6 +705,9 @@ export default function ControlPlane({ user, tenant, onLogout }) {
               </TabsTrigger>
             </TabsList>
 
+            <TabsContent value="ops">
+              <UnifiedOpsView />
+            </TabsContent>
             <TabsContent value="lookup">
               <ReservationLookup />
             </TabsContent>
