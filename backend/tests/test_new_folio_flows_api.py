@@ -433,6 +433,19 @@ class TestSidebarQuickActions:
 
     def test_erken_giris_button(self, authenticated_client, booking_id):
         """Test Erken Giris (Early Check-in) action."""
+        import os
+        from pymongo import MongoClient
+        _mongo = MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms"))
+        _db = _mongo[os.environ.get("DB_NAME", "hotel_pms")]
+        booking = _db.bookings.find_one({"id": booking_id}, {"_id": 0, "room_id": 1, "status": 1})
+        eligible = ['confirmed', 'guaranteed', 'pending']
+        if booking and booking.get("status") not in eligible:
+            _db.bookings.update_one({"id": booking_id}, {"$set": {"status": "confirmed"}})
+        if booking:
+            _db.rooms.update_one({"id": booking["room_id"]}, {"$set": {"status": "available", "current_booking_id": None}})
+            _db.room_night_locks.delete_many({"room_id": booking["room_id"]})
+        _mongo.close()
+
         response = authenticated_client.post(
             f"{BASE_URL}/api/pms/reservations/{booking_id}/early-checkin",
             json={"extra_charge": 50.0}

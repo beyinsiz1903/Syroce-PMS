@@ -1,17 +1,14 @@
 import os
 import uuid
-from datetime import datetime, timedelta
+import random
+from datetime import datetime, timezone, timedelta
 
 import pytest
 import requests
+from pymongo import MongoClient
 
-import os
-import pytest
-if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
-    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
-
-from core.database import db
-
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
+DB_NAME = os.environ.get("DB_NAME", "hotel_pms")
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
@@ -38,11 +35,15 @@ class TestCreateRoomBlockBridge:
         yield
 
     def _find_one(self, collection_name: str, query: dict):
-        return db.delegate[collection_name].find_one(query, {'_id': 0})
+        client = MongoClient(MONGO_URL)
+        result = client[DB_NAME][collection_name].find_one(query, {'_id': 0})
+        client.close()
+        return result
 
     def _pick_available_room(self):
-        start_date = (datetime.utcnow().date() + timedelta(days=40)).isoformat()
-        end_date = (datetime.utcnow().date() + timedelta(days=42)).isoformat()
+        offset = 3000 + random.randint(0, 3000)
+        start_date = (datetime.now(timezone.utc).date() + timedelta(days=offset)).isoformat()
+        end_date = (datetime.now(timezone.utc).date() + timedelta(days=offset + 2)).isoformat()
         availability = self.session.get(
             f'{BASE_URL}/api/pms/rooms/availability?check_in={start_date}&check_out={end_date}'
         ).json()
@@ -80,7 +81,9 @@ class TestCreateRoomBlockBridge:
         block = data['block']
         assert block['room_id'] == room['id']
 
-        outbox = self._find_one('outbox_events', {'room_block_id': block['id'], 'event_type': 'inventory.blocked.v1'})
+        outbox = self._find_one('outbox_events', {'entity_id': block['id'], 'event_type': 'inventory.blocked.v1'})
+        if not outbox:
+            outbox = self._find_one('outbox_events', {'room_block_id': block['id'], 'event_type': 'inventory.blocked.v1'})
         assert outbox is not None
         assert outbox['tenant_id'] == self.tenant_id
 

@@ -162,9 +162,20 @@ class TestBookingDateValidation:
             "Idempotency-Key": str(uuid.uuid4())
         }
         
-        # Use future dates (30 days from now)
-        checkin_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%dT14:00:00+00:00")
-        checkout_date = (datetime.now() + timedelta(days=32)).strftime("%Y-%m-%dT11:00:00+00:00")
+        # Use far-future dates to avoid lock collisions
+        import random
+        offset = 3000 + random.randint(0, 3000)
+        checkin_date = (datetime.now() + timedelta(days=offset)).strftime("%Y-%m-%dT14:00:00+00:00")
+        checkout_date = (datetime.now() + timedelta(days=offset + 2)).strftime("%Y-%m-%dT11:00:00+00:00")
+        
+        # Clean stale locks for this room in this range
+        from pymongo import MongoClient
+        _mongo = MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms"))
+        _db = _mongo[os.environ.get("DB_NAME", "hotel_pms")]
+        ci_str = (datetime.now() + timedelta(days=offset)).strftime("%Y-%m-%d")
+        co_str = (datetime.now() + timedelta(days=offset + 2)).strftime("%Y-%m-%d")
+        _db.room_night_locks.delete_many({"room_id": test_room_id, "night_date": {"$gte": ci_str, "$lte": co_str}})
+        _mongo.close()
         
         booking_data = {
             "guest_name": "TEST Future Date Guest",

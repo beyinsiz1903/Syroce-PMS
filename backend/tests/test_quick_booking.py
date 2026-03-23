@@ -6,9 +6,30 @@ import os
 import pytest
 import requests
 import uuid
-from datetime import datetime, timedelta
+import random
+from datetime import datetime, timezone, timedelta
+from pymongo import MongoClient
+
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
+DB_NAME = os.environ.get("DB_NAME", "hotel_pms")
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+
+
+def _clean_locks(room_id, ci_str, co_str):
+    client = MongoClient(MONGO_URL)
+    client[DB_NAME].room_night_locks.delete_many({
+        "room_id": room_id,
+        "night_date": {"$gte": ci_str.split('T')[0], "$lte": co_str.split('T')[0]},
+    })
+    client.close()
+
+
+def _future_dates():
+    offset = 3000 + random.randint(0, 3000)
+    ci = (datetime.now(timezone.utc) + timedelta(days=offset)).strftime('%Y-%m-%d')
+    co = (datetime.now(timezone.utc) + timedelta(days=offset + 1)).strftime('%Y-%m-%d')
+    return ci, co
 
 pytestmark = pytest.mark.skipif(
     not BASE_URL,
@@ -54,8 +75,8 @@ class TestQuickBookingAPI:
     
     def test_quick_booking_success(self, auth_headers, available_room):
         """Test successful quick booking creation"""
-        check_in = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
-        check_out = (datetime.now() + timedelta(days=8)).strftime('%Y-%m-%d')
+        check_in, check_out = _future_dates()
+        _clean_locks(available_room['id'], check_in, check_out)
         
         payload = {
             "guest_name": "TEST_QuickBooking Guest",
@@ -84,8 +105,7 @@ class TestQuickBookingAPI:
     
     def test_quick_booking_missing_guest_name(self, auth_headers, available_room):
         """Test validation: empty guest name should fail"""
-        check_in = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
-        check_out = (datetime.now() + timedelta(days=8)).strftime('%Y-%m-%d')
+        check_in, check_out = _future_dates()
         
         payload = {
             "guest_name": "",
@@ -109,8 +129,7 @@ class TestQuickBookingAPI:
     
     def test_quick_booking_invalid_room(self, auth_headers):
         """Test validation: non-existent room should fail"""
-        check_in = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
-        check_out = (datetime.now() + timedelta(days=8)).strftime('%Y-%m-%d')
+        check_in, check_out = _future_dates()
         
         payload = {
             "guest_name": "TEST_InvalidRoom Guest",
@@ -133,8 +152,9 @@ class TestQuickBookingAPI:
     
     def test_quick_booking_checkout_before_checkin(self, auth_headers, available_room):
         """Test validation: check-out before check-in should fail"""
-        check_in = (datetime.now() + timedelta(days=8)).strftime('%Y-%m-%d')
-        check_out = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+        offset = 3000 + random.randint(0, 3000)
+        check_in = (datetime.now(timezone.utc) + timedelta(days=offset + 1)).strftime('%Y-%m-%d')
+        check_out = (datetime.now(timezone.utc) + timedelta(days=offset)).strftime('%Y-%m-%d')
         
         payload = {
             "guest_name": "TEST_InvalidDates Guest",
@@ -158,8 +178,7 @@ class TestQuickBookingAPI:
     
     def test_quick_booking_zero_price(self, auth_headers, available_room):
         """Test validation: zero total amount"""
-        check_in = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
-        check_out = (datetime.now() + timedelta(days=8)).strftime('%Y-%m-%d')
+        check_in, check_out = _future_dates()
         
         payload = {
             "guest_name": "TEST_ZeroPrice Guest",
@@ -184,8 +203,7 @@ class TestQuickBookingAPI:
     
     def test_quick_booking_negative_price(self, auth_headers, available_room):
         """Test validation: negative total amount should fail"""
-        check_in = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
-        check_out = (datetime.now() + timedelta(days=8)).strftime('%Y-%m-%d')
+        check_in, check_out = _future_dates()
         
         payload = {
             "guest_name": "TEST_NegativePrice Guest",
@@ -248,9 +266,8 @@ class TestQuickBookingCreatesGuest:
         """Test that quick booking creates both guest and booking records"""
         unique_name = f"TEST_QuickGuest_{uuid.uuid4().hex[:8]}"
         
-        # Use future dates to avoid business date validation issues
-        check_in = (datetime.now() + timedelta(days=5)).strftime('%Y-%m-%d')
-        check_out = (datetime.now() + timedelta(days=6)).strftime('%Y-%m-%d')
+        check_in, check_out = _future_dates()
+        _clean_locks(available_room['id'], check_in, check_out)
         
         payload = {
             "guest_name": unique_name,

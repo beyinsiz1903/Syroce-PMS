@@ -139,10 +139,19 @@ class TestQuickBookingWithGuestId:
         if not room:
             pytest.skip("No available room for testing")
         
-        import datetime
+        import datetime as dt
         import uuid
-        today = datetime.date.today()
-        tomorrow = today + datetime.timedelta(days=1)
+        import random
+        from pymongo import MongoClient
+        offset = 3000 + random.randint(0, 3000)
+        today = dt.date.today() + dt.timedelta(days=offset)
+        tomorrow = today + dt.timedelta(days=1)
+        
+        # Clean stale locks
+        _mongo = MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms"))
+        _db = _mongo[os.environ.get("DB_NAME", "hotel_pms")]
+        _db.room_night_locks.delete_many({"room_id": room['id'], "night_date": {"$gte": str(today), "$lte": str(tomorrow)}})
+        _mongo.close()
         
         payload = {
             "guest_name": "TEST_WalkIn_Guest",
@@ -171,11 +180,18 @@ class TestQuickBookingWithGuestId:
         if not guest:
             pytest.skip("No existing guest for testing")
         
-        import datetime
+        import datetime as dt
         import uuid
-        today = datetime.date.today()
-        check_in = today + datetime.timedelta(days=7)  # Future date to avoid conflicts
-        check_out = check_in + datetime.timedelta(days=1)
+        import random
+        from pymongo import MongoClient
+        offset = 3000 + random.randint(0, 3000)
+        check_in = dt.date.today() + dt.timedelta(days=offset)
+        check_out = check_in + dt.timedelta(days=1)
+        
+        _mongo = MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms"))
+        _db = _mongo[os.environ.get("DB_NAME", "hotel_pms")]
+        _db.room_night_locks.delete_many({"room_id": room['id'], "night_date": {"$gte": str(check_in), "$lte": str(check_out)}})
+        _mongo.close()
         
         payload = {
             "guest_name": guest.get('name', 'Existing Guest'),
@@ -201,11 +217,12 @@ class TestQuickBookingWithGuestId:
         if not room:
             pytest.skip("No available room for testing")
         
-        import datetime
+        import datetime as dt
         import uuid
-        today = datetime.date.today()
-        check_in = today + datetime.timedelta(days=14)
-        check_out = check_in + datetime.timedelta(days=1)
+        import random
+        offset = 3000 + random.randint(0, 3000)
+        check_in = dt.date.today() + dt.timedelta(days=offset)
+        check_out = check_in + dt.timedelta(days=1)
         
         payload = {
             "guest_name": "Test Guest",
