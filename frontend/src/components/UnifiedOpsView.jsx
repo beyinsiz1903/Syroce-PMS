@@ -19,6 +19,7 @@ import { toast } from "sonner";
 
 import { SandboxDashboard } from "./SandboxDashboard";
 import { SecurityOpsDashboard } from "./SecurityOpsDashboard";
+import { CICDPipelineDashboard } from "./CICDPipelineDashboard";
 
 // ─── Style Maps ─────────────────────────────────────────────────
 const RATING_STYLES = {
@@ -588,6 +589,9 @@ export function UnifiedOpsView() {
 
       {/* BOTTOM: KPI Dashboard */}
       <KpiDashboard kpiData={kpiData} dora={dora} correlation={correlation} onDrillDown={handleDrillDown} />
+
+      {/* CI/CD: 3-Tier Pipeline Validation */}
+      <CICDPipelineDashboard />
 
       {/* SANDBOX: Resilience Dashboard */}
       <SandboxDashboard />

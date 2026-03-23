@@ -155,6 +155,8 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("controlplane.security_ops_router", "router", ["Security Operations"], None, None),
     # Sandbox Dashboard — Visualization of simulation results on ops dashboard
     ("controlplane.sandbox_dashboard_router", "router", ["Sandbox Dashboard"], None, None),
+    # CI/CD Pipeline — 3-tier deploy validation (PR Gate, Staging Gate, Nightly)
+    ("controlplane.cicd_pipeline_router", "router", ["CI/CD Pipeline"], None, None),
     # Room Blocks — OOO/OOS/Maintenance (INV-5: same availability truth)
     ("routers.room_blocks", "router", ["Room Blocks"], None, None),
     # Booking Holds — TTL/Hold mechanism for pending bookings
