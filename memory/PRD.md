@@ -1,189 +1,92 @@
 # Syroce PMS — Product Requirements Document
 
 ## Original Problem Statement
-Enterprise-grade hotel management platform (PMS) with multi-tenant architecture, channel management, CI/CD observability, and operational intelligence capabilities.
+Enterprise otel yönetim sistemi (PMS). Operasyonel zeka platformu: channel manager entegrasyonu, drift algılama, auto-reconciliation, deploy tracking, KPI metrikleri. Frontend'in "data-driven"dan "decision-driven"a dönüşümü hedefleniyor.
 
-## Core Architecture
-- **Backend**: FastAPI + MongoDB (motor async) + Redis
-- **Frontend**: React (Vite) + Recharts + Shadcn/UI
-- **CI/CD**: GitHub Actions with standardized notifications and smoke tests
-- **Multi-tenant**: Organization-based tenant isolation
+## Core User Personas
+- **Resepsiyonist**: Check-in/out, misafir yönetimi, ödeme alma
+- **Kat Hizmetleri**: Oda temizlik durumu takibi
+- **Genel Müdür**: Operasyonel overview, KPI analiz
+- **Rezervasyon Yöneticisi**: Kanal yönetimi, fiyatlandırma
 
-## User Personas
-| Role | Access |
-|------|--------|
-| super_admin | Full system access, Control Plane, Ops |
-| property_manager | Property-level operations |
-| front_desk | Booking, check-in/out |
-| guest | Self-service portal |
+## Tech Stack
+- **Frontend**: React + Vite + Shadcn/UI + Tailwind + Manrope font
+- **Backend**: FastAPI + MongoDB (motor async) + Python
+- **Auth**: JWT-based custom auth
+
+## Architecture
+- Backend: `/app/backend/` (FastAPI, routers in `/app/backend/routers/`)
+- Frontend: `/app/frontend/src/` (React, pages + components)
+- axios baseURL: `VITE_BACKEND_URL + '/api'`
+
+## Phase A-I (COMPLETED)
+All foundational layers: Notification, Auto-Action Engine, Unified Ops View, Control Plane, Channel Health, Drift Alerting, Import Bridge, Outbox Worker, ARI Push Engine, Crypto/Secrets modules.
+
+## Decision-Driven UX Transformation (COMPLETED - March 2026)
+### What was built:
+1. **Dashboard Command Center** (`CommandCenter.jsx`):
+   - Operational alerts ("Dikkat Gerektiren") with severity-based styling
+   - Summary stat cards: Bugün Geliş, Bugün Çıkış, İçeride, Kirli Oda
+   - Direct action navigation buttons per alert
+   - Backend: `GET /api/pms/operational-alerts`
+
+2. **Enhanced Room Board** (`RoomsTab.jsx`):
+   - Live cleaning indicators for dirty rooms ("Temizlik bekliyor ~15 dk")
+   - Animated progress bars for rooms being cleaned
+   - Check-in ETA indicators for rooms with arrivals
+   - Manrope font for room numbers
+   - `DirtyRoomDecision` component with alternative room suggestions
+
+3. **Upgraded Front Desk** (`FrontdeskTab.jsx`):
+   - Enhanced arrival cards with guest name, room info, dates
+   - Inline operational alerts (dirty room warning, balance)
+   - VIP badge support
+   - Departure cards with balance blocking check-out
+   - Empty state messages for no arrivals/departures
+
+4. **Smart Payment Dialog** (`PaymentDialog.jsx`):
+   - Balance analysis bar (total, paid, remaining)
+   - "Tüm bakiyeyi al" quick-fill button
+   - Partial payment warnings
+   - Gold-themed submit button
+
+5. **Reservation Detail Ops Panel** (`ReservationDetailModal.jsx`):
+   - Payment status indicator (pending/ok)
+   - Room readiness indicator (dirty/cleaning/ready)
+   - VIP/repeat guest badges
+   - Guest preferences display
+
+6. **Room Alternatives API** (`pms.py`):
+   - `GET /api/pms/room-alternatives/{room_number}`
+   - Returns same-type and different-type available rooms
+
+## Key Endpoints
+- `POST /api/auth/login` → `{access_token, user, tenant}`
+- `GET /api/pms/operational-alerts` → `{alerts[], summary{}, available_clean_rooms[]}`
+- `GET /api/pms/room-alternatives/{room_number}` → `{same_type[], other_type[]}`
+- `GET /api/pms/dashboard` → room stats
+- `GET /api/pms/rooms` → room list
+- `GET /api/pms/bookings` → booking list
 
 ## Test Credentials
 | User | Email | Password | Role |
 |------|-------|----------|------|
 | Demo Admin | demo@hotel.com | demo123 | super_admin |
 
----
+## Backlog (P1)
+- Sandbox Simulation (Exely/HotelRunner)
+- Security Hardening (SEC-001, SEC-002)
+- Alert → Business KPI Correlation
 
-## Completed Features
+## Backlog (P2)
+- Strict Tenant Mode
+- Legacy db import migration (~264 imports)
+- pms.py decomposition (2714 lines → modular services)
+- Legacy collection cleanup (~489 collections)
 
-### Phase A: Core PMS
-- Multi-tenant auth (JWT)
-- Room management with room types
-- Booking engine with availability checks
-- Guest management
-- Rate plans and pricing
-
-### Phase B: Channel Manager
-- Provider connectors (Exely, HotelRunner)
-- Inventory sync service
-- Rate sync service
-- Reservation import
-- Reconciliation service
-
-### Phase C: Room Night Locks & Inventory
-- C.1: `room_type_inventory` materialized view from `room_night_locks`
-- Accounts for: booking, hold, OOO, OOS locks
-- Sellable formula: `total - locked_booking - locked_hold - locked_ooo - locked_oos`
-- Auto-reconciliation every 5 minutes
-
-### Phase D: CI/CD Observability (P0 — COMPLETE)
-- Standardized GitHub Actions workflows (ci-cd.yml, deploy.yml)
-- Rich notifications with GitHub annotations + job summaries
-- Consistent smoke tests (4 key endpoints, formatted table)
-- Deploy event tracking + deploy trend endpoint
-- Deploy Dashboard with Recharts trend chart
-
-### Phase E: Inventory Ledger Alignment (P0 — COMPLETE, 2026-03-23)
-**Critical change**: Channel manager's `_detect_inventory_deltas()` now reads exclusively from `room_type_inventory` materialized view.
-- **Old**: Computed availability from `db.rooms` count - `db.bookings` count (missed holds, OOO, OOS)
-- **New**: Reads `sellable` from `room_type_inventory` (authoritative, lock-aware)
-- **No fallback**: If view is stale → reconcile first, never fall back to old computation
-- **Freshness check**: fresh (<5min), recent (<15min), stale (>15min), empty
-- **Stale behavior**: Deterministic — triggers reconciliation, reports degraded status
-- **Source tagging**: All availability changes tagged with `source: "room_type_inventory"`
-
-### Phase F: DORA Metrics (COMPLETE, 2026-03-23)
-- 4 DORA metrics: deployment_frequency, change_failure_rate, MTTR, lead_time
-- Rating system: elite/high/medium/low/no_data
-- Daily trend breakdown
-- **Correlation layer**: DORA × Channel Health cross-reference
-  - deploy frequency vs drift events
-  - change failure rate vs sync success
-  - MTTR vs import failures
-- Time window, tenant, and provider filters
-
-### Phase G: Unified Ops View (COMPLETE, 2026-03-23)
-**Decision console** (not just dashboard) — single screen for operational intelligence:
-- Inventory Alignment block (status, drift count, provider breakdown)
-- Deploy Health block (per-environment success rates)
-- DORA Metrics block (4 metrics + mini trend chart)
-- Provider Health block (per-provider drift status)
-- Correlation block (DORA × Channel Health inferences)
-- Reconciliation Queue block (freshness, room-type-night count)
-- Drill-down from each block to detailed views
-- Auto-refresh every 60 seconds
-
-### Phase H: Drift Threshold Alerting (COMPLETE, 2026-03-23)
-**Active intervention layer** — transforms Ops from passive visibility to active monitoring:
-- 3 severity tiers: warning (1+ drift/15min), critical (3+ room-night drift/15min), severe (post-recon drift)
-- Alert payload: tenant, property, providers, drift_count, drift_nights, drift_or_stale, last_reconciliation_result, runbook_link
-- Cooldown-aware firing (no spam within 15 min per severity per tenant)
-- Webhook relay via AlertingEngine for Slack-compatible notifications
-- Alert lifecycle: fire → acknowledge (with operator tracking)
-- Inventory drift runbook with structured resolution steps
-- Frontend DriftAlertPanel integrated into Unified Ops View as top-priority block
-
-### Phase I: Notification Layer + Auto-Action + Unified Ops View Redesign (COMPLETE, 2026-03-23)
-**Config-driven notification routing**:
-- warning → dashboard only
-- critical → ALERT_WEBHOOK_URL (Slack Block Kit, no-op if absent)
-- severe → ALERT_WEBHOOK_URL + ESCALATION_WEBHOOK_URL + auto-reconciliation
-
-**Auto-action engine** with guardrails:
-- 15-min cooldown, eligibility check, single execution per tenant
-- Calls existing ReconciliationEngine with metadata
-- Failed actions fire new alerts, all actions logged to event_timeline
-
-**Unified Ops View — "ürünün kalbi"**:
-- Top: Channel Health + Deploy Health
-- Middle: Live Drift Alerts (severity badges, auto-heal indicator, acknowledge, runbook)
-- Bottom: KPI Dashboard (Sync Success, MTTR, Push SLA, Auto-Heal, DORA mini, Drift Trend, Correlation)
-
----
-
-## API Endpoints
-
-### Control Plane / Ops
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /api/ops/deploys | Record deploy event |
-| GET | /api/ops/dashboard/deploys | Deploy history |
-| GET | /api/ops/dashboard/deploy-stats | Deploy statistics |
-| GET | /api/ops/dashboard/deploy-trend | Daily deploy trend |
-| GET | /api/ops/dashboard/inventory-alignment | Inventory ledger alignment status |
-| GET | /api/ops/dashboard/dora-metrics | DORA release metrics |
-| GET | /api/ops/dashboard/dora-correlation | DORA × Channel Health correlation |
-| GET | /api/ops/dashboard/channel-health | Channel health dashboard |
-| GET | /api/ops/dashboard/tech-debt | Tech debt tracking |
-| GET | /api/ops/dashboard/drift-alerts | Active drift alerts (filterable) |
-| GET | /api/ops/dashboard/drift-alerts/summary | Drift alert severity summary |
-| POST | /api/ops/dashboard/drift-alerts/evaluate | Evaluate and fire drift alerts |
-| POST | /api/ops/dashboard/drift-alerts/{id}/acknowledge | Acknowledge a drift alert |
-| GET | /api/ops/dashboard/auto-actions | Auto-action history |
-| GET | /api/ops/dashboard/ops-kpis | Unified KPI panel (MTTR, drift trend, sync success, auto-heal) |
-
----
-
-## Key DB Collections
-
-### deploy_events
-```json
-{
-  "sha": "string",
-  "environment": "string",
-  "status": "string",
-  "triggered_by": "string",
-  "started_at": "datetime",
-  "finished_at": "datetime",
-  "duration_seconds": "float",
-  "commit_message": "string",
-  "rollback_of": "string | null"
-}
-```
-
-### room_type_inventory (materialized view)
-```json
-{
-  "tenant_id": "string",
-  "date": "string (YYYY-MM-DD)",
-  "room_type": "string",
-  "total": "int",
-  "locked_booking": "int",
-  "locked_hold": "int",
-  "locked_ooo": "int",
-  "locked_oos": "int",
-  "sellable": "int",
-  "last_computed_at": "datetime ISO"
-}
-```
-
----
-
-## Prioritized Backlog
-
-### P1 — Next
-- **Sandbox Testing**: Exely/HotelRunner real-world simulation
-- **SEC-001**: Secrets Management Rollout
-- **SEC-002**: Crypto Migration
-
-### P2 — Future
-- Enable Strict Tenant Mode (`STRICT_TENANT_MODE=true`)
-- Load/chaos proof testing
-- Quarantine burn-down
-- Migrate `motor` → `pymongo` native async
-
-### P3 — Vision
-- Vite production build + Nginx static serving
-- Go-live runbook
-- SLO/SLA documentation
-- Incident playbooks
+## Backlog (P3)
+- Vite production build + Nginx
+- Go-live runbook, SLO/SLA docs
+- AWS KMS, HashiCorp Vault
+- PII masking, stress testing
+- Motor → pymongo migration
