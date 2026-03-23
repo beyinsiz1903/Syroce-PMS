@@ -98,6 +98,64 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 <div className="flex justify-between"><span className="text-gray-500">Giris</span><span className="font-medium">{booking?.check_in?.toString().slice(0, 10)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Cikis</span><span className="font-medium">{booking?.check_out?.toString().slice(0, 10)}</span></div>
               </div>
+
+              {/* Operational Status Panel */}
+              <div className="space-y-1.5 pt-2 border-t" data-testid="reservation-ops-panel">
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Operasyonel Durum</p>
+                {/* Payment status */}
+                {(summary?.balance || 0) > 0 && (
+                  <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 rounded-md px-2 py-1.5" data-testid="ops-payment-alert">
+                    <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0" />
+                    <span className="text-[11px] text-red-700 font-medium">Odeme bekleniyor: {fmtTL(summary?.balance)} TL</span>
+                  </div>
+                )}
+                {(summary?.balance || 0) <= 0 && (
+                  <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-md px-2 py-1.5" data-testid="ops-payment-ok">
+                    <Shield className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+                    <span className="text-[11px] text-emerald-700">Odeme tamam</span>
+                  </div>
+                )}
+                {/* Room status */}
+                {room && (room.status === 'dirty' || room.status === 'cleaning') && (
+                  <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5" data-testid="ops-room-dirty">
+                    <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                    <span className="text-[11px] text-amber-700 font-medium">Oda {room.status === 'cleaning' ? 'temizleniyor' : 'kirli'}</span>
+                  </div>
+                )}
+                {room && room.status === 'available' && (
+                  <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-md px-2 py-1.5" data-testid="ops-room-ready">
+                    <Shield className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+                    <span className="text-[11px] text-emerald-700">Oda hazir</span>
+                  </div>
+                )}
+                {/* VIP status */}
+                {guest?.vip_status && (
+                  <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-200 rounded-md px-2 py-1.5" data-testid="ops-vip">
+                    <Star className="w-3 h-3 text-purple-500 flex-shrink-0" />
+                    <span className="text-[11px] text-purple-700 font-medium">VIP Misafir</span>
+                  </div>
+                )}
+                {/* Repeat guest */}
+                {guest?.total_stays > 1 && (
+                  <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-md px-2 py-1.5" data-testid="ops-repeat">
+                    <Users className="w-3 h-3 text-blue-500 flex-shrink-0" />
+                    <span className="text-[11px] text-blue-700">{guest.total_stays}. konaklama</span>
+                  </div>
+                )}
+                {/* Guest preferences */}
+                {guest?.preferences && Object.keys(guest.preferences).length > 0 && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-md px-2 py-1.5" data-testid="ops-preferences">
+                    <p className="text-[10px] text-slate-500 mb-0.5">Tercihler</p>
+                    <div className="flex flex-wrap gap-1">
+                      {Object.entries(guest.preferences).slice(0, 3).map(([k, v]) => (
+                        <span key={k} className="text-[10px] bg-white border rounded px-1.5 py-0.5 text-slate-600">
+                          {k}: {typeof v === 'boolean' ? (v ? 'Evet' : 'Hayir') : String(v)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="border rounded-lg p-3 bg-white space-y-2">
                 <div className="flex justify-between text-xs"><span className="text-gray-500">TOPLAM</span><span className="font-bold">{fmtTL(summary?.total_amount)} TL</span></div>
                 <div className="flex justify-between text-xs"><span className="text-gray-500">ODENEN</span><span className="font-bold text-emerald-600">{fmtTL(summary?.total_payments)} TL</span></div>

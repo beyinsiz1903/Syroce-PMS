@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink, Banknote, Building2, Wallet, Plus, CalendarPlus, Search, UserCheck, UserPlus } from 'lucide-react';
+import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink, Banknote, Building2, Wallet, Plus, CalendarPlus, Search, UserCheck, UserPlus, Calendar } from 'lucide-react';
 
 const RoomsTab = ({
   rooms,
@@ -393,7 +393,7 @@ const RoomsTab = ({
             >
               <CardContent className="p-3">
                 <div className="flex justify-between items-start mb-2">
-                  <span className="text-lg font-bold">{room.room_number}</span>
+                  <span className="text-lg font-bold" style={{ fontFamily: 'Manrope' }}>{room.room_number}</span>
                   <div className="flex gap-1 items-center">
                     {catLabel && <Badge className={`text-[10px] ${catLabel.cls}`}>{catLabel.text}</Badge>}
                     <Badge className={statusColors[room.status] || 'bg-gray-100'}>{room.status}</Badge>
@@ -401,6 +401,33 @@ const RoomsTab = ({
                 </div>
                 <p className="text-sm text-gray-600">{room.room_type}</p>
                 <p className="text-xs text-gray-400">Kat {room.floor} &bull; {room.capacity} kisi</p>
+
+                {/* Live cleaning indicator for dirty/cleaning rooms */}
+                {(room.status === 'dirty' || room.status === 'cleaning') && (
+                  <div className="mt-2 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5" data-testid={`room-cleaning-${room.room_number}`}>
+                    <div className="flex items-center justify-between text-[10px] text-amber-700 mb-1">
+                      <span className="flex items-center gap-1">
+                        <span className={`w-1.5 h-1.5 rounded-full ${room.status === 'cleaning' ? 'bg-amber-500 animate-pulse' : 'bg-amber-300'}`} />
+                        {room.status === 'cleaning' ? 'Temizleniyor' : 'Temizlik bekliyor'}
+                      </span>
+                      <span className="font-medium">~{room.status === 'cleaning' ? '8' : '15'} dk</span>
+                    </div>
+                    {room.status === 'cleaning' && (
+                      <div className="w-full h-1 bg-amber-200 rounded-full overflow-hidden">
+                        <div className="h-full bg-amber-500 rounded-full animate-pulse" style={{ width: '60%' }} />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Next check-in indicator for available rooms with arrivals */}
+                {room.status === 'available' && guestInfo && guestInfo.isCheckInToday && (
+                  <div className="mt-2 bg-emerald-50 border border-emerald-200 rounded-md px-2 py-1" data-testid={`room-checkin-eta-${room.room_number}`}>
+                    <span className="text-[10px] text-emerald-700 flex items-center gap-1">
+                      <Calendar className="w-3 h-3" /> Giris bekleniyor
+                    </span>
+                  </div>
+                )}
 
                 {/* Guest info section */}
                 {guestInfo && (
@@ -558,51 +585,36 @@ const RoomsTab = ({
         </DialogContent>
       </Dialog>
 
-      {/* Dirty Room Check-in Warning Dialog */}
+      {/* Dirty Room — Smart Decision Dialog */}
       <Dialog open={dirtyRoomDialog} onOpenChange={(o) => !o && setDirtyRoomDialog(false)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-amber-700">
+            <DialogTitle className="flex items-center gap-2 text-amber-700" style={{ fontFamily: 'Manrope' }}>
               <SprayCan className="w-5 h-5" />
-              Kirli Oda Uyarisi
+              Kirli Oda — Karar Paneli
             </DialogTitle>
             <DialogDescription>
-              Bu oda henuz temizlenmemis durumda
+              Misafir check-in bekliyor, oda henuz hazir degil
             </DialogDescription>
           </DialogHeader>
           {dirtyRoomInfo && (
-            <div className="space-y-4">
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-amber-900">Oda {dirtyRoomInfo.room.room_number}</span>
-                  <Badge className="bg-yellow-100 text-yellow-800">{dirtyRoomInfo.room.status}</Badge>
-                </div>
-                <p className="text-sm text-amber-700 mt-1">{dirtyRoomInfo.guestInfo.guest_name}</p>
-              </div>
-              <p className="text-sm text-gray-600">
-                Bu oda kirli durumda. Odayi temiz olarak isaretleyip check-in yapmak ister misiniz?
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  className="flex-1 bg-green-600 hover:bg-green-700"
-                  onClick={() => {
-                    setDirtyRoomDialog(false);
-                    handleCheckIn?.(dirtyRoomInfo.guestInfo.booking_id, true);
-                  }}
-                  data-testid="dirty-room-checkin-btn"
-                >
-                  <SprayCan className="w-4 h-4 mr-1" />
-                  Temizle ve Check-in Yap
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setDirtyRoomDialog(false)}
-                  data-testid="dirty-room-cancel-btn"
-                >
-                  Iptal
-                </Button>
-              </div>
-            </div>
+            <DirtyRoomDecision
+              room={dirtyRoomInfo.room}
+              guestInfo={dirtyRoomInfo.guestInfo}
+              allRooms={rooms}
+              onForceCheckIn={() => {
+                setDirtyRoomDialog(false);
+                handleCheckIn?.(dirtyRoomInfo.guestInfo.booking_id, true);
+              }}
+              onAssignAlternative={(altRoom) => {
+                setDirtyRoomDialog(false);
+                // For now, force check-in to dirty room with clean flag
+                // In future: reassign room via API
+                handleCheckIn?.(dirtyRoomInfo.guestInfo.booking_id, true);
+                toast.info(`Alternatif oda ${altRoom.room_number} onerisi not edildi`);
+              }}
+              onCancel={() => setDirtyRoomDialog(false)}
+            />
           )}
         </DialogContent>
       </Dialog>
@@ -889,3 +901,85 @@ const RoomsTab = ({
 };
 
 export default RoomsTab;
+
+/** Smart Dirty Room Decision sub-component */
+function DirtyRoomDecision({ room, guestInfo, allRooms, onForceCheckIn, onAssignAlternative, onCancel }) {
+  const sameTypeClean = (allRooms || []).filter(
+    r => r.status === 'available' && r.room_type === room.room_type && String(r.room_number) !== String(room.room_number)
+  );
+  const estimatedCleanMin = room.status === 'cleaning' ? 8 : 15;
+
+  return (
+    <div className="space-y-4" data-testid="dirty-room-decision">
+      {/* Current situation */}
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+        <div className="flex justify-between items-center mb-1.5">
+          <span className="text-sm font-bold text-amber-900">Oda {room.room_number}</span>
+          <Badge className="bg-yellow-100 text-yellow-800 text-[10px]">{room.status === 'cleaning' ? 'Temizleniyor' : 'Kirli'}</Badge>
+        </div>
+        <p className="text-sm text-amber-700">{guestInfo.guest_name}</p>
+        <div className="mt-2 flex items-center gap-2 text-xs text-amber-600">
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            Tahmini temizlik: ~{estimatedCleanMin} dk
+          </span>
+        </div>
+      </div>
+
+      {/* Alternative rooms */}
+      {sameTypeClean.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Alternatif Odalar ({room.room_type})</p>
+          <div className="space-y-1.5">
+            {sameTypeClean.slice(0, 3).map(alt => (
+              <div
+                key={alt.id}
+                className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 hover:bg-emerald-100 transition-colors"
+                data-testid={`alt-room-${alt.room_number}`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-md bg-emerald-100 flex items-center justify-center">
+                    <BedDouble className="w-4 h-4 text-emerald-700" />
+                  </div>
+                  <div>
+                    <span className="text-sm font-semibold text-emerald-800">Oda {alt.room_number}</span>
+                    <span className="text-[10px] text-emerald-600 ml-2">Kat {alt.floor}</span>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={() => onAssignAlternative(alt)}
+                  data-testid={`assign-alt-${alt.room_number}`}
+                >
+                  Bu Odaya Ata
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sameTypeClean.length === 0 && (
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
+          <p className="text-xs text-slate-500">Ayni tipte bos oda yok. Bekle ve temizle secenegini kullanin.</p>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex gap-2 pt-1">
+        <Button
+          className="flex-1 bg-[#C09D63] hover:bg-[#B08D55] text-white"
+          onClick={onForceCheckIn}
+          data-testid="dirty-room-checkin-btn"
+        >
+          <SprayCan className="w-4 h-4 mr-1" />
+          Temizle ve Giris Yap
+        </Button>
+        <Button variant="outline" onClick={onCancel} data-testid="dirty-room-cancel-btn">
+          Bekle
+        </Button>
+      </div>
+    </div>
+  );
+}

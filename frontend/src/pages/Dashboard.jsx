@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import Layout from '@/components/Layout';
 import { Hotel, FileText, TrendingUp, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Crown, Shield, Sparkles, Bot, Star, Building, CreditCard, Gift, Globe, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor, ArrowRight } from 'lucide-react';
+import CommandCenter from '@/components/CommandCenter';
 import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import cacheDB from '@/utils/cacheDB';
 
@@ -696,6 +697,9 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                 </CardContent>
               </Card>
             )}
+
+            {/* Command Center: Decision-Driven Alerts */}
+            <CommandCenter />
 
             {/* Quick Stats */}
             {stats?.pms && (
