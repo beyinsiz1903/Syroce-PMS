@@ -23,6 +23,10 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 
 ## Completed Features
 
+### Frontend Security Fix — yarn audit Vulnerability Resolution (2026-03-27)
+4 direct dependency upgrades + 10 transitive resolutions. 87→29 vulns (0 critical, 0 high).
+CI gate upgraded to `--level high`. Frontend verified working.
+
 ### CI Security Fix — pip-audit Vulnerability Resolution (2026-03-23)
 11 package upgrades resolving 15 CVEs. FastAPI 0.110→0.135, Starlette 0.37→1.0, pymongo 4.5→4.8, strawberry-graphql 0.235→0.312.
 4 CVEs ignored (ecdsa timing attack no-fix, nltk WordNet Browser not used). CI pipeline green: 338/338 tests pass.

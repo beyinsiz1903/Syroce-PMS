@@ -1,5 +1,34 @@
 # Syroce PMS — Changelog
 
+## 2026-03-27: Frontend Security — yarn audit Vulnerability Resolution
+
+### Direct Dependency Upgrades
+- **jspdf** 4.2.0 → 4.2.1 (HTML Injection in New Window paths — CRITICAL)
+- **axios** 1.13.2 → 1.13.6 (DoS via __proto__ key in mergeConfig — HIGH)
+- **react-router-dom** 7.11.0 → 7.13.1 (SSR XSS in ScrollRestoration — HIGH)
+- **socket.io-client** 4.8.1 → 4.8.3 (unbounded binary attachments — HIGH)
+
+### Transitive Dependency Resolutions (yarn resolutions)
+- **minimatch** → >=5.1.8 (ReDoS via nested extglobs)
+- **nth-check** → >=2.0.1 (Inefficient RegExp Complexity)
+- **svgo** → >=2.8.1 (DoS via entity expansion)
+- **underscore** → >=1.13.8 (unlimited recursion DoS)
+- **flatted** → >=3.4.2 (Prototype Pollution via parse())
+- **serialize-javascript** → >=7.0.3 (RCE via RegExp.flags)
+- **dompurify** → >=3.3.2 (XSS vulnerability)
+- **jsonpath** → >=1.3.0 (Arbitrary Code Injection)
+- **socket.io-parser** → >=4.2.6 (unbounded binary attachments)
+- **rollup** → >=2.80.0 (Arbitrary File Write via Path Traversal)
+
+### CI/CD Update
+- Frontend audit gate upgraded: `--level critical` → `--level high`
+- Result: **0 Critical, 0 High** (29 remaining: 7 Low + 22 Moderate — all transitive build-time)
+
+### Result
+- **87 → 29 vulnerabilities** (66% reduction)
+- **1 Critical + 55 High → 0 Critical + 0 High**
+- Frontend verified working, backend battle tests passing
+
 ## 2026-03-23: CI Fix — pip-audit Security Vulnerability Resolution
 
 ### Package Upgrades (19 → 0 unignored vulnerabilities)

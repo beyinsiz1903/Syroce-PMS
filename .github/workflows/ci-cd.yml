@@ -239,10 +239,10 @@ jobs:
             --ignore-vuln CVE-2026-33231 \
             || { echo "::error::CRITICAL vulnerabilities found — see security-report.txt"; exit 1; }
 
-      - name: Node.js dependency security audit (critical — hard gate)
+      - name: Node.js dependency security audit (high — hard gate)
         run: |
           cd frontend
-          yarn audit --level critical
+          yarn audit --level high
 
       - name: Check for hardcoded secrets (hard gate)
         run: |
