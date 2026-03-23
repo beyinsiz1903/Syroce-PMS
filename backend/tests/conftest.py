@@ -13,6 +13,9 @@ if str(BACKEND_ROOT) not in sys.path:
 if str(TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(TESTS_DIR))
 
+# Ensure TESTING=1 so rate limiter uses relaxed limits during test runs
+os.environ.setdefault("TESTING", "1")
+
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 
 

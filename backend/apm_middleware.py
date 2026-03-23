@@ -332,8 +332,12 @@ class EnhancedRateLimitMiddleware:
         self._windows: Dict[str, deque] = defaultdict(lambda: deque())
 
         # Rate limit tiers: (max_requests, window_seconds)
-        # In test/CI environments, use higher limits to avoid test failures
-        is_test_env = os.environ.get('TESTING', '') == '1' or os.environ.get('CI', '') != ''
+        # In test/CI/dev environments, use higher limits to avoid test failures
+        is_test_env = (
+            os.environ.get('TESTING', '') == '1'
+            or os.environ.get('CI', '') != ''
+            or os.environ.get('APP_ENV', '') == 'development'
+        )
         if is_test_env:
             self.limits = {
                 'auth': (10000, 60),

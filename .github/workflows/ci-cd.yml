@@ -139,6 +139,7 @@ jobs:
             tests/test_atomic_booking.py \
             tests/battle/test_booking_integrity.py \
             tests/battle/test_sprint2_hold_ooo.py \
+            tests/battle/test_regression_guards.py \
             -v --tb=short -q --timeout=30 --junitxml=test-results.xml
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
@@ -206,41 +207,81 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Python dependency security audit (critical/high)
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          yarn install --ignore-engines
+
+      - name: Python dependency security audit (CRITICAL — hard gate)
         run: |
           pip install pip-audit
           cd backend
-          pip-audit -r requirements.txt --desc --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ \
-            --fix --dry-run 2>&1 | tee security-report.txt
-          pip-audit -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ \
-            --ignore-vuln PYSEC-2024-* || echo "::warning::Known vulnerabilities found, review security-report.txt"
+          pip-audit -r requirements.txt --desc \
+            --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ \
+            2>&1 | tee security-report.txt
+          echo "--- Checking for CRITICAL/HIGH vulnerabilities ---"
+          pip-audit -r requirements.txt \
+            --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ \
+            --ignore-vuln PYSEC-2024-62920 \
+            --ignore-vuln PYSEC-2024-113 \
+            || { echo "::error::CRITICAL vulnerabilities found — see security-report.txt"; exit 1; }
 
-      - name: Node.js dependency security audit (critical/high)
+      - name: Node.js dependency security audit (critical — hard gate)
         run: |
           cd frontend
           yarn audit --level critical
 
-      - name: Check for hardcoded secrets
+      - name: Check for hardcoded secrets (hard gate)
         run: |
           echo "Scanning for potential secrets..."
           FOUND=0
-          grep -rn "password\s*=\s*['\"]" backend/ --include="*.py" \
+
+          # Check for hardcoded passwords in non-test Python files
+          grep -rn "password\s*=\s*['\"][^'\"]\{8,\}" backend/ --include="*.py" \
             --exclude="*test*" --exclude="*demo*" --exclude="*seed*" \
-            --exclude="*create_*" --exclude="requirements.txt" && FOUND=1 || true
-          grep -rn "secret\s*=\s*['\"]sk-\|api_key\s*=\s*['\"]" backend/ --include="*.py" \
+            --exclude="*create_*" --exclude="requirements.txt" \
+            --exclude="*conftest*" && FOUND=1 || true
+
+          # Check for hardcoded API keys / secret keys
+          grep -rn "api_key\s*=\s*['\"]sk-" backend/ --include="*.py" \
             --exclude="*test*" --exclude="*.env" && FOUND=1 || true
+
+          # Check for hardcoded JWT secrets
+          grep -rn "JWT_SECRET\s*=\s*['\"]" backend/ --include="*.py" \
+            --exclude="*test*" --exclude="*.env" && FOUND=1 || true
+
+          # Check for AWS/cloud credentials
+          grep -rn "AKIA[A-Z0-9]\{16\}" backend/ --include="*.py" && FOUND=1 || true
+
           if [ "$FOUND" -eq 1 ]; then
-            echo "::warning::Potential hardcoded secrets detected — review above matches"
+            echo "::error::Hardcoded secrets detected — fix before merge"
+            exit 1
           else
             echo "No hardcoded secrets found"
           fi
 
-      - name: Trivy filesystem scan
+      - name: Trivy filesystem scan (CRITICAL — hard gate)
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: .
-          severity: CRITICAL,HIGH
+          severity: CRITICAL
+          exit-code: 1
+
+      - name: Trivy HIGH severity (warning only)
+        if: always()
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH
           exit-code: 0
 
       - name: Upload security report
