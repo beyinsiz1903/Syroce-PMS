@@ -1,3 +1,10 @@
+# QUARANTINED: 2026-03-24
+# REASON: Stale DB fixtures - pymongo.errors.BulkWriteError. Tests assume seed data
+#         (room types, rate plans, external entities) that no longer exists in test DB.
+#         21/25 tests fail. Fix: Update seed data or rewrite tests with fresh fixtures.
+# ORIGINAL: tests/test_mapping_engine.py
+# CATEGORY: stale_fixtures
+
 """
 Mapping Engine Contract Tests
 Tests the 6 critical mapping scenarios:

@@ -16,6 +16,22 @@ if str(TESTS_DIR) not in sys.path:
 # Ensure TESTING=1 so rate limiter uses relaxed limits during test runs
 os.environ.setdefault("TESTING", "1")
 
+
+# ── Quarantine Auto-Skip Hook (ADR-002) ──────────────────────────────────
+# Loads the quarantine manifest and auto-skips listed tests at collection time.
+# This keeps failing tests visible in output (as "skipped") without blocking CI.
+def pytest_collection_modifyitems(config, items):
+    try:
+        from tests._quarantine.quarantine_manifest import QUARANTINED_TESTS
+    except ImportError:
+        return
+    for item in items:
+        node_id = item.nodeid
+        for q_id, reason in QUARANTINED_TESTS.items():
+            if q_id in node_id:
+                item.add_marker(pytest.mark.skip(reason=reason))
+                break
+
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 
 

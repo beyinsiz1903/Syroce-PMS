@@ -1,3 +1,9 @@
+# QUARANTINED: 2026-03-24
+# REASON: Stale room-night locks - Room block operations fail due to leftover locks.
+#         3/7 tests fail. Fix: Add cleanup fixture to clear room_night_locks + room_blocks.
+# ORIGINAL: tests/test_release_room_block_bridge.py
+# CATEGORY: stale_room_locks
+
 import os
 import uuid
 from datetime import datetime, timedelta

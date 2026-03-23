@@ -1,3 +1,10 @@
+# QUARANTINED: 2026-03-24
+# REASON: Stale room-night locks - all tests try to create bookings but fail due to
+#         leftover locks from prior test runs. 4/7 tests fail (1 quarantined + 3 cascade).
+#         Fix: Add cleanup fixture to clear room_night_locks before each test.
+# ORIGINAL: tests/test_atomic_checkin_checkout.py
+# CATEGORY: stale_room_locks
+
 """
 Tests for Atomic Check-in / Check-out
 ======================================

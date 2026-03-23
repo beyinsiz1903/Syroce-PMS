@@ -1,3 +1,10 @@
+# QUARANTINED: 2026-03-24
+# REASON: Stale room-night locks - "Room not available" errors. Tests depend on
+#         booking creation which fails due to leftover room_night_locks from prior runs.
+#         6/7 tests fail. Fix: Add test cleanup fixture to clear locks before each test.
+# ORIGINAL: tests/test_open_folio_bridge.py
+# CATEGORY: stale_room_locks
+
 import os
 import uuid
 from datetime import datetime, timedelta

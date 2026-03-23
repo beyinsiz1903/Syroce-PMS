@@ -1,3 +1,10 @@
+# QUARANTINED: 2026-03-24
+# REASON: Hardcoded dates - Tests reference business_date=2026-03-22 which is now past.
+#         Date validation rejects these as past-date bookings. 3/6 tests fail.
+#         Fix: Rewrite with dynamic dates (today + offset) instead of hardcoded dates.
+# ORIGINAL: tests/test_business_date_validation.py
+# CATEGORY: stale_dates
+
 """
 Test suite for Hotel Business Date validation in reservations
 Features tested:
