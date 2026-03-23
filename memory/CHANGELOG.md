@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## [2026-03-23] Notification Layer + Auto-Action + Unified Ops View Redesign
+
+### Notification Routing (Config-Driven)
+- **warning** → dashboard only (no external notification)
+- **critical** → dashboard + `ALERT_WEBHOOK_URL` (Slack-compatible webhook, no-op if absent)
+- **severe** → dashboard + `ALERT_WEBHOOK_URL` + `ESCALATION_WEBHOOK_URL` + auto-action trigger
+- Slack Block Kit formatted payload with severity emoji, provider details, runbook link
+
+### Auto-Action Engine
+- **New**: `/app/backend/controlplane/auto_actions.py`
+- Severe drift → triggers existing `ReconciliationEngine.reconcile()` with `trigger_source=auto_action` metadata
+- Guardrails: 15-min cooldown per tenant, eligibility check, single execution per provider/tenant, timeline logging
+- Failed auto-action fires new alert via `AlertingEngine`
+- Full audit trail in `cp_auto_actions` collection + `event_timeline`
+- **Endpoints**: `GET /api/ops/dashboard/auto-actions`, `GET /api/ops/dashboard/ops-kpis`
+
+### Unified Ops View Redesign — "Urunun Kalbi"
+- **Top Row**: Channel Health (alignment, freshness, providers) + Deploy Health (env success rates)
+- **Middle**: Live Drift Alerts (severity badges, auto-heal indicators, acknowledge, runbook links)
+- **Bottom**: KPI Dashboard — Sync Success, MTTR, Push SLA, Auto-Heal stats, DORA mini metrics, Drift Trend chart, DORA × Kanal Korelasyonu, summary footer
+- Every widget has drill-down support + data-testid attributes
+
+### Testing
+- 21/21 backend tests passed (ops-kpis, auto-actions, notification routing, guardrails)
+- 10/10 frontend elements verified, all interactions working
+
+---
+
 ## [2026-03-23] Drift Threshold Alerting
 
 ### Drift Alerting Engine

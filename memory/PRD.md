@@ -93,6 +93,22 @@ Enterprise-grade hotel management platform (PMS) with multi-tenant architecture,
 - Inventory drift runbook with structured resolution steps
 - Frontend DriftAlertPanel integrated into Unified Ops View as top-priority block
 
+### Phase I: Notification Layer + Auto-Action + Unified Ops View Redesign (COMPLETE, 2026-03-23)
+**Config-driven notification routing**:
+- warning → dashboard only
+- critical → ALERT_WEBHOOK_URL (Slack Block Kit, no-op if absent)
+- severe → ALERT_WEBHOOK_URL + ESCALATION_WEBHOOK_URL + auto-reconciliation
+
+**Auto-action engine** with guardrails:
+- 15-min cooldown, eligibility check, single execution per tenant
+- Calls existing ReconciliationEngine with metadata
+- Failed actions fire new alerts, all actions logged to event_timeline
+
+**Unified Ops View — "ürünün kalbi"**:
+- Top: Channel Health + Deploy Health
+- Middle: Live Drift Alerts (severity badges, auto-heal indicator, acknowledge, runbook)
+- Bottom: KPI Dashboard (Sync Success, MTTR, Push SLA, Auto-Heal, DORA mini, Drift Trend, Correlation)
+
 ---
 
 ## API Endpoints
@@ -113,6 +129,8 @@ Enterprise-grade hotel management platform (PMS) with multi-tenant architecture,
 | GET | /api/ops/dashboard/drift-alerts/summary | Drift alert severity summary |
 | POST | /api/ops/dashboard/drift-alerts/evaluate | Evaluate and fire drift alerts |
 | POST | /api/ops/dashboard/drift-alerts/{id}/acknowledge | Acknowledge a drift alert |
+| GET | /api/ops/dashboard/auto-actions | Auto-action history |
+| GET | /api/ops/dashboard/ops-kpis | Unified KPI panel (MTTR, drift trend, sync success, auto-heal) |
 
 ---
 
