@@ -36,57 +36,85 @@ Dashboard Command Center, Enhanced Room Board, Upgraded Front Desk, Smart Paymen
 Channel Manager resilience testing framework: 5 scenarios, 2 providers (HotelRunner + Exely). 10/10 pass rate.
 
 ## SEC-001 Secrets Management Rollout (COMPLETED - March 2026)
-### What was built:
 Operational APIs for secrets management with rotation, rollback, and visibility.
 
-1. **Secrets Status** (`GET /api/ops/secrets/status`): Health, provider config, audit stats, anomaly counts
-2. **Rotation Plan** (`GET /api/ops/secrets/rotation-plan`): Per-secret age tracking, severity ratings (OK/ROTATE_RECOMMENDED/ROTATE_URGENT), rollback availability
-3. **Rotate** (`POST /api/ops/secrets/rotate`): Credential rotation with previous version preserved
-4. **Rollback** (`POST /api/ops/secrets/rollback`): Restore previous credential version
-5. **Scoping** (`GET /api/ops/secrets/scoping`): Tenant/provider/property isolation view
-
 ## SEC-002 Crypto Migration Rollout (COMPLETED - March 2026)
-### What was built:
 Operational APIs for crypto migration status and cutover readiness.
 
-1. **Crypto Status** (`GET /api/ops/crypto/status`): V2/V1 state, dual-read/write config, fallback strategy, key versioning
-2. **Cutover Metrics** (`GET /api/ops/crypto/cutover-metrics`): Format distribution (SYR1 vs AES-GCM vs legacy), migration percentage, cutover readiness
-3. **Migration Dry-Run** (`POST /api/ops/crypto/migrate-check`): Scan without writing, shows migration candidates
-4. **Key Info** (`GET /api/ops/crypto/key-info`): Key versioning, rotation steps, rollback plan (immediate, break-glass, key rollback)
-
 ## Sandbox Dashboard Visualization (COMPLETED - March 2026)
-### What was built:
 Full ops dashboard integration for sandbox simulation results.
 
-1. **Provider Cards**: Exely/HotelRunner pass/fail with scenario-level drill-down
-2. **Trend Chart**: Pass rate over last 30 runs with Recharts visualization
-3. **Regression Detection**: Compares last 2 runs, flags scenarios that regressed
-4. **Correlation**: Links sandbox results to deploys and drift events
-5. **Labels**: `sandbox_pass` / `sandbox_regression` / `prod_health` separation
-
 ## /api/ops/* Admin Guard (COMPLETED - March 2026)
-Role-based access control for all operational endpoints. Requires `super_admin`, `admin`, `operator`, or `manager` role. Returns 401 without token, 403 for insufficient role.
+Role-based access control for all operational endpoints.
 
-## Alert → Business KPI Correlation (COMPLETED - March 2026)
+## Alert -> Business KPI Correlation (COMPLETED - March 2026)
+Enhanced alerts with severity, runbook links, tenant/provider context.
+
+## CI/CD Pipeline Sandbox Integration (COMPLETED - March 2026)
 ### What was built:
-1. **Enhanced Alerts**: All alerts now include `severity`, `runbook_link`, `tenant_id`, `property_id`, `provider` fields
-2. **KPI Correlation** (`GET /api/ops/alerts/kpi-correlation`): Maps alerts to business impact:
-   - Import failures → revenue_risk
-   - Outbox stuck → rate_parity_risk
-   - Secret anomalies → security_risk
-   - Crypto failures → data_protection_risk
-3. **Webhook Enhancement**: Slack-compatible payloads now include tenant/provider context
+3-tier sandbox validation integrated into CI/CD pipeline for deploy confidence.
+
+1. **PR Gate** (`POST /api/ops/cicd/run tier=pr_gate`):
+   - Quick subset: 5 scenarios, 2 providers, low concurrency (duplicate_count=3, storm_size=6)
+   - Blocks deploy on failure
+   - Health label: `sandbox_validation`
+
+2. **Staging Gate** (`POST /api/ops/cicd/run tier=staging_gate`):
+   - Full scenario pack: all 5 scenarios, 2 providers, standard concurrency (duplicate_count=5, storm_size=10)
+   - Blocks deploy on failure
+   - Health label: `staging_deploy_validation`
+
+3. **Nightly Resilience** (`POST /api/ops/cicd/run tier=nightly`):
+   - Heavy set: all scenarios, high concurrency (duplicate_count=10, storm_size=25)
+   - Does NOT block deploy, produces confidence signal
+   - Health label: `prod_health`
+
+4. **Acceptance Criteria Evaluator**: Each run evaluates:
+   - Exely sandbox: all critical PASS
+   - HotelRunner sandbox: all critical PASS
+   - oversell: 0
+   - duplicate inventory consumption: 0
+   - inconsistent state: 0
+   - stale provider recovery: PASS
+   - reconciliation recovery: PASS
+   - deterministic modify/cancel: PASS
+   - new regression vs baseline: 0 critical
+
+5. **Deploy Gate Verdict**: PASS / BLOCK / WARN with failure details and runbook links
+
+6. **Health Badges**: 3 separate badges (sandbox_validation, staging_deploy_validation, prod_health) — never mixed
+
+7. **Results to Dashboard**: build_id, commit_sha, deploy_id, provider result, scenario result, regression status, runbook links
+
+8. **Runbook per Failure**: Every fail case includes severity, impact, runbook link, rollback suggestion
+
+### API Endpoints:
+- `GET /api/ops/cicd/tiers` — Available tier configurations
+- `POST /api/ops/cicd/run` — Trigger pipeline run
+- `GET /api/ops/cicd/runs` — List recent runs
+- `GET /api/ops/cicd/runs/{run_id}` — Specific run details
+- `GET /api/ops/cicd/deploy-gate/{run_id}` — Deploy gate verdict
+- `GET /api/ops/cicd/baseline` — Last passing baselines
+- `GET /api/ops/cicd/health-badges` — Separate health badges
+- `GET /api/ops/cicd/trends` — Pipeline trend data
+
+### Frontend:
+- `CICDPipelineDashboard.jsx` — Health badges, tier trigger buttons, trend chart, recent runs with drill-down
+- Integrated into `UnifiedOpsView.jsx` on `/control-plane` page
 
 ## Key Endpoints
-- `POST /api/auth/login` → `{access_token, user, tenant}`
-- `GET /api/pms/operational-alerts` → `{alerts[], summary{}, available_clean_rooms[]}`
-- `POST /api/channel-manager/v2/sandbox/simulate` → simulation report
-- `GET /api/ops/secrets/status` → secrets health
-- `GET /api/ops/crypto/status` → crypto health
-- `GET /api/ops/crypto/cutover-metrics` → migration progress
-- `GET /api/ops/sandbox/dashboard` → sandbox provider cards
-- `GET /api/ops/sandbox/trends` → pass rate trends
-- `GET /api/ops/alerts/kpi-correlation` → business impact mapping
+- `POST /api/auth/login` -> `{access_token, user, tenant}`
+- `GET /api/pms/operational-alerts` -> `{alerts[], summary{}, available_clean_rooms[]}`
+- `POST /api/channel-manager/v2/sandbox/simulate` -> simulation report
+- `GET /api/ops/secrets/status` -> secrets health
+- `GET /api/ops/crypto/status` -> crypto health
+- `GET /api/ops/crypto/cutover-metrics` -> migration progress
+- `GET /api/ops/sandbox/dashboard` -> sandbox provider cards
+- `GET /api/ops/sandbox/trends` -> pass rate trends
+- `GET /api/ops/alerts/kpi-correlation` -> business impact mapping
+- `POST /api/ops/cicd/run` -> CI/CD pipeline run with deploy gate verdict
+- `GET /api/ops/cicd/health-badges` -> separate health badges
+- `GET /api/ops/cicd/trends` -> pipeline trend data
 
 ## Test Credentials
 | User | Email | Password | Role |
@@ -97,7 +125,7 @@ Role-based access control for all operational endpoints. Requires `super_admin`,
 - Wire failure tracking (import bridge, outbox worker, ARI push engine)
 - Strict Tenant Mode (`STRICT_TENANT_MODE=true`)
 - Legacy db import migration (~264 imports)
-- pms.py decomposition (2714 lines → modular services)
+- pms.py decomposition (2714 lines -> modular services)
 - Legacy collection cleanup (~489 collections)
 - Load and chaos testing
 
@@ -106,6 +134,6 @@ Role-based access control for all operational endpoints. Requires `super_admin`,
 - Go-live runbook, SLO/SLA docs
 - AWS KMS, HashiCorp Vault integration
 - PII masking, stress testing
-- Motor → pymongo async migration
+- Motor -> pymongo async migration
 - HMR guard decommission
 - Configure Slack webhook for production alerts
