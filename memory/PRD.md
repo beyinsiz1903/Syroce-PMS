@@ -10,7 +10,10 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 - `/app/backend/channel_manager/` — Channel manager adapters
 - `/app/backend/workers/` — Background workers (ARI push, retry, etc.)
 - `/app/backend/tests/resilience/` — Chaos testing and resilience validation suite
+- `/app/backend/tests/battle/` — CI hard gate battle tests (Sprint 1-3)
 - `/app/backend/docs/BATTLE_READINESS_BLUEPRINT.md` — Battle-grade execution blueprint
+- `/app/backend/docs/ADR_BOOKING_INVARIANTS.md` — ADR-001: Booking invariants
+- `/app/backend/docs/ADR_TEST_QUARANTINE_STRATEGY.md` — ADR-002: Test quarantine strategy
 - `/app/frontend/src/pages/ControlPlane.jsx` — Control Plane UI (ops weapon)
 
 ## Credentials
@@ -20,29 +23,36 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 
 ## Completed Features
 
+### Sprint 3 — Regression Guards + CI Security + Test Quarantine (2026-03-23)
+**Regression Guard Tests (DONE)**
+- `tests/battle/test_regression_guards.py`: 8 permanent regression tests
+- REG-1 through REG-7: Past date, navigation, date validation guards
+- **Testing**: 28/28 battle tests pass, 338/338 CI suite (iteration_136)
+
+**CI/CD Security Tightening (DONE)**
+- pip-audit: specific vuln ignores (no wildcard), hard gate
+- Trivy CRITICAL: exit-code=1 (hard gate)
+- Hardcoded secrets: exit-code=1 (hard gate)
+
+**Test Quarantine Strategy (DONE)**
+- ADR-002: T0 (battle) / T1 (curated CI) / T2 (quarantine) tiers
+- `tests/_quarantine/` directory created
+
 ### Sprint 2 — TTL/Hold Mechanism + OOO/OOS Full Integration (2026-03-23)
 **A2: TTL/Hold Mechanism (DONE)**
 - `core/booking_hold_service.py`: Full hold lifecycle (create, confirm, release, sweep)
 - `routers/booking_holds.py`: REST API for hold management
 - Background sweeper runs every 60s, auto-releases expired holds
-- Hold locks use `lock_type=hold` with `hold_expires_at` in `room_night_locks`
-- Confirm upgrades `lock_type` to `booking` and removes expiry
-- Sweep sets booking status to `hold_expired` on TTL expiry
 - Default TTL: 15 minutes (configurable via `BOOKING_HOLD_TTL_MINUTES` env var)
-- **API**: POST/POST/DELETE/GET `/api/booking-holds`, POST `/api/booking-holds/confirm`, POST `/api/booking-holds/sweep`
 - **Testing**: 32/32 pass (iteration_135)
 
 **A5: OOO/OOS INV-5 Integration (DONE)**
-- PMS room block create (`create_room_block_service.py`) now writes to `room_night_locks`
-- PMS room block cancel (`release_room_block_service.py`) now releases from `room_night_locks`
+- PMS room block create/cancel now writes to/releases from `room_night_locks`
 - Type mapping: `out_of_order` → `ooo`, `out_of_service` → `oos`, `maintenance` → `maintenance`
-- Dual-write ensures old `room_blocks` collection (for UI) + `room_night_locks` (for availability) stay in sync
 
 ### Sprint 1 — Overbooking Prevention v2 (Booking Integrity Hardening) (2026-03-23)
 ADR-001 invariants, room-night lock audit trail, OOO/OOS/maintenance integration, cancel/modify race guard, 10-test CI hard gate.
-- **Files**: `core/atomic_booking.py`, `routers/room_blocks.py`, `modules/reservations/repository.py`, `docs/ADR_BOOKING_INVARIANTS.md`, `tests/battle/test_booking_integrity.py`
-- **API**: POST/DELETE/GET `/api/room-blocks`
-- **Invariants**: INV-1 (no negative inventory), INV-2 (all-or-nothing), INV-3 (idempotency), INV-4 (version check), INV-5 (OOO same truth), INV-6 (timeline audit)
+- **Invariants**: INV-1 through INV-6
 - **Testing**: 25/25 pass (iteration_134)
 
 ### Deploy Pipeline — Hard Gate CI/CD & Progressive Deploy (2026-03-22) — Phase 2
@@ -73,16 +83,11 @@ Frontend operations screen: Reservation Trace, System Health, Live Feed.
 
 ## Pending Tasks
 
-### P0 — Sprint 3 (Security & Test Triage)
-- CI/CD security scans tightening
-- Convert historical bug fixes to permanent regression tests
-- ~700 failing test quarantine/triage strategy
-- PMS battle tests: split reservation, no-show, room change
-
-### P1 — Sprint 4 (Room-Type Strategy)
+### P0 — Sprint 4 (Room-Type Strategy)
 - RFC/ADR for Phase C "Room-Type Level Strategy"
 - Design room-type strategy from audit trail telemetry
 - Align channel manager inventory ledger with hardened booking system
+- PMS battle tests: split reservation, no-show, room change
 
 ### P1 — Governance Phase 3 (Support Tooling)
 - Support Dashboard: tenant health, quick actions
@@ -102,6 +107,7 @@ Frontend operations screen: Reservation Trace, System Health, Live Feed.
 - Pilot hotel shadow mode + canary rollout
 
 ### P2 — Tech Debt
+- ~403 failing tests → quarantine triage (ADR-002 strategy ready)
 - ~264 legacy DB imports to tenant-scoped access
 - README and CI workflow file cleanup
 - Crypto Migration (SEC-002) & Secrets Management (SEC-001)

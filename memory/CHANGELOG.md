@@ -1,5 +1,48 @@
 # Syroce PMS — Changelog
 
+## 2026-03-23: Sprint 3 — Regression Guards + CI Security + Test Quarantine
+
+### Regression Guard Tests (8 new tests)
+- New `tests/battle/test_regression_guards.py`:
+  - REG-1: Past date booking rejection → 400 with "gecmis" message
+  - REG-2: Deeply past date (30 days ago) → 400
+  - REG-3: Future date booking succeeds → 200
+  - REG-4: Checkout before checkin → 400
+  - REG-5: Login returns user role + tenant_id for navigation
+  - REG-5b: PMS module endpoints accessible after login (dashboard, rooms, bookings)
+  - REG-6: Same-day checkin succeeds (200 or 409 if room booked)
+  - REG-7: Core PMS endpoints accessible with valid auth
+
+### CI/CD Security Scan Tightening
+- `pip-audit`: Removed broad `--ignore-vuln PYSEC-2024-*` wildcard, specific ignores only
+- `pip-audit`: Removed `|| echo` soft failure → now `exit 1` on CRITICAL/HIGH
+- Trivy filesystem scan: Changed `exit-code: 0` → `exit-code: 1` for CRITICAL severity
+- Trivy HIGH severity: Separate step, warning-only (no gate)
+- Hardcoded secrets: Changed `::warning` → `exit 1` on detection
+- Added checks for: JWT secrets, AWS credentials (AKIA*), cloud keys
+- Node.js audit + frontend deps install added to security-scan job
+
+### CI Pipeline Update
+- Added `tests/battle/test_regression_guards.py` to curated test suite hard gate
+- Total CI battle tests: 28 (10 Sprint 1 + 10 Sprint 2 + 8 Sprint 3)
+
+### Test Quarantine Strategy (ADR-002)
+- Created `docs/ADR_TEST_QUARANTINE_STRATEGY.md`
+- 3-tier system: T0 (battle, hard gate), T1 (curated CI), T2 (quarantine)
+- Created `tests/_quarantine/` directory with README
+- Error categories documented: ~500 import errors, ~200 stale fixtures, ~150 removed APIs
+
+### Rate Limiter Development Fix
+- `apm_middleware.py`: Rate limiter now checks `APP_ENV=development` for relaxed limits
+- `tests/conftest.py`: Sets `TESTING=1` env var for local pytest runs
+- Prevents rate limit exhaustion when running full test suite locally
+
+### Testing
+- 28/28 battle tests pass (8 Sprint 3 + 10 Sprint 2 + 10 Sprint 1)
+- 338/338 full CI curated suite passes
+- Testing agent: 100% success (iteration_136)
+
+
 ## 2026-03-23: Sprint 2 — TTL/Hold Mechanism + OOO/OOS Full Integration
 
 ### A2: TTL/Hold Mechanism (Booking Hold Service)
