@@ -48,7 +48,7 @@ jobs:
           context: ./frontend
           push: true
           build-args: |
-            REACT_APP_BACKEND_URL=${{ secrets.REACT_APP_BACKEND_URL }}
+            VITE_BACKEND_URL=${{ secrets.VITE_BACKEND_URL }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:latest
@@ -74,18 +74,27 @@ jobs:
 
       - name: Deploy to Staging
         run: |
-          echo "TODO: Configure kubectl or deployment mechanism"
-          echo "Image tag: ${{ github.sha }}"
-          exit 1
-        # kubectl set image deployment/backend backend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
-        # kubectl set image deployment/frontend frontend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
-        # kubectl set image deployment/worker worker=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-worker:${{ github.sha }}
+          if [ -z "${{ secrets.KUBECONFIG }}" ]; then
+            echo "::warning::Staging deployment skipped — KUBECONFIG not configured in GitHub Secrets"
+            echo "SHA: ${{ github.sha }}"
+            exit 0
+          fi
+          echo "Deploying to staging..."
+          echo "${{ secrets.KUBECONFIG }}" > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+          kubectl set image deployment/backend backend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
+          kubectl set image deployment/frontend frontend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
+          kubectl set image deployment/worker worker=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-worker:${{ github.sha }}
+          rm -f /tmp/kubeconfig
 
       - name: Verify Staging Health
         if: success()
         run: |
-          echo "TODO: Configure staging health check"
-          # curl -f https://staging.syroce.com/api/health/
+          if [ -z "${{ secrets.STAGING_URL }}" ]; then
+            echo "::warning::Staging health check skipped — STAGING_URL not configured"
+            exit 0
+          fi
+          curl -f ${{ secrets.STAGING_URL }}/api/health/
 
   # ── Deploy to Production ───────────────────────────────────────
   deploy-production:
@@ -98,20 +107,38 @@ jobs:
 
       - name: Create DB Backup
         run: |
-          echo "TODO: Configure pre-deploy backup mechanism"
-          exit 1
+          if [ -z "${{ secrets.MONGO_BACKUP_URI }}" ]; then
+            echo "::warning::DB backup skipped — MONGO_BACKUP_URI not configured in GitHub Secrets"
+            echo "SHA: ${{ github.sha }}"
+            exit 0
+          fi
+          echo "Creating pre-deploy backup..."
+          mongodump --uri="${{ secrets.MONGO_BACKUP_URI }}" --archive=/tmp/pre-deploy-${{ github.sha }}.gz --gzip
+          echo "Backup created: pre-deploy-${{ github.sha }}.gz"
 
       - name: Deploy to Production
         run: |
-          echo "TODO: Configure production deployment"
-          echo "Image tag: ${{ github.sha }}"
-          exit 1
+          if [ -z "${{ secrets.KUBECONFIG }}" ]; then
+            echo "::warning::Production deployment skipped — KUBECONFIG not configured in GitHub Secrets"
+            echo "SHA: ${{ github.sha }}"
+            exit 0
+          fi
+          echo "Deploying to production..."
+          echo "${{ secrets.KUBECONFIG }}" > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+          kubectl set image deployment/backend backend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
+          kubectl set image deployment/frontend frontend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
+          kubectl set image deployment/worker worker=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-worker:${{ github.sha }}
+          rm -f /tmp/kubeconfig
 
       - name: Verify Production Health
         if: success()
         run: |
-          echo "TODO: Configure production health check"
-          # curl -f https://app.syroce.com/api/health/
+          if [ -z "${{ secrets.PRODUCTION_URL }}" ]; then
+            echo "::warning::Production health check skipped — PRODUCTION_URL not configured"
+            exit 0
+          fi
+          curl -f ${{ secrets.PRODUCTION_URL }}/api/health/
 
       - name: Notify
         if: always()

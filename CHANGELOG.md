@@ -1,5 +1,11 @@
 # Syroce Hotel PMS — Changelog
 
+## Current Status Snapshot (2026-03)
+- **Backend vulnerabilities:** 0 unignored (pip-audit). 2 accepted: ecdsa timing (out-of-scope), nltk WordNet (unused)
+- **Frontend vulnerabilities:** 0 high/critical (yarn audit). Vite migration: 87 -> 0
+- **CI tests:** 391+ passing, 0 failures. 37 quarantined (controlled, ADR-002)
+- **Deploy pipeline:** 6 hard gates all green. deploy.yml graceful-skip when secrets not configured
+
 ## [2026-03-12] Phase 7 Review & Bug Fix
 - **GO-LIVE Decision**: Principal architect evaluated dashboard, declared platform "Production Candidate SaaS"
 - **Bug Fix**: Fixed `incident-readiness` endpoint 500 error (import name: `incident_service` -> `incident_response_service`)

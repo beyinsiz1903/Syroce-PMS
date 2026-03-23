@@ -4,47 +4,34 @@
 #
 # Structure:
 #   _quarantine/
-#   ├── quarantine_manifest.py    ← Individual test skip markers (loaded by conftest.py)
-#   ├── stale_fixtures/           ← Tests failing due to missing/outdated seed data
-#   ├── stale_room_locks/         ← Tests failing due to leftover room_night_locks
-#   └── stale_dates/              ← Tests with hardcoded dates that are now past
+#   ├── quarantine_manifest.py    <- Individual test skip markers (loaded by conftest.py)
+#   ├── stale_fixtures/           <- Tests failing due to missing/outdated seed data
+#   ├── stale_room_locks/         <- RESTORED (2026-03-23) — copies kept for reference
+#   └── stale_dates/              <- RESTORED (2026-03-23) — copies kept for reference
 #
-# Quarantine Rules (from ADR-002):
-# - Import errors from refactored modules → fix imports, move back
-# - Stale DB fixtures → update seed data, move back
-# - Removed/changed API → rewrite or delete
-# - Flaky tests → tag [FLAKY], investigate root cause
+# ── Current Quarantine Status (2026-03) ──
 #
-# Format: Each test file moved here should have a header comment:
-#   # QUARANTINED: 2026-03-24
-#   # REASON: <reason>
-#   # ORIGINAL: tests/test_some_file.py
-#   # CATEGORY: stale_fixtures | stale_room_locks | stale_dates | import_error | flaky
+# CI Hard Gate: 391+ tests, 0 failures
+# Restored from quarantine: 70+ tests (2026-03-23)
 #
-# ── Sprint 4 Triage (2026-03-24) ──
+# REMAINING IN QUARANTINE (via quarantine_manifest.py):
+# ┌─────────────────────────┬───────┬──────────────────────────────────────────┐
+# | Category                | Count | Action Required                          |
+# ├─────────────────────────┼───────┼──────────────────────────────────────────┤
+# | stale_fixtures          | 10    | Rate manager needs room_type seed data   |
+# | changed_api             | 10    | Rewrite assertions for current API       |
+# | changed_implementation  | 13    | Fix after feature completion             |
+# | external_dependency     | 3     | Mock or CI-skip                          |
+# | meta-test               | 1     | Update assertion (file restored)         |
+# └─────────────────────────┴───────┴──────────────────────────────────────────┘
+# Total remaining: ~37 tests (controlled tech debt)
 #
-# FULLY QUARANTINED FILES (moved here):
-# ┌───────────────────────────────────────────┬──────────────┬────────────────────┐
-# │ File                                      │ Fail/Total   │ Category           │
-# ├───────────────────────────────────────────┼──────────────┼────────────────────┤
-# │ stale_fixtures/test_mapping_engine.py     │ 21/25        │ stale_fixtures     │
-# │ stale_room_locks/test_modify_reservation  │ 6/6          │ stale_room_locks   │
-# │ stale_room_locks/test_open_folio_bridge   │ 6/7          │ stale_room_locks   │
-# │ stale_room_locks/test_release_room_block  │ 3/7          │ stale_room_locks   │
-# │ stale_room_locks/test_day2_hardening      │ 8/14(cascade)│ stale_room_locks   │
-# │ stale_room_locks/test_atomic_checkin_co.. │ 5/7(cascade) │ stale_room_locks   │
-# │ stale_dates/test_business_date_validation │ 3/6          │ stale_dates        │
-# └───────────────────────────────────────────┴──────────────┴────────────────────┘
-#
-# INDIVIDUALLY SKIPPED TESTS (via quarantine_manifest.py → conftest.py hook):
-# See quarantine_manifest.py for full list with reasons.
-# Categories: stale_room_locks (14), stale_fixtures (11), changed_api (10),
-#             changed_implementation (13), external_dependency (3), meta-test (1)
-#
-# Total quarantined: ~52 file-level + ~52 individual = ~104 test failures addressed
+# Note: stale_room_locks/ and stale_dates/ subdirectories contain original copies
+# of files that have been fixed and restored to tests/. They are kept for reference
+# only and are NOT executed.
 #
 # Monthly Review Process:
-# 1. Run quarantined files: pytest tests/_quarantine/ --tb=short
+# 1. Run quarantined tests: pytest tests/_quarantine/ --tb=short
 # 2. Check if root causes are fixed
 # 3. Move passing files back to tests/
 # 4. Remove passing tests from quarantine_manifest.py

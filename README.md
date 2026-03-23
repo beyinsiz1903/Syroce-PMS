@@ -70,7 +70,7 @@ Multi-tenant Property Management System with integrated Channel Manager, Control
     routers/          # HTTP route handlers
     security/         # Tenant guard, rate limiter, credential guard
     workers/          # Background: ARI push, retry, queue monitor
-    tests/            # Test suite (304 curated CI tests)
+    tests/            # Test suite (391+ curated CI tests)
   frontend/
     src/
       components/     # Shared components + shadcn/ui primitives
@@ -98,7 +98,7 @@ pip install -r requirements.txt
 cd frontend
 yarn install
 yarn start
-# Requires: REACT_APP_BACKEND_URL in .env
+# Requires: VITE_BACKEND_URL in .env
 ```
 
 ### Running Tests
@@ -121,7 +121,7 @@ GitHub Actions workflow (`.github/workflows/ci-cd.yml`) enforces strict hard gat
 |------|------|-------|
 | Backend Lint | `ruff check .` | Full backend (excl. `_legacy/`) |
 | Frontend Lint | `npx eslint src/ --quiet` | All frontend source |
-| Backend Tests | `pytest` (curated suite) | 304 tests across 10 paths |
+| Backend Tests | `pytest` (curated suite) | 391+ tests across 14 paths |
 | Security Audit | `pip-audit` + `yarn audit` | Dependencies |
 | Build | Dockerfile validation | Both services |
 
@@ -162,8 +162,38 @@ DB_NAME=<database-name>
 JWT_SECRET=<min-32-char-random-string>
 
 # Frontend (.env)
-REACT_APP_BACKEND_URL=<backend-url>
+VITE_BACKEND_URL=<backend-url>
 ```
+
+## Security Status (Current Snapshot)
+
+| Layer | Tool | Status | Detail |
+|-------|------|--------|--------|
+| Backend (Python) | `pip-audit` | **0 unignored** | 2 known-accepted: ecdsa timing (out-of-scope), nltk WordNet (unused) |
+| Frontend (Node) | `yarn audit --level high` | **0 High / 0 Critical** | Vite 8 migration eliminated 87 CRA-era vulnerabilities |
+| Secrets | `grep` + Trivy | **Clean** | No hardcoded secrets, CRITICAL filesystem scan passes |
+| CI Gate | GitHub Actions | **Hard gate** | pip-audit + yarn audit high + Trivy CRITICAL = merge blocker |
+
+> Full vulnerability reduction history: `memory/CHANGELOG.md` (87 -> 29 -> 14 -> 0)
+
+## Test Health
+
+| Tier | Location | Count | CI Gate | Description |
+|------|----------|-------|---------|-------------|
+| **T0** Battle | `tests/battle/` | 46 | Hard gate | Booking invariants, regression guards, hold/OOO, folio, learning loop |
+| **T1** Curated | `ci-cd.yml` list | 345+ | Hard gate | Core integration + unit tests across 14 paths |
+| **T2** Quarantine | `tests/_quarantine/` | ~37 | Excluded | Controlled tech debt (ADR-002) — reviewed monthly |
+
+**CI result: 391+ tests, 0 failures.**
+
+Quarantine breakdown (37 tests, not running in CI):
+- `stale_fixtures`: 10 (rate_manager — needs room_type seed data)
+- `changed_api`: 10 (endpoint behavior/schema changed post-refactor)
+- `changed_implementation`: 13 (checkout flow, timeline, crypto v2 not yet enabled)
+- `external_dependency`: 3 (require live HotelRunner API)
+- `meta-test`: 1 (references restored file, needs update)
+
+> 70+ tests restored from quarantine on 2026-03-23. See `backend/docs/ADR_TEST_QUARANTINE_STRATEGY.md`.
 
 ## Documentation
 
@@ -172,6 +202,10 @@ REACT_APP_BACKEND_URL=<backend-url>
 - `backend/docs/ONBOARDING_PLAYBOOK.md` — Pilot hotel onboarding process
 - `backend/docs/CONTROLPLANE_ARCHITECTURE.md` — Control Plane design
 - `backend/docs/ENCRYPTION_ARCHITECTURE.md` — Crypto and secrets design
+- `backend/docs/CHANNEL_CAPABILITY_MATRIX.md` — Exely/HotelRunner provider parity matrix
+- `backend/docs/PILOT_KPI_FRAMEWORK.md` — Pilot hotel KPI measurement criteria
+- `backend/docs/ADR_TEST_QUARANTINE_STRATEGY.md` — Test quarantine triage (ADR-002)
+- `backend/docs/ADR_ROOM_TYPE_INVENTORY_STRATEGY.md` — Inventory model (ADR-003)
 - `memory/PRD.md` — Product requirements and task tracking
 - `memory/CHANGELOG.md` — Detailed change history
 
@@ -181,4 +215,4 @@ MIT
 
 ---
 
-**Version**: 2.0.0 | **Last Updated**: 2026-03
+**Version**: 2.1.0 | **Last Updated**: 2026-03

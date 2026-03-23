@@ -6,14 +6,11 @@
 ## Context
 
 The Syroce PMS test suite has accumulated ~1,400+ tests across multiple development phases.
-Current state as of Sprint 3:
-- **~1,721 passing** tests
-- **~403 failing** tests 
-- **~590 skipped** tests
-- **~856 errors** (import/setup failures, not assertion failures)
-
-Many "failures" are actually import errors from tests written against old interfaces
-or tests that depend on external services/stale seed data.
+Current state as of 2026-03-23 (post-quarantine restoration):
+- **391+ CI-gated tests passing** (T0 + T1)
+- **70+ tests restored** from quarantine (stale dates, stale room locks, stale fixtures)
+- **~37 tests remaining in quarantine** (controlled tech debt)
+- **0 CI failures**
 
 ## Decision
 
@@ -64,17 +61,25 @@ A test exits quarantine when:
 5. Monthly review: attempt to fix/delete quarantined tests
 ```
 
-### Error Categories (from current ~1,259 non-passing tests)
+### Error Categories (current quarantine: ~37 tests)
 
-| Category | Count (est.) | Action |
-|----------|-------------|--------|
-| Import errors (module moved/renamed) | ~500 | Quarantine, fix imports in batch |
-| Stale DB fixtures | ~200 | Quarantine, update seed data |
-| Removed/changed API endpoints | ~150 | Quarantine, rewrite or delete |
-| Assertion failures (real bugs?) | ~50 | Investigate, file issues |
-| Flaky (timing, concurrency) | ~50 | Quarantine with [FLAKY] tag |
-| Rate limit exhaustion | ~50+ | Fixed via TESTING=1 env var |
-| External service dependency | ~50+ | Quarantine, mock in tests |
+| Category | Count | Action |
+|----------|-------|--------|
+| Stale fixtures (rate_manager seed data) | 10 | Needs room_type seed, fixable |
+| Changed API (endpoint schema/behavior) | 10 | Rewrite assertions against current API |
+| Changed implementation (checkout, timeline, crypto v2) | 13 | Fix after feature completion |
+| External dependency (live HotelRunner API) | 3 | Mock or skip in CI |
+| Meta-test (references restored file) | 1 | Update assertion |
+
+### Restored from Quarantine (2026-03-23)
+
+| Category | Tests Restored | Fix Applied |
+|----------|---------------|-------------|
+| stale_dates | 6 | Dynamic `datetime.now() + timedelta(...)` |
+| stale_room_locks (file-level) | 48 | Lock cleanup + wide date offsets + sync pymongo |
+| stale_room_locks (individual) | 14 | Same pattern, fixed in-place |
+| stale_fixtures | 25 | cleanup-before-seed pattern |
+| **Total** | **70+** | |
 
 ## Consequences
 
