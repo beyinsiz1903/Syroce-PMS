@@ -1,5 +1,35 @@
 # Syroce PMS — Changelog
 
+## 2026-03-23: Sprint 2 — TTL/Hold Mechanism + OOO/OOS Full Integration
+
+### A2: TTL/Hold Mechanism (Booking Hold Service)
+- New `core/booking_hold_service.py`: Full hold lifecycle management
+  - `create_booking_hold()`: Claims room-night locks with `lock_type=hold` and `hold_expires_at`
+  - `confirm_hold()`: Upgrades `lock_type` from `hold` to `booking`, removes expiry
+  - `release_hold()`: Manually releases hold locks
+  - `sweep_expired_holds()`: Finds expired holds, releases locks, updates booking status to `hold_expired`
+- Background sweeper: asyncio task runs every 60s, auto-releases expired holds
+- Default TTL: 15 minutes (configurable via `BOOKING_HOLD_TTL_MINUTES` env var)
+- New REST API: `routers/booking_holds.py`
+  - POST /api/booking-holds — Create a hold
+  - POST /api/booking-holds/confirm — Convert hold to booking
+  - DELETE /api/booking-holds — Release hold
+  - GET /api/booking-holds/status — Get hold status
+  - POST /api/booking-holds/sweep — Manual sweep trigger
+
+### A5: OOO/OOS INV-5 Full Integration
+- PMS room block create now writes to `room_night_locks` (INV-5 single source of truth)
+- PMS room block cancel now releases from `room_night_locks`
+- Type mapping: `out_of_order`→`ooo`, `out_of_service`→`oos`, `maintenance`→`maintenance`
+
+### CI Hard Gate Update
+- Added `tests/battle/test_sprint2_hold_ooo.py` to CI pipeline
+
+### Testing
+- 32/32 tests pass (10 Sprint 2 unit + 12 Sprint 2 API + 10 Sprint 1 regression)
+- Testing agent: 100% success (iteration_135)
+
+
 ## 2026-03-23: Sprint 1 — Overbooking Prevention v2 (Booking Integrity Hardening)
 
 ### ADR-001: Booking Invariants Document (Faz 0)

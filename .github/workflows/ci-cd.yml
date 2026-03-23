@@ -138,6 +138,7 @@ jobs:
             tests/test_hardening_multi_phase.py \
             tests/test_atomic_booking.py \
             tests/battle/test_booking_integrity.py \
+            tests/battle/test_sprint2_hold_ooo.py \
             -v --tb=short -q --timeout=30 --junitxml=test-results.xml
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
