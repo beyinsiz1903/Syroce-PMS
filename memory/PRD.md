@@ -23,6 +23,14 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 
 ## Completed Features
 
+### Phase C.1 — Room-Type Inventory Materialized View (2026-03-28)
+ADR-003 Layer 2 implementation. Read-only materialized view of room-type-level availability.
+- `core/room_type_inventory_service.py`: Aggregation engine + reconciliation worker (5 min interval)
+- `routers/inventory.py`: 4 API endpoints (room-types, summary, reconcile, health)
+- `tests/battle/test_room_type_inventory.py`: 10 battle tests, all passing
+- INV-7: sellable = physical_total - sum(locks). Drift detection + event_timeline alerts.
+- CI hard gate updated.
+
 ### Frontend Security Fix — yarn audit Vulnerability Resolution (2026-03-27)
 4 direct dependency upgrades + 10 transitive resolutions. 87→29 vulns (0 critical, 0 high).
 CI gate upgraded to `--level high`. Frontend verified working.
@@ -105,11 +113,11 @@ Frontend operations screen: Reservation Trace, System Health, Live Feed.
 
 ## Pending Tasks
 
-### P0 — Sprint 5 (Phase C.1 Implementation)
-- Implement Phase C.1: Read-only room-type inventory materialized view (ADR-003)
-- Create `room_type_inventory` collection with reconciliation worker
-- Add API endpoint `GET /api/inventory/room-types?date=YYYY-MM-DD`
-- Verify accuracy against ad-hoc channel manager calculation
+### P0 — Sprint 5 (Phase C.2 Implementation)
+- Implement Phase C.2: Event-driven room-type inventory updates (ADR-003)
+- Hook `room_type_inventory` updates into booking/cancel/hold/OOO events
+- Create `channel_inventory` collection
+- Wire ARI push to read from `channel_inventory`
 
 ### P0 — Battle Tests Expansion
 - PMS battle tests: split reservation, no-show, room change

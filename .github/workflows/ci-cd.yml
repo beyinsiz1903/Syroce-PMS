@@ -142,6 +142,7 @@ jobs:
             tests/battle/test_booking_integrity.py \
             tests/battle/test_sprint2_hold_ooo.py \
             tests/battle/test_regression_guards.py \
+            tests/battle/test_room_type_inventory.py \
             -v --tb=short -q --timeout=30 --junitxml=test-results.xml
         env:
           MONGO_URL: ${{ env.MONGO_URL }}

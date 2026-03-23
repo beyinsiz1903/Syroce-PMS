@@ -153,6 +153,8 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("routers.room_blocks", "router", ["Room Blocks"], None, None),
     # Booking Holds — TTL/Hold mechanism for pending bookings
     ("routers.booking_holds", "router", ["Booking Holds"], None, None),
+    # Room-Type Inventory — Phase C.1 read-only materialized view (ADR-003)
+    ("routers.inventory", "router", ["Room-Type Inventory"], None, None),
 ]
 
 # Optional routers with special import paths

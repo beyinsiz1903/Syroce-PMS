@@ -150,6 +150,20 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Booking index creation error: {e}")
 
+    # ── Room-Type Inventory indexes + worker (ADR-003, Phase C.1) ────
+    try:
+        from core.room_type_inventory_service import (
+            ensure_room_type_inventory_indexes,
+            get_inventory_worker,
+        )
+        await ensure_room_type_inventory_indexes()
+        inv_worker = get_inventory_worker()
+        await inv_worker.start()
+        app.state.room_type_inventory_worker = inv_worker
+        print("Room-type inventory worker started (300s interval)")
+    except Exception as e:
+        logger.warning(f"Room-type inventory worker startup error: {e}")
+
     # ── Booking hold sweeper (TTL auto-release) ──────────────────────
     try:
         from core.booking_hold_service import start_hold_sweeper
@@ -507,6 +521,14 @@ async def on_shutdown(app):
             await snapshot_worker.stop()
         except Exception as e:
             logger.warning(f"Dashboard snapshot worker shutdown warning: {e}")
+
+    # Room-Type Inventory worker (Phase C.1)
+    inv_worker = getattr(app.state, "room_type_inventory_worker", None)
+    if inv_worker is not None:
+        try:
+            await inv_worker.stop()
+        except Exception as e:
+            logger.warning(f"Room-type inventory worker shutdown warning: {e}")
 
     # OTA-002: Stop production outbox worker
     ota_worker = getattr(app.state, "outbox_ota_worker", None)

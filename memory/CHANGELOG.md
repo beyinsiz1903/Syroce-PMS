@@ -1,5 +1,41 @@
 # Syroce PMS — Changelog
 
+## 2026-03-28: Phase C.1 — Room-Type Inventory Materialized View (ADR-003)
+
+### New Service: `core/room_type_inventory_service.py`
+- **3-layer inventory model** Layer 2 implementation (read-only materialized view)
+- Computes room-type availability by aggregating `room_night_locks` joined with `rooms`
+- Lock categories tracked: `locked_booking`, `locked_hold`, `locked_ooo`, `locked_oos`
+- INV-7 invariant enforced: `sellable == physical_total - sum(all_locks)`
+- Background reconciliation worker runs every 5 minutes across all tenants (30-day horizon)
+- Drift detection with event_timeline alerts
+- On-the-fly computation fallback when materialized view is empty
+
+### New API: `routers/inventory.py` (4 endpoints)
+- `GET /api/inventory/room-types?date=YYYY-MM-DD` — Room-type availability per date
+- `GET /api/inventory/room-types/summary?start_date=&end_date=` — Date-range aggregation
+- `POST /api/inventory/room-types/reconcile` — Manual reconciliation trigger
+- `GET /api/inventory/room-types/health` — Freshness and data availability check
+
+### Battle Tests: `tests/battle/test_room_type_inventory.py` (10 tests)
+- Data returns, sellable=physical (unlocked), booking reduces sellable, reconcile works
+- Health reports freshness, summary aggregation, room_type filter, invalid date → 400
+- Totals consistency, INV-7 verification
+
+### CI Pipeline
+- Added `tests/battle/test_room_type_inventory.py` to CI hard gate
+
+### Security Documentation
+- Created `docs/SECURITY_ACCEPTED_RISKS.md`: Classifies 29 remaining frontend vulnerabilities
+- 3 buckets: patch-fixable (lodash, ajv, qs), major-upgrade (webpack-dev-server), toolchain-migration (CRA)
+- All build-time only, zero runtime risk
+
+### Result
+- 10/10 Phase C.1 battle tests pass
+- 18/18 existing battle tests pass (no regression)
+- All 4 API endpoints operational
+- Background worker running (300s interval)
+
 ## 2026-03-27: Frontend Security — yarn audit Vulnerability Resolution
 
 ### Direct Dependency Upgrades
