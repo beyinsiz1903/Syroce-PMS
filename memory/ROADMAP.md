@@ -1,43 +1,37 @@
-# Syroce PMS — Roadmap
+# Syroce PMS — ROADMAP
 
-## Completed
-- [x] SEC-001: Secrets Management Architecture
-- [x] SEC-002: Production-Grade Encryption (AES-256-GCM)
-- [x] OPS-001: Production-Grade Control Plane (Failure Model + Ops APIs + Alerting + Runbooks)
-- [x] P0: HMR Auto-Refresh Permanent Fix (3-layer defense + regression tests)
-- [x] P1: Sandbox Simulation (5 scenarios × 2 providers, 100% pass rate)
+## Completed (March 2026)
 
-## P0 — Immediate
-- [ ] Wire failure tracking into import bridge (record failures to cp_failures)
-- [ ] Wire failure tracking into outbox worker (dispatch failures)
-- [ ] Wire failure tracking into ARI push engine
-- [ ] Wire secret access control into credential vault operations
-- [ ] SEC-002 Phase 1: Enable CRYPTO_V2_ENABLED=true in staging
-- [ ] SEC-002 Phase 2: Run migrate_crypto.py on existing data
-- [ ] SEC-001 Rollout: Execute secrets migration (scripts/migrate_secrets.py)
-- [ ] Protect /api/ops/* endpoints with admin/operator role guard
+### Phase A-I: Foundation
+- [x] All core modules (Notification, Auto-Action, Unified Ops, Control Plane, Channel Health, Drift, Import Bridge, Outbox, ARI, Crypto/Secrets)
 
-## P1 — High Priority
-- [ ] Enable STRICT_TENANT_MODE=true
-- [ ] Gradual migration of ~264 legacy `db` imports to `get_db()`
-- [ ] Fix pre-existing test failures (test_hardening_comprehensive.py)
-- [ ] Fix pre-existing lint errors (frontdesk_router.py, misc_router.py)
-- [ ] INFRA-002: Collection Registry
+### Decision-Driven UX
+- [x] Dashboard Command Center, Room Board, Front Desk, Payment Dialog, Reservation Ops Panel
+
+### P0 Bug Fixes
+- [x] HMR page auto-refresh permanent fix (3-layer defense + feature flag + compat check)
+
+### P1 Sprint
+- [x] Sandbox Simulation — 5 resilience scenarios, 2 providers, 10/10 pass rate
+- [x] SEC-001 Secrets Management Rollout — rotation plan, rollback, tenant/provider scoping, access audit
+- [x] SEC-002 Crypto Migration Rollout — dual-read/write status, cutover metrics, key versioning, fallback
+- [x] Sandbox Dashboard Visualization — provider cards, trend chart, regression alerts, correlation
+- [x] /api/ops/* Admin Guard — role-based access control
+- [x] Alert → Business KPI Correlation — severity, runbook links, tenant/provider/property context
+
+## P2 — Next Sprint
+- [ ] Wire failure tracking into import bridge, outbox worker, ARI push engine
+- [ ] Enable Strict Tenant Mode
+- [ ] Legacy DB import migration (~264 imports)
 - [ ] pms.py decomposition (2714 lines → modular services)
-
-## P2 — Medium Priority
 - [ ] Legacy collection cleanup (~489 collections)
-- [ ] Refactor @cached decorator (cache_manager.py)
-- [ ] Data Model Repair Plan
-- [ ] Remove legacy encryption modules after migration (3 credential_vault.py, 2 encryption.py)
-- [ ] Observability & Incident Response Plan
+- [ ] Load and chaos testing
 
-## P3 — Future / Backlog
-- [ ] Frontend dashboards (Control Plane, Outbox, Import Bridge, Night Audit)
-- [ ] AWS KMS integration for key wrapping
-- [ ] Per-tenant key derivation via HKDF info parameter
-- [ ] HashiCorp Vault backend implementation
-- [ ] PII masking in logs
-- [ ] Stress testing & dependency security audit
-- [ ] Envelope encryption (KMS-wrapped data keys)
+## P3 — Future
+- [ ] Vite production build + Nginx
+- [ ] Go-live runbook, SLO/SLA documentation, incident playbooks
+- [ ] AWS KMS / HashiCorp Vault integration
+- [ ] PII masking and stress testing
+- [ ] Motor → pymongo async migration
+- [ ] HMR guard decommission
 - [ ] Configure Slack webhook for production alerts

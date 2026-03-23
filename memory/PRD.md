@@ -1,13 +1,13 @@
 # Syroce PMS — Product Requirements Document
 
 ## Original Problem Statement
-Enterprise otel yönetim sistemi (PMS). Operasyonel zeka platformu: channel manager entegrasyonu, drift algılama, auto-reconciliation, deploy tracking, KPI metrikleri. Frontend'in "data-driven"dan "decision-driven"a dönüşümü hedefleniyor.
+Enterprise otel yonetim sistemi (PMS). Operasyonel zeka platformu: channel manager entegrasyonu, drift algilama, auto-reconciliation, deploy tracking, KPI metrikleri. Frontend'in "data-driven"dan "decision-driven"a donusumu hedefleniyor.
 
 ## Core User Personas
-- **Resepsiyonist**: Check-in/out, misafir yönetimi, ödeme alma
+- **Resepsiyonist**: Check-in/out, misafir yonetimi, odeme alma
 - **Kat Hizmetleri**: Oda temizlik durumu takibi
-- **Genel Müdür**: Operasyonel overview, KPI analiz
-- **Rezervasyon Yöneticisi**: Kanal yönetimi, fiyatlandırma
+- **Genel Mudur**: Operasyonel overview, KPI analiz
+- **Rezervasyon Yoneticisi**: Kanal yonetimi, fiyatlandirma
 
 ## Tech Stack
 - **Frontend**: React + Vite + Shadcn/UI + Tailwind + Manrope font
@@ -23,7 +23,7 @@ Enterprise otel yönetim sistemi (PMS). Operasyonel zeka platformu: channel mana
 - **HMR Page Auto-Refresh (Permanent Fix - March 2026):**
   - 3-layer defense: postinstall patch, build-time transform, runtime guard
   - Runtime guard now behind `VITE_HMR_GUARD_ENABLED` feature flag
-  - Upstream compatibility check: `scripts/check-vite-compat.js` — detects Vite client changes
+  - Upstream compatibility check: `scripts/check-vite-compat.js`
   - Regression tests: 8 tests in `backend/tests/test_hmr_patch.py`
 
 ## Phase A-I (COMPLETED)
@@ -33,79 +33,79 @@ All foundational layers: Notification, Auto-Action Engine, Unified Ops View, Con
 Dashboard Command Center, Enhanced Room Board, Upgraded Front Desk, Smart Payment Dialog, Reservation Detail Ops Panel, Room Alternatives API.
 
 ## P1 Sandbox Simulation (COMPLETED - March 2026)
+Channel Manager resilience testing framework: 5 scenarios, 2 providers (HotelRunner + Exely). 10/10 pass rate.
+
+## SEC-001 Secrets Management Rollout (COMPLETED - March 2026)
 ### What was built:
-Channel Manager resilience testing framework with 5 scenarios, 2 providers (HotelRunner + Exely).
+Operational APIs for secrets management with rotation, rollback, and visibility.
 
-1. **Provider Harness** (`sandbox_simulation/provider_harness.py`):
-   - Synthetic data generators for HotelRunner and Exely
-   - Configurable reservation generation with chaos injection
+1. **Secrets Status** (`GET /api/ops/secrets/status`): Health, provider config, audit stats, anomaly counts
+2. **Rotation Plan** (`GET /api/ops/secrets/rotation-plan`): Per-secret age tracking, severity ratings (OK/ROTATE_RECOMMENDED/ROTATE_URGENT), rollback availability
+3. **Rotate** (`POST /api/ops/secrets/rotate`): Credential rotation with previous version preserved
+4. **Rollback** (`POST /api/ops/secrets/rollback`): Restore previous credential version
+5. **Scoping** (`GET /api/ops/secrets/scoping`): Tenant/provider/property isolation view
 
-2. **5 Resilience Scenarios** (`sandbox_simulation/scenarios.py`):
-   - **Duplicate Delivery**: Same reservation sent N times → 0 double inventory consumption
-   - **Delayed Acknowledgment**: ACK failure + retry → 0 inconsistent state
-   - **Retry Storm**: Provider resends same batch → 0 oversell, idempotent import
-   - **Stale Provider State**: Old availability data → reconciliation detects drift & recovers
-   - **Modify/Cancel Race**: new → modify → cancel sequence → deterministic outcome
+## SEC-002 Crypto Migration Rollout (COMPLETED - March 2026)
+### What was built:
+Operational APIs for crypto migration status and cutover readiness.
 
-3. **Simulation Engine** (`sandbox_simulation/engine.py`):
-   - Orchestrates all scenarios per provider
-   - Creates sandbox fixtures (connectors, mappings) with unique property IDs
-   - Generates per-provider result tables with pass_rate
-   - Persists results and event timeline to MongoDB
+1. **Crypto Status** (`GET /api/ops/crypto/status`): V2/V1 state, dual-read/write config, fallback strategy, key versioning
+2. **Cutover Metrics** (`GET /api/ops/crypto/cutover-metrics`): Format distribution (SYR1 vs AES-GCM vs legacy), migration percentage, cutover readiness
+3. **Migration Dry-Run** (`POST /api/ops/crypto/migrate-check`): Scan without writing, shows migration candidates
+4. **Key Info** (`GET /api/ops/crypto/key-info`): Key versioning, rotation steps, rollback plan (immediate, break-glass, key rollback)
 
-4. **API Endpoints** (`routers/sandbox_router.py`):
-   - `POST /api/channel-manager/v2/sandbox/simulate` — Run simulation
-   - `GET /api/channel-manager/v2/sandbox/results` — List results
-   - `GET /api/channel-manager/v2/sandbox/results/{run_id}` — Specific result
-   - `GET /api/channel-manager/v2/sandbox/timeline/{run_id}` — Event timeline
-   - `DELETE /api/channel-manager/v2/sandbox/cleanup/{run_id}` — Clean up
+## Sandbox Dashboard Visualization (COMPLETED - March 2026)
+### What was built:
+Full ops dashboard integration for sandbox simulation results.
 
-5. **Testing**: 24/24 tests pass (9 unit + 15 API)
+1. **Provider Cards**: Exely/HotelRunner pass/fail with scenario-level drill-down
+2. **Trend Chart**: Pass rate over last 30 runs with Recharts visualization
+3. **Regression Detection**: Compares last 2 runs, flags scenarios that regressed
+4. **Correlation**: Links sandbox results to deploys and drift events
+5. **Labels**: `sandbox_pass` / `sandbox_regression` / `prod_health` separation
 
-### Done Criteria Met:
-| Criteria | Result |
-|----------|--------|
-| duplicate delivery → 0 double inventory | ✅ PASS |
-| delayed ack → 0 inconsistent state | ✅ PASS |
-| retry storm → 0 oversell | ✅ PASS |
-| stale provider state → reconciliation recovers | ✅ PASS |
-| modify/cancel races → deterministic | ✅ PASS |
-| Exely separate result table | ✅ PASS |
-| HotelRunner separate result table | ✅ PASS |
-| Events in timeline | ✅ PASS (46 events per run) |
+## /api/ops/* Admin Guard (COMPLETED - March 2026)
+Role-based access control for all operational endpoints. Requires `super_admin`, `admin`, `operator`, or `manager` role. Returns 401 without token, 403 for insufficient role.
+
+## Alert → Business KPI Correlation (COMPLETED - March 2026)
+### What was built:
+1. **Enhanced Alerts**: All alerts now include `severity`, `runbook_link`, `tenant_id`, `property_id`, `provider` fields
+2. **KPI Correlation** (`GET /api/ops/alerts/kpi-correlation`): Maps alerts to business impact:
+   - Import failures → revenue_risk
+   - Outbox stuck → rate_parity_risk
+   - Secret anomalies → security_risk
+   - Crypto failures → data_protection_risk
+3. **Webhook Enhancement**: Slack-compatible payloads now include tenant/provider context
 
 ## Key Endpoints
 - `POST /api/auth/login` → `{access_token, user, tenant}`
 - `GET /api/pms/operational-alerts` → `{alerts[], summary{}, available_clean_rooms[]}`
-- `GET /api/pms/room-alternatives/{room_number}` → `{same_type[], other_type[]}`
 - `POST /api/channel-manager/v2/sandbox/simulate` → simulation report
-- `GET /api/channel-manager/v2/sandbox/results` → recent results
-- `GET /api/channel-manager/v2/sandbox/timeline/{run_id}` → event timeline
+- `GET /api/ops/secrets/status` → secrets health
+- `GET /api/ops/crypto/status` → crypto health
+- `GET /api/ops/crypto/cutover-metrics` → migration progress
+- `GET /api/ops/sandbox/dashboard` → sandbox provider cards
+- `GET /api/ops/sandbox/trends` → pass rate trends
+- `GET /api/ops/alerts/kpi-correlation` → business impact mapping
 
 ## Test Credentials
 | User | Email | Password | Role |
 |------|-------|----------|------|
 | Demo Admin | demo@hotel.com | demo123 | super_admin |
 
-## Backlog (P1 — Next)
-- SEC-001 Secrets Management — rotation + rollback plan, tenant/provider-scoped, access audit trail
-- SEC-002 Crypto Migration — dual-read/dual-write, migration cutover metric, failed decrypt fallback, key versioning
-
-## Backlog (P1.5)
-- Alert → Business KPI Correlation — severity + runbook link + tenant/property/provider context
-
 ## Backlog (P2)
 - Wire failure tracking (import bridge, outbox worker, ARI push engine)
-- `/api/ops/*` admin guard protection
-- Strict Tenant Mode
+- Strict Tenant Mode (`STRICT_TENANT_MODE=true`)
 - Legacy db import migration (~264 imports)
 - pms.py decomposition (2714 lines → modular services)
 - Legacy collection cleanup (~489 collections)
+- Load and chaos testing
 
 ## Backlog (P3)
 - Vite production build + Nginx
 - Go-live runbook, SLO/SLA docs
-- AWS KMS, HashiCorp Vault
+- AWS KMS, HashiCorp Vault integration
 - PII masking, stress testing
-- Motor → pymongo migration
-- HMR guard decommission (when proxy/WebSocket/HMR chain is natively stable)
+- Motor → pymongo async migration
+- HMR guard decommission
+- Configure Slack webhook for production alerts
