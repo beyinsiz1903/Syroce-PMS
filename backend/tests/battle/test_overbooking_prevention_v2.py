@@ -33,7 +33,7 @@ import pytest
 API_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://test-isolation-work.preview.emergentagent.com").rstrip("/")
 
 # Use unique year range per test run to avoid date collisions
-_RUN_TAG = random.randint(2060, 2099)
+_RUN_TAG = random.randint(2100, 9999)
 
 # ── Shared Auth ────────────────────────────────────────────────
 

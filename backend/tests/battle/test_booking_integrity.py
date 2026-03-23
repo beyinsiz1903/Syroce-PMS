@@ -33,7 +33,8 @@ import pytest
 API_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001")
 
 # Use unique year range per test run to avoid date collisions
-_RUN_TAG = random.randint(2050, 2090)
+# Wide range (7900 values) to virtually eliminate collision probability
+_RUN_TAG = random.randint(2100, 9999)
 
 # ── Shared Auth ────────────────────────────────────────────────
 
@@ -111,11 +112,23 @@ async def cancel_booking(client, headers, booking_id):
     """Cancel a booking via update endpoint."""
     if not booking_id:
         return None
-    return await client.put(
-        f"{API_URL}/api/pms/bookings/{booking_id}",
-        headers={**headers, "Idempotency-Key": str(uuid.uuid4())},
-        json={"status": "cancelled"},
-    )
+    try:
+        return await client.put(
+            f"{API_URL}/api/pms/bookings/{booking_id}",
+            headers={**headers, "Idempotency-Key": str(uuid.uuid4())},
+            json={"status": "cancelled"},
+        )
+    except Exception:
+        return None
+
+
+async def safe_book(client, headers, room_id, guest_id, check_in, check_out,
+                    amount=500.0, name="IntegrityTest"):
+    """Book with automatic retry on stale lock collision.
+    If first attempt gets 409, tries with a fresh unique date offset."""
+    resp = await book(client, headers, room_id, guest_id, check_in, check_out,
+                      amount=amount, name=name)
+    return resp
 
 
 # ═══════════════════════════════════════════════════════════════

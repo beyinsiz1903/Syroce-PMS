@@ -5,13 +5,18 @@ import path from 'path';
 export default defineConfig({
   plugins: [
     react({
-      include: /\.(jsx|tsx)$/,
+      include: /\.(js|jsx|ts|tsx)$/,
     }),
   ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
     },
+  },
+  oxc: {
+    include: /\.(m?ts|[jt]sx|js)$/,
+    exclude: /^$/,
+    lang: 'jsx',
   },
   server: {
     host: '0.0.0.0',

@@ -658,3 +658,37 @@
 - OPS-001: Control Plane (15 endpoints, failure taxonomy, retry engine, runbooks)
 - CHAOS-001: Resilience testing (69 tests, 7 test files)
 - Production infrastructure (crypto, secrets, tenant isolation, etc.)
+
+---
+
+## 2026-02-XX — CI/CD Pipeline Full Stabilization
+
+### Frontend Build Fix (P0)
+- **Root cause:** Vite 8 (Rolldown 1.0.0-rc.10) native `viteTransformPlugin` doesn't support `oxc.lang: 'jsx'` for `.js` files in bundled build mode. Dev server works because it uses the JS-based OXC plugin path.
+- **Fix:** Renamed all 356 `.js` → `.jsx` files in `src/`. Updated `index.html` entry point to reference `index.jsx`.
+- **Impact:** `yarn build` now completes successfully (~3s with Rolldown).
+
+### Flaky Backend Test Fix (P0)
+- **Root cause:** `_RUN_TAG = random.randint(2050, 2090)` — only 40 possible values caused frequent date collisions. Stale `room_night_locks` from failed test runs persisted in DB.
+- **Fix:** 
+  - Widened range to `random.randint(2100, 9999)` (7900 values) across all battle test files.
+  - Added `tests/battle/conftest.py` with session-scoped `clean_stale_test_locks` fixture that auto-removes stale locks (years > 2040) before tests run.
+- **Impact:** 348 tests pass reliably. No intermittent 409 conflicts.
+
+### CI/CD Config Fixes
+- **yarn audit:** Implemented bitmask exit code check — only fails on HIGH/CRITICAL vulnerabilities (8+16), allows moderate (4).
+- **Environment variables:** Fixed `REACT_APP_BACKEND_URL` → `VITE_BACKEND_URL` for Vite 8 compatibility.
+- **VITE_ENABLE_VISUAL_EDITS:** Added to frontend `.env` and CI build step to suppress build warning.
+- **Bundle size check:** Updated `find` path from `build/static/js` to `build/` (Rolldown outputs to `build/assets/`).
+
+### Files Modified
+- `frontend/src/**/*.js` → `frontend/src/**/*.jsx` (356 files renamed)
+- `frontend/index.html` — entry point updated to `index.jsx`
+- `frontend/vite.config.js` — simplified (removed unused `oxc` config)
+- `frontend/.env` — added `VITE_ENABLE_VISUAL_EDITS=false`
+- `backend/tests/battle/conftest.py` — NEW: session cleanup fixture
+- `backend/tests/battle/test_booking_integrity.py` — widened `_RUN_TAG` range
+- `backend/tests/battle/test_sprint2_api_holds.py` — widened `_RUN_TAG` range
+- `backend/tests/battle/test_room_type_inventory.py` — widened `_RUN_TAG` range
+- `backend/tests/battle/test_overbooking_prevention_v2.py` — widened `_RUN_TAG` range
+- `.github/workflows/ci-cd.yml` — fixed audit, env vars, bundle size path

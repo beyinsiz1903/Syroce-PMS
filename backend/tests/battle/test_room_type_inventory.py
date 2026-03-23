@@ -28,7 +28,7 @@ import pytest
 
 API_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001")
 
-_RUN_TAG = random.randint(2060, 2080)
+_RUN_TAG = random.randint(2100, 9999)
 
 # ── Auth Helper ─────────────────────────────────────────────────
 

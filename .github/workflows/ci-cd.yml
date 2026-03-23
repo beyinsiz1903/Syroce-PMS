@@ -150,6 +150,7 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
           JWT_SECRET: ${{ env.JWT_SECRET }}
           REACT_APP_BACKEND_URL: http://localhost:8001
+          VITE_BACKEND_URL: http://localhost:8001
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -183,14 +184,15 @@ jobs:
           yarn build
         env:
           CI: false
-          REACT_APP_BACKEND_URL: http://localhost:8001
+          VITE_BACKEND_URL: http://localhost:8001
+          VITE_ENABLE_VISUAL_EDITS: false
 
       - name: Check bundle size
         run: |
           cd frontend
           du -sh build/
           echo "--- JS Bundle Sizes ---"
-          find build/static/js -name "*.js" -exec du -sh {} \; | sort -rh | head -10
+          find build/ -name "*.js" -exec du -sh {} \; | sort -rh | head -10
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -243,7 +245,15 @@ jobs:
       - name: Node.js dependency security audit (high — hard gate)
         run: |
           cd frontend
-          yarn audit --level high
+          # yarn audit exit code is a bitmask: 8=high, 16=critical
+          # Allow moderate (4) and lower; fail only on high (8+)
+          AUDIT_EXIT=0
+          yarn audit --level high || AUDIT_EXIT=$?
+          if [ $((AUDIT_EXIT & 24)) -ne 0 ]; then
+            echo "::error::High or critical Node.js vulnerabilities found"
+            exit 1
+          fi
+          echo "No high/critical vulnerabilities (exit code: $AUDIT_EXIT)"
 
       - name: Check for hardcoded secrets (hard gate)
         run: |
