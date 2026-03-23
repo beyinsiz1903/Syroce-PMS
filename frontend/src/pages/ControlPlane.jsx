@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
-import { Search, Activity, Radio, ArrowLeft, RefreshCw, AlertTriangle, CheckCircle, XCircle, Clock, ChevronRight, ChevronDown, Copy, ExternalLink, Gauge } from "lucide-react";
+import { Search, Activity, Radio, ArrowLeft, RefreshCw, AlertTriangle, CheckCircle, XCircle, Clock, ChevronRight, ChevronDown, Copy, ExternalLink, Gauge, Flame, Award } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
@@ -11,6 +11,8 @@ import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
 import Layout from "../components/Layout";
 import { ChannelHealth } from "../components/ChannelHealthDashboard";
+import { TechDebtDashboard } from "../components/TechDebtDashboard";
+import { WeeklyProof } from "../components/WeeklyProofDashboard";
 
 // ─── Reservation Lookup ──────────────────────────────────────────
 function ReservationLookup() {
@@ -628,7 +630,7 @@ export default function ControlPlane({ user, tenant, onLogout }) {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">Control Plane</h1>
-              <p className="text-xs text-zinc-500 mt-0.5">Operasyon gorulumu · Reservation trace · Sistem sagligi · Kanal sagligi</p>
+              <p className="text-xs text-zinc-500 mt-0.5">Operasyon gorulumu · Kanal sagligi · Deger kaniti · Teknik borc</p>
             </div>
           </div>
 
@@ -667,6 +669,22 @@ export default function ControlPlane({ user, tenant, onLogout }) {
                 <Radio className="h-3.5 w-3.5 mr-2" />
                 Canli
               </TabsTrigger>
+              <TabsTrigger
+                value="weekly-proof"
+                className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100 text-zinc-500 text-sm px-4"
+                data-testid="tab-weekly-proof"
+              >
+                <Award className="h-3.5 w-3.5 mr-2" />
+                Deger Kaniti
+              </TabsTrigger>
+              <TabsTrigger
+                value="tech-debt"
+                className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100 text-zinc-500 text-sm px-4"
+                data-testid="tab-tech-debt"
+              >
+                <Flame className="h-3.5 w-3.5 mr-2" />
+                Teknik Borc
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="lookup">
@@ -680,6 +698,12 @@ export default function ControlPlane({ user, tenant, onLogout }) {
             </TabsContent>
             <TabsContent value="feed">
               <LiveFeed />
+            </TabsContent>
+            <TabsContent value="weekly-proof">
+              <WeeklyProof />
+            </TabsContent>
+            <TabsContent value="tech-debt">
+              <TechDebtDashboard />
             </TabsContent>
           </Tabs>
         </div>

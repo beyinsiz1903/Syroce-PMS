@@ -10,6 +10,8 @@ Endpoints:
   GET  /api/ops/dashboard/connectors   — Connector health
   GET  /api/ops/dashboard/pipeline     — Pipeline depth
   GET  /api/ops/dashboard/channel-health — Channel Health Dashboard
+  GET  /api/ops/dashboard/channel-health/weekly-proof — Weekly improvement proof
+  GET  /api/ops/dashboard/tech-debt    — Quarantine burn-down tracking
 """
 import logging
 from datetime import datetime, timedelta, timezone
@@ -140,3 +142,22 @@ async def get_channel_health_field_kpis(
     operator interventions, push SLA compliance with period-over-period comparison."""
     from .channel_health_aggregator import compute_field_kpis
     return await compute_field_kpis(tenant_id=tenant_id, period_hours=period_hours)
+
+
+@router.get("/channel-health/weekly-proof")
+async def get_channel_health_weekly_proof(
+    tenant_id: Optional[str] = Query(None),
+    weeks: int = Query(8, ge=2, le=52),
+):
+    """Week-over-week improvement proof — drift reduction, MTTR improvement,
+    SLA compliance trend, sync success trend over N weeks."""
+    from .channel_health_aggregator import compute_weekly_proof
+    return await compute_weekly_proof(tenant_id=tenant_id, weeks=weeks)
+
+
+@router.get("/tech-debt")
+async def get_tech_debt():
+    """Quarantine burn-down dashboard — categorized test counts,
+    weekly targets, effort estimates, and health score."""
+    from .tech_debt_aggregator import compute_tech_debt
+    return compute_tech_debt()

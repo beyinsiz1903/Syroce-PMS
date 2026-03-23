@@ -10,6 +10,7 @@ Metrics:
   - Provider-based SLA compliance
   - Historical trends (time-bucketed)
   - Field KPIs (period-over-period comparison, MTTR, operator interventions)
+  - Weekly proof (week-over-week improvement summary)
 """
 import asyncio
 import logging
@@ -830,3 +831,154 @@ def _percentile(sorted_values: List[int], pct: int) -> int:
         return sorted_values[lower]
     frac = idx - lower
     return round(sorted_values[lower] * (1 - frac) + sorted_values[upper] * frac)
+
+
+# ─── Weekly Proof — Week-over-week improvement ──────────────────
+
+async def compute_weekly_proof(
+    tenant_id: Optional[str] = None,
+    weeks: int = 8,
+) -> Dict[str, Any]:
+    """Week-over-week summary for drift, MTTR, SLA compliance, sync success."""
+    now = datetime.now(timezone.utc)
+    weekly_data = []
+
+    for w in range(weeks - 1, -1, -1):
+        week_end = now - timedelta(weeks=w)
+        week_start = week_end - timedelta(weeks=1)
+        start_iso = week_start.isoformat()
+        end_iso = week_end.isoformat()
+
+        results = await asyncio.gather(
+            _weekly_sync_rate(tenant_id, start_iso, end_iso),
+            _weekly_drift_count(tenant_id, start_iso, end_iso),
+            _weekly_mttr(tenant_id, start_iso, end_iso),
+            _weekly_sla_compliance(tenant_id, start_iso, end_iso),
+            _weekly_push_p95(tenant_id, start_iso, end_iso),
+            return_exceptions=True,
+        )
+
+        sync_rate = results[0] if not isinstance(results[0], Exception) else 0.0
+        drift_count = results[1] if not isinstance(results[1], Exception) else 0
+        mttr = results[2] if not isinstance(results[2], Exception) else 0.0
+        sla_pct = results[3] if not isinstance(results[3], Exception) else 0.0
+        push_p95 = results[4] if not isinstance(results[4], Exception) else 0
+
+        weekly_data.append({
+            "week_label": week_start.strftime("W%U"),
+            "week_start": week_start.strftime("%Y-%m-%d"),
+            "week_end": week_end.strftime("%Y-%m-%d"),
+            "sync_success_rate": sync_rate,
+            "drift_count": drift_count,
+            "mttr_hours": mttr,
+            "sla_compliance": sla_pct,
+            "push_latency_p95": push_p95,
+        })
+
+    # Compute improvement deltas (first week vs last week)
+    improvements = {}
+    if len(weekly_data) >= 2:
+        first = weekly_data[0]
+        last = weekly_data[-1]
+        improvements = {
+            "sync_success_delta": round(last["sync_success_rate"] - first["sync_success_rate"], 1),
+            "drift_delta": last["drift_count"] - first["drift_count"],
+            "mttr_delta": round(last["mttr_hours"] - first["mttr_hours"], 1),
+            "sla_delta": round(last["sla_compliance"] - first["sla_compliance"], 1),
+            "push_p95_delta": last["push_latency_p95"] - first["push_latency_p95"],
+        }
+
+    return {
+        "weeks": weekly_data,
+        "improvements": improvements,
+        "total_weeks": len(weekly_data),
+        "calculated_at": now.isoformat(),
+    }
+
+
+async def _weekly_sync_rate(tenant_id: Optional[str], start: str, end: str) -> float:
+    match: Dict[str, Any] = {"started_at": {"$gte": start, "$lt": end}}
+    if tenant_id:
+        match["tenant_id"] = tenant_id
+    pipeline = [{"$match": match}, {"$group": {
+        "_id": None, "total": {"$sum": 1},
+        "completed": {"$sum": {"$cond": [{"$eq": ["$status", "completed"]}, 1, 0]}},
+    }}]
+    try:
+        async for doc in db[SYNC_JOBS].aggregate(pipeline):
+            return round(doc["completed"] / max(doc["total"], 1) * 100, 1)
+    except Exception:
+        pass
+    return 0.0
+
+
+async def _weekly_drift_count(tenant_id: Optional[str], start: str, end: str) -> int:
+    match: Dict[str, Any] = {"detected_at": {"$gte": start, "$lt": end}}
+    if tenant_id:
+        match["tenant_id"] = tenant_id
+    try:
+        return await db[RECONCILIATION_ISSUES].count_documents(match)
+    except Exception:
+        return 0
+
+
+async def _weekly_mttr(tenant_id: Optional[str], start: str, end: str) -> float:
+    match: Dict[str, Any] = {
+        "resolved_at": {"$gte": start, "$lt": end},
+        "status": "resolved",
+    }
+    if tenant_id:
+        match["tenant_id"] = tenant_id
+    pipeline = [
+        {"$match": match},
+        {"$addFields": {
+            "_det": {"$dateFromString": {"dateString": "$detected_at", "onError": None}},
+            "_res": {"$dateFromString": {"dateString": "$resolved_at", "onError": None}},
+        }},
+        {"$match": {"_det": {"$ne": None}, "_res": {"$ne": None}}},
+        {"$addFields": {"_dur_ms": {"$subtract": ["$_res", "$_det"]}}},
+        {"$group": {"_id": None, "avg_ms": {"$avg": "$_dur_ms"}}},
+    ]
+    try:
+        async for doc in db[RECONCILIATION_ISSUES].aggregate(pipeline):
+            return round((doc["avg_ms"] or 0) / 3600000, 1)
+    except Exception:
+        pass
+    return 0.0
+
+
+async def _weekly_sla_compliance(tenant_id: Optional[str], start: str, end: str) -> float:
+    match: Dict[str, Any] = {"recorded_at": {"$gte": start, "$lt": end}, "success": True}
+    if tenant_id:
+        match["tenant_id"] = tenant_id
+    pipeline = [
+        {"$match": match},
+        {"$group": {
+            "_id": None,
+            "total": {"$sum": 1},
+            "within_sla": {"$sum": {"$cond": [{"$lte": ["$latency_ms", SLA_PUSH_LATENCY_P95_MS]}, 1, 0]}},
+        }},
+    ]
+    try:
+        async for doc in db[RATE_PUSH_METRICS].aggregate(pipeline):
+            return round(doc["within_sla"] / max(doc["total"], 1) * 100, 1)
+    except Exception:
+        pass
+    return 0.0
+
+
+async def _weekly_push_p95(tenant_id: Optional[str], start: str, end: str) -> int:
+    match: Dict[str, Any] = {"recorded_at": {"$gte": start, "$lt": end}, "success": True}
+    if tenant_id:
+        match["tenant_id"] = tenant_id
+    pipeline = [
+        {"$match": match},
+        {"$group": {"_id": None, "latencies": {"$push": "$latency_ms"}}},
+    ]
+    try:
+        async for doc in db[RATE_PUSH_METRICS].aggregate(pipeline):
+            lats = sorted(doc["latencies"])
+            return _percentile(lats, 95)
+    except Exception:
+        pass
+    return 0
