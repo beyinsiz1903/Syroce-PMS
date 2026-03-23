@@ -14,11 +14,11 @@ import pytest
 import requests
 from typing import Dict, Any, Optional
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
 
 pytestmark = pytest.mark.skipif(
     not BASE_URL,
-    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
+    reason="VITE_BACKEND_URL not set - integration tests require a running server"
 )
 
 

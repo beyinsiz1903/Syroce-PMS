@@ -99,7 +99,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      REACT_APP_BACKEND_URL: http://localhost:8001
+      VITE_BACKEND_URL: http://localhost:8001
     depends_on:
       backend:
         condition: service_healthy

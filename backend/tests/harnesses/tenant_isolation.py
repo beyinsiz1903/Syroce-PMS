@@ -7,7 +7,7 @@ import requests
 
 class TenantIsolationHarness:
     def __init__(self, base_url: Optional[str] = None):
-        self.base_url = (base_url or os.environ.get("REACT_APP_BACKEND_URL", "")).rstrip("/")
+        self.base_url = (base_url or os.environ.get("VITE_BACKEND_URL", "")).rstrip("/")
 
     def login(self, email: str, password: str) -> Optional[str]:
         if not self.base_url:

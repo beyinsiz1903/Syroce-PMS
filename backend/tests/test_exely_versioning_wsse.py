@@ -18,8 +18,8 @@ from datetime import datetime, timezone, timedelta
 # Add backend to path for unit tests
 sys.path.insert(0, '/app/backend')
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set — requires live server")
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"

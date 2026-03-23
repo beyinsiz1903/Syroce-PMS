@@ -28,7 +28,7 @@ if not BASE_URL:
     env_path = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", ".env")
     if os.path.exists(env_path):
         for line in open(env_path):
-            if line.startswith("REACT_APP_BACKEND_URL="):
+            if line.startswith("VITE_BACKEND_URL="):
                 BASE_URL = line.strip().split("=", 1)[1]
 
 if not BASE_URL:

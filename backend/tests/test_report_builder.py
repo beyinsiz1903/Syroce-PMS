@@ -13,9 +13,9 @@ import os
 import uuid
 from datetime import datetime, timedelta
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
 
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"

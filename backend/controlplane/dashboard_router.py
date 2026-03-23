@@ -116,3 +116,27 @@ async def get_channel_health(
     failure breakdown, reconciliation drift, retry metrics, provider SLA."""
     from .channel_health_aggregator import compute_channel_health
     return await compute_channel_health(tenant_id=tenant_id, hours=hours)
+
+
+@router.get("/channel-health/trends")
+async def get_channel_health_trends(
+    tenant_id: Optional[str] = Query(None),
+    hours: int = Query(168, ge=1, le=720),
+    bucket_hours: int = Query(0, ge=0, le=24, description="0 = auto"),
+):
+    """Historical trends for channel health — time-bucketed latency, sync, drift, retry."""
+    from .channel_health_aggregator import compute_channel_health_trends
+    return await compute_channel_health_trends(
+        tenant_id=tenant_id, hours=hours, bucket_hours=bucket_hours,
+    )
+
+
+@router.get("/channel-health/field-kpis")
+async def get_channel_health_field_kpis(
+    tenant_id: Optional[str] = Query(None),
+    period_hours: int = Query(24, ge=1, le=720),
+):
+    """Operational field KPIs — sync success, drift reduction, MTTR,
+    operator interventions, push SLA compliance with period-over-period comparison."""
+    from .channel_health_aggregator import compute_field_kpis
+    return await compute_field_kpis(tenant_id=tenant_id, period_hours=period_hours)

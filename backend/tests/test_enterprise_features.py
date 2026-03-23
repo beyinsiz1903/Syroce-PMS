@@ -7,9 +7,9 @@ import httpx
 import os
 import asyncio
 
-API_URL = os.environ.get("REACT_APP_BACKEND_URL", "")
+API_URL = os.environ.get("VITE_BACKEND_URL", "")
 
-pytestmark = pytest.mark.skipif(not API_URL, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not API_URL, reason="VITE_BACKEND_URL not set")
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"
 

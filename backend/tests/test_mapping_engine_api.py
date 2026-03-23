@@ -14,9 +14,9 @@ import requests
 import os
 import uuid
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
 
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
 CONNECTOR_ID = "c79fd9cb-d240-4344-8b2d-7d8b71d6a681"
 
 # Test credentials

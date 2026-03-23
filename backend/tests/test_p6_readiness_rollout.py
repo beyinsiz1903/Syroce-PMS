@@ -13,7 +13,7 @@ import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 from datetime import datetime, timezone
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '')
 
 
 # ══════════════════════════════════════════════════════════════
@@ -454,7 +454,7 @@ class TestRolloutFramework:
 
 @pytest.mark.skipif(
     not BASE_URL,
-    reason="REACT_APP_BACKEND_URL not set — skipping live API tests"
+    reason="VITE_BACKEND_URL not set — skipping live API tests"
 )
 class TestAPIEndpoints:
     """Test the API endpoints via httpx."""

@@ -32,19 +32,19 @@ def pytest_collection_modifyitems(config, items):
                 item.add_marker(pytest.mark.skip(reason=reason))
                 break
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
 
 
-# Ensure REACT_APP_BACKEND_URL is set for test files that read it directly
-if not os.environ.get("REACT_APP_BACKEND_URL"):
-    os.environ["REACT_APP_BACKEND_URL"] = "http://localhost:8001"
+# Ensure VITE_BACKEND_URL is set for test files that read it directly
+if not os.environ.get("VITE_BACKEND_URL"):
+    os.environ["VITE_BACKEND_URL"] = "http://localhost:8001"
 
 
 @pytest.fixture(scope="session")
 def demo_auth_token():
     """Shared demo admin auth token for all tests."""
     if not BASE_URL:
-        pytest.skip("REACT_APP_BACKEND_URL not set")
+        pytest.skip("VITE_BACKEND_URL not set")
     resp = requests.post(
         f"{BASE_URL}/api/auth/login",
         json={"email": "demo@hotel.com", "password": "demo123"},

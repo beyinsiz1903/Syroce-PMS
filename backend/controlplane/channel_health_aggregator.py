@@ -8,6 +8,8 @@ Metrics:
   - Reconciliation drift count per provider
   - Retry success rate per provider
   - Provider-based SLA compliance
+  - Historical trends (time-bucketed)
+  - Field KPIs (period-over-period comparison, MTTR, operator interventions)
 """
 import asyncio
 import logging
@@ -68,6 +70,387 @@ async def compute_channel_health(
         "period_hours": hours,
         "calculated_at": now.isoformat(),
     }
+
+
+# ─── Historical Trends ───────────────────────────────────────────
+
+async def compute_channel_health_trends(
+    tenant_id: Optional[str] = None,
+    hours: int = 168,
+    bucket_hours: int = 0,
+) -> Dict[str, Any]:
+    """Time-bucketed historical trends for channel health metrics."""
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(hours=hours)).isoformat()
+
+    if bucket_hours <= 0:
+        bucket_hours = 1 if hours <= 24 else (4 if hours <= 72 else (12 if hours <= 168 else 24))
+
+    results = await asyncio.gather(
+        _trend_push_latency(tenant_id, cutoff, bucket_hours),
+        _trend_sync_success(tenant_id, cutoff, bucket_hours),
+        _trend_failures(tenant_id, cutoff, bucket_hours),
+        _trend_drift_created(tenant_id, cutoff, bucket_hours),
+        _trend_retry_success(tenant_id, cutoff, bucket_hours),
+        return_exceptions=True,
+    )
+
+    latency_buckets = results[0] if not isinstance(results[0], Exception) else []
+    sync_buckets = results[1] if not isinstance(results[1], Exception) else []
+    failure_buckets = results[2] if not isinstance(results[2], Exception) else []
+    drift_buckets = results[3] if not isinstance(results[3], Exception) else []
+    retry_buckets = results[4] if not isinstance(results[4], Exception) else []
+
+    ts_map: Dict[str, Dict[str, Any]] = {}
+    for b in latency_buckets:
+        ts_map.setdefault(b["t"], {})["push_latency"] = {"p50": b["p50"], "p95": b["p95"], "p99": b["p99"], "count": b["count"]}
+    for b in sync_buckets:
+        ts_map.setdefault(b["t"], {})["sync"] = {"success_rate": b["success_rate"], "total": b["total"], "completed": b["completed"]}
+    for b in failure_buckets:
+        ts_map.setdefault(b["t"], {})["failures"] = b["count"]
+    for b in drift_buckets:
+        ts_map.setdefault(b["t"], {})["drift_created"] = b["count"]
+    for b in retry_buckets:
+        ts_map.setdefault(b["t"], {})["retry"] = {"success_rate": b["success_rate"], "total": b["total"]}
+
+    buckets = []
+    for ts in sorted(ts_map.keys()):
+        entry = {"timestamp": ts, **ts_map[ts]}
+        entry.setdefault("push_latency", {"p50": 0, "p95": 0, "p99": 0, "count": 0})
+        entry.setdefault("sync", {"success_rate": 0, "total": 0, "completed": 0})
+        entry.setdefault("failures", 0)
+        entry.setdefault("drift_created", 0)
+        entry.setdefault("retry", {"success_rate": 0, "total": 0})
+        buckets.append(entry)
+
+    return {
+        "buckets": buckets,
+        "bucket_size_hours": bucket_hours,
+        "period_hours": hours,
+        "total_buckets": len(buckets),
+        "calculated_at": now.isoformat(),
+    }
+
+
+async def _trend_push_latency(tenant_id: Optional[str], cutoff: str, bucket_hours: int) -> List[Dict]:
+    match: Dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "success": True}
+    if tenant_id:
+        match["tenant_id"] = tenant_id
+    pipeline = [
+        {"$match": match},
+        {"$addFields": {
+            "_ts": {"$dateFromString": {"dateString": "$recorded_at", "onError": None}},
+        }},
+        {"$match": {"_ts": {"$ne": None}}},
+        {"$addFields": {
+            "_bucket": {"$dateTrunc": {"date": "$_ts", "unit": "hour", "binSize": bucket_hours}},
+        }},
+        {"$group": {
+            "_id": "$_bucket",
+            "latencies": {"$push": "$latency_ms"},
+            "count": {"$sum": 1},
+        }},
+        {"$sort": {"_id": 1}},
+    ]
+    result = []
+    try:
+        async for doc in db[RATE_PUSH_METRICS].aggregate(pipeline):
+            lats = sorted(doc["latencies"])
+            result.append({
+                "t": doc["_id"].isoformat() if doc["_id"] else "",
+                "p50": _percentile(lats, 50),
+                "p95": _percentile(lats, 95),
+                "p99": _percentile(lats, 99),
+                "count": doc["count"],
+            })
+    except Exception as e:
+        logger.warning("Trend push latency error: %s", e)
+    return result
+
+
+async def _trend_sync_success(tenant_id: Optional[str], cutoff: str, bucket_hours: int) -> List[Dict]:
+    match: Dict[str, Any] = {"started_at": {"$gte": cutoff}}
+    if tenant_id:
+        match["tenant_id"] = tenant_id
+    pipeline = [
+        {"$match": match},
+        {"$addFields": {
+            "_ts": {"$dateFromString": {"dateString": "$started_at", "onError": None}},
+        }},
+        {"$match": {"_ts": {"$ne": None}}},
+        {"$addFields": {
+            "_bucket": {"$dateTrunc": {"date": "$_ts", "unit": "hour", "binSize": bucket_hours}},
+        }},
+        {"$group": {
+            "_id": "$_bucket",
+            "total": {"$sum": 1},
+            "completed": {"$sum": {"$cond": [{"$eq": ["$status", "completed"]}, 1, 0]}},
+        }},
+        {"$sort": {"_id": 1}},
+    ]
+    result = []
+    try:
+        async for doc in db[SYNC_JOBS].aggregate(pipeline):
+            t = doc["total"]
+            c = doc["completed"]
+            result.append({
+                "t": doc["_id"].isoformat() if doc["_id"] else "",
+                "success_rate": round(c / max(t, 1) * 100, 1),
+                "total": t,
+                "completed": c,
+            })
+    except Exception as e:
+        logger.warning("Trend sync success error: %s", e)
+    return result
+
+
+async def _trend_failures(tenant_id: Optional[str], cutoff: str, bucket_hours: int) -> List[Dict]:
+    match: Dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "success": False}
+    if tenant_id:
+        match["tenant_id"] = tenant_id
+    pipeline = [
+        {"$match": match},
+        {"$addFields": {
+            "_ts": {"$dateFromString": {"dateString": "$recorded_at", "onError": None}},
+        }},
+        {"$match": {"_ts": {"$ne": None}}},
+        {"$addFields": {
+            "_bucket": {"$dateTrunc": {"date": "$_ts", "unit": "hour", "binSize": bucket_hours}},
+        }},
+        {"$group": {"_id": "$_bucket", "count": {"$sum": 1}}},
+        {"$sort": {"_id": 1}},
+    ]
+    result = []
+    try:
+        async for doc in db[RATE_PUSH_METRICS].aggregate(pipeline):
+            result.append({"t": doc["_id"].isoformat() if doc["_id"] else "", "count": doc["count"]})
+    except Exception as e:
+        logger.warning("Trend failures error: %s", e)
+    return result
+
+
+async def _trend_drift_created(tenant_id: Optional[str], cutoff: str, bucket_hours: int) -> List[Dict]:
+    match: Dict[str, Any] = {"detected_at": {"$gte": cutoff}}
+    if tenant_id:
+        match["tenant_id"] = tenant_id
+    pipeline = [
+        {"$match": match},
+        {"$addFields": {
+            "_ts": {"$dateFromString": {"dateString": "$detected_at", "onError": None}},
+        }},
+        {"$match": {"_ts": {"$ne": None}}},
+        {"$addFields": {
+            "_bucket": {"$dateTrunc": {"date": "$_ts", "unit": "hour", "binSize": bucket_hours}},
+        }},
+        {"$group": {"_id": "$_bucket", "count": {"$sum": 1}}},
+        {"$sort": {"_id": 1}},
+    ]
+    result = []
+    try:
+        async for doc in db[RECONCILIATION_ISSUES].aggregate(pipeline):
+            result.append({"t": doc["_id"].isoformat() if doc["_id"] else "", "count": doc["count"]})
+    except Exception as e:
+        logger.warning("Trend drift created error: %s", e)
+    return result
+
+
+async def _trend_retry_success(tenant_id: Optional[str], cutoff: str, bucket_hours: int) -> List[Dict]:
+    match: Dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "retry_count": {"$gt": 0}}
+    if tenant_id:
+        match["tenant_id"] = tenant_id
+    pipeline = [
+        {"$match": match},
+        {"$addFields": {
+            "_ts": {"$dateFromString": {"dateString": "$recorded_at", "onError": None}},
+        }},
+        {"$match": {"_ts": {"$ne": None}}},
+        {"$addFields": {
+            "_bucket": {"$dateTrunc": {"date": "$_ts", "unit": "hour", "binSize": bucket_hours}},
+        }},
+        {"$group": {
+            "_id": "$_bucket",
+            "total": {"$sum": 1},
+            "success": {"$sum": {"$cond": ["$success", 1, 0]}},
+        }},
+        {"$sort": {"_id": 1}},
+    ]
+    result = []
+    try:
+        async for doc in db[RATE_PUSH_METRICS].aggregate(pipeline):
+            t = doc["total"]
+            s = doc["success"]
+            result.append({
+                "t": doc["_id"].isoformat() if doc["_id"] else "",
+                "success_rate": round(s / max(t, 1) * 100, 1),
+                "total": t,
+            })
+    except Exception as e:
+        logger.warning("Trend retry success error: %s", e)
+    return result
+
+
+# ─── Field KPIs ──────────────────────────────────────────────────
+
+async def compute_field_kpis(
+    tenant_id: Optional[str] = None,
+    period_hours: int = 24,
+) -> Dict[str, Any]:
+    """Operational field KPIs with period-over-period comparison."""
+    now = datetime.now(timezone.utc)
+    current_cutoff = (now - timedelta(hours=period_hours)).isoformat()
+    prev_cutoff = (now - timedelta(hours=period_hours * 2)).isoformat()
+
+    results = await asyncio.gather(
+        _kpi_sync_success(tenant_id, current_cutoff, prev_cutoff, current_cutoff),
+        _kpi_drift(tenant_id, current_cutoff, prev_cutoff, current_cutoff),
+        _kpi_mttr(tenant_id, current_cutoff, prev_cutoff, current_cutoff),
+        _kpi_operator_interventions(tenant_id, current_cutoff, prev_cutoff, current_cutoff),
+        _kpi_push_sla(tenant_id, current_cutoff, prev_cutoff, current_cutoff),
+        return_exceptions=True,
+    )
+
+    sync_kpi = results[0] if not isinstance(results[0], Exception) else _empty_kpi()
+    drift_kpi = results[1] if not isinstance(results[1], Exception) else _empty_kpi()
+    mttr_kpi = results[2] if not isinstance(results[2], Exception) else _empty_kpi()
+    operator_kpi = results[3] if not isinstance(results[3], Exception) else _empty_kpi()
+    sla_kpi = results[4] if not isinstance(results[4], Exception) else _empty_kpi()
+
+    return {
+        "sync_success": sync_kpi,
+        "drift_reduction": drift_kpi,
+        "mttr_hours": mttr_kpi,
+        "operator_interventions": operator_kpi,
+        "push_sla_compliance": sla_kpi,
+        "period_hours": period_hours,
+        "calculated_at": now.isoformat(),
+    }
+
+
+def _empty_kpi() -> Dict[str, Any]:
+    return {"current": 0, "previous": 0, "delta": 0, "trend": "flat"}
+
+
+def _kpi_trend(current: float, previous: float) -> str:
+    if current > previous:
+        return "up"
+    elif current < previous:
+        return "down"
+    return "flat"
+
+
+async def _kpi_sync_success(tenant_id, current_cutoff, prev_cutoff, current_start) -> Dict[str, Any]:
+    async def _rate(cutoff_from, cutoff_to):
+        match: Dict[str, Any] = {"started_at": {"$gte": cutoff_from, "$lt": cutoff_to}}
+        if tenant_id:
+            match["tenant_id"] = tenant_id
+        pipeline = [{"$match": match}, {"$group": {
+            "_id": None, "total": {"$sum": 1},
+            "completed": {"$sum": {"$cond": [{"$eq": ["$status", "completed"]}, 1, 0]}},
+        }}]
+        try:
+            async for doc in db[SYNC_JOBS].aggregate(pipeline):
+                t = doc["total"]
+                return round(doc["completed"] / max(t, 1) * 100, 1)
+        except Exception:
+            pass
+        return 0.0
+
+    current = await _rate(current_cutoff, datetime.now(timezone.utc).isoformat())
+    previous = await _rate(prev_cutoff, current_start)
+    delta = round(current - previous, 1)
+    return {"current": current, "previous": previous, "delta": delta, "trend": _kpi_trend(current, previous), "unit": "%"}
+
+
+async def _kpi_drift(tenant_id, current_cutoff, prev_cutoff, current_start) -> Dict[str, Any]:
+    async def _count(cutoff_from, cutoff_to):
+        match: Dict[str, Any] = {"detected_at": {"$gte": cutoff_from, "$lt": cutoff_to}}
+        if tenant_id:
+            match["tenant_id"] = tenant_id
+        try:
+            return await db[RECONCILIATION_ISSUES].count_documents(match)
+        except Exception:
+            return 0
+
+    current = await _count(current_cutoff, datetime.now(timezone.utc).isoformat())
+    previous = await _count(prev_cutoff, current_start)
+    delta = current - previous
+    return {"current": current, "previous": previous, "delta": delta, "trend": _kpi_trend(current, previous), "unit": "issues"}
+
+
+async def _kpi_mttr(tenant_id, current_cutoff, prev_cutoff, current_start) -> Dict[str, Any]:
+    async def _avg_resolve_hours(cutoff_from, cutoff_to):
+        match: Dict[str, Any] = {
+            "resolved_at": {"$gte": cutoff_from, "$lt": cutoff_to},
+            "status": "resolved",
+        }
+        if tenant_id:
+            match["tenant_id"] = tenant_id
+        pipeline = [
+            {"$match": match},
+            {"$addFields": {
+                "_det": {"$dateFromString": {"dateString": "$detected_at", "onError": None}},
+                "_res": {"$dateFromString": {"dateString": "$resolved_at", "onError": None}},
+            }},
+            {"$match": {"_det": {"$ne": None}, "_res": {"$ne": None}}},
+            {"$addFields": {"_dur_ms": {"$subtract": ["$_res", "$_det"]}}},
+            {"$group": {"_id": None, "avg_ms": {"$avg": "$_dur_ms"}}},
+        ]
+        try:
+            async for doc in db[RECONCILIATION_ISSUES].aggregate(pipeline):
+                return round((doc["avg_ms"] or 0) / 3600000, 1)
+        except Exception:
+            pass
+        return 0.0
+
+    current = await _avg_resolve_hours(current_cutoff, datetime.now(timezone.utc).isoformat())
+    previous = await _avg_resolve_hours(prev_cutoff, current_start)
+    delta = round(current - previous, 1)
+    return {"current": current, "previous": previous, "delta": delta, "trend": _kpi_trend(current, previous), "unit": "saat"}
+
+
+async def _kpi_operator_interventions(tenant_id, current_cutoff, prev_cutoff, current_start) -> Dict[str, Any]:
+    async def _count(cutoff_from, cutoff_to):
+        match: Dict[str, Any] = {
+            "resolved_at": {"$gte": cutoff_from, "$lt": cutoff_to},
+            "resolution_type": "manual",
+        }
+        if tenant_id:
+            match["tenant_id"] = tenant_id
+        try:
+            return await db[RECONCILIATION_ISSUES].count_documents(match)
+        except Exception:
+            return 0
+
+    current = await _count(current_cutoff, datetime.now(timezone.utc).isoformat())
+    previous = await _count(prev_cutoff, current_start)
+    delta = current - previous
+    return {"current": current, "previous": previous, "delta": delta, "trend": _kpi_trend(current, previous), "unit": "mudahale"}
+
+
+async def _kpi_push_sla(tenant_id, current_cutoff, prev_cutoff, current_start) -> Dict[str, Any]:
+    async def _compliance_pct(cutoff_from, cutoff_to):
+        match: Dict[str, Any] = {"recorded_at": {"$gte": cutoff_from, "$lt": cutoff_to}, "success": True}
+        if tenant_id:
+            match["tenant_id"] = tenant_id
+        pipeline = [
+            {"$match": match},
+            {"$group": {
+                "_id": None,
+                "total": {"$sum": 1},
+                "within_sla": {"$sum": {"$cond": [{"$lte": ["$latency_ms", SLA_PUSH_LATENCY_P95_MS]}, 1, 0]}},
+            }},
+        ]
+        try:
+            async for doc in db[RATE_PUSH_METRICS].aggregate(pipeline):
+                return round(doc["within_sla"] / max(doc["total"], 1) * 100, 1)
+        except Exception:
+            pass
+        return 0.0
+
+    current = await _compliance_pct(current_cutoff, datetime.now(timezone.utc).isoformat())
+    previous = await _compliance_pct(prev_cutoff, current_start)
+    delta = round(current - previous, 1)
+    return {"current": current, "previous": previous, "delta": delta, "trend": _kpi_trend(current, previous), "unit": "%"}
 
 
 async def _push_latency_percentiles(

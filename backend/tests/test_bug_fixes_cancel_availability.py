@@ -10,11 +10,11 @@ import requests
 import os
 from datetime import datetime, timedelta
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '')
 
 pytestmark = pytest.mark.skipif(
     not BASE_URL,
-    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
+    reason="VITE_BACKEND_URL not set - integration tests require a running server"
 )
 if BASE_URL.endswith('/'):
     BASE_URL = BASE_URL.rstrip('/')

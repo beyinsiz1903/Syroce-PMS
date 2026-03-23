@@ -11,9 +11,9 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
 
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
@@ -332,7 +332,7 @@ class TestSecurityModules:
         """Check CORS headers are present"""
         response = requests.options(
             f"{BASE_URL}/api/auth/login",
-            headers={"Origin": "https://vite-migration-6.preview.emergentagent.com"}
+            headers={"Origin": "https://kanal-saglik-tab.preview.emergentagent.com"}
         )
         # CORS headers should be present
         if "access-control-allow-origin" in response.headers:

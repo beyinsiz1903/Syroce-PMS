@@ -12,7 +12,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
 
 # Test data from simulated timeline events
 TEST_EXTERNAL_ID_SUCCESS = "EXELY-TEST-98765"  # Full pipeline: received -> confirmed

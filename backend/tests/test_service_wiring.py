@@ -11,7 +11,7 @@ import pytest
 import httpx
 import os
 
-API_URL = os.environ.get("TEST_API_URL", os.environ.get("REACT_APP_BACKEND_URL", ""))
+API_URL = os.environ.get("TEST_API_URL", os.environ.get("VITE_BACKEND_URL", ""))
 
 pytestmark = pytest.mark.skipif(not API_URL, reason="TEST_API_URL not set")
 TEST_EMAIL = "demo@hotel.com"

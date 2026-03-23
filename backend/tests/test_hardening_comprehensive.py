@@ -9,7 +9,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/") or "http://localhost:8001"
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/") or "http://localhost:8001"
 
 
 @pytest.fixture(scope="module")

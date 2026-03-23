@@ -20,16 +20,16 @@ if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
 from core.database import db
 
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
 
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
 
 
 class TestOpenFolioBridge:
     @pytest.fixture(autouse=True)
     def setup(self):
         if not BASE_URL:
-            pytest.skip('REACT_APP_BACKEND_URL missing')
+            pytest.skip('VITE_BACKEND_URL missing')
 
         self.session = requests.Session()
         self.session.headers.update({'Content-Type': 'application/json'})

@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 
 load_dotenv("/app/frontend/.env")
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
 
 # Test data identifiers
 TEST_PREFIX = "TEST_IMPORT_API_"

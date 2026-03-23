@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import pytest
 
-API_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001")
+API_URL = os.environ.get("VITE_BACKEND_URL", "http://localhost:8001")
 
 # ── Shared Auth ────────────────────────────────────────────────
 

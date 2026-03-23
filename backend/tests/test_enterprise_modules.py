@@ -15,9 +15,9 @@ from pathlib import Path
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
-API_URL = os.environ.get("REACT_APP_BACKEND_URL", "")
+API_URL = os.environ.get("VITE_BACKEND_URL", "")
 
-pytestmark = pytest.mark.skipif(not API_URL, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not API_URL, reason="VITE_BACKEND_URL not set")
 
 @pytest.fixture(scope="session")
 def auth_headers():

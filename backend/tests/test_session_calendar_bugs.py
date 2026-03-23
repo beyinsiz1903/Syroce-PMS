@@ -16,11 +16,11 @@ import os
 from datetime import datetime, timedelta
 from test_helpers import skip_if_no_exely
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '')
 
 pytestmark = pytest.mark.skipif(
     not BASE_URL,
-    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
+    reason="VITE_BACKEND_URL not set - integration tests require a running server"
 )
 if not BASE_URL.endswith('/api'):
     BASE_URL = BASE_URL.rstrip('/') + '/api'

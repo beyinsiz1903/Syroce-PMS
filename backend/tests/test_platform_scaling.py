@@ -6,9 +6,9 @@ import pytest
 import httpx
 import os
 
-API_URL = os.environ.get("REACT_APP_BACKEND_URL", "")
+API_URL = os.environ.get("VITE_BACKEND_URL", "")
 
-pytestmark = pytest.mark.skipif(not API_URL, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not API_URL, reason="VITE_BACKEND_URL not set")
 
 @pytest.fixture(scope="module")
 def auth_headers():

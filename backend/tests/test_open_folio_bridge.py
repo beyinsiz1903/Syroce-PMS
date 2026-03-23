@@ -19,9 +19,9 @@ from pymongo import MongoClient
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
 DB_NAME = os.environ.get("DB_NAME", "hotel_pms")
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
 
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
 
 
 def _get_sync_db():
@@ -33,7 +33,7 @@ class TestOpenFolioBridge:
     @pytest.fixture(autouse=True)
     def setup(self):
         if not BASE_URL:
-            pytest.skip('REACT_APP_BACKEND_URL missing')
+            pytest.skip('VITE_BACKEND_URL missing')
 
         self.session = requests.Session()
         self.session.headers.update({'Content-Type': 'application/json'})

@@ -10,7 +10,7 @@ import pytest
 import httpx
 import os
 
-BASE = os.environ.get("TEST_BASE_URL", os.environ.get("REACT_APP_BACKEND_URL", ""))
+BASE = os.environ.get("TEST_BASE_URL", os.environ.get("VITE_BACKEND_URL", ""))
 
 pytestmark = pytest.mark.skipif(not BASE, reason="TEST_BASE_URL not set")
 API = f"{BASE}/api/channel-manager/v2"

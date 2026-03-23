@@ -18,10 +18,10 @@ import time
 import hmac
 import hashlib
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'http://localhost:8001').rstrip('/')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'http://localhost:8001').rstrip('/')
 API_PREFIX = f"{BASE_URL}/api/channel-manager/v2"
 
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
 
 
 class TestAuthentication:

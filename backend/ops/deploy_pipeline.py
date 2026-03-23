@@ -303,7 +303,7 @@ class DeployPipeline:
             import os as _os
             import sys as _sys
             python_bin = _sys.executable
-            env = {**_os.environ, "REACT_APP_BACKEND_URL": "http://localhost:8001"}
+            env = {**_os.environ, "VITE_BACKEND_URL": "http://localhost:8001"}
             cmd = [python_bin, "-m", "pytest"] + ci_test_paths + [
                 "-v", "--tb=short", "-q", "--timeout=30",
             ]

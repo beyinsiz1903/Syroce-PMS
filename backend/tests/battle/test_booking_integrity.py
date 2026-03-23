@@ -30,7 +30,7 @@ import uuid
 import httpx
 import pytest
 
-API_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001")
+API_URL = os.environ.get("VITE_BACKEND_URL", "http://localhost:8001")
 
 # Use unique year range per test run to avoid date collisions
 # Wide range (7900 values) to virtually eliminate collision probability

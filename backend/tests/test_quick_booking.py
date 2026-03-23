@@ -13,7 +13,7 @@ from pymongo import MongoClient
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
 DB_NAME = os.environ.get("DB_NAME", "hotel_pms")
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
 
 
 def _clean_locks(room_id, ci_str, co_str):
@@ -33,7 +33,7 @@ def _future_dates():
 
 pytestmark = pytest.mark.skipif(
     not BASE_URL,
-    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
+    reason="VITE_BACKEND_URL not set - integration tests require a running server"
 )
 
 

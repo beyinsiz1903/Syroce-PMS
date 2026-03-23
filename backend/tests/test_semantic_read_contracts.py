@@ -12,15 +12,15 @@ from tests.harnesses.contract import (
 from tests.harnesses.tenant_isolation import TenantIsolationHarness
 
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
 
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
 
 
 @pytest.fixture(scope="module")
 def harness():
     if not BASE_URL:
-        pytest.skip("REACT_APP_BACKEND_URL not configured")
+        pytest.skip("VITE_BACKEND_URL not configured")
     return TenantIsolationHarness(base_url=BASE_URL)
 
 

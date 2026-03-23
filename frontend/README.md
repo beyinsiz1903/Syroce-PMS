@@ -38,7 +38,7 @@ yarn install
 yarn start
 ```
 
-**Environment:** All API calls route through `REACT_APP_BACKEND_URL` defined in `.env`.
+**Environment:** All API calls route through `VITE_BACKEND_URL` defined in `.env`.
 
 ## Build
 

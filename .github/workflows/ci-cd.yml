@@ -149,7 +149,7 @@ jobs:
           DB_NAME: ${{ env.DB_NAME }}
           REDIS_URL: redis://localhost:6379/0
           JWT_SECRET: ${{ env.JWT_SECRET }}
-          REACT_APP_BACKEND_URL: http://localhost:8001
+          VITE_BACKEND_URL: http://localhost:8001
           VITE_BACKEND_URL: http://localhost:8001
 
       - name: Upload test results

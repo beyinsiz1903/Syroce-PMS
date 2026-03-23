@@ -8,7 +8,7 @@ import httpx
 import os
 import uuid
 
-API_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001")
+API_URL = os.environ.get("VITE_BACKEND_URL", "http://localhost:8001")
 
 _cached_headers = None
 

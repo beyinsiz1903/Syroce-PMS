@@ -16,7 +16,7 @@ import requests
 import os
 import uuid
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
 
 # Test credentials for super_admin
 TEST_EMAIL = "demo@hotel.com"
@@ -24,7 +24,7 @@ TEST_PASSWORD = "demo123"
 
 pytestmark = pytest.mark.skipif(
     not BASE_URL,
-    reason="REACT_APP_BACKEND_URL not set – integration tests require a running server"
+    reason="VITE_BACKEND_URL not set – integration tests require a running server"
 )
 
 

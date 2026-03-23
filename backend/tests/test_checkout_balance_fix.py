@@ -11,14 +11,14 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
 
 pytestmark = pytest.mark.skipif(
     not BASE_URL,
-    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
+    reason="VITE_BACKEND_URL not set - integration tests require a running server"
 )
 if not BASE_URL:
-    BASE_URL = "https://vite-migration-6.preview.emergentagent.com"
+    BASE_URL = "https://kanal-saglik-tab.preview.emergentagent.com"
 
 
 class TestCheckoutBalanceFix:

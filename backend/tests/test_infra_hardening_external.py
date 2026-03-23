@@ -8,9 +8,9 @@ import requests
 import os
 
 # Use public URL for testing
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '')
 
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
 
 
 @pytest.fixture(scope="module")

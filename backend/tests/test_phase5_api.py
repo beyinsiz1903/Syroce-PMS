@@ -13,9 +13,9 @@ BACKEND_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
 # Read API URL from frontend env or default to local
-API_BASE = os.environ.get("REACT_APP_BACKEND_URL", "")
+API_BASE = os.environ.get("VITE_BACKEND_URL", "")
 
-pytestmark = pytest.mark.skipif(not API_BASE, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not API_BASE, reason="VITE_BACKEND_URL not set")
 
 
 @pytest.fixture(scope="session")

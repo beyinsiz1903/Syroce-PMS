@@ -63,7 +63,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL}
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL}
     restart: always
     deploy:
       replicas: ${FRONTEND_REPLICAS:-2}
