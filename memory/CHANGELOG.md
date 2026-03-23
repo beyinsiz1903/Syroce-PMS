@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## [2026-03-23] Drift Threshold Alerting
+
+### Drift Alerting Engine
+- **New**: `/app/backend/controlplane/drift_alerting.py` — threshold-based drift alert engine
+  - 3 severity tiers: warning (1+ drift/15min), critical (3+ room-night drift/15min), severe (post-recon drift)
+  - Alert payload: tenant, providers, drift_count, drift_nights, drift_or_stale, last_reconciliation_result, runbook_link
+  - Cooldown-aware firing (15 min cooldown per severity per tenant)
+  - Webhook relay via existing AlertingEngine
+  - Lifecycle: fire → persist → acknowledge
+- **Endpoints**:
+  - `GET /api/ops/dashboard/drift-alerts` — list with filters
+  - `GET /api/ops/dashboard/drift-alerts/summary` — severity overview
+  - `POST /api/ops/dashboard/drift-alerts/evaluate` — evaluate and fire
+  - `POST /api/ops/dashboard/drift-alerts/{id}/acknowledge` — acknowledge alert
+- **New runbook**: `inventory_drift_detected` — structured resolution for drift incidents
+- **Frontend**: `DriftAlertPanel` in UnifiedOpsView — top-priority alert block with severity badges, acknowledge buttons, runbook links
+
+### Testing
+- 15/15 backend tests passed (drift_alerting_api)
+- All frontend elements verified (DriftAlertPanel, evaluate button, toast notifications)
+
+---
+
 ## [2026-03-23] Inventory Ledger Alignment + DORA Metrics + Unified Ops View
 
 ### Inventory Ledger Alignment (P0 — CRITICAL)

@@ -83,6 +83,16 @@ Enterprise-grade hotel management platform (PMS) with multi-tenant architecture,
 - Drill-down from each block to detailed views
 - Auto-refresh every 60 seconds
 
+### Phase H: Drift Threshold Alerting (COMPLETE, 2026-03-23)
+**Active intervention layer** — transforms Ops from passive visibility to active monitoring:
+- 3 severity tiers: warning (1+ drift/15min), critical (3+ room-night drift/15min), severe (post-recon drift)
+- Alert payload: tenant, property, providers, drift_count, drift_nights, drift_or_stale, last_reconciliation_result, runbook_link
+- Cooldown-aware firing (no spam within 15 min per severity per tenant)
+- Webhook relay via AlertingEngine for Slack-compatible notifications
+- Alert lifecycle: fire → acknowledge (with operator tracking)
+- Inventory drift runbook with structured resolution steps
+- Frontend DriftAlertPanel integrated into Unified Ops View as top-priority block
+
 ---
 
 ## API Endpoints
@@ -99,6 +109,10 @@ Enterprise-grade hotel management platform (PMS) with multi-tenant architecture,
 | GET | /api/ops/dashboard/dora-correlation | DORA × Channel Health correlation |
 | GET | /api/ops/dashboard/channel-health | Channel health dashboard |
 | GET | /api/ops/dashboard/tech-debt | Tech debt tracking |
+| GET | /api/ops/dashboard/drift-alerts | Active drift alerts (filterable) |
+| GET | /api/ops/dashboard/drift-alerts/summary | Drift alert severity summary |
+| POST | /api/ops/dashboard/drift-alerts/evaluate | Evaluate and fire drift alerts |
+| POST | /api/ops/dashboard/drift-alerts/{id}/acknowledge | Acknowledge a drift alert |
 
 ---
 
@@ -146,11 +160,12 @@ Enterprise-grade hotel management platform (PMS) with multi-tenant architecture,
 
 ### P2 — Future
 - Enable Strict Tenant Mode (`STRICT_TENANT_MODE=true`)
+- Load/chaos proof testing
+- Quarantine burn-down
 - Migrate `motor` → `pymongo` native async
-- Production build with `vite build` + Nginx static serving
-- Quarantine burn-down (engineering hygiene)
 
 ### P3 — Vision
-- Unified "Channel Health + Deploy + KPI" dashboard (extended version)
-- Real-time alerting on drift detection
-- Automated rollback on drift threshold
+- Vite production build + Nginx static serving
+- Go-live runbook
+- SLO/SLA documentation
+- Incident playbooks
