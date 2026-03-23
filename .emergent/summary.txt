@@ -1,276 +1,40 @@
 <analysis>**original_problem_statement:**
-The user approved the agent's proposal to create a Channel Health tab within the Control Plane. The user provided a specific list of metrics to be included in this new dashboard:
-- Push latency (p50 / p95 / p99)
-- Sync success rate (%)
-- Failure breakdown (by timeout, validation, mapping)
-- Reconciliation drift count
-- Retry success rate
-- Provider-based Service Level Agreement (SLA) status
+The user provided a new, high-priority set of tasks to evolve the Channel Health feature and address technical debt. The specific requests were:
+1.  **Transform Channel Health**: Convert the feature from a simple pilot/display screen into a full-fledged management dashboard.
+2.  **Add Historical Trends**: Display historical trend graphs for key metrics like Push Latency (p50/p95/p99), Sync Success Rate, Reconciliation Drift, and Retry Success.
+3.  **Generate Field KPIs**: Create and display real field KPIs to track metrics that directly impact operations.
+4.  **Eliminate Environment Variable Drift**: Completely remove all traces of the  variable from the codebase, standardizing on  across all tests and configurations.
+5.  **Ultimate Goal**: The user emphasized that the true measure of success is not just shipping code, but improving live operational metrics like sync success, drift reduction, Mean Time To Repair (MTTR), and reducing the need for manual operator intervention.
 
 **User's preferred language**: Turkish
 
 **what currently exists?**
-The agent has successfully implemented the Channel Health dashboard as a new feature.
-- **Backend:** A new endpoint, , has been added to . This endpoint is powered by a new  service, which gathers and computes the required metrics from various existing channel manager services.
-- **Frontend:** A new Kanal Sağlığı (Channel Health) tab has been integrated into the  page. This tab renders a new dedicated component, , which fetches data from the new backend endpoint and displays it using a series of KPI cards and charts.
-- **Fixes:** The agent also corrected a malformed  file that was causing issues with API calls.
+The agent has successfully completed a major overhaul based on the user's latest instructions.
+- **Backend**:
+    - The  was significantly enhanced to calculate data for historical trends (by time buckets) and new field-level KPIs.
+    - The  was updated with two new endpoints:  and .
+    - A bug in the trend calculation logic was fixed to ensure the direction (up, down) is correctly reported.
+- **Frontend**:
+    - The  component was completely rewritten. It now functions as a management dashboard, featuring historical trend charts (using the  library) and new KPI cards for the field KPIs.
+- **Technical Debt**:
+    - A project-wide cleanup was performed, removing all instances of . This change was applied to over 120 test files, CI/CD workflows (), Docker configurations (, etc.), and documentation.
 
 **Last working item**:
-    - Last item agent was working: The complete implementation of the Channel Health Dashboard feature, from backend API creation to frontend UI integration and full-stack testing.
+    - Last item agent was working: The complete implementation of the user's requests: transforming the Channel Health dashboard into a management screen, adding historical trends and field KPIs, and performing a full-stack cleanup of the  environment variable.
     - Status: USER VERIFICATION PENDING
     - Agent Testing Done: Y
     - Which testing method agent to use? NA
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  - Issue 1:  (P2) Inconsistent environment variable usage in backend tests.
-  
-  Issues Detail:
-  - Issue 1: 
-     - Attempted fixes: This issue was identified in a previous session. The agent has not attempted to fix it yet, as it was not part of the current task. Backend tests still use , while the rest of the application has migrated to .
-     - Next debug checklist: 
-       - Find all occurrences using /app/backend/tests/test_admin_tenants_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_admin_tenants_api.py:    reason="REACT_APP_BACKEND_URL not set – integration tests require a running server"
-/app/backend/tests/test_p0_verification.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_p0_verification.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
-/app/backend/tests/test_stop_sale_scheduler_holidays.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'http://localhost:8001').rstrip('/')
-/app/backend/tests/test_mapping_engine_api.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/test_mapping_engine_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_controlplane_api.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/test_rate_manager_bulk_update.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_rate_manager_bulk_update.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_production_hardening_v3.py:            if line.startswith("REACT_APP_BACKEND_URL="):
-/app/backend/tests/test_readme_and_booking_validation.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_exely_real_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_exely_real_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_channel_health_api.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/test_booking_room_move_fix.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_booking_room_move_fix.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_tenant_isolation_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_p1_features_mapping_lineage_testbooking.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://kanal-saglik-tab.preview.emergentagent.com')
-/app/backend/tests/test_guest_messaging.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL')
-/app/backend/tests/test_guest_messaging.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_frontdesk_checkin_checkout_bugs.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_frontdesk_checkin_checkout_bugs.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_business_date_validation.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_business_date_validation.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_exely_versioning_wsse.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_exely_versioning_wsse.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
-/app/backend/tests/test_create_reservation_bridge.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_create_reservation_bridge.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_create_reservation_bridge.py:            pytest.skip('REACT_APP_BACKEND_URL missing')
-/app/backend/tests/test_night_audit_hardened_api.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/test_hotelrunner_webhook_ingest.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_hotelrunner_webhook_ingest.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_production_golive_deployment_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_production_golive_deployment_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_import_admin_api.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/test_group_folio_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_group_folio_api.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_sec001_secrets_api.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://kanal-saglik-tab.preview.emergentagent.com")
-/app/backend/tests/test_quick_booking.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_quick_booking.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_production_runtime_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_production_runtime_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_semantic_read_contracts.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/test_semantic_read_contracts.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_semantic_read_contracts.py:        pytest.skip("REACT_APP_BACKEND_URL not configured")
-/app/backend/tests/test_overbooking_prevention_e2e.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://kanal-saglik-tab.preview.emergentagent.com").rstrip("/")
-/app/backend/tests/test_enterprise_features.py:API_URL = os.environ.get("REACT_APP_BACKEND_URL", "")
-/app/backend/tests/test_enterprise_features.py:pytestmark = pytest.mark.skipif(not API_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/harnesses/tenant_isolation.py:        self.base_url = (base_url or os.environ.get("REACT_APP_BACKEND_URL", "")).rstrip("/")
-/app/backend/tests/test_room_management_access.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_room_management_access.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_platform_v2.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", '')
-/app/backend/tests/test_platform_v2.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_enterprise_modules.py:API_URL = os.environ.get("REACT_APP_BACKEND_URL", "")
-/app/backend/tests/test_enterprise_modules.py:pytestmark = pytest.mark.skipif(not API_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_domain_routers_phase_b_batch2_3.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_domain_routers_phase_b_batch2_3.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_new_pms_features_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_new_pms_features_api.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_phase_b_domain_extraction.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
-/app/backend/tests/test_phase_b_domain_extraction.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_crypto_refactor_api.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/test_pms_hardening_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_pms_hardening_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_phase7_production_rollout.py:API = os.environ.get("REACT_APP_BACKEND_URL", "")
-/app/backend/tests/test_phase7_production_rollout.py:pytestmark = pytest.mark.skipif(not API, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_open_folio_bridge.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_open_folio_bridge.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_open_folio_bridge.py:            pytest.skip('REACT_APP_BACKEND_URL missing')
-/app/backend/tests/test_production_hardening_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_production_hardening_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_reservation_import_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
-/app/backend/tests/test_reservation_import_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_deploy_pipeline_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_security_faz7.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
-/app/backend/tests/test_security_faz7.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_night_audit_schedule_api.py:# Use REACT_APP_BACKEND_URL from environment
-/app/backend/tests/test_night_audit_schedule_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_night_audit_schedule_api.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_exely_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_exely_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
-/app/backend/tests/test_exely_webhook_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
-/app/backend/tests/test_exely_webhook_api.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_phase6_api.py:API_BASE = os.environ.get("REACT_APP_BACKEND_URL", "")
-/app/backend/tests/test_phase6_api.py:pytestmark = pytest.mark.skipif(not API_BASE, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_modify_reservation_bridge.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_modify_reservation_bridge.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_modify_reservation_bridge.py:            pytest.skip('REACT_APP_BACKEND_URL missing')
-/app/backend/tests/test_production_golive_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_production_golive_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_refactor_validation.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_refactor_validation.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_exely_sync_and_calendar_bugfixes.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_exely_sync_and_calendar_bugfixes.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_lockdown_api.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/test_lockdown_api.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_ari_push_engine_v2.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_ari_push_engine_v2.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
-/app/backend/tests/test_rooms_tab_quick_actions.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_rooms_tab_quick_actions.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_reservation_detail_api.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/test_reservation_detail_api.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_controlplane_ui_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://kanal-saglik-tab.preview.emergentagent.com')
-/app/backend/tests/test_channel_manager_v2_phase6.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
-/app/backend/tests/test_channel_manager_v2_phase6.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_p5_stop_sale_deposits.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://kanal-saglik-tab.preview.emergentagent.com')
-/app/backend/tests/test_phase5_api.py:API_BASE = os.environ.get("REACT_APP_BACKEND_URL", "")
-/app/backend/tests/test_phase5_api.py:pytestmark = pytest.mark.skipif(not API_BASE, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_ari_push_engine.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_ari_push_engine.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
-/app/backend/tests/test_admin_control_panel_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'http://localhost:8001').rstrip('/')
-/app/backend/tests/test_admin_control_panel_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_session_calendar_bugs.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
-/app/backend/tests/test_session_calendar_bugs.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_hotelrunner_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_hotelrunner_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_calendar_features.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_calendar_features.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_hardening_comprehensive.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/") or "http://localhost:8001"
-/app/backend/tests/test_guest_search_quick_booking.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_guest_search_quick_booking.py:    reason="REACT_APP_BACKEND_URL not set – skipping integration tests in CI"
-/app/backend/tests/test_migration_observability.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_migration_observability.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_migration_observability.py:            pytest.skip('REACT_APP_BACKEND_URL missing')
-/app/backend/tests/test_operational_maturity.py:BASE = os.environ.get("TEST_BASE_URL", os.environ.get("REACT_APP_BACKEND_URL", ""))
-/app/backend/tests/test_production_hardening_v2.py:            if line.startswith("REACT_APP_BACKEND_URL="):
-/app/backend/tests/test_atomic_booking_overbooking.py:API_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://kanal-saglik-tab.preview.emergentagent.com")
-/app/backend/tests/test_inventory_sync_engine.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_inventory_sync_engine.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_p6_readiness_rollout.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
-/app/backend/tests/test_p6_readiness_rollout.py:    reason="REACT_APP_BACKEND_URL not set — skipping live API tests"
-/app/backend/tests/test_operational_monitoring_api.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/test_operational_monitoring_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
-/app/backend/tests/test_infra_hardening_external.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
-/app/backend/tests/test_infra_hardening_external.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_unassigned_booking_and_calendar_features.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_unassigned_booking_and_calendar_features.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_release_room_block_bridge.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_release_room_block_bridge.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_release_room_block_bridge.py:            pytest.skip('REACT_APP_BACKEND_URL missing')
-/app/backend/tests/test_pms_finance_reports_routers.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_pms_finance_reports_routers.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_reconciliation_engine.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/test_reconciliation_engine.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
-/app/backend/tests/test_report_builder.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_report_builder.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_connection_test_detailed.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_connection_test_detailed.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_new_folio_flows_api.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/test_new_folio_flows_api.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_webhook_timeline_integration.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/test_hotel_services_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_hotel_services_api.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_pms_phase2_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
-/app/backend/tests/test_pms_phase2_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_hardening_multi_phase.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_hardening_multi_phase.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_night_audit_financial_api.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/test_night_audit_financial_api.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_create_room_block_bridge.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_create_room_block_bridge.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_create_room_block_bridge.py:            pytest.skip('REACT_APP_BACKEND_URL missing')
-/app/backend/tests/test_system_health_normalized_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_system_health_normalized_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_platform_scaling.py:API_URL = os.environ.get("REACT_APP_BACKEND_URL", "")
-/app/backend/tests/test_platform_scaling.py:pytestmark = pytest.mark.skipif(not API_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_domain_routers_phase_b.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
-/app/backend/tests/test_domain_routers_phase_b.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_provider_config_slack_trends.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_provider_config_slack_trends.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
-/app/backend/tests/test_production_golive_new_features.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_production_golive_new_features.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_data_intelligence.py:API_URL = os.environ.get("API_URL", os.environ.get("REACT_APP_BACKEND_URL", ""))
-/app/backend/tests/test_data_intelligence.py:pytestmark = pytest.mark.skipif(not API_URL, reason="API_URL/REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_timeline_dashboard_api.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/test_phase5_comprehensive.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_phase5_comprehensive.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_service_wiring.py:API_URL = os.environ.get("TEST_API_URL", os.environ.get("REACT_APP_BACKEND_URL", ""))
-/app/backend/tests/test_checkout_balance_fix.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/test_checkout_balance_fix.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/battle/test_regression_guards.py:API_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001")
-/app/backend/tests/battle/test_sprint2_api_holds.py:API_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://kanal-saglik-tab.preview.emergentagent.com")
-/app/backend/tests/battle/test_room_type_inventory.py:API_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001")
-/app/backend/tests/battle/test_overbooking_prevention_v2.py:API_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://kanal-saglik-tab.preview.emergentagent.com").rstrip("/")
-/app/backend/tests/battle/test_learning_loop.py:API_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001")
-/app/backend/tests/battle/test_cancellation_edges.py:API_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001")
-/app/backend/tests/battle/test_folio_ledger.py:API_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001")
-/app/backend/tests/battle/test_booking_integrity.py:API_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001")
-/app/backend/tests/test_hotelrunner_adapter_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_hotelrunner_adapter_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
-/app/backend/tests/test_platform_hardening_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_platform_hardening_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_rate_manager_notifications.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_rate_manager_notifications.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/conftest.py:BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-/app/backend/tests/conftest.py:# Ensure REACT_APP_BACKEND_URL is set for test files that read it directly
-/app/backend/tests/conftest.py:if not os.environ.get("REACT_APP_BACKEND_URL"):
-/app/backend/tests/conftest.py:    os.environ["REACT_APP_BACKEND_URL"] = "http://localhost:8001"
-/app/backend/tests/conftest.py:        pytest.skip("REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_calendar_past_dates_and_guests_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_calendar_past_dates_and_guests_api.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_sprint_features_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_sprint_features_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/_quarantine/stale_dates/test_business_date_validation.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/_quarantine/stale_dates/test_business_date_validation.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/_quarantine/stale_room_locks/test_open_folio_bridge.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/_quarantine/stale_room_locks/test_open_folio_bridge.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/_quarantine/stale_room_locks/test_open_folio_bridge.py:            pytest.skip('REACT_APP_BACKEND_URL missing')
-/app/backend/tests/_quarantine/stale_room_locks/test_modify_reservation_bridge.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/_quarantine/stale_room_locks/test_modify_reservation_bridge.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/_quarantine/stale_room_locks/test_modify_reservation_bridge.py:            pytest.skip('REACT_APP_BACKEND_URL missing')
-/app/backend/tests/_quarantine/stale_room_locks/test_release_room_block_bridge.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/_quarantine/stale_room_locks/test_release_room_block_bridge.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/_quarantine/stale_room_locks/test_release_room_block_bridge.py:            pytest.skip('REACT_APP_BACKEND_URL missing')
-/app/backend/tests/test_router_modularization.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_router_modularization.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_bug_fixes_cancel_availability.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
-/app/backend/tests/test_bug_fixes_cancel_availability.py:    reason="REACT_APP_BACKEND_URL not set - integration tests require a running server"
-/app/backend/tests/test_data_model_9collections.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_data_model_9collections.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
-/app/backend/tests/test_channel_manager_v2.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_channel_manager_v2.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
-/app/backend/tests/test_ingest_pipeline.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_ingest_pipeline.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
-/app/backend/tests/test_governance_layer_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_v2_new_endpoints_api.py:BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-/app/backend/tests/test_v2_new_endpoints_api.py:pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set").
-       - Refactor the affected test files to read  from the environment.
-       - Update  to remove the redundant  variable from the test job.
-     - Why fix this issue and what will be achieved with the fix? To eliminate technical debt, ensure consistency, and create a single source of truth for the backend URL, which simplifies future development and CI/CD configuration.
-     - Status:  NOT STARTED
-     - Is recurring issue? Y
-     - Should Test frontend/backend/both after fix? backend
-     - Blocked on other issue: None
+  - None. The primary issue from the previous session (inconsistent env vars) has been resolved.
 
 **In progress Task List**:
   - None.
 
 **Upcoming and Future Tasks**
 **Upcoming Tasks:**
-*   **(P0) Implement CI/CD Deployment:** Implement the actual deployment logic in  and . The  blockers were previously removed, but the deployment steps are still placeholders.
+*   **(P0) Implement CI/CD Deployment:** Implement the actual deployment logic in  and . The  blockers were previously removed, but the deployment steps are still placeholder shells.
 
 **Future Tasks:**
 *   Align the channel manager's inventory ledger with the new room-type system.
@@ -281,14 +45,18 @@ The agent has successfully implemented the Channel Health dashboard as a new fea
 *   Address  for non-async functions marked with .
 
 **Completed work in this session**
-- **Channel Health Dashboard (DONE):**
-    - **Backend API:** Created the  endpoint in  and the associated data aggregation logic in .
-    - **Frontend UI:** Developed the  component and integrated it as a Kanal Sağlığı tab within .
-    - **Bug Fix:** Repaired a malformed  file where two environment variables were concatenated on a single line.
-    - **Testing:** The new feature was successfully tested end-to-end using , screenshots, and the , with all tests passing.
+- **Channel Health Management Dashboard (DONE):**
+    - **Backend**: Added new endpoints (, ) and updated aggregation logic in .
+    - **Frontend**: Completely rewrote  to include  trend graphs and new KPI cards.
+- **Environment Variable Unification (DONE):**
+    - Systematically removed  from the entire codebase, including tests, CI/CD files, and Docker configurations.
+- **End-to-End Testing (DONE):**
+    - The new APIs and frontend were successfully validated using , a final screenshot, and a comprehensive run of the , which confirmed all backend and frontend tests passed.
+- **Documentation (DONE):**
+    -  was updated to reflect the completion of these tasks.
 
 **Earlier issues found/mentioned but not fixed**
-   - The pre-existing inconsistency where backend integration tests rely on  instead of  remains unresolved.
+   - None in this session. The major known issue was fixed.
 
 **Known issue recurrence from previous fork**
   - None.
@@ -297,56 +65,53 @@ The agent has successfully implemented the Channel Health dashboard as a new fea
 
 
 **Key Technical Concepts**
-- **Full-Stack Feature Development:** A new feature was built from scratch, involving both backend API creation and frontend component development.
-- **Data Aggregation:** The backend aggregator () demonstrates pulling data from multiple independent services to create a unified, high-level dashboard.
-- **API-First & Component-Based Design:** The agent first built and validated the backend API before creating a modular React component to consume and display the data.
-- **Automated E2E Testing:** The  was used to perform a comprehensive validation of the new feature across the stack.
-- **Interactive Debugging:** The agent diagnosed and fixed issues by analyzing logs, inspecting environment files, and correcting API call prefixes after observing frontend failures.
+- **Dashboard Refactoring**: Evolving a simple data display into an interactive management dashboard with historical context.
+- **Time-Series Data Aggregation**: The backend now buckets data into time-based chunks to power historical trend charts.
+- **Technical Debt Remediation**: A systematic, large-scale cleanup of inconsistent environment variables across the entire stack to improve maintainability.
+- **End-to-End Feature Development**: The agent handled backend API changes, a complete frontend rewrite, and comprehensive testing for a complex feature update.
 
 **key DB schema**
-  - No database schema changes were made. The feature reads from existing collections.
+  - No database schema changes were made.
 
 **All files of reference**
--  (Created)
 -  (Modified)
--  (Created)
 -  (Modified)
+-  (Rewritten)
 -  (Modified)
 -  (Modified)
 
 **Areas that need refactoring**:
-- **Environment Variable Unification:** Backend tests should be updated to use  for consistency with the rest of the application.
+- The major technical debt around environment variables has been addressed. The next areas for improvement are listed in the Future Tasks section (e.g.,  to  migration).
 
 **key api endpoints**
-- : A new endpoint that returns a JSON object containing aggregated health metrics for all channel manager connections.
+- ** (NEW)**: Provides time-bucketed data for trend charts.
+- ** (NEW)**: Returns the new set of operational KPIs.
+- : (Existing) Returns overall current health status.
 
 **Critical Info for New Agent**
 1.  **User Language is Turkish:** You **MUST** continue the conversation in Turkish.
-2.  **Channel Health Dashboard is Complete (Pending Verification):** The primary task for this session is finished and has passed automated tests. It is now awaiting user review.
-3.  **Next Priority is CI/CD (P0):** The most important upcoming task is to implement the actual deployment logic in the GitHub Actions workflows.
-4.  **Acknowledge Known Tech Debt:** Be aware of the inconsistent environment variable () used in the backend test suite. This should be fixed when time permits.
+2.  **Dashboard v2 is Complete (Pending Verification):** The primary task of rebuilding the dashboard and cleaning up tech debt is finished and has passed all automated tests. It is now awaiting the user's review and feedback.
+3.  **Next Priority is CI/CD (P0):** The most critical upcoming task is to implement the actual deployment logic in the GitHub Actions workflows, as they are currently just placeholder shells.
 
 **documents and test reports created in this job**
 - 
--  (Updated to reflect the new feature)
+- 
 
 **Last 10 User Messages and any pending HUMAN messages** 
- -  **User:**  (The user strongly approved the agent's suggestion to build the Channel Health tab and provided detailed requirements for the metrics to be displayed.)
-    - **Status:** COMPLETED. The agent implemented this feature according to the user's specifications.
- -  **User:** 
-    - **Status:** COMPLETED. The agent presented a plan to the user, which was subsequently approved, initiating the work session.
+ -  **User:**  (Provided a clear, multi-step plan to transform the Channel Health dashboard into a management screen, add historical trends, introduce field KPIs, and fix the  inconsistency.)
+    - **Status:** COMPLETED. The agent implemented all points from this request.
 
 **Project Health Check:**
 - **Broken:** None.
-- **Mocked:** The  and  jobs within the CI/CD pipelines (, ) are still placeholder shells without functional deployment logic.
+- **Mocked:** The  and  jobs within the CI/CD pipelines (, ) remain placeholders without functional deployment logic.
 
 **3rd Party Integrations**
-- No new integrations were added.
+- ****: Used for rendering historical trend charts on the frontend. This was an existing dependency that is now actively used.
 
 **Testing status**
-  - Testing agent used after significant changes: YES ( was used).
+  - Testing agent used after significant changes: YES ( was used and passed).
   - Troubleshoot agent used after agent stuck in loop: NO
-  - Test files created: None.
+  - Test files created: None, but over 120 test files were modified during the env variable cleanup.
   - Known regressions: None.
 
 **Credentials to test flow:**
@@ -355,4 +120,4 @@ The agent has successfully implemented the Channel Health dashboard as a new fea
 | **Demo Admin** |  |  |  |
 
 **What agent forgot to execute**
-- The agent correctly prioritized and executed the user's main request. It did not address the pre-existing technical debt regarding environment variables, which was not part of the active task.</analysis>
+- Nothing. The agent successfully executed all high-priority tasks requested by the user in their last message.</analysis>
