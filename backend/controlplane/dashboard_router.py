@@ -19,6 +19,10 @@ Endpoints:
   GET  /api/ops/dashboard/inventory-alignment — Inventory ledger alignment status
   GET  /api/ops/dashboard/dora-metrics — DORA release metrics
   GET  /api/ops/dashboard/dora-correlation — DORA × Channel Health correlation
+  GET  /api/ops/dashboard/drift-alerts — Active drift alerts
+  GET  /api/ops/dashboard/drift-alerts/summary — Drift alert summary for dashboard
+  POST /api/ops/dashboard/drift-alerts/evaluate — Evaluate and fire drift alerts
+  POST /api/ops/dashboard/drift-alerts/{alert_id}/acknowledge — Acknowledge a drift alert
 """
 import logging
 from datetime import datetime, timedelta, timezone
@@ -236,6 +240,62 @@ async def get_dora_correlation(
     """
     from .dora_metrics import compute_dora_channel_correlation
     return await compute_dora_channel_correlation(days=days, tenant_id=tenant_id)
+
+
+# ── Drift Alerts ─────────────────────────────────────────────────
+
+@router.get("/drift-alerts")
+async def get_drift_alerts_endpoint(
+    tenant_id: Optional[str] = Query(None),
+    severity: Optional[str] = Query(None, description="Filter: warning, critical, severe"),
+    acknowledged: Optional[bool] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Active drift alerts — threshold-based inventory drift warnings."""
+    from .drift_alerting import get_drift_alerts
+    alerts = await get_drift_alerts(
+        tenant_id=tenant_id, severity=severity,
+        acknowledged=acknowledged, limit=limit,
+    )
+    return {"alerts": alerts, "count": len(alerts)}
+
+
+@router.get("/drift-alerts/summary")
+async def get_drift_alert_summary_endpoint(
+    tenant_id: Optional[str] = Query(None),
+):
+    """Drift alert summary for the ops dashboard — quick severity overview."""
+    from .drift_alerting import get_drift_alert_summary
+    return await get_drift_alert_summary(tenant_id=tenant_id)
+
+
+@router.post("/drift-alerts/evaluate")
+async def evaluate_drift_alerts_endpoint(
+    tenant_id: Optional[str] = Query(None),
+):
+    """Evaluate current inventory state and fire drift alerts if thresholds are breached.
+
+    Thresholds:
+      - warning: 1+ drift record in 15 min
+      - critical: 3+ room-night drift in 15 min
+      - severe: drift persists after reconciliation
+    """
+    from .drift_alerting import evaluate_drift_alerts
+    return await evaluate_drift_alerts(tenant_id=tenant_id)
+
+
+@router.post("/drift-alerts/{alert_id}/acknowledge")
+async def acknowledge_drift_alert_endpoint(
+    alert_id: str,
+    acknowledged_by: Optional[str] = Query("operator"),
+):
+    """Acknowledge a drift alert."""
+    from .drift_alerting import acknowledge_drift_alert
+    success = await acknowledge_drift_alert(alert_id, acknowledged_by=acknowledged_by)
+    if not success:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Alert not found or already acknowledged")
+    return {"success": True, "alert_id": alert_id, "status": "acknowledged"}
 
 
 # ── Deploy event ingestion (separate prefix for CI/CD webhook) ───

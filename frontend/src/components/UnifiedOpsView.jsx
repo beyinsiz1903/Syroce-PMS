@@ -8,7 +8,8 @@ import {
   Activity, Shield, AlertTriangle, CheckCircle, XCircle,
   TrendingUp, TrendingDown, Minus, RefreshCw, Zap,
   Target, Timer, Gauge, ArrowUpRight, ArrowDownRight,
-  ChevronRight, Layers, GitBranch,
+  ChevronRight, Layers, GitBranch, Bell, BellRing,
+  AlertOctagon, ShieldAlert, ExternalLink,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
@@ -29,6 +30,13 @@ const ALIGNMENT_STYLES = {
   drift_detected: { label: "DRIFT", icon: AlertTriangle, cls: "text-red-400 bg-red-500/10 border-red-500/30" },
   stale: { label: "BAYAT", icon: Timer, cls: "text-yellow-400 bg-yellow-500/10 border-yellow-500/30" },
   no_data: { label: "VERI YOK", icon: Minus, cls: "text-zinc-400 bg-zinc-500/10 border-zinc-500/30" },
+};
+
+const DRIFT_SEVERITY_STYLES = {
+  severe: { label: "SEVERE", icon: AlertOctagon, cls: "bg-red-600/20 text-red-300 border-red-500/50", pulse: true },
+  critical: { label: "CRITICAL", icon: ShieldAlert, cls: "bg-orange-500/20 text-orange-300 border-orange-500/50", pulse: true },
+  warning: { label: "WARNING", icon: AlertTriangle, cls: "bg-yellow-500/15 text-yellow-300 border-yellow-500/40", pulse: false },
+  none: { label: "TEMIZ", icon: CheckCircle, cls: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30", pulse: false },
 };
 
 const CORRELATION_INFERENCE = {
@@ -438,31 +446,210 @@ function ReconQueueBlock({ data }) {
   );
 }
 
+// ─── Drift Alert Panel ──────────────────────────────────────────
+function DriftAlertPanel({ summary, alerts, onEvaluate, onAcknowledge, evaluating }) {
+  const highest = summary?.highest_severity || "none";
+  const style = DRIFT_SEVERITY_STYLES[highest] || DRIFT_SEVERITY_STYLES.none;
+  const Icon = style.icon;
+  const activeCount = summary?.active_count || 0;
+  const bySeverity = summary?.by_severity || {};
+
+  return (
+    <Card className={`border ${highest === "severe" ? "border-red-500/50 bg-red-950/30" : highest === "critical" ? "border-orange-500/40 bg-orange-950/20" : "bg-zinc-900 border-zinc-800"}`} data-testid="drift-alert-panel">
+      <CardHeader className="pb-2 pt-4 px-4">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-xs font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+            {activeCount > 0 ? (
+              <BellRing className={`h-3.5 w-3.5 ${style.pulse ? "animate-pulse" : ""} ${highest === "severe" ? "text-red-400" : highest === "critical" ? "text-orange-400" : "text-yellow-400"}`} />
+            ) : (
+              <Bell className="h-3.5 w-3.5" />
+            )}
+            Drift Alert Durumu
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-[10px] text-zinc-500 hover:text-zinc-300"
+              onClick={onEvaluate}
+              disabled={evaluating}
+              data-testid="drift-evaluate-btn"
+            >
+              {evaluating ? (
+                <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+              ) : (
+                <Zap className="h-3 w-3 mr-1" />
+              )}
+              Degerlendir
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="px-4 pb-4 space-y-3">
+        {/* Severity indicator */}
+        <div className="flex items-center gap-3">
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-md border ${style.cls}`}>
+            <Icon className={`h-4 w-4 ${style.pulse ? "animate-pulse" : ""}`} />
+            <span className="text-sm font-bold tracking-wide">{style.label}</span>
+          </div>
+          {activeCount > 0 && (
+            <div className="flex items-center gap-3 text-xs">
+              {bySeverity.severe > 0 && (
+                <span className="text-red-400 font-mono font-bold">{bySeverity.severe} severe</span>
+              )}
+              {bySeverity.critical > 0 && (
+                <span className="text-orange-400 font-mono font-bold">{bySeverity.critical} critical</span>
+              )}
+              {bySeverity.warning > 0 && (
+                <span className="text-yellow-400 font-mono font-bold">{bySeverity.warning} warning</span>
+              )}
+            </div>
+          )}
+          {activeCount === 0 && (
+            <span className="text-xs text-zinc-500">Aktif drift alarmi yok</span>
+          )}
+        </div>
+
+        {/* Recent alerts */}
+        {alerts && alerts.length > 0 && (
+          <div className="space-y-2">
+            {alerts.slice(0, 5).map((alert, i) => {
+              const alertStyle = DRIFT_SEVERITY_STYLES[alert.severity] || DRIFT_SEVERITY_STYLES.warning;
+              const AlertIcon = alertStyle.icon;
+              const payload = alert.payload || {};
+              return (
+                <div
+                  key={alert.alert_id || i}
+                  className={`border rounded-lg p-3 space-y-2 ${alert.severity === "severe" ? "border-red-500/30 bg-red-950/20" : alert.severity === "critical" ? "border-orange-500/25 bg-orange-950/10" : "border-yellow-500/20 bg-yellow-950/10"}`}
+                  data-testid={`drift-alert-${alert.alert_id}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <AlertIcon className={`h-3.5 w-3.5 ${alert.severity === "severe" ? "text-red-400" : alert.severity === "critical" ? "text-orange-400" : "text-yellow-400"}`} />
+                      <Badge variant="outline" className={`${alertStyle.cls} text-[9px] px-1.5 py-0 border`}>
+                        {alertStyle.label}
+                      </Badge>
+                      <span className="text-[10px] text-zinc-500 font-mono">
+                        {alert.fired_at ? new Date(alert.fired_at).toLocaleTimeString("tr-TR") : ""}
+                      </span>
+                    </div>
+                    {!alert.acknowledged && (
+                      <button
+                        onClick={() => onAcknowledge?.(alert.alert_id)}
+                        className="text-[10px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded px-2 py-0.5 transition-colors"
+                        data-testid={`ack-alert-${alert.alert_id}`}
+                      >
+                        Onayla
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-zinc-300">{alert.reason}</p>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-zinc-500 font-mono">
+                    {payload.providers?.length > 0 && (
+                      <span>provider: <span className="text-zinc-300">{payload.providers.join(", ")}</span></span>
+                    )}
+                    {payload.drift_count > 0 && (
+                      <span>drift: <span className="text-red-400">{payload.drift_count}</span></span>
+                    )}
+                    {payload.drift_nights > 0 && (
+                      <span>gece: <span className="text-red-400">{payload.drift_nights}</span></span>
+                    )}
+                    <span>durum: <span className={payload.drift_or_stale === "stale" ? "text-yellow-400" : payload.drift_or_stale === "drift" ? "text-red-400" : "text-zinc-400"}>{payload.drift_or_stale}</span></span>
+                    {payload.last_reconciliation_result && (
+                      <span>recon: <span className="text-zinc-400">{payload.last_reconciliation_result.status}</span></span>
+                    )}
+                  </div>
+                  {payload.runbook_link && (
+                    <a
+                      href={payload.runbook_link}
+                      className="inline-flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
+                      data-testid={`runbook-link-${alert.alert_id}`}
+                    >
+                      <ExternalLink className="h-2.5 w-2.5" />
+                      Runbook
+                    </a>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Main Unified Ops View ──────────────────────────────────────
 export function UnifiedOpsView() {
   const [alignment, setAlignment] = useState(null);
   const [dora, setDora] = useState(null);
   const [correlation, setCorrelation] = useState(null);
   const [deployStats, setDeployStats] = useState(null);
+  const [driftSummary, setDriftSummary] = useState(null);
+  const [driftAlerts, setDriftAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [evaluating, setEvaluating] = useState(false);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [alignRes, doraRes, corrRes, statsRes] = await Promise.allSettled([
+      const [alignRes, doraRes, corrRes, statsRes, driftSumRes, driftAlertsRes] = await Promise.allSettled([
         axios.get("/ops/dashboard/inventory-alignment"),
         axios.get("/ops/dashboard/dora-metrics"),
         axios.get("/ops/dashboard/dora-correlation"),
         axios.get("/ops/dashboard/deploy-stats"),
+        axios.get("/ops/dashboard/drift-alerts/summary"),
+        axios.get("/ops/dashboard/drift-alerts?acknowledged=false&limit=10"),
       ]);
       if (alignRes.status === "fulfilled") setAlignment(alignRes.value.data);
       if (doraRes.status === "fulfilled") setDora(doraRes.value.data);
       if (corrRes.status === "fulfilled") setCorrelation(corrRes.value.data);
       if (statsRes.status === "fulfilled") setDeployStats(statsRes.value.data);
+      if (driftSumRes.status === "fulfilled") setDriftSummary(driftSumRes.value.data);
+      if (driftAlertsRes.status === "fulfilled") setDriftAlerts(driftAlertsRes.value.data?.alerts || []);
     } catch (err) {
       toast.error("Ops verisi yuklenemedi");
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const handleEvaluate = useCallback(async () => {
+    setEvaluating(true);
+    try {
+      const res = await axios.post("/ops/dashboard/drift-alerts/evaluate");
+      const data = res.data;
+      if (data.alerts_fired?.length > 0) {
+        toast.warning(`${data.alerts_fired.length} drift alarmi tetiklendi!`);
+      } else {
+        toast.success("Drift degerlendirmesi tamamlandi — yeni alarm yok");
+      }
+      // Refresh alert data
+      const [sumRes, alertsRes] = await Promise.allSettled([
+        axios.get("/ops/dashboard/drift-alerts/summary"),
+        axios.get("/ops/dashboard/drift-alerts?acknowledged=false&limit=10"),
+      ]);
+      if (sumRes.status === "fulfilled") setDriftSummary(sumRes.value.data);
+      if (alertsRes.status === "fulfilled") setDriftAlerts(alertsRes.value.data?.alerts || []);
+    } catch (err) {
+      toast.error("Drift degerlendirmesi basarisiz");
+    } finally {
+      setEvaluating(false);
+    }
+  }, []);
+
+  const handleAcknowledge = useCallback(async (alertId) => {
+    try {
+      await axios.post(`/ops/dashboard/drift-alerts/${alertId}/acknowledge`);
+      toast.success("Alarm onaylandi");
+      // Remove from local state
+      setDriftAlerts((prev) => prev.filter((a) => a.alert_id !== alertId));
+      setDriftSummary((prev) => prev ? {
+        ...prev,
+        active_count: Math.max(0, (prev.active_count || 0) - 1),
+      } : prev);
+    } catch (err) {
+      toast.error("Alarm onaylanamadi");
     }
   }, []);
 
@@ -497,6 +684,15 @@ export function UnifiedOpsView() {
           Yenile
         </Button>
       </div>
+
+      {/* Drift Alert Panel — top priority */}
+      <DriftAlertPanel
+        summary={driftSummary}
+        alerts={driftAlerts}
+        onEvaluate={handleEvaluate}
+        onAcknowledge={handleAcknowledge}
+        evaluating={evaluating}
+      />
 
       {/* Top row: Alignment + Deploy Health */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
