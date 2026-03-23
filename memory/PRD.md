@@ -21,78 +21,82 @@ Enterprise otel yönetim sistemi (PMS). Operasyonel zeka platformu: channel mana
 
 ## Bug Fixes
 - **HMR Page Auto-Refresh (Permanent Fix - March 2026):**
-  - **Root cause:** Kubernetes proxy drops idle WebSocket connections after ~60s. Vite HMR client and `emergent-main.js` call `location.reload()` on disconnect.
-  - **Fix: 3-layer defense (permanent, survives `yarn install`):**
-    1. **Postinstall script** (`scripts/patch-vite-client.js`): Automatically patches `node_modules/vite/dist/client/client.mjs` after every `yarn install`, replacing `location.reload()` with console.debug.
-    2. **Vite plugin transform hook** (`hmrReloadGuard`): Build-time backup that catches reload calls in bundled client code.
-    3. **Runtime guard** (`transformIndexHtml`): Injects smart `Location.prototype.reload` override that only allows reloads triggered within 3s of user interaction (click/submit/keydown). Blocks HMR auto-reloads while preserving legitimate app reloads (Settings, PropertySwitcher, etc.)
-  - **WebSocket keepalive:** HMR timeout reduced to 15s for more frequent pings, preventing proxy idle timeout.
-  - **Regression tests:** 8 tests in `backend/tests/test_hmr_patch.py` covering patch existence, idempotency, config validation.
-  - **Verified:** 2-minute Playwright stability test confirmed 0 auto-reloads, 1 suppressed attempt at ~60s mark.
+  - 3-layer defense: postinstall patch, build-time transform, runtime guard
+  - Runtime guard now behind `VITE_HMR_GUARD_ENABLED` feature flag
+  - Upstream compatibility check: `scripts/check-vite-compat.js` — detects Vite client changes
+  - Regression tests: 8 tests in `backend/tests/test_hmr_patch.py`
 
 ## Phase A-I (COMPLETED)
 All foundational layers: Notification, Auto-Action Engine, Unified Ops View, Control Plane, Channel Health, Drift Alerting, Import Bridge, Outbox Worker, ARI Push Engine, Crypto/Secrets modules.
 
 ## Decision-Driven UX Transformation (COMPLETED - March 2026)
+Dashboard Command Center, Enhanced Room Board, Upgraded Front Desk, Smart Payment Dialog, Reservation Detail Ops Panel, Room Alternatives API.
+
+## P1 Sandbox Simulation (COMPLETED - March 2026)
 ### What was built:
-1. **Dashboard Command Center** (`CommandCenter.jsx`):
-   - Operational alerts ("Dikkat Gerektiren") with severity-based styling
-   - Summary stat cards: Bugün Geliş, Bugün Çıkış, İçeride, Kirli Oda
-   - Direct action navigation buttons per alert
-   - Backend: `GET /api/pms/operational-alerts`
+Channel Manager resilience testing framework with 5 scenarios, 2 providers (HotelRunner + Exely).
 
-2. **Enhanced Room Board** (`RoomsTab.jsx`):
-   - Live cleaning indicators for dirty rooms ("Temizlik bekliyor ~15 dk")
-   - Animated progress bars for rooms being cleaned
-   - Check-in ETA indicators for rooms with arrivals
-   - Manrope font for room numbers
-   - `DirtyRoomDecision` component with alternative room suggestions
+1. **Provider Harness** (`sandbox_simulation/provider_harness.py`):
+   - Synthetic data generators for HotelRunner and Exely
+   - Configurable reservation generation with chaos injection
 
-3. **Upgraded Front Desk** (`FrontdeskTab.jsx`):
-   - Enhanced arrival cards with guest name, room info, dates
-   - Inline operational alerts (dirty room warning, balance)
-   - VIP badge support
-   - Departure cards with balance blocking check-out
-   - Empty state messages for no arrivals/departures
+2. **5 Resilience Scenarios** (`sandbox_simulation/scenarios.py`):
+   - **Duplicate Delivery**: Same reservation sent N times → 0 double inventory consumption
+   - **Delayed Acknowledgment**: ACK failure + retry → 0 inconsistent state
+   - **Retry Storm**: Provider resends same batch → 0 oversell, idempotent import
+   - **Stale Provider State**: Old availability data → reconciliation detects drift & recovers
+   - **Modify/Cancel Race**: new → modify → cancel sequence → deterministic outcome
 
-4. **Smart Payment Dialog** (`PaymentDialog.jsx`):
-   - Balance analysis bar (total, paid, remaining)
-   - "Tüm bakiyeyi al" quick-fill button
-   - Partial payment warnings
-   - Gold-themed submit button
+3. **Simulation Engine** (`sandbox_simulation/engine.py`):
+   - Orchestrates all scenarios per provider
+   - Creates sandbox fixtures (connectors, mappings) with unique property IDs
+   - Generates per-provider result tables with pass_rate
+   - Persists results and event timeline to MongoDB
 
-5. **Reservation Detail Ops Panel** (`ReservationDetailModal.jsx`):
-   - Payment status indicator (pending/ok)
-   - Room readiness indicator (dirty/cleaning/ready)
-   - VIP/repeat guest badges
-   - Guest preferences display
+4. **API Endpoints** (`routers/sandbox_router.py`):
+   - `POST /api/channel-manager/v2/sandbox/simulate` — Run simulation
+   - `GET /api/channel-manager/v2/sandbox/results` — List results
+   - `GET /api/channel-manager/v2/sandbox/results/{run_id}` — Specific result
+   - `GET /api/channel-manager/v2/sandbox/timeline/{run_id}` — Event timeline
+   - `DELETE /api/channel-manager/v2/sandbox/cleanup/{run_id}` — Clean up
 
-6. **Room Alternatives API** (`pms.py`):
-   - `GET /api/pms/room-alternatives/{room_number}`
-   - Returns same-type and different-type available rooms
+5. **Testing**: 24/24 tests pass (9 unit + 15 API)
+
+### Done Criteria Met:
+| Criteria | Result |
+|----------|--------|
+| duplicate delivery → 0 double inventory | ✅ PASS |
+| delayed ack → 0 inconsistent state | ✅ PASS |
+| retry storm → 0 oversell | ✅ PASS |
+| stale provider state → reconciliation recovers | ✅ PASS |
+| modify/cancel races → deterministic | ✅ PASS |
+| Exely separate result table | ✅ PASS |
+| HotelRunner separate result table | ✅ PASS |
+| Events in timeline | ✅ PASS (46 events per run) |
 
 ## Key Endpoints
 - `POST /api/auth/login` → `{access_token, user, tenant}`
 - `GET /api/pms/operational-alerts` → `{alerts[], summary{}, available_clean_rooms[]}`
 - `GET /api/pms/room-alternatives/{room_number}` → `{same_type[], other_type[]}`
-- `GET /api/pms/dashboard` → room stats
-- `GET /api/pms/rooms` → room list
-- `GET /api/pms/bookings` → booking list
+- `POST /api/channel-manager/v2/sandbox/simulate` → simulation report
+- `GET /api/channel-manager/v2/sandbox/results` → recent results
+- `GET /api/channel-manager/v2/sandbox/timeline/{run_id}` → event timeline
 
 ## Test Credentials
 | User | Email | Password | Role |
 |------|-------|----------|------|
 | Demo Admin | demo@hotel.com | demo123 | super_admin |
 
-## Backlog (P1)
-- Sandbox Simulation (Exely/HotelRunner) — duplicate delivery, delayed ack, retry storm, stale provider state
-- SEC-001 Secrets Management — rotation + rollback plan
-- SEC-002 Crypto Migration — dual-read / dual-write transition plan
+## Backlog (P1 — Next)
+- SEC-001 Secrets Management — rotation + rollback plan, tenant/provider-scoped, access audit trail
+- SEC-002 Crypto Migration — dual-read/dual-write, migration cutover metric, failed decrypt fallback, key versioning
 
 ## Backlog (P1.5)
 - Alert → Business KPI Correlation — severity + runbook link + tenant/property/provider context
 
 ## Backlog (P2)
+- Wire failure tracking (import bridge, outbox worker, ARI push engine)
+- `/api/ops/*` admin guard protection
 - Strict Tenant Mode
 - Legacy db import migration (~264 imports)
 - pms.py decomposition (2714 lines → modular services)
@@ -104,3 +108,4 @@ All foundational layers: Notification, Auto-Action Engine, Unified Ops View, Con
 - AWS KMS, HashiCorp Vault
 - PII masking, stress testing
 - Motor → pymongo migration
+- HMR guard decommission (when proxy/WebSocket/HMR chain is natively stable)

@@ -4,6 +4,8 @@
 - [x] SEC-001: Secrets Management Architecture
 - [x] SEC-002: Production-Grade Encryption (AES-256-GCM)
 - [x] OPS-001: Production-Grade Control Plane (Failure Model + Ops APIs + Alerting + Runbooks)
+- [x] P0: HMR Auto-Refresh Permanent Fix (3-layer defense + regression tests)
+- [x] P1: Sandbox Simulation (5 scenarios × 2 providers, 100% pass rate)
 
 ## P0 — Immediate
 - [ ] Wire failure tracking into import bridge (record failures to cp_failures)

@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## [2026-03-23] P1 Sandbox Simulation — Channel Manager Resilience Testing
+
+### Sandbox Simulation Framework
+- **New**: `/app/backend/channel_manager/application/sandbox_simulation/` — Full resilience test suite
+  - `provider_harness.py`: Synthetic data generators for HotelRunner and Exely providers
+  - `scenarios.py`: 5 resilience scenarios (duplicate delivery, delayed ack, retry storm, stale provider state, modify/cancel race)
+  - `engine.py`: Orchestrator with per-provider fixtures, result aggregation, cleanup
+- **New**: `/app/backend/channel_manager/interfaces/routers/sandbox_router.py` — API endpoints
+  - `POST /api/channel-manager/v2/sandbox/simulate` — Run full simulation
+  - `GET /api/channel-manager/v2/sandbox/results` — List recent results
+  - `GET /api/channel-manager/v2/sandbox/results/{run_id}` — Specific result
+  - `GET /api/channel-manager/v2/sandbox/timeline/{run_id}` — Event timeline
+  - `DELETE /api/channel-manager/v2/sandbox/cleanup/{run_id}` — Cleanup
+
+### HMR Guard Improvements
+- **Feature flag**: `VITE_HMR_GUARD_ENABLED` env var controls HMR reload guard activation
+- **Upstream compat check**: `scripts/check-vite-compat.js` — CI-ready script that detects Vite client changes
+
+### Testing
+- 24/24 tests passed (9 unit + 15 API)
+- Both HotelRunner and Exely achieve 100% pass rate (10/10 scenarios)
+- All done criteria met: 0 double inventory, 0 inconsistent state, 0 oversell, reconciliation recovery, deterministic races
+
+---
+
 ## [2026-03-23] Notification Layer + Auto-Action + Unified Ops View Redesign
 
 ### Notification Routing (Config-Driven)
