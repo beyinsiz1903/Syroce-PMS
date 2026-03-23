@@ -298,6 +298,89 @@ async def acknowledge_drift_alert_endpoint(
     return {"success": True, "alert_id": alert_id, "status": "acknowledged"}
 
 
+# ── Auto-Actions ────────────────────────────────────────────────
+
+@router.get("/auto-actions")
+async def get_auto_actions_endpoint(
+    tenant_id: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """Auto-action history — automated responses to severe alerts."""
+    from .auto_actions import get_auto_action_history
+    actions = await get_auto_action_history(tenant_id=tenant_id, limit=limit)
+    return {"actions": actions, "count": len(actions)}
+
+
+@router.get("/ops-kpis")
+async def get_ops_kpis_endpoint(
+    tenant_id: Optional[str] = Query(None),
+    hours: int = Query(24, ge=1, le=168),
+):
+    """Unified KPI panel data — MTTR, drift trend, sync success, auto-heal stats."""
+    from core.database import db as _db
+    from .drift_alerting import get_drift_alert_summary, COLL_DRIFT_ALERTS, COLL_DRIFT_EVAL_LOG
+    from .auto_actions import COLL_AUTO_ACTIONS
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(hours=hours)).isoformat()
+
+    # Drift alert stats
+    drift_summary = await get_drift_alert_summary(tenant_id=tenant_id)
+
+    # Auto-action stats
+    total_actions = await _db[COLL_AUTO_ACTIONS].count_documents(
+        {"executed_at": {"$gte": cutoff}}
+    )
+    success_actions = await _db[COLL_AUTO_ACTIONS].count_documents(
+        {"executed_at": {"$gte": cutoff}, "status": {"$in": ["success", "partial"]}}
+    )
+    failed_actions = await _db[COLL_AUTO_ACTIONS].count_documents(
+        {"executed_at": {"$gte": cutoff}, "status": "failed"}
+    )
+
+    # Evaluation history for drift trend
+    eval_logs = await _db[COLL_DRIFT_EVAL_LOG].find(
+        {"evaluated_at": {"$gte": cutoff}},
+        {"_id": 0, "evaluated_at": 1, "drift_records": 1, "drift_nights": 1, "alignment_status": 1},
+    ).sort("evaluated_at", 1).to_list(500)
+
+    drift_trend = []
+    for ev in eval_logs:
+        drift_trend.append({
+            "time": ev.get("evaluated_at", ""),
+            "drift_records": ev.get("drift_records", 0),
+            "drift_nights": ev.get("drift_nights", 0),
+            "status": ev.get("alignment_status", "unknown"),
+        })
+
+    # Channel health KPIs (sync success, MTTR)
+    try:
+        from .channel_health_aggregator import compute_field_kpis
+        field_kpis = await compute_field_kpis(tenant_id=tenant_id, period_hours=hours)
+    except Exception:
+        field_kpis = {}
+
+    return {
+        "period_hours": hours,
+        "calculated_at": now.isoformat(),
+        "drift_alerts": drift_summary,
+        "auto_actions": {
+            "total": total_actions,
+            "success": success_actions,
+            "failed": failed_actions,
+            "success_rate": round(success_actions / total_actions * 100, 1) if total_actions > 0 else 100.0,
+        },
+        "drift_trend": drift_trend[-50:],
+        "field_kpis": {
+            "sync_success": field_kpis.get("sync_success", {}),
+            "mttr_hours": field_kpis.get("mttr_hours", {}),
+            "drift_reduction": field_kpis.get("drift_reduction", {}),
+            "push_sla_compliance": field_kpis.get("push_sla_compliance", {}),
+        },
+    }
+
+
 # ── Deploy event ingestion (separate prefix for CI/CD webhook) ───
 deploy_router = APIRouter(prefix="/api/ops", tags=["Deploy Events"])
 

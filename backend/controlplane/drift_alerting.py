@@ -4,20 +4,21 @@ Drift Threshold Alerting — Inventory Drift Alert Engine
 Transforms the Ops screen from passive visibility to active intervention.
 
 Thresholds:
-  - warning:  1+ drift record in 15 min window
-  - critical: 3+ room-night drift in 15 min window
-  - severe:   drift persists after reconciliation
+  - warning:  1+ drift record in 15 min window  → dashboard only
+  - critical: 3+ room-night drift in 15 min window → ALERT_WEBHOOK_URL
+  - severe:   drift persists after reconciliation → ALERT_WEBHOOK_URL + ESCALATION_WEBHOOK_URL
 
 Alert payload:
   tenant, property, provider, drift_count, drift_nights,
   drift_or_stale, last_reconciliation_result, runbook_link
 
-Channels:
-  1. Database (cp_drift_alerts) — always active
-  2. Log — always active
-  3. Webhook (via AlertingEngine) — if ALERT_WEBHOOK_URL is set
+Notification routing (config-driven, no-op if URLs absent):
+  warning  → cp_drift_alerts + log only
+  critical → cp_drift_alerts + log + ALERT_WEBHOOK_URL
+  severe   → cp_drift_alerts + log + ALERT_WEBHOOK_URL + ESCALATION_WEBHOOK_URL + auto-action
 """
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -36,6 +37,13 @@ THRESHOLDS = {
     "warning": {"drift_records": 1, "drift_nights": 0},
     "critical": {"drift_records": 0, "drift_nights": 3},
     "severe": {"post_recon_drift": True},
+}
+
+# Notification routing matrix
+NOTIFICATION_ROUTING = {
+    "warning": {"dashboard": True, "webhook": False, "escalation": False},
+    "critical": {"dashboard": True, "webhook": True, "escalation": False},
+    "severe": {"dashboard": True, "webhook": True, "escalation": True},
 }
 
 RUNBOOK_LINK = "/api/ops/runbooks/inventory_drift_detected"
@@ -343,9 +351,7 @@ async def _fire_drift_alert(
     reason: str,
     now: datetime,
 ) -> Optional[Dict[str, Any]]:
-    """Fire a drift alert if not in cooldown."""
-    cooldown_key = f"{tenant_id}_{severity}"
-
+    """Fire a drift alert with severity-based routing."""
     # Check cooldown: same tenant + severity within last COOLDOWN_MINUTES
     cooldown_cutoff = (now - timedelta(minutes=COOLDOWN_MINUTES)).isoformat()
     recent = await db[COLL_DRIFT_ALERTS].find_one(
@@ -390,6 +396,9 @@ async def _fire_drift_alert(
         "acknowledged": False,
         "acknowledged_at": None,
         "acknowledged_by": None,
+        "notification_routing": NOTIFICATION_ROUTING.get(severity, {}),
+        "auto_action_triggered": False,
+        "auto_action_result": None,
         "payload": {
             "tenant": tenant_id,
             "property": alignment.get("date_range", {}).get("start", ""),
@@ -423,23 +432,101 @@ async def _fire_drift_alert(
     except Exception as e:
         logger.exception("Failed to persist drift alert: %s", e)
 
-    # Also fire through the general alerting engine for webhook delivery
-    try:
-        from .alerting import get_alerting_engine, AlertSeverity
-        engine = get_alerting_engine()
-        alert_severity_map = {
-            "warning": AlertSeverity.WARNING,
-            "critical": AlertSeverity.CRITICAL,
-            "severe": AlertSeverity.CRITICAL,
-        }
-        await engine.fire(
-            trigger=f"inventory_drift_{severity}",
-            severity=alert_severity_map.get(severity, AlertSeverity.WARNING),
-            title=f"Inventory Drift Alert [{severity.upper()}]",
-            message=reason,
-            context=alert["payload"],
-        )
-    except Exception as e:
-        logger.debug("Alerting engine relay failed: %s", e)
+    # Notification routing based on severity
+    routing = NOTIFICATION_ROUTING.get(severity, {})
+
+    # Webhook notification (critical + severe)
+    if routing.get("webhook"):
+        await _send_webhook_notification(alert, "ALERT_WEBHOOK_URL")
+
+    # Escalation webhook (severe only)
+    if routing.get("escalation"):
+        await _send_webhook_notification(alert, "ESCALATION_WEBHOOK_URL")
+
+    # Auto-action for severe alerts
+    if severity == "severe":
+        try:
+            from .auto_actions import execute_auto_action
+            action_result = await execute_auto_action(
+                action_type="reconciliation",
+                tenant_id=tenant_id,
+                alert_id=alert["alert_id"],
+                reason=reason,
+                providers=evidence.get("providers_with_drift", []),
+            )
+            alert["auto_action_triggered"] = True
+            alert["auto_action_result"] = action_result
+            # Update persisted alert
+            await db[COLL_DRIFT_ALERTS].update_one(
+                {"alert_id": alert["alert_id"]},
+                {"$set": {
+                    "auto_action_triggered": True,
+                    "auto_action_result": action_result,
+                }},
+            )
+        except Exception as e:
+            logger.exception("Auto-action failed for drift alert: %s", e)
 
     return alert
+
+
+async def _send_webhook_notification(alert: Dict[str, Any], url_env_key: str) -> None:
+    """Send alert via webhook. Config-driven: no-op if URL not set."""
+    webhook_url = os.environ.get(url_env_key, "")
+    if not webhook_url:
+        logger.debug("Webhook skipped: %s not configured", url_env_key)
+        return
+
+    try:
+        import aiohttp
+        severity = alert.get("severity", "unknown")
+        payload_data = alert.get("payload", {})
+        severity_emoji = {"severe": ":rotating_light:", "critical": ":warning:", "warning": ":large_yellow_circle:"}
+        emoji = severity_emoji.get(severity, ":bell:")
+
+        providers_str = ", ".join(payload_data.get("providers", [])) or "N/A"
+        slack_payload = {
+            "text": f"{emoji} *Inventory Drift Alert [{severity.upper()}]*\n{alert.get('reason', '')}",
+            "blocks": [
+                {
+                    "type": "header",
+                    "text": {"type": "plain_text", "text": f"Drift Alert: {severity.upper()}"},
+                },
+                {
+                    "type": "section",
+                    "fields": [
+                        {"type": "mrkdwn", "text": f"*Severity:* {severity}"},
+                        {"type": "mrkdwn", "text": f"*Tenant:* {alert.get('tenant_id', 'N/A')}"},
+                        {"type": "mrkdwn", "text": f"*Providers:* {providers_str}"},
+                        {"type": "mrkdwn", "text": f"*Drift Count:* {payload_data.get('drift_count', 0)}"},
+                        {"type": "mrkdwn", "text": f"*Drift Nights:* {payload_data.get('drift_nights', 0)}"},
+                        {"type": "mrkdwn", "text": f"*Status:* {payload_data.get('drift_or_stale', 'unknown')}"},
+                    ],
+                },
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": alert.get("reason", "")},
+                },
+                {
+                    "type": "context",
+                    "elements": [
+                        {"type": "mrkdwn", "text": f"Runbook: {payload_data.get('runbook_link', 'N/A')}"},
+                        {"type": "mrkdwn", "text": f"Fired: {alert.get('fired_at', '')}"},
+                    ],
+                },
+            ],
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                webhook_url, json=slack_payload,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status >= 400:
+                    logger.warning("Webhook %s delivery failed: status=%d", url_env_key, resp.status)
+                else:
+                    logger.info("Webhook %s delivered for alert %s", url_env_key, alert.get("alert_id"))
+    except ImportError:
+        logger.debug("aiohttp not installed — webhook disabled")
+    except Exception:
+        logger.exception("Webhook %s delivery error", url_env_key)
