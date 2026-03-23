@@ -19,8 +19,28 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - Crypto engine for sensitive data
 - Outbox pattern for reliable event publishing
 - Comprehensive battle test suite (540+ tests)
+- Channel Health Dashboard in Control Plane
 
 ## What's Been Completed
+
+### Channel Health Dashboard (2026-03-23)
+- **Backend:** New `/api/ops/dashboard/channel-health` endpoint with 6 aggregation pipelines
+  - Push latency percentiles (p50/p95/p99) from `cm_rate_push_metrics`
+  - Sync success rate per provider from `cm_sync_jobs`
+  - Failure breakdown by category (timeout/validation/mapping/auth/provider)
+  - Reconciliation drift count from `cm_reconciliation_issues`
+  - Retry success rate from rate push metrics
+  - Provider-based SLA compliance scoring
+- **Frontend:** New "Kanal Sagligi" tab in Control Plane (`ControlPlane.jsx`)
+  - KPI summary strip (latency, sync rate, drift count, retry rate)
+  - Push latency distribution bars with p50/p95/p99
+  - Stacked failure breakdown chart with color-coded categories
+  - Reconciliation drift cards per provider with issue type breakdown
+  - Provider SLA compliance cards (compliant/warning/breached)
+  - Provider sync detail section with success/failure/duration metrics
+  - Auto-refresh every 60s + manual refresh button
+- **Files:** `channel_health_aggregator.py`, `ChannelHealthDashboard.jsx`, `ControlPlane.jsx`
+- **Testing:** 12/12 backend tests passed, 10/10 frontend elements verified
 
 ### Documentation & Quality Hardening (2026-03)
 - **README drift fixed:** `REACT_APP_BACKEND_URL` -> `VITE_BACKEND_URL` in Quick Start and Environment Variables
@@ -53,6 +73,7 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - [x] Quarantine test restoration (7 files + 10 individual tests)
 - [x] CI/CD deployment jobs (deploy.yml graceful-skip pattern)
 - [x] Documentation drift resolution (README, CHANGELOG, ADR-002)
+- [x] Channel Health Dashboard in Control Plane (push latency p50/p95/p99, sync success rate, failure breakdown, reconciliation drift, retry success rate, provider SLA)
 
 ## P1 — Upcoming
 - [ ] Fix remaining quarantined tests: stale_fixtures (rate_manager, 10 tests)
@@ -60,9 +81,11 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - [ ] Fix remaining quarantined tests: changed_implementation (13 tests)
 - [ ] Channel manager inventory ledger alignment with room-type system
 - [ ] Exely/HotelRunner sandbox testing (per capability matrix gaps)
+- [ ] CI/CD actual deployment logic (Docker build/push, Kubernetes manifests)
 
 ## P2 — Backlog
 - [ ] Fix remaining quarantined tests: external_dependency (3 tests)
+- [ ] Backend test env var unification (REACT_APP_BACKEND_URL -> VITE_BACKEND_URL)
 - [ ] Crypto Migration (SEC-002) — will fix crypto v2 tests
 - [ ] Secrets Management Rollout (SEC-001)
 - [ ] Enable Strict Tenant Mode
@@ -80,6 +103,7 @@ Full-stack hotel PMS (Property Management System) application with multi-tenant 
 - **Quarantine Fix Pattern:** Far-future dates (3000-6000 day offsets), sync pymongo for DB verification in sync tests, cleanup-before-seed for fixture isolation.
 - **yarn audit CI Gate:** Uses bitmask check `(exit_code & 24) != 0` to only fail on HIGH/CRITICAL.
 - **Deploy graceful-skip:** All deploy jobs check for secrets existence before attempting deployment; missing secrets = warning + exit 0.
+- **Channel Health Aggregator:** Uses MongoDB aggregation pipelines with $lookup to join metrics with connector provider info. Percentile calculation uses linear interpolation on sorted arrays.
 
 ## Test Credentials
 | User | Email | Password | Role |
