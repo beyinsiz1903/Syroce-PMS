@@ -1,4 +1,13 @@
 # Syroce PMS — Changelog
+## 2026-03-23: ESLint ajv Uyumluluk Düzeltmesi
+
+### Bug Fix
+- **Sorun:** ESLint 9.23.0, `ajv@^6.12.4` gerektiriyor ama `package.json` resolutions `"ajv": ">=6.14.0"` ile `ajv@8.18.0` yükleniyordu
+- **Hata:** `TypeError: Cannot set properties of undefined (setting 'defaultMeta')` — ajv v8 API'si v6 ile uyumsuz
+- **Düzeltme:** Resolution `"ajv": "6.12.6"` olarak değiştirildi (güvenlik yaması dahil, ESLint uyumlu)
+- **Sonuç:** ESLint artık CI/CD pipeline'da hatasız çalışıyor
+
+
 
 ## 2026-03-23: CRA → Vite Migration (Frontend Build Modernization)
 

@@ -11,7 +11,7 @@ import requests
 # Get BASE_URL from environment
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 if not BASE_URL:
-    BASE_URL = "https://cra-vite-prep.preview.emergentagent.com"
+    BASE_URL = "https://react-to-vite-1.preview.emergentagent.com"
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
