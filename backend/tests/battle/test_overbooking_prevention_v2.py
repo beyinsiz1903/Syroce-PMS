@@ -30,7 +30,7 @@ import httpx
 import pytest
 
 # Use public URL from environment
-API_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://race-guard.preview.emergentagent.com").rstrip("/")
+API_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://inventory-shield-2.preview.emergentagent.com").rstrip("/")
 
 # Use unique year range per test run to avoid date collisions
 _RUN_TAG = random.randint(2060, 2099)
