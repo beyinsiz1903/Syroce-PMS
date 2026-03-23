@@ -15,7 +15,7 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 - `/app/backend/docs/ADR_BOOKING_INVARIANTS.md` — ADR-001: Booking invariants
 - `/app/backend/docs/ADR_TEST_QUARANTINE_STRATEGY.md` — ADR-002: Test quarantine strategy
 - `/app/backend/docs/ADR_ROOM_TYPE_INVENTORY_STRATEGY.md` — ADR-003: Room-type inventory (3-layer model)
-- `/app/backend/docs/SECURITY_ACCEPTED_RISKS.md` — Accepted frontend vulnerability risks
+- `/app/backend/docs/SECURITY_ACCEPTED_RISKS.md` — Accepted frontend vulnerability risks (updated 2026-03-28)
 - `/app/frontend/src/pages/ControlPlane.jsx` — Control Plane UI (ops weapon)
 
 ## Credentials
@@ -24,6 +24,11 @@ Hotel PMS + Channel Manager platform. FastAPI backend, MongoDB, Redis. Multi-ten
 | Demo Admin | demo@hotel.com | demo123 | super_admin |
 
 ## Completed Features
+
+### Frontend Dependency Hardening — Bucket 1 (2026-03-28)
+5 packages resolved via yarn resolutions: lodash, qs, postcss, diff, @eslint/plugin-kit.
+29 → 14 vulnerabilities (52% reduction). ajv resolution attempted & reverted (CRA incompatible).
+Remaining 14 are CRA-locked build-time only. CI gate `--level high` passes.
 
 ### Phase C.1 — Room-Type Inventory Materialized View (2026-03-28)
 ADR-003 Layer 2 implementation. Read-only materialized view of room-type-level availability.
@@ -84,10 +89,11 @@ Deploy Pipeline, Governance & Metering, Control Plane, Chaos Testing, Core Battl
 - PMS battle tests: split reservation, no-show, room change
 - Align channel manager inventory ledger with hardened booking system
 
-### P1 — Frontend Dependency Hardening
-- Add yarn resolutions for Bucket 1 packages (lodash, ajv, qs, postcss, diff)
-- Evaluate @craco/craco removal and react-scripts 6.x upgrade
-- Long-term: CRA → Vite migration
+### P1 — Frontend Dependency Hardening (Bucket 1 DONE)
+- [x] yarn resolutions for Bucket 1: lodash, qs, postcss, diff, @eslint/plugin-kit (29→14 vulns)
+- [x] ajv resolution attempted & reverted (CRA incompatible)
+- [ ] Evaluate @craco/craco removal and react-scripts 6.x upgrade
+- [ ] Long-term: CRA → Vite migration (eliminates remaining 14 vulns)
 
 ### P1 — Quarantined Tests
 - Fix tests in `tests/_quarantine/` starting with stale_dates category

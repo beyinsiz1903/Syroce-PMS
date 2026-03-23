@@ -1,5 +1,27 @@
 # Syroce PMS — Changelog
 
+## 2026-03-28: Frontend Dependency Hardening — Bucket 1 yarn resolutions
+
+### Resolved Vulnerabilities (5 packages)
+- **lodash** → `>=4.17.23` (Prototype Pollution — 8 paths resolved)
+- **qs** → `>=6.14.2` (DoS via arrayLimit bypass — 4 paths resolved)
+- **postcss** → `>=8.4.31` (Line return parsing error — 1 path resolved)
+- **diff** → `>=4.0.4` (DoS in parsePatch — 1 path resolved)
+- **@eslint/plugin-kit** → `>=0.3.4` (ReDoS — 1 path resolved)
+
+### Attempted & Reverted
+- **ajv** `>=6.14.0` — Breaks `ajv-keywords` v3 / `fork-ts-checker-webpack-plugin` in CRA build chain. v6.14.0 does not exist; fix only in v8+ (CRA incompatible).
+
+### Remaining (CRA-locked, build-time only)
+- 14 vulnerabilities: ajv v6 (x4), ajv v8 (x5), webpack-dev-server (x2), @tootallnate/once (x3)
+- All require CRA → Vite migration
+- CI gate `yarn audit --level high` passes (0 high, 0 critical)
+
+### Result
+- **29 → 14 vulnerabilities** (52% reduction)
+- Frontend verified working, all 80 backend battle tests passing
+- `SECURITY_ACCEPTED_RISKS.md` updated with resolution status
+
 ## 2026-03-28: Phase C.1 — Room-Type Inventory Materialized View (ADR-003)
 
 ### New Service: `core/room_type_inventory_service.py`

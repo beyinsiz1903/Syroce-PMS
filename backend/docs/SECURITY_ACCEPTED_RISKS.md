@@ -6,38 +6,34 @@
 
 ---
 
-## Current State: 29 Vulnerabilities (7 Low + 22 Moderate)
+## Current State: 14 Vulnerabilities (3 Low + 11 Moderate)
 
-All remaining vulnerabilities are in **build-time toolchain** dependencies (`react-scripts`, `@craco/craco`, `eslint`). None affect production runtime.
+After Bucket 1 yarn resolutions (2026-03-28), reduced from 29 → 14. All remaining vulnerabilities are in **build-time toolchain** dependencies (`react-scripts`, `@craco/craco`). None affect production runtime. Resolution is only possible via CRA → Vite migration.
 
 ---
 
 ## Vulnerability Classification
 
-### Bucket 1: Patch ile Cozulur (Resolution/Patch Available)
+### Bucket 1: RESOLVED via yarn resolutions (2026-03-28)
 
-| Package | Severity | CVE | Root Dependency | Patched Version | Remediation |
-|---------|----------|-----|-----------------|-----------------|-------------|
-| `lodash` 4.17.21 | MODERATE | CVE-2025-13465 | `@craco/craco`, `react-scripts` (8 paths) | >=4.17.23 | `yarn resolutions`: `"lodash": ">=4.17.23"` |
-| `ajv` 6.12.6 | MODERATE | CVE-2025-69873 | `eslint`, `react-scripts` (3 paths) | >=6.14.0 | `yarn resolutions`: `"ajv": ">=6.14.0"` |
-| `qs` 6.14.0 | MODERATE+LOW | CVE-2026-2391, CVE-2025-15284 | `react-scripts>webpack-dev-server>express` (4 paths) | >=6.14.2 | `yarn resolutions`: `"qs": ">=6.14.2"` |
-| `postcss` <8.4.31 | MODERATE | N/A | `react-scripts>resolve-url-loader` (1 path) | >=8.4.31 | `yarn resolutions`: `"postcss": ">=8.4.31"` |
-| `@eslint/plugin-kit` 0.2.8 | LOW | GHSA-xffm-g5w8-qvg7 | `eslint` (1 path) | >=0.3.4 | `yarn resolutions` or eslint upgrade |
-| `diff` 4.0.2 | LOW | CVE-2026-24001 | `@craco/craco>cosmiconfig-typescript-loader>ts-node` (1 path) | >=4.0.4 | `yarn resolutions`: `"diff": ">=4.0.4"` |
+| Package | Status | Resolution Applied |
+|---------|--------|--------------------|
+| `lodash` | FIXED | `"lodash": ">=4.17.23"` |
+| `qs` | FIXED | `"qs": ">=6.14.2"` |
+| `postcss` | FIXED | `"postcss": ">=8.4.31"` |
+| `diff` | FIXED | `"diff": ">=4.0.4"` |
+| `@eslint/plugin-kit` | FIXED | `"@eslint/plugin-kit": ">=0.3.4"` |
 
-### Bucket 2: Major Upgrade Ister
+**Note:** `ajv` resolution (`>=6.14.0`) was attempted but removed — breaks `ajv-keywords` v3 compatibility in CRA build chain. v6.14.0 does not exist in npm registry; fix only available in v8+ which is incompatible with CRA's webpack plugin chain.
 
-| Package | Severity | CVE | Root Dependency | Patched Version | Notes |
-|---------|----------|-----|-----------------|-----------------|-------|
-| `ajv` 8.x | MODERATE | CVE-2025-69873 | `react-scripts>@pmmmwh/*`, `react-scripts>webpack>terser-webpack-plugin`, `react-scripts>workbox-webpack-plugin` (4 paths) | >=8.18.0 | Requires webpack plugin chain upgrades |
-| `webpack-dev-server` 4.x | MODERATE x2 | GHSA-* | `react-scripts` (2 advisories) | >=5.2.1 | CRA pins webpack-dev-server 4.x; major version requires CRA 6+ or eject |
+### Bucket 2: CRA-Locked (Cannot resolve without migration)
 
-### Bucket 3: Toolchain Migration Ister (CRA/react-scripts Cikmak Gerekir)
-
-| Package | Severity | Root Cause | Long-term Fix |
-|---------|----------|-----------|---------------|
-| `@tootallnate/once` | LOW (3 paths) | `react-scripts>jest>jsdom` chain | Migrate to Vite or Next.js (eliminates CRA dependency tree) |
-| `webpack-dev-server` | MODERATE (2 advisories) | CRA pins old WDS | Same — Vite eliminates webpack dependency |
+| Package | Severity | Paths | Root Cause | Fix |
+|---------|----------|-------|-----------|-----|
+| `ajv` v6 | MODERATE | x4 | `react-scripts` internals | Requires CRA → Vite |
+| `ajv` v8 | MODERATE | x5 | `webpack>terser-webpack-plugin`, `workbox-webpack-plugin` | Requires CRA → Vite |
+| `webpack-dev-server` 4.x | MODERATE | x2 | CRA pins WDS 4.x | Requires CRA → Vite |
+| `@tootallnate/once` | LOW | x3 | `jest>jsdom>http-proxy-agent` chain | Requires CRA → Vite |
 
 ---
 
@@ -54,21 +50,23 @@ All remaining vulnerabilities are in **build-time toolchain** dependencies (`rea
 
 ## Remediation Plan
 
-### Short-term (Next Sprint)
-- [ ] Add `yarn resolutions` for Bucket 1 packages (lodash, ajv v6, qs, postcss, diff, @eslint/plugin-kit)
-- [ ] Estimate: ~30 min, reduces count from 29 to ~10
+### Short-term: DONE (2026-03-28)
+- [x] Added `yarn resolutions` for Bucket 1 packages (lodash, qs, postcss, diff, @eslint/plugin-kit)
+- [x] Result: 29 → 14 vulnerabilities (52% reduction)
+- [x] `ajv` resolution attempted and reverted (CRA incompatible)
 
 ### Medium-term (Backlog)
 - [ ] Evaluate `@craco/craco` removal (replaces with `react-app-rewired` or eject)
 - [ ] Evaluate `react-scripts` 6.x upgrade path
 
 ### Long-term (Planned)
-- [ ] CRA → Vite migration (eliminates all remaining build-time vulnerabilities)
+- [ ] CRA → Vite migration (eliminates all 14 remaining build-time vulnerabilities)
 - [ ] Removes dependency on `webpack-dev-server`, old `jest`/`jsdom` chain, `@craco/craco`
 
 ---
 
 ## References
-- Previous fix: 87 → 29 vulnerabilities (2026-03-27, see CHANGELOG.md)
-- CI gate: `.github/workflows/ci-cd.yml` → `yarn audit --level high`
+- Initial fix: 87 → 29 vulnerabilities (2026-03-27, see CHANGELOG.md)
+- Bucket 1 fix: 29 → 14 vulnerabilities (2026-03-28, yarn resolutions)
+- CI gate: `.github/workflows/ci-cd.yml` → `yarn audit --level high` (passes with 0 high, 0 critical)
 - ADR-003 Note: Phase C delivery not blocked by these vulnerabilities
