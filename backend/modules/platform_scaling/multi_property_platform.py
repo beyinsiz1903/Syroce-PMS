@@ -126,7 +126,7 @@ class CentralReservationService:
                     "property_id": pid,
                     "property_name": prop.get("hotel_name") or prop.get("name", pid),
                     "available_rooms": len(available_rooms),
-                    "room_types": list(set(r.get("room_type", "Standard") for r in available_rooms)),
+                    "room_types": list({r.get("room_type", "Standard") for r in available_rooms}),
                     "min_rate": min(r.get("base_price", 0) for r in available_rooms) if available_rooms else 0,
                     "max_rate": max(r.get("base_price", 0) for r in available_rooms) if available_rooms else 0,
                 })

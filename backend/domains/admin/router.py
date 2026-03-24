@@ -65,7 +65,7 @@ async def check_permission(
     """Check if current user has a specific permission"""
     if not request.permission or request.permission.strip() == "":
         raise HTTPException(status_code=400, detail="Permission field is required and cannot be empty")
-    
+
     try:
         perm = Permission(request.permission)
         has_perm = has_permission(current_user.role, perm)
@@ -93,9 +93,9 @@ async def get_resource_permissions(
     """
     if user_role.value not in RBAC_V2_PERMISSIONS:
         raise HTTPException(status_code=404, detail="Role not found")
-    
+
     role_permissions = RBAC_V2_PERMISSIONS[user_role.value]
-    
+
     if resource not in role_permissions:
         return {
             'user_role': user_role.value,
@@ -103,9 +103,9 @@ async def get_resource_permissions(
             'permissions': PermissionSet().model_dump(),
             'has_access': False
         }
-    
+
     permissions = role_permissions[resource]
-    
+
     return {
         'user_role': user_role.value,
         'resource': resource,
@@ -122,12 +122,12 @@ async def get_my_permissions(
 ):
     """Get current user's all resource permissions"""
     user_role = current_user.role
-    
+
     if user_role.value not in RBAC_V2_PERMISSIONS:
         return {'error': 'Invalid role'}
-    
+
     all_permissions = RBAC_V2_PERMISSIONS[user_role.value]
-    
+
     return {
         'user_id': current_user.id,
         'user_name': current_user.name,
@@ -201,7 +201,7 @@ async def create_tenant(
     current_user: User = Depends(require_super_admin)
 ):
     """Create a new hotel/tenant (SUPER ADMIN only)"""
-    
+
     # Check if tenant with same email already exists
     existing = await db.tenants.find_one({
         "$or": [{"contact_email": payload.email}, {"email": payload.email}]
@@ -250,10 +250,10 @@ async def create_tenant(
     tenant_dict['phone'] = payload.phone
     tenant_dict['description'] = payload.description or ""
     await db.tenants.insert_one(tenant_dict)
-    
+
     # Create admin user for this tenant
     hashed_password = hash_password(payload.password)
-    
+
     new_user = User(
         tenant_id=new_tenant.id,
         email=payload.email,
@@ -262,13 +262,13 @@ async def create_tenant(
         password_hash=hashed_password,
         role=UserRole.ADMIN
     )
-    
+
     user_dict = new_user.model_dump()
     user_dict['created_at'] = user_dict['created_at'].isoformat()
     # Rename password_hash to hashed_password for login compatibility
     user_dict['hashed_password'] = user_dict.pop('password_hash', hashed_password)
     await db.users.insert_one(user_dict)
-    
+
     return {
         "success": True,
         "message": "Otel başarıyla oluşturuldu",
@@ -290,7 +290,7 @@ async def list_all_users(
     current_user: User = Depends(require_super_admin)
 ):
     """List all users in the system (SUPER ADMIN only)"""
-    
+
     query = {}
     if email_filter:
         query['email'] = {'$regex': email_filter, '$options': 'i'}
@@ -298,9 +298,9 @@ async def list_all_users(
         query['role'] = role_filter
     if tenant_id_filter:
         query['tenant_id'] = tenant_id_filter
-    
+
     users = await db.users.find(query, {'_id': 0, 'hashed_password': 0, 'password_hash': 0}).to_list(100)
-    
+
     return {
         "users": users,
         "count": len(users)
@@ -316,32 +316,32 @@ async def update_user_role(
     current_user: User = Depends(require_super_admin)
 ):
     """Update user role (SUPER ADMIN only)
-    
+
     Allows super admin to change any user's role including making other super admins.
     """
-    
+
     # Validate role
     valid_roles = [role.value for role in UserRole]
     if payload.role not in valid_roles:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail=f"Invalid role. Valid roles: {', '.join(valid_roles)}"
         )
-    
+
     # Find user
     target_user = await db.users.find_one({"id": user_id})
     if not target_user:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
-    
+
     # Update role
     result = await db.users.update_one(
         {"id": user_id},
         {"$set": {"role": payload.role}}
     )
-    
+
     if result.modified_count == 0:
         raise HTTPException(status_code=400, detail="Role güncellenemedi")
-    
+
     return {
         "success": True,
         "message": f"Kullanıcı role'ü başarıyla güncellendi: {payload.role}",
@@ -774,10 +774,10 @@ async def get_current_subscription(
 ):
     """Get current user's subscription"""
     tenant = await db.tenants.find_one({'id': current_user.tenant_id})
-    
+
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    
+
     subscription_tier = tenant.get('subscription_tier', 'basic')
     # Handle legacy tier names
     tier_map = {"pro": "professional", "ultra": "enterprise"}
@@ -786,7 +786,7 @@ async def get_current_subscription(
         plan = SUBSCRIPTION_PLANS.get(SubscriptionTier(normalized_tier))
     except ValueError:
         plan = SUBSCRIPTION_PLANS.get(SubscriptionTier.BASIC)
-    
+
     return {
         'tenant_id': current_user.tenant_id,
         'tier': normalized_tier,
@@ -808,27 +808,27 @@ async def upgrade_subscription(
 ):
     """Upgrade subscription tier"""
     tenant = await db.tenants.find_one({'id': current_user.tenant_id})
-    
+
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    
+
     current_tier = tenant.get('subscription_tier', 'basic')
     tier_map = {"pro": "professional", "ultra": "enterprise"}
     normalized_current = tier_map.get(current_tier, current_tier)
-    
+
     try:
         if SubscriptionTier(normalized_current) == new_tier:
             raise HTTPException(status_code=400, detail="Already on this tier")
     except ValueError:
         pass
-    
+
     plan = SUBSCRIPTION_PLANS.get(new_tier)
     if not plan:
         raise HTTPException(status_code=400, detail="Invalid subscription tier")
-    
+
     # Calculate price
     amount = plan.price_yearly if billing_cycle == 'yearly' else plan.price_monthly
-    
+
     # Get default modules for new tier
     new_modules = get_plan_default_modules(new_tier.value)
 
@@ -844,7 +844,7 @@ async def upgrade_subscription(
             'last_billing_date': datetime.now(timezone.utc).isoformat()
         }}
     )
-    
+
     return {
         'success': True,
         'message': f'Successfully upgraded to {plan.name}',
@@ -1237,15 +1237,15 @@ async def populate_demo_data(
     current_user: User = Depends(get_current_user)
 ):
     """Populate account with realistic demo data"""
-    
+
     # Check if already has data
     existing_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     if existing_rooms > 10:
         raise HTTPException(status_code=400, detail="Account already has data. Cannot populate demo data.")
-    
+
     # Generate demo data
     demo_data = DemoDataGenerator.generate_demo_hotel(current_user.tenant_id, hotel_type)
-    
+
     # Insert demo data
     stats = {
         'rooms': 0,
@@ -1254,22 +1254,22 @@ async def populate_demo_data(
         'staff': 0,
         'inventory': 0
     }
-    
+
     # Insert rooms
     if demo_data['rooms']:
         await db.rooms.insert_many(demo_data['rooms'])
         stats['rooms'] = len(demo_data['rooms'])
-    
+
     # Insert guests
     if demo_data['guests']:
         await db.guests.insert_many(demo_data['guests'])
         stats['guests'] = len(demo_data['guests'])
-    
+
     # Insert bookings
     if demo_data['bookings']:
         await db.bookings.insert_many(demo_data['bookings'])
         stats['bookings'] = len(demo_data['bookings'])
-    
+
     # Insert staff
     if demo_data['staff']:
         # Note: Staff might need to be in users collection with passwords
@@ -1277,12 +1277,12 @@ async def populate_demo_data(
         for staff in demo_data['staff']:
             await db.staff_profiles.insert_one(staff)
         stats['staff'] = len(demo_data['staff'])
-    
+
     # Insert inventory
     if demo_data['inventory']:
         await db.inventory.insert_many(demo_data['inventory'])
         stats['inventory'] = len(demo_data['inventory'])
-    
+
     return {
         'success': True,
         'message': 'Demo data populated successfully',
@@ -1297,13 +1297,13 @@ async def get_demo_status(
     current_user: User = Depends(get_current_user)
 ):
     """Check if account is using demo data"""
-    
+
     rooms_count = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     guests_count = await db.guests.count_documents({'tenant_id': current_user.tenant_id})
     bookings_count = await db.bookings.count_documents({'tenant_id': current_user.tenant_id})
-    
+
     is_demo = rooms_count > 0 and guests_count > 0
-    
+
     return {
         'is_demo': is_demo,
         'has_data': rooms_count > 0,
@@ -1523,14 +1523,14 @@ async def create_sla_config(
     """
     try:
         sla_id = str(uuid.uuid4())
-        
+
         # Check if SLA exists for this category
         existing = await db.sla_configs.find_one({
             'tenant_id': current_user.tenant_id,
             'category': config.category,
             'priority': config.priority
         }, {'_id': 0})
-        
+
         if existing:
             # Update existing
             await db.sla_configs.update_one(
@@ -1561,7 +1561,7 @@ async def create_sla_config(
                 'created_at': datetime.now(timezone.utc).isoformat(),
                 'created_by': current_user.name
             })
-        
+
         return {
             'message': 'SLA yapılandırması kaydedildi',
             'sla_id': sla_id,
@@ -1570,7 +1570,7 @@ async def create_sla_config(
             'response_time': f'{config.response_time_minutes} dakika',
             'resolution_time': f'{config.resolution_time_minutes} dakika'
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save SLA config: {str(e)}")
 
@@ -1588,7 +1588,7 @@ async def get_sla_configs(
         configs = await db.sla_configs.find({
             'tenant_id': current_user.tenant_id
         }, {'_id': 0}).to_list(100)
-        
+
         # If no configs, return defaults
         if not configs:
             configs = [
@@ -1611,12 +1611,12 @@ async def get_sla_configs(
                     'resolution_time_minutes': 60
                 }
             ]
-        
+
         return {
             'configs': configs,
             'count': len(configs)
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get SLA configs: {str(e)}")
 
@@ -1881,7 +1881,7 @@ async def get_system_logs(
     try:
         # Read from audit logs and create application logs
         logs = []
-        
+
         # Get audit logs from database
         filter_dict = {'tenant_id': current_user.tenant_id}
         if search:
@@ -1890,9 +1890,9 @@ async def get_system_logs(
                 {'entity_type': {'$regex': search, '$options': 'i'}},
                 {'user_name': {'$regex': search, '$options': 'i'}}
             ]
-        
+
         audit_logs = await db.audit_logs.find(filter_dict).sort('timestamp', -1).limit(limit).to_list(limit)
-        
+
         for log in audit_logs:
             # Convert audit log to application log format
             log_entry = {
@@ -1906,15 +1906,15 @@ async def get_system_logs(
                 'entity_id': log.get('entity_id'),
                 'details': log.get('changes', {})
             }
-            
+
             # Determine log level based on action
             if 'DELETE' in log['action'] or 'VOID' in log['action']:
                 log_entry['level'] = 'WARN'
             elif 'ERROR' in log['action'] or 'FAIL' in log['action']:
                 log_entry['level'] = 'ERROR'
-            
+
             logs.append(log_entry)
-        
+
         # Add some system logs
         system_logs = [
             {
@@ -1936,14 +1936,14 @@ async def get_system_logs(
                 'details': {'latency_ms': 12}
             }
         ]
-        
+
         logs.extend(system_logs)
         logs.sort(key=lambda x: x['timestamp'], reverse=True)
-        
+
         # Filter by level if specified (after adding all logs)
         if level:
             logs = [log for log in logs if log['level'] == level.upper()]
-        
+
         return {
             'logs': logs[:limit],
             'count': len(logs),
@@ -1959,7 +1959,7 @@ async def get_system_logs(
                 'DEBUG': len([l for l in logs if l['level'] == 'DEBUG'])
             }
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve logs: {str(e)}")
 
@@ -1985,9 +1985,9 @@ async def create_demo_request(request: DemoRequest):
             'created_at': datetime.now(timezone.utc).isoformat(),
             'contacted': False
         }
-        
+
         await db.demo_requests.insert_one(demo_data)
-        
+
         return {
             'success': True,
             'message': 'Demo talebi başarıyla alındı',
@@ -2009,14 +2009,14 @@ async def system_health_check(
     """
     try:
         health_checks = []
-        
+
         # Check database connection
         try:
             await db.command('ping')
             db_latency_start = time.time()
             await db.bookings.find_one({})
             db_latency = (time.time() - db_latency_start) * 1000
-            
+
             health_checks.append({
                 'service': 'MongoDB',
                 'status': 'healthy',
@@ -2030,7 +2030,7 @@ async def system_health_check(
                 'latency_ms': 0,
                 'message': f'Database error: {str(e)}'
             })
-        
+
         # Check API endpoints
         critical_endpoints = [
             {'name': 'Authentication', 'count_collection': 'users'},
@@ -2038,13 +2038,13 @@ async def system_health_check(
             {'name': 'Rooms', 'count_collection': 'rooms'},
             {'name': 'Guests', 'count_collection': 'guests'}
         ]
-        
+
         for endpoint in critical_endpoints:
             try:
                 start_time = time.time()
                 count = await db[endpoint['count_collection']].count_documents({'tenant_id': current_user.tenant_id})
                 latency = (time.time() - start_time) * 1000
-                
+
                 health_checks.append({
                     'service': endpoint['name'],
                     'status': 'healthy',
@@ -2059,11 +2059,11 @@ async def system_health_check(
                     'latency_ms': 0,
                     'message': f'Error: {str(e)}'
                 })
-        
+
         # Overall health status
         unhealthy_count = len([h for h in health_checks if h['status'] == 'unhealthy'])
         overall_status = 'healthy' if unhealthy_count == 0 else 'degraded' if unhealthy_count < 2 else 'critical'
-        
+
         return {
             'overall_status': overall_status,
             'checks': health_checks,
@@ -2072,7 +2072,7 @@ async def system_health_check(
             'unhealthy_count': unhealthy_count,
             'timestamp': datetime.now(timezone.utc).isoformat()
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
 
@@ -2102,19 +2102,19 @@ async def get_security_audit_logs(
 ):
     """Get security audit logs"""
     start_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    
+
     query = {
         'tenant_id': current_user.tenant_id,
         'timestamp': {'$gte': start_date}
     }
-    
+
     if action:
         query['action'] = action
     if user_id:
         query['user_id'] = user_id
-    
+
     logs = await db.audit_logs.find(query, {'_id': 0}).sort('timestamp', -1).limit(100).to_list(100)
-    
+
     return {
         'logs': logs,
         'count': len(logs),
@@ -2133,9 +2133,9 @@ async def get_gdpr_data_requests(
     query = {'tenant_id': current_user.tenant_id}
     if status:
         query['status'] = status
-    
+
     requests_data = await db.gdpr_requests.find(query, {'_id': 0}).sort('created_at', -1).to_list(100)
-    
+
     # Return real data (empty if none)
     return {
         'requests': requests_data,
@@ -2150,12 +2150,12 @@ async def get_gdpr_data_requests(
 @router.get("/compliance/certifications")
 async def get_compliance_certifications(current_user: User = Depends(get_current_user)):
     """Get compliance certifications - REAL DATA from database"""
-    
+
     # Get from database
     certs = await db.certifications.find({
         'tenant_id': current_user.tenant_id
     }, {'_id': 0}).to_list(10)
-    
+
     # If no data, return empty
     return {
         'certifications': certs,

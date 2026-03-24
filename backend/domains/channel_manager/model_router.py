@@ -149,7 +149,7 @@ async def get_connection(
         raise HTTPException(status_code=404, detail="Connection not found")
     # Mask credentials
     if "credentials" in conn:
-        conn["credentials"] = {k: "***" for k in conn["credentials"]}
+        conn["credentials"] = dict.fromkeys(conn["credentials"], "***")
     return conn
 
 

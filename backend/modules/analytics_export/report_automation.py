@@ -5,12 +5,12 @@ Otomatik rapor email gönderimi, PDF generation, scheduling
 
 class ReportAutomation:
     """Otomatik rapor gönderimi"""
-    
+
     def __init__(self, db, email_service):
         self.db = db
         self.email_service = email_service
         self.scheduled_reports = []
-    
+
     async def generate_flash_report_email(self, tenant_id: str, report_data: dict) -> str:
         """Flash report HTML email oluştur"""
         html = f"""
@@ -21,9 +21,9 @@ class ReportAutomation:
             <style>
                 body {{ font-family: Arial, sans-serif; color: #333; }}
                 .container {{ max-width: 800px; margin: 0 auto; padding: 20px; }}
-                .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                           color: white; padding: 30px; text-align: center; }}
-                .metric-card {{ background: #f9f9f9; padding: 20px; margin: 10px 0; 
+                .metric-card {{ background: #f9f9f9; padding: 20px; margin: 10px 0;
                                border-left: 4px solid #667eea; }}
                 .metric-value {{ font-size: 36px; font-weight: bold; color: #667eea; }}
             </style>
@@ -46,7 +46,7 @@ class ReportAutomation:
         </html>
         """
         return html
-    
+
     async def send_flash_report_email(self, tenant_id: str, recipients: list):
         """Flash report'u email ile gönder"""
         print(f"📧 Sending flash report to {len(recipients)} recipients")

@@ -175,7 +175,7 @@ async def get_connector(
         raise HTTPException(status_code=404, detail="Connector not found")
     # Mask credentials in response
     if "credentials" in connector:
-        connector["credentials"] = {k: "***" for k in connector["credentials"]}
+        connector["credentials"] = dict.fromkeys(connector["credentials"], "***")
     return connector
 
 class ConnectionTestStepResult(BaseModel):

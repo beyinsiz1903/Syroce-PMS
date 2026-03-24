@@ -68,7 +68,7 @@ async def get_critical_issues_mobile(
 ):
     """Get recent critical issues for GM mobile dashboard"""
     current_user = await get_current_user(credentials)
-    
+
     # Get critical maintenance tasks
     critical_tasks = []
     async for task in db.tasks.find({
@@ -87,7 +87,7 @@ async def get_critical_issues_mobile(
             'created_at': task.get('created_at'),
             'type': 'maintenance'
         })
-    
+
     # Get overbooking situations
     today = datetime.now(timezone.utc)
     overbookings = []
@@ -112,11 +112,11 @@ async def get_critical_issues_mobile(
                 'created_at': booking.get('created_at'),
                 'type': 'overbooking'
             })
-    
+
     # Combine and sort by date
     all_issues = critical_tasks + overbookings[:limit]
     all_issues.sort(key=lambda x: x['created_at'], reverse=True)
-    
+
     return {
         'critical_issues': all_issues[:limit],
         'total_count': len(all_issues)
@@ -130,7 +130,7 @@ async def get_recent_complaints_mobile(
 ):
     """Get recent guest complaints for GM mobile dashboard"""
     current_user = await get_current_user(credentials)
-    
+
     # Get recent negative feedback/reviews
     complaints = []
     async for feedback in db.feedback.find({
@@ -151,7 +151,7 @@ async def get_recent_complaints_mobile(
             'created_at': feedback.get('created_at'),
             'status': feedback.get('status', 'new')
         })
-    
+
     return {
         'complaints': complaints,
         'total_count': len(complaints)
@@ -165,9 +165,9 @@ async def get_gm_notifications_mobile(
     """Get notifications for GM mobile dashboard"""
     current_user = await get_current_user(credentials)
     today = datetime.now(timezone.utc)
-    
+
     notifications = []
-    
+
     # VIP Check-ins today
     vip_checkins = 0
     async for booking in db.bookings.find({
@@ -192,14 +192,14 @@ async def get_gm_notifications_mobile(
                 'priority': 'high',
                 'created_at': today.isoformat()
             })
-    
+
     # Low inventory warning (occupancy > 90%)
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     occupied_rooms = await db.rooms.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'occupied'
     })
-    
+
     if total_rooms > 0:
         occupancy_pct = (occupied_rooms / total_rooms) * 100
         if occupancy_pct > 90:
@@ -211,7 +211,7 @@ async def get_gm_notifications_mobile(
                 'priority': 'high',
                 'created_at': today.isoformat()
             })
-    
+
     # High-risk reviews (rating <= 2 in last 24 hours)
     risk_reviews = 0
     yesterday = today - timedelta(days=1)
@@ -221,7 +221,7 @@ async def get_gm_notifications_mobile(
         'created_at': {'$gte': yesterday}
     }):
         risk_reviews += 1
-    
+
     if risk_reviews > 0:
         notifications.append({
             'id': str(uuid.uuid4()),
@@ -231,7 +231,7 @@ async def get_gm_notifications_mobile(
             'priority': 'medium',
             'created_at': today.isoformat()
         })
-    
+
     return {
         'notifications': notifications,
         'unread_count': len(notifications)
@@ -249,7 +249,7 @@ async def get_early_checkin_requests_mobile(
     """Get early check-in requests for front desk mobile"""
     current_user = await get_current_user(credentials)
     today = datetime.now(timezone.utc)
-    
+
     requests = []
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -269,7 +269,7 @@ async def get_early_checkin_requests_mobile(
             'room_status': 'checking',  # Will be updated with actual room status
             'notes': booking.get('special_requests', '')
         })
-    
+
     # Check actual room status for each request
     for req in requests:
         if req['room_number']:
@@ -279,7 +279,7 @@ async def get_early_checkin_requests_mobile(
             })
             if room:
                 req['room_status'] = room.get('status', 'unknown')
-    
+
     return {
         'early_checkin_requests': requests,
         'count': len(requests)
@@ -293,7 +293,7 @@ async def get_late_checkout_requests_mobile(
     """Get late checkout requests for front desk mobile"""
     current_user = await get_current_user(credentials)
     today = datetime.now(timezone.utc)
-    
+
     requests = []
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -313,7 +313,7 @@ async def get_late_checkout_requests_mobile(
             'has_next_arrival': False,  # Will be updated
             'notes': booking.get('special_requests', '')
         })
-    
+
     # Check if there's a next arrival for the same room
     for req in requests:
         next_booking = await db.bookings.find_one({
@@ -328,7 +328,7 @@ async def get_late_checkout_requests_mobile(
         if next_booking:
             req['has_next_arrival'] = True
             req['next_arrival_time'] = next_booking.get('check_in')
-    
+
     return {
         'late_checkout_requests': requests,
         'count': len(requests)
@@ -343,20 +343,20 @@ async def process_no_show_mobile(
     """Process no-show for a booking"""
     current_user = await get_current_user(credentials)
     booking_id = request.booking_id
-    
+
     # Find booking
     booking = await db.bookings.find_one({
         'id': booking_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
+
     # Check if already processed
     if booking.get('status') == 'no_show':
         raise HTTPException(status_code=400, detail="Booking already marked as no-show")
-    
+
     # Update booking status
     await db.bookings.update_one(
         {'id': booking_id, 'tenant_id': current_user.tenant_id},
@@ -368,7 +368,7 @@ async def process_no_show_mobile(
             }
         }
     )
-    
+
     # Apply no-show charge if policy exists
     no_show_fee = booking.get('cancellation_policy', {}).get('no_show_fee', 0)
     if no_show_fee > 0:
@@ -385,7 +385,7 @@ async def process_no_show_mobile(
             'created_at': datetime.now(timezone.utc),
             'created_by': current_user.username
         })
-    
+
     return {
         'message': 'No-show processed successfully',
         'booking_id': booking_id,
@@ -404,35 +404,35 @@ async def change_room_mobile(
     booking_id = request.booking_id
     new_room_id = request.new_room_id
     reason = request.reason
-    
+
     # Find booking
     booking = await db.bookings.find_one({
         'id': booking_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
+
     # Find new room
     new_room = await db.rooms.find_one({
         'id': new_room_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not new_room:
         raise HTTPException(status_code=404, detail="New room not found")
-    
+
     # Check if new room is available
     if new_room.get('status') not in ['available', 'inspected']:
         raise HTTPException(
             status_code=400,
             detail=f"Room {new_room.get('room_number')} is not available (status: {new_room.get('status')})"
         )
-    
+
     old_room_id = booking.get('room_id')
     old_room_number = booking.get('room_number')
-    
+
     # Update booking with new room
     await db.bookings.update_one(
         {'id': booking_id, 'tenant_id': current_user.tenant_id},
@@ -447,7 +447,7 @@ async def change_room_mobile(
             }
         }
     )
-    
+
     # Update old room status (if checked in)
     if booking.get('status') == 'checked_in' and old_room_id:
         await db.rooms.update_one(
@@ -459,7 +459,7 @@ async def change_room_mobile(
                 }
             }
         )
-    
+
     # Update new room status (if checked in)
     if booking.get('status') == 'checked_in':
         await db.rooms.update_one(
@@ -471,7 +471,7 @@ async def change_room_mobile(
                 }
             }
         )
-    
+
     # Log room change
     await db.audit_logs.insert_one({
         'id': str(uuid.uuid4()),
@@ -490,7 +490,7 @@ async def change_room_mobile(
         },
         'timestamp': datetime.now(timezone.utc)
     })
-    
+
     return {
         'message': 'Room changed successfully',
         'booking_id': booking_id,
@@ -507,9 +507,9 @@ async def get_frontdesk_notifications_mobile(
     """Get notifications for front desk mobile dashboard"""
     current_user = await get_current_user(credentials)
     today = datetime.now(timezone.utc)
-    
+
     notifications = []
-    
+
     # VIP arrivals today
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -532,13 +532,13 @@ async def get_frontdesk_notifications_mobile(
                 'priority': 'high',
                 'created_at': today.isoformat()
             })
-    
+
     # Overbooking risk
     available_rooms = await db.rooms.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['available', 'inspected']}
     })
-    
+
     arrivals_today = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_in': {
@@ -547,7 +547,7 @@ async def get_frontdesk_notifications_mobile(
         },
         'status': {'$in': ['confirmed', 'guaranteed']}
     })
-    
+
     if arrivals_today > available_rooms:
         notifications.append({
             'id': str(uuid.uuid4()),
@@ -557,7 +557,7 @@ async def get_frontdesk_notifications_mobile(
             'priority': 'urgent',
             'created_at': today.isoformat()
         })
-    
+
     # Room cleaning completed
     recently_cleaned = 0
     last_hour = today - timedelta(hours=1)
@@ -568,7 +568,7 @@ async def get_frontdesk_notifications_mobile(
         'completed_at': {'$gte': last_hour}
     }):
         recently_cleaned += 1
-    
+
     if recently_cleaned > 0:
         notifications.append({
             'id': str(uuid.uuid4()),
@@ -578,7 +578,7 @@ async def get_frontdesk_notifications_mobile(
             'priority': 'info',
             'created_at': today.isoformat()
         })
-    
+
     return {
         'notifications': notifications,
         'unread_count': len(notifications)
@@ -595,11 +595,11 @@ async def get_sla_delayed_rooms_mobile(
 ):
     """Get rooms with SLA delays for housekeeping mobile"""
     current_user = await get_current_user(credentials)
-    
+
     # SLA standard: cleaning should complete within 30 minutes
     sla_threshold = timedelta(minutes=30)
     delayed_rooms = []
-    
+
     now_utc = datetime.now(timezone.utc)
     async for task in db.housekeeping_tasks.find({
         'tenant_id': current_user.tenant_id,
@@ -621,7 +621,7 @@ async def get_sla_delayed_rooms_mobile(
                     'id': task.get('room_id'),
                     'tenant_id': current_user.tenant_id
                 })
-                
+
                 delayed_rooms.append({
                     'task_id': task.get('id'),
                     'room_id': task.get('room_id'),
@@ -632,10 +632,10 @@ async def get_sla_delayed_rooms_mobile(
                     'sla_breach_minutes': int((duration - sla_threshold).total_seconds() / 60),
                     'priority': task.get('priority', 'normal')
                 })
-    
+
     # Sort by breach time (most delayed first)
     delayed_rooms.sort(key=lambda x: x['sla_breach_minutes'], reverse=True)
-    
+
     return {
         'sla_delayed_rooms': delayed_rooms,
         'count': len(delayed_rooms),
@@ -649,17 +649,17 @@ async def get_team_assignments_mobile(
 ):
     """Get team assignment overview for housekeeping mobile"""
     current_user = await get_current_user(credentials)
-    
+
     # Get all active housekeeping staff
     staff_assignments = {}
-    
+
     async for task in db.housekeeping_tasks.find({
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['assigned', 'in_progress']},
         'assigned_to': {'$exists': True, '$ne': None}
     }):
         staff_name = task.get('assigned_to')
-        
+
         if staff_name not in staff_assignments:
             staff_assignments[staff_name] = {
                 'staff_name': staff_name,
@@ -668,27 +668,27 @@ async def get_team_assignments_mobile(
                 'completed_today': 0,
                 'in_progress': 0
             }
-        
+
         room = await db.rooms.find_one({
             'id': task.get('room_id'),
             'tenant_id': current_user.tenant_id
         })
-        
+
         staff_assignments[staff_name]['assigned_rooms'].append({
             'room_number': room.get('room_number') if room else 'N/A',
             'task_type': task.get('task_type'),
             'status': task.get('status'),
             'priority': task.get('priority')
         })
-        
+
         staff_assignments[staff_name]['total_tasks'] += 1
-        
+
         if task.get('status') == 'in_progress':
             staff_assignments[staff_name]['in_progress'] += 1
-    
+
     # Get completed tasks today for each staff
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
-    
+
     for staff_name in staff_assignments:
         completed_count = await db.housekeeping_tasks.count_documents({
             'tenant_id': current_user.tenant_id,
@@ -697,7 +697,7 @@ async def get_team_assignments_mobile(
             'completed_at': {'$gte': today}
         })
         staff_assignments[staff_name]['completed_today'] = completed_count
-    
+
     return {
         'team_assignments': list(staff_assignments.values()),
         'total_staff': len(staff_assignments)
@@ -716,16 +716,16 @@ async def create_quick_task_mobile(
     priority = request.priority
     assigned_to = request.assigned_to
     notes = request.notes
-    
+
     # Validate room
     room = await db.rooms.find_one({
         'id': room_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
-    
+
     # Create task
     task_id = str(uuid.uuid4())
     task = {
@@ -741,16 +741,16 @@ async def create_quick_task_mobile(
         'created_at': datetime.now(timezone.utc),
         'created_by': current_user.username
     }
-    
+
     await db.housekeeping_tasks.insert_one(task)
-    
+
     # Update room status if needed
     if task_type == 'cleaning':
         await db.rooms.update_one(
             {'id': room_id, 'tenant_id': current_user.tenant_id},
             {'$set': {'status': 'cleaning'}}
         )
-    
+
     return {
         'message': 'Task created successfully',
         'task_id': task_id,
@@ -772,7 +772,7 @@ async def get_inspection_checklist_template(
 ):
     """Get inspection checklist template"""
     await get_current_user(credentials)
-    
+
     # Default checklist template
     checklist = [
         # Bathroom
@@ -781,32 +781,32 @@ async def get_inspection_checklist_template(
         {'area': 'bathroom', 'item': 'Soap/Shampoo', 'status': 'pending'},
         {'area': 'bathroom', 'item': 'Hair dryer', 'status': 'pending'},
         {'area': 'bathroom', 'item': 'Cleanliness (sink, shower, toilet)', 'status': 'pending'},
-        
+
         # Bedroom
         {'area': 'bedroom', 'item': 'Bed linens fresh', 'status': 'pending'},
         {'area': 'bedroom', 'item': 'Pillows (quantity)', 'status': 'pending'},
         {'area': 'bedroom', 'item': 'Duvet/blanket', 'status': 'pending'},
         {'area': 'bedroom', 'item': 'Curtains functional', 'status': 'pending'},
         {'area': 'bedroom', 'item': 'Carpet/floor clean', 'status': 'pending'},
-        
+
         # Minibar
         {'area': 'minibar', 'item': 'Minibar stocked', 'status': 'pending'},
         {'area': 'minibar', 'item': 'Minibar clean', 'status': 'pending'},
         {'area': 'minibar', 'item': 'Glasses/cups clean', 'status': 'pending'},
-        
+
         # Amenities
         {'area': 'amenities', 'item': 'TV remote working', 'status': 'pending'},
         {'area': 'amenities', 'item': 'AC working', 'status': 'pending'},
         {'area': 'amenities', 'item': 'Safe working', 'status': 'pending'},
         {'area': 'amenities', 'item': 'Phone working', 'status': 'pending'},
         {'area': 'amenities', 'item': 'Light bulbs OK', 'status': 'pending'},
-        
+
         # General
         {'area': 'general', 'item': 'No damage visible', 'status': 'pending'},
         {'area': 'general', 'item': 'No stains', 'status': 'pending'},
         {'area': 'general', 'item': 'No odors', 'status': 'pending'},
     ]
-    
+
     return {
         'checklist': checklist,
         'template_name': 'Standard Room Inspection',
@@ -827,15 +827,15 @@ async def create_room_inspection(
 ):
     """Create room inspection record"""
     current_user = await get_current_user(credentials)
-    
+
     inspection_id = str(uuid.uuid4())
-    
+
     # Check for issues
     issues_found = []
     for item in checklist:
         if item.get('status') in ['missing', 'damaged', 'dirty']:
             issues_found.append(f"{item.get('area')}: {item.get('item')} - {item.get('status')}")
-    
+
     # Create maintenance task if needed
     maintenance_task_id = None
     if maintenance_required and issues_found:
@@ -854,7 +854,7 @@ async def create_room_inspection(
             'created_at': datetime.now(timezone.utc)
         })
         maintenance_task_id = task_id
-    
+
     # Create inspection record
     inspection = {
         'id': inspection_id,
@@ -874,9 +874,9 @@ async def create_room_inspection(
         'created_at': datetime.now(timezone.utc),
         'updated_at': datetime.now(timezone.utc)
     }
-    
+
     await db.room_inspections.insert_one(inspection)
-    
+
     return {
         'message': 'Inspection completed',
         'inspection_id': inspection_id,
@@ -901,11 +901,11 @@ async def create_lost_found_item(
 ):
     """Register lost & found item"""
     current_user = await get_current_user(credentials)
-    
+
     # Generate item number
     count = await db.lost_found_items.count_documents({'tenant_id': current_user.tenant_id})
     item_number = f"LF-{count + 1:05d}"
-    
+
     item_id = str(uuid.uuid4())
     item = {
         'id': item_id,
@@ -925,9 +925,9 @@ async def create_lost_found_item(
         'created_at': datetime.now(timezone.utc),
         'updated_at': datetime.now(timezone.utc)
     }
-    
+
     await db.lost_found_items.insert_one(item)
-    
+
     return {
         'message': 'Lost & Found item registered',
         'item_id': item_id,
@@ -943,11 +943,11 @@ async def get_lost_found_items(
 ):
     """Get lost & found items"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
     if status:
         query['status'] = status
-    
+
     items = []
     async for item in db.lost_found_items.find(query).sort('found_date', -1).limit(100):
         items.append({
@@ -966,7 +966,7 @@ async def get_lost_found_items(
             'claimed_by': item.get('claimed_by'),
             'claimed_date': item.get('claimed_date').isoformat() if item.get('claimed_date') else None
         })
-    
+
     # Summary
     summary = {
         'total': len(items),
@@ -974,7 +974,7 @@ async def get_lost_found_items(
         'claimed': len([i for i in items if i['status'] == 'claimed']),
         'delivered': len([i for i in items if i['status'] == 'delivered'])
     }
-    
+
     return {
         'items': items,
         'summary': summary
@@ -991,15 +991,15 @@ async def claim_lost_found_item(
 ):
     """Mark item as claimed"""
     current_user = await get_current_user(credentials)
-    
+
     item = await db.lost_found_items.find_one({
         'id': item_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    
+
     await db.lost_found_items.update_one(
         {'id': item_id, 'tenant_id': current_user.tenant_id},
         {'$set': {
@@ -1011,7 +1011,7 @@ async def claim_lost_found_item(
             'updated_at': datetime.now(timezone.utc)
         }}
     )
-    
+
     return {
         'message': 'Item marked as claimed',
         'item_id': item_id,
@@ -1030,7 +1030,7 @@ async def assign_hk_tasks(
 ):
     """Assign rooms to housekeeping staff"""
     current_user = await get_current_user(credentials)
-    
+
     assignment_id = str(uuid.uuid4())
     assignment = {
         'id': assignment_id,
@@ -1046,9 +1046,9 @@ async def assign_hk_tasks(
         'created_at': datetime.now(timezone.utc),
         'updated_at': datetime.now(timezone.utc)
     }
-    
+
     await db.hk_task_assignments.insert_one(assignment)
-    
+
     # Update rooms status
     await db.rooms.update_many(
         {
@@ -1060,7 +1060,7 @@ async def assign_hk_tasks(
             'assigned_at': datetime.now(timezone.utc)
         }}
     )
-    
+
     return {
         'message': 'Tasks assigned successfully',
         'assignment_id': assignment_id,
@@ -1076,9 +1076,9 @@ async def get_staff_assignments(
 ):
     """Get staff task assignments"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if assignment_date:
         date_obj = datetime.fromisoformat(assignment_date).date()
         start_of_day = datetime.combine(date_obj, datetime.min.time()).replace(tzinfo=timezone.utc)
@@ -1090,7 +1090,7 @@ async def get_staff_assignments(
         start_of_day = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
         end_of_day = datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
         query['assignment_date'] = {'$gte': start_of_day, '$lte': end_of_day}
-    
+
     assignments = []
     async for assignment in db.hk_task_assignments.find(query).sort('assignment_date', -1):
         # Get room details
@@ -1104,7 +1104,7 @@ async def get_staff_assignments(
                 'room_number': room.get('room_number'),
                 'status': room.get('status')
             })
-        
+
         assignments.append({
             'assignment_id': assignment.get('id'),
             'staff_id': assignment.get('staff_id'),
@@ -1115,7 +1115,7 @@ async def get_staff_assignments(
             'assigned_by': assignment.get('assigned_by'),
             'assignment_date': assignment.get('assignment_date').isoformat() if assignment.get('assignment_date') else None
         })
-    
+
     return {
         'assignments': assignments,
         'total_staff': len(assignments),
@@ -1132,21 +1132,21 @@ async def start_cleaning_timer(
 ):
     """Start cleaning timer"""
     current_user = await get_current_user(credentials)
-    
+
     # Check if already started
     existing = await db.cleaning_timers.find_one({
         'tenant_id': current_user.tenant_id,
         'room_id': room_id,
         'status': 'in_progress'
     })
-    
+
     if existing:
         return {
             'message': 'Timer already running',
             'timer_id': existing.get('id'),
             'started_at': existing.get('started_at').isoformat()
         }
-    
+
     timer_id = str(uuid.uuid4())
     timer = {
         'id': timer_id,
@@ -1159,15 +1159,15 @@ async def start_cleaning_timer(
         'started_at': datetime.now(timezone.utc),
         'status': 'in_progress'
     }
-    
+
     await db.cleaning_timers.insert_one(timer)
-    
+
     # Update room status
     await db.rooms.update_one(
         {'id': room_id, 'tenant_id': current_user.tenant_id},
         {'$set': {'status': 'cleaning'}}
     )
-    
+
     return {
         'message': 'Cleaning started',
         'timer_id': timer_id,
@@ -1184,19 +1184,19 @@ async def stop_cleaning_timer(
 ):
     """Stop cleaning timer"""
     current_user = await get_current_user(credentials)
-    
+
     timer = await db.cleaning_timers.find_one({
         'tenant_id': current_user.tenant_id,
         'room_id': room_id,
         'status': 'in_progress'
     })
-    
+
     if not timer:
         raise HTTPException(status_code=404, detail="No active timer found")
-    
+
     completed_at = datetime.now(timezone.utc)
     duration = (completed_at - timer['started_at']).total_seconds() / 60
-    
+
     await db.cleaning_timers.update_one(
         {'id': timer['id'], 'tenant_id': current_user.tenant_id},
         {'$set': {
@@ -1206,13 +1206,13 @@ async def stop_cleaning_timer(
             'notes': notes
         }}
     )
-    
+
     # Update room status
     await db.rooms.update_one(
         {'id': room_id, 'tenant_id': current_user.tenant_id},
         {'$set': {'status': 'clean'}}
     )
-    
+
     return {
         'message': 'Cleaning completed',
         'room_number': timer.get('room_number'),
@@ -1234,7 +1234,7 @@ async def report_maintenance_from_hk(
 ):
     """Report maintenance issue from housekeeping"""
     current_user = await get_current_user(credentials)
-    
+
     task_id = str(uuid.uuid4())
     task = {
         'id': task_id,
@@ -1252,9 +1252,9 @@ async def report_maintenance_from_hk(
         'photos': photos or [],
         'created_at': datetime.now(timezone.utc)
     }
-    
+
     await db.tasks.insert_one(task)
-    
+
     return {
         'message': 'Maintenance task created',
         'task_id': task_id,
@@ -1270,21 +1270,21 @@ async def get_hk_daily_report(
 ):
     """Get housekeeping daily report"""
     current_user = await get_current_user(credentials)
-    
+
     if report_date:
         target_date = datetime.fromisoformat(report_date).date()
     else:
         target_date = datetime.now(timezone.utc).date()
-    
+
     start_of_day = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
     end_of_day = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=timezone.utc)
-    
+
     # Room statistics
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     clean_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id, 'status': 'clean'})
     dirty_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id, 'status': 'dirty'})
     occupied_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id, 'status': 'occupied'})
-    
+
     # Cleaning timers today
     timers = []
     total_duration = 0
@@ -1301,28 +1301,28 @@ async def get_hk_daily_report(
             'task_type': timer.get('task_type'),
             'duration_minutes': duration
         })
-    
+
     avg_cleaning_time = total_duration / len(timers) if timers else 0
-    
+
     # Lost & Found today
     lf_count = await db.lost_found_items.count_documents({
         'tenant_id': current_user.tenant_id,
         'found_date': {'$gte': start_of_day, '$lte': end_of_day}
     })
-    
+
     # Inspections today
     inspection_count = await db.room_inspections.count_documents({
         'tenant_id': current_user.tenant_id,
         'created_at': {'$gte': start_of_day, '$lte': end_of_day}
     })
-    
+
     # Maintenance reports from HK
     maintenance_count = await db.tasks.count_documents({
         'tenant_id': current_user.tenant_id,
         'source': 'housekeeping',
         'created_at': {'$gte': start_of_day, '$lte': end_of_day}
     })
-    
+
     return {
         'report_date': target_date.isoformat(),
         'room_statistics': {
@@ -1356,9 +1356,9 @@ async def get_housekeeping_notifications_mobile(
 ):
     """Get notifications for housekeeping mobile dashboard"""
     current_user = await get_current_user(credentials)
-    
+
     notifications = []
-    
+
     # Damage reports
     async for report in db.damage_reports.find({
         'tenant_id': current_user.tenant_id,
@@ -1377,7 +1377,7 @@ async def get_housekeeping_notifications_mobile(
             'priority': 'high',
             'created_at': report.get('created_at').isoformat()
         })
-    
+
     # Rush room requests (early check-in)
     today = datetime.now(timezone.utc)
     async for booking in db.bookings.find({
@@ -1403,7 +1403,7 @@ async def get_housekeeping_notifications_mobile(
                 'priority': 'urgent',
                 'created_at': datetime.now(timezone.utc).isoformat()
             })
-    
+
     # Guest "clean now" requests
     async for request in db.room_service_requests.find({
         'tenant_id': current_user.tenant_id,
@@ -1419,7 +1419,7 @@ async def get_housekeeping_notifications_mobile(
             'priority': 'medium',
             'created_at': request.get('created_at').isoformat()
         })
-    
+
     return {
         'notifications': notifications,
         'unread_count': len(notifications)
@@ -1439,10 +1439,10 @@ async def get_pm_schedule_mobile(
     current_user = await get_current_user(credentials)
     today = datetime.now(timezone.utc)
     end_date = today + timedelta(days=days)
-    
+
     # Get scheduled PM tasks
     pm_schedule = []
-    
+
     # Check equipment maintenance schedules
     async for equipment in db.equipment.find({
         'tenant_id': current_user.tenant_id,
@@ -1463,10 +1463,10 @@ async def get_pm_schedule_mobile(
             'assigned_technician': equipment.get('assigned_technician'),
             'status': 'scheduled'
         })
-    
+
     # Sort by date
     pm_schedule.sort(key=lambda x: x['next_maintenance_date'])
-    
+
     return {
         'pm_schedule': pm_schedule,
         'count': len(pm_schedule),
@@ -1488,16 +1488,16 @@ async def create_quick_issue_mobile(
     issue_type = request.issue_type
     description = request.description
     priority = request.priority
-    
+
     # Validate room
     room = await db.rooms.find_one({
         'id': room_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
-    
+
     # Create maintenance task
     task_id = str(uuid.uuid4())
     task = {
@@ -1515,16 +1515,16 @@ async def create_quick_issue_mobile(
         'created_by': current_user.username,
         'reported_by': current_user.username
     }
-    
+
     await db.tasks.insert_one(task)
-    
+
     # If priority is urgent or high, update room status
     if priority in ['urgent', 'high']:
         await db.rooms.update_one(
             {'id': room_id, 'tenant_id': current_user.tenant_id},
             {'$set': {'status': 'maintenance'}}
         )
-    
+
     return {
         'message': 'Maintenance issue created successfully',
         'task_id': task_id,
@@ -1544,7 +1544,7 @@ async def get_sla_configurations(
 ):
     """Get SLA configurations for different priorities"""
     current_user = await get_current_user(credentials)
-    
+
     configurations = []
     async for config in db.sla_configurations.find({
         'tenant_id': current_user.tenant_id,
@@ -1557,7 +1557,7 @@ async def get_sla_configurations(
             'resolution_time_minutes': config.get('resolution_time_minutes'),
             'is_active': config.get('is_active', True)
         })
-    
+
     # If no configurations exist, return defaults
     if not configurations:
         default_slas = [
@@ -1568,7 +1568,7 @@ async def get_sla_configurations(
             {'priority': 'low', 'response_time_minutes': 240, 'resolution_time_minutes': 2880}
         ]
         configurations = default_slas
-    
+
     return {
         'sla_configurations': configurations,
         'count': len(configurations)
@@ -1584,13 +1584,13 @@ async def update_sla_configuration(
 ):
     """Update or create SLA configuration"""
     current_user = await get_current_user(credentials)
-    
+
     # Check if configuration exists
     existing = await db.sla_configurations.find_one({
         'tenant_id': current_user.tenant_id,
         'priority': priority
     })
-    
+
     if existing:
         # Update
         await db.sla_configurations.update_one(
@@ -1615,7 +1615,7 @@ async def update_sla_configuration(
             'created_at': datetime.now(timezone.utc),
             'updated_at': datetime.now(timezone.utc)
         })
-    
+
     return {
         'message': 'SLA configuration updated',
         'config_id': config_id,
@@ -1634,49 +1634,49 @@ async def update_task_status_mobile(
 ):
     """Update task status (complete, on_hold, waiting_parts, in_progress)"""
     current_user = await get_current_user(credentials)
-    
+
     task = await db.tasks.find_one({
         'id': task_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     update_data = {
         'status': new_status,
         'updated_at': datetime.now(timezone.utc)
     }
-    
+
     if new_status == 'in_progress':
         if not task.get('started_at'):
             update_data['started_at'] = datetime.now(timezone.utc)
-    
+
     elif new_status == 'completed':
         update_data['completed_at'] = datetime.now(timezone.utc)
-        
+
         # Calculate actual duration
         if task.get('started_at'):
             started = task['started_at']
             completed = datetime.now(timezone.utc)
             duration_minutes = int((completed - started).total_seconds() / 60)
             update_data['actual_duration_minutes'] = duration_minutes
-    
+
     elif new_status == 'on_hold':
         update_data['on_hold_at'] = datetime.now(timezone.utc)
         if reason:
             update_data['on_hold_reason'] = reason
-    
+
     elif new_status == 'waiting_parts':
         update_data['parts_waiting'] = True
         if reason:
             update_data['on_hold_reason'] = reason
-    
+
     await db.tasks.update_one(
         {'id': task_id, 'tenant_id': current_user.tenant_id},
         {'$set': update_data}
     )
-    
+
     return {
         'message': f'Task status updated to {new_status}',
         'task_id': task_id,
@@ -1695,15 +1695,15 @@ async def upload_task_photo_mobile(
 ):
     """Upload photo for maintenance task"""
     current_user = await get_current_user(credentials)
-    
+
     task = await db.tasks.find_one({
         'id': task_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     # Create photo record
     photo_id = str(uuid.uuid4())
     photo = {
@@ -1716,15 +1716,15 @@ async def upload_task_photo_mobile(
         'uploaded_by': current_user.username,
         'uploaded_at': datetime.now(timezone.utc)
     }
-    
+
     await db.task_photos.insert_one(photo)
-    
+
     # Update task with photo reference
     await db.tasks.update_one(
         {'id': task_id, 'tenant_id': current_user.tenant_id},
         {'$push': {'photos': photo_id}}
     )
-    
+
     return {
         'message': 'Photo uploaded successfully',
         'photo_id': photo_id,
@@ -1740,7 +1740,7 @@ async def get_task_photos_mobile(
 ):
     """Get all photos for a task"""
     current_user = await get_current_user(credentials)
-    
+
     photos = []
     async for photo in db.task_photos.find({
         'tenant_id': current_user.tenant_id,
@@ -1754,7 +1754,7 @@ async def get_task_photos_mobile(
             'uploaded_by': photo.get('uploaded_by'),
             'uploaded_at': photo.get('uploaded_at').isoformat() if photo.get('uploaded_at') else None
         })
-    
+
     return {
         'photos': photos,
         'count': len(photos)
@@ -1769,30 +1769,30 @@ async def get_spare_parts_mobile(
 ):
     """Get spare parts inventory"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if warehouse_location:
         query['warehouse_location'] = warehouse_location
-    
+
     parts = []
     low_stock_count = 0
     total_value = 0.0
-    
+
     async for part in db.spare_parts.find(query).sort('part_name', 1):
         current_stock = part.get('current_stock', 0)
         minimum_stock = part.get('minimum_stock', 0)
         is_low_stock = current_stock <= minimum_stock
-        
+
         if low_stock_only and not is_low_stock:
             continue
-        
+
         if is_low_stock:
             low_stock_count += 1
-        
+
         stock_value = current_stock * part.get('unit_price', 0)
         total_value += stock_value
-        
+
         parts.append({
             'id': part.get('id'),
             'part_number': part.get('part_number'),
@@ -1809,7 +1809,7 @@ async def get_spare_parts_mobile(
             'qr_code': part.get('qr_code'),
             'last_restocked': part.get('last_restocked').isoformat() if part.get('last_restocked') else None
         })
-    
+
     return {
         'spare_parts': parts,
         'summary': {
@@ -1830,34 +1830,34 @@ async def use_spare_part_mobile(
 ):
     """Record spare part usage for a task"""
     current_user = await get_current_user(credentials)
-    
+
     # Validate task
     task = await db.tasks.find_one({
         'id': task_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     # Validate spare part
     part = await db.spare_parts.find_one({
         'id': spare_part_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not part:
         raise HTTPException(status_code=404, detail="Spare part not found")
-    
+
     # Check stock
     current_stock = part.get('current_stock', 0)
     if current_stock < quantity:
         raise HTTPException(status_code=400, detail=f"Insufficient stock. Available: {current_stock}, Requested: {quantity}")
-    
+
     # Calculate cost
     unit_price = part.get('unit_price', 0)
     total_cost = unit_price * quantity
-    
+
     # Record usage
     usage_id = str(uuid.uuid4())
     usage = {
@@ -1873,9 +1873,9 @@ async def use_spare_part_mobile(
         'used_at': datetime.now(timezone.utc),
         'notes': notes
     }
-    
+
     await db.spare_part_usage.insert_one(usage)
-    
+
     # Update stock
     new_stock = current_stock - quantity
     await db.spare_parts.update_one(
@@ -1885,13 +1885,13 @@ async def use_spare_part_mobile(
             'updated_at': datetime.now(timezone.utc)
         }}
     )
-    
+
     # Add part to task
     await db.tasks.update_one(
         {'id': task_id, 'tenant_id': current_user.tenant_id},
         {'$push': {'parts_list': f"{part.get('part_name')} x{quantity}"}}
     )
-    
+
     return {
         'message': 'Spare part usage recorded',
         'usage_id': usage_id,
@@ -1910,23 +1910,23 @@ async def get_asset_history_mobile(
 ):
     """Get maintenance history for an asset with MTBF calculation"""
     current_user = await get_current_user(credentials)
-    
+
     # Get maintenance history
     history = []
     total_cost = 0.0
     total_downtime = 0
     corrective_count = 0
-    
+
     async for record in db.asset_maintenance_history.find({
         'tenant_id': current_user.tenant_id,
         'asset_id': asset_id
     }).sort('completed_at', -1):
         total_cost += record.get('total_cost', 0)
         total_downtime += record.get('downtime_minutes', 0)
-        
+
         if record.get('maintenance_type') == 'corrective':
             corrective_count += 1
-        
+
         history.append({
             'id': record.get('id'),
             'task_id': record.get('task_id'),
@@ -1940,20 +1940,20 @@ async def get_asset_history_mobile(
             'downtime_minutes': record.get('downtime_minutes'),
             'notes': record.get('notes')
         })
-    
+
     # Calculate MTBF (Mean Time Between Failures)
     mtbf_hours = 0.0
     if corrective_count > 1 and history:
         first_failure = history[-1].get('completed_at') if history else None
         last_failure = history[0].get('completed_at') if history else None
-        
+
         if first_failure and last_failure:
             from dateutil import parser
             first_dt = parser.isoparse(first_failure)
             last_dt = parser.isoparse(last_failure)
             total_hours = (last_dt - first_dt).total_seconds() / 3600
             mtbf_hours = total_hours / (corrective_count - 1) if corrective_count > 1 else 0
-    
+
     return {
         'asset_id': asset_id,
         'maintenance_history': history,
@@ -1977,31 +1977,31 @@ async def get_planned_maintenance_mobile(
 ):
     """Get planned maintenance calendar"""
     current_user = await get_current_user(credentials)
-    
+
     today = datetime.now(timezone.utc).date()
     end_date = today + timedelta(days=upcoming_days)
-    
+
     planned_items = []
     overdue_count = 0
-    
+
     async for item in db.planned_maintenance.find({
         'tenant_id': current_user.tenant_id,
         'is_active': True
     }).sort('next_maintenance', 1):
         next_maintenance_date = item.get('next_maintenance')
-        
+
         if isinstance(next_maintenance_date, str):
             next_maintenance_date = datetime.fromisoformat(next_maintenance_date).date()
         elif isinstance(next_maintenance_date, datetime):
             next_maintenance_date = next_maintenance_date.date()
-        
+
         if next_maintenance_date <= end_date:
             is_overdue = next_maintenance_date < today
             days_until = (next_maintenance_date - today).days
-            
+
             if is_overdue:
                 overdue_count += 1
-            
+
             planned_items.append({
                 'id': item.get('id'),
                 'asset_id': item.get('asset_id'),
@@ -2016,7 +2016,7 @@ async def get_planned_maintenance_mobile(
                 'days_until': days_until,
                 'notes': item.get('notes')
             })
-    
+
     return {
         'planned_maintenance': planned_items,
         'summary': {
@@ -2039,16 +2039,16 @@ async def get_filtered_tasks_mobile(
 ):
     """Get filtered maintenance tasks"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if status:
         query['status'] = status
     if priority:
         query['priority'] = priority
     if assigned_to:
         query['assigned_to'] = assigned_to
-    
+
     if start_date or end_date:
         date_filter = {}
         if start_date:
@@ -2056,7 +2056,7 @@ async def get_filtered_tasks_mobile(
         if end_date:
             date_filter['$lte'] = datetime.fromisoformat(end_date)
         query['created_at'] = date_filter
-    
+
     tasks = []
     async for task in db.tasks.find(query).sort('created_at', -1).limit(100):
         tasks.append({
@@ -2072,7 +2072,7 @@ async def get_filtered_tasks_mobile(
             'started_at': task.get('started_at').isoformat() if task.get('started_at') else None,
             'completed_at': task.get('completed_at').isoformat() if task.get('completed_at') else None
         })
-    
+
     return {
         'tasks': tasks,
         'count': len(tasks),
@@ -2092,12 +2092,12 @@ async def get_maintenance_notifications_mobile(
 ):
     """Get notifications for maintenance mobile dashboard"""
     current_user = await get_current_user(credentials)
-    
+
     notifications = []
-    
+
     # Water leak / electrical issues (critical)
     critical_issues = ['water_leak', 'electrical', 'gas_leak', 'fire_alarm']
-    
+
     async for task in db.tasks.find({
         'tenant_id': current_user.tenant_id,
         'department': 'maintenance',
@@ -2113,7 +2113,7 @@ async def get_maintenance_notifications_mobile(
             'priority': 'urgent',
             'created_at': task.get('created_at').isoformat()
         })
-    
+
     # SLA breach alerts
     async for task in db.tasks.find({
         'tenant_id': current_user.tenant_id,
@@ -2130,7 +2130,7 @@ async def get_maintenance_notifications_mobile(
             'priority': 'high',
             'created_at': task.get('created_at').isoformat()
         })
-    
+
     # Critical room maintenance (room is out of order)
     async for room in db.rooms.find({
         'tenant_id': current_user.tenant_id,
@@ -2145,7 +2145,7 @@ async def get_maintenance_notifications_mobile(
             'priority': 'high',
             'created_at': room.get('updated_at').isoformat()
         })
-    
+
     return {
         'notifications': notifications,
         'unread_count': len(notifications)
@@ -2167,34 +2167,34 @@ async def create_quick_order_mobile(
     table_number = request.table_number
     items = [item.dict() for item in request.items]
     notes = request.notes
-    
+
     # Validate outlet
     outlet = await db.pos_outlets.find_one({
         'id': outlet_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not outlet:
         raise HTTPException(status_code=404, detail="Outlet not found")
-    
+
     # Calculate total
     subtotal = 0.0
     order_items = []
-    
+
     for item in items:
         menu_item = await db.pos_menu_items.find_one({
             'id': item.get('item_id'),
             'tenant_id': current_user.tenant_id
         })
-        
+
         if not menu_item:
             continue
-        
+
         quantity = item.get('quantity', 1)
         item_price = menu_item.get('price', 0)
         item_total = item_price * quantity
         subtotal += item_total
-        
+
         order_items.append({
             'item_id': item.get('item_id'),
             'item_name': menu_item.get('name'),
@@ -2202,11 +2202,11 @@ async def create_quick_order_mobile(
             'unit_price': item_price,
             'total': item_total
         })
-    
+
     # Calculate tax (18% VAT)
     tax = subtotal * 0.18
     total = subtotal + tax
-    
+
     # Create order
     order_id = str(uuid.uuid4())
     order = {
@@ -2224,9 +2224,9 @@ async def create_quick_order_mobile(
         'created_at': datetime.now(timezone.utc),
         'created_by': current_user.username
     }
-    
+
     await db.pos_orders.insert_one(order)
-    
+
     return {
         'message': 'Order created successfully',
         'order_id': order_id,
@@ -2247,18 +2247,18 @@ async def update_menu_item_price_mobile(
     current_user = await get_current_user(credentials)
     new_price = request.new_price
     reason = request.reason
-    
+
     # Find menu item
     menu_item = await db.pos_menu_items.find_one({
         'id': item_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not menu_item:
         raise HTTPException(status_code=404, detail="Menu item not found")
-    
+
     old_price = menu_item.get('price')
-    
+
     # Update price
     await db.pos_menu_items.update_one(
         {'id': item_id, 'tenant_id': current_user.tenant_id},
@@ -2270,7 +2270,7 @@ async def update_menu_item_price_mobile(
             }
         }
     )
-    
+
     # Log price change
     await db.audit_logs.insert_one({
         'id': str(uuid.uuid4()),
@@ -2288,7 +2288,7 @@ async def update_menu_item_price_mobile(
         },
         'timestamp': datetime.now(timezone.utc)
     })
-    
+
     return {
         'message': 'Menu item price updated',
         'item_id': item_id,
@@ -2304,9 +2304,9 @@ async def get_fnb_notifications_mobile(
 ):
     """Get notifications for F&B mobile dashboard"""
     current_user = await get_current_user(credentials)
-    
+
     notifications = []
-    
+
     # Void transactions in last 24 hours
     void_transactions = 0
     async for transaction in db.pos_transactions.find({
@@ -2315,7 +2315,7 @@ async def get_fnb_notifications_mobile(
         'voided_at': {'$gte': datetime.now(timezone.utc) - timedelta(hours=24)}
     }):
         void_transactions += 1
-    
+
     if void_transactions > 0:
         notifications.append({
             'id': str(uuid.uuid4()),
@@ -2325,7 +2325,7 @@ async def get_fnb_notifications_mobile(
             'priority': 'medium',
             'created_at': datetime.now(timezone.utc).isoformat()
         })
-    
+
     # POS connection errors
     async for error in db.system_logs.find({
         'tenant_id': current_user.tenant_id,
@@ -2340,14 +2340,14 @@ async def get_fnb_notifications_mobile(
             'priority': 'high',
             'created_at': error.get('created_at').isoformat()
         })
-    
+
     # End of day report ready notification
     today = datetime.now(timezone.utc).date()
     eod_report = await db.pos_eod_reports.find_one({
         'tenant_id': current_user.tenant_id,
         'report_date': today
     })
-    
+
     if eod_report and eod_report.get('status') == 'ready':
         notifications.append({
             'id': str(uuid.uuid4()),
@@ -2357,7 +2357,7 @@ async def get_fnb_notifications_mobile(
             'priority': 'info',
             'created_at': eod_report.get('created_at').isoformat()
         })
-    
+
     return {
         'notifications': notifications,
         'unread_count': len(notifications)

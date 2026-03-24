@@ -93,7 +93,7 @@ class PropertyPermissionService:
                 pid: {
                     "user_count": len(u_list),
                     "users": u_list,
-                    "roles": list(set(u.get("role", "") for u in u_list)),
+                    "roles": list({u.get("role", "") for u in u_list}),
                 }
                 for pid, u_list in property_users.items()
             },

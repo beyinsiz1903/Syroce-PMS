@@ -52,10 +52,10 @@ async def join_room(sid, data):
     """Join a specific room for targeted updates"""
     room = data.get('room', 'general')
     await sio.enter_room(sid, room)
-    
+
     if room in connected_clients:
         connected_clients[room].add(sid)
-    
+
     logger.info(f"Client {sid} joined room: {room}")
     await sio.emit('room_joined', {
         'room': room,
@@ -67,10 +67,10 @@ async def leave_room(sid, data):
     """Leave a specific room"""
     room = data.get('room', 'general')
     await sio.leave_room(sid, room)
-    
+
     if room in connected_clients and sid in connected_clients[room]:
         connected_clients[room].remove(sid)
-    
+
     logger.info(f"Client {sid} left room: {room}")
 
 # Broadcast functions
@@ -88,7 +88,7 @@ async def broadcast_dashboard_update(metrics: Dict[str, Any]):
 async def broadcast_booking_update(booking_data: Dict[str, Any], event_type: str = 'update'):
     """
     Broadcast booking update
-    
+
     Args:
         booking_data: Booking information
         event_type: 'create', 'update', 'checkin', 'checkout', 'cancel'

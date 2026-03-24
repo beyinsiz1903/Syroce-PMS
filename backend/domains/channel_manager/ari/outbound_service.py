@@ -225,5 +225,5 @@ def get_engine_stats() -> dict:
         "buffer": buf.get_buffer_stats(),
         "rate_limiter": rate_limiter.get_stats(),
         "registered_adapters": list(_PROVIDER_ADAPTERS.keys()),
-        "active_tenants": {k: v for k, v in _ACTIVE_PROVIDERS.items()},
+        "active_tenants": dict(_ACTIVE_PROVIDERS.items()),
     }

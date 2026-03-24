@@ -48,7 +48,7 @@ async def send_push_notification(notif_data: dict, current_user: User = Depends(
     if notif_data.get('user_id') and not target_user_ids:
         target_user_ids = [notif_data['user_id']]
     target_departments = notif_data.get('departments')
-    
+
     payload = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -64,7 +64,7 @@ async def send_push_notification(notif_data: dict, current_user: User = Depends(
         'sent_at': datetime.now(timezone.utc).isoformat(),
         'created_by': current_user.id
     }
-    
+
     if 'in_app' in channels:
         in_app_notification = {
             **payload,
@@ -73,7 +73,7 @@ async def send_push_notification(notif_data: dict, current_user: User = Depends(
             'read': False
         }
         await db.notifications.insert_one(in_app_notification)
-    
+
     deliveries: List[dict] = []
     if 'push' in channels:
         devices = await _collect_push_devices(
@@ -82,13 +82,13 @@ async def send_push_notification(notif_data: dict, current_user: User = Depends(
             departments=target_departments
         )
         deliveries = await _simulate_push_delivery(devices, payload)
-    
+
     await db.push_notifications.insert_one({
         **payload,
         'target_count': len(deliveries),
     })
     await _record_push_log(current_user.tenant_id, payload, deliveries, current_user.id)
-    
+
     return {
         'success': True,
         'notification_id': payload['id'],
@@ -105,10 +105,10 @@ async def register_push_device(device_payload: dict, current_user: User = Depend
     push_token = device_payload.get('push_token')
     if not device_id or not push_token:
         raise HTTPException(status_code=400, detail="device_id and push_token are required")
-    
+
     subscriptions = device_payload.get('subscriptions') or device_payload.get('channels') or DEFAULT_PUSH_CHANNELS
     departments = device_payload.get('departments') or ([current_user.role] if current_user.role else [])
-    
+
     device_doc = {
         'tenant_id': current_user.tenant_id,
         'user_id': current_user.id,
@@ -126,7 +126,7 @@ async def register_push_device(device_payload: dict, current_user: User = Depend
         'updated_at': datetime.now(timezone.utc).isoformat(),
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     await db.push_device_tokens.update_one(
         {
             'tenant_id': current_user.tenant_id,
@@ -136,7 +136,7 @@ async def register_push_device(device_payload: dict, current_user: User = Depend
         {'$set': device_doc},
         upsert=True
     )
-    
+
     return {
         'success': True,
         'device_id': device_id,
@@ -149,7 +149,7 @@ async def register_push_device(device_payload: dict, current_user: User = Depend
 @router.post("/notifications/push/subscriptions")
 async def update_push_subscriptions(subscription_payload: dict, current_user: User = Depends(get_current_user)):
     channels = subscription_payload.get('channels') or DEFAULT_PUSH_CHANNELS
-    
+
     await db.push_subscriptions.update_one(
         {
             'tenant_id': current_user.tenant_id,
@@ -163,7 +163,7 @@ async def update_push_subscriptions(subscription_payload: dict, current_user: Us
         },
         upsert=True
     )
-    
+
     await db.push_device_tokens.update_many(
         {
             'tenant_id': current_user.tenant_id,
@@ -171,7 +171,7 @@ async def update_push_subscriptions(subscription_payload: dict, current_user: Us
         },
         {'$set': {'subscriptions': channels}}
     )
-    
+
     return {'success': True, 'channels': channels}
 
 
@@ -196,17 +196,17 @@ async def get_push_status(current_user: User = Depends(get_current_user)):
         {'tenant_id': current_user.tenant_id, 'user_id': current_user.id},
         {'_id': 0}
     ).sort('updated_at', -1).to_list(20)
-    
+
     subscription = await db.push_subscriptions.find_one(
         {'tenant_id': current_user.tenant_id, 'user_id': current_user.id},
         {'_id': 0}
     )
-    
+
     last_delivery = await db.push_delivery_logs.find(
         {'tenant_id': current_user.tenant_id, 'target_user_ids': {'$in': [current_user.id]}},
         {'_id': 0}
     ).sort('created_at', -1).to_list(1)
-    
+
     return {
         'enabled': len(devices) > 0,
         'devices': devices,
@@ -226,9 +226,9 @@ async def get_my_notifications(current_user: User = Depends(get_current_user)):
         ],
         'tenant_id': current_user.tenant_id
     }, {'_id': 0}).sort('sent_at', -1).limit(50).to_list(50)
-    
+
     unread_count = len([n for n in notifications if not n.get('read', False)])
-    
+
     return {
         'notifications': notifications,
         'unread_count': unread_count,
@@ -263,14 +263,14 @@ async def get_inbox_alerts(
             {'assigned_to': None}  # General alerts
         ]
     }
-    
+
     if status:
         match_criteria['status'] = status
     if alert_type:
         match_criteria['alert_type'] = alert_type
     if priority:
         match_criteria['priority'] = priority
-    
+
     alerts = []
     async for alert in db.alerts.find(match_criteria).sort('created_at', -1).limit(limit):
         alerts.append({
@@ -284,10 +284,10 @@ async def get_inbox_alerts(
             'action_url': alert.get('action_url'),
             'created_at': alert.get('created_at')
         })
-    
+
     # Count by status
     unread_count = await db.alerts.count_documents({**match_criteria, 'status': 'unread'})
-    
+
     return {
         'alerts': alerts,
         'total_count': len(alerts),
@@ -326,11 +326,11 @@ async def create_alert(
         assigned_to=assigned_to,
         action_url=action_url
     )
-    
+
     alert_dict = alert.model_dump()
     alert_dict['created_at'] = alert_dict['created_at'].isoformat()
     await db.alerts.insert_one(alert_dict)
-    
+
     return {
         'success': True,
         'alert_id': alert.id,
@@ -353,7 +353,7 @@ async def mark_alert_read(
             'read_at': datetime.now(timezone.utc).isoformat()
         }}
     )
-    
+
     return {'success': True, 'message': 'Alert marked as read'}
 
 
@@ -376,18 +376,18 @@ async def get_inbox_summary(
             {'assigned_to': None}
         ]
     }
-    
+
     # Count by type
     type_counts = {}
     async for alert in db.alerts.find(match_criteria):
         alert_type = alert.get('alert_type', 'other')
         type_counts[alert_type] = type_counts.get(alert_type, 0) + 1
-    
+
     # Count by priority
     urgent = await db.alerts.count_documents({**match_criteria, 'priority': 'urgent', 'status': 'unread'})
     high = await db.alerts.count_documents({**match_criteria, 'priority': 'high', 'status': 'unread'})
     normal = await db.alerts.count_documents({**match_criteria, 'priority': 'normal', 'status': 'unread'})
-    
+
     return {
         'total_unread': urgent + high + normal,
         'by_priority': {
@@ -412,11 +412,11 @@ async def get_notification_preferences(
     Get user notification preferences
     """
     current_user = await get_current_user(credentials)
-    
+
     preferences = await db.notification_preferences.find_one({
         'user_id': current_user.id
     })
-    
+
     if not preferences:
         # Return default preferences
         default_prefs = {
@@ -433,7 +433,7 @@ async def get_notification_preferences(
             ]
         }
         return default_prefs
-    
+
     return preferences
 
 
@@ -449,7 +449,7 @@ async def update_notification_preferences(
     Update notification preferences for a specific notification type
     """
     current_user = await get_current_user(credentials)
-    
+
     # Update or create preferences
     await db.notification_preferences.update_one(
         {'user_id': current_user.id},
@@ -463,7 +463,7 @@ async def update_notification_preferences(
         },
         upsert=True
     )
-    
+
     return {
         'message': 'Bildirim tercihleri güncellendi',
         'notification_type': request.notification_type,
@@ -490,17 +490,17 @@ async def get_notifications_list(
     Filter by unread_only
     """
     current_user = await get_current_user(credentials)
-    
+
     query = {
         '$or': [
             {'user_id': current_user.id},
             {'tenant_id': current_user.tenant_id, 'user_id': None}  # System-wide notifications
         ]
     }
-    
+
     if unread_only:
         query['read'] = False
-    
+
     notifications = []
     async for notif in db.notifications.find(query).sort('created_at', -1).limit(limit):
         notifications.append({
@@ -513,7 +513,7 @@ async def get_notifications_list(
             'created_at': notif.get('created_at'),
             'action_url': notif.get('action_url')
         })
-    
+
     return {
         'notifications': notifications,
         'count': len(notifications),
@@ -533,7 +533,7 @@ async def mark_notification_read(
     Mark a notification as read
     """
     current_user = await get_current_user(credentials)
-    
+
     result = await db.notifications.update_one(
         {
             'id': notification_id,
@@ -544,10 +544,10 @@ async def mark_notification_read(
         },
         {'$set': {'read': True, 'read_at': datetime.now(timezone.utc).isoformat()}}
     )
-    
+
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Notification not found")
-    
+
     return {
         'message': 'Bildirim okundu olarak işaretlendi',
         'notification_id': notification_id
@@ -567,17 +567,17 @@ async def send_system_alert(
     Only admin can send system alerts
     """
     current_user = await get_current_user(credentials)
-    
+
     if current_user.role != 'admin':
         raise HTTPException(status_code=403, detail="Only admin can send system alerts")
-    
+
     # Get users with target roles
     query = {'tenant_id': current_user.tenant_id}
     if request.target_roles:
         query['role'] = {'$in': request.target_roles}
-    
+
     users = await db.users.find(query).to_list(1000)
-    
+
     # Create notifications for each user
     notifications_created = 0
     for target_user in users:
@@ -594,7 +594,7 @@ async def send_system_alert(
         }
         await db.notifications.insert_one(notification)
         notifications_created += 1
-    
+
     return {
         'message': 'Sistem uyarısı gönderildi',
         'notifications_sent': notifications_created,

@@ -132,7 +132,7 @@ class CanaryDeploymentService:
             "advanced_by": ctx.actor_email,
             "advanced_at": now,
             "updated_at": now,
-            "checks_status": {c: "pending" for c in stage["checks"]},
+            "checks_status": dict.fromkeys(stage["checks"], "pending"),
         }
 
         await self._db.canary_deployments.insert_one(entry)

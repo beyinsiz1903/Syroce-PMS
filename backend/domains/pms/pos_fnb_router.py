@@ -211,7 +211,7 @@ async def create_pos_transaction(
         'processed_by': current_user.id,
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     transaction_copy = transaction.copy()
     await db.pos_transactions.insert_one(transaction_copy)
     return transaction
@@ -236,15 +236,15 @@ async def split_check(
         'id': transaction_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    
+
     total_amount = transaction.get('total_amount', 0)
     items = transaction.get('items', [])
-    
+
     split_transactions = []
-    
+
     if split_type == 'equal':
         # Equal split
         amount_per_split = total_amount / split_count
@@ -254,12 +254,12 @@ async def split_check(
                 'amount': round(amount_per_split, 2),
                 'items': 'All items (split equally)'
             })
-    
+
     elif split_type == 'by_item':
         # By item (from split_details)
         if not split_details:
             raise HTTPException(status_code=400, detail="split_details required for by_item split")
-        
+
         for split_num, item_indices in split_details.items():
             split_amount = sum(items[i].get('price', 0) for i in item_indices if i < len(items))
             split_items = [items[i].get('name') for i in item_indices if i < len(items)]
@@ -268,19 +268,19 @@ async def split_check(
                 'amount': round(split_amount, 2),
                 'items': split_items
             })
-    
+
     elif split_type == 'custom':
         # Custom amounts
         if not split_details:
             raise HTTPException(status_code=400, detail="split_details required for custom split")
-        
+
         for split_num, amount in split_details.items():
             split_transactions.append({
                 'split_number': int(split_num),
                 'amount': round(amount, 2),
                 'items': 'Custom split'
             })
-    
+
     # Update original transaction
     await db.pos_transactions.update_one(
         {'id': transaction_id},
@@ -290,7 +290,7 @@ async def split_check(
             'split_count': len(split_transactions)
         }}
     )
-    
+
     return {
         'success': True,
         'original_transaction_id': transaction_id,
@@ -320,24 +320,24 @@ async def transfer_table(
         'table_number': from_table,
         'status': 'open'
     })
-    
+
     if not source_transaction:
         raise HTTPException(status_code=404, detail=f"No active transaction found for table {from_table}")
-    
+
     if transfer_all:
         # Transfer entire table
         await db.pos_transactions.update_one(
             {'id': source_transaction.get('id')},
             {'$set': {'table_number': to_table}}
         )
-        
+
         return {
             'success': True,
             'message': f'Table {from_table} transferred to {to_table}',
             'transaction_id': source_transaction.get('id'),
             'items_transferred': len(source_transaction.get('items', []))
         }
-    
+
     else:
         # Transfer specific items (not implemented in MVP)
         raise HTTPException(status_code=501, detail="Partial transfer not yet implemented")
@@ -370,9 +370,9 @@ async def apply_happy_hour_discount(
         'active': True,
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     await db.happy_hour_rules.insert_one(happy_hour)
-    
+
     return {
         'success': True,
         'happy_hour_id': happy_hour['id'],
@@ -406,7 +406,7 @@ async def get_table_layout(
             transaction = await db.pos_transactions.find_one({
                 'id': table.get('current_transaction_id')
             })
-        
+
         tables.append({
             'id': table.get('id'),
             'table_number': table.get('table_number'),
@@ -424,7 +424,7 @@ async def get_table_layout(
             'guest_count': transaction.get('guests', 0) if transaction else 0,
             'duration_minutes': calculate_table_duration(table) if table.get('status') == 'occupied' else 0
         })
-    
+
     # If no tables exist, create default layout
     if not tables:
         default_tables = create_default_table_layout(current_user.tenant_id, outlet_id)
@@ -444,7 +444,7 @@ async def get_table_layout(
                 'guest_count': 0,
                 'duration_minutes': 0
             })
-    
+
     return {
         'outlet_id': outlet_id,
         'total_tables': len(tables),
@@ -476,12 +476,12 @@ async def update_table_layout(
         updates['seats'] = seats
     if server_assigned is not None:
         updates['server_assigned'] = server_assigned
-    
+
     await db.table_layouts.update_one(
         {'id': table_id, 'tenant_id': current_user.tenant_id},
         {'$set': updates}
     )
-    
+
     return {'success': True, 'message': 'Table layout updated'}
 
 
@@ -502,12 +502,12 @@ async def get_split_bill_ui_data(
         'id': transaction_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    
+
     items = transaction.get('items', [])
-    
+
     # Format items for split UI
     formatted_items = []
     for idx, item in enumerate(items):
@@ -520,7 +520,7 @@ async def get_split_bill_ui_data(
             'selected_for_split': False,
             'split_assignee': None  # Which guest (1, 2, 3, etc.)
         })
-    
+
     return {
         'transaction_id': transaction_id,
         'table_number': transaction.get('table_number'),
@@ -554,18 +554,18 @@ async def get_kitchen_display_orders(
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['pending', 'preparing']}
     }
-    
+
     if station:
         match_criteria['station'] = station
     if status:
         match_criteria['status'] = status
-    
+
     orders = []
     async for order in db.kitchen_orders.find(match_criteria).sort('ordered_at', 1):
         # Calculate wait time
         ordered_at = datetime.fromisoformat(order.get('ordered_at'))
         wait_minutes = (datetime.now(timezone.utc) - ordered_at).total_seconds() / 60
-        
+
         # Determine priority color
         if wait_minutes > 15:
             priority_color = 'red'
@@ -576,7 +576,7 @@ async def get_kitchen_display_orders(
         else:
             priority_color = 'green'
             priority = 'normal'
-        
+
         orders.append({
             'id': order.get('id'),
             'table_number': order.get('table_number'),
@@ -590,7 +590,7 @@ async def get_kitchen_display_orders(
             'priority_color': priority_color,
             'ordered_at': order.get('ordered_at')
         })
-    
+
     return {
         'station': station or 'all',
         'total_orders': len(orders),
@@ -611,17 +611,17 @@ async def update_kitchen_order_status(
 ):
     """Update kitchen order status from KDS"""
     updates = {'status': new_status}
-    
+
     if new_status == 'ready':
         updates['ready_at'] = datetime.now(timezone.utc).isoformat()
     elif new_status == 'served':
         updates['served_at'] = datetime.now(timezone.utc).isoformat()
-    
+
     await db.kitchen_orders.update_one(
         {'id': order_id, 'tenant_id': current_user.tenant_id},
         {'$set': updates}
     )
-    
+
     return {'success': True, 'order_id': order_id, 'new_status': new_status}
 
 
@@ -652,12 +652,12 @@ async def set_room_charge_restrictions(
         'created_at': datetime.now(timezone.utc).isoformat(),
         'created_by': current_user.name
     }
-    
+
     # Store or update restrictions
     existing = await db.pos_room_charge_restrictions.find_one({
         'tenant_id': current_user.tenant_id
     })
-    
+
     if existing:
         await db.pos_room_charge_restrictions.update_one(
             {'tenant_id': current_user.tenant_id},
@@ -665,7 +665,7 @@ async def set_room_charge_restrictions(
         )
     else:
         await db.pos_room_charge_restrictions.insert_one(restrictions)
-    
+
     return {
         'success': True,
         'message': 'Room charge restrictions updated',
@@ -691,13 +691,13 @@ async def validate_room_charge(
     restrictions = await db.pos_room_charge_restrictions.find_one({
         'tenant_id': current_user.tenant_id
     })
-    
+
     validation_result = {
         'allowed': True,
         'reason': None,
         'requires_approval': False
     }
-    
+
     if restrictions:
         # Check max daily charge
         if restrictions.get('max_daily_charge'):
@@ -709,34 +709,34 @@ async def validate_room_charge(
                 'date': {'$gte': today}
             }):
                 daily_total += charge.get('total', 0)
-            
+
             if daily_total + amount > restrictions['max_daily_charge']:
                 validation_result['allowed'] = False
                 validation_result['reason'] = f"Exceeds daily limit of ${restrictions['max_daily_charge']}"
                 return validation_result
-        
+
         # Check allowed categories
         if restrictions.get('allowed_categories'):
             if category not in restrictions['allowed_categories']:
                 validation_result['allowed'] = False
                 validation_result['reason'] = f"Category '{category}' not allowed for room charge"
                 return validation_result
-        
+
         # Check restricted hours
         if restrictions.get('restricted_hours'):
             current_time = datetime.now().time()
             start_time = datetime.strptime(restrictions['restricted_hours']['start'], '%H:%M').time()
             end_time = datetime.strptime(restrictions['restricted_hours']['end'], '%H:%M').time()
-            
+
             if start_time <= current_time <= end_time:
                 validation_result['allowed'] = False
                 validation_result['reason'] = f"Room charges restricted between {restrictions['restricted_hours']['start']}-{restrictions['restricted_hours']['end']}"
                 return validation_result
-        
+
         # Check if approval required
         if restrictions.get('require_supervisor_approval'):
             validation_result['requires_approval'] = True
-    
+
     return validation_result
 
 
@@ -751,15 +751,15 @@ async def get_fnb_dashboard(
 ):
     """Get F&B dashboard overview"""
     current_user = await get_current_user(credentials)
-    
+
     # Default to today
     if not date:
         date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-    
+
     target_date = datetime.fromisoformat(date)
     start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=1)
-    
+
     # Get F&B charges
     charges = await db.folio_charges.find({
         'tenant_id': current_user.tenant_id,
@@ -770,11 +770,11 @@ async def get_fnb_dashboard(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     food_revenue = sum(c.get('total', 0) for c in charges if c.get('charge_category') == 'food')
     beverage_revenue = sum(c.get('total', 0) for c in charges if c.get('charge_category') == 'beverage')
     total_revenue = food_revenue + beverage_revenue
-    
+
     # Get POS orders
     orders = await db.pos_orders.find({
         'tenant_id': current_user.tenant_id,
@@ -783,17 +783,17 @@ async def get_fnb_dashboard(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     orders_count = len(orders)
     avg_order_value = round(total_revenue / orders_count, 2) if orders_count > 0 else 0
-    
+
     # Get table turnover (simplified)
-    tables_used = len(set(o.get('table_number') for o in orders if o.get('table_number')))
-    
+    tables_used = len({o.get('table_number') for o in orders if o.get('table_number')})
+
     # Previous day comparison
     prev_start = start - timedelta(days=1)
     prev_end = start
-    
+
     prev_charges = await db.folio_charges.find({
         'tenant_id': current_user.tenant_id,
         'voided': False,
@@ -803,10 +803,10 @@ async def get_fnb_dashboard(
             '$lte': prev_end.isoformat()
         }
     }).to_list(10000)
-    
+
     prev_revenue = sum(c.get('total', 0) for c in prev_charges)
     revenue_change = round(((total_revenue - prev_revenue) / prev_revenue * 100), 2) if prev_revenue > 0 else 0
-    
+
     return {
         'date': date,
         'summary': {
@@ -830,7 +830,7 @@ async def get_fnb_sales_report(
 ):
     """Get F&B sales report"""
     current_user = await get_current_user(credentials)
-    
+
     # Default to last 30 days
     if start_date and end_date:
         start = datetime.fromisoformat(start_date)
@@ -838,7 +838,7 @@ async def get_fnb_sales_report(
     else:
         end = datetime.now(timezone.utc)
         start = end - timedelta(days=30)
-    
+
     # Get charges
     charges = await db.folio_charges.find({
         'tenant_id': current_user.tenant_id,
@@ -849,17 +849,17 @@ async def get_fnb_sales_report(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     # Daily breakdown
     daily_sales = {}
     for charge in charges:
         date_str = charge.get('date', '')[:10]
         if date_str not in daily_sales:
             daily_sales[date_str] = {'food': 0, 'beverage': 0}
-        
+
         category = charge.get('charge_category')
         daily_sales[date_str][category] += charge.get('total', 0)
-    
+
     daily_data = []
     for date_str in sorted(daily_sales.keys()):
         daily_data.append({
@@ -868,12 +868,12 @@ async def get_fnb_sales_report(
             'beverage': round(daily_sales[date_str]['beverage'], 2),
             'total': round(daily_sales[date_str]['food'] + daily_sales[date_str]['beverage'], 2)
         })
-    
+
     # Category totals
     total_food = sum(d['food'] for d in daily_data)
     total_beverage = sum(d['beverage'] for d in daily_data)
     total_sales = total_food + total_beverage
-    
+
     return {
         'period': {
             'start_date': start.strftime('%Y-%m-%d'),
@@ -899,7 +899,7 @@ async def get_fnb_menu_performance(
 ):
     """Get menu item performance analysis"""
     current_user = await get_current_user(credentials)
-    
+
     # Default to last 30 days
     if start_date and end_date:
         start = datetime.fromisoformat(start_date)
@@ -907,7 +907,7 @@ async def get_fnb_menu_performance(
     else:
         end = datetime.now(timezone.utc)
         start = end - timedelta(days=30)
-    
+
     # Get POS orders with item details
     orders = await db.pos_orders.find({
         'tenant_id': current_user.tenant_id,
@@ -916,7 +916,7 @@ async def get_fnb_menu_performance(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     # Aggregate by menu item
     menu_stats = {}
     for order in orders:
@@ -925,18 +925,18 @@ async def get_fnb_menu_performance(
             item_name = item.get('item_name', 'Unknown')
             quantity = item.get('quantity', 1)
             price = item.get('price', 0)
-            
+
             if item_name not in menu_stats:
                 menu_stats[item_name] = {
                     'quantity_sold': 0,
                     'revenue': 0,
                     'orders_count': 0
                 }
-            
+
             menu_stats[item_name]['quantity_sold'] += quantity
             menu_stats[item_name]['revenue'] += price * quantity
             menu_stats[item_name]['orders_count'] += 1
-    
+
     # Format and sort
     menu_items = []
     for item_name, stats in menu_stats.items():
@@ -947,16 +947,16 @@ async def get_fnb_menu_performance(
             'orders_count': stats['orders_count'],
             'avg_price': round(stats['revenue'] / stats['quantity_sold'], 2) if stats['quantity_sold'] > 0 else 0
         })
-    
+
     # Sort by revenue
     menu_items.sort(key=lambda x: x['revenue'], reverse=True)
-    
+
     # Get top 10 and bottom 5
     top_items = menu_items[:10]
     bottom_items = menu_items[-5:] if len(menu_items) > 5 else []
-    
+
     total_revenue = sum(item['revenue'] for item in menu_items)
-    
+
     return {
         'period': {
             'start_date': start.strftime('%Y-%m-%d'),
@@ -977,12 +977,12 @@ async def get_fnb_revenue_chart(
 ):
     """Get F&B revenue chart data"""
     current_user = await get_current_user(credentials)
-    
+
     # Calculate date range
     days = int(period.replace('days', ''))
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
-    
+
     # Get charges
     charges = await db.folio_charges.find({
         'tenant_id': current_user.tenant_id,
@@ -993,18 +993,18 @@ async def get_fnb_revenue_chart(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     # Group by date
     daily_revenue = {}
     for charge in charges:
         date_str = charge.get('date', '')[:10]
         category = charge.get('charge_category')
-        
+
         if date_str not in daily_revenue:
             daily_revenue[date_str] = {'food': 0, 'beverage': 0}
-        
+
         daily_revenue[date_str][category] += charge.get('total', 0)
-    
+
     # Prepare chart data
     chart_data = []
     current_date = start
@@ -1012,19 +1012,19 @@ async def get_fnb_revenue_chart(
         date_str = current_date.strftime('%Y-%m-%d')
         food = daily_revenue.get(date_str, {}).get('food', 0)
         beverage = daily_revenue.get(date_str, {}).get('beverage', 0)
-        
+
         chart_data.append({
             'date': date_str,
             'food': round(food, 2),
             'beverage': round(beverage, 2),
             'total': round(food + beverage, 2)
         })
-        
+
         current_date += timedelta(days=1)
-    
+
     total_food = sum(d['food'] for d in chart_data)
     total_beverage = sum(d['beverage'] for d in chart_data)
-    
+
     return {
         'period': period,
         'chart_data': chart_data,
@@ -1047,35 +1047,35 @@ async def create_pos_order(
 ):
     """Create a POS order with detailed items"""
     current_user = await get_current_user(credentials)
-    
+
     if not data.order_items:
         raise HTTPException(status_code=400, detail="Order items required")
-    
+
     # Get booking and guest info
     guest_id = None
     if data.booking_id:
         booking = await db.bookings.find_one({'id': data.booking_id, 'tenant_id': current_user.tenant_id})
         if booking:
             guest_id = booking['guest_id']
-    
+
     # Build order items
     order_items_list = []
     subtotal = 0.0
-    
+
     for item_data in data.order_items:
         # Get menu item
         menu_item = await db.pos_menu_items.find_one({
             'id': item_data.item_id,
             'tenant_id': current_user.tenant_id
         })
-        
+
         if not menu_item:
             continue
-        
+
         quantity = item_data.quantity
         total_price = menu_item['unit_price'] * quantity
         subtotal += total_price
-        
+
         order_items_list.append(POSOrderItem(
             item_id=menu_item['id'],
             item_name=menu_item['item_name'],
@@ -1084,11 +1084,11 @@ async def create_pos_order(
             unit_price=menu_item['unit_price'],
             total_price=total_price
         ))
-    
+
     # Calculate tax (18% VAT for Turkey)
     tax_amount = subtotal * 0.18
     total_amount = subtotal + tax_amount
-    
+
     # Create order
     order = POSOrder(
         tenant_id=current_user.tenant_id,
@@ -1101,9 +1101,9 @@ async def create_pos_order(
         total_amount=total_amount,
         status="completed"
     )
-    
+
     await db.pos_orders.insert_one(order.model_dump())
-    
+
     # If folio_id provided, post charge to folio
     if data.folio_id:
         # Post charge to folio
@@ -1120,12 +1120,12 @@ async def create_pos_order(
                 total=order_item.total_price * 1.18,
                 voided=False
             )
-            
+
             await db.folio_charges.insert_one(charge.model_dump())
-        
+
         # Update folio balance
         await recalculate_folio_balance(data.folio_id, current_user.tenant_id)
-    
+
     return {
         'success': True,
         'message': 'POS order created',
@@ -1144,24 +1144,24 @@ async def get_pos_orders(
 ):
     """Get POS orders with filtering"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if booking_id:
         query['booking_id'] = booking_id
-    
+
     if start_date and end_date:
         query['created_at'] = {
             '$gte': datetime.fromisoformat(start_date),
             '$lte': datetime.fromisoformat(end_date)
         }
-    
+
     orders = []
     async for order in db.pos_orders.find(query).sort('created_at', -1):
         # Remove ObjectId fields to prevent serialization issues
         order.pop('_id', None)
         orders.append(order)
-    
+
     return {
         'orders': orders,
         'count': len(orders)
@@ -1189,19 +1189,19 @@ async def get_active_orders(
     Filters by status and outlet, calculates preparation time and delayed orders
     """
     current_user = await get_current_user(credentials)
-    
+
     # Build query
     query = {
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['pending', 'preparing', 'ready']}  # Only active orders
     }
-    
+
     if status:
         query['status'] = status
-    
+
     if outlet_id:
         query['outlet_id'] = outlet_id
-    
+
     # Get orders from pos_orders collection
     orders = []
     async for order in db.pos_orders.find(query).sort('created_at', 1):
@@ -1209,18 +1209,18 @@ async def get_active_orders(
         created_at = order.get('created_at')
         if isinstance(created_at, str):
             created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-        
+
         time_elapsed = (datetime.now(timezone.utc) - created_at).total_seconds() / 60  # minutes
-        
+
         # Determine if delayed (more than 30 minutes in pending/preparing)
         is_delayed = False
         if order.get('status') in ['pending', 'preparing'] and time_elapsed > 30:
             is_delayed = True
-        
+
         # Get table/room info
         table_number = order.get('table_number', 'N/A')
         room_number = order.get('room_number', 'N/A')
-        
+
         orders.append({
             'id': order['id'],
             'order_number': order.get('order_number', order['id'][:8]),
@@ -1237,7 +1237,7 @@ async def get_active_orders(
             'created_at': order.get('created_at'),
             'notes': order.get('notes', '')
         })
-    
+
     return {
         'orders': orders,
         'count': len(orders),
@@ -1258,22 +1258,22 @@ async def get_order_details(
     Including items, notes, timing, and guest information
     """
     current_user = await get_current_user(credentials)
-    
+
     order = await db.pos_orders.find_one({
         'id': order_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    
+
     # Calculate preparation time
     created_at = order.get('created_at')
     if isinstance(created_at, str):
         created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-    
+
     time_elapsed = (datetime.now(timezone.utc) - created_at).total_seconds() / 60
-    
+
     # Get order items with details
     order_items = []
     for item in order.get('order_items', []):
@@ -1286,7 +1286,7 @@ async def get_order_details(
             'total_price': item.get('total_price', 0),
             'special_instructions': item.get('special_instructions', '')
         })
-    
+
     return {
         'id': order['id'],
         'order_number': order.get('order_number', order['id'][:8]),
@@ -1327,21 +1327,21 @@ async def update_order_status(
     Tracks status change history with timestamps
     """
     current_user = await get_current_user(credentials)
-    
+
     # Validate status
     valid_statuses = ['pending', 'preparing', 'ready', 'served', 'cancelled']
     if request.status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
-    
+
     # Get order
     order = await db.pos_orders.find_one({
         'id': order_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    
+
     # Add to status history
     status_history = order.get('status_history', [])
     status_history.append({
@@ -1352,7 +1352,7 @@ async def update_order_status(
         'notes': request.notes,
         'timestamp': datetime.now(timezone.utc).isoformat()
     })
-    
+
     # Update order
     await db.pos_orders.update_one(
         {'id': order_id, 'tenant_id': current_user.tenant_id},
@@ -1365,7 +1365,7 @@ async def update_order_status(
             }
         }
     )
-    
+
     return {
         'message': 'Order status updated successfully',
         'order_id': order_id,
@@ -1392,10 +1392,10 @@ async def get_order_history(
     Filters: date range, outlet, server, status
     """
     current_user = await get_current_user(credentials)
-    
+
     # Build query
     query = {'tenant_id': current_user.tenant_id}
-    
+
     # Date filter
     if start_date or end_date:
         date_filter = {}
@@ -1406,16 +1406,16 @@ async def get_order_history(
             end_dt = datetime.fromisoformat(end_date) + timedelta(days=1)
             date_filter['$lt'] = end_dt.isoformat()
         query['created_at'] = date_filter
-    
+
     if outlet_id:
         query['outlet_id'] = outlet_id
-    
+
     if server_name:
         query['server_name'] = server_name
-    
+
     if status:
         query['status'] = status
-    
+
     # Get orders
     orders = []
     async for order in db.pos_orders.find(query).sort('created_at', -1).limit(limit):
@@ -1432,7 +1432,7 @@ async def get_order_history(
             'created_at': order.get('created_at'),
             'payment_status': order.get('payment_status', 'unpaid')
         })
-    
+
     return {
         'orders': orders,
         'count': len(orders),
@@ -1467,10 +1467,10 @@ async def get_inventory_movements(
     Shows all ins/outs with date, product, quantity, type
     """
     current_user = await get_current_user(credentials)
-    
+
     # Build query
     query = {'tenant_id': current_user.tenant_id}
-    
+
     # Date filter
     if start_date or end_date:
         date_filter = {}
@@ -1480,13 +1480,13 @@ async def get_inventory_movements(
             end_dt = datetime.fromisoformat(end_date) + timedelta(days=1)
             date_filter['$lt'] = end_dt.isoformat()
         query['timestamp'] = date_filter
-    
+
     if product_id:
         query['product_id'] = product_id
-    
+
     if movement_type:
         query['movement_type'] = movement_type
-    
+
     # Get movements from inventory_movements collection
     movements = []
     async for movement in db.inventory_movements.find(query).sort('timestamp', -1).limit(limit):
@@ -1502,7 +1502,7 @@ async def get_inventory_movements(
             'performed_by': movement.get('performed_by', ''),
             'timestamp': movement.get('timestamp', datetime.now(timezone.utc).isoformat())
         })
-    
+
     # If no movements exist, create sample data
     if len(movements) == 0:
         sample_movements = [
@@ -1544,7 +1544,7 @@ async def get_inventory_movements(
             }
         ]
         movements = sample_movements
-    
+
     return {
         'movements': movements,
         'count': len(movements)
@@ -1565,20 +1565,20 @@ async def get_stock_levels(
     Shows quantity, minimum level, and low stock warnings
     """
     current_user = await get_current_user(credentials)
-    
+
     # Build query
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if category:
         query['category'] = category
-    
+
     # Get stock items
     stock_items = []
     async for item in db.inventory.find(query):
         current_qty = item.get('quantity', 0)
         min_qty = item.get('minimum_quantity', 10)
         is_low_stock = current_qty <= min_qty
-        
+
         # Calculate stock status
         if current_qty == 0:
             stock_status = 'out_of_stock'
@@ -1592,7 +1592,7 @@ async def get_stock_levels(
         else:
             stock_status = 'good'
             status_color = 'green'
-        
+
         stock_item = {
             'id': item.get('id', str(uuid.uuid4())),
             'product_id': item.get('product_id', item.get('id')),
@@ -1606,10 +1606,10 @@ async def get_stock_levels(
             'status_color': status_color,
             'last_updated': item.get('last_updated', datetime.now(timezone.utc).isoformat())
         }
-        
+
         if not low_stock_only or is_low_stock:
             stock_items.append(stock_item)
-    
+
     # If no items, create sample data
     if len(stock_items) == 0:
         sample_items = [
@@ -1669,12 +1669,12 @@ async def get_stock_levels(
                 'status_color': 'red'
             }
         ]
-        
+
         if low_stock_only:
             stock_items = [item for item in sample_items if item['is_low_stock']]
         else:
             stock_items = sample_items
-    
+
     return {
         'stock_items': stock_items,
         'count': len(stock_items),
@@ -1694,15 +1694,15 @@ async def get_low_stock_alerts(
     Critical alerts for inventory management
     """
     current_user = await get_current_user(credentials)
-    
+
     # Get all inventory items
     query = {'tenant_id': current_user.tenant_id}
-    
+
     low_stock_alerts = []
     async for item in db.inventory.find(query):
         current_qty = item.get('quantity', 0)
         min_qty = item.get('minimum_quantity', 10)
-        
+
         if current_qty <= min_qty:
             # Calculate urgency
             if current_qty == 0:
@@ -1714,7 +1714,7 @@ async def get_low_stock_alerts(
             else:
                 urgency = 'medium'
                 urgency_level = 1
-            
+
             low_stock_alerts.append({
                 'id': item.get('id', str(uuid.uuid4())),
                 'product_id': item.get('product_id', item.get('id')),
@@ -1729,10 +1729,10 @@ async def get_low_stock_alerts(
                 'alert_message': f"{item.get('product_name', 'Product')} → {current_qty} {item.get('unit_of_measure', 'pcs')} kaldı",
                 'recommended_order': max(min_qty * 2 - current_qty, 0)
             })
-    
+
     # Sort by urgency level (highest first)
     low_stock_alerts.sort(key=lambda x: x['urgency_level'], reverse=True)
-    
+
     # If no alerts, create sample
     if len(low_stock_alerts) == 0:
         low_stock_alerts = [
@@ -1776,7 +1776,7 @@ async def get_low_stock_alerts(
                 'recommended_order': 20
             }
         ]
-    
+
     return {
         'alerts': low_stock_alerts,
         'count': len(low_stock_alerts),
@@ -1798,7 +1798,7 @@ async def adjust_stock(
     Only for Warehouse staff and F&B Manager roles
     """
     current_user = await get_current_user(credentials)
-    
+
     # Check permissions - only Warehouse and F&B Manager
     allowed_roles = ['admin', 'warehouse', 'fnb_manager', 'supervisor']
     if current_user.role not in allowed_roles:
@@ -1806,24 +1806,24 @@ async def adjust_stock(
             status_code=403,
             detail="Insufficient permissions. Only Warehouse staff and F&B Manager can adjust stock."
         )
-    
+
     # Validate adjustment type
     valid_types = ['in', 'out', 'adjustment']
     if request.adjustment_type not in valid_types:
         raise HTTPException(status_code=400, detail=f"Invalid adjustment type. Must be one of: {', '.join(valid_types)}")
-    
+
     # Get product
     product = await db.inventory.find_one({
         'id': request.product_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not product:
         raise HTTPException(status_code=404, detail="Product not found in inventory")
-    
+
     # Calculate new quantity
     current_qty = product.get('quantity', 0)
-    
+
     if request.adjustment_type == 'in':
         new_qty = current_qty + request.quantity
     elif request.adjustment_type == 'out':
@@ -1832,7 +1832,7 @@ async def adjust_stock(
             raise HTTPException(status_code=400, detail="Insufficient stock for this adjustment")
     else:  # adjustment
         new_qty = request.quantity  # Direct adjustment to specific quantity
-    
+
     # Update inventory
     await db.inventory.update_one(
         {'id': request.product_id, 'tenant_id': current_user.tenant_id},
@@ -1844,7 +1844,7 @@ async def adjust_stock(
             }
         }
     )
-    
+
     # Log the movement
     movement = {
         'id': str(uuid.uuid4()),
@@ -1862,9 +1862,9 @@ async def adjust_stock(
         'performed_by_role': current_user.role,
         'timestamp': datetime.now(timezone.utc).isoformat()
     }
-    
+
     await db.inventory_movements.insert_one(movement)
-    
+
     return {
         'message': 'Stock adjusted successfully',
         'product_id': request.product_id,
@@ -1888,12 +1888,12 @@ async def adjust_stock(
 @router.get("/pos/menu-engineering")
 async def get_menu_engineering(current_user: User = Depends(get_current_user)):
     """Menu engineering analysis (Stars, Plowhorses, Puzzles, Dogs) - REAL DATA"""
-    
+
     # Get menu items with sales data from database
     menu_items = await db.pos_menu_items.find({
         'tenant_id': current_user.tenant_id
     }, {'_id': 0}).to_list(200)
-    
+
     # If no menu items, return empty structure
     if not menu_items:
         return {
@@ -1911,14 +1911,14 @@ async def get_menu_engineering(current_user: User = Depends(get_current_user)):
                 'Dogs': []
             }
         }
-    
+
     # Calculate profitability and popularity
     analyzed_items = []
-    
+
     for item in menu_items:
         profit_margin = item.get('profit_margin', 0)
         sales_count = item.get('sales_count', 0)
-        
+
         # Categorize based on Boston Matrix
         if profit_margin > 50 and sales_count > 100:
             category = 'Stars'
@@ -1928,7 +1928,7 @@ async def get_menu_engineering(current_user: User = Depends(get_current_user)):
             category = 'Puzzles'
         else:
             category = 'Dogs'
-        
+
         analyzed_items.append({
             'item_name': item.get('name'),
             'category': item.get('category'),
@@ -1940,7 +1940,7 @@ async def get_menu_engineering(current_user: User = Depends(get_current_user)):
             'classification': category,
             'recommendation': get_menu_recommendation(category)
         })
-    
+
     # Group by classification
     summary = {
         'Stars': [i for i in analyzed_items if i['classification'] == 'Stars'],
@@ -1948,7 +1948,7 @@ async def get_menu_engineering(current_user: User = Depends(get_current_user)):
         'Puzzles': [i for i in analyzed_items if i['classification'] == 'Puzzles'],
         'Dogs': [i for i in analyzed_items if i['classification'] == 'Dogs']
     }
-    
+
     return {
         'items': analyzed_items,
         'summary': {

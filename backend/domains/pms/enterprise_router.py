@@ -37,7 +37,7 @@ async def get_ota_conversations(
     query = {'tenant_id': current_user.tenant_id}
     if ota:
         query['ota_platform'] = ota
-    
+
     conversations = await db.ota_conversations.find(query, {'_id': 0}).sort('last_message_at', -1).to_list(100)
     return {'conversations': conversations}
 
@@ -68,13 +68,13 @@ async def send_ota_message(
         'sent_at': datetime.now(timezone.utc).isoformat()
     }
     await db.ota_messages.insert_one(message)
-    
+
     # Update conversation last message
     await db.ota_conversations.update_one(
         {'id': conversation_id},
         {'$set': {'last_message': message_data.get('message'), 'last_message_at': message['sent_at']}}
     )
-    
+
     return {'message': 'Sent successfully'}
 
 # OTA Booking.com Integration Endpoints
@@ -328,7 +328,7 @@ async def get_pos_closures(current_user: User = Depends(get_current_user)):
 async def create_pos_closure(current_user: User = Depends(get_current_user)):
     # Calculate today's sales
     today = datetime.now(timezone.utc).date().isoformat()
-    
+
     closure = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -340,7 +340,7 @@ async def create_pos_closure(current_user: User = Depends(get_current_user)):
         'closed_at': datetime.now(timezone.utc).isoformat(),
         'closed_by': current_user.id
     }
-    
+
     await db.pos_closures.insert_one(closure)
     return closure
 
@@ -357,7 +357,7 @@ async def get_tasks(
 ):
     """Get tasks with filters"""
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if department:
         query['department'] = department
     if status:
@@ -366,12 +366,12 @@ async def get_tasks(
         query['priority'] = priority
     if assigned_to:
         query['assigned_to'] = assigned_to
-    
+
     tasks = await db.tasks.find(
         query,
         {'_id': 0}
     ).sort([('priority_order', -1), ('created_at', 1)]).to_list(1000)
-    
+
     return {'tasks': tasks, 'count': len(tasks)}
 
 @router.post("/tasks")
@@ -387,7 +387,7 @@ async def create_task(
         'normal': 2,
         'low': 1
     }
-    
+
     task = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -408,10 +408,10 @@ async def create_task(
         'created_by': current_user.id,
         'updated_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     task_copy = task.copy()
     await db.tasks.insert_one(task_copy)
-    
+
     # Create notification for assigned user
     if request.assigned_to:
         notification = {
@@ -426,7 +426,7 @@ async def create_task(
         }
         notif_copy = notification.copy()
         await db.notifications.insert_one(notif_copy)
-    
+
     return task
 
 @router.get("/tasks/my-tasks")
@@ -439,12 +439,12 @@ async def get_my_tasks(
         'tenant_id': current_user.tenant_id,
         'assigned_to': current_user.name
     }
-    
+
     if status:
         query['status'] = status
-    
+
     tasks = await db.tasks.find(query, {'_id': 0}).sort([('priority_order', -1), ('due_date', 1)]).to_list(1000)
-    
+
     return {'tasks': tasks, 'count': len(tasks)}
 
 @router.get("/tasks/dashboard")
@@ -455,14 +455,14 @@ async def get_tasks_dashboard(current_user: User = Depends(get_current_user)):
     tasks = await db.tasks.find({
         'tenant_id': current_user.tenant_id
     }, {'_id': 0}).to_list(10000)
-    
+
     # Department breakdown
     departments = ['engineering', 'housekeeping', 'fnb', 'maintenance', 'front_desk']
     dept_stats = {}
-    
+
     for dept in departments:
         dept_tasks = [t for t in tasks if t.get('department') == dept]
-        
+
         dept_stats[dept] = {
             'total': len(dept_tasks),
             'new': sum(1 for t in dept_tasks if t.get('status') == 'new'),
@@ -471,10 +471,10 @@ async def get_tasks_dashboard(current_user: User = Depends(get_current_user)):
             'urgent': sum(1 for t in dept_tasks if t.get('priority') == 'urgent'),
             'overdue': sum(1 for t in dept_tasks if t.get('due_date') and t.get('due_date') < datetime.now(timezone.utc).date().isoformat() and t.get('status') not in ['completed', 'verified'])
         }
-    
+
     # Overall stats
     today = datetime.now(timezone.utc).date().isoformat()
-    
+
     return {
         'summary': {
             'total_tasks': len(tasks),
@@ -498,36 +498,36 @@ async def get_delayed_tasks(
     Automatically creates notifications for overdue tasks
     """
     current_user = await get_current_user(credentials)
-    
+
     try:
         now = datetime.now(timezone.utc)
-        
+
         # Get SLA configs
         sla_configs = await db.sla_configs.find({
             'tenant_id': current_user.tenant_id
         }, {'_id': 0}).to_list(100)
-        
+
         # Create SLA lookup
         sla_lookup = {}
         for sla in sla_configs:
             key = f"{sla['category']}_{sla.get('priority', 'normal')}"
             sla_lookup[key] = sla
-        
+
         delayed_tasks = []
-        
+
         # Check cleaning requests
         cleaning_requests = await db.cleaning_requests.find({
             'status': {'$in': ['pending', 'in_progress']},
             'tenant_id': current_user.tenant_id
         }, {'_id': 0}).to_list(100)
-        
+
         for req in cleaning_requests:
             requested_at = datetime.fromisoformat(req['requested_at'])
             elapsed_minutes = (now - requested_at).total_seconds() / 60
-            
+
             sla_key = f"guest_request_{req.get('priority', 'normal')}"
             sla = sla_lookup.get(sla_key, {'resolution_time_minutes': 120})
-            
+
             if elapsed_minutes > sla['resolution_time_minutes']:
                 delay_minutes = elapsed_minutes - sla['resolution_time_minutes']
                 delayed_tasks.append({
@@ -542,14 +542,14 @@ async def get_delayed_tasks(
                     'priority': req.get('priority', 'normal'),
                     'status': req['status']
                 })
-                
+
                 # Create notification if not already sent
                 existing_notif = await db.notifications.find_one({
                     'related_id': req['id'],
                     'type': 'sla_breach',
                     'tenant_id': current_user.tenant_id
                 }, {'_id': 0})
-                
+
                 if not existing_notif:
                     await db.notifications.insert_one({
                         'id': str(uuid.uuid4()),
@@ -563,14 +563,14 @@ async def get_delayed_tasks(
                         'read': False,
                         'created_at': now.isoformat()
                     })
-        
+
         return {
             'delayed_tasks': delayed_tasks,
             'count': len(delayed_tasks),
             'critical_count': len([t for t in delayed_tasks if t['delay_minutes'] > 60]),
             'generated_at': now.isoformat()
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get delayed tasks: {str(e)}")
 
@@ -584,18 +584,18 @@ async def get_task_details(
         'id': task_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     # Get task history
     history = await db.task_history.find({
         'tenant_id': current_user.tenant_id,
         'task_id': task_id
     }, {'_id': 0}).sort('timestamp', 1).to_list(100)
-    
+
     task['history'] = history
-    
+
     return task
 
 @router.post("/tasks/{task_id}/assign")
@@ -609,10 +609,10 @@ async def assign_task(
         'id': task_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     # Update task
     await db.tasks.update_one(
         {'id': task_id},
@@ -626,7 +626,7 @@ async def assign_task(
             }
         }
     )
-    
+
     # Add to history
     history_entry = {
         'id': str(uuid.uuid4()),
@@ -640,7 +640,7 @@ async def assign_task(
     }
     history_copy = history_entry.copy()
     await db.task_history.insert_one(history_copy)
-    
+
     # Create notification
     notification = {
         'id': str(uuid.uuid4()),
@@ -654,7 +654,7 @@ async def assign_task(
     }
     notif_copy = notification.copy()
     await db.notifications.insert_one(notif_copy)
-    
+
     return {'message': 'Task assigned successfully'}
 
 @router.post("/tasks/{task_id}/status")
@@ -668,26 +668,26 @@ async def update_task_status(
         'id': task_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     update_data = {
         'status': request.status,
         'updated_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     if request.status == 'completed':
         update_data['completed_at'] = datetime.now(timezone.utc).isoformat()
         update_data['completed_by'] = current_user.id
         if request.completion_photos:
             update_data['completion_photos'] = request.completion_photos
-    
+
     await db.tasks.update_one(
         {'id': task_id},
         {'$set': update_data}
     )
-    
+
     # Add to history
     history_entry = {
         'id': str(uuid.uuid4()),
@@ -701,7 +701,7 @@ async def update_task_status(
     }
     history_copy = history_entry.copy()
     await db.task_history.insert_one(history_copy)
-    
+
     return {'message': 'Task status updated successfully'}
 
 @router.get("/tasks/department/{department}")
@@ -715,30 +715,30 @@ async def get_department_tasks(
         'tenant_id': current_user.tenant_id,
         'department': department
     }
-    
+
     if status:
         query['status'] = status
-    
+
     tasks = await db.tasks.find(query, {'_id': 0}).sort([('priority_order', -1), ('created_at', 1)]).to_list(1000)
-    
+
     # Calculate stats
     total = len(tasks)
     by_status = {}
     by_priority = {}
     overdue = 0
-    
+
     today = datetime.now(timezone.utc).date().isoformat()
-    
+
     for task in tasks:
         status = task.get('status', 'new')
         priority = task.get('priority', 'normal')
-        
+
         by_status[status] = by_status.get(status, 0) + 1
         by_priority[priority] = by_priority.get(priority, 0) + 1
-        
+
         if task.get('due_date') and task.get('due_date') < today and status not in ['completed', 'verified', 'cancelled']:
             overdue += 1
-    
+
     return {
         'department': department,
         'tasks': tasks,
@@ -773,7 +773,7 @@ async def create_engineering_maintenance_request(
         location=location,
         room_id=room_id
     )
-    
+
     return await create_task(task_request, current_user)
 
 # Housekeeping Tasks (Enhanced)
@@ -787,10 +787,10 @@ async def create_housekeeping_cleaning_request(
 ):
     """Create housekeeping cleaning request"""
     room = await db.rooms.find_one({'id': room_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
-    
+
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
-    
+
     task_request = CreateTaskRequest(
         department='housekeeping',
         task_type=task_type,
@@ -800,7 +800,7 @@ async def create_housekeeping_cleaning_request(
         location=f"Room {room.get('room_number')}",
         room_id=room_id
     )
-    
+
     return await create_task(task_request, current_user)
 
 # F&B Tasks
@@ -824,7 +824,7 @@ async def create_fnb_service_request(
         location=location,
         due_date=due_date
     )
-    
+
     return await create_task(task_request, current_user)
 
 
@@ -838,7 +838,7 @@ async def get_roles(current_user: User = Depends(get_current_user)):
         {'tenant_id': current_user.tenant_id},
         {'_id': 0}
     ).to_list(100)
-    
+
     # Default roles if none exist
     if not roles:
         default_roles = [
@@ -918,7 +918,7 @@ async def get_roles(current_user: User = Depends(get_current_user)):
             }
         ]
         roles = default_roles
-    
+
     return {'roles': roles, 'count': len(roles)}
 
 @router.post("/admin/roles")
@@ -937,10 +937,10 @@ async def create_role(
         'created_at': datetime.now(timezone.utc).isoformat(),
         'created_by': current_user.id
     }
-    
+
     role_copy = role.copy()
     await db.roles.insert_one(role_copy)
-    
+
     # Log audit trail
     await log_audit_event(
         tenant_id=current_user.tenant_id,
@@ -951,7 +951,7 @@ async def create_role(
         details=f"Created role: {request.role_name}",
         db=db
     )
-    
+
     return role
 
 @router.post("/admin/users/{user_id}/assign-role")
@@ -966,10 +966,10 @@ async def assign_role_to_user(
         'id': request.role_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not role:
         raise HTTPException(status_code=404, detail="Role not found")
-    
+
     # Update user role
     await db.users.update_one(
         {'id': user_id, 'tenant_id': current_user.tenant_id},
@@ -982,7 +982,7 @@ async def assign_role_to_user(
             }
         }
     )
-    
+
     # Log audit trail
     await log_audit_event(
         tenant_id=current_user.tenant_id,
@@ -993,7 +993,7 @@ async def assign_role_to_user(
         details=f"Assigned role {role['role_name']} to user",
         db=db
     )
-    
+
     return {'message': 'Role assigned successfully', 'role': role['role_name']}
 
 @router.get("/admin/permissions")
@@ -1035,7 +1035,7 @@ async def get_all_permissions():
             'view_all', 'edit_all', 'delete_all', 'approve_all'
         ]
     }
-    
+
     return {'permissions': permissions}
 
 
@@ -1058,7 +1058,7 @@ async def log_audit_event(tenant_id: str, user_id: str, action: str, entity_type
         'user_agent': None,  # Can be captured from request
         'timestamp': datetime.now(timezone.utc).isoformat()
     }
-    
+
     audit_copy = audit_log.copy()
     await db.audit_logs.insert_one(audit_copy)
     return audit_log
@@ -1075,7 +1075,7 @@ async def get_audit_logs(
 ):
     """Get audit logs with filters"""
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if action:
         query['action'] = action
     if entity_type:
@@ -1084,12 +1084,12 @@ async def get_audit_logs(
         query['user_id'] = user_id
     if start_date and end_date:
         query['timestamp'] = {'$gte': start_date, '$lte': end_date}
-    
+
     logs = await db.audit_logs.find(
         query,
         {'_id': 0}
     ).sort('timestamp', -1).limit(limit).to_list(limit)
-    
+
     return {'logs': logs, 'count': len(logs)}
 
 @router.get("/admin/audit-logs/critical")
@@ -1103,21 +1103,21 @@ async def get_critical_audit_logs(
         'void_invoice', 'void_charge', 'edit_rates', 'override_rate',
         'delete_user', 'change_role'
     ]
-    
+
     start_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    
+
     logs = await db.audit_logs.find({
         'tenant_id': current_user.tenant_id,
         'action': {'$in': critical_actions},
         'timestamp': {'$gte': start_date}
     }, {'_id': 0}).sort('timestamp', -1).to_list(1000)
-    
+
     # Group by action
     by_action = {}
     for log in logs:
         action = log.get('action')
         by_action[action] = by_action.get(action, 0) + 1
-    
+
     return {
         'logs': logs,
         'summary': {
@@ -1142,18 +1142,18 @@ async def change_rate_with_audit(
         'tenant_id': current_user.tenant_id,
         'name': room_type
     }, {'_id': 0})
-    
+
     if not current_rate_record:
         raise HTTPException(status_code=404, detail="Room type not found")
-    
+
     old_rate = current_rate_record.get('base_rate', 0)
-    
+
     # Update rate
     await db.room_types.update_one(
         {'tenant_id': current_user.tenant_id, 'name': room_type},
         {'$set': {'base_rate': new_rate, 'updated_at': datetime.now(timezone.utc).isoformat()}}
     )
-    
+
     # Log audit event
     await log_audit_event(
         tenant_id=current_user.tenant_id,
@@ -1166,7 +1166,7 @@ async def change_rate_with_audit(
         after_value={'base_rate': new_rate},
         db=db
     )
-    
+
     return {
         'message': 'Rate changed successfully',
         'old_rate': old_rate,
@@ -1183,7 +1183,7 @@ async def create_backup(
 ):
     """Create database backup"""
     backup_id = str(uuid.uuid4())
-    
+
     # In production, this would trigger actual backup process
     # For now, we'll create a backup metadata record
     backup = {
@@ -1196,10 +1196,10 @@ async def create_backup(
         'started_at': datetime.now(timezone.utc).isoformat(),
         'created_by': current_user.id
     }
-    
+
     backup_copy = backup.copy()
     await db.backups.insert_one(backup_copy)
-    
+
     # Log audit event
     await log_audit_event(
         tenant_id=current_user.tenant_id,
@@ -1210,7 +1210,7 @@ async def create_backup(
         details=f"Initiated {request.backup_type} backup",
         db=db
     )
-    
+
     # Simulate backup completion
     await db.backups.update_one(
         {'id': backup_id},
@@ -1222,7 +1222,7 @@ async def create_backup(
             }
         }
     )
-    
+
     return {
         'message': 'Backup created successfully',
         'backup_id': backup_id,
@@ -1238,7 +1238,7 @@ async def list_backups(
     backups = await db.backups.find({
         'tenant_id': current_user.tenant_id
     }, {'_id': 0}).sort('started_at', -1).limit(limit).to_list(limit)
-    
+
     return {'backups': backups, 'count': len(backups)}
 
 @router.post("/admin/backup/{backup_id}/restore")
@@ -1250,19 +1250,19 @@ async def restore_backup(
     """Restore from backup"""
     if not confirm:
         raise HTTPException(status_code=400, detail="Must confirm restore operation")
-    
+
     # Get backup
     backup = await db.backups.find_one({
         'id': backup_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not backup:
         raise HTTPException(status_code=404, detail="Backup not found")
-    
+
     if backup.get('status') != 'completed':
         raise HTTPException(status_code=400, detail="Cannot restore from incomplete backup")
-    
+
     # Log critical audit event
     await log_audit_event(
         tenant_id=current_user.tenant_id,
@@ -1273,7 +1273,7 @@ async def restore_backup(
         details=f"Restore initiated from backup {backup_id}",
         db=db
     )
-    
+
     # In production, this would trigger actual restore process
     restore_job = {
         'id': str(uuid.uuid4()),
@@ -1283,10 +1283,10 @@ async def restore_backup(
         'started_at': datetime.now(timezone.utc).isoformat(),
         'initiated_by': current_user.id
     }
-    
+
     restore_copy = restore_job.copy()
     await db.restore_jobs.insert_one(restore_copy)
-    
+
     return {
         'message': 'Restore initiated',
         'restore_job_id': restore_job['id'],
@@ -1303,14 +1303,14 @@ async def get_system_health(current_user: User = Depends(get_current_user)):
         db_status = 'healthy'
     except Exception as e:
         db_status = f'unhealthy: {str(e)}'
-    
+
     # Get latest backup
     latest_backup = await db.backups.find_one(
         {'tenant_id': current_user.tenant_id, 'status': 'completed'},
         {'_id': 0},
         sort=[('completed_at', -1)]
     )
-    
+
     # Calculate RPO (Recovery Point Objective)
     if latest_backup:
         last_backup_time = datetime.fromisoformat(latest_backup['completed_at'])
@@ -1319,13 +1319,13 @@ async def get_system_health(current_user: User = Depends(get_current_user)):
     else:
         hours_since_backup = None
         rpo_status = 'critical'
-    
+
     # Get audit log count (last 24h)
     audit_count = await db.audit_logs.count_documents({
         'tenant_id': current_user.tenant_id,
         'timestamp': {'$gte': (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()}
     })
-    
+
     return {
         'status': 'healthy' if db_status == 'healthy' else 'degraded',
         'components': {

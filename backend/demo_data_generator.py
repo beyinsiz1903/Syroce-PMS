@@ -11,11 +11,11 @@ from typing import Dict, List
 
 class DemoDataGenerator:
     """Generate demo data for hotel PMS"""
-    
+
     @staticmethod
     def generate_demo_hotel(tenant_id: str, hotel_type: str = "boutique") -> Dict:
         """Generate complete demo hotel data"""
-        
+
         if hotel_type == "boutique":
             config = {
                 'name': 'The Pearl Boutique Hotel',
@@ -37,7 +37,7 @@ class DemoDataGenerator:
                 'room_types': ['Standard Room', 'Executive Room', 'Business Suite'],
                 'base_rate': 150
             }
-        
+
         demo_data = {
             'tenant_id': tenant_id,
             'hotel_name': config['name'],
@@ -47,16 +47,16 @@ class DemoDataGenerator:
             'staff': DemoDataGenerator._generate_staff(tenant_id),
             'inventory': DemoDataGenerator._generate_inventory(tenant_id)
         }
-        
+
         # Generate bookings with room and guest data
         demo_data['bookings'] = DemoDataGenerator._generate_bookings(
-            tenant_id, 
-            demo_data['rooms'], 
+            tenant_id,
+            demo_data['rooms'],
             demo_data['guests']
         )
-        
+
         return demo_data
-    
+
     @staticmethod
     def _generate_rooms(tenant_id: str, config: Dict) -> List[Dict]:
         """Generate demo rooms"""
@@ -65,9 +65,9 @@ class DemoDataGenerator:
         room_types = config['room_types']
         total_rooms = config['room_count']
         base_rate = config['base_rate']
-        
+
         rooms_per_type = total_rooms // len(room_types)
-        
+
         for room_type in room_types:
             # Calculate rate multiplier
             if 'Suite' in room_type or 'Villa' in room_type:
@@ -82,10 +82,10 @@ class DemoDataGenerator:
             else:
                 rate_multiplier = 1.0
                 max_occupancy = 2
-            
+
             for _ in range(rooms_per_type):
                 status = random.choice(['available'] * 7 + ['occupied'] * 2 + ['cleaning'])
-                
+
                 room = {
                     'id': str(uuid.uuid4()),
                     'tenant_id': tenant_id,
@@ -100,23 +100,23 @@ class DemoDataGenerator:
                     'bed_type': 'King' if 'Suite' in room_type else random.choice(['Queen', 'Twin']),
                     'smoking': False
                 }
-                
+
                 rooms.append(room)
                 room_number += 1
-        
+
         return rooms
-    
+
     @staticmethod
     def _generate_guests(tenant_id: str, count: int) -> List[Dict]:
         """Generate demo guests"""
         first_names = ['John', 'Emma', 'Michael', 'Sophia', 'William', 'Olivia', 'James', 'Ava', 'Robert', 'Isabella']
         last_names = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez']
-        
+
         guests = []
         for i in range(count):
             first = random.choice(first_names)
             last = random.choice(last_names)
-            
+
             guest = {
                 'id': str(uuid.uuid4()),
                 'tenant_id': tenant_id,
@@ -136,25 +136,25 @@ class DemoDataGenerator:
                 },
                 'created_at': datetime.now(timezone.utc).isoformat()
             }
-            
+
             guests.append(guest)
-        
+
         return guests
-    
+
     @staticmethod
     def _generate_bookings(tenant_id: str, rooms: List[Dict], guests: List[Dict]) -> List[Dict]:
         """Generate demo bookings"""
         bookings = []
-        
+
         # Generate some past bookings
         for _ in range(15):
             guest = random.choice(guests)
             room = random.choice(rooms)
-            
+
             check_in = datetime.now(timezone.utc) - timedelta(days=random.randint(1, 30))
             nights = random.randint(1, 5)
             check_out = check_in + timedelta(days=nights)
-            
+
             booking = {
                 'id': str(uuid.uuid4()),
                 'tenant_id': tenant_id,
@@ -169,18 +169,18 @@ class DemoDataGenerator:
                 'channel': random.choice(['direct', 'booking_com', 'expedia', 'airbnb']),
                 'created_at': (check_in - timedelta(days=random.randint(1, 30))).isoformat()
             }
-            
+
             bookings.append(booking)
-        
+
         # Generate current bookings (checked in)
         for _ in range(10):
             guest = random.choice(guests)
             room = random.choice([r for r in rooms if r['status'] == 'occupied'][:10])
-            
+
             check_in = datetime.now(timezone.utc) - timedelta(days=random.randint(0, 3))
             nights = random.randint(2, 7)
             check_out = check_in + timedelta(days=nights)
-            
+
             booking = {
                 'id': str(uuid.uuid4()),
                 'tenant_id': tenant_id,
@@ -195,18 +195,18 @@ class DemoDataGenerator:
                 'channel': random.choice(['direct', 'booking_com', 'expedia']),
                 'created_at': (check_in - timedelta(days=random.randint(7, 60))).isoformat()
             }
-            
+
             bookings.append(booking)
-        
+
         # Generate future bookings (confirmed)
         for _ in range(20):
             guest = random.choice(guests)
             room = random.choice(rooms)
-            
+
             check_in = datetime.now(timezone.utc) + timedelta(days=random.randint(1, 60))
             nights = random.randint(1, 5)
             check_out = check_in + timedelta(days=nights)
-            
+
             booking = {
                 'id': str(uuid.uuid4()),
                 'tenant_id': tenant_id,
@@ -221,11 +221,11 @@ class DemoDataGenerator:
                 'channel': random.choice(['direct', 'booking_com', 'expedia', 'airbnb']),
                 'created_at': (check_in - timedelta(days=random.randint(1, 90))).isoformat()
             }
-            
+
             bookings.append(booking)
-        
+
         return bookings
-    
+
     @staticmethod
     def _generate_staff(tenant_id: str) -> List[Dict]:
         """Generate demo staff"""
@@ -239,7 +239,7 @@ class DemoDataGenerator:
             {'name': 'Tom Engineer', 'role': 'Chief Engineer', 'department': 'engineering'},
             {'name': 'Bob Technician', 'role': 'Maintenance Technician', 'department': 'engineering'}
         ]
-        
+
         staff = []
         for member in staff_members:
             staff.append({
@@ -253,9 +253,9 @@ class DemoDataGenerator:
                 'active': True,
                 'created_at': datetime.now(timezone.utc).isoformat()
             })
-        
+
         return staff
-    
+
     @staticmethod
     def _generate_inventory(tenant_id: str) -> List[Dict]:
         """Generate demo inventory items"""
@@ -269,7 +269,7 @@ class DemoDataGenerator:
             {'name': 'Coffee', 'category': 'Minibar', 'unit': 'kg', 'stock': 25, 'min_stock': 10},
             {'name': 'Water Bottles', 'category': 'Minibar', 'unit': 'bottles', 'stock': 600, 'min_stock': 200}
         ]
-        
+
         inventory = []
         for item in items:
             inventory.append({
@@ -284,5 +284,5 @@ class DemoDataGenerator:
                 'supplier': random.choice(['Hotel Supplies Co', 'Linen Express', 'Amenity World']),
                 'last_updated': datetime.now(timezone.utc).isoformat()
             })
-        
+
         return inventory

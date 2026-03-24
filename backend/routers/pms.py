@@ -2,8 +2,6 @@
 PMS Router - Extracted from server.py
 """
 import asyncio
-import csv
-import io
 import os
 import uuid
 from datetime import datetime, timezone
@@ -11,7 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -19,14 +17,12 @@ from core.database import db
 from core.helpers import (
     create_audit_log,
     require_module,
-    require_super_admin_guard,
 )
 from core.security import get_current_user
 from models.enums import (
     BookingStatus,
     CancellationPolicyType,
     ChannelType,
-    CompanyStatus,
     ContractedRateType,
     FolioType,
     MarketSegment,
@@ -39,8 +35,6 @@ from models.schemas import (
     Guest,
     GuestCreate,
     RateOverrideLog,
-    Room,
-    RoomCreate,
     RoomMoveHistory,
     User,
     _ensure_hotel_context,
@@ -112,740 +106,7 @@ class RejectRequest(BaseModel):
     reason_note: Optional[str] = Field(default=None, max_length=500)
 
 
-@router.post("/pms/rooms", response_model=Room)
-async def create_room(
-    room_data: RoomCreate,
-    current_user: User = Depends(require_super_admin_guard(not_found=False)),
-    _: None = Depends(require_module("pms")),
-):
-    room = Room(tenant_id=current_user.tenant_id, **room_data.model_dump())
-    room_dict = room.model_dump()
-    room_dict['created_at'] = room_dict['created_at'].isoformat()
-    await db.rooms.insert_one(room_dict)
-    return room
-
-
-@router.get("/pms/rooms", response_model=List[Room])
-async def get_rooms(
-    limit: int = 100,  # Optimized for 550+ room properties - load in batches
-    offset: int = 0,
-    status: Optional[str] = None,
-    room_type: Optional[str] = None,
-    view: Optional[str] = None,
-    amenity: Optional[str] = None,
-    current_user: User = Depends(get_current_user),
-    _: None = Depends(require_module("pms")),
-):
-    """Get rooms with pagination - Optimized for large properties (550+ rooms)"""
-    
-    # For small queries with filters, skip cache
-    use_cache = (offset == 0 and not status and not room_type and not view and not amenity and limit >= 100)
-    
-    # Try Redis cache first (FASTEST!) - only for full list
-    if use_cache:
-        try:
-            from redis_cache import redis_cache
-            if redis_cache:
-                cache_key = f"rooms:{current_user.tenant_id}:limit{limit}"
-                cached = redis_cache.get(cache_key)
-                if cached:
-                    return cached
-        except Exception:
-            pass
-        
-        # Check pre-warmed cache second
-        from cache_warmer import cache_warmer
-        if cache_warmer:
-            cached_data = cache_warmer.get_cached(f"rooms:{current_user.tenant_id}")
-            if cached_data:
-                # Process cached data quickly
-                rooms = []
-                for room in cached_data[:limit]:  # Apply limit to cached data
-                    # Ensure tenant_id is present
-                    if 'tenant_id' not in room:
-                        room['tenant_id'] = current_user.tenant_id
-                    
-                    if 'floor' in room and isinstance(room['floor'], str):
-                        try:
-                            room['floor'] = int(room['floor'])
-                        except Exception:
-                            room['floor'] = 1
-                    elif 'floor' not in room:
-                        room['floor'] = 1
-                    
-                    if 'capacity' not in room and 'max_occupancy' in room:
-                        room['capacity'] = room['max_occupancy']
-                    elif 'capacity' not in room:
-                        room['capacity'] = 2
-                    
-                    rooms.append(room)
-                return rooms
-    
-    # Build query with filters
-    # Backward compatible: old room docs may not have is_active field.
-    query = {
-        'tenant_id': current_user.tenant_id,
-        '$or': [{'is_active': True}, {'is_active': {'$exists': False}}],
-    }
-    if status:
-        query['status'] = status
-    if room_type:
-        query['room_type'] = room_type
-    if view:
-        query['view'] = view
-    if amenity:
-        query['amenities'] = amenity
-    
-    # Fallback: Ultra-minimal projection with pagination
-    projection = {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1, 'status': 1, 'floor': 1, 'capacity': 1, 'max_occupancy': 1, 'base_price': 1, 'tenant_id': 1, 'amenities': 1, 'view': 1, 'bed_type': 1, 'images': 1}
-    rooms_raw = await db.rooms.find(query, projection).skip(offset).limit(limit).to_list(limit)
-    
-    # Fix field mapping
-    rooms = []
-    for room in rooms_raw:
-        # Convert floor to int if it's string
-        if 'floor' in room and isinstance(room['floor'], str):
-            try:
-                room['floor'] = int(room['floor'])
-            except Exception:
-                room['floor'] = 1
-        elif 'floor' not in room:
-            room['floor'] = 1
-        
-        # Map max_occupancy to capacity if needed
-        if 'capacity' not in room and 'max_occupancy' in room:
-            room['capacity'] = room['max_occupancy']
-        elif 'capacity' not in room:
-            room['capacity'] = 2
-
-        rooms.append(room)
-
-    # Cache result in Redis for 30 seconds (only for full lists)
-    if use_cache:
-        try:
-            from redis_cache import redis_cache
-            if redis_cache:
-                cache_key = f"rooms:{current_user.tenant_id}:limit{limit}"
-                redis_cache.set(cache_key, rooms, ttl=30)
-        except Exception:
-            pass
-
-    return rooms
-
-
-
-
-class RoomCsvImportResponse(BaseModel):
-    created: int
-    skipped: int
-    errors: int
-    skipped_room_numbers: List[str] = []
-    error_rows: List[Dict[str, Any]] = []  # {row_number, error}
-
-
-
-class RoomBulkRangeRequest(BaseModel):
-    """Create many rooms quickly using a numeric range.
-
-    Supports:
-    - prefix (optional): e.g. "A" → A101, A102 ...
-    - start/end inclusive
-    """
-
-    prefix: Optional[str] = None
-    start_number: int
-    end_number: int
-    floor: int
-    room_type: str
-    capacity: int = 2
-    base_price: float = 0
-    amenities: List[str] = []
-    view: Optional[str] = None
-    bed_type: Optional[str] = None
-
-
-
-class RoomBulkTemplateRequest(BaseModel):
-    """Create N rooms based on a template.
-
-    Supports prefix + starting number to auto-generate unique room_number values.
-    """
-
-    prefix: Optional[str] = None
-    start_number: int = 1
-    count: int
-    floor: int
-    room_type: str
-    capacity: int = 2
-    base_price: float = 0
-    amenities: List[str] = []
-    view: Optional[str] = None
-    bed_type: Optional[str] = None
-
-
-
-class RoomBulkCreateResponse(BaseModel):
-    created: int
-    skipped: int
-
-
-class RoomBulkDeleteRequest(BaseModel):
-    """Soft-delete many rooms in one request.
-
-    Supports:
-    - ids: explicit room ids
-    - room_numbers: explicit room numbers
-    - prefix + start/end numeric range
-
-    Safety:
-    - requires confirm_text == 'DELETE'
-    - blocks rooms with active/checked_in bookings in date range
-    """
-
-    ids: Optional[List[str]] = None
-    room_numbers: Optional[List[str]] = None
-
-    prefix: Optional[str] = None
-    start_number: Optional[int] = None
-    end_number: Optional[int] = None
-
-    confirm_text: str
-
-
-
-class RoomBulkDeleteResponse(BaseModel):
-    to_delete: int
-    deleted: int
-    blocked: int
-    blocked_rooms: List[str] = []
-    deleted_room_numbers: List[str] = []
-
-
-    rooms: List[Room] = []
-    skipped_room_numbers: List[str] = []
-
-
-
-@router.post("/pms/rooms/bulk/range", response_model=RoomBulkCreateResponse)
-async def bulk_create_rooms_range(
-    payload: RoomBulkRangeRequest,
-    current_user: User = Depends(require_super_admin_guard(not_found=False)),
-    _: None = Depends(require_module("pms")),
-):
-    if payload.end_number < payload.start_number:
-        raise HTTPException(status_code=400, detail="end_number start_number'dan küçük olamaz")
-    if payload.end_number - payload.start_number + 1 > 2000:
-        raise HTTPException(status_code=400, detail="Tek seferde maksimum 2000 oda oluşturabilirsiniz")
-
-    prefix = (payload.prefix or "").strip()
-
-    created_rooms: List[Room] = []
-    skipped: List[str] = []
-
-    existing = await db.rooms.find(
-        {"tenant_id": current_user.tenant_id},
-        {"_id": 0, "room_number": 1},
-    ).to_list(5000)
-    existing_numbers = set([r.get("room_number") for r in existing if r.get("room_number")])
-
-    docs = []
-    for n in range(payload.start_number, payload.end_number + 1):
-        room_number = f"{prefix}{n}"
-        if room_number in existing_numbers:
-            skipped.append(room_number)
-            continue
-
-        room = Room(
-            tenant_id=current_user.tenant_id,
-            room_number=room_number,
-            room_type=payload.room_type,
-            floor=payload.floor,
-            capacity=payload.capacity,
-            base_price=payload.base_price,
-            amenities=payload.amenities,
-            view=payload.view,
-            bed_type=payload.bed_type,
-        )
-        room_dict = room.model_dump()
-        room_dict['created_at'] = room_dict['created_at'].isoformat()
-        docs.append(room_dict)
-        created_rooms.append(room)
-
-    if docs:
-        await db.rooms.insert_many(docs)
-
-    return RoomBulkCreateResponse(
-        created=len(created_rooms),
-        skipped=len(skipped),
-        rooms=created_rooms,
-        skipped_room_numbers=skipped,
-    )
-
-
-
-@router.post("/pms/rooms/bulk/template", response_model=RoomBulkCreateResponse)
-async def bulk_create_rooms_template(
-    payload: RoomBulkTemplateRequest,
-    current_user: User = Depends(require_super_admin_guard(not_found=False)),
-    _: None = Depends(require_module("pms")),
-):
-    if payload.count <= 0:
-        raise HTTPException(status_code=400, detail="count 0'dan büyük olmalı")
-    if payload.count > 2000:
-        raise HTTPException(status_code=400, detail="Tek seferde maksimum 2000 oda oluşturabilirsiniz")
-
-    prefix = (payload.prefix or "").strip()
-
-    existing = await db.rooms.find(
-        {"tenant_id": current_user.tenant_id},
-        {"_id": 0, "room_number": 1},
-    ).to_list(5000)
-    existing_numbers = set([r.get("room_number") for r in existing if r.get("room_number")])
-
-    created_rooms: List[Room] = []
-    skipped: List[str] = []
-    docs = []
-
-    current = payload.start_number
-    created_count = 0
-    safety = 0
-    while created_count < payload.count:
-        safety += 1
-        if safety > payload.count + 5000:
-            raise HTTPException(status_code=400, detail="Oda numarası üretiminde çok fazla çakışma oluştu")
-
-        room_number = f"{prefix}{current}"
-        current += 1
-
-        if room_number in existing_numbers:
-            skipped.append(room_number)
-            continue
-
-        room = Room(
-            tenant_id=current_user.tenant_id,
-            room_number=room_number,
-            room_type=payload.room_type,
-            floor=payload.floor,
-            capacity=payload.capacity,
-            base_price=payload.base_price,
-            amenities=payload.amenities,
-            view=payload.view,
-            bed_type=payload.bed_type,
-        )
-        room_dict = room.model_dump()
-        room_dict['created_at'] = room_dict['created_at'].isoformat()
-        docs.append(room_dict)
-        created_rooms.append(room)
-        existing_numbers.add(room_number)
-        created_count += 1
-
-    if docs:
-        await db.rooms.insert_many(docs)
-
-    return RoomBulkCreateResponse(
-        created=len(created_rooms),
-        skipped=len(skipped),
-        rooms=created_rooms,
-        skipped_room_numbers=skipped,
-    )
-
-
-
-@router.post("/pms/rooms/bulk/delete", response_model=RoomBulkDeleteResponse)
-async def bulk_delete_rooms(
-    payload: RoomBulkDeleteRequest,
-    current_user: User = Depends(require_super_admin_guard(not_found=False)),
-    _: None = Depends(require_module("pms")),
-):
-    # Permission: super_admin only
-
-    if (payload.confirm_text or '').strip().upper() != 'DELETE':
-        raise HTTPException(status_code=400, detail="Silme işlemini onaylamak için 'DELETE' yazmalısınız")
-
-    target_ids = set(payload.ids or [])
-    target_numbers = set([rn.strip() for rn in (payload.room_numbers or []) if rn and rn.strip()])
-
-    if payload.start_number is not None or payload.end_number is not None:
-        if payload.start_number is None or payload.end_number is None:
-            raise HTTPException(status_code=400, detail="Range için start_number ve end_number zorunlu")
-        if payload.end_number < payload.start_number:
-            raise HTTPException(status_code=400, detail="end_number start_number'dan küçük olamaz")
-        if payload.end_number - payload.start_number + 1 > 2000:
-            raise HTTPException(status_code=400, detail="Tek seferde maksimum 2000 oda silebilirsiniz")
-
-        prefix = (payload.prefix or '').strip()
-        for n in range(payload.start_number, payload.end_number + 1):
-            target_numbers.add(f"{prefix}{n}")
-
-    if not target_ids and not target_numbers:
-        raise HTTPException(status_code=400, detail="Silinecek oda seçilmedi")
-
-    query: Dict[str, Any] = {
-        "tenant_id": current_user.tenant_id,
-        "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
-    }
-    or_clauses = []
-    if target_ids:
-        or_clauses.append({"id": {"$in": list(target_ids)}})
-    if target_numbers:
-        or_clauses.append({"room_number": {"$in": list(target_numbers)}})
-    if or_clauses:
-        query["$or"] = or_clauses
-
-    rooms = await db.rooms.find(query, {"_id": 0, "id": 1, "room_number": 1}).to_list(5000)
-
-    room_ids = [r['id'] for r in rooms]
-    if not room_ids:
-        return RoomBulkDeleteResponse(to_delete=0, deleted=0, blocked=0)
-
-    active_bookings = await db.bookings.find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "room_id": {"$in": room_ids},
-            "status": {"$in": ["confirmed", "checked_in"]},
-            "is_active": True,
-        },
-        {"_id": 0, "room_id": 1},
-    ).to_list(5000)
-
-    blocked_room_ids = set([b.get('room_id') for b in active_bookings if b.get('room_id')])
-
-    to_delete_rooms = [r for r in rooms if r['id'] not in blocked_room_ids]
-    blocked_rooms = [r['room_number'] for r in rooms if r['id'] in blocked_room_ids]
-
-    now = datetime.now(timezone.utc).isoformat()
-
-    deleted_numbers: List[str] = []
-    if to_delete_rooms:
-        ids_to_delete = [r['id'] for r in to_delete_rooms]
-        deleted_numbers = [r['room_number'] for r in to_delete_rooms]
-        await db.rooms.update_many(
-            {"tenant_id": current_user.tenant_id, "id": {"$in": ids_to_delete}},
-            {"$set": {"is_active": False, "deleted_at": now}},
-        )
-
-    return RoomBulkDeleteResponse(
-        to_delete=len(rooms),
-        deleted=len(to_delete_rooms),
-        blocked=len(blocked_rooms),
-        blocked_rooms=blocked_rooms,
-        deleted_room_numbers=deleted_numbers,
-    )
-
-
-@router.post("/pms/rooms/import-csv", response_model=RoomCsvImportResponse)
-async def import_rooms_csv(
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
-    _: None = Depends(require_module("pms")),
-):
-    # CSV rows limit safety
-    MAX_ROWS = 2000
-
-    if not (file.filename or '').lower().endswith('.csv'):
-        raise HTTPException(status_code=400, detail="Lütfen .csv dosyası yükleyin")
-
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="CSV dosyası boş")
-    if len(content) > 2 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="CSV dosyası çok büyük (max 2MB)")
-
-
-    decoded = content.decode('utf-8-sig', errors='replace')
-    reader = csv.DictReader(io.StringIO(decoded))
-
-    required = {'room_number','room_type','floor','capacity','base_price'}
-    header = set([h.strip() for h in (reader.fieldnames or []) if h])
-    missing = sorted(list(required - header))
-    if missing:
-        raise HTTPException(status_code=400, detail=f"Eksik kolonlar: {', '.join(missing)}")
-
-    existing = await db.rooms.find(
-        {"tenant_id": current_user.tenant_id},
-        {"_id": 0, "room_number": 1},
-    ).to_list(10000)
-    existing_numbers = set([r.get("room_number") for r in existing if r.get("room_number")])
-
-    created = 0
-    skipped_numbers: List[str] = []
-    error_rows: List[Dict[str, Any]] = []
-    docs = []
-
-    for idx, row in enumerate(reader, start=2):  # header is row 1
-        if idx > MAX_ROWS + 1:
-            break
-
-        try:
-            room_number = (row.get('room_number') or '').strip()
-            if not room_number:
-                raise ValueError('room_number boş')
-
-            if room_number in existing_numbers:
-                skipped_numbers.append(room_number)
-                continue
-
-            room_type = (row.get('room_type') or 'standard').strip() or 'standard'
-            floor = int((row.get('floor') or '1').strip() or 1)
-            capacity = int((row.get('capacity') or '2').strip() or 2)
-            base_price = float((row.get('base_price') or '0').strip() or 0)
-
-            view = (row.get('view') or '').strip() or None
-            bed_type = (row.get('bed_type') or '').strip() or None
-
-            amenities_raw = (row.get('amenities') or '').strip()
-            amenities = [a.strip() for a in amenities_raw.split('|') if a.strip()] if amenities_raw else []
-
-            room = Room(
-                tenant_id=current_user.tenant_id,
-                room_number=room_number,
-                room_type=room_type,
-                floor=floor,
-                capacity=capacity,
-                base_price=base_price,
-                amenities=amenities,
-                view=view,
-                bed_type=bed_type,
-            )
-            room_dict = room.model_dump()
-            room_dict['created_at'] = room_dict['created_at'].isoformat()
-            docs.append(room_dict)
-            existing_numbers.add(room_number)
-            created += 1
-        except Exception as e:
-            error_rows.append({"row_number": idx, "error": str(e)})
-
-    if docs:
-        await db.rooms.insert_many(docs)
-
-    return RoomCsvImportResponse(
-        created=created,
-        skipped=len(skipped_numbers),
-        errors=len(error_rows),
-        skipped_room_numbers=skipped_numbers,
-        error_rows=error_rows[:50],
-    )
-
-
-@router.post("/pms/rooms/{room_id}/images")
-async def upload_room_images(
-    room_id: str,
-    files: List[UploadFile] = File(...),
-    current_user: User = Depends(get_current_user),
-    _: None = Depends(require_module("pms")),
-):
-    room = await db.rooms.find_one({'id': room_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
-    if not room:
-        raise HTTPException(status_code=404, detail="Room not found")
-
-    room_folder = UPLOAD_DIR / current_user.tenant_id / 'rooms' / room_id
-    room_folder.mkdir(parents=True, exist_ok=True)
-
-    saved_urls: List[str] = []
-    for f in files:
-        if f.content_type and not f.content_type.startswith('image/'):
-            raise HTTPException(status_code=400, detail=f"Only image uploads allowed. Got: {f.content_type}")
-
-        ext = Path(f.filename or '').suffix.lower()[:10]
-        if ext not in ['.jpg', '.jpeg', '.png', '.webp', '.gif']:
-            ext = ext if ext else '.jpg'
-
-        filename = f"{uuid.uuid4()}{ext}"
-        dest = room_folder / filename
-
-        content = await f.read()
-        if not content:
-            continue
-        if len(content) > 10 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="Image too large (max 10MB)")
-
-        dest.write_bytes(content)
-        url = f"/api/uploads/{current_user.tenant_id}/rooms/{room_id}/{filename}"
-        saved_urls.append(url)
-
-    if not saved_urls:
-        return {"success": True, "uploaded": 0, "images": room.get('images', [])}
-
-    await db.rooms.update_one(
-        {'id': room_id, 'tenant_id': current_user.tenant_id},
-        {'$push': {'images': {'$each': saved_urls}}}
-    )
-
-    updated = await db.rooms.find_one({'id': room_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
-    return {"success": True, "uploaded": len(saved_urls), "images": updated.get('images', [])}
-
-
-@router.put("/pms/rooms/{room_id}")
-async def update_room(room_id: str, updates: Dict[str, Any], current_user: User = Depends(get_current_user)):
-    await db.rooms.update_one({'id': room_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
-    room_doc = await db.rooms.find_one({'id': room_id}, {'_id': 0})
-    return room_doc
-
-
-@router.get("/pms/companies")
-async def get_pms_companies(
-    search: Optional[str] = None,
-    status: Optional[CompanyStatus] = None,
-    current_user: User = Depends(get_current_user)
-):
-    """Get all companies - PMS module alias."""
-    query = {'tenant_id': current_user.tenant_id}
-    
-    if status:
-        query['status'] = status
-    
-    if search:
-        query['$or'] = [
-            {'name': {'$regex': search, '$options': 'i'}},
-            {'corporate_code': {'$regex': search, '$options': 'i'}}
-        ]
-    
-    companies = await db.companies.find(query, {'_id': 0}).to_list(1000)
-    return companies
-
-
-
-@router.post("/pms/guests", response_model=Guest)
-async def create_guest(
-    guest_data: GuestCreate,
-    current_user: User = Depends(get_current_user),
-    _: None = Depends(require_module("pms")),
-):
-    guest = Guest(tenant_id=current_user.tenant_id, **guest_data.model_dump())
-    guest_dict = guest.model_dump()
-    guest_dict['created_at'] = guest_dict['created_at'].isoformat()
-    await db.guests.insert_one(guest_dict)
-    return guest
-
-
-@router.get("/pms/guests", response_model=List[Guest])
-@cached(ttl=300, key_prefix="pms_guests")  # Cache for 5 minutes
-async def get_guests(
-    limit: int = 1000,
-    offset: int = 0,
-    current_user: User = Depends(get_current_user),
-    _: None = Depends(require_module("pms")),
-):
-    guests_raw = await db.guests.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).skip(offset).limit(limit).to_list(limit)
-    
-    # Map database fields to model fields
-    guests = []
-    for guest in guests_raw:
-        # Combine first_name and last_name into name if they exist
-        if 'first_name' in guest and 'last_name' in guest:
-            guest['name'] = f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip()
-        elif 'name' not in guest:
-            guest['name'] = guest.get('email', 'Unknown')
-        
-        # Use passport_number as id_number if id_number doesn't exist
-        if 'id_number' not in guest and 'passport_number' in guest:
-            guest['id_number'] = guest.get('passport_number', '')
-        elif 'id_number' not in guest:
-            guest['id_number'] = ''
-        
-        guests.append(guest)
-    
-    return guests
-
-
-@router.get("/pms/guests/search")
-async def search_guests(
-    q: str = "",
-    limit: int = 10,
-    current_user: User = Depends(get_current_user),
-    _: None = Depends(require_module("pms")),
-):
-    """Misafir arama: ad, e-posta, telefon veya kimlik numarasina gore arar."""
-    q = q.strip()
-    if not q or len(q) < 2:
-        return []
-
-    tenant_id = current_user.tenant_id
-    regex = {"$regex": q, "$options": "i"}
-    query = {
-        "tenant_id": tenant_id,
-        "$or": [
-            {"name": regex},
-            {"first_name": regex},
-            {"last_name": regex},
-            {"email": regex},
-            {"phone": regex},
-            {"id_number": regex},
-            {"passport_number": regex},
-        ],
-    }
-    guests_raw = await db.guests.find(query, {"_id": 0}).sort("name", 1).limit(limit).to_list(limit)
-
-    results = []
-    for g in guests_raw:
-        if "first_name" in g and "last_name" in g:
-            g["name"] = f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
-        elif "name" not in g:
-            g["name"] = g.get("email", "Unknown")
-        if "id_number" not in g:
-            g["id_number"] = g.get("passport_number", "")
-        results.append({
-            "id": g.get("id", ""),
-            "name": g.get("name", ""),
-            "email": g.get("email", ""),
-            "phone": g.get("phone", ""),
-            "id_number": g.get("id_number", ""),
-            "vip_status": g.get("vip_status", False),
-            "total_stays": g.get("total_stays", 0),
-        })
-    return results
-
-
-@router.get("/pms/guests/{guest_id}")
-async def get_guest_by_id(
-    guest_id: str,
-    current_user: User = Depends(get_current_user),
-    _: None = Depends(require_module("pms")),
-):
-    guest = await db.guests.find_one(
-        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
-    if not guest:
-        raise HTTPException(status_code=404, detail="Misafir bulunamadi")
-    if "first_name" in guest and "last_name" in guest:
-        guest["name"] = f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip()
-    elif "name" not in guest:
-        guest["name"] = guest.get("email", "Unknown")
-    if "id_number" not in guest:
-        guest["id_number"] = guest.get("passport_number", "")
-    return guest
-
-
-@router.put("/pms/guests/{guest_id}")
-async def update_guest(
-    guest_id: str,
-    data: dict,
-    current_user: User = Depends(get_current_user),
-    _: None = Depends(require_module("pms")),
-):
-    guest = await db.guests.find_one(
-        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
-    if not guest:
-        raise HTTPException(status_code=404, detail="Misafir bulunamadi")
-    allowed = {
-        "name", "email", "phone", "id_type", "id_number",
-        "nationality", "date_of_birth", "address", "city",
-        "postal_code", "country", "gender", "notes",
-        "id_issue_date", "id_expiry_date", "id_issuing_authority",
-    }
-    update_fields = {k: v for k, v in data.items() if k in allowed}
-    if not update_fields:
-        raise HTTPException(status_code=400, detail="Guncellenecek alan bulunamadi")
-    await db.guests.update_one(
-        {"id": guest_id, "tenant_id": current_user.tenant_id},
-        {"$set": update_fields},
-    )
-    updated = await db.guests.find_one(
-        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
-    return updated
-
+# ── Room & Guest routes extracted to pms_rooms.py / pms_guests.py ──
 
 @router.post("/pms/bookings")
 async def create_booking(
@@ -975,7 +236,7 @@ async def get_bookings(
                     b["room_number"] = room.get("room_number", "")
             bookings.append(b)
         return {"bookings": bookings, "total": len(bookings)}
-    
+
     # Check pre-warmed cache for default query (no filters)
     if not start_date and not end_date and not status and offset == 0:
         from cache_warmer import cache_warmer
@@ -1211,12 +472,12 @@ async def create_room_move_history(
         reason=move_data.get('reason'),
         moved_by=move_data.get('moved_by', current_user.name)
     )
-    
+
     history_dict = history.model_dump()
     history_dict['timestamp'] = history_dict['timestamp'].isoformat()
-    
+
     await db.room_move_history.insert_one(history_dict)
-    
+
     return {"message": "Room move logged successfully", "history": history}
 
 
@@ -1233,14 +494,14 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
                 return cached
     except Exception:
         pass
-    
+
     # Check pre-warmed cache second
     from cache_warmer import cache_warmer
     if cache_warmer:
         cached_data = cache_warmer.get_cached(f"dashboard:{current_user.tenant_id}")
         if cached_data:
             return cached_data
-    
+
     # Fallback: Ultra-fast aggregation
     pipeline = [
         {'$match': {'tenant_id': current_user.tenant_id}},
@@ -1250,11 +511,11 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
             'occupied_rooms': {'$sum': {'$cond': [{'$eq': ['$status', 'occupied']}, 1, 0]}}
         }}
     ]
-    
+
     room_stats = await db.rooms.aggregate(pipeline).to_list(1)
     total_rooms = room_stats[0]['total_rooms'] if room_stats else 0
     occupied_rooms = room_stats[0]['occupied_rooms'] if room_stats else 0
-    
+
     # Ultra-fast response - minimal queries
     result = {
         'total_rooms': total_rooms,
@@ -1264,7 +525,7 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
         'today_checkins': 0,  # Skip for max speed
         'total_guests': 0  # Skip for max speed
     }
-    
+
     # Cache in Redis for 5 seconds
     try:
         from redis_cache import redis_cache
@@ -1273,7 +534,7 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
             redis_cache.set(cache_key, result, ttl=5)
     except Exception:
         pass
-    
+
     return result
 
 
@@ -1500,13 +761,13 @@ async def get_room_blocks(
 ):
     """Get room blocks with optional filters"""
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if room_id:
         query['room_id'] = room_id
-    
+
     if status:
         query['status'] = status
-    
+
     if from_date or to_date:
         date_query = {}
         if from_date:
@@ -1514,9 +775,9 @@ async def get_room_blocks(
         if to_date:
             date_query['$lte'] = to_date
         query['start_date'] = date_query
-    
+
     blocks = await db.room_blocks.find(query, {'_id': 0}).to_list(1000)
-    
+
     # Filter expired blocks
     today = datetime.now(timezone.utc).date().isoformat()
     for block in blocks:
@@ -1527,7 +788,7 @@ async def get_room_blocks(
                 {'$set': {'status': 'expired'}}
             )
             block['status'] = 'expired'
-    
+
     return blocks
 
 
@@ -1552,27 +813,27 @@ async def update_room_block(
         'tenant_id': current_user.tenant_id,
         'id': block_id
     })
-    
+
     if not existing:
         raise HTTPException(404, "Block not found")
-    
+
     # Only allow updates to active blocks
     if existing['status'] != 'active':
         raise HTTPException(400, "Cannot update cancelled or expired blocks")
-    
+
     update_data = {}
     allowed_fields = ['reason', 'details', 'start_date', 'end_date', 'allow_sell']
-    
+
     for field in allowed_fields:
         if field in updates:
             update_data[field] = updates[field]
-    
+
     if update_data:
         await db.room_blocks.update_one(
             {'id': block_id},
             {'$set': update_data}
         )
-        
+
         # Audit log
         await db.audit_logs.insert_one({
             'id': str(uuid.uuid4()),
@@ -1584,7 +845,7 @@ async def update_room_block(
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'details': update_data
         })
-    
+
     updated = await db.room_blocks.find_one({'id': block_id}, {'_id': 0})
     return updated
 
@@ -1706,7 +967,7 @@ async def get_staff_tasks(
         query['department'] = department
     if status:
         query['status'] = status
-    
+
     tasks = await db.staff_tasks.find(query, {'_id': 0}).sort('created_at', -1).to_list(1000)
     return tasks
 
@@ -1731,15 +992,15 @@ async def create_staff_task(
         'created_by': current_user.id,
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     # Get room number if room_id provided
     if task['room_id']:
         room = await db.rooms.find_one({'id': task['room_id']}, {'_id': 0, 'room_number': 1})
         if room:
             task['room_number'] = room['room_number']
-    
+
     await db.staff_tasks.insert_one(task)
-    
+
     # Return the task without MongoDB ObjectId
     return {
         'id': task['id'],
@@ -1769,16 +1030,16 @@ async def update_staff_task(
         {'id': task_id, 'tenant_id': current_user.tenant_id},
         {'$set': update_data}
     )
-    
+
     # Return updated task
     updated_task = await db.staff_tasks.find_one(
         {'id': task_id, 'tenant_id': current_user.tenant_id},
         {'_id': 0}
     )
-    
+
     if not updated_task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     return updated_task
 
 
@@ -1839,7 +1100,7 @@ async def create_allotment_contract(
         'status': 'active',
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     await db.allotment_contracts.insert_one(contract)
     return contract
 
@@ -1854,12 +1115,12 @@ async def release_allotment_rooms(
         'id': contract_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not contract:
         raise HTTPException(status_code=404, detail="Contract not found")
-    
+
     available_rooms = contract['allocated_rooms'] - contract.get('used_rooms', 0)
-    
+
     await db.allotment_contracts.update_one(
         {'id': contract_id},
         {'$set': {
@@ -1867,7 +1128,7 @@ async def release_allotment_rooms(
             'released_at': datetime.now(timezone.utc).isoformat()
         }}
     )
-    
+
     return {
         "message": f"Released {available_rooms} rooms",
         "released_rooms": available_rooms
@@ -1948,10 +1209,10 @@ async def get_room_details_enhanced(
         'id': room_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
-    
+
     # Get room notes
     notes = []
     async for note in db.room_notes.find({
@@ -1967,18 +1228,18 @@ async def get_room_details_enhanced(
             'created_by': note.get('created_by'),
             'created_at': note.get('created_at')
         })
-    
+
     # Get mini-bar last update
     minibar_update = await db.minibar_updates.find_one({
         'room_id': room_id,
         'tenant_id': current_user.tenant_id
     }, sort=[('updated_at', -1)])
-    
+
     minibar_info = None
     if minibar_update:
         updated_at = datetime.fromisoformat(minibar_update.get('updated_at'))
         hours_ago = (datetime.now(timezone.utc) - updated_at).total_seconds() / 3600
-        
+
         minibar_info = {
             'last_updated': minibar_update.get('updated_at'),
             'hours_ago': round(hours_ago, 1),
@@ -1988,7 +1249,7 @@ async def get_room_details_enhanced(
             'total_value': minibar_update.get('total_value', 0.0),
             'needs_restock': hours_ago > 24
         }
-    
+
     # Get next maintenance due
     next_maintenance = await db.maintenance_schedule.find_one({
         'room_id': room_id,
@@ -1996,12 +1257,12 @@ async def get_room_details_enhanced(
         'status': {'$in': ['scheduled', 'pending']},
         'scheduled_date': {'$gte': datetime.now(timezone.utc).isoformat()}
     }, sort=[('scheduled_date', 1)])
-    
+
     maintenance_info = None
     if next_maintenance:
         scheduled_date = datetime.fromisoformat(next_maintenance.get('scheduled_date'))
         days_until = (scheduled_date - datetime.now(timezone.utc)).days
-        
+
         maintenance_info = {
             'scheduled_date': next_maintenance.get('scheduled_date'),
             'days_until': days_until,
@@ -2010,7 +1271,7 @@ async def get_room_details_enhanced(
             'priority': next_maintenance.get('priority'),
             'is_overdue': days_until < 0
         }
-    
+
     return {
         'room_id': room_id,
         'room_number': room.get('room_number'),
@@ -2047,11 +1308,11 @@ async def add_room_note(
         priority=priority,
         created_by=current_user.name
     )
-    
+
     note_dict = note.model_dump()
     note_dict['created_at'] = note_dict['created_at'].isoformat()
     await db.room_notes.insert_one(note_dict)
-    
+
     return {'success': True, 'note_id': note.id, 'message': 'Room note added'}
 
 
@@ -2073,11 +1334,11 @@ async def update_minibar(
         items_consumed=items_consumed,
         total_value=total_value
     )
-    
+
     update_dict = update.model_dump()
     update_dict['updated_at'] = update_dict['updated_at'].isoformat()
     await db.minibar_updates.insert_one(update_dict)
-    
+
     return {'success': True, 'update_id': update.id, 'message': 'Mini-bar updated'}
 
 
@@ -2097,14 +1358,14 @@ async def get_reservation_details_enhanced(
         'id': booking_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Reservation not found")
-    
+
     # Cancellation policy details
     policy = booking.get('cancellation_policy', CancellationPolicyType.H24)
     policy_details = get_cancellation_policy_details(policy)
-    
+
     # OTA commission
     commission_info = None
     if booking.get('ota_channel'):
@@ -2112,7 +1373,7 @@ async def get_reservation_details_enhanced(
         total_amount = booking.get('total_amount', 0)
         commission_amount = total_amount * (commission_pct / 100)
         net_revenue = total_amount - commission_amount
-        
+
         commission_info = {
             'ota_channel': booking.get('ota_channel'),
             'ota_confirmation': booking.get('ota_confirmation'),
@@ -2122,7 +1383,7 @@ async def get_reservation_details_enhanced(
             'net_revenue': round(net_revenue, 2),
             'payment_model': booking.get('payment_model')
         }
-    
+
     return {
         'booking_id': booking_id,
         'status': booking.get('status'),
@@ -2152,7 +1413,7 @@ async def check_double_booking_conflicts(
     - Room assignment overlaps
     """
     target_date = date or datetime.now().date().isoformat()
-    
+
     # Get all bookings for the date
     bookings = []
     async for booking in db.bookings.find({
@@ -2162,7 +1423,7 @@ async def check_double_booking_conflicts(
         'check_out': {'$gte': target_date}
     }):
         bookings.append(booking)
-    
+
     # Group by room
     room_bookings = {}
     for booking in bookings:
@@ -2170,7 +1431,7 @@ async def check_double_booking_conflicts(
         if room_id not in room_bookings:
             room_bookings[room_id] = []
         room_bookings[room_id].append(booking)
-    
+
     # Find conflicts
     conflicts = []
     for room_id, room_booking_list in room_bookings.items():
@@ -2189,7 +1450,7 @@ async def check_double_booking_conflicts(
                     'status': b.get('status')
                 } for b in room_booking_list]
             })
-    
+
     return {
         'date': target_date,
         'total_conflicts': len(conflicts),
@@ -2222,16 +1483,16 @@ async def get_adr_and_rate_visibility(
         }
     }):
         bookings.append(booking)
-    
+
     # Calculate ADR
     total_room_revenue = sum(b.get('total_amount', 0) for b in bookings)
     total_room_nights = sum(
         (datetime.fromisoformat(b.get('check_out')) - datetime.fromisoformat(b.get('check_in'))).days
         for b in bookings
     )
-    
+
     adr = total_room_revenue / total_room_nights if total_room_nights > 0 else 0
-    
+
     # By rate type
     rate_breakdown = {}
     for booking in bookings:
@@ -2243,11 +1504,11 @@ async def get_adr_and_rate_visibility(
             }
         rate_breakdown[rate_type]['bookings'] += 1
         rate_breakdown[rate_type]['revenue'] += booking.get('total_amount', 0)
-    
+
     # Calculate ADR per rate type
     for rate_type, data in rate_breakdown.items():
         data['adr'] = round(data['revenue'] / data['bookings'], 2) if data['bookings'] > 0 else 0
-    
+
     return {
         'start_date': start_date,
         'end_date': end_date,
@@ -2278,12 +1539,12 @@ async def create_rate_override_with_panel(
         'id': booking_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
+
     original_rate = booking.get('total_amount', 0)
-    
+
     # Create override log
     override_log = {
         'id': str(uuid.uuid4()),
@@ -2297,9 +1558,9 @@ async def create_rate_override_with_panel(
         'authorized_by': authorized_by or current_user.name,
         'timestamp': datetime.now(timezone.utc).isoformat()
     }
-    
+
     await db.rate_override_logs.insert_one(override_log)
-    
+
     # Update booking
     await db.bookings.update_one(
         {'id': booking_id},
@@ -2309,7 +1570,7 @@ async def create_rate_override_with_panel(
             'override_reason': override_reason
         }}
     )
-    
+
     # Create audit log
     await create_audit_log(
         tenant_id=current_user.tenant_id,
@@ -2323,7 +1584,7 @@ async def create_rate_override_with_panel(
             'reason': override_reason
         }
     )
-    
+
     return {
         'success': True,
         'booking_id': booking_id,
@@ -2373,16 +1634,16 @@ async def get_ota_reservation_details(
 ):
     """Get detailed OTA reservation information including special requests, multi-room, source, extra charges"""
     current_user = await get_current_user(credentials)
-    
+
     # Get booking
     booking = await db.bookings.find_one({
         'id': booking_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
+
     # Get extra charges
     extra_charges = []
     async for charge in db.extra_charges.find({
@@ -2393,7 +1654,7 @@ async def get_ota_reservation_details(
         if '_id' in charge:
             del charge['_id']
         extra_charges.append(charge)
-    
+
     # Check if part of multi-room reservation
     multi_room_info = None
     multi_room = await db.multi_room_bookings.find_one({
@@ -2403,7 +1664,7 @@ async def get_ota_reservation_details(
             {'related_booking_ids': booking_id}
         ]
     })
-    
+
     if multi_room:
         # Get all related bookings
         related_bookings = []
@@ -2419,13 +1680,13 @@ async def get_ota_reservation_details(
                 'room_number': room.get('room_number') if room else 'N/A',
                 'guest_name': await get_guest_name(related_booking['guest_id'], current_user.tenant_id)
             })
-        
+
         multi_room_info = {
             'group_name': multi_room.get('group_name'),
             'total_rooms': multi_room.get('total_rooms'),
             'related_bookings': related_bookings
         }
-    
+
     # Determine source of booking
     source_of_booking = BookingSourceType.WEBSITE.value  # Default
     if booking.get('ota_channel'):
@@ -2436,7 +1697,7 @@ async def get_ota_reservation_details(
         source_of_booking = BookingSourceType.WALK_IN.value
     elif booking.get('channel') == 'phone':
         source_of_booking = BookingSourceType.PHONE.value
-    
+
     return {
         'booking_id': booking_id,
         'special_requests': booking.get('special_requests', ''),
@@ -2465,16 +1726,16 @@ async def add_extra_charge(
 ):
     """Add an extra charge to a reservation"""
     current_user = await get_current_user(credentials)
-    
+
     # Verify booking exists
     booking = await db.bookings.find_one({
         'id': booking_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
+
     # Create extra charge
     extra_charge = ExtraCharge(
         booking_id=booking_id,
@@ -2483,9 +1744,9 @@ async def add_extra_charge(
         charge_amount=data.charge_amount,
         notes=data.notes
     )
-    
+
     await db.extra_charges.insert_one(extra_charge.model_dump())
-    
+
     return {
         'success': True,
         'message': 'Extra charge added successfully',
@@ -2506,7 +1767,7 @@ async def create_multi_room_reservation(
 ):
     """Link multiple bookings as a multi-room reservation"""
     current_user = await get_current_user(credentials)
-    
+
     # Create multi-room booking record
     multi_room = MultiRoomBooking(
         tenant_id=current_user.tenant_id,
@@ -2515,9 +1776,9 @@ async def create_multi_room_reservation(
         related_booking_ids=data.related_booking_ids,
         total_rooms=len(data.related_booking_ids) + 1
     )
-    
+
     await db.multi_room_bookings.insert_one(multi_room.model_dump())
-    
+
     return {
         'success': True,
         'message': 'Multi-room reservation created',
@@ -2669,10 +1930,10 @@ async def search_reservations(
     """
     try:
         filter_dict = {'tenant_id': current_user.tenant_id}
-        
+
         # Search conditions
         search_conditions = []
-        
+
         if query:
             # Search in guest name or booking ID
             search_conditions.append({
@@ -2682,38 +1943,38 @@ async def search_reservations(
                     {'booking_number': {'$regex': query, '$options': 'i'}}
                 ]
             })
-        
+
         if booking_id:
             search_conditions.append({'id': booking_id})
-        
+
         if phone:
             # Find guest by phone first
             guest = await db.guests.find_one({'phone': {'$regex': phone, '$options': 'i'}})
             if guest:
                 search_conditions.append({'guest_id': guest['id']})
-        
+
         if email:
             # Find guest by email first
             guest = await db.guests.find_one({'email': {'$regex': email, '$options': 'i'}})
             if guest:
                 search_conditions.append({'guest_id': guest['id']})
-        
+
         if check_in:
             search_conditions.append({'check_in': {'$gte': check_in}})
-        
+
         if check_out:
             search_conditions.append({'check_out': {'$lte': check_out}})
-        
+
         if status:
             search_conditions.append({'status': status})
-        
+
         # Combine all conditions
         if search_conditions:
             filter_dict['$and'] = search_conditions
-        
+
         # Find bookings
         bookings = await db.bookings.find(filter_dict).sort('check_in', -1).limit(50).to_list(50)
-        
+
         # Enrich with guest and room data
         for booking in bookings:
             if booking.get('guest_id'):
@@ -2721,13 +1982,13 @@ async def search_reservations(
                 if guest:
                     booking['guest_phone'] = guest.get('phone')
                     booking['guest_email'] = guest.get('email')
-            
+
             if booking.get('room_id'):
                 room = await db.rooms.find_one({'id': booking['room_id']})
                 if room:
                     booking['room_number'] = room.get('room_number')
                     booking['room_type'] = room.get('room_type')
-        
+
         return {
             'bookings': bookings,
             'count': len(bookings),
@@ -2740,7 +2001,7 @@ async def search_reservations(
                 'email': email
             }
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
@@ -2753,19 +2014,19 @@ async def add_to_room_queue(
 ):
     """Add guest to room queue (early arrival waiting list)"""
     current_user = await get_current_user(credentials)
-    
+
     # Verify booking
     booking = await db.bookings.find_one({
         'id': queue_data['booking_id'],
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
+
     # Get guest info
     guest = await db.guests.find_one({'id': booking['guest_id']})
-    
+
     # Determine priority
     priority = 5
     if guest and guest.get('vip_status'):
@@ -2774,7 +2035,7 @@ async def add_to_room_queue(
         priority = 2
     elif queue_data.get('priority'):
         priority = queue_data['priority']
-    
+
     queue_entry = QueueRoom(
         tenant_id=current_user.tenant_id,
         booking_id=queue_data['booking_id'],
@@ -2786,9 +2047,9 @@ async def add_to_room_queue(
         special_requests=queue_data.get('special_requests'),
         vip_status=guest.get('vip_status', False) if guest else False
     )
-    
+
     await db.room_queue.insert_one(queue_entry.model_dump())
-    
+
     return {
         'success': True,
         'queue_id': queue_entry.id,
@@ -2804,19 +2065,19 @@ async def get_room_queue(
 ):
     """Get room queue list sorted by priority"""
     current_user = await get_current_user(credentials)
-    
+
     queue = await db.room_queue.find({
         'tenant_id': current_user.tenant_id,
         'status': status
     }, {'_id': 0}).sort('priority', 1).to_list(1000)
-    
+
     # Get available rooms for assignment
     available_rooms = await db.rooms.find({
         'tenant_id': current_user.tenant_id,
         'status': 'available',
         'housekeeping_status': 'clean'
     }, {'_id': 0}).to_list(1000)
-    
+
     return {
         'queue': queue,
         'queue_length': len(queue),
@@ -2839,10 +2100,10 @@ async def assign_queue_priority(
 ):
     """Manually assign priority to queue entry"""
     current_user = await get_current_user(credentials)
-    
+
     if priority < 1 or priority > 10:
         raise HTTPException(status_code=400, detail="Priority must be between 1 and 10")
-    
+
     result = await db.room_queue.update_one(
         {
             'id': queue_id,
@@ -2850,10 +2111,10 @@ async def assign_queue_priority(
         },
         {'$set': {'priority': priority}}
     )
-    
+
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Queue entry not found")
-    
+
     return {
         'success': True,
         'queue_id': queue_id,
@@ -2869,19 +2130,19 @@ async def notify_guest_room_ready(
 ):
     """Notify guest that their room is ready"""
     current_user = await get_current_user(credentials)
-    
+
     # Get queue entry
     queue_entry = await db.room_queue.find_one({
         'id': queue_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not queue_entry:
         raise HTTPException(status_code=404, detail="Queue entry not found")
-    
+
     # Get booking
     await db.bookings.find_one({'id': queue_entry['booking_id']})
-    
+
     # Update queue status
     await db.room_queue.update_one(
         {'id': queue_id},
@@ -2894,12 +2155,12 @@ async def notify_guest_room_ready(
             }
         }
     )
-    
+
     # Send notification (mock)
     notification_message = f"Dear {queue_entry['guest_name']}, your room {room_number} is now ready! Please proceed to reception."
-    
+
     print(f"📱 Room Ready Notification: {notification_message}")
-    
+
     return {
         'success': True,
         'message': 'Guest notified successfully',
@@ -2916,15 +2177,15 @@ async def remove_from_queue(
 ):
     """Remove entry from room queue"""
     current_user = await get_current_user(credentials)
-    
+
     result = await db.room_queue.delete_one({
         'id': queue_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Queue entry not found")
-    
+
     return {
         'success': True,
         'message': 'Entry removed from queue'

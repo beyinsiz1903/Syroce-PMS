@@ -25,7 +25,7 @@ async def create_group_block(
     current_user: User = Depends(get_current_user)
 ):
     """Grup bloğu oluştur"""
-    
+
     # Flexible field mapping
     group_name = block_data.get('group_name') or block_data.get('block_name')
     organization = block_data.get('organization') or block_data.get('group_type', '')
@@ -35,7 +35,7 @@ async def create_group_block(
     check_in = block_data.get('check_in') or block_data.get('check_in_date')
     check_out = block_data.get('check_out') or block_data.get('check_out_date')
     cutoff_date = block_data.get('cutoff_date') or block_data.get('cutoff', check_in)
-    
+
     # Create group block
     block = {
         'id': str(uuid.uuid4()),
@@ -60,9 +60,9 @@ async def create_group_block(
         'created_at': datetime.now(timezone.utc).isoformat(),
         'updated_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     await db.group_blocks.insert_one(block)
-    
+
     # Create master folio if billing type is master_account
     if block['billing_type'] == 'master_account':
         master_folio = {
@@ -79,13 +79,13 @@ async def create_group_block(
             'created_at': datetime.now(timezone.utc).isoformat()
         }
         await db.folios.insert_one(master_folio)
-        
+
         block['master_folio_id'] = master_folio['id']
         await db.group_blocks.update_one(
             {'id': block['id']},
             {'$set': {'master_folio_id': master_folio['id']}}
         )
-    
+
     return {
         'success': True,
         'message': 'Grup bloğu başarıyla oluşturuldu',
@@ -143,9 +143,9 @@ async def get_group_blocks(
             start_str = range_start.isoformat()
             end_str = range_end.isoformat()
             query['check_in'] = {'$gte': start_str, '$lte': end_str}
-    
+
     blocks = await db.group_blocks.find(query, {'_id': 0}).sort('check_in', -1).to_list(100)
-    
+
     return {
         'blocks': blocks,
         'total': len(blocks)
@@ -163,27 +163,27 @@ async def get_group_block_details(
         'id': block_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not block:
         raise HTTPException(status_code=404, detail="Grup bloğu bulunamadı")
-    
+
     # Get all bookings in this group
     group_bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'group_block_id': block_id
     }, {'_id': 0}).to_list(1000)
-    
+
     # Calculate pickup stats
     rooms_picked_up = len(group_bookings)
     rooms_remaining = block['total_rooms'] - rooms_picked_up
     pickup_pct = (rooms_picked_up / block['total_rooms'] * 100) if block['total_rooms'] > 0 else 0
-    
+
     # Update block pickup count
     await db.group_blocks.update_one(
         {'id': block_id},
         {'$set': {'rooms_picked_up': rooms_picked_up}}
     )
-    
+
     return {
         'block': block,
         'pickup': {
@@ -206,29 +206,29 @@ async def upload_rooming_list(
 ):
     """Rooming list upload (Excel'den gelen data)"""
     from domains.pms.group_sales_models import RoomingListEntry
-    
+
     # Verify block exists
     block = await db.group_blocks.find_one({
         'id': block_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not block:
         raise HTTPException(status_code=404, detail="Grup bloğu bulunamadı")
-    
+
     created_bookings = []
     errors = []
-    
+
     for idx, entry_data in enumerate(rooming_list):
         try:
             entry = RoomingListEntry(**entry_data)
-            
+
             # Create or find guest
             guest = await db.guests.find_one({
                 'tenant_id': current_user.tenant_id,
                 'name': entry.guest_name
             }, {'_id': 0})
-            
+
             if not guest:
                 # Create new guest
                 guest = {
@@ -241,18 +241,18 @@ async def upload_rooming_list(
                     'created_at': datetime.now(timezone.utc).isoformat()
                 }
                 await db.guests.insert_one(guest)
-            
+
             # Find available room of requested type
             room = await db.rooms.find_one({
                 'tenant_id': current_user.tenant_id,
                 'room_type': entry.room_type,
                 'status': 'available'
             }, {'_id': 0})
-            
+
             if not room:
                 errors.append(f"Row {idx+1}: {entry.room_type} tipi oda mevcut değil")
                 continue
-            
+
             # Create booking
             booking = {
                 'id': str(uuid.uuid4()),
@@ -272,7 +272,7 @@ async def upload_rooming_list(
                 'created_at': datetime.now(timezone.utc).isoformat(),
                 'created_by': current_user.id
             }
-            
+
             from core.atomic_booking import BookingConflictError, create_booking_atomic
             try:
                 await create_booking_atomic(booking)
@@ -284,10 +284,10 @@ async def upload_rooming_list(
                 'guest_name': entry.guest_name,
                 'room_number': room['room_number']
             })
-            
+
         except Exception as e:
             errors.append(f"Row {idx+1}: {str(e)}")
-    
+
     return {
         'success': True,
         'message': f'{len(created_bookings)} rezervasyon oluşturuldu',
@@ -311,40 +311,40 @@ async def get_group_master_folio(
         'id': block_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not block:
         raise HTTPException(status_code=404, detail="Grup bloğu bulunamadı")
-    
+
     # Get master folio
     master_folio = await db.folios.find_one({
         'group_block_id': block_id,
         'folio_type': 'group_master'
     }, {'_id': 0})
-    
+
     if not master_folio:
         return {
             'block_id': block_id,
             'has_master_folio': False,
             'message': 'Bu grup için master folio oluşturulmamış'
         }
-    
+
     # Get all charges on master folio
     charges = await db.folio_charges.find({
         'folio_id': master_folio['id'],
         'voided': False
     }, {'_id': 0}).to_list(1000)
-    
+
     total_charges = sum([c.get('total', c.get('amount', 0)) for c in charges])
-    
+
     # Get payments
     payments = await db.payments.find({
         'folio_id': master_folio['id']
     }, {'_id': 0}).to_list(1000)
-    
+
     total_payments = sum([p.get('amount', 0) for p in payments])
-    
+
     balance = total_charges - total_payments
-    
+
     # Update folio totals
     await db.folios.update_one(
         {'id': master_folio['id']},
@@ -356,7 +356,7 @@ async def get_group_master_folio(
             }
         }
     )
-    
+
     return {
         'block_id': block_id,
         'block_name': block['group_name'],
@@ -387,20 +387,20 @@ async def release_group_block(
         'id': block_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not block:
         raise HTTPException(status_code=404, detail="Grup bloğu bulunamadı")
-    
+
     rooms_remaining = block['total_rooms'] - block['rooms_picked_up']
-    
+
     if release_count > rooms_remaining:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail=f"Sadece {rooms_remaining} oda serbest bırakılabilir"
         )
-    
+
     new_total = block['total_rooms'] - release_count
-    
+
     await db.group_blocks.update_one(
         {'id': block_id},
         {
@@ -411,7 +411,7 @@ async def release_group_block(
             }
         }
     )
-    
+
     return {
         'success': True,
         'message': f'{release_count} oda başarıyla serbest bırakıldı',
@@ -429,7 +429,7 @@ async def get_group_reservations(current_user: User = Depends(get_current_user))
         {'tenant_id': current_user.tenant_id},
         {'_id': 0}
     ).sort('created_at', -1).to_list(100)
-    
+
     return {'groups': groups, 'count': len(groups)}
 
 
@@ -458,7 +458,7 @@ async def create_group_reservation(
         'created_at': datetime.now(timezone.utc).isoformat(),
         'created_by': current_user.id
     }
-    
+
     group_copy = group.copy()
     await db.group_reservations.insert_one(group_copy)
     return group
@@ -475,19 +475,19 @@ async def get_group_reservation(
         {'id': group_id, 'tenant_id': current_user.tenant_id},
         {'_id': 0}
     )
-    
+
     if not group:
         raise HTTPException(status_code=404, detail="Group reservation not found")
-    
+
     # Get individual bookings in this group
     bookings = await db.bookings.find(
         {'tenant_id': current_user.tenant_id, 'group_id': group_id},
         {'_id': 0}
     ).to_list(1000)
-    
+
     group['bookings'] = bookings
     group['bookings_count'] = len(bookings)
-    
+
     return group
 
 
@@ -503,12 +503,12 @@ async def assign_group_rooms(
     group = await db.group_reservations.find_one(
         {'id': group_id, 'tenant_id': current_user.tenant_id}
     )
-    
+
     if not group:
         raise HTTPException(status_code=404, detail="Group reservation not found")
-    
+
     created_bookings = []
-    
+
     for assignment in room_assignments:
         booking = {
             'id': str(uuid.uuid4()),
@@ -527,14 +527,14 @@ async def assign_group_rooms(
             'booking_source': 'group',
             'created_at': datetime.now(timezone.utc).isoformat()
         }
-        
+
         from core.atomic_booking import BookingConflictError, create_booking_atomic
         try:
             await create_booking_atomic(booking)
         except BookingConflictError as e:
             raise HTTPException(status_code=409, detail=str(e))
         created_bookings.append(booking)
-    
+
     # Update group reservation
     await db.group_reservations.update_one(
         {'id': group_id},
@@ -545,7 +545,7 @@ async def assign_group_rooms(
             }
         }
     )
-    
+
     return {
         'message': f'Assigned {len(created_bookings)} rooms to group',
         'bookings': created_bookings
@@ -560,7 +560,7 @@ async def get_block_reservations(current_user: User = Depends(get_current_user))
         {'tenant_id': current_user.tenant_id},
         {'_id': 0}
     ).sort('created_at', -1).to_list(100)
-    
+
     return {'blocks': blocks, 'count': len(blocks)}
 
 
@@ -587,7 +587,7 @@ async def create_block_reservation(
         'created_at': datetime.now(timezone.utc).isoformat(),
         'created_by': current_user.id
     }
-    
+
     block_copy = block.copy()
     await db.block_reservations.insert_one(block_copy)
     return block
@@ -606,13 +606,13 @@ async def use_block_room(
     block = await db.block_reservations.find_one(
         {'id': block_id, 'tenant_id': current_user.tenant_id}
     )
-    
+
     if not block:
         raise HTTPException(status_code=404, detail="Block reservation not found")
-    
+
     if block['rooms_available'] <= 0:
         raise HTTPException(status_code=400, detail="No rooms available in block")
-    
+
     # Create booking from block
     booking = {
         'id': str(uuid.uuid4()),
@@ -627,13 +627,13 @@ async def use_block_room(
         'booking_source': 'block',
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     from core.atomic_booking import BookingConflictError, create_booking_atomic
     try:
         await create_booking_atomic(booking.copy())
     except BookingConflictError as e:
         raise HTTPException(status_code=409, detail=str(e))
-    
+
     # Update block availability
     await db.block_reservations.update_one(
         {'id': block_id},
@@ -641,7 +641,7 @@ async def use_block_room(
             '$inc': {'rooms_used': 1, 'rooms_available': -1}
         }
     )
-    
+
     return {'message': 'Room used from block successfully', 'booking': booking}
 
 
@@ -655,10 +655,10 @@ async def release_block_reservation(
     block = await db.block_reservations.find_one(
         {'id': block_id, 'tenant_id': current_user.tenant_id}
     )
-    
+
     if not block:
         raise HTTPException(status_code=404, detail="Block reservation not found")
-    
+
     await db.block_reservations.update_one(
         {'id': block_id},
         {
@@ -669,7 +669,7 @@ async def release_block_reservation(
             }
         }
     )
-    
+
     return {
         'message': 'Block released successfully',
         'rooms_released': block['rooms_available']

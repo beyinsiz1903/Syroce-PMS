@@ -271,14 +271,14 @@ async def set_dynamic_restrictions(
         'created_by': current_user.name,
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     # Check if restriction exists
     existing = await db.rms_restrictions.find_one({
         'tenant_id': current_user.tenant_id,
         'date': request.date,
         'room_type': request.room_type
     })
-    
+
     if existing:
         await db.rms_restrictions.update_one(
             {'id': existing.get('id')},
@@ -286,7 +286,7 @@ async def set_dynamic_restrictions(
         )
     else:
         await db.rms_restrictions.insert_one(restriction)
-    
+
     return {
         'success': True,
         'message': 'Restrictions updated',
@@ -308,36 +308,36 @@ async def get_market_compression(
     - Pricing opportunity
     """
     target_date = date or datetime.now().date().isoformat()
-    
+
     # In production, integrate with:
     # - Local DMO (Destination Marketing Organization)
     # - STR (Smith Travel Research)
     # - Competitor data
-    
+
     # Simulated market compression analysis
     # Check for events
     events = await db.city_events.find({
         'date': target_date
     }).to_list(length=10)
-    
+
     has_major_event = any(e.get('impact') == 'high' for e in events)
-    
+
     # Calculate compression score (0-100)
     base_score = 50
     if has_major_event:
         base_score += 30
-    
+
     # Check competitor pricing (simulated)
     competitor_avg_rate = 120
     our_avg_rate = 100
-    
+
     if our_avg_rate < competitor_avg_rate:
         pricing_opportunity = ((competitor_avg_rate - our_avg_rate) / our_avg_rate) * 100
     else:
         pricing_opportunity = 0
-    
+
     compression_score = min(100, base_score)
-    
+
     return {
         'date': target_date,
         'compression_score': compression_score,
@@ -364,7 +364,7 @@ async def get_contracted_rates(
     Get contracted rates list
     """
     today = datetime.now().date()
-    
+
     # Sample contracted rates data
     rates = [
         {
@@ -392,15 +392,15 @@ async def get_contracted_rates(
             'status': 'active'
         }
     ]
-    
+
     # Filter by status
     if status:
         rates = [r for r in rates if r['status'] == status]
-    
+
     # Filter by company
     if company_id:
         rates = [r for r in rates if r.get('company_id') == company_id]
-    
+
     return {
         'contracted_rates': rates,
         'count': len(rates)
@@ -422,32 +422,32 @@ async def get_allotment_utilization(
     """
     end_dt = datetime.now(timezone.utc)
     start_dt = end_dt - timedelta(days=date_range_days)
-    
+
     match_criteria = {
         'tenant_id': current_user.tenant_id
     }
-    
+
     if company_id:
         match_criteria['company_id'] = company_id
-    
+
     # Get all companies with contracted rates
     utilization_data = []
-    
+
     async for company in db.companies.find(match_criteria):
         if not company.get('contracted_rate'):
             continue
-        
+
         # Get allotment data (if configured)
         allotment = await db.contracted_allotments.find_one({
             'company_id': company.get('id'),
             'tenant_id': current_user.tenant_id
         })
-        
+
         if not allotment:
             continue
-        
+
         allocated_rooms = allotment.get('rooms_allocated', 0)
-        
+
         # Count bookings from this company in date range
         bookings_count = 0
         async for booking in db.bookings.find({
@@ -459,9 +459,9 @@ async def get_allotment_utilization(
             }
         }):
             bookings_count += 1
-        
+
         utilization_pct = (bookings_count / allocated_rooms * 100) if allocated_rooms > 0 else 0
-        
+
         utilization_data.append({
             'company_id': company.get('id'),
             'company_name': company.get('name'),
@@ -472,16 +472,16 @@ async def get_allotment_utilization(
             'status': '🚨 Critical' if utilization_pct >= 90 else '⚠️ High' if utilization_pct >= 75 else '✅ Normal',
             'alert': utilization_pct >= 90
         })
-    
+
     # Sort by utilization
     utilization_data.sort(key=lambda x: x['utilization_pct'], reverse=True)
-    
+
     # Generate alerts
     alerts = []
     for item in utilization_data:
         if item['utilization_pct'] >= 90:
             alerts.append(f"⚠️ {item['company_name']}: Allotment {item['utilization_pct']}% used - Consider increasing allocation")
-    
+
     return {
         'period_days': date_range_days,
         'total_companies': len(utilization_data),
@@ -503,7 +503,7 @@ async def get_pickup_vs_allocation_alerts(
     - Alert when pickup is slow
     """
     alerts = []
-    
+
     # Get all contracted allotments
     async for allotment in db.contracted_allotments.find({
         'tenant_id': current_user.tenant_id,
@@ -511,11 +511,11 @@ async def get_pickup_vs_allocation_alerts(
     }):
         company_id = allotment.get('company_id')
         company = await db.companies.find_one({'id': company_id})
-        
+
         allocated = allotment.get('rooms_allocated', 0)
         start_date = allotment.get('start_date')
         end_date = allotment.get('end_date')
-        
+
         # Count actual bookings
         bookings_count = await db.bookings.count_documents({
             'company_id': company_id,
@@ -525,15 +525,15 @@ async def get_pickup_vs_allocation_alerts(
                 '$lte': end_date
             }
         })
-        
+
         pickup_pct = (bookings_count / allocated * 100) if allocated > 0 else 0
-        
+
         # Calculate expected pickup (time-based)
         if start_date and end_date:
             total_days = (datetime.fromisoformat(end_date) - datetime.fromisoformat(start_date)).days
             days_passed = (datetime.now(timezone.utc) - datetime.fromisoformat(start_date)).days
             expected_pickup_pct = (days_passed / total_days * 100) if total_days > 0 else 0
-            
+
             if pickup_pct < expected_pickup_pct - 20:  # 20% behind pace
                 alerts.append({
                     'company_name': company.get('name') if company else 'Unknown',
@@ -544,7 +544,7 @@ async def get_pickup_vs_allocation_alerts(
                     'status': 'behind_pace',
                     'message': f"⚠️ Pickup is {round(expected_pickup_pct - pickup_pct, 1)}% behind expected pace"
                 })
-    
+
     return {
         'total_alerts': len(alerts),
         'alerts': alerts
@@ -572,7 +572,7 @@ async def train_demand_forecast_model(
     # Collect historical data
     end_dt = datetime.now(timezone.utc)
     start_dt = end_dt - timedelta(days=historical_days)
-    
+
     # Get historical bookings
     bookings = []
     async for booking in db.bookings.find({
@@ -583,7 +583,7 @@ async def train_demand_forecast_model(
         }
     }):
         bookings.append(booking)
-    
+
     # Feature engineering (simulated)
     training_data = {
         'samples': len(bookings),
@@ -592,7 +592,7 @@ async def train_demand_forecast_model(
         'accuracy_score': 0.87,  # Simulated R² score
         'mae': 5.2  # Mean Absolute Error (%)
     }
-    
+
     return {
         'success': True,
         'message': 'Demand forecast model trained successfully',
@@ -622,14 +622,14 @@ async def scrape_competitor_rates(
     # - Booking.com Connectivity API
     # - Expedia Partner API
     # - Web scraping (Selenium/Playwright)
-    
+
     scraped_rates = []
-    
+
     for competitor in competitors:
         for room_type in room_types:
             # Simulated scraping
             rate = 100 + (len(competitor) * 5)  # Simulated rate
-            
+
             competitor_rate = CompetitorRate(
                 tenant_id=current_user.tenant_id,
                 competitor_name=competitor,
@@ -638,18 +638,18 @@ async def scrape_competitor_rates(
                 rate=rate,
                 source='google_hotels'
             )
-            
+
             rate_dict = competitor_rate.model_dump()
             rate_dict['scraped_at'] = rate_dict['scraped_at'].isoformat()
             await db.competitor_rates.insert_one(rate_dict)
-            
+
             scraped_rates.append({
                 'competitor': competitor,
                 'room_type': room_type,
                 'rate': rate,
                 'source': 'google_hotels'
             })
-    
+
     return {
         'success': True,
         'date': date,
@@ -676,7 +676,7 @@ async def calculate_price_elasticity(
     # Get historical bookings with different prices
     end_dt = datetime.now(timezone.utc)
     start_dt = end_dt - timedelta(days=analysis_days)
-    
+
     # Collect price-demand pairs
     bookings = []
     async for booking in db.bookings.find({
@@ -687,12 +687,12 @@ async def calculate_price_elasticity(
         }
     }):
         bookings.append(booking)
-    
+
     # Calculate elasticity (simulated)
     # Real formula: Elasticity = (% Change in Demand) / (% Change in Price)
-    
+
     avg_price = sum(b.get('total_amount', 0) for b in bookings) / len(bookings) if bookings else 100
-    
+
     elasticity_analysis = {
         'room_type': room_type,
         'analysis_period_days': analysis_days,
@@ -709,7 +709,7 @@ async def calculate_price_elasticity(
             'Use promotional rates during low demand periods'
         ]
     }
-    
+
     return elasticity_analysis
 
 
@@ -735,7 +735,7 @@ async def auto_publish_rates_based_on_forecast(
         'date': {'$gte': start_date, '$lte': end_date}
     }).sort('date', 1):
         forecasts.append(forecast)
-    
+
     # If no forecasts, create simulated ones
     if not forecasts:
         current_date = datetime.fromisoformat(start_date)
@@ -748,14 +748,14 @@ async def auto_publish_rates_based_on_forecast(
                 'confidence': 0.85
             })
             current_date += timedelta(days=1)
-    
+
     # Calculate recommended rates
     published_rates = []
     base_rate = 100
-    
+
     for forecast in forecasts:
         occupancy = forecast.get('forecasted_occupancy', 0.7)
-        
+
         if strategy == "revenue_optimization":
             # High demand = high price
             multiplier = 1 + (occupancy - 0.5)  # 50% occupancy = base rate
@@ -764,9 +764,9 @@ async def auto_publish_rates_based_on_forecast(
             multiplier = 1 - (occupancy - 0.5) * 0.5
         else:  # balanced
             multiplier = 1 + (occupancy - 0.5) * 0.5
-        
+
         recommended_rate = round(base_rate * multiplier, 2)
-        
+
         published_rates.append({
             'date': forecast.get('date'),
             'forecasted_occupancy': round(occupancy * 100, 1),
@@ -774,7 +774,7 @@ async def auto_publish_rates_based_on_forecast(
             'published': True,
             'strategy': strategy
         })
-    
+
     return {
         'success': True,
         'start_date': start_date,
@@ -807,37 +807,37 @@ async def get_pickup_graph_data(
         'id': contract_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not allotment:
         raise HTTPException(status_code=404, detail="Contract not found")
-    
+
     start_date = datetime.fromisoformat(allotment.get('start_date'))
     end_date = datetime.fromisoformat(allotment.get('end_date'))
     company_id = allotment.get('company_id')
     allocated_total = allotment.get('rooms_allocated', 0)
-    
+
     # Get daily pickup data
     current_date = start_date
     pickup_data = []
     cumulative_pickup = 0
     cumulative_allocation = 0
-    
+
     days_total = (end_date - start_date).days
     daily_allocation = allocated_total / days_total if days_total > 0 else 0
-    
+
     while current_date <= end_date:
         date_str = current_date.date().isoformat()
-        
+
         # Count bookings for this date
         bookings_count = await db.bookings.count_documents({
             'company_id': company_id,
             'tenant_id': current_user.tenant_id,
             'check_in': date_str
         })
-        
+
         cumulative_pickup += bookings_count
         cumulative_allocation += daily_allocation
-        
+
         pickup_data.append({
             'date': date_str,
             'daily_pickup': bookings_count,
@@ -846,9 +846,9 @@ async def get_pickup_graph_data(
             'pickup_pct': round((cumulative_pickup / cumulative_allocation * 100), 1) if cumulative_allocation > 0 else 0,
             'on_track': cumulative_pickup >= cumulative_allocation * 0.8  # 80% threshold
         })
-        
+
         current_date += timedelta(days=1)
-    
+
     return {
         'contract_id': contract_id,
         'company_id': company_id,
@@ -889,16 +889,16 @@ async def get_realization_report(
     match_criteria = {
         'tenant_id': current_user.tenant_id
     }
-    
+
     if company_id:
         match_criteria['company_id'] = company_id
-    
+
     # Get all active allotments in period
     allotments = []
     async for allot in db.contracted_allotments.find(match_criteria):
         allot_start = allot.get('start_date')
         allot_end = allot.get('end_date')
-        
+
         # Check if allotment overlaps with requested period
         if allot_start <= end_date and allot_end >= start_date:
             # Count realized bookings
@@ -907,10 +907,10 @@ async def get_realization_report(
                 'tenant_id': current_user.tenant_id,
                 'check_in': {'$gte': start_date, '$lte': end_date}
             })
-            
+
             allocated = allot.get('rooms_allocated', 0)
             realization_pct = (realized / allocated * 100) if allocated > 0 else 0
-            
+
             # Calculate revenue
             revenue = 0
             async for booking in db.bookings.find({
@@ -919,10 +919,10 @@ async def get_realization_report(
                 'check_in': {'$gte': start_date, '$lte': end_date}
             }):
                 revenue += booking.get('total_amount', 0)
-            
+
             # Get company details
             company = await db.companies.find_one({'id': allot.get('company_id')})
-            
+
             allotments.append({
                 'company_name': company.get('name') if company else 'Unknown',
                 'company_id': allot.get('company_id'),
@@ -935,16 +935,16 @@ async def get_realization_report(
                 'avg_rate': round(revenue / realized, 2) if realized > 0 else 0,
                 'status': 'Excellent' if realization_pct >= 90 else 'Good' if realization_pct >= 70 else 'Poor' if realization_pct >= 50 else 'Critical'
             })
-    
+
     # Sort by realization percentage
     allotments.sort(key=lambda x: x['realization_pct'], reverse=True)
-    
+
     # Calculate totals
     total_allocated = sum(a['allocated_rooms'] for a in allotments)
     total_realized = sum(a['realized_rooms'] for a in allotments)
     total_revenue = sum(a['revenue'] for a in allotments)
     overall_realization = (total_realized / total_allocated * 100) if total_allocated > 0 else 0
-    
+
     return {
         'period': {
             'start_date': start_date,
@@ -996,13 +996,13 @@ async def set_free_sale_control(
         'created_at': datetime.now(timezone.utc).isoformat(),
         'created_by': current_user.name
     }
-    
+
     # Store or update
     existing = await db.free_sale_controls.find_one({
         'tenant_id': current_user.tenant_id,
         'company_id': company_id
     })
-    
+
     if existing:
         await db.free_sale_controls.update_one(
             {'company_id': company_id, 'tenant_id': current_user.tenant_id},
@@ -1010,7 +1010,7 @@ async def set_free_sale_control(
         )
     else:
         await db.free_sale_controls.insert_one(control)
-    
+
     return {
         'success': True,
         'message': 'Free-sale control configured',
@@ -1037,31 +1037,31 @@ async def check_free_sale_availability(
         'tenant_id': current_user.tenant_id,
         'company_id': company_id
     })
-    
+
     if not control or not control.get('enable_free_sale'):
         return {
             'allowed': False,
             'reason': 'Free-sale not enabled for this tour operator'
         }
-    
+
     # Check lead time
     check_in = datetime.fromisoformat(check_in_date).date()
     today = datetime.now().date()
     lead_time_days = (check_in - today).days
-    
+
     if lead_time_days < control.get('min_lead_time_days', 7):
         return {
             'allowed': False,
             'reason': f"Minimum lead time is {control['min_lead_time_days']} days"
         }
-    
+
     # Check max free-sale rooms
     if rooms_requested > control.get('max_free_sale_rooms', 10):
         return {
             'allowed': False,
             'reason': f"Maximum free-sale rooms is {control['max_free_sale_rooms']}"
         }
-    
+
     # Check release period (if within release period, check allotment)
     release_period = control.get('release_period_days', 14)
     if lead_time_days <= release_period:
@@ -1072,7 +1072,7 @@ async def check_free_sale_availability(
             'reason': 'Within release period - check inventory',
             'note': 'Inventory check required'
         }
-    
+
     return {
         'allowed': True,
         'rooms_requested': rooms_requested,
@@ -1092,15 +1092,15 @@ async def get_price_recommendation_with_range(
 ):
     """Get price recommendations with slider range (min, recommended, max)"""
     current_user = await get_current_user(credentials)
-    
+
     # Get base room price
     room = await db.rooms.find_one({
         'tenant_id': current_user.tenant_id,
         'room_type': room_type
     })
-    
+
     base_price = room.get('base_price', 100) if room else 100
-    
+
     # Get historical occupancy - handle date parsing
     try:
         check_in = datetime.fromisoformat(check_in_date.replace('Z', '+00:00'))
@@ -1110,7 +1110,7 @@ async def get_price_recommendation_with_range(
             check_in = datetime.strptime(check_in_date, '%Y-%m-%d')
         except Exception:
             check_in = datetime.now(timezone.utc)
-    
+
     # Calculate occupancy for same date last year
     last_year_date = check_in - timedelta(days=365)
     last_year_bookings = await db.bookings.count_documents({
@@ -1121,10 +1121,10 @@ async def get_price_recommendation_with_range(
         },
         'status': {'$in': ['confirmed', 'guaranteed', 'checked_in', 'checked_out']}
     })
-    
+
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     historical_occupancy_pct = (last_year_bookings / total_rooms * 100) if total_rooms > 0 else 50
-    
+
     # Calculate current occupancy for the target date
     current_bookings = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
@@ -1134,9 +1134,9 @@ async def get_price_recommendation_with_range(
         },
         'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
     })
-    
+
     current_occupancy_pct = (current_bookings / total_rooms * 100) if total_rooms > 0 else 0
-    
+
     # Pricing logic based on occupancy
     if current_occupancy_pct < 30:
         # Low occupancy - discount to attract bookings
@@ -1158,7 +1158,7 @@ async def get_price_recommendation_with_range(
         recommended_price = base_price * 1.3
         min_price = base_price * 1.15
         max_price = base_price * 1.5
-    
+
     return {
         'room_type': room_type,
         'check_in_date': check_in_date,
@@ -1187,7 +1187,7 @@ async def get_demand_heatmap(
 ):
     """Get historical demand heatmap for visualization"""
     current_user = await get_current_user(credentials)
-    
+
     # Default to next 90 days
     if start_date and end_date:
         start = datetime.fromisoformat(start_date)
@@ -1195,13 +1195,13 @@ async def get_demand_heatmap(
     else:
         start = datetime.now(timezone.utc)
         end = start + timedelta(days=90)
-    
+
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    
+
     # Generate heatmap data for each day
     heatmap_data = []
     current_date = start
-    
+
     while current_date <= end:
         # Count bookings for this date
         bookings_count = await db.bookings.count_documents({
@@ -1214,9 +1214,9 @@ async def get_demand_heatmap(
             },
             'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
         })
-        
+
         occupancy_pct = (bookings_count / total_rooms * 100) if total_rooms > 0 else 0
-        
+
         # Determine demand level
         if occupancy_pct < 30:
             demand_level = 'low'
@@ -1226,7 +1226,7 @@ async def get_demand_heatmap(
             demand_level = 'high'
         else:
             demand_level = 'very_high'
-        
+
         heatmap_data.append({
             'date': current_date.strftime('%Y-%m-%d'),
             'day_of_week': current_date.strftime('%A'),
@@ -1234,9 +1234,9 @@ async def get_demand_heatmap(
             'bookings_count': bookings_count,
             'demand_level': demand_level
         })
-        
+
         current_date += timedelta(days=1)
-    
+
     return {
         'period': {
             'start_date': start.isoformat(),
@@ -1254,12 +1254,12 @@ async def get_compset_analysis(
 ):
     """Get competitive set analysis - most wanted features"""
     current_user = await get_current_user(credentials)
-    
+
     # Get competitor data
     competitors = []
     async for comp in db.competitors.find({'tenant_id': current_user.tenant_id}):
         competitors.append(comp)
-    
+
     # If no competitors, return sample data
     if len(competitors) == 0:
         competitors = [
@@ -1285,24 +1285,24 @@ async def get_compset_analysis(
                 'features': ['Free WiFi', 'Breakfast', 'Spa', 'Gym', 'Business Center']
             }
         ]
-    
+
     # Analyze features
     feature_count = {}
     for comp in competitors:
         for feature in comp.get('features', []):
             feature_count[feature] = feature_count.get(feature, 0) + 1
-    
+
     # Sort by popularity
     most_wanted_features = [
         {'feature': feature, 'competitor_count': count, 'popularity_pct': round(count / len(competitors) * 100, 1)}
         for feature, count in sorted(feature_count.items(), key=lambda x: x[1], reverse=True)
     ]
-    
+
     # Calculate averages
     avg_rate = sum(c.get('avg_rate', 0) for c in competitors) / len(competitors) if competitors else 0
     avg_occupancy = sum(c.get('occupancy_estimate', 0) for c in competitors) / len(competitors) if competitors else 0
     avg_rating = sum(c.get('rating', 0) for c in competitors) / len(competitors) if competitors else 0
-    
+
     return {
         'compset_summary': {
             'total_competitors': len(competitors),
@@ -1329,7 +1329,7 @@ async def get_adr_mobile(
 ):
     """Get ADR (Average Daily Rate) for mobile app"""
     current_user = await get_current_user(credentials)
-    
+
     # Default to last 30 days
     if start_date and end_date:
         start = datetime.fromisoformat(start_date)
@@ -1337,7 +1337,7 @@ async def get_adr_mobile(
     else:
         end = datetime.now(timezone.utc)
         start = end - timedelta(days=30)
-    
+
     # Get completed bookings in date range
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -1347,7 +1347,7 @@ async def get_adr_mobile(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     # Calculate room revenue from folio charges
     total_room_revenue = 0
     for booking in bookings:
@@ -1358,7 +1358,7 @@ async def get_adr_mobile(
             'voided': False
         }).to_list(1000)
         total_room_revenue += sum(c.get('total', 0) for c in charges)
-    
+
     # Calculate room nights
     total_room_nights = 0
     for booking in bookings:
@@ -1366,10 +1366,10 @@ async def get_adr_mobile(
         check_out = datetime.fromisoformat(booking['check_out'])
         nights = (check_out - check_in).days
         total_room_nights += max(nights, 1)
-    
+
     # Calculate ADR
     adr = round(total_room_revenue / total_room_nights, 2) if total_room_nights > 0 else 0
-    
+
     # Calculate comparison with previous period
     prev_start = start - (end - start)
     prev_end = start
@@ -1381,7 +1381,7 @@ async def get_adr_mobile(
             '$lte': prev_end.isoformat()
         }
     }).to_list(10000)
-    
+
     prev_room_revenue = 0
     prev_room_nights = 0
     for booking in prev_bookings:
@@ -1392,15 +1392,15 @@ async def get_adr_mobile(
             'voided': False
         }).to_list(1000)
         prev_room_revenue += sum(c.get('total', 0) for c in charges)
-        
+
         check_in = datetime.fromisoformat(booking['check_in'])
         check_out = datetime.fromisoformat(booking['check_out'])
         nights = (check_out - check_in).days
         prev_room_nights += max(nights, 1)
-    
+
     prev_adr = round(prev_room_revenue / prev_room_nights, 2) if prev_room_nights > 0 else 0
     change_pct = round(((adr - prev_adr) / prev_adr * 100), 2) if prev_adr > 0 else 0
-    
+
     return {
         'period': {
             'start_date': start.strftime('%Y-%m-%d'),
@@ -1426,7 +1426,7 @@ async def get_revpar_mobile(
 ):
     """Get RevPAR (Revenue Per Available Room) for mobile app"""
     current_user = await get_current_user(credentials)
-    
+
     # Default to last 30 days
     if start_date and end_date:
         start = datetime.fromisoformat(start_date)
@@ -1434,12 +1434,12 @@ async def get_revpar_mobile(
     else:
         end = datetime.now(timezone.utc)
         start = end - timedelta(days=30)
-    
+
     # Get total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     days = (end - start).days + 1
     available_room_nights = total_rooms * days
-    
+
     # Get total room revenue from folio charges
     charges = await db.folio_charges.find({
         'tenant_id': current_user.tenant_id,
@@ -1450,12 +1450,12 @@ async def get_revpar_mobile(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     total_room_revenue = sum(c.get('total', 0) for c in charges)
-    
+
     # Calculate RevPAR
     revpar = round(total_room_revenue / available_room_nights, 2) if available_room_nights > 0 else 0
-    
+
     # Calculate occupancy
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -1465,22 +1465,22 @@ async def get_revpar_mobile(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     occupied_room_nights = 0
     for booking in bookings:
         check_in = datetime.fromisoformat(booking['check_in'])
         check_out = datetime.fromisoformat(booking['check_out'])
         nights = (check_out - check_in).days
         occupied_room_nights += max(nights, 1)
-    
+
     occupancy_pct = round((occupied_room_nights / available_room_nights * 100), 2) if available_room_nights > 0 else 0
-    
+
     # Previous period comparison
     prev_start = start - (end - start)
     prev_end = start
     prev_days = (prev_end - prev_start).days + 1
     prev_available_room_nights = total_rooms * prev_days
-    
+
     prev_charges = await db.folio_charges.find({
         'tenant_id': current_user.tenant_id,
         'charge_category': 'room',
@@ -1490,11 +1490,11 @@ async def get_revpar_mobile(
             '$lte': prev_end.isoformat()
         }
     }).to_list(10000)
-    
+
     prev_room_revenue = sum(c.get('total', 0) for c in prev_charges)
     prev_revpar = round(prev_room_revenue / prev_available_room_nights, 2) if prev_available_room_nights > 0 else 0
     change_pct = round(((revpar - prev_revpar) / prev_revpar * 100), 2) if prev_revpar > 0 else 0
-    
+
     return {
         'period': {
             'start_date': start.strftime('%Y-%m-%d'),
@@ -1522,7 +1522,7 @@ async def get_total_revenue_mobile(
 ):
     """Get total revenue breakdown for mobile app"""
     current_user = await get_current_user(credentials)
-    
+
     # Default to last 30 days
     if start_date and end_date:
         start = datetime.fromisoformat(start_date)
@@ -1530,7 +1530,7 @@ async def get_total_revenue_mobile(
     else:
         end = datetime.now(timezone.utc)
         start = end - timedelta(days=30)
-    
+
     # Get all charges in date range
     charges = await db.folio_charges.find({
         'tenant_id': current_user.tenant_id,
@@ -1540,7 +1540,7 @@ async def get_total_revenue_mobile(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     # Calculate revenue by category
     room_revenue = sum(c.get('total', 0) for c in charges if c.get('charge_category') == 'room')
     food_revenue = sum(c.get('total', 0) for c in charges if c.get('charge_category') == 'food')
@@ -1550,17 +1550,17 @@ async def get_total_revenue_mobile(
     laundry_revenue = sum(c.get('total', 0) for c in charges if c.get('charge_category') == 'laundry')
     parking_revenue = sum(c.get('total', 0) for c in charges if c.get('charge_category') == 'parking')
     other_revenue = sum(c.get('total', 0) for c in charges if c.get('charge_category') not in ['room', 'food', 'beverage', 'minibar', 'spa', 'laundry', 'parking'])
-    
+
     total_revenue = sum(c.get('total', 0) for c in charges)
-    
+
     # Daily breakdown
     daily_revenue = {}
     for charge in charges:
         date = charge.get('date', '')[:10]
         daily_revenue[date] = daily_revenue.get(date, 0) + charge.get('total', 0)
-    
+
     daily_data = [{'date': date, 'revenue': round(revenue, 2)} for date, revenue in sorted(daily_revenue.items())]
-    
+
     # Previous period comparison
     prev_start = start - (end - start)
     prev_end = start
@@ -1572,10 +1572,10 @@ async def get_total_revenue_mobile(
             '$lte': prev_end.isoformat()
         }
     }).to_list(10000)
-    
+
     prev_total_revenue = sum(c.get('total', 0) for c in prev_charges)
     change_pct = round(((total_revenue - prev_total_revenue) / prev_total_revenue * 100), 2) if prev_total_revenue > 0 else 0
-    
+
     return {
         'period': {
             'start_date': start.strftime('%Y-%m-%d'),
@@ -1610,7 +1610,7 @@ async def get_segment_distribution_mobile(
 ):
     """Get revenue distribution by market segment for mobile app"""
     current_user = await get_current_user(credentials)
-    
+
     # Default to last 30 days
     if start_date and end_date:
         start = datetime.fromisoformat(start_date)
@@ -1618,7 +1618,7 @@ async def get_segment_distribution_mobile(
     else:
         end = datetime.now(timezone.utc)
         start = end - timedelta(days=30)
-    
+
     # Get bookings in date range
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -1628,45 +1628,45 @@ async def get_segment_distribution_mobile(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     # Calculate revenue by market segment
     segment_data = {}
     for booking in bookings:
         segment = booking.get('market_segment', 'other')
-        
+
         # Get charges for this booking
         charges = await db.folio_charges.find({
             'tenant_id': current_user.tenant_id,
             'booking_id': booking['id'],
             'voided': False
         }).to_list(1000)
-        
+
         booking_revenue = sum(c.get('total', 0) for c in charges)
-        
+
         if segment not in segment_data:
             segment_data[segment] = {
                 'revenue': 0,
                 'bookings_count': 0,
                 'room_nights': 0
             }
-        
+
         segment_data[segment]['revenue'] += booking_revenue
         segment_data[segment]['bookings_count'] += 1
-        
+
         # Calculate room nights
         check_in = datetime.fromisoformat(booking['check_in'])
         check_out = datetime.fromisoformat(booking['check_out'])
         nights = (check_out - check_in).days
         segment_data[segment]['room_nights'] += max(nights, 1)
-    
+
     # Calculate percentages and format
     total_revenue = sum(s['revenue'] for s in segment_data.values())
-    
+
     segments = []
     for segment, data in segment_data.items():
         percentage = round((data['revenue'] / total_revenue * 100), 2) if total_revenue > 0 else 0
         avg_booking_value = round(data['revenue'] / data['bookings_count'], 2) if data['bookings_count'] > 0 else 0
-        
+
         segments.append({
             'segment': segment,
             'revenue': round(data['revenue'], 2),
@@ -1675,10 +1675,10 @@ async def get_segment_distribution_mobile(
             'room_nights': data['room_nights'],
             'avg_booking_value': avg_booking_value
         })
-    
+
     # Sort by revenue descending
     segments.sort(key=lambda x: x['revenue'], reverse=True)
-    
+
     return {
         'period': {
             'start_date': start.strftime('%Y-%m-%d'),
@@ -1698,13 +1698,13 @@ async def get_pickup_graph_mobile(
 ):
     """Get pickup graph showing booking pace for mobile app"""
     current_user = await get_current_user(credentials)
-    
+
     # Default to 30 days from now
     if target_date:
         target = datetime.fromisoformat(target_date)
     else:
         target = datetime.now(timezone.utc) + timedelta(days=30)
-    
+
     # Get all bookings for target date
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -1714,33 +1714,33 @@ async def get_pickup_graph_mobile(
         },
         'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
     }).to_list(10000)
-    
+
     # Get total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    
+
     # Organize bookings by booking date
     pickup_data = []
     days_out = [90, 60, 30, 14, 7, 3, 1, 0]  # Days before target date
-    
+
     for days in days_out:
         cutoff_date = target - timedelta(days=days)
-        
+
         # Count bookings made before this cutoff
         bookings_by_cutoff = [b for b in bookings if datetime.fromisoformat(b.get('created_at', b.get('check_in'))) <= cutoff_date]
         rooms_booked = len(bookings_by_cutoff)
         occupancy_pct = round((rooms_booked / total_rooms * 100), 2) if total_rooms > 0 else 0
-        
+
         pickup_data.append({
             'days_out': days,
             'date': cutoff_date.strftime('%Y-%m-%d'),
             'rooms_booked': rooms_booked,
             'occupancy_pct': occupancy_pct
         })
-    
+
     # Calculate pickup velocity (last 7 days)
     recent_bookings = [b for b in bookings if datetime.fromisoformat(b.get('created_at', b.get('check_in'))) >= (datetime.now(timezone.utc) - timedelta(days=7))]
     pickup_velocity = len(recent_bookings)
-    
+
     # Compare with same date last year
     last_year_target = target - timedelta(days=365)
     last_year_bookings = await db.bookings.count_documents({
@@ -1751,10 +1751,10 @@ async def get_pickup_graph_mobile(
         },
         'status': {'$in': ['confirmed', 'guaranteed', 'checked_in', 'checked_out']}
     })
-    
+
     current_bookings = len(bookings)
     comparison_pct = round(((current_bookings - last_year_bookings) / last_year_bookings * 100), 2) if last_year_bookings > 0 else 0
-    
+
     return {
         'target_date': target.strftime('%Y-%m-%d'),
         'total_rooms': total_rooms,
@@ -1781,11 +1781,11 @@ async def get_revenue_forecast_mobile(
 ):
     """Get revenue forecast for next N days for mobile app"""
     current_user = await get_current_user(credentials)
-    
+
     # Get confirmed bookings for forecast period
     start = datetime.now(timezone.utc)
     end = start + timedelta(days=days_ahead)
-    
+
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
@@ -1794,25 +1794,25 @@ async def get_revenue_forecast_mobile(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     # Get total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    
+
     # Calculate daily forecast
     daily_forecast = {}
     current_date = start
-    
+
     while current_date <= end:
         date_str = current_date.strftime('%Y-%m-%d')
-        
+
         # Count bookings for this date
-        bookings_on_date = [b for b in bookings 
-                           if b['check_in'] <= current_date.isoformat() 
+        bookings_on_date = [b for b in bookings
+                           if b['check_in'] <= current_date.isoformat()
                            and b['check_out'] > current_date.isoformat()]
-        
+
         rooms_occupied = len(bookings_on_date)
         occupancy_pct = round((rooms_occupied / total_rooms * 100), 2) if total_rooms > 0 else 0
-        
+
         # Estimate revenue based on average room rate
         estimated_room_revenue = 0
         for booking in bookings_on_date:
@@ -1822,11 +1822,11 @@ async def get_revenue_forecast_mobile(
                 # Use average from historical data
                 rate = 100  # Fallback default
             estimated_room_revenue += rate
-        
+
         # Add estimated ancillary revenue (typically 20-30% of room revenue)
         ancillary_multiplier = 1.25
         total_estimated_revenue = estimated_room_revenue * ancillary_multiplier
-        
+
         daily_forecast[date_str] = {
             'date': date_str,
             'day_of_week': current_date.strftime('%A'),
@@ -1835,18 +1835,18 @@ async def get_revenue_forecast_mobile(
             'estimated_room_revenue': round(estimated_room_revenue, 2),
             'estimated_total_revenue': round(total_estimated_revenue, 2)
         }
-        
+
         current_date += timedelta(days=1)
-    
+
     # Calculate totals
     total_forecast_revenue = sum(d['estimated_total_revenue'] for d in daily_forecast.values())
     total_forecast_room_revenue = sum(d['estimated_room_revenue'] for d in daily_forecast.values())
     avg_occupancy = sum(d['occupancy_pct'] for d in daily_forecast.values()) / len(daily_forecast) if daily_forecast else 0
-    
+
     # Compare with same period last year
     last_year_start = start - timedelta(days=365)
     last_year_end = last_year_start + timedelta(days=days_ahead)
-    
+
     last_year_charges = await db.folio_charges.find({
         'tenant_id': current_user.tenant_id,
         'voided': False,
@@ -1855,10 +1855,10 @@ async def get_revenue_forecast_mobile(
             '$lte': last_year_end.isoformat()
         }
     }).to_list(10000)
-    
+
     last_year_revenue = sum(c.get('total', 0) for c in last_year_charges)
     variance_pct = round(((total_forecast_revenue - last_year_revenue) / last_year_revenue * 100), 2) if last_year_revenue > 0 else 0
-    
+
     return {
         'forecast_period': {
             'start_date': start.strftime('%Y-%m-%d'),
@@ -1889,7 +1889,7 @@ async def get_channel_distribution_mobile(
 ):
     """Get revenue distribution by booking channel for mobile app"""
     current_user = await get_current_user(credentials)
-    
+
     # Default to last 30 days
     if start_date and end_date:
         start = datetime.fromisoformat(start_date)
@@ -1897,7 +1897,7 @@ async def get_channel_distribution_mobile(
     else:
         end = datetime.now(timezone.utc)
         start = end - timedelta(days=30)
-    
+
     # Get bookings in date range
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -1907,26 +1907,26 @@ async def get_channel_distribution_mobile(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     # Calculate revenue by channel
     channel_data = {}
     for booking in bookings:
         source = booking.get('source', 'direct')
-        
+
         # Get charges for this booking
         charges = await db.folio_charges.find({
             'tenant_id': current_user.tenant_id,
             'booking_id': booking['id'],
             'voided': False
         }).to_list(1000)
-        
+
         booking_revenue = sum(c.get('total', 0) for c in charges)
-        
+
         # Get OTA commission if applicable
         commission_pct = booking.get('commission_pct', 0)
         commission_amount = booking_revenue * (commission_pct / 100)
         net_revenue = booking_revenue - commission_amount
-        
+
         if source not in channel_data:
             channel_data[source] = {
                 'gross_revenue': 0,
@@ -1935,29 +1935,29 @@ async def get_channel_distribution_mobile(
                 'bookings_count': 0,
                 'room_nights': 0
             }
-        
+
         channel_data[source]['gross_revenue'] += booking_revenue
         channel_data[source]['commission'] += commission_amount
         channel_data[source]['net_revenue'] += net_revenue
         channel_data[source]['bookings_count'] += 1
-        
+
         # Calculate room nights
         check_in = datetime.fromisoformat(booking['check_in'])
         check_out = datetime.fromisoformat(booking['check_out'])
         nights = (check_out - check_in).days
         channel_data[source]['room_nights'] += max(nights, 1)
-    
+
     # Calculate percentages and format
     total_gross_revenue = sum(c['gross_revenue'] for c in channel_data.values())
     total_net_revenue = sum(c['net_revenue'] for c in channel_data.values())
     total_commission = sum(c['commission'] for c in channel_data.values())
-    
+
     channels = []
     for channel, data in channel_data.items():
         percentage = round((data['gross_revenue'] / total_gross_revenue * 100), 2) if total_gross_revenue > 0 else 0
         avg_booking_value = round(data['net_revenue'] / data['bookings_count'], 2) if data['bookings_count'] > 0 else 0
         commission_pct = round((data['commission'] / data['gross_revenue'] * 100), 2) if data['gross_revenue'] > 0 else 0
-        
+
         channels.append({
             'channel': channel,
             'gross_revenue': round(data['gross_revenue'], 2),
@@ -1969,10 +1969,10 @@ async def get_channel_distribution_mobile(
             'avg_booking_value': avg_booking_value,
             'commission_pct': commission_pct
         })
-    
+
     # Sort by net revenue descending
     channels.sort(key=lambda x: x['net_revenue'], reverse=True)
-    
+
     return {
         'period': {
             'start_date': start.strftime('%Y-%m-%d'),
@@ -1998,7 +1998,7 @@ async def get_cancellation_report_mobile(
 ):
     """Get cancellation and no-show report for mobile app"""
     current_user = await get_current_user(credentials)
-    
+
     # Default to last 30 days
     if start_date and end_date:
         start = datetime.fromisoformat(start_date)
@@ -2006,7 +2006,7 @@ async def get_cancellation_report_mobile(
     else:
         end = datetime.now(timezone.utc)
         start = end - timedelta(days=30)
-    
+
     # Get all bookings in date range
     all_bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -2015,21 +2015,21 @@ async def get_cancellation_report_mobile(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     # Get cancelled bookings
     cancelled_bookings = [b for b in all_bookings if b.get('status') == 'cancelled']
-    
+
     # Get no-show bookings
     no_show_bookings = [b for b in all_bookings if b.get('status') == 'no_show']
-    
+
     # Calculate metrics
     total_bookings = len(all_bookings)
     cancellation_count = len(cancelled_bookings)
     no_show_count = len(no_show_bookings)
-    
+
     cancellation_rate = round((cancellation_count / total_bookings * 100), 2) if total_bookings > 0 else 0
     no_show_rate = round((no_show_count / total_bookings * 100), 2) if total_bookings > 0 else 0
-    
+
     # Calculate lost revenue
     def calculate_booking_revenue(booking):
         if 'total_amount' in booking:
@@ -2040,11 +2040,11 @@ async def get_cancellation_report_mobile(
         nights = max((check_out - check_in).days, 1)
         rate = booking.get('rate_per_night', 0)
         return rate * nights
-    
+
     cancelled_revenue = sum(calculate_booking_revenue(b) for b in cancelled_bookings)
     no_show_revenue = sum(calculate_booking_revenue(b) for b in no_show_bookings)
     total_lost_revenue = cancelled_revenue + no_show_revenue
-    
+
     # Calculate cancellation fees collected
     cancellation_fees = 0
     for booking in cancelled_bookings:
@@ -2055,13 +2055,13 @@ async def get_cancellation_report_mobile(
             'voided': False
         }).to_list(100)
         cancellation_fees += sum(f.get('total', 0) for f in fees)
-    
+
     # Analyze by channel
     channel_analysis = {}
     for booking in cancelled_bookings + no_show_bookings:
         source = booking.get('source', 'direct')
         status = booking.get('status')
-        
+
         if source not in channel_analysis:
             channel_analysis[source] = {
                 'cancellations': 0,
@@ -2069,24 +2069,24 @@ async def get_cancellation_report_mobile(
                 'total': 0,
                 'lost_revenue': 0
             }
-        
+
         if status == 'cancelled':
             channel_analysis[source]['cancellations'] += 1
         elif status == 'no_show':
             channel_analysis[source]['no_shows'] += 1
-        
+
         channel_analysis[source]['total'] += 1
         channel_analysis[source]['lost_revenue'] += calculate_booking_revenue(booking)
-    
+
     # Format channel data
     channels = []
     for channel, data in channel_analysis.items():
         # Count total bookings from this channel
         channel_bookings = [b for b in all_bookings if b.get('source') == channel]
         channel_total = len(channel_bookings)
-        
+
         rate = round((data['total'] / channel_total * 100), 2) if channel_total > 0 else 0
-        
+
         channels.append({
             'channel': channel,
             'cancellations': data['cancellations'],
@@ -2095,10 +2095,10 @@ async def get_cancellation_report_mobile(
             'rate': rate,
             'lost_revenue': round(data['lost_revenue'], 2)
         })
-    
+
     # Sort by total issues descending
     channels.sort(key=lambda x: x['total_issues'], reverse=True)
-    
+
     # Analyze by lead time (how far in advance cancelled)
     lead_time_analysis = {
         'same_day': 0,
@@ -2107,12 +2107,12 @@ async def get_cancellation_report_mobile(
         '8_14_days': 0,
         '15_plus_days': 0
     }
-    
+
     for booking in cancelled_bookings:
         check_in = datetime.fromisoformat(booking['check_in'])
         cancelled_at = datetime.fromisoformat(booking.get('cancelled_at', booking.get('updated_at', booking.get('created_at'))))
         days_before = (check_in - cancelled_at).days
-        
+
         if days_before == 0:
             lead_time_analysis['same_day'] += 1
         elif days_before <= 3:
@@ -2123,7 +2123,7 @@ async def get_cancellation_report_mobile(
             lead_time_analysis['8_14_days'] += 1
         else:
             lead_time_analysis['15_plus_days'] += 1
-    
+
     return {
         'period': {
             'start_date': start.strftime('%Y-%m-%d'),
@@ -2153,28 +2153,28 @@ async def create_rate_override_mobile(
 ):
     """Create rate override for mobile app - requires approval for significant changes"""
     current_user = await get_current_user(credentials)
-    
+
     # Validate required fields
     required_fields = ['room_type', 'date', 'new_rate', 'reason']
     for field in required_fields:
         if field not in data:
             raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
-    
+
     room_type = data['room_type']
     date_str = data['date']
     new_rate = float(data['new_rate'])
     reason = data['reason']
-    
+
     # Get current base rate for this room type
     # This is simplified - in production you'd have a rate table
     base_rate = 100  # Default base rate
-    
+
     # Calculate percentage change
     change_pct = abs((new_rate - base_rate) / base_rate * 100) if base_rate > 0 else 0
-    
+
     # Determine if approval is needed (>15% change)
     needs_approval = change_pct > 15
-    
+
     # Create rate override record
     override_id = str(uuid.uuid4())
     override = {
@@ -2193,10 +2193,10 @@ async def create_rate_override_mobile(
         'approved_by': None if needs_approval else current_user.id,
         'approved_at': None if needs_approval else datetime.now(timezone.utc).isoformat()
     }
-    
+
     # Save to database
     await db.rate_overrides.insert_one(override)
-    
+
     # If needs approval, create approval request
     if needs_approval:
         approval_request = {
@@ -2219,11 +2219,11 @@ async def create_rate_override_mobile(
             'created_at': datetime.now(timezone.utc).isoformat()
         }
         await db.approval_requests.insert_one(approval_request)
-        
+
         message = f"Rate override request created. Requires approval (change: {round(change_pct, 2)}%)"
     else:
         message = "Rate override applied successfully"
-    
+
     return {
         'message': message,
         'override_id': override_id,
@@ -2249,15 +2249,15 @@ async def get_pickup_analysis(
     Shows daily occupancy, bookings, revenue trends
     """
     current_user = await get_current_user(credentials)
-    
+
     today = datetime.now(timezone.utc).date()
-    
+
     # Historical data (last 30 days)
     historical = []
     for i in range(days_back, 0, -1):
         date = today - timedelta(days=i)
         date_str = date.isoformat()
-        
+
         # Get bookings for this date
         bookings = await db.bookings.count_documents({
             'tenant_id': current_user.tenant_id,
@@ -2265,11 +2265,11 @@ async def get_pickup_analysis(
             'check_out': {'$gt': date_str},
             'status': {'$in': ['confirmed', 'checked_in']}
         })
-        
+
         # Calculate occupancy
         total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
         occupancy_pct = (bookings / total_rooms * 100) if total_rooms > 0 else 0
-        
+
         # Get revenue
         revenue = 0
         async for booking in db.bookings.find({
@@ -2277,7 +2277,7 @@ async def get_pickup_analysis(
             'check_in': date_str
         }):
             revenue += booking.get('total_amount', 0)
-        
+
         historical.append({
             'date': date_str,
             'occupancy': round(occupancy_pct, 1),
@@ -2285,20 +2285,20 @@ async def get_pickup_analysis(
             'revenue': round(revenue, 2),
             'type': 'actual'
         })
-    
+
     # Forecast data (next 7 days) - simple projection based on current pace
     avg_occupancy = sum(h['occupancy'] for h in historical[-7:]) / 7 if len(historical) >= 7 else 50
     avg_revenue = sum(h['revenue'] for h in historical[-7:]) / 7 if len(historical) >= 7 else 10000
-    
+
     forecast = []
     for i in range(1, days_forward + 1):
         date = today + timedelta(days=i)
         date_str = date.isoformat()
-        
+
         # Simple forecast with slight variation
         forecast_occupancy = avg_occupancy * (0.95 + (i % 3) * 0.05)
         forecast_revenue = avg_revenue * (0.9 + (i % 4) * 0.1)
-        
+
         forecast.append({
             'date': date_str,
             'occupancy': round(forecast_occupancy, 1),
@@ -2306,7 +2306,7 @@ async def get_pickup_analysis(
             'revenue': round(forecast_revenue, 2),
             'type': 'forecast'
         })
-    
+
     return {
         'historical': historical,
         'forecast': forecast,
@@ -2330,26 +2330,26 @@ async def get_pace_report(
     Shows on-the-books comparison
     """
     current_user = await get_current_user(credentials)
-    
+
     today = datetime.now(timezone.utc).date()
-    
+
     # Next 30 days
     pace_data = []
     for i in range(30):
         date = today + timedelta(days=i)
         date_str = date.isoformat()
         (date - timedelta(days=365)).isoformat()
-        
+
         # This year bookings
         this_year = await db.bookings.count_documents({
             'tenant_id': current_user.tenant_id,
             'check_in': date_str,
             'status': {'$in': ['confirmed', 'checked_in', 'guaranteed']}
         })
-        
+
         # Last year bookings (simulated)
         last_year = this_year - (5 if i % 3 == 0 else -3)  # Simulated comparison
-        
+
         pace_data.append({
             'date': date_str,
             'this_year': this_year,
@@ -2357,7 +2357,7 @@ async def get_pace_report(
             'variance': this_year - last_year,
             'variance_pct': round(((this_year - last_year) / last_year * 100) if last_year > 0 else 0, 1)
         })
-    
+
     return {
         'pace_data': pace_data,
         'summary': {
@@ -2380,27 +2380,27 @@ async def get_rate_recommendations(
     Based on occupancy, demand, historical data
     """
     current_user = await get_current_user(credentials)
-    
+
     today = datetime.now(timezone.utc).date()
-    
+
     recommendations = []
     for i in range(7):
         date = today + timedelta(days=i)
         date_str = date.isoformat()
-        
+
         # Get current bookings
         bookings = await db.bookings.count_documents({
             'tenant_id': current_user.tenant_id,
             'check_in': date_str,
             'status': {'$in': ['confirmed', 'guaranteed']}
         })
-        
+
         total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
         occupancy_pct = (bookings / total_rooms * 100) if total_rooms > 0 else 0
-        
+
         # Simple pricing algorithm
         base_rate = 1000  # Base rate
-        
+
         if occupancy_pct > 80:
             recommended_rate = base_rate * 1.3
             strategy = 'maximize'
@@ -2417,7 +2417,7 @@ async def get_rate_recommendations(
             recommended_rate = base_rate * 0.85
             strategy = 'stimulate'
             reason = 'Düşük doluluk - talep artırıcı fiyat'
-        
+
         recommendations.append({
             'date': date_str,
             'current_occupancy': round(occupancy_pct, 1),
@@ -2428,7 +2428,7 @@ async def get_rate_recommendations(
             'strategy': strategy,
             'reason': reason
         })
-    
+
     return {
         'recommendations': recommendations,
         'summary': {
@@ -2449,27 +2449,27 @@ async def get_historical_comparison(
     Revenue, occupancy, ADR comparison
     """
     current_user = await get_current_user(credentials)
-    
+
     today = datetime.now(timezone.utc).date()
     month_start = today.replace(day=1)
-    
+
     # This month data
     this_month_bookings = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_in': {'$gte': month_start.isoformat()}
     })
-    
+
     this_month_revenue = 0
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'check_in': {'$gte': month_start.isoformat()}
     }):
         this_month_revenue += booking.get('total_amount', 0)
-    
+
     # Simulated last year data
     last_year_bookings = int(this_month_bookings * 0.92)
     last_year_revenue = this_month_revenue * 0.88
-    
+
     return {
         'this_year': {
             'bookings': this_month_bookings,
@@ -2506,30 +2506,30 @@ async def detect_anomalies(
     Returns active anomalies with severity levels
     """
     current_user = await get_current_user(credentials)
-    
+
     anomalies = []
-    
+
     # Get recent data for comparison
     today = datetime.now(timezone.utc).date()
     yesterday = today - timedelta(days=1)
     week_ago = today - timedelta(days=7)
-    
+
     # 1. Occupancy Drop Detection
     today_occupancy = await db.rooms.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'occupied'
     })
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    
+
     yesterday_bookings = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_in': yesterday.isoformat()
     })
-    
+
     if total_rooms > 0:
         today_occ_pct = today_occupancy / total_rooms * 100
         yesterday_occ_pct = yesterday_bookings / total_rooms * 100
-        
+
         if yesterday_occ_pct > 0 and (yesterday_occ_pct - today_occ_pct) > 15:
             anomalies.append({
                 'id': str(uuid.uuid4()),
@@ -2543,20 +2543,20 @@ async def detect_anomalies(
                 'variance': round(today_occ_pct - yesterday_occ_pct, 1),
                 'detected_at': datetime.now(timezone.utc).isoformat()
             })
-    
+
     # 2. Cancellation Spike Detection
     today_cancellations = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'cancelled',
         'updated_at': {'$gte': today.isoformat()}
     })
-    
+
     week_avg_cancellations = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'cancelled',
         'updated_at': {'$gte': week_ago.isoformat()}
     }) / 7
-    
+
     if today_cancellations > week_avg_cancellations * 2:
         anomalies.append({
             'id': str(uuid.uuid4()),
@@ -2570,7 +2570,7 @@ async def detect_anomalies(
             'variance': round(today_cancellations - week_avg_cancellations, 1),
             'detected_at': datetime.now(timezone.utc).isoformat()
         })
-    
+
     # 3. Revenue Deviation Detection
     today_revenue = 0
     async for payment in db.payments.find({
@@ -2578,7 +2578,7 @@ async def detect_anomalies(
         'payment_date': {'$gte': today.isoformat()}
     }):
         today_revenue += payment.get('amount', 0)
-    
+
     # Get average revenue from last week
     week_revenue = 0
     async for payment in db.payments.find({
@@ -2586,9 +2586,9 @@ async def detect_anomalies(
         'payment_date': {'$gte': week_ago.isoformat()}
     }):
         week_revenue += payment.get('amount', 0)
-    
+
     avg_daily_revenue = week_revenue / 7 if week_revenue > 0 else 10000
-    
+
     if avg_daily_revenue > 0 and abs(today_revenue - avg_daily_revenue) / avg_daily_revenue > 0.2:
         severity = 'high' if today_revenue < avg_daily_revenue else 'medium'
         anomalies.append({
@@ -2603,7 +2603,7 @@ async def detect_anomalies(
             'variance': round(today_revenue - avg_daily_revenue, 2),
             'detected_at': datetime.now(timezone.utc).isoformat()
         })
-    
+
     # 4. Maintenance Spike Detection
     urgent_maintenance = await db.maintenance_tasks.count_documents({
         'tenant_id': current_user.tenant_id,
@@ -2611,7 +2611,7 @@ async def detect_anomalies(
         'status': 'pending',
         'created_at': {'$gte': today.isoformat()}
     })
-    
+
     if urgent_maintenance > 5:
         anomalies.append({
             'id': str(uuid.uuid4()),
@@ -2625,7 +2625,7 @@ async def detect_anomalies(
             'variance': urgent_maintenance - 2,
             'detected_at': datetime.now(timezone.utc).isoformat()
         })
-    
+
     return {
         'anomalies': anomalies,
         'count': len(anomalies),
@@ -2647,11 +2647,11 @@ async def get_anomaly_alerts(
     Filter by severity
     """
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
     if severity:
         query['severity'] = severity
-    
+
     alerts = []
     async for alert in db.anomaly_alerts.find(query).sort('detected_at', -1).limit(50):
         alerts.append({
@@ -2666,7 +2666,7 @@ async def get_anomaly_alerts(
             'detected_at': alert['detected_at'],
             'resolved': alert.get('resolved', False)
         })
-    
+
     return {
         'alerts': alerts,
         'count': len(alerts)
@@ -2689,9 +2689,9 @@ async def get_active_campaigns(
     Get active promotional campaigns
     """
     await get_current_user(credentials)
-    
+
     today = datetime.now().date()
-    
+
     # Sample campaigns
     campaigns = [
         {
@@ -2731,11 +2731,11 @@ async def get_active_campaigns(
             'revenue_generated': 28000
         }
     ]
-    
+
     # Filter by status
     if status:
         campaigns = [c for c in campaigns if c['status'] == status]
-    
+
     return {
         'campaigns': campaigns,
         'count': len(campaigns),
@@ -2756,7 +2756,7 @@ async def get_discount_codes(
     Get discount codes
     """
     await get_current_user(credentials)
-    
+
     codes = [
         {
             'id': str(uuid.uuid4()),
@@ -2783,10 +2783,10 @@ async def get_discount_codes(
             'is_active': True
         }
     ]
-    
+
     if active_only:
         codes = [c for c in codes if c['is_active']]
-    
+
     return {
         'discount_codes': codes,
         'count': len(codes),
@@ -2806,7 +2806,7 @@ async def create_rate_override(
     Create rate override (with optional approval flow)
     """
     current_user = await get_current_user(credentials)
-    
+
     override = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -2818,7 +2818,7 @@ async def create_rate_override(
         'created_at': datetime.now(timezone.utc).isoformat(),
         'status': 'pending_approval' if request.requires_approval else 'applied'
     }
-    
+
     if request.requires_approval:
         # Create approval request
         approval = {
@@ -2833,7 +2833,7 @@ async def create_rate_override(
             'request_date': datetime.now(timezone.utc).isoformat()
         }
         await db.approvals.insert_one(approval)
-        
+
         return {
             'message': 'Fiyat değişikliği onaya gönderildi',
             'override_id': override['id'],
@@ -2860,7 +2860,7 @@ async def get_promotional_rates(
     Get promotional rates
     """
     await get_current_user(credentials)
-    
+
     promo_rates = [
         {
             'room_type': 'Standard Room',
@@ -2879,7 +2879,7 @@ async def get_promotional_rates(
             'conditions': 'Hafta içi rezervasyonlar'
         }
     ]
-    
+
     return {
         'promotional_rates': promo_rates,
         'count': len(promo_rates)
@@ -2900,21 +2900,21 @@ async def get_compset_real_time_prices(
     current_user: User = Depends(get_current_user)
 ):
     """Get competitor prices - REAL DATA from compset database
-    
+
     Note: In production, this would integrate with:
     - Booking.com API
-    - Expedia API  
+    - Expedia API
     - OTA Insight
     For now, uses manually entered competitor data from database
     """
-    
+
     # Get competitor data from database
     competitors = await db.competitor_prices.find({
         'tenant_id': current_user.tenant_id,
         'check_in_date': check_in_date,
         'room_type': room_type
     }, {'_id': 0}).to_list(20)
-    
+
     # If no data, return empty (no mock data)
     if not competitors:
         return {
@@ -2929,9 +2929,9 @@ async def get_compset_real_time_prices(
             },
             'last_updated': datetime.now(timezone.utc).isoformat()
         }
-    
+
     avg_price = sum(c['price'] for c in competitors) / len(competitors)
-    
+
     return {
         'check_in_date': check_in_date,
         'room_type': room_type,

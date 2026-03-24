@@ -80,7 +80,7 @@ async def update_housekeeping_task(task_id: str, status: Optional[str] = None, a
 async def get_room_status_board(current_user: User = Depends(get_current_user)):
     """Get comprehensive room status board"""
     rooms = await db.rooms.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
-    status_counts = {s: 0 for s in ['available', 'occupied', 'dirty', 'cleaning', 'inspected', 'maintenance', 'out_of_order']}
+    status_counts = dict.fromkeys(['available', 'occupied', 'dirty', 'cleaning', 'inspected', 'maintenance', 'out_of_order'], 0)
     for room in rooms:
         status_counts[room['status']] += 1
     return {'rooms': rooms, 'status_counts': status_counts, 'total_rooms': len(rooms)}
@@ -91,13 +91,13 @@ async def get_due_out_rooms(current_user: User = Depends(get_current_user)):
     """Get rooms with guests checking out today"""
     today = datetime.now(timezone.utc).date()
     tomorrow = today + timedelta(days=1)
-    
+
     # Find bookings checking out today
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'status': 'checked_in'
     }).to_list(1000)
-    
+
     due_out_rooms = []
     for booking in bookings:
         try:
@@ -109,11 +109,11 @@ async def get_due_out_rooms(current_user: User = Depends(get_current_user)):
                 checkout_date = datetime.fromisoformat(checkout.replace('Z', '+00:00')).date()
             else:
                 continue
-            
+
             if checkout_date == today or checkout_date == tomorrow:
                 room = await db.rooms.find_one({'id': booking['room_id']}, {'_id': 0})
                 guest = await db.guests.find_one({'id': booking['guest_id']}, {'_id': 0})
-                
+
                 due_out_rooms.append({
                     'room_number': room['room_number'] if room else 'N/A',
                     'room_type': room['room_type'] if room else 'N/A',
@@ -125,7 +125,7 @@ async def get_due_out_rooms(current_user: User = Depends(get_current_user)):
         except Exception as e:
             print(f"Error processing booking {booking.get('id')}: {e}")
             continue
-    
+
     return {
         'due_out_rooms': due_out_rooms,
         'count': len(due_out_rooms)
@@ -136,13 +136,13 @@ async def get_due_out_rooms(current_user: User = Depends(get_current_user)):
 async def get_stayover_rooms(current_user: User = Depends(get_current_user)):
     """Get rooms with guests staying beyond today"""
     today = datetime.now(timezone.utc).date()
-    
+
     # Find checked-in bookings not checking out today
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'status': 'checked_in'
     }).to_list(1000)
-    
+
     stayover_rooms = []
     for booking in bookings:
         try:
@@ -154,13 +154,13 @@ async def get_stayover_rooms(current_user: User = Depends(get_current_user)):
                 checkout_date = datetime.fromisoformat(checkout.replace('Z', '+00:00')).date()
             else:
                 continue
-            
+
             if checkout_date > today:
                 room = await db.rooms.find_one({'id': booking['room_id']}, {'_id': 0})
                 guest = await db.guests.find_one({'id': booking['guest_id']}, {'_id': 0})
-                
+
                 nights_remaining = (checkout_date - today).days
-                
+
                 stayover_rooms.append({
                     'room_number': room['room_number'] if room else 'N/A',
                     'room_type': room['room_type'] if room else 'N/A',
@@ -172,7 +172,7 @@ async def get_stayover_rooms(current_user: User = Depends(get_current_user)):
         except Exception as e:
             print(f"Error processing stayover booking {booking.get('id')}: {e}")
             continue
-    
+
     return {
         'stayover_rooms': stayover_rooms,
         'count': len(stayover_rooms)
@@ -183,10 +183,10 @@ async def get_stayover_rooms(current_user: User = Depends(get_current_user)):
 @cached(ttl=120, key_prefix="hk_room_status_report")
 async def get_room_status_report(current_user: User = Depends(get_current_user)):
     """Comprehensive room status report with DND, Sleep Out, OOO details"""
-    
+
     # Get all rooms
     rooms = await db.rooms.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
-    
+
     # Calculate summary
     summary = {
         'total_rooms': len(rooms),
@@ -196,27 +196,27 @@ async def get_room_status_report(current_user: User = Depends(get_current_user))
         'out_of_order': sum(1 for r in rooms if r.get('status') == 'out_of_order'),
         'out_of_service': sum(1 for r in rooms if r.get('status') == 'maintenance')
     }
-    
+
     # Get DND (Do Not Disturb) rooms - occupied rooms with DND flag
     dnd_rooms = []
     sleep_out_rooms = []
     out_of_order_rooms = []
-    
+
     # Get current bookings for occupied rooms
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'status': 'checked_in'
     }, {'_id': 0}).to_list(1000)
-    
+
     for booking in bookings:
         room = next((r for r in rooms if r.get('id') == booking.get('room_id')), None)
         if not room:
             continue
-            
+
         guest = await db.guests.find_one({'id': booking.get('guest_id')}, {'_id': 0})
         guest_name = guest.get('name') if guest else 'Unknown'
         room_number = room.get('room_number')
-        
+
         # Check for DND flag
         if booking.get('dnd_status') or room.get('dnd_status'):
             dnd_since = booking.get('dnd_since') or room.get('dnd_since', datetime.now(timezone.utc).isoformat())
@@ -225,14 +225,14 @@ async def get_room_status_report(current_user: User = Depends(get_current_user))
                 duration_hours = int((datetime.now(timezone.utc) - dnd_time).total_seconds() / 3600)
             except Exception:
                 duration_hours = 0
-                
+
             dnd_rooms.append({
                 'room': room_number,
                 'guest': guest_name,
                 'dnd_since': dnd_since[:16] if isinstance(dnd_since, str) else dnd_since.strftime('%H:%M'),
                 'duration_hours': duration_hours
             })
-        
+
         # Check for Sleep Out (guest hasn't been in room for 24h+)
         last_activity = booking.get('last_room_activity')
         if last_activity:
@@ -248,7 +248,7 @@ async def get_room_status_report(current_user: User = Depends(get_current_user))
                     })
             except Exception:
                 pass
-    
+
     # Get Out of Order rooms
     for room in rooms:
         if room.get('status') == 'out_of_order':
@@ -258,7 +258,7 @@ async def get_room_status_report(current_user: User = Depends(get_current_user))
                 'since': room.get('ooo_since', 'N/A'),
                 'expected_fix': room.get('ooo_until', 'TBD')
             })
-    
+
     return {
         'summary': summary,
         'dnd_rooms': dnd_rooms,
@@ -271,16 +271,16 @@ async def get_room_status_report(current_user: User = Depends(get_current_user))
 @cached(ttl=300, key_prefix="hk_staff_perf_detailed")
 async def get_staff_performance_detailed(current_user: User = Depends(get_current_user)):
     """Detailed staff performance metrics"""
-    
+
     # Get completed tasks from last 30 days
     start_date = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-    
+
     tasks = await db.housekeeping_tasks.find({
         'tenant_id': current_user.tenant_id,
         'status': 'completed',
         'completed_at': {'$gte': start_date}
     }, {'_id': 0}).to_list(5000)
-    
+
     # Group by staff
     staff_stats = {}
     for task in tasks:
@@ -292,9 +292,9 @@ async def get_staff_performance_detailed(current_user: User = Depends(get_curren
                 'durations': [],
                 'quality_scores': []
             }
-        
+
         staff_stats[staff]['tasks_completed'] += 1
-        
+
         # Calculate duration if available
         if task.get('started_at') and task.get('completed_at'):
             try:
@@ -304,23 +304,23 @@ async def get_staff_performance_detailed(current_user: User = Depends(get_curren
                 staff_stats[staff]['durations'].append(duration)
             except Exception:
                 pass
-        
+
         # Quality score (from inspections or ratings)
         if task.get('quality_score'):
             staff_stats[staff]['quality_scores'].append(task['quality_score'])
-    
+
     # Calculate final metrics
     staff_performance = []
     for staff, data in staff_stats.items():
         avg_duration = sum(data['durations']) / len(data['durations']) if data['durations'] else 0
         avg_quality = sum(data['quality_scores']) / len(data['quality_scores']) if data['quality_scores'] else 95
-        
+
         # Performance rating
         if avg_duration > 0:
             speed_rating = 'Fast' if avg_duration < 20 else 'Average' if avg_duration < 30 else 'Slow'
         else:
             speed_rating = 'N/A'
-        
+
         staff_performance.append({
             'staff_name': staff,
             'tasks_completed': data['tasks_completed'],
@@ -329,10 +329,10 @@ async def get_staff_performance_detailed(current_user: User = Depends(get_curren
             'speed_rating': speed_rating,
             'efficiency_rating': '⭐⭐⭐⭐⭐' if avg_quality >= 95 and avg_duration < 20 else '⭐⭐⭐⭐' if avg_quality >= 90 else '⭐⭐⭐'
         })
-    
+
     # Sort by tasks completed
     staff_performance.sort(key=lambda x: x['tasks_completed'], reverse=True)
-    
+
     return {
         'staff_performance': staff_performance,
         'total_staff': len(staff_performance),
@@ -345,13 +345,13 @@ async def get_staff_performance_detailed(current_user: User = Depends(get_curren
 async def get_arrival_rooms(current_user: User = Depends(get_current_user)):
     """Get rooms with guests arriving today"""
     today = datetime.now(timezone.utc).date()
-    
+
     # Find bookings checking in today
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['confirmed', 'guaranteed', 'pending']}
     }).to_list(1000)
-    
+
     arrival_rooms = []
     for booking in bookings:
         try:
@@ -363,11 +363,11 @@ async def get_arrival_rooms(current_user: User = Depends(get_current_user)):
                 checkin_date = datetime.fromisoformat(checkin.replace('Z', '+00:00')).date()
             else:
                 continue
-            
+
             if checkin_date == today:
                 room = await db.rooms.find_one({'id': booking['room_id']}, {'_id': 0})
                 guest = await db.guests.find_one({'id': booking['guest_id']}, {'_id': 0})
-                
+
                 arrival_rooms.append({
                     'room_number': room['room_number'] if room else 'N/A',
                     'room_type': room['room_type'] if room else 'N/A',
@@ -381,7 +381,7 @@ async def get_arrival_rooms(current_user: User = Depends(get_current_user)):
         except Exception as e:
             print(f"Error processing arrival booking {booking.get('id')}: {e}")
             continue
-    
+
     return {
         'arrival_rooms': arrival_rooms,
         'count': len(arrival_rooms),
@@ -397,31 +397,31 @@ async def update_room_status_hk(
 ):
     """Quick room status update from housekeeping"""
     valid_statuses = ['available', 'occupied', 'dirty', 'cleaning', 'inspected', 'maintenance', 'out_of_order']
-    
+
     if new_status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
-    
+
     room = await db.rooms.find_one({
         'id': room_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
-    
+
     update_data = {
         'status': new_status,
         'updated_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     if notes:
         update_data['hk_notes'] = notes
-    
+
     await db.rooms.update_one(
         {'id': room_id},
         {'$set': update_data}
     )
-    
+
     return {
         'message': f'Room {room["room_number"]} status updated to {new_status}',
         'room_number': room['room_number'],
@@ -442,10 +442,10 @@ async def assign_housekeeping_task(
         'id': room_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
-    
+
     task = HousekeepingTask(
         tenant_id=current_user.tenant_id,
         room_id=room_id,
@@ -454,11 +454,11 @@ async def assign_housekeeping_task(
         priority=priority,
         notes=notes or f"{task_type.title()} for Room {room['room_number']}"
     )
-    
+
     task_dict = task.model_dump()
     task_dict['created_at'] = task_dict['created_at'].isoformat()
     await db.housekeeping_tasks.insert_one(task_dict)
-    
+
     return {
         'message': f'Task assigned to {assigned_to}',
         'task': task
@@ -477,13 +477,13 @@ async def get_room_blocks(
 ):
     """Get room blocks with optional filters"""
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if room_id:
         query['room_id'] = room_id
-    
+
     if status:
         query['status'] = status
-    
+
     # Date range filtering
     if from_date or to_date:
         date_query = {}
@@ -496,16 +496,16 @@ async def get_room_blocks(
                 {'end_date': {'$gte': from_date if from_date else to_date}},
                 {'end_date': None}
             ]
-    
+
     blocks = await db.room_blocks.find(query, {'_id': 0}).to_list(1000)
-    
+
     # Enrich with room information
     for block in blocks:
         room = await db.rooms.find_one({'id': block['room_id'], 'tenant_id': current_user.tenant_id}, {'_id': 0})
         if room:
             block['room_number'] = room['room_number']
             block['room_type'] = room['room_type']
-    
+
     return {
         'blocks': blocks,
         'count': len(blocks)
@@ -530,47 +530,47 @@ async def update_room_block(
         'id': block_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not block:
         raise HTTPException(status_code=404, detail="Room block not found")
-    
+
     # Build update dict
     update_data = {}
     changes = {}
-    
+
     if block_data.reason is not None:
         update_data['reason'] = block_data.reason
         changes['reason'] = {'old': block.get('reason'), 'new': block_data.reason}
-    
+
     if block_data.details is not None:
         update_data['details'] = block_data.details
         changes['details'] = {'old': block.get('details'), 'new': block_data.details}
-    
+
     if block_data.start_date is not None:
         update_data['start_date'] = block_data.start_date
         changes['start_date'] = {'old': block.get('start_date'), 'new': block_data.start_date}
-    
+
     if block_data.end_date is not None:
         update_data['end_date'] = block_data.end_date
         changes['end_date'] = {'old': block.get('end_date'), 'new': block_data.end_date}
-    
+
     if block_data.allow_sell is not None:
         update_data['allow_sell'] = block_data.allow_sell
         changes['allow_sell'] = {'old': block.get('allow_sell'), 'new': block_data.allow_sell}
-    
+
     if block_data.status is not None:
         update_data['status'] = block_data.status
         changes['status'] = {'old': block.get('status'), 'new': block_data.status}
-    
+
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
-    
+
     # Update block
     await db.room_blocks.update_one(
         {'id': block_id, 'tenant_id': current_user.tenant_id},
         {'$set': update_data}
     )
-    
+
     # Create audit log
     await db.audit_logs.insert_one({
         'id': str(uuid.uuid4()),
@@ -584,13 +584,13 @@ async def update_room_block(
         'changes': changes,
         'timestamp': datetime.now(timezone.utc).isoformat()
     })
-    
+
     # Get updated block
     updated_block = await db.room_blocks.find_one({
         'id': block_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     return {
         'message': 'Room block updated successfully',
         'block': updated_block

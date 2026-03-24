@@ -43,16 +43,16 @@ async def get_sales_customers(
     VIP, Corporate, Returning, New customers
     """
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
-    
+
     # Get all bookings to analyze customers
     customers_data = {}
     async for booking in db.bookings.find(query):
         guest_id = booking.get('guest_id')
         if not guest_id:
             continue
-        
+
         if guest_id not in customers_data:
             customers_data[guest_id] = {
                 'guest_id': guest_id,
@@ -65,21 +65,21 @@ async def get_sales_customers(
                 'is_vip': False,
                 'is_corporate': booking.get('booking_source') == 'corporate'
             }
-        
+
         customers_data[guest_id]['total_bookings'] += 1
         customers_data[guest_id]['total_revenue'] += booking.get('total_amount', 0)
-        
+
         booking_date = booking.get('check_in', '')
         if not customers_data[guest_id]['last_stay'] or booking_date > customers_data[guest_id]['last_stay']:
             customers_data[guest_id]['last_stay'] = booking_date
-    
+
     # Convert to list and classify
     customers = []
     for customer in customers_data.values():
         # Classify customer type
         if customer['total_revenue'] > 50000:
             customer['is_vip'] = True
-        
+
         customer['customer_type'] = []
         if customer['is_vip']:
             customer['customer_type'].append('vip')
@@ -89,16 +89,16 @@ async def get_sales_customers(
             customer['customer_type'].append('returning')
         else:
             customer['customer_type'].append('new')
-        
+
         # Filter by type if specified
         if customer_type and customer_type not in customer['customer_type']:
             continue
-        
+
         customers.append(customer)
-    
+
     # Sort by revenue
     customers.sort(key=lambda x: x['total_revenue'], reverse=True)
-    
+
     # Sample data if empty
     if len(customers) == 0:
         customers = [
@@ -127,7 +127,7 @@ async def get_sales_customers(
                 'customer_type': ['vip', 'returning']
             }
         ]
-    
+
     return {
         'customers': customers[:limit],
         'count': len(customers),
@@ -151,9 +151,9 @@ async def get_ota_pricing(
     OTA price tracking - Booking.com, Expedia, Agoda comparison
     """
     await get_current_user(credentials)
-    
+
     target_date = date if date else datetime.now().date().isoformat()
-    
+
     # Sample OTA pricing data
     ota_prices = [
         {
@@ -193,7 +193,7 @@ async def get_ota_pricing(
             'parity_status': 'warning'
         }
     ]
-    
+
     return {
         'ota_prices': ota_prices,
         'date': target_date,
@@ -215,7 +215,7 @@ async def create_lead(
     Create new sales lead
     """
     current_user = await get_current_user(credentials)
-    
+
     lead = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -232,9 +232,9 @@ async def create_lead(
         'created_at': datetime.now(timezone.utc).isoformat(),
         'updated_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     await db.leads.insert_one(lead)
-    
+
     return {
         'message': 'Lead oluşturuldu',
         'lead_id': lead['id'],
@@ -255,15 +255,15 @@ async def update_lead_stage(
     Update lead pipeline stage
     """
     current_user = await get_current_user(credentials)
-    
+
     lead = await db.leads.find_one({
         'id': lead_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
-    
+
     await db.leads.update_one(
         {'id': lead_id},
         {
@@ -275,7 +275,7 @@ async def update_lead_stage(
             }
         }
     )
-    
+
     return {
         'message': 'Lead stage güncellendi',
         'lead_id': lead_id,
@@ -352,7 +352,7 @@ async def get_follow_ups(
     Get follow-up reminders for leads
     """
     current_user = await get_current_user(credentials)
-    
+
     # Get leads that need follow-up (warm and hot stages)
     leads = []
     async for lead in db.leads.find({
@@ -361,7 +361,7 @@ async def get_follow_ups(
     }):
         updated_at = datetime.fromisoformat(lead['updated_at'].replace('Z', '+00:00'))
         days_since_update = (datetime.now(timezone.utc) - updated_at).days
-        
+
         if days_since_update > 3:  # Needs follow-up if no update in 3 days
             leads.append({
                 'id': lead['id'],
@@ -372,9 +372,9 @@ async def get_follow_ups(
                 'expected_revenue': lead.get('expected_revenue', 0),
                 'urgency': 'high' if days_since_update > 7 else 'medium'
             })
-    
+
     leads.sort(key=lambda x: x['days_since_update'], reverse=True)
-    
+
     return {
         'follow_ups': leads,
         'count': len(leads),
@@ -397,9 +397,9 @@ async def get_corporate_contracts(
     Get corporate contracts list
     """
     await get_current_user(credentials)
-    
+
     today = datetime.now().date()
-    
+
     contracts = [
         {
             'id': str(uuid.uuid4()),
@@ -434,7 +434,7 @@ async def get_corporate_contracts(
             'days_until_expiry': 45
         }
     ]
-    
+
     # Filter by status
     if status:
         if status == 'active':
@@ -443,7 +443,7 @@ async def get_corporate_contracts(
             contracts = [c for c in contracts if 0 < c['days_until_expiry'] <= 60]
         elif status == 'expired':
             contracts = [c for c in contracts if c['days_until_expiry'] <= 0]
-    
+
     return {
         'contracts': contracts,
         'count': len(contracts),
@@ -462,7 +462,7 @@ async def get_corporate_customers(
     Get corporate customer list
     """
     await get_current_user(credentials)
-    
+
     customers = [
         {
             'company_name': 'Tech Solutions Ltd.',
@@ -483,7 +483,7 @@ async def get_corporate_customers(
             'vip_status': True
         }
     ]
-    
+
     return {
         'corporate_customers': customers,
         'count': len(customers),
@@ -617,7 +617,7 @@ async def get_corporate_rates(
     Get corporate contract rates
     """
     await get_current_user(credentials)
-    
+
     rates = [
         {
             'company': 'Tech Solutions Ltd.',
@@ -647,10 +647,10 @@ async def get_corporate_rates(
             'blackout_dates': ['2025-12-24', '2025-12-31']
         }
     ]
-    
+
     if company:
         rates = [r for r in rates if r['company'] == company]
-    
+
     return {
         'contract_rates': rates,
         'count': len(rates)
@@ -669,9 +669,9 @@ async def get_corporate_rate_plans(
     query = {'tenant_id': current_user.tenant_id}
     if company_id:
         query['company_id'] = company_id
-    
+
     rate_plans = await db.corporate_rate_plans.find(query, {'_id': 0}).to_list(100)
-    
+
     # If no data in DB, return empty
     return {
         'rate_plans': rate_plans,
@@ -690,7 +690,7 @@ async def get_corporate_alerts(
     Get contract expiry and renewal alerts
     """
     await get_current_user(credentials)
-    
+
     alerts = [
         {
             'id': str(uuid.uuid4()),
@@ -715,7 +715,7 @@ async def get_corporate_alerts(
             'created_at': datetime.now().isoformat()
         }
     ]
-    
+
     return {
         'alerts': alerts,
         'count': len(alerts),

@@ -64,7 +64,7 @@ async def create_leave_request(leave_data: dict, current_user: User = Depends(ge
         total_days = (end - start).days + 1
     else:
         total_days = leave_data['total_days']
-    
+
     leave = {
         'id': str(uuid.uuid4()), 'tenant_id': current_user.tenant_id,
         'staff_id': leave_data['staff_id'], 'staff_name': leave_data.get('staff_name', 'Unknown'),
@@ -135,7 +135,7 @@ async def get_attendance_summary(
     }
     records = await db.attendance_records.find(query, {'_id': 0}).to_list(2000)
     staff_map = await _get_staff_map(current_user.tenant_id)
-    
+
     summary: Dict[str, Any] = {}
     for record in records:
         staff_id = record['staff_id']
@@ -148,7 +148,7 @@ async def get_attendance_summary(
         })
         summary[staff_id]['total_hours'] += record.get('total_hours', 0)
         summary[staff_id]['days_present'] += 1
-    
+
     for staff_id, data in summary.items():
         staff = staff_map.get(staff_id, {})
         data['staff_name'] = staff.get('name', staff_id)
@@ -160,11 +160,11 @@ async def get_attendance_summary(
         data['average_daily_hours'] = round(
             data['total_hours'] / data['days_present'], 2
         ) if data['days_present'] else 0
-    
+
     summary_list = sorted(summary.values(), key=lambda x: x['staff_name'])
     total_hours = round(sum(item['total_hours'] for item in summary_list), 2)
     avg_hours = round(total_hours / len(summary_list), 2) if summary_list else 0
-    
+
     return {
         'summary': summary_list,
         'range': {'start': start_dt.isoformat(), 'end': end_dt.isoformat()},
@@ -189,20 +189,20 @@ async def export_payroll(
         start_dt = date(today.year, today.month, 1)
     next_month = start_dt.replace(day=28) + timedelta(days=4)
     end_dt = next_month - timedelta(days=next_month.day)
-    
+
     query = {
         'tenant_id': current_user.tenant_id,
         'date': {'$gte': start_dt.isoformat(), '$lte': end_dt.isoformat()}
     }
     records = await db.attendance_records.find(query, {'_id': 0}).to_list(5000)
     staff_map = await _get_staff_map(current_user.tenant_id)
-    
+
     payroll_rows = {}
     for record in records:
         staff_id = record['staff_id']
         payroll_rows.setdefault(staff_id, 0)
         payroll_rows[staff_id] += record.get('total_hours', 0)
-    
+
     payroll = []
     for staff_id, total_hours in payroll_rows.items():
         staff = staff_map.get(staff_id, {})
@@ -221,14 +221,14 @@ async def export_payroll(
             'overtime_rate': overtime_rate,
             'gross_pay': round(gross_pay, 2)
         })
-    
+
     response = {
         'month': start_dt.strftime('%Y-%m'),
         'payroll': payroll,
         'staff_count': len(payroll),
         'total_gross_pay': round(sum(row['gross_pay'] for row in payroll), 2)
     }
-    
+
     if format == 'csv':
         import csv
         from io import StringIO
@@ -241,7 +241,7 @@ async def export_payroll(
         for row in payroll:
             writer.writerow(row)
         response['csv'] = base64.b64encode(buffer.getvalue().encode()).decode()
-    
+
     return response
 
 @router.post("/hr/job-posting")
@@ -272,7 +272,7 @@ def _enrich_recipe_cost(recipe: dict, ingredient_map: Dict[str, dict]):
         waste_pct = line.get('waste_pct', 0)
         line_cost = unit_cost * quantity * (1 + waste_pct / 100)
         total_cost += line_cost
-        
+
         enriched_lines.append({
             'ingredient_id': line.get('ingredient_id'),
             'ingredient_name': line.get('ingredient_name') or (ingredient.get('name') if ingredient else 'Unknown'),
@@ -283,7 +283,7 @@ def _enrich_recipe_cost(recipe: dict, ingredient_map: Dict[str, dict]):
             'line_cost': round(line_cost, 2),
             'supplier': ingredient.get('supplier') if ingredient else None
         })
-    
+
     recipe['cost_breakdown'] = enriched_lines
     recipe['total_cost'] = round(total_cost, 2)
     selling_price = recipe.get('selling_price', 0)
@@ -295,7 +295,7 @@ def _enrich_recipe_cost(recipe: dict, ingredient_map: Dict[str, dict]):
 @router.post("/fnb/recipes")
 async def create_recipe(recipe_data: dict, current_user: User = Depends(get_current_user)):
     ingredient_map, _ = await _get_ingredient_map(current_user.tenant_id)
-    
+
     recipe = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -308,10 +308,10 @@ async def create_recipe(recipe_data: dict, current_user: User = Depends(get_curr
         'active': True,
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     recipe = _enrich_recipe_cost(recipe, ingredient_map)
     await db.recipes.insert_one(recipe)
-    
+
     return {
         'success': True,
         'recipe_id': recipe['id'],
@@ -327,11 +327,11 @@ async def get_recipes(current_user: User = Depends(get_current_user)):
         {'tenant_id': current_user.tenant_id, 'active': True},
         {'_id': 0}
     ).sort('dish_name', 1).to_list(200)
-    
+
     enriched = [_enrich_recipe_cost(dict(recipe), ingredient_map) for recipe in recipes]
     avg_gp = sum([r.get('gp_percentage', 0) for r in enriched]) / len(enriched) if enriched else 0
     avg_food_cost = sum([r.get('total_cost', 0) for r in enriched]) / len(enriched) if enriched else 0
-    
+
     return {
         'recipes': enriched,
         'total': len(enriched),
@@ -355,11 +355,11 @@ async def update_recipe(recipe_id: str, recipe_data: dict, current_user: User = 
     recipe = await db.recipes.find_one({'tenant_id': current_user.tenant_id, 'id': recipe_id})
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
-    
+
     updated = {**recipe, **recipe_data}
     ingredient_map, _ = await _get_ingredient_map(current_user.tenant_id)
     updated = _enrich_recipe_cost(updated, ingredient_map)
-    
+
     await db.recipes.update_one(
         {'tenant_id': current_user.tenant_id, 'id': recipe_id},
         {'$set': updated}
@@ -415,7 +415,7 @@ async def get_kitchen_orders(
 async def create_kitchen_order(order_data: dict, current_user: User = Depends(get_current_user)):
     if not order_data.get('items'):
         raise HTTPException(status_code=400, detail="Order items required")
-    
+
     order = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -462,16 +462,16 @@ async def list_ingredients(current_user: User = Depends(get_current_user)):
         {'tenant_id': current_user.tenant_id},
         {'_id': 0}
     ).sort('name', 1).to_list(500)
-    
+
     low_stock = [ing for ing in ingredients if ing.get('current_stock', 0) <= ing.get('reorder_point', 0)]
     total_value = sum((ing.get('current_stock', 0) * ing.get('unit_cost', 0)) for ing in ingredients)
-    
+
     categories = {}
     for ing in ingredients:
         cat = ing.get('category', 'other')
         categories.setdefault(cat, 0)
         categories[cat] += 1
-    
+
     return {
         'ingredients': ingredients,
         'summary': {
@@ -509,7 +509,7 @@ async def update_ingredient(ingredient_id: str, ing_data: dict, current_user: Us
     ingredient = await db.ingredients.find_one({'tenant_id': current_user.tenant_id, 'id': ingredient_id})
     if not ingredient:
         raise HTTPException(status_code=404, detail="Ingredient not found")
-    
+
     updated = {**ingredient, **ing_data}
     await db.ingredients.update_one(
         {'tenant_id': current_user.tenant_id, 'id': ingredient_id},

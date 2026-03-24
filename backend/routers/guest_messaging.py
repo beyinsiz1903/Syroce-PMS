@@ -39,8 +39,8 @@ async def get_guest_messages(
 ):
     """Misafirin mesajlarını listele."""
     current_user = await _get_current_user(credentials)
-    
-    
+
+
     if current_user.role == "guest":
         query_filter = {
             "tenant_id": current_user.tenant_id,
@@ -50,12 +50,12 @@ async def get_guest_messages(
         query_filter = {"tenant_id": current_user.tenant_id}
         if booking_id:
             query_filter["booking_id"] = booking_id
-    
+
     messages = await _db.guest_messages.find(
         query_filter,
         {"_id": 0}
     ).sort("created_at", -1).to_list(200)
-    
+
     # Group by conversation (booking_id or guest_user_id)
     conversations = {}
     for msg in messages:
@@ -73,7 +73,7 @@ async def get_guest_messages(
         conversations[conv_key]["messages"].append(msg)
         if not msg.get("read") and msg.get("sender") == "guest":
             conversations[conv_key]["unread_count"] += 1
-    
+
     return {
         "conversations": list(conversations.values()),
         "total_messages": len(messages),
@@ -88,14 +88,14 @@ async def send_guest_message(
 ):
     """Misafir mesajı gönder."""
     current_user = await _get_current_user(credentials)
-    
+
     # Determine sender type
     is_guest = current_user.role == "guest"
-    
+
     # Get guest info if staff is sending
     guest_name = getattr(current_user, 'name', 'Misafir')
     room_number = None
-    
+
     if req.booking_id:
         booking = await _db.bookings.find_one(
             {"id": req.booking_id, "tenant_id": current_user.tenant_id},
@@ -104,7 +104,7 @@ async def send_guest_message(
         if booking:
             guest_name = booking.get("guest_name", guest_name)
             room_number = booking.get("room_number")
-    
+
     msg_doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
@@ -120,10 +120,10 @@ async def send_guest_message(
         "read": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    
+
     await _db.guest_messages.insert_one(msg_doc)
     msg_doc.pop("_id", None)
-    
+
     return msg_doc
 
 
@@ -135,16 +135,16 @@ async def reply_to_message(
 ):
     """Mesaja yanıt ver."""
     current_user = await _get_current_user(credentials)
-    
+
     original = await _db.guest_messages.find_one(
         {"id": message_id, "tenant_id": current_user.tenant_id},
         {"_id": 0}
     )
     if not original:
         raise HTTPException(status_code=404, detail="Mesaj bulunamadı")
-    
+
     is_guest = current_user.role == "guest"
-    
+
     reply_doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
@@ -161,10 +161,10 @@ async def reply_to_message(
         "read": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    
+
     await _db.guest_messages.insert_one(reply_doc)
     reply_doc.pop("_id", None)
-    
+
     return reply_doc
 
 
@@ -175,7 +175,7 @@ async def mark_message_read(
 ):
     """Mesajı okundu olarak işaretle."""
     current_user = await _get_current_user(credentials)
-    
+
     await _db.guest_messages.update_one(
         {"id": message_id, "tenant_id": current_user.tenant_id},
         {"$set": {"read": True, "read_at": datetime.now(timezone.utc).isoformat()}}
@@ -190,7 +190,7 @@ async def mark_all_read(
 ):
     """Tüm mesajları okundu işaretle."""
     current_user = await _get_current_user(credentials)
-    
+
     query = {"tenant_id": current_user.tenant_id, "read": False}
     if booking_id:
         query["booking_id"] = booking_id
@@ -198,11 +198,11 @@ async def mark_all_read(
         query["sender"] = "staff"
     else:
         query["sender"] = "guest"
-    
+
     result = await _db.guest_messages.update_many(query, {
         "$set": {"read": True, "read_at": datetime.now(timezone.utc).isoformat()}
     })
-    
+
     return {"marked_read": result.modified_count}
 
 
@@ -210,12 +210,12 @@ async def mark_all_read(
 async def get_unread_count(credentials=Depends(HTTPBearer())):
     """Okunmamış mesaj sayısı."""
     current_user = await _get_current_user(credentials)
-    
+
     query = {"tenant_id": current_user.tenant_id, "read": False}
     if current_user.role == "guest":
         query["sender"] = "staff"
     else:
         query["sender"] = "guest"
-    
+
     count = await _db.guest_messages.count_documents(query)
     return {"unread_count": count}

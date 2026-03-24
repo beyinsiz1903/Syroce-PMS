@@ -52,14 +52,14 @@ async def predict_cleaning_time(
     """Flash report otomatik gönderim ayarla"""
     from modules.analytics_export.report_automation import get_report_automation
     from modules.messaging.email_service import email_service
-    
+
     automation = get_report_automation(db, email_service)
     schedule = automation.schedule_daily_report(
         current_user.tenant_id,
         schedule_data['recipients'],
         schedule_data.get('send_time', '07:00')
     )
-    
+
     return {
         'success': True,
         'message': 'Flash report otomatik gönderim ayarlandı',
@@ -78,13 +78,13 @@ async def get_ai_room_assignment(
 ):
     """AI ile oda dağılımı optimizasyonu"""
     from domains.pms.housekeeping_ai import get_housekeeping_ai
-    
+
     ai = get_housekeeping_ai(db)
     assignments = await ai.optimize_room_assignment(
         current_user.tenant_id,
         staff_data['staff_list']
     )
-    
+
     return {
         'success': True,
         'assignments': assignments,
@@ -102,10 +102,10 @@ async def predict_cleaning_time_simple(
 ):
     """Temizlik süresi tahmini"""
     from domains.pms.housekeeping_ai import get_housekeeping_ai
-    
+
     ai = get_housekeeping_ai(db)
     prediction = await ai.predict_cleaning_time(room_type, staff_id)
-    
+
     return prediction
 
 
@@ -127,16 +127,16 @@ async def upload_room_photo(
     """
     file_bytes = await photo.read()
     file_size = len(file_bytes)
-    
+
     # Encode preview for quick rendering if file is reasonably small (<2MB)
     inline_preview = None
     if file_size <= 2_000_000:
         encoded = base64.b64encode(file_bytes).decode('utf-8')
         inline_preview = f"data:{photo.content_type};base64,{encoded}"
-    
+
     # Determine final inspection type
     normalized_type = (photo_type or legacy_type or 'inspection').lower()
-    
+
     # Safe quality score parsing
     parsed_quality = None
     if quality_score is not None:
@@ -144,7 +144,7 @@ async def upload_room_photo(
             parsed_quality = max(1, min(10, int(quality_score)))
         except (TypeError, ValueError):
             parsed_quality = None
-    
+
     photo_record = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -164,7 +164,7 @@ async def upload_room_photo(
         # Placeholder URL until external storage (S3/R2) is configured
         'url': f'/photos/{room_id}_{normalized_type}_{str(uuid.uuid4())[:8]}.jpg'
     }
-    
+
     await db.room_photos.insert_one(photo_record)
     return {
         'success': True,
@@ -189,7 +189,7 @@ async def get_housekeeping_photo_feed(
         query['room_id'] = room_id
     if photo_type:
         query['photo_type'] = photo_type
-    
+
     limit = max(1, min(limit, 50))
     photos = await db.room_photos.find(query, {'_id': 0}).sort('uploaded_at', -1).to_list(limit)
     return {'photos': photos, 'count': len(photos)}
@@ -211,12 +211,12 @@ async def get_my_housekeeping_tasks(
     }
     if status:
         query['status'] = status
-    
+
     tasks = await db.housekeeping_tasks.find(
         query,
         {'_id': 0}
     ).sort('priority', -1).to_list(100)
-    
+
     # Enrich with room details
     for task in tasks:
         if task.get('room_id'):
@@ -227,7 +227,7 @@ async def get_my_housekeeping_tasks(
             if room:
                 task['room_number'] = room['room_number']
                 task['room_type'] = room['room_type']
-    
+
     return {'tasks': tasks, 'count': len(tasks)}
 
 
@@ -243,10 +243,10 @@ async def start_housekeeping_task(
         'tenant_id': current_user.tenant_id,
         'assigned_to': current_user.name
     })
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     await db.housekeeping_tasks.update_one(
         {'id': task_id},
         {
@@ -256,14 +256,14 @@ async def start_housekeeping_task(
             }
         }
     )
-    
+
     # Update room status to cleaning
     if task.get('room_id'):
         await db.rooms.update_one(
             {'id': task['room_id'], 'tenant_id': current_user.tenant_id},
             {'$set': {'room_status': 'cleaning'}}
         )
-    
+
     return {'message': 'Task started successfully'}
 
 
@@ -281,10 +281,10 @@ async def complete_housekeeping_task(
         'tenant_id': current_user.tenant_id,
         'assigned_to': current_user.name
     })
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     await db.housekeeping_tasks.update_one(
         {'id': task_id},
         {
@@ -296,7 +296,7 @@ async def complete_housekeeping_task(
             }
         }
     )
-    
+
     # Update room status based on task type
     if task.get('room_id'):
         new_status = 'inspected' if task.get('task_type') == 'inspection' else 'clean'
@@ -304,7 +304,7 @@ async def complete_housekeeping_task(
             {'id': task['room_id'], 'tenant_id': current_user.tenant_id},
             {'$set': {'room_status': new_status}}
         )
-    
+
     return {'message': 'Task completed successfully'}
 
 
@@ -327,10 +327,10 @@ async def report_housekeeping_issue(
         'reported_by': current_user.name,
         'reported_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     issue_copy = issue.copy()
     await db.housekeeping_issues.insert_one(issue_copy)
-    
+
     # If maintenance issue, create maintenance task
     if request.issue_type == 'maintenance':
         maintenance_task = {
@@ -345,7 +345,7 @@ async def report_housekeeping_issue(
             'created_at': datetime.now(timezone.utc).isoformat()
         }
         await db.housekeeping_tasks.insert_one(maintenance_task)
-    
+
     return {'message': 'Issue reported successfully', 'issue_id': issue['id']}
 
 
@@ -364,10 +364,10 @@ async def upload_housekeeping_photo(
         'uploaded_by': current_user.name,
         'uploaded_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     photo_copy = photo_record.copy()
     await db.housekeeping_photos.insert_one(photo_copy)
-    
+
     return {'message': 'Photo uploaded successfully', 'photo_id': photo_record['id']}
 
 
@@ -382,10 +382,10 @@ async def get_mobile_room_status(
         {'id': room_id, 'tenant_id': current_user.tenant_id},
         {'_id': 0}
     )
-    
+
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
-    
+
     # Get current booking
     booking = None
     if room.get('current_booking_id'):
@@ -393,7 +393,7 @@ async def get_mobile_room_status(
             {'id': room['current_booking_id']},
             {'_id': 0}
         )
-    
+
     # Get pending tasks for this room
     tasks = await db.housekeeping_tasks.find(
         {
@@ -403,7 +403,7 @@ async def get_mobile_room_status(
         },
         {'_id': 0}
     ).to_list(10)
-    
+
     return {
         'room': room,
         'current_booking': booking,
@@ -429,12 +429,12 @@ async def get_task_timing_analysis(
         end_dt = datetime.now(timezone.utc)
     else:
         end_dt = datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc)
-    
+
     if not start_date:
         start_dt = end_dt - timedelta(days=30)
     else:
         start_dt = datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc)
-    
+
     # Get completed tasks with timing
     match_criteria = {
         'tenant_id': current_user.tenant_id,
@@ -444,10 +444,10 @@ async def get_task_timing_analysis(
             '$lte': end_dt.isoformat()
         }
     }
-    
+
     if staff_member:
         match_criteria['assigned_to'] = staff_member
-    
+
     tasks = []
     async for task in db.housekeeping_tasks.find(match_criteria):
         # Calculate duration
@@ -460,14 +460,14 @@ async def get_task_timing_analysis(
                 duration_minutes = None
         else:
             duration_minutes = None
-        
+
         task['duration_minutes'] = duration_minutes
         tasks.append(task)
-    
+
     # Calculate statistics
     total_tasks = len(tasks)
     tasks_with_timing = [t for t in tasks if t.get('duration_minutes')]
-    
+
     if tasks_with_timing:
         avg_duration = sum(t['duration_minutes'] for t in tasks_with_timing) / len(tasks_with_timing)
         min_duration = min(t['duration_minutes'] for t in tasks_with_timing)
@@ -475,7 +475,7 @@ async def get_task_timing_analysis(
         median_duration = sorted(t['duration_minutes'] for t in tasks_with_timing)[len(tasks_with_timing) // 2]
     else:
         avg_duration = min_duration = max_duration = median_duration = 0
-    
+
     # By staff member
     staff_performance = {}
     for task in tasks_with_timing:
@@ -488,7 +488,7 @@ async def get_task_timing_analysis(
             }
         staff_performance[staff]['total_tasks'] += 1
         staff_performance[staff]['durations'].append(task['duration_minutes'])
-    
+
     # Calculate staff averages
     staff_stats = []
     for staff, data in staff_performance.items():
@@ -502,10 +502,10 @@ async def get_task_timing_analysis(
                 'max_duration_minutes': round(max(data['durations']), 1),
                 'efficiency_rating': 'Fast' if staff_avg < 20 else 'Average' if staff_avg < 30 else 'Slow'
             })
-    
+
     # Sort by avg duration (fastest first)
     staff_stats.sort(key=lambda x: x['avg_duration_minutes'])
-    
+
     # By task type
     task_type_stats = {}
     for task in tasks_with_timing:
@@ -513,7 +513,7 @@ async def get_task_timing_analysis(
         if task_type not in task_type_stats:
             task_type_stats[task_type] = []
         task_type_stats[task_type].append(task['duration_minutes'])
-    
+
     task_type_analysis = []
     for task_type, durations in task_type_stats.items():
         task_type_analysis.append({
@@ -523,7 +523,7 @@ async def get_task_timing_analysis(
             'min_duration_minutes': round(min(durations), 1),
             'max_duration_minutes': round(max(durations), 1)
         })
-    
+
     return {
         'start_date': start_dt.date().isoformat(),
         'end_date': end_dt.date().isoformat(),
@@ -563,7 +563,7 @@ async def get_staff_performance_table(
     """
     end_dt = datetime.now(timezone.utc)
     start_dt = end_dt - timedelta(days=period_days)
-    
+
     # Get all completed tasks
     tasks = []
     async for task in db.housekeeping_tasks.find({
@@ -575,7 +575,7 @@ async def get_staff_performance_table(
         }
     }):
         tasks.append(task)
-    
+
     # Group by staff
     staff_data = {}
     for task in tasks:
@@ -586,10 +586,10 @@ async def get_staff_performance_table(
                 'durations': [],
                 'room_ids': set()
             }
-        
+
         staff_data[staff]['tasks_completed'] += 1
         staff_data[staff]['room_ids'].add(task.get('room_id'))
-        
+
         # Calculate duration
         if task.get('started_at') and task.get('completed_at'):
             try:
@@ -599,7 +599,7 @@ async def get_staff_performance_table(
                 staff_data[staff]['durations'].append(duration)
             except Exception:
                 pass
-    
+
     # Get inspection results for quality score
     inspection_scores = {}
     async for task in db.housekeeping_tasks.find({
@@ -618,24 +618,24 @@ async def get_staff_performance_table(
                 inspection_scores[staff] = {'passed': 0, 'total': 0}
             inspection_scores[staff]['total'] += 1
             inspection_scores[staff]['passed'] += 1  # Simulated
-    
+
     # Build performance table
     performance_table = []
     for staff, data in staff_data.items():
         avg_duration = sum(data['durations']) / len(data['durations']) if data['durations'] else 0
-        
+
         # Quality score from inspections
         if staff in inspection_scores:
             quality_score = (inspection_scores[staff]['passed'] / inspection_scores[staff]['total']) * 100
         else:
             quality_score = 95  # Default assumption
-        
+
         # Calculate performance score (weighted)
         # Speed: 40%, Quality: 40%, Quantity: 20%
         speed_score = max(0, 100 - ((avg_duration - 25) * 2)) if avg_duration > 0 else 0
         quantity_score = min(100, (data['tasks_completed'] / period_days) * 10)
         overall_score = (speed_score * 0.4) + (quality_score * 0.4) + (quantity_score * 0.2)
-        
+
         performance_table.append({
             'staff_name': staff,
             'tasks_completed': data['tasks_completed'],
@@ -646,10 +646,10 @@ async def get_staff_performance_table(
             'rating': '⭐⭐⭐⭐⭐' if overall_score >= 90 else '⭐⭐⭐⭐' if overall_score >= 80 else '⭐⭐⭐' if overall_score >= 70 else '⭐⭐',
             'tasks_per_day': round(data['tasks_completed'] / period_days, 1)
         })
-    
+
     # Sort by overall score
     performance_table.sort(key=lambda x: x['overall_performance_score'], reverse=True)
-    
+
     return {
         'period_days': period_days,
         'start_date': start_dt.date().isoformat(),
@@ -688,11 +688,11 @@ async def get_linen_inventory(
         in_laundry = item.get('quantity_in_laundry', 0)
         damaged = item.get('quantity_damaged', 0)
         reorder_level = item.get('reorder_level', 50)
-        
+
         # Calculate status
         is_low_stock = total_available < reorder_level
         stock_percentage = (total_available / reorder_level * 100) if reorder_level > 0 else 100
-        
+
         item_data = {
             'id': item.get('id'),
             'item_type': item.get('item_type'),
@@ -710,10 +710,10 @@ async def get_linen_inventory(
             'estimated_reorder_cost': item.get('unit_cost', 0.0) * (reorder_level - total_available) if is_low_stock else 0,
             'last_restocked': item.get('last_restocked')
         }
-        
+
         if not low_stock_only or is_low_stock:
             linen_items.append(item_data)
-    
+
     # If no items exist, create default inventory
     if not linen_items:
         default_items = [
@@ -726,7 +726,7 @@ async def get_linen_inventory(
             {'item_type': 'hand_towel', 'size': 'standard', 'reorder_level': 200},
             {'item_type': 'bathrobe', 'size': 'l', 'reorder_level': 50}
         ]
-        
+
         for default in default_items:
             new_item = LinenInventoryItem(
                 tenant_id=current_user.tenant_id,
@@ -738,11 +738,11 @@ async def get_linen_inventory(
                 reorder_level=default['reorder_level'],
                 unit_cost=10.0
             )
-            
+
             item_dict = new_item.model_dump()
             item_dict['created_at'] = item_dict['created_at'].isoformat()
             await db.linen_inventory.insert_one(item_dict)
-            
+
             linen_items.append({
                 'id': new_item.id,
                 'item_type': new_item.item_type,
@@ -760,16 +760,16 @@ async def get_linen_inventory(
                 'estimated_reorder_cost': 0,
                 'last_restocked': None
             })
-    
+
     # Sort by stock percentage (critical items first)
     linen_items.sort(key=lambda x: x['stock_percentage'])
-    
+
     # Calculate summary
     total_items = len(linen_items)
     low_stock_count = sum(1 for item in linen_items if item['needs_reorder'])
     critical_count = sum(1 for item in linen_items if item['stock_status'] == 'critical')
     total_reorder_cost = sum(item['estimated_reorder_cost'] for item in linen_items)
-    
+
     return {
         'total_item_types': total_items,
         'low_stock_items': low_stock_count,
@@ -806,47 +806,47 @@ async def adjust_linen_inventory(
         'id': item_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not item:
         raise HTTPException(status_code=404, detail="Linen item not found")
-    
+
     updates = {}
-    
+
     if adjustment_type == 'restock':
         updates['quantity_in_stock'] = item.get('quantity_in_stock', 0) + quantity
         updates['last_restocked'] = datetime.now(timezone.utc).isoformat()
-    
+
     elif adjustment_type == 'use':
         if item.get('quantity_in_stock', 0) < quantity:
             raise HTTPException(status_code=400, detail="Insufficient stock")
         updates['quantity_in_stock'] = item.get('quantity_in_stock', 0) - quantity
         updates['quantity_in_use'] = item.get('quantity_in_use', 0) + quantity
-    
+
     elif adjustment_type == 'return_from_use':
         if item.get('quantity_in_use', 0) < quantity:
             raise HTTPException(status_code=400, detail="Insufficient items in use")
         updates['quantity_in_use'] = item.get('quantity_in_use', 0) - quantity
         updates['quantity_in_laundry'] = item.get('quantity_in_laundry', 0) + quantity
-    
+
     elif adjustment_type == 'return_from_laundry':
         if item.get('quantity_in_laundry', 0) < quantity:
             raise HTTPException(status_code=400, detail="Insufficient items in laundry")
         updates['quantity_in_laundry'] = item.get('quantity_in_laundry', 0) - quantity
         updates['quantity_in_stock'] = item.get('quantity_in_stock', 0) + quantity
-    
+
     elif adjustment_type == 'mark_damaged':
         # Can come from any category
         updates['quantity_damaged'] = item.get('quantity_damaged', 0) + quantity
-    
+
     else:
         raise HTTPException(status_code=400, detail="Invalid adjustment type")
-    
+
     # Update database
     await db.linen_inventory.update_one(
         {'id': item_id},
         {'$set': updates}
     )
-    
+
     # Create audit log
     await create_audit_log(
         tenant_id=current_user.tenant_id,
@@ -861,7 +861,7 @@ async def adjust_linen_inventory(
             **updates
         }
     )
-    
+
     return {
         'success': True,
         'message': f'Linen inventory adjusted: {adjustment_type}',
@@ -883,22 +883,22 @@ async def get_room_assignments(
 ):
     """Get room assignments showing who is cleaning which room"""
     current_user = await get_current_user(credentials)
-    
+
     # Build query
     query = {
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['pending', 'in_progress']}
     }
-    
+
     if staff_name:
         query['assigned_to'] = staff_name
-    
+
     # Get all active housekeeping tasks
     assignments = []
     async for task in db.housekeeping_tasks.find(query):
         # Get room info
         room = await db.rooms.find_one({'id': task['room_id'], 'tenant_id': current_user.tenant_id})
-        
+
         # Calculate duration if in progress
         duration_minutes = None
         if task.get('started_at') and task['status'] == 'in_progress':
@@ -910,7 +910,7 @@ async def get_room_assignments(
             if started_at.tzinfo is None:
                 started_at = started_at.replace(tzinfo=timezone.utc)
             duration_minutes = (datetime.now(timezone.utc) - started_at).total_seconds() / 60
-        
+
         assignments.append({
             'task_id': task['id'],
             'room_number': room.get('room_number') if room else 'N/A',
@@ -922,7 +922,7 @@ async def get_room_assignments(
             'started_at': task.get('started_at'),
             'duration_minutes': round(duration_minutes, 1) if duration_minutes else None
         })
-    
+
     return {
         'assignments': assignments,
         'total_count': len(assignments)
@@ -938,7 +938,7 @@ async def get_cleaning_time_statistics(
 ):
     """Get room cleaning time statistics by staff member"""
     current_user = await get_current_user(credentials)
-    
+
     # Date range
     if start_date and end_date:
         start = datetime.fromisoformat(start_date)
@@ -947,7 +947,7 @@ async def get_cleaning_time_statistics(
         # Default to last 30 days
         end = datetime.now(timezone.utc)
         start = end - timedelta(days=30)
-    
+
     # Get completed tasks
     completed_tasks = []
     async for task in db.housekeeping_tasks.find({
@@ -963,7 +963,7 @@ async def get_cleaning_time_statistics(
                 'task_type': task.get('task_type'),
                 'duration_minutes': duration_minutes
             })
-    
+
     # Group by staff member
     staff_stats = {}
     for task in completed_tasks:
@@ -974,42 +974,42 @@ async def get_cleaning_time_statistics(
                 'total_duration': 0,
                 'by_task_type': {}
             }
-        
+
         staff_stats[staff_name]['total_tasks'] += 1
         staff_stats[staff_name]['total_duration'] += task['duration_minutes']
-        
+
         task_type = task['task_type']
         if task_type not in staff_stats[staff_name]['by_task_type']:
             staff_stats[staff_name]['by_task_type'][task_type] = {
                 'count': 0,
                 'total_duration': 0
             }
-        
+
         staff_stats[staff_name]['by_task_type'][task_type]['count'] += 1
         staff_stats[staff_name]['by_task_type'][task_type]['total_duration'] += task['duration_minutes']
-    
+
     # Calculate averages
     statistics = []
     for staff_name, stats in staff_stats.items():
         avg_duration = stats['total_duration'] / stats['total_tasks'] if stats['total_tasks'] > 0 else 0
-        
+
         task_type_avg = {}
         for task_type, type_stats in stats['by_task_type'].items():
             task_type_avg[task_type] = {
                 'count': type_stats['count'],
                 'avg_duration': round(type_stats['total_duration'] / type_stats['count'], 1) if type_stats['count'] > 0 else 0
             }
-        
+
         statistics.append({
             'staff_name': staff_name,
             'total_tasks_completed': stats['total_tasks'],
             'avg_cleaning_time_minutes': round(avg_duration, 1),
             'by_task_type': task_type_avg
         })
-    
+
     # Sort by total tasks
     statistics.sort(key=lambda x: x['total_tasks_completed'], reverse=True)
-    
+
     return {
         'period': {
             'start_date': start.isoformat(),
@@ -1034,21 +1034,21 @@ async def get_cleaning_requests(
     """
     try:
         filter_dict = {'tenant_id': current_user.tenant_id}
-        
+
         if status:
             filter_dict['status'] = status
-        
+
         if priority:
             filter_dict['priority'] = priority
-        
+
         # Get cleaning requests
         requests = await db.cleaning_requests.find(filter_dict, {'_id': 0}).sort('requested_at', -1).to_list(100)
-        
+
         # Categorize by status
         pending = [r for r in requests if r['status'] == 'pending']
         in_progress = [r for r in requests if r['status'] == 'in_progress']
         completed_today = [r for r in requests if r['status'] == 'completed' and r.get('completed_at', '').startswith(datetime.now(timezone.utc).date().isoformat())]
-        
+
         return {
             'requests': requests,
             'count': len(requests),
@@ -1062,7 +1062,7 @@ async def get_cleaning_requests(
                 'completed_today': completed_today
             }
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve cleaning requests: {str(e)}")
 
@@ -1084,23 +1084,23 @@ async def update_cleaning_request_status(
             'id': request_id,
             'tenant_id': current_user.tenant_id
         }, {'_id': 0})
-        
+
         if not request:
             raise HTTPException(status_code=404, detail="Cleaning request not found")
-        
+
         update_fields = {
             'status': update_data.status,
             'updated_at': datetime.now(timezone.utc).isoformat()
         }
-        
+
         if update_data.status == 'in_progress':
             update_fields['assigned_to'] = update_data.assigned_to or current_user.name
             update_fields['started_at'] = datetime.now(timezone.utc).isoformat()
-        
+
         if update_data.status == 'completed':
             update_fields['completed_at'] = datetime.now(timezone.utc).isoformat()
             update_fields['completed_by'] = update_data.completed_by or current_user.name
-            
+
             # Notify guest
             await db.notifications.insert_one({
                 'id': str(uuid.uuid4()),
@@ -1114,19 +1114,19 @@ async def update_cleaning_request_status(
                 'read': False,
                 'created_at': datetime.now(timezone.utc).isoformat()
             })
-        
+
         await db.cleaning_requests.update_one(
             {'id': request_id},
             {'$set': update_fields}
         )
-        
+
         return {
             'message': f'Temizlik talebi {update_data.status} olarak güncellendi',
             'request_id': request_id,
             'status': update_data.status,
             'room_number': request['room_number']
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:

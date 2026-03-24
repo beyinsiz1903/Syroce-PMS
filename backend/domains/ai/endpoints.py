@@ -22,22 +22,22 @@ async def get_daily_briefing(
     try:
         # Get data from database
         from server import db
-        
+
         # Get PMS stats
         rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}).to_list(None)
         all_bookings = await db.bookings.find({
             "tenant_id": current_user.tenant_id
         }).to_list(None)
-        
+
         # Get invoice stats
         invoices = await db.accounting_invoices.find({
             "tenant_id": current_user.tenant_id
         }).to_list(None)
-        
+
         total_rooms = len(rooms)
         occupied_rooms = len([b for b in all_bookings if b.get('status') == 'checked_in'])
         confirmed_bookings = len([b for b in all_bookings if b.get('status') == 'confirmed'])
-        
+
         # Count today's check-ins/outs
         today = datetime.now().date()
         today_str = str(today)
@@ -54,14 +54,14 @@ async def get_daily_briefing(
                 today_checkouts += 1
             elif hasattr(co, 'strftime') and co.strftime('%Y-%m-%d') == today_str:
                 today_checkouts += 1
-        
+
         pending_invoices = len([i for i in invoices if i.get('status') == 'pending'])
         monthly_revenue = sum(i.get('total', 0) for i in invoices)
-        
+
         # Get hotel name from tenant
         tenant = await db.tenants.find_one({"id": current_user.tenant_id})
         hotel_name = tenant.get('property_name', 'Hotel') if tenant else 'Hotel'
-        
+
         occupancy_rate = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
 
         # Try to generate AI briefing, fallback to heuristic
@@ -103,7 +103,7 @@ async def get_daily_briefing(
             insights.append(f"{pending_invoices} bekleyen fatura var, muhasebe takibi önerilir.")
         if confirmed_bookings > 0:
             insights.append(f"{confirmed_bookings} onaylı rezervasyon aktif.")
-        
+
         return {
             "summary": briefing_text,
             "text": briefing_text,
@@ -142,23 +142,23 @@ async def predict_occupancy(
     """
     try:
         from server import db
-        
+
         # Get booking data
         bookings = await db.bookings.find({
             "tenant_id": current_user.tenant_id
         }).to_list(None)
-        
+
         rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}).to_list(None)
-        
+
         total_rooms = len(rooms)
         occupied_rooms = len([b for b in bookings if b.get('status') == 'checked_in'])
         current_occupancy = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
-        
+
         upcoming_bookings = len([b for b in bookings if b.get('status') == 'confirmed'])
-        
+
         # Get historical data (simplified)
         historical_data = []
-        
+
         prediction = await get_ai_service().predict_occupancy(
             historical_data=historical_data,
             current_occupancy=current_occupancy,
@@ -166,7 +166,7 @@ async def predict_occupancy(
             season="normal",
             room_capacity=total_rooms
         )
-        
+
         return {
             "prediction": prediction,
             "current_occupancy": current_occupancy,
@@ -185,35 +185,35 @@ async def analyze_guest_patterns(
     """
     try:
         from server import db
-        
+
         bookings = await db.bookings.find({
             "tenant_id": current_user.tenant_id
         }).to_list(100)  # Limit for performance
-        
+
         # Safely convert datetime objects to strings
         checkin_times = []
         checkout_times = []
-        
+
         for b in bookings:
             checkin = b.get('check_in')
             checkout = b.get('check_out')
-            
+
             if checkin:
                 if isinstance(checkin, datetime):
                     checkin_times.append(checkin.isoformat())
                 elif isinstance(checkin, str):
                     checkin_times.append(checkin)
-            
+
             if checkout:
                 if isinstance(checkout, datetime):
                     checkout_times.append(checkout.isoformat())
                 elif isinstance(checkout, str):
                     checkout_times.append(checkout)
-        
+
         # Simple analysis without AI service call
         avg_checkin_hour = 15  # Default 3 PM
         avg_checkout_hour = 11  # Default 11 AM
-        
+
         return {
             "analysis": {
                 "avg_checkin_time": f"{avg_checkin_hour}:00",
@@ -263,18 +263,18 @@ async def detect_invoice_anomalies(
     """
     try:
         from server import db
-        
+
         invoices = await db.accounting_invoices.find({
             "tenant_id": current_user.tenant_id
         }).to_list(None)
-        
+
         average_amount = sum(i.get('total', 0) for i in invoices) / len(invoices) if invoices else 0
-        
+
         anomalies = await get_ai_service().detect_invoice_anomalies(
             invoices=invoices,
             average_amount=average_amount
         )
-        
+
         return {
             "anomalies": anomalies,
             "total_invoices": len(invoices),
@@ -293,18 +293,18 @@ async def segment_guests(
     """
     try:
         from server import db
-        
+
         guests = await db.guests.find({
             "tenant_id": current_user.tenant_id
         }).to_list(None)
-        
+
         # Get loyalty data
         await db.loyalty_programs.find({
             "tenant_id": current_user.tenant_id
         }).to_list(None)
-        
+
         segments = await get_ai_service().segment_guests(guests=guests)
-        
+
         return segments
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to segment guests: {str(e)}")
@@ -320,39 +320,39 @@ async def predict_churn_risk(
     """
     try:
         from server import db
-        
+
         # Get guest data
         guest = await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id})
         if not guest:
             raise HTTPException(status_code=404, detail="Guest not found")
-        
+
         # Get booking history
         bookings = await db.bookings.find({
             "guest_id": guest_id,
             "tenant_id": current_user.tenant_id
         }).to_list(None)
-        
+
         if not bookings:
             return {
                 "risk_level": "low",
                 "analysis": "New guest - no history to analyze"
             }
-        
+
         # Calculate metrics
         last_booking = max(bookings, key=lambda b: b.get('check_out', ''))
         last_visit_date = datetime.fromisoformat(last_booking.get('check_out', datetime.now().isoformat()))
         last_visit_days = (datetime.now() - last_visit_date).days
-        
+
         total_visits = len(bookings)
         average_spend = sum(b.get('total_amount', 0) for b in bookings) / len(bookings)
-        
+
         risk = await get_ai_service().predict_churn_risk(
             guest_id=guest_id,
             last_visit_days=last_visit_days,
             total_visits=total_visits,
             average_spend=average_spend
         )
-        
+
         return risk
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to predict churn: {str(e)}")
@@ -367,21 +367,21 @@ async def get_product_recommendations(
     """
     try:
         from server import db
-        
+
         products = await db.marketplace_products.find({
             "tenant_id": current_user.tenant_id
         }).to_list(None)
-        
+
         orders = await db.marketplace_orders.find({
             "tenant_id": current_user.tenant_id
         }).to_list(None)
-        
+
         recommendations = await get_ai_service().recommend_products(
             inventory=products,
             recent_orders=orders,
             season="normal"
         )
-        
+
         return {
             "recommendations": recommendations,
             "total_products": len(products)
@@ -399,32 +399,32 @@ async def analyze_revenue(
     """
     try:
         from server import db
-        
+
         # Get invoice data
         invoices = await db.accounting_invoices.find({
             "tenant_id": current_user.tenant_id
         }).to_list(None)
-        
+
         # Calculate monthly revenue
         current_month = datetime.now().month
         last_month = current_month - 1 if current_month > 1 else 12
-        
+
         current_month_revenue = sum(
-            i.get('total', 0) for i in invoices 
+            i.get('total', 0) for i in invoices
             if datetime.fromisoformat(i.get('created_at', datetime.now().isoformat())).month == current_month
         )
-        
+
         last_month_revenue = sum(
-            i.get('total', 0) for i in invoices 
+            i.get('total', 0) for i in invoices
             if datetime.fromisoformat(i.get('created_at', datetime.now().isoformat())).month == last_month
         )
-        
+
         analysis = await get_ai_service().analyze_revenue_trends(
             revenue_data=invoices,
             current_month_revenue=current_month_revenue,
             last_month_revenue=last_month_revenue
         )
-        
+
         return {
             "analysis": analysis,
             "current_month_revenue": current_month_revenue,

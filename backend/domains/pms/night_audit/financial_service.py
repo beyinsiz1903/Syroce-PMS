@@ -231,7 +231,7 @@ class FinancialService:
             seen_charges[key] = c
 
         # Check for charges without matching bookings
-        booking_ids = set(c.get("booking_id") for c in charges if c.get("booking_id"))
+        booking_ids = {c.get("booking_id") for c in charges if c.get("booking_id")}
         for bid in booking_ids:
             booking = await self._db.bookings.find_one(
                 {"id": bid, "tenant_id": ctx.tenant_id},

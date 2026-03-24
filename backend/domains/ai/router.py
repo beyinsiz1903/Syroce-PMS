@@ -100,15 +100,15 @@ async def ai_chat(
                         {"last_name": {"$regex": guest_name_hint, "$options": "i"}}
                     ]
                 }).to_list(10)
-                
+
                 guest_ids = [g['id'] for g in guests]
-                
+
                 # Also search folios directly by guest_name field
                 folios_by_name = await db.folios.find({
                     "tenant_id": current_user.tenant_id,
                     "guest_name": {"$regex": guest_name_hint, "$options": "i"}
                 }).to_list(20)
-                
+
                 # Search folios by guest_id
                 folios_by_id = []
                 if guest_ids:
@@ -116,7 +116,7 @@ async def ai_chat(
                         "tenant_id": current_user.tenant_id,
                         "guest_id": {"$in": guest_ids}
                     }).to_list(20)
-                
+
                 # Merge and deduplicate
                 seen_ids = set()
                 all_folios = []
@@ -124,24 +124,24 @@ async def ai_chat(
                     if f['id'] not in seen_ids:
                         seen_ids.add(f['id'])
                         all_folios.append(f)
-                    
+
                 for f in all_folios:
                     charges = await db.folio_charges.find({
                         "folio_id": f['id'], "voided": {"$ne": True}
                     }).to_list(50)
-                    
+
                     charge_lines = []
                     total = 0
                     for ch in charges:
                         amt = ch.get('total', ch.get('amount', 0))
                         total += amt
                         charge_lines.append(f"  - {ch.get('description','')}: {amt:.2f} TL")
-                    
+
                     # Get booking info
                     booking = await db.bookings.find_one({"id": f.get('booking_id')})
                     guest = next((g for g in guests if g['id'] == f.get('guest_id')), None)
                     guest_full = f"{guest.get('first_name','')} {guest.get('last_name','')}" if guest else f.get('guest_name', 'Bilinmiyor')
-                    
+
                     folio_info = (
                         f"Folio #{f.get('folio_number','')}\n"
                         f"  Misafir: {guest_full}\n"
@@ -156,28 +156,28 @@ async def ai_chat(
                     folio_info += "  Harcamalar:\n" + "\n".join(charge_lines) if charge_lines else "  Harcama yok"
                     folio_info += f"\n  TOPLAM: {total:.2f} TL"
                     folios_found.append(folio_info)
-            
+
             if not folios_found:
                 # If no name provided or no match, list all open folios
                 open_folios = await db.folios.find({
                     "tenant_id": current_user.tenant_id,
                     "status": "open"
                 }).to_list(10)
-                
+
                 for f in open_folios:
                     charges = await db.folio_charges.find({
                         "folio_id": f['id'], "voided": {"$ne": True}
                     }).to_list(50)
                     total = sum(ch.get('total', ch.get('amount', 0)) for ch in charges)
                     charge_summary = ", ".join(ch.get('description','') for ch in charges[:5])
-                    
+
                     booking = await db.bookings.find_one({"id": f.get('booking_id')})
                     folios_found.append(
                         f"Folio #{f.get('folio_number','')} | {f.get('guest_name','Bilinmiyor')} | "
                         f"Oda {booking.get('room_number','') if booking else '-'} | "
                         f"Toplam: {total:.2f} TL | Kalemler: {charge_summary}"
                     )
-            
+
             if folios_found:
                 count_label = f"({len(folios_found)} adet bulundu - KULLANICIYA HANGİSİNİ İSTEDİĞİNİ SOR)" if len(folios_found) > 1 else "(1 adet)"
                 data_context = f"\n\n## VERİTABANINDAN GELEN FOLİO VERİLERİ {count_label}:\n" + "\n\n".join(folios_found)
@@ -187,7 +187,7 @@ async def ai_chat(
         # ── RESERVATION INTENT ──
         elif any(w in msg_lower for w in ['rezervasyon', 'booking', 'geçmiş', 'gelecek', 'bugün', 'yarın', 'misafir listesi', 'kimler var', 'kimler gelecek']):
             datetime.now(timezone.utc).strftime('%Y-%m-%d')
-            
+
             if any(w in msg_lower for w in ['geçmiş', 'önceki', 'eski', 'tamamlanan']):
                 # Past reservations
                 past = [b for b in all_bookings if b.get('status') == 'checked_out']
@@ -200,7 +200,7 @@ async def ai_chat(
                         f"Tutar: {b.get('total_amount',0):.0f} TL | Durum: Çıkış yapıldı"
                     )
                 data_context = f"\n\n## GEÇMİŞ REZERVASYONLAR ({len(past)} adet):\n" + "\n".join(lines) if lines else "\nGeçmiş rezervasyon bulunamadı."
-            
+
             elif any(w in msg_lower for w in ['gelecek', 'yaklaşan', 'planlanan', 'gelecek hafta', 'kimler gelecek']):
                 # Future reservations
                 future = [b for b in all_bookings if b.get('status') == 'confirmed']
@@ -213,7 +213,7 @@ async def ai_chat(
                         f"Gecelik: {b.get('rate_per_night',0):.0f} TL | Toplam: {b.get('total_amount',0):.0f} TL"
                     )
                 data_context = f"\n\n## GELECEK REZERVASYONLAR ({len(future)} adet):\n" + "\n".join(lines) if lines else "\nGelecek rezervasyon bulunamadı."
-            
+
             elif any(w in msg_lower for w in ['bugün', 'şu an', 'aktif', 'mevcut', 'kimler var', 'otelde kim']):
                 # Current guests (checked in)
                 current = [b for b in all_bookings if b.get('status') == 'checked_in']
@@ -225,7 +225,7 @@ async def ai_chat(
                         f"Gecelik: {b.get('rate_per_night',0):.0f} TL"
                     )
                 data_context = f"\n\n## ŞU AN OTELDE OLAN MİSAFİRLER ({len(current)} kişi):\n" + "\n".join(lines) if lines else "\nŞu an otelde misafir yok."
-            
+
             else:
                 # Search by guest name if mentioned
                 guest_name_hint = None
@@ -234,7 +234,7 @@ async def ai_chat(
                     if w[0].isupper() and w.lower() not in ['rezervasyon', 'booking', 'getir', 'göster', 'bak', 'listele', 'misafir']:
                         guest_name_hint = w
                         break
-                
+
                 if guest_name_hint:
                     matched = [b for b in all_bookings if guest_name_hint.lower() in (b.get('guest_name','') or '').lower()]
                     lines = []
@@ -262,7 +262,7 @@ async def ai_chat(
         # ── GUEST SEARCH INTENT ──
         elif any(w in msg_lower for w in ['misafir', 'müşteri', 'konuk', 'guest']):
             all_guests = await db.guests.find({"tenant_id": current_user.tenant_id}).to_list(50)
-            
+
             # Check if specific name is asked
             guest_name_hint = None
             words = user_message.split()
@@ -270,7 +270,7 @@ async def ai_chat(
                 if len(w) > 2 and w[0].isupper() and w.lower() not in ['misafir', 'müşteri', 'konuk', 'guest', 'bilgi', 'göster', 'getir', 'listele', 'kimdir']:
                     guest_name_hint = w
                     break
-            
+
             if guest_name_hint:
                 matched = [g for g in all_guests if guest_name_hint.lower() in f"{g.get('first_name','')} {g.get('last_name','')}".lower()]
                 if matched:
@@ -499,10 +499,10 @@ async def get_competitor_rates(
 ):
     """Rakip otel fiyatları"""
     from dynamic_pricing_engine import get_pricing_engine
-    
+
     engine = get_pricing_engine(db)
     rates = await engine.get_competitor_rates(target_date, room_type)
-    
+
     return rates
 
 # ============= WHATSAPP BUSINESS INTEGRATION =============
@@ -513,10 +513,10 @@ async def get_competitor_rates(
 async def get_reputation_overview(current_user: User = Depends(get_current_user)):
     """Online reputation özeti"""
     from domains.ai.reputation_manager import get_reputation_manager
-    
+
     manager = get_reputation_manager(db)
     overview = await manager.aggregate_reviews(current_user.tenant_id)
-    
+
     return overview
 
 
@@ -528,10 +528,10 @@ async def get_reputation_trends(
 ):
     """Reputation trend analizi"""
     from domains.ai.reputation_manager import get_reputation_manager
-    
+
     manager = get_reputation_manager(db)
     trends = await manager.get_reputation_trends(current_user.tenant_id, days)
-    
+
     return trends
 
 
@@ -543,13 +543,13 @@ async def suggest_review_response(
 ):
     """AI review yanıt önerisi"""
     from domains.ai.reputation_manager import get_reputation_manager
-    
+
     manager = get_reputation_manager(db)
     response = await manager.suggest_response(
         review_data['review_text'],
         review_data.get('rating', 3)
     )
-    
+
     return {
         'suggested_response': response
     }
@@ -560,10 +560,10 @@ async def suggest_review_response(
 async def get_negative_review_alerts(current_user: User = Depends(get_current_user)):
     """Son 24 saatteki negatif review'lar"""
     from domains.ai.reputation_manager import get_reputation_manager
-    
+
     manager = get_reputation_manager(db)
     alerts = await manager.detect_negative_reviews(current_user.tenant_id)
-    
+
     return {
         'negative_reviews': alerts,
         'total': len(alerts),
@@ -585,14 +585,14 @@ async def ai_whatsapp_concierge(
     # Support both phone and guest_phone
     phone = message_data.get('phone') or message_data.get('guest_phone', '+905551234567')
     message = message_data.get('message', '')
-    
+
     # Mock AI response
     result = {
         'response': 'Havuzumuz 08:00-20:00 saatleri arasinda aciktir. Iyi gunler!',
         'action': 'pool_hours_info',
         'confidence': 0.95
     }
-    
+
     # Save conversation
     conversation = {
         'id': str(uuid.uuid4()),
@@ -604,7 +604,7 @@ async def ai_whatsapp_concierge(
         'created_at': datetime.now(timezone.utc).isoformat()
     }
     await db.ai_conversations.insert_one(conversation)
-    
+
     return result
 
 
@@ -618,9 +618,9 @@ async def get_ai_conversations(
     query = {'tenant_id': current_user.tenant_id}
     if phone:
         query['phone'] = phone
-    
+
     conversations = await db.ai_conversations.find(query, {'_id': 0}).sort('created_at', -1).limit(100).to_list(100)
-    
+
     return {
         'conversations': conversations,
         'total': len(conversations)
@@ -639,13 +639,13 @@ async def predict_no_shows(
     # Use today if no date provided
     if not target_date:
         target_date = datetime.now().strftime("%Y-%m-%d")
-    
+
     # Mock predictions
     predictions = [
         {'booking_id': 'BK001', 'guest_name': 'John Doe', 'risk_score': 0.75, 'risk_level': 'high'},
         {'booking_id': 'BK002', 'guest_name': 'Jane Smith', 'risk_score': 0.45, 'risk_level': 'medium'}
     ]
-    
+
     return {
         'target_date': target_date,
         'predictions': predictions,
@@ -662,10 +662,10 @@ async def demand_forecast(
 ):
     """30 günlük talep tahmini"""
     from domains.ai.predictive_engine import get_predictive_engine
-    
+
     engine = get_predictive_engine(db)
     forecast = await engine.predict_demand(current_user.tenant_id, days)
-    
+
     return {
         'forecast_period': f'{days} days',
         'daily_forecast': forecast,
@@ -821,10 +821,10 @@ async def solve_overbooking(
     target_date = datetime.fromisoformat(date).date()
     start_of_day = datetime.combine(target_date, datetime.min.time())
     end_of_day = datetime.combine(target_date, datetime.max.time())
-    
+
     # Get all rooms
     rooms = await db.rooms.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
-    
+
     # Find overbookings (multiple bookings on same room same date)
     conflicts = []
     for room in rooms:
@@ -835,22 +835,22 @@ async def solve_overbooking(
             'check_in': {'$lte': end_of_day.isoformat()},
             'check_out': {'$gte': start_of_day.isoformat()}
         }, {'_id': 0}).to_list(100)
-        
+
         if len(bookings) > 1:
             conflicts.append({
                 'room': room,
                 'bookings': bookings
             })
-    
+
     # Generate AI solutions
     solutions = []
     for conflict in conflicts:
         room = conflict['room']
         bookings = conflict['bookings']
-        
+
         # Find alternative rooms of same type
         alt_rooms = [r for r in rooms if r['room_type'] == room['room_type'] and r['id'] != room['id']]
-        
+
         for booking in bookings[1:]:  # Keep first booking, move others
             # Find available alternative rooms
             available_alts = []
@@ -863,7 +863,7 @@ async def solve_overbooking(
                     'check_in': {'$lte': booking['check_out']},
                     'check_out': {'$gte': booking['check_in']}
                 })
-                
+
                 if existing == 0:
                     # Calculate guest priority score
                     guest = await db.guests.find_one({'id': booking['guest_id'], 'tenant_id': current_user.tenant_id}, {'_id': 0})
@@ -874,20 +874,20 @@ async def solve_overbooking(
                         'silver': 60,
                         'standard': 40
                     }.get(loyalty_tier, 40)
-                    
+
                     # Add OTA channel penalty (harder to move OTA bookings)
                     if booking.get('ota_channel'):
                         priority_score -= 20
-                    
+
                     available_alts.append({
                         'room': alt_room,
                         'priority_score': priority_score,
                         'reason': f"Same type ({alt_room['room_type']}), Floor {alt_room['floor']}"
                     })
-            
+
             # Sort by priority score
             available_alts.sort(key=lambda x: x['priority_score'], reverse=True)
-            
+
             if available_alts:
                 best_option = available_alts[0]
                 solutions.append({
@@ -906,7 +906,7 @@ async def solve_overbooking(
                     'impact': 'minimal',
                     'auto_apply': False
                 })
-    
+
     return {
         'date': target_date.isoformat(),
         'conflicts_found': len(conflicts),
@@ -925,9 +925,9 @@ async def recommend_room_moves(
     target_date = datetime.fromisoformat(date).date()
     start_of_day = datetime.combine(target_date, datetime.min.time())
     end_of_day = datetime.combine(target_date, datetime.max.time())
-    
+
     rooms = await db.rooms.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
-    
+
     # Get bookings for target date
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -935,27 +935,27 @@ async def recommend_room_moves(
         'check_in': {'$lte': end_of_day.isoformat()},
         'check_out': {'$gte': start_of_day.isoformat()}
     }, {'_id': 0}).to_list(1000)
-    
+
     recommendations = []
-    
+
     for booking in bookings:
         guest = await db.guests.find_one({'id': booking['guest_id'], 'tenant_id': current_user.tenant_id}, {'_id': 0})
         if not guest:
             continue
-        
+
         current_room = next((r for r in rooms if r['id'] == booking['room_id']), None)
         if not current_room:
             continue
-        
+
         loyalty_tier = guest.get('loyalty_tier', 'standard')
-        
+
         # VIP/Gold upgrade opportunities
         if loyalty_tier in ['vip', 'gold']:
             # Find better rooms available
-            better_rooms = [r for r in rooms 
-                          if r['room_type'] != current_room['room_type'] 
+            better_rooms = [r for r in rooms
+                          if r['room_type'] != current_room['room_type']
                           and r['base_price'] > current_room['base_price']]
-            
+
             for better_room in better_rooms:
                 # Check availability
                 existing = await db.bookings.count_documents({
@@ -965,7 +965,7 @@ async def recommend_room_moves(
                     'check_in': {'$lte': booking['check_out']},
                     'check_out': {'$gte': booking['check_in']}
                 })
-                
+
                 if existing == 0:
                     recommendations.append({
                         'type': 'upgrade',
@@ -981,7 +981,7 @@ async def recommend_room_moves(
                         'confidence': 0.90
                     })
                     break  # One recommendation per booking
-        
+
         # Room block avoidance
         blocks = await db.room_blocks.find({
             'tenant_id': current_user.tenant_id,
@@ -993,13 +993,13 @@ async def recommend_room_moves(
                 {'end_date': None}
             ]
         }, {'_id': 0}).to_list(10)
-        
+
         if blocks:
             # Find alternative same-type room
-            alt_rooms = [r for r in rooms 
-                        if r['room_type'] == current_room['room_type'] 
+            alt_rooms = [r for r in rooms
+                        if r['room_type'] == current_room['room_type']
                         and r['id'] != current_room['id']]
-            
+
             for alt_room in alt_rooms:
                 existing = await db.bookings.count_documents({
                     'tenant_id': current_user.tenant_id,
@@ -1008,7 +1008,7 @@ async def recommend_room_moves(
                     'check_in': {'$lte': booking['check_out']},
                     'check_out': {'$gte': booking['check_in']}
                 })
-                
+
                 if existing == 0:
                     recommendations.append({
                         'type': 'block_avoidance',
@@ -1023,11 +1023,11 @@ async def recommend_room_moves(
                         'confidence': 0.95
                     })
                     break
-    
+
     # Sort by priority
     priority_order = {'urgent': 0, 'high': 1, 'medium': 2, 'low': 3}
     recommendations.sort(key=lambda x: priority_order.get(x['priority'], 99))
-    
+
     return {
         'date': target_date.isoformat(),
         'recommendations': recommendations,
@@ -1046,22 +1046,22 @@ async def recommend_rates(
     """AI-powered dynamic rate recommendations"""
     start = datetime.fromisoformat(start_date).date()
     end = datetime.fromisoformat(end_date).date()
-    
+
     rooms = await db.rooms.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
-    room_types = list(set(r['room_type'] for r in rooms))
-    
+    room_types = list({r['room_type'] for r in rooms})
+
     recommendations = []
-    
+
     for rt in room_types:
         rt_rooms = [r for r in rooms if r['room_type'] == rt]
         total_rt_rooms = len(rt_rooms)
         base_rate = rt_rooms[0]['base_price'] if rt_rooms else 0
-        
+
         current_date = start
         while current_date <= end:
             start_of_day = datetime.combine(current_date, datetime.min.time())
             end_of_day = datetime.combine(current_date, datetime.max.time())
-            
+
             # Calculate occupancy
             occupied = await db.bookings.count_documents({
                 'tenant_id': current_user.tenant_id,
@@ -1070,9 +1070,9 @@ async def recommend_rates(
                 'check_in': {'$lte': end_of_day.isoformat()},
                 'check_out': {'$gte': start_of_day.isoformat()}
             })
-            
+
             occupancy_pct = (occupied / total_rt_rooms * 100) if total_rt_rooms > 0 else 0
-            
+
             # AI pricing strategy
             if occupancy_pct >= 90:
                 # High demand - increase rates
@@ -1098,13 +1098,13 @@ async def recommend_rates(
                 strategy = 'attract'
                 reason = f"Low occupancy ({occupancy_pct:.0f}%) - attract bookings with discount"
                 confidence = 0.80
-            
+
             # Check day of week for adjustments
             day_of_week = current_date.weekday()
             if day_of_week in [4, 5]:  # Friday, Saturday
                 recommended_rate *= 1.10
                 reason += " + Weekend premium"
-            
+
             recommendations.append({
                 'date': current_date.isoformat(),
                 'day_of_week': current_date.strftime('%A'),
@@ -1119,12 +1119,12 @@ async def recommend_rates(
                 'confidence': confidence,
                 'revenue_impact': round((recommended_rate - base_rate) * (total_rt_rooms - occupied), 2)
             })
-            
+
             current_date += timedelta(days=1)
-    
+
     # Calculate total potential revenue impact
     total_impact = sum(r['revenue_impact'] for r in recommendations if r['revenue_impact'] > 0)
-    
+
     return {
         'period': {
             'start_date': start.isoformat(),
@@ -1149,27 +1149,27 @@ async def predict_no_shows_detailed(
 ):
     """AI prediction of high-risk no-show bookings"""
     target_date = datetime.fromisoformat(date).date()
-    
+
     # Get arrivals for target date
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'check_in': target_date.isoformat(),
         'status': {'$in': ['confirmed', 'guaranteed']}
     }, {'_id': 0}).to_list(1000)
-    
+
     predictions = []
-    
+
     for booking in bookings:
         risk_score = 0
         risk_factors = []
-        
+
         # Factor 1: Channel risk (OTA bookings higher risk)
         if booking.get('ota_channel'):
             risk_score += 25
             risk_factors.append(f"OTA booking ({booking.get('ota_channel')})")
         else:
             risk_score += 5
-        
+
         # Factor 2: Payment method
         payment_model = booking.get('payment_model')
         if payment_model == 'agency':
@@ -1181,7 +1181,7 @@ async def predict_no_shows_detailed(
         elif payment_model == 'virtual_card':
             risk_score += 5
             risk_factors.append("Virtual card")
-        
+
         # Factor 3: Booking lead time (last-minute bookings higher risk)
         created_at = datetime.fromisoformat(booking.get('created_at', datetime.now(timezone.utc).isoformat()))
         lead_time = (target_date - created_at.date()).days
@@ -1191,7 +1191,7 @@ async def predict_no_shows_detailed(
         elif lead_time < 7:
             risk_score += 10
             risk_factors.append(f"Short lead time ({lead_time} days)")
-        
+
         # Factor 4: Guest history (if available)
         guest = await db.guests.find_one({'id': booking['guest_id'], 'tenant_id': current_user.tenant_id}, {'_id': 0})
         if guest:
@@ -1200,22 +1200,22 @@ async def predict_no_shows_detailed(
                 'guest_id': booking['guest_id'],
                 'status': 'checked_in'
             })
-            
+
             if past_bookings == 0:
                 risk_score += 15
                 risk_factors.append("First-time guest")
             elif past_bookings > 3:
                 risk_score -= 10
                 risk_factors.append(f"Repeat guest ({past_bookings} stays)")
-        
+
         # Factor 5: Booking amount (lower rates = higher risk)
         if booking.get('total_amount', 0) < 100:
             risk_score += 10
             risk_factors.append("Low booking value")
-        
+
         # Normalize risk score (0-100)
         risk_score = min(100, max(0, risk_score))
-        
+
         # Classify risk level
         if risk_score >= 70:
             risk_level = 'high'
@@ -1226,7 +1226,7 @@ async def predict_no_shows_detailed(
         else:
             risk_level = 'low'
             recommendation = 'Standard arrival preparation'
-        
+
         predictions.append({
             'booking_id': booking['id'],
             'guest_name': booking.get('guest_name', 'Unknown'),
@@ -1240,10 +1240,10 @@ async def predict_no_shows_detailed(
             'channel': booking.get('ota_channel') or 'direct',
             'booking_value': booking.get('total_amount', 0)
         })
-    
+
     # Sort by risk score descending
     predictions.sort(key=lambda x: x['risk_score'], reverse=True)
-    
+
     return {
         'date': target_date.isoformat(),
         'total_arrivals': len(bookings),
@@ -1270,19 +1270,19 @@ async def get_ai_activity_log(
     query = {'tenant_id': current_user.tenant_id}
     if activity_type:
         query['type'] = activity_type
-    
+
     activities = await db.ai_activity_log.find(
         query,
         {'_id': 0}
     ).sort('timestamp', -1).limit(limit).to_list(limit)
-    
+
     # Calculate stats
     total = await db.ai_activity_log.count_documents({'tenant_id': current_user.tenant_id})
     successful = await db.ai_activity_log.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'success'
     })
-    
+
     return {
         'activities': activities,
         'stats': {
@@ -1320,17 +1320,17 @@ async def analyze_review_sentiment_ai(
     # - OpenAI GPT-4
     # - Google Cloud Natural Language API
     # - Azure Text Analytics
-    
+
     # Simulated AI analysis
     review_lower = review_text.lower()
-    
+
     # Simple sentiment detection
     positive_words = ['great', 'excellent', 'amazing', 'wonderful', 'perfect', 'love', 'best', 'fantastic']
     negative_words = ['bad', 'terrible', 'awful', 'poor', 'worst', 'dirty', 'rude', 'disappointed']
-    
+
     positive_count = sum(1 for word in positive_words if word in review_lower)
     negative_count = sum(1 for word in negative_words if word in review_lower)
-    
+
     if positive_count > negative_count:
         sentiment = 'positive'
         sentiment_score = 0.8
@@ -1340,7 +1340,7 @@ async def analyze_review_sentiment_ai(
     else:
         sentiment = 'neutral'
         sentiment_score = 0.5
-    
+
     # Department detection
     departments_mentioned = []
     if any(word in review_lower for word in ['room', 'bed', 'clean', 'housekeeping']):
@@ -1351,10 +1351,10 @@ async def analyze_review_sentiment_ai(
         departments_mentioned.append('fnb')
     if any(word in review_lower for word in ['spa', 'massage', 'wellness']):
         departments_mentioned.append('spa')
-    
+
     # Key topics (simulated)
     topics = ['service', 'cleanliness'] if sentiment == 'positive' else ['maintenance', 'noise']
-    
+
     return {
         'review_text': review_text,
         'sentiment': sentiment,
@@ -1384,23 +1384,23 @@ async def generate_auto_reply(
         'id': review_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
-    
+
     guest_name = review.get('guest_name', 'Guest')
     sentiment = review.get('sentiment', 'neutral')
-    
+
     # Generate reply based on sentiment
     if sentiment == 'positive' or template_type == 'thank_you':
         reply = f"Dear {guest_name},\n\nThank you for taking the time to share your wonderful feedback! We're thrilled to hear that you enjoyed your stay with us. Your kind words mean a lot to our team, and we look forward to welcoming you back soon.\n\nWarm regards,\n{current_user.name}\nGuest Relations Manager"
-    
+
     elif sentiment == 'negative' or template_type == 'apology':
         reply = f"Dear {guest_name},\n\nThank you for sharing your feedback with us. We sincerely apologize that your experience did not meet your expectations. Your comments are very important to us, and we are taking immediate steps to address the issues you've raised.\n\nWe would appreciate the opportunity to discuss this further and make things right. Please contact me directly at your convenience.\n\nSincerely,\n{current_user.name}\nGuest Relations Manager"
-    
+
     else:
         reply = f"Dear {guest_name},\n\nThank you for your feedback regarding your recent stay. We appreciate you taking the time to share your thoughts with us. Your input helps us continuously improve our services.\n\nWe hope to have the pleasure of welcoming you back in the future.\n\nBest regards,\n{current_user.name}\nGuest Relations Manager"
-    
+
     return {
         'review_id': review_id,
         'generated_reply': reply,
@@ -1429,7 +1429,7 @@ async def get_reviews_by_source(
     """
     end_dt = datetime.now(timezone.utc)
     start_dt = end_dt - timedelta(days=days)
-    
+
     match_criteria = {
         'tenant_id': current_user.tenant_id,
         'created_at': {
@@ -1437,7 +1437,7 @@ async def get_reviews_by_source(
             '$lte': end_dt.isoformat()
         }
     }
-    
+
     # Determine collection based on source
     if source == 'in_house':
         collection = db.survey_responses
@@ -1449,10 +1449,10 @@ async def get_reviews_by_source(
     else:
         collection = db.external_reviews
         match_criteria['platform'] = source
-    
+
     if sentiment:
         match_criteria['sentiment'] = sentiment
-    
+
     reviews = []
     async for review in collection.find(match_criteria).sort('created_at', -1):
         reviews.append({
@@ -1464,11 +1464,11 @@ async def get_reviews_by_source(
             'date': review.get('created_at') or review.get('submitted_at'),
             'source': source
         })
-    
+
     # Calculate summary
     total_reviews = len(reviews)
     avg_rating = sum(r['rating'] for r in reviews) / total_reviews if total_reviews > 0 else 0
-    
+
     return {
         'source': source,
         'period_days': days,
@@ -1498,10 +1498,10 @@ async def analyze_guest_persona(
         'id': guest_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
-    
+
     # Get guest's booking history
     bookings = []
     async for booking in db.bookings.find({
@@ -1509,26 +1509,26 @@ async def analyze_guest_persona(
         'tenant_id': current_user.tenant_id
     }).sort('created_at', -1):
         bookings.append(booking)
-    
+
     # Get spending data
     total_spent = 0
     ota_bookings = 0
     direct_bookings = 0
     avg_lead_time = []
-    
+
     for booking in bookings:
         total_spent += booking.get('total_amount', 0)
         if booking.get('channel') in ['booking_com', 'expedia', 'airbnb']:
             ota_bookings += 1
         elif booking.get('channel') == 'direct':
             direct_bookings += 1
-        
+
         # Calculate lead time
         created = datetime.fromisoformat(booking.get('created_at'))
         checkin = datetime.fromisoformat(booking.get('check_in'))
         lead_time = (checkin - created).days
         avg_lead_time.append(lead_time)
-    
+
     # Get reviews/feedback
     reviews = []
     async for review in db.department_feedback.find({
@@ -1536,9 +1536,9 @@ async def analyze_guest_persona(
         'tenant_id': current_user.tenant_id
     }):
         reviews.append(review)
-    
+
     negative_reviews = sum(1 for r in reviews if r.get('rating', 0) < 3)
-    
+
     # Get upsell history
     upsells_accepted = 0
     async for charge in db.folio_charges.find({
@@ -1547,10 +1547,10 @@ async def analyze_guest_persona(
         'charge_category': {'$in': ['spa', 'upgrade', 'minibar']}
     }):
         upsells_accepted += 1
-    
+
     # AI Persona Analysis
     personas = []
-    
+
     # 1. Price Sensitive
     if len(bookings) > 0:
         avg_spend = total_spent / len(bookings)
@@ -1570,7 +1570,7 @@ async def analyze_guest_persona(
                     'Focus on value packages'
                 ]
             })
-    
+
     # 2. Experience Seeker
     if upsells_accepted > 3:
         personas.append({
@@ -1588,7 +1588,7 @@ async def analyze_guest_persona(
                 'VIP treatment opportunities'
             ]
         })
-    
+
     # 3. Complainer
     if negative_reviews >= 2:
         personas.append({
@@ -1607,7 +1607,7 @@ async def analyze_guest_persona(
                 'Consider welcome amenity'
             ]
         })
-    
+
     # 4. Upsell Candidate
     if total_spent > 1000 and upsells_accepted > 0:
         personas.append({
@@ -1626,7 +1626,7 @@ async def analyze_guest_persona(
                 'Airport transfer service'
             ]
         })
-    
+
     # 5. High LTV (Lifetime Value)
     if total_spent > 2000 or len(bookings) > 5:
         ltv_score = total_spent + (len(bookings) * 200)  # Factor in repeat visits
@@ -1646,7 +1646,7 @@ async def analyze_guest_persona(
                 'Invitation to special events'
             ]
         })
-    
+
     # 6. OTA → Direct Conversion Candidate
     if ota_bookings > 0 and direct_bookings == 0 and len(bookings) >= 2:
         personas.append({
@@ -1665,7 +1665,7 @@ async def analyze_guest_persona(
                 'Best rate guarantee promotion'
             ]
         })
-    
+
     # Store personas
     for persona_data in personas:
         persona = GuestPersona(
@@ -1676,18 +1676,18 @@ async def analyze_guest_persona(
             indicators=persona_data['indicators'],
             recommendations=persona_data['recommendations']
         )
-        
+
         # Check if exists
         existing = await db.guest_personas.find_one({
             'guest_id': guest_id,
             'tenant_id': current_user.tenant_id,
             'persona_type': persona_data['type']
         })
-        
+
         persona_dict = persona.model_dump()
         persona_dict['created_at'] = persona_dict['created_at'].isoformat()
         persona_dict['updated_at'] = persona_dict['updated_at'].isoformat()
-        
+
         if existing:
             await db.guest_personas.update_one(
                 {'id': existing.get('id')},
@@ -1695,7 +1695,7 @@ async def analyze_guest_persona(
             )
         else:
             await db.guest_personas.insert_one(persona_dict)
-    
+
     return {
         'guest_id': guest_id,
         'guest_name': guest.get('name'),
@@ -1730,10 +1730,10 @@ async def get_all_guest_insights(
         'tenant_id': current_user.tenant_id,
         'confidence_score': {'$gte': min_confidence}
     }
-    
+
     if persona_type:
         match_criteria['persona_type'] = persona_type
-    
+
     insights = []
     async for persona in db.guest_personas.find(match_criteria).sort('confidence_score', -1):
         guest = await db.guests.find_one({'id': persona.get('guest_id')})
@@ -1744,7 +1744,7 @@ async def get_all_guest_insights(
             'confidence': persona.get('confidence_score'),
             'recommendations': persona.get('recommendations')
         })
-    
+
     # Group by persona type
     by_type = {}
     for insight in insights:
@@ -1752,7 +1752,7 @@ async def get_all_guest_insights(
         if ptype not in by_type:
             by_type[ptype] = []
         by_type[ptype].append(insight)
-    
+
     return {
         'total_insights': len(insights),
         'persona_filter': persona_type,
@@ -1778,19 +1778,19 @@ async def analyze_predictive_maintenance(
     """
     # In production: Integrate with IoT sensors, HVAC controllers, BMS
     # Analyze: Temperature patterns, error codes, usage frequency, vibration data
-    
+
     alerts = []
-    
+
     # Get all rooms
     rooms = []
     async for room in db.rooms.find({'tenant_id': current_user.tenant_id}):
         rooms.append(room)
-    
+
     # Get maintenance history
     for room in rooms[:5]:  # Analyze first 5 rooms for demo
         room_id = room.get('id')
         room_number = room.get('room_number')
-        
+
         # Get past maintenance issues
         issues = []
         async for task in db.maintenance_tasks.find({
@@ -1798,9 +1798,9 @@ async def analyze_predictive_maintenance(
             'tenant_id': current_user.tenant_id
         }).sort('created_at', -1).limit(10):
             issues.append(task)
-        
+
         # Pattern Analysis (Simulated AI/ML)
-        
+
         # 1. HVAC Analysis
         hvac_issues = [i for i in issues if 'ac' in i.get('description', '').lower() or 'hvac' in i.get('description', '').lower()]
         if len(hvac_issues) >= 2:
@@ -1820,12 +1820,12 @@ async def analyze_predictive_maintenance(
                 recommended_action='Schedule preventive maintenance - compressor inspection',
                 estimated_failure_days=7
             )
-            
+
             alert_dict = alert.model_dump()
             alert_dict['created_at'] = alert_dict['created_at'].isoformat()
             await db.predictive_maintenance_alerts.insert_one(alert_dict)
             alerts.append(alert_dict)
-            
+
             # Auto-create maintenance task
             await create_predictive_maintenance_task(
                 current_user.tenant_id,
@@ -1835,7 +1835,7 @@ async def analyze_predictive_maintenance(
                 'high',
                 alert.id
             )
-        
+
         # 2. Plumbing Analysis
         plumbing_issues = [i for i in issues if 'leak' in i.get('description', '').lower() or 'water' in i.get('description', '').lower()]
         if len(plumbing_issues) >= 1:
@@ -1853,12 +1853,12 @@ async def analyze_predictive_maintenance(
                 recommended_action='Inspect pipes and seals',
                 estimated_failure_days=14
             )
-            
+
             alert_dict = alert.model_dump()
             alert_dict['created_at'] = alert_dict['created_at'].isoformat()
             await db.predictive_maintenance_alerts.insert_one(alert_dict)
             alerts.append(alert_dict)
-    
+
     return {
         'analysis_date': datetime.now().date().isoformat(),
         'rooms_analyzed': len(rooms),
@@ -1893,7 +1893,7 @@ async def get_predictive_maintenance_dashboard(
             'days_until_failure': alert.get('estimated_failure_days'),
             'recommended_action': alert.get('recommended_action')
         })
-    
+
     return {
         'total_alerts': len(alerts),
         'critical_alerts': sum(1 for a in alerts if a['severity'] == 'critical'),
@@ -1918,7 +1918,7 @@ async def ai_housekeeping_smart_scheduler(
     - Workload balancing
     """
     datetime.fromisoformat(date)
-    
+
     # 1. Get occupancy forecast
     occupied_rooms = []
     async for booking in db.bookings.find({
@@ -1928,7 +1928,7 @@ async def ai_housekeeping_smart_scheduler(
         'status': {'$in': ['confirmed', 'checked_in']}
     }):
         occupied_rooms.append(booking.get('room_id'))
-    
+
     # 2. Check-outs today (require deep cleaning)
     checkout_today = []
     async for booking in db.bookings.find({
@@ -1937,7 +1937,7 @@ async def ai_housekeeping_smart_scheduler(
         'status': 'checked_in'
     }):
         checkout_today.append(booking.get('room_id'))
-    
+
     # 3. Get available HK staff
     hk_staff = []
     async for user in db.users.find({
@@ -1946,7 +1946,7 @@ async def ai_housekeeping_smart_scheduler(
         'status': 'active'
     }):
         hk_staff.append(user)
-    
+
     if not hk_staff:
         # Create simulated staff for demo
         hk_staff = [
@@ -1954,33 +1954,33 @@ async def ai_housekeeping_smart_scheduler(
             {'id': '2', 'name': 'Elena'},
             {'id': '3', 'name': 'Sofia'}
         ]
-    
+
     staff_count = len(hk_staff)
-    
+
     # 4. Calculate workload
     total_rooms = len(occupied_rooms) + len(checkout_today)
-    
+
     # Standard cleaning times
     occupied_cleaning_time = 20  # minutes
     checkout_cleaning_time = 45  # minutes (deep clean)
-    
+
     total_minutes = (len(occupied_rooms) * occupied_cleaning_time) + (len(checkout_today) * checkout_cleaning_time)
-    
+
     # Available staff hours (8-hour shift = 480 minutes)
     available_minutes = staff_count * 480
-    
+
     # AI Task Distribution
     tasks_per_staff = total_rooms / staff_count if staff_count > 0 else 0
-    
+
     # Intelligent assignment (balance workload)
     staff_assignments = []
-    
+
     # Priority 1: Checkout rooms (must be done first)
     checkout_assignments = distribute_tasks(checkout_today, hk_staff, 'checkout')
-    
+
     # Priority 2: Occupied rooms
     occupied_assignments = distribute_tasks(occupied_rooms, hk_staff, 'occupied')
-    
+
     # Combine assignments
     combined = {}
     for assignment in checkout_assignments + occupied_assignments:
@@ -1996,9 +1996,9 @@ async def ai_housekeeping_smart_scheduler(
         combined[staff_name]['tasks'].append(assignment['task'])
         combined[staff_name]['total_tasks'] += 1
         combined[staff_name]['estimated_minutes'] += assignment['estimated_minutes']
-    
+
     staff_assignments = list(combined.values())
-    
+
     # Create tasks in database
     for assignment in staff_assignments:
         for task in assignment['tasks']:
@@ -2015,10 +2015,10 @@ async def ai_housekeeping_smart_scheduler(
                 'created_at': datetime.now(timezone.utc).isoformat(),
                 'source': 'ai_scheduler'
             })
-    
+
     # Capacity analysis
     capacity_pct = (total_minutes / available_minutes * 100) if available_minutes > 0 else 0
-    
+
     return {
         'date': date,
         'forecast': {
@@ -2056,14 +2056,14 @@ async def auto_loyalty_tier_upgrade(
     - Smart loyalty management
     """
     upgrades = []
-    
+
     # Get all guests
     async for guest in db.guests.find({'tenant_id': current_user.tenant_id}):
         guest_id = guest.get('id')
         guest_name = guest.get('name')
         current_points = guest.get('loyalty_points', 0)
         current_tier = guest.get('loyalty_tier', 'bronze')
-        
+
         # Get booking history
         bookings = []
         async for booking in db.bookings.find({
@@ -2071,14 +2071,14 @@ async def auto_loyalty_tier_upgrade(
             'tenant_id': current_user.tenant_id
         }).sort('created_at', 1):
             bookings.append(booking)
-        
+
         if not bookings:
             continue
-        
+
         # Behavior Analysis
         ota_bookings = [b for b in bookings if b.get('channel') in ['booking_com', 'expedia', 'airbnb']]
         direct_bookings = [b for b in bookings if b.get('channel') == 'direct']
-        
+
         # Rule 1: OTA → Direct Conversion Bonus
         if len(ota_bookings) > 0 and len(direct_bookings) > 0:
             # Check if last booking was direct (conversion!)
@@ -2089,12 +2089,12 @@ async def auto_loyalty_tier_upgrade(
                     # Conversion detected!
                     bonus_points = 500
                     new_points = current_points + bonus_points
-                    
+
                     await db.guests.update_one(
                         {'id': guest_id},
                         {'$set': {'loyalty_points': new_points}}
                     )
-                    
+
                     upgrades.append({
                         'guest_id': guest_id,
                         'guest_name': guest_name,
@@ -2104,9 +2104,9 @@ async def auto_loyalty_tier_upgrade(
                         'old_points': current_points,
                         'new_points': new_points
                     })
-                    
+
                     current_points = new_points  # Update for tier calculation
-        
+
         # Rule 2: Repeat Visit Auto-Tier Upgrade
         if len(bookings) >= 3:  # 3+ stays
             # Calculate recommended tier
@@ -2118,13 +2118,13 @@ async def auto_loyalty_tier_upgrade(
                 new_tier = 'silver'
             else:
                 new_tier = current_tier
-            
+
             if new_tier != current_tier:
                 await db.guests.update_one(
                     {'id': guest_id},
                     {'$set': {'loyalty_tier': new_tier}}
                 )
-                
+
                 upgrades.append({
                     'guest_id': guest_id,
                     'guest_name': guest_name,
@@ -2134,7 +2134,7 @@ async def auto_loyalty_tier_upgrade(
                     'reason': f'{len(bookings)} stays, {current_points} points earned',
                     'benefits_unlocked': get_tier_benefits(new_tier)
                 })
-        
+
         # Rule 3: Frequency Bonus (Bookings within 90 days)
         if len(bookings) >= 2:
             last_two = bookings[-2:]
@@ -2142,16 +2142,16 @@ async def auto_loyalty_tier_upgrade(
                 date1 = datetime.fromisoformat(last_two[0].get('check_out'))
                 date2 = datetime.fromisoformat(last_two[1].get('check_in'))
                 days_between = (date2 - date1).days
-                
+
                 if days_between <= 90:
                     frequency_bonus = 300
                     new_points = current_points + frequency_bonus
-                    
+
                     await db.guests.update_one(
                         {'id': guest_id},
                         {'$set': {'loyalty_points': new_points}}
                     )
-                    
+
                     upgrades.append({
                         'guest_id': guest_id,
                         'guest_name': guest_name,
@@ -2161,7 +2161,7 @@ async def auto_loyalty_tier_upgrade(
                         'old_points': current_points,
                         'new_points': new_points
                     })
-    
+
     # Create notification alerts for upgrades
     for upgrade in upgrades:
         await db.alerts.insert_one({
@@ -2175,7 +2175,7 @@ async def auto_loyalty_tier_upgrade(
             'status': 'unread',
             'created_at': datetime.now(timezone.utc).isoformat()
         })
-    
+
     return {
         'analysis_date': datetime.now().date().isoformat(),
         'guests_analyzed': await db.guests.count_documents({'tenant_id': current_user.tenant_id}),
@@ -2205,15 +2205,15 @@ async def train_rms_model(
     try:
         from ml_data_generators import RMSDataGenerator
         from ml_trainers import RMSModelTrainer
-        
+
         # Generate training data
         print(f"Generating {historical_days} days of RMS training data...")
         data_df = RMSDataGenerator.generate(days=historical_days)
-        
+
         # Train models
         trainer = RMSModelTrainer(model_dir='ml_models')
         metrics = trainer.train(data_df)
-        
+
         return {
             'success': True,
             'message': 'RMS models trained successfully',
@@ -2256,15 +2256,15 @@ async def train_persona_model(
     try:
         from ml_data_generators import PersonaDataGenerator
         from ml_trainers import PersonaModelTrainer
-        
+
         # Generate training data
         print(f"Generating {num_guests} guest persona training samples...")
         data_df = PersonaDataGenerator.generate(num_guests=num_guests)
-        
+
         # Train model
         trainer = PersonaModelTrainer(model_dir='ml_models')
         metrics = trainer.train(data_df)
-        
+
         return {
             'success': True,
             'message': 'Persona model trained successfully',
@@ -2297,15 +2297,15 @@ async def train_predictive_maintenance_model(
     try:
         from ml_data_generators import PredictiveMaintenanceDataGenerator
         from ml_trainers import PredictiveMaintenanceModelTrainer
-        
+
         # Generate training data
         print(f"Generating {num_samples} predictive maintenance training samples...")
         data_df = PredictiveMaintenanceDataGenerator.generate(num_samples=num_samples)
-        
+
         # Train models
         trainer = PredictiveMaintenanceModelTrainer(model_dir='ml_models')
         metrics = trainer.train(data_df)
-        
+
         return {
             'success': True,
             'message': 'Predictive maintenance models trained successfully',
@@ -2337,15 +2337,15 @@ async def train_hk_scheduler_model(
     try:
         from ml_data_generators import HKSchedulerDataGenerator
         from ml_trainers import HKSchedulerModelTrainer
-        
+
         # Generate training data
         print(f"Generating {num_days} days of HK scheduler training data...")
         data_df = HKSchedulerDataGenerator.generate(num_days=num_days)
-        
+
         # Train models
         trainer = HKSchedulerModelTrainer(model_dir='ml_models')
         metrics = trainer.train(data_df)
-        
+
         return {
             'success': True,
             'message': 'HK scheduler models trained successfully',
@@ -2377,12 +2377,12 @@ async def train_all_models(
     """
     results = {}
     errors = []
-    
+
     try:
         # Import all required modules
         from ml_data_generators import HKSchedulerDataGenerator, PersonaDataGenerator, PredictiveMaintenanceDataGenerator, RMSDataGenerator
         from ml_trainers import HKSchedulerModelTrainer, PersonaModelTrainer, PredictiveMaintenanceModelTrainer, RMSModelTrainer
-        
+
         # 1. Train RMS Model
         try:
             print("\n=== Training RMS Model ===")
@@ -2393,7 +2393,7 @@ async def train_all_models(
         except Exception as e:
             results['rms'] = {'status': 'failed', 'error': str(e)}
             errors.append(f"RMS: {str(e)}")
-        
+
         # 2. Train Persona Model
         try:
             print("\n=== Training Persona Model ===")
@@ -2404,7 +2404,7 @@ async def train_all_models(
         except Exception as e:
             results['persona'] = {'status': 'failed', 'error': str(e)}
             errors.append(f"Persona: {str(e)}")
-        
+
         # 3. Train Predictive Maintenance Model
         try:
             print("\n=== Training Predictive Maintenance Model ===")
@@ -2415,7 +2415,7 @@ async def train_all_models(
         except Exception as e:
             results['predictive_maintenance'] = {'status': 'failed', 'error': str(e)}
             errors.append(f"Predictive Maintenance: {str(e)}")
-        
+
         # 4. Train HK Scheduler Model
         try:
             print("\n=== Training HK Scheduler Model ===")
@@ -2426,11 +2426,11 @@ async def train_all_models(
         except Exception as e:
             results['hk_scheduler'] = {'status': 'failed', 'error': str(e)}
             errors.append(f"HK Scheduler: {str(e)}")
-        
+
         # Summary
         successful = sum(1 for r in results.values() if r.get('status') == 'success')
         total = len(results)
-        
+
         return {
             'success': len(errors) == 0,
             'message': f'Training complete: {successful}/{total} models trained successfully',
@@ -2442,7 +2442,7 @@ async def train_all_models(
                 'failed': len(errors)
             }
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Bulk training failed: {str(e)}")
 
@@ -2459,9 +2459,9 @@ async def get_ml_models_status(
     - Return training metrics if available
     """
     import json
-    
+
     model_dir = 'ml_models'
-    
+
     models_status = {
         'rms': {
             'trained': False,
@@ -2480,20 +2480,20 @@ async def get_ml_models_status(
             'files': ['hk_staff_model.pkl', 'hk_hours_model.pkl', 'hk_scheduler_metrics.json']
         }
     }
-    
+
     # Check each model
     for model_name, info in models_status.items():
         all_files_exist = all(
             os.path.exists(os.path.join(model_dir, file))
             for file in info['files']
         )
-        
+
         info['trained'] = all_files_exist
         info['files_status'] = {
             file: os.path.exists(os.path.join(model_dir, file))
             for file in info['files']
         }
-        
+
         # Load metrics if available
         metrics_file = [f for f in info['files'] if f.endswith('_metrics.json')]
         if metrics_file and all_files_exist:
@@ -2502,11 +2502,11 @@ async def get_ml_models_status(
                     info['metrics'] = json.load(f)
             except Exception:
                 info['metrics'] = None
-    
+
     # Overall summary
     trained_count = sum(1 for info in models_status.values() if info['trained'])
     total_count = len(models_status)
-    
+
     return {
         'models': models_status,
         'summary': {
@@ -2531,18 +2531,18 @@ async def get_occupancy_prediction(
 ):
     """Get AI-powered occupancy prediction for next N days"""
     current_user = await get_current_user(credentials)
-    
+
     # Get total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    
+
     # Get bookings for next N days
     start_date = datetime.now(timezone.utc)
     start_date + timedelta(days=days)
-    
+
     predictions = []
     for day_offset in range(days):
         pred_date = start_date + timedelta(days=day_offset)
-        
+
         # Count bookings for this date
         bookings_count = await db.bookings.count_documents({
             'tenant_id': current_user.tenant_id,
@@ -2550,9 +2550,9 @@ async def get_occupancy_prediction(
             'check_out': {'$gt': pred_date},
             'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
         })
-        
+
         occupancy_pct = (bookings_count / total_rooms * 100) if total_rooms > 0 else 0
-        
+
         # Simple prediction model (can be enhanced with ML)
         # Add some variance based on day of week
         day_of_week = pred_date.weekday()
@@ -2562,7 +2562,7 @@ async def get_occupancy_prediction(
             predicted_pct = occupancy_pct * 0.85
         else:
             predicted_pct = occupancy_pct
-        
+
         predictions.append({
             'date': pred_date.strftime('%Y-%m-%d'),
             'day_of_week': pred_date.strftime('%A'),
@@ -2571,7 +2571,7 @@ async def get_occupancy_prediction(
             'predicted_occupancy_pct': round(predicted_pct, 1),
             'confidence': 'high' if day_offset < 7 else 'medium' if day_offset < 14 else 'low'
         })
-    
+
     return {
         'predictions': predictions,
         'total_rooms': total_rooms,
@@ -2593,17 +2593,17 @@ async def get_guest_patterns(
 ):
     """AI-powered guest behavior pattern analysis"""
     current_user = await get_current_user(credentials)
-    
+
     from datetime import datetime, timedelta
-    
+
     # Get recent bookings (last 90 days)
     ninety_days_ago = datetime.now() - timedelta(days=90)
-    
+
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'check_in': {'$gte': ninety_days_ago.isoformat()}
     }).to_list(length=5000)
-    
+
     # Analyze patterns
     patterns = {
         'booking_lead_time': {},
@@ -2613,7 +2613,7 @@ async def get_guest_patterns(
         'peak_seasons': {},
         'cancellation_rate': 0
     }
-    
+
     total_bookings = len(bookings)
     cancelled = 0
     lead_times = []
@@ -2621,7 +2621,7 @@ async def get_guest_patterns(
     room_types = {}
     channels = {}
     monthly_bookings = {}
-    
+
     for booking in bookings:
         # Lead time
         if booking.get('created_at'):
@@ -2629,31 +2629,31 @@ async def get_guest_patterns(
             check_in = datetime.fromisoformat(booking['check_in'].replace('Z', '+00:00'))
             lead_time = (check_in - created).days
             lead_times.append(lead_time)
-        
+
         # Duration
         check_in = datetime.fromisoformat(booking['check_in'].replace('Z', '+00:00'))
         check_out = datetime.fromisoformat(booking['check_out'].replace('Z', '+00:00'))
         duration = (check_out - check_in).days
         durations.append(duration)
-        
+
         # Room type (get from room)
         room = await db.rooms.find_one({'id': booking.get('room_id')})
         if room:
             room_type = room.get('room_type', 'standard')
             room_types[room_type] = room_types.get(room_type, 0) + 1
-        
+
         # Channel
         channel = booking.get('booking_channel', 'direct')
         channels[channel] = channels.get(channel, 0) + 1
-        
+
         # Month
         month = check_in.strftime('%B')
         monthly_bookings[month] = monthly_bookings.get(month, 0) + 1
-        
+
         # Cancellation
         if booking.get('status') == 'cancelled':
             cancelled += 1
-    
+
     # Calculate averages and patterns
     patterns['booking_lead_time'] = {
         'average_days': round(sum(lead_times) / len(lead_times), 1) if lead_times else 0,
@@ -2664,7 +2664,7 @@ async def get_guest_patterns(
             '30+_days': len([x for x in lead_times if x > 30])
         }
     }
-    
+
     patterns['stay_duration'] = {
         'average_nights': round(sum(durations) / len(durations), 1) if durations else 0,
         'distribution': {
@@ -2674,30 +2674,30 @@ async def get_guest_patterns(
             '7+_nights': len([x for x in durations if x > 7])
         }
     }
-    
+
     patterns['preferred_room_types'] = room_types
     patterns['booking_channels'] = channels
     patterns['peak_seasons'] = monthly_bookings
     patterns['cancellation_rate'] = round((cancelled / total_bookings * 100), 2) if total_bookings > 0 else 0
-    
+
     # AI Insights
     insights = []
-    
+
     avg_lead = patterns['booking_lead_time']['average_days']
     if avg_lead < 7:
         insights.append("Misafirleriniz çoğunlukla son dakika rezervasyonu yapıyor. Esnek iptal politikası düşünün.")
     elif avg_lead > 30:
         insights.append("Misafirleriniz önceden planlama yapıyor. Erken rezervasyon indirimleri sunun.")
-    
+
     if patterns['cancellation_rate'] > 15:
         insights.append(f"İptal oranı yüksek (%{patterns['cancellation_rate']}). İptal koşullarını gözden geçirin.")
-    
+
     avg_stay = patterns['stay_duration']['average_nights']
     if avg_stay < 2:
         insights.append("Kısa süreli konaklamalar yaygın. Transit misafir profili olabilir.")
     elif avg_stay > 5:
         insights.append("Uzun süreli konaklamalar yaygın. Haftalık paket fiyatları sunun.")
-    
+
     return {
         'success': True,
         'total_bookings_analyzed': total_bookings,

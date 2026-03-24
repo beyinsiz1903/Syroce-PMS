@@ -82,7 +82,7 @@ async def create_approval_request(
     Types: discount, price_override, budget_expense, rate_change, refund, comp_room
     """
     current_user = await get_current_user(credentials)
-    
+
     approval = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -104,9 +104,9 @@ async def create_approval_request(
         'rejection_reason': None,
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     await db.approvals.insert_one(approval)
-    
+
     return {
         'message': 'Onay isteği oluşturuldu',
         'approval_id': approval['id'],
@@ -131,7 +131,7 @@ async def approve_request(
     Only managers and supervisors can approve
     """
     current_user = await get_current_user(credentials)
-    
+
     # Check permissions - only certain roles can approve
     allowed_roles = ['admin', 'supervisor', 'fnb_manager', 'gm', 'finance_manager']
     if current_user.role not in allowed_roles:
@@ -139,19 +139,19 @@ async def approve_request(
             status_code=403,
             detail="Insufficient permissions. Only managers can approve requests."
         )
-    
+
     # Get approval
     approval = await db.approvals.find_one({
         'id': approval_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not approval:
         raise HTTPException(status_code=404, detail="Approval request not found")
-    
+
     if approval['status'] != ApprovalStatus.PENDING.value:
         raise HTTPException(status_code=400, detail=f"Cannot approve. Request is already {approval['status']}")
-    
+
     # Update approval
     await db.approvals.update_one(
         {'id': approval_id, 'tenant_id': current_user.tenant_id},
@@ -166,7 +166,7 @@ async def approve_request(
             }
         }
     )
-    
+
     # Create notification for requester
     notification = {
         'id': str(uuid.uuid4()),
@@ -180,7 +180,7 @@ async def approve_request(
         'created_at': datetime.now(timezone.utc).isoformat()
     }
     await db.notifications.insert_one(notification)
-    
+
     return {
         'message': 'Onay isteği onaylandı',
         'approval_id': approval_id,
@@ -204,7 +204,7 @@ async def approve_request_v2(
     Only managers and supervisors can approve
     """
     current_user = await get_current_user(credentials)
-    
+
     # Check permissions - only certain roles can approve
     allowed_roles = ['admin', 'supervisor', 'fnb_manager', 'gm', 'finance_manager']
     if current_user.role not in allowed_roles:
@@ -212,19 +212,19 @@ async def approve_request_v2(
             status_code=403,
             detail="Insufficient permissions. Only managers can approve requests."
         )
-    
+
     # Get approval
     approval = await db.approvals.find_one({
         'id': approval_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not approval:
         raise HTTPException(status_code=404, detail="Approval request not found")
-    
+
     if approval['status'] != ApprovalStatus.PENDING.value:
         raise HTTPException(status_code=400, detail=f"Cannot approve. Request is already {approval['status']}")
-    
+
     # Update approval
     await db.approvals.update_one(
         {'id': approval_id, 'tenant_id': current_user.tenant_id},
@@ -239,7 +239,7 @@ async def approve_request_v2(
             }
         }
     )
-    
+
     # Create notification for requester
     notification = {
         'id': str(uuid.uuid4()),
@@ -253,7 +253,7 @@ async def approve_request_v2(
         'created_at': datetime.now(timezone.utc).isoformat()
     }
     await db.notifications.insert_one(notification)
-    
+
     return {
         'message': 'Onay isteği onaylandı',
         'approval_id': approval_id,
@@ -276,7 +276,7 @@ async def approve_request_v3(
     Only managers and supervisors can approve
     """
     current_user = await get_current_user(credentials)
-    
+
     # Check permissions - only certain roles can approve
     allowed_roles = ['admin', 'supervisor', 'fnb_manager', 'gm', 'finance_manager']
     if current_user.role not in allowed_roles:
@@ -284,19 +284,19 @@ async def approve_request_v3(
             status_code=403,
             detail="Insufficient permissions. Only managers can approve requests."
         )
-    
+
     # Get approval
     approval = await db.approvals.find_one({
         'id': approval_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not approval:
         raise HTTPException(status_code=404, detail="Approval request not found")
-    
+
     if approval['status'] != ApprovalStatus.PENDING.value:
         raise HTTPException(status_code=400, detail=f"Cannot approve. Request is already {approval['status']}")
-    
+
     # Update approval
     await db.approvals.update_one(
         {'id': approval_id, 'tenant_id': current_user.tenant_id},
@@ -311,7 +311,7 @@ async def approve_request_v3(
             }
         }
     )
-    
+
     # Create notification for requester
     notification = {
         'id': str(uuid.uuid4()),
@@ -325,7 +325,7 @@ async def approve_request_v3(
         'created_at': datetime.now(timezone.utc).isoformat()
     }
     await db.notifications.insert_one(notification)
-    
+
     return {
         'message': 'Onay isteği onaylandı',
         'approval_id': approval_id,
@@ -348,7 +348,7 @@ async def reject_request(
     Only managers and supervisors can reject
     """
     current_user = await get_current_user(credentials)
-    
+
     # Check permissions
     allowed_roles = ['admin', 'supervisor', 'fnb_manager', 'gm', 'finance_manager']
     if current_user.role not in allowed_roles:
@@ -356,22 +356,22 @@ async def reject_request(
             status_code=403,
             detail="Insufficient permissions. Only managers can reject requests."
         )
-    
+
     if not request.rejection_reason:
         raise HTTPException(status_code=400, detail="Rejection reason is required")
-    
+
     # Get approval
     approval = await db.approvals.find_one({
         'id': approval_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not approval:
         raise HTTPException(status_code=404, detail="Approval request not found")
-    
+
     if approval['status'] != ApprovalStatus.PENDING.value:
         raise HTTPException(status_code=400, detail=f"Cannot reject. Request is already {approval['status']}")
-    
+
     # Update approval
     await db.approvals.update_one(
         {'id': approval_id, 'tenant_id': current_user.tenant_id},
@@ -387,7 +387,7 @@ async def reject_request(
             }
         }
     )
-    
+
     # Create notification for requester
     notification = {
         'id': str(uuid.uuid4()),
@@ -401,7 +401,7 @@ async def reject_request(
         'created_at': datetime.now(timezone.utc).isoformat()
     }
     await db.notifications.insert_one(notification)
-    
+
     return {
         'message': 'Onay isteği reddedildi',
         'approval_id': approval_id,
@@ -425,15 +425,15 @@ async def get_approval_history(
     Filter by status and approval_type
     """
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if status:
         query['status'] = status
-    
+
     if approval_type:
         query['approval_type'] = approval_type
-    
+
     approvals = []
     async for approval in db.approvals.find(query).sort('request_date', -1).limit(limit):
         approvals.append({
@@ -448,7 +448,7 @@ async def get_approval_history(
             'approval_date': approval.get('approval_date'),
             'rejection_reason': approval.get('rejection_reason')
         })
-    
+
     return {
         'history': approvals,
         'count': len(approvals)

@@ -16,7 +16,7 @@ class DataArchivalManager:
         self.bookings = db.bookings
         self.bookings_archive = db.bookings_archive
         self.archive_threshold_days = 365  # 1 year
-        
+
     async def setup_indexes(self):
         """Setup indexes for archived collection"""
         try:
@@ -33,29 +33,29 @@ class DataArchivalManager:
             logger.info("Archive indexes created successfully")
         except Exception as e:
             logger.error(f"Failed to create archive indexes: {e}")
-    
+
     async def archive_old_bookings(self, dry_run: bool = True) -> Dict[str, Any]:
         """
         Archive bookings older than threshold
-        
+
         Args:
             dry_run: If True, only count records without moving them
-            
+
         Returns:
             dict with archive statistics
         """
         try:
             cutoff_date = datetime.utcnow() - timedelta(days=self.archive_threshold_days)
-            
+
             # Find old bookings
             query = {
                 "check_out": {"$lt": cutoff_date},
                 "status": {"$in": ["checked_out", "cancelled", "no_show"]}
             }
-            
+
             # Count records to archive
             count = await self.bookings.count_documents(query)
-            
+
             if dry_run:
                 return {
                     "dry_run": True,
@@ -63,28 +63,28 @@ class DataArchivalManager:
                     "cutoff_date": cutoff_date.isoformat(),
                     "threshold_days": self.archive_threshold_days
                 }
-            
+
             # Archive in batches
             batch_size = 1000
             archived_count = 0
-            
+
             cursor = self.bookings.find(query).limit(batch_size)
             async for booking in cursor:
                 # Add archive metadata
                 booking["archived_at"] = datetime.utcnow()
                 booking["original_id"] = booking["_id"]
-                
+
                 # Insert to archive
                 await self.bookings_archive.insert_one(booking)
-                
+
                 # Delete from main collection
                 await self.bookings.delete_one({"_id": booking["_id"]})
-                
+
                 archived_count += 1
-                
+
                 if archived_count % 100 == 0:
                     logger.info(f"Archived {archived_count} bookings...")
-            
+
             return {
                 "dry_run": False,
                 "records_archived": archived_count,
@@ -92,14 +92,14 @@ class DataArchivalManager:
                 "threshold_days": self.archive_threshold_days,
                 "success": True
             }
-            
+
         except Exception as e:
             logger.error(f"Archival failed: {e}")
             return {
                 "success": False,
                 "error": str(e)
             }
-    
+
     async def query_with_archive(
         self,
         query: Dict[str, Any],
@@ -109,23 +109,23 @@ class DataArchivalManager:
     ) -> list:
         """
         Query bookings with optional archive inclusion
-        
+
         Args:
             query: MongoDB query
             limit: Result limit
             skip: Skip records
             include_archived: Include archived records
-            
+
         Returns:
             List of bookings
         """
         results = []
-        
+
         # Query active bookings
         cursor = self.bookings.find(query).skip(skip).limit(limit)
         async for doc in cursor:
             results.append(doc)
-        
+
         # If including archived and limit not reached
         if include_archived and len(results) < limit:
             remaining = limit - len(results)
@@ -133,27 +133,27 @@ class DataArchivalManager:
             async for doc in archive_cursor:
                 doc["from_archive"] = True
                 results.append(doc)
-        
+
         return results
-    
+
     async def get_archive_stats(self) -> Dict[str, Any]:
         """Get archival statistics"""
         try:
             active_count = await self.bookings.count_documents({})
             archived_count = await self.bookings_archive.count_documents({})
-            
+
             # Get oldest active booking
             oldest_active = await self.bookings.find_one(
                 {},
                 sort=[("check_in", ASCENDING)]
             )
-            
+
             # Get newest archived booking
             newest_archived = await self.bookings_archive.find_one(
                 {},
                 sort=[("archived_at", DESCENDING)]
             )
-            
+
             return {
                 "active_bookings": active_count,
                 "archived_bookings": archived_count,

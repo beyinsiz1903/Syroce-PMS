@@ -1241,7 +1241,7 @@ class RoomService(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
 
-# Invoice Models  
+# Invoice Models
 class InvoiceItem(BaseModel):
     description: str
     quantity: float

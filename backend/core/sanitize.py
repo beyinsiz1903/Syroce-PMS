@@ -75,12 +75,12 @@ def sanitize_dict(data: dict, max_depth: int = 5) -> dict:
     """Recursively sanitize a dictionary of input data."""
     if max_depth <= 0:
         return data
-    
+
     cleaned = {}
     for key, value in data.items():
         # Sanitize keys
         clean_key = str(key)[:100]
-        
+
         if isinstance(value, str):
             cleaned[clean_key] = sanitize_string(value)
         elif isinstance(value, dict):
@@ -94,7 +94,7 @@ def sanitize_dict(data: dict, max_depth: int = 5) -> dict:
             ]
         else:
             cleaned[clean_key] = value
-    
+
     return cleaned
 
 

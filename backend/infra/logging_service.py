@@ -33,10 +33,10 @@ class LogCategory(str, Enum):
 
 class LoggingService:
     """Centralized logging service"""
-    
+
     def __init__(self, db):
         self.db = db
-    
+
     async def log_error(
         self,
         tenant_id: str,
@@ -52,7 +52,7 @@ class LoggingService:
     ) -> str:
         """
         Log an error
-        
+
         Args:
             tenant_id: Tenant identifier
             error_type: Type of error (e.g., "ValidationError", "DatabaseError")
@@ -64,14 +64,14 @@ class LoggingService:
             stack_trace: Full stack trace
             severity: Error severity
             metadata: Additional metadata
-        
+
         Returns:
             Log ID
         """
         import uuid
-        
+
         log_id = str(uuid.uuid4())
-        
+
         log_entry = {
             'id': log_id,
             'tenant_id': tenant_id,
@@ -91,9 +91,9 @@ class LoggingService:
             'resolved_by': None,
             'resolution_notes': None
         }
-        
+
         await self.db.error_logs.insert_one(log_entry)
-        
+
         # Also create an alert for critical errors
         if severity == LogLevel.CRITICAL:
             await self.create_alert(
@@ -105,9 +105,9 @@ class LoggingService:
                 source_module=endpoint or 'system',
                 metadata={'error_log_id': log_id}
             )
-        
+
         return log_id
-    
+
     async def log_night_audit(
         self,
         tenant_id: str,
@@ -124,9 +124,9 @@ class LoggingService:
     ) -> str:
         """Log night audit operation"""
         import uuid
-        
+
         log_id = str(uuid.uuid4())
-        
+
         log_entry = {
             'id': log_id,
             'tenant_id': tenant_id,
@@ -143,9 +143,9 @@ class LoggingService:
             'errors': errors or [],
             'metadata': metadata or {}
         }
-        
+
         await self.db.night_audit_logs.insert_one(log_entry)
-        
+
         # Create alert if audit failed
         if status == 'failed':
             await self.create_alert(
@@ -157,9 +157,9 @@ class LoggingService:
                 source_module='night_audit',
                 metadata={'log_id': log_id}
             )
-        
+
         return log_id
-    
+
     async def log_ota_sync(
         self,
         tenant_id: str,
@@ -176,9 +176,9 @@ class LoggingService:
     ) -> str:
         """Log OTA channel sync operation"""
         import uuid
-        
+
         log_id = str(uuid.uuid4())
-        
+
         log_entry = {
             'id': log_id,
             'tenant_id': tenant_id,
@@ -195,9 +195,9 @@ class LoggingService:
             'warnings': warnings or [],
             'metadata': metadata or {}
         }
-        
+
         await self.db.ota_sync_logs.insert_one(log_entry)
-        
+
         # Create alert if sync failed
         if status == 'failed':
             await self.create_alert(
@@ -209,9 +209,9 @@ class LoggingService:
                 source_module='channel_manager',
                 metadata={'log_id': log_id}
             )
-        
+
         return log_id
-    
+
     async def log_rms_publish(
         self,
         tenant_id: str,
@@ -232,9 +232,9 @@ class LoggingService:
     ) -> str:
         """Log RMS rate/restriction publishing"""
         import uuid
-        
+
         log_id = str(uuid.uuid4())
-        
+
         log_entry = {
             'id': log_id,
             'tenant_id': tenant_id,
@@ -255,9 +255,9 @@ class LoggingService:
             'errors': errors or [],
             'metadata': metadata or {}
         }
-        
+
         await self.db.rms_publish_logs.insert_one(log_entry)
-        
+
         # Create alert if publishing failed
         if status == 'failed':
             await self.create_alert(
@@ -269,9 +269,9 @@ class LoggingService:
                 source_module='rms',
                 metadata={'log_id': log_id}
             )
-        
+
         return log_id
-    
+
     async def log_maintenance_prediction(
         self,
         tenant_id: str,
@@ -292,9 +292,9 @@ class LoggingService:
     ) -> str:
         """Log predictive maintenance AI predictions"""
         import uuid
-        
+
         log_id = str(uuid.uuid4())
-        
+
         log_entry = {
             'id': log_id,
             'tenant_id': tenant_id,
@@ -315,9 +315,9 @@ class LoggingService:
             'model_version': model_version,
             'metadata': metadata or {}
         }
-        
+
         await self.db.maintenance_prediction_logs.insert_one(log_entry)
-        
+
         # Create alert for high-risk predictions
         if prediction_result == 'high':
             await self.create_alert(
@@ -329,9 +329,9 @@ class LoggingService:
                 source_module='predictive_maintenance',
                 metadata={'log_id': log_id}
             )
-        
+
         return log_id
-    
+
     async def create_alert(
         self,
         tenant_id: str,
@@ -345,9 +345,9 @@ class LoggingService:
     ) -> str:
         """Create an alert in alert center"""
         import uuid
-        
+
         alert_id = str(uuid.uuid4())
-        
+
         alert_entry = {
             'id': alert_id,
             'tenant_id': tenant_id,
@@ -366,13 +366,13 @@ class LoggingService:
             'resolution_notes': None,
             'metadata': metadata or {}
         }
-        
+
         # Insert into both alerts collection and alert_history
         await self.db.alerts.insert_one(alert_entry)
         await self.db.alert_history.insert_one(alert_entry)
-        
+
         return alert_id
-    
+
     async def log_api_request(
         self,
         tenant_id: str,
@@ -397,7 +397,7 @@ class LoggingService:
             'duration_ms': duration_ms,
             'error': error
         }
-        
+
         # Only log slow requests (>2s) or errors to reduce storage
         if duration_ms and duration_ms > 2000 or status_code >= 400:
             await self.db.api_logs.insert_one(log_entry)

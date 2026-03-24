@@ -54,15 +54,15 @@ async def get_energy_consumption(days: int = 30, current_user: User = Depends(ge
     """Enerji tüketim raporu"""
     from datetime import timedelta
     start = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    
+
     consumption = await db.energy_consumption.find({
         'tenant_id': current_user.tenant_id,
         'timestamp': {'$gte': start}
     }, {'_id': 0}).to_list(1000)
-    
+
     total_kwh = sum([c.get('consumption_kwh', 0) for c in consumption])
     total_cost = sum([c.get('cost', 0) for c in consumption])
-    
+
     return {
         'period_days': days,
         'total_kwh': round(total_kwh, 2),
@@ -234,36 +234,36 @@ async def technician_submit_task(
         'id': task_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     updates = {
         'status': status,
         'updated_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     if status == 'completed':
         updates['completed_at'] = datetime.now(timezone.utc).isoformat()
         updates['completed_by'] = current_user.name
-    
+
     if time_spent_minutes:
         updates['time_spent_minutes'] = time_spent_minutes
-    
+
     if notes:
         updates['technician_notes'] = notes
-    
+
     if parts_used:
         updates['parts_used'] = parts_used
-    
+
     if photo_urls:
         updates['photo_urls'] = photo_urls
-    
+
     await db.maintenance_tasks.update_one(
         {'id': task_id},
         {'$set': updates}
     )
-    
+
     return {
         'success': True,
         'task_id': task_id,
@@ -287,7 +287,7 @@ async def get_repeat_issues(
     """
     end_dt = datetime.now(timezone.utc)
     start_dt = end_dt - timedelta(days=days)
-    
+
     # Get all maintenance tasks in period
     tasks = []
     async for task in db.maintenance_tasks.find({
@@ -298,14 +298,14 @@ async def get_repeat_issues(
         }
     }):
         tasks.append(task)
-    
+
     # Group by room + issue type
     issue_groups = {}
     for task in tasks:
         room_id = task.get('room_id')
         issue_type = task.get('issue_type', 'general')
         key = f"{room_id}_{issue_type}"
-        
+
         if key not in issue_groups:
             issue_groups[key] = {
                 'room_id': room_id,
@@ -313,20 +313,20 @@ async def get_repeat_issues(
                 'occurrences': [],
                 'total_cost': 0
             }
-        
+
         issue_groups[key]['occurrences'].append({
             'date': task.get('created_at'),
             'description': task.get('description')
         })
         issue_groups[key]['total_cost'] += task.get('cost', 0)
-    
+
     # Filter repeat issues
     repeat_issues = []
     for key, data in issue_groups.items():
         if len(data['occurrences']) >= min_occurrences:
             # Get room details
             room = await db.rooms.find_one({'id': data['room_id']})
-            
+
             repeat_issues.append({
                 'room_number': room.get('room_number') if room else 'Unknown',
                 'room_id': data['room_id'],
@@ -338,10 +338,10 @@ async def get_repeat_issues(
                 'last_occurrence': data['occurrences'][-1]['date'],
                 'recommendation': 'Schedule preventive maintenance or consider equipment replacement'
             })
-    
+
     # Sort by occurrence count
     repeat_issues.sort(key=lambda x: x['occurrence_count'], reverse=True)
-    
+
     return {
         'period_days': days,
         'min_occurrences': min_occurrences,
@@ -366,7 +366,7 @@ async def get_maintenance_sla(
     """
     end_dt = datetime.now(timezone.utc)
     start_dt = end_dt - timedelta(days=days)
-    
+
     # SLA targets (in hours)
     sla_targets = {
         'urgent': 2,
@@ -374,7 +374,7 @@ async def get_maintenance_sla(
         'normal': 24,
         'low': 72
     }
-    
+
     # Get completed tasks
     tasks = []
     async for task in db.maintenance_tasks.find({
@@ -386,30 +386,30 @@ async def get_maintenance_sla(
         }
     }):
         tasks.append(task)
-    
+
     # Calculate SLA metrics by priority
     sla_by_priority = {}
     for priority in ['urgent', 'high', 'normal', 'low']:
         priority_tasks = [t for t in tasks if t.get('priority') == priority]
-        
+
         if not priority_tasks:
             continue
-        
+
         completion_times = []
         sla_met_count = 0
-        
+
         for task in priority_tasks:
             created = datetime.fromisoformat(task.get('created_at'))
             completed = datetime.fromisoformat(task.get('completed_at'))
             hours = (completed - created).total_seconds() / 3600
             completion_times.append(hours)
-            
+
             if hours <= sla_targets[priority]:
                 sla_met_count += 1
-        
+
         avg_completion = sum(completion_times) / len(completion_times) if completion_times else 0
         sla_compliance = (sla_met_count / len(priority_tasks) * 100) if priority_tasks else 0
-        
+
         sla_by_priority[priority] = {
             'priority': priority,
             'sla_target_hours': sla_targets[priority],
@@ -419,12 +419,12 @@ async def get_maintenance_sla(
             'sla_compliance_pct': round(sla_compliance, 1),
             'status': '✅ Good' if sla_compliance >= 90 else '⚠️ Needs Improvement' if sla_compliance >= 70 else '❌ Poor'
         }
-    
+
     # Overall metrics
     total_tasks = len(tasks)
     total_sla_met = sum(m['sla_met_count'] for m in sla_by_priority.values())
     overall_compliance = (total_sla_met / total_tasks * 100) if total_tasks > 0 else 0
-    
+
     return {
         'period_days': days,
         'start_date': start_dt.date().isoformat(),

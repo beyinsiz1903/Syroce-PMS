@@ -12,47 +12,47 @@ logger = logging.getLogger(__name__)
 class DatabaseOptimizer:
     def __init__(self, db):
         self.db = db
-        
+
     async def create_all_indexes(self):
         """Create all necessary indexes for optimal performance"""
         results = {}
-        
+
         try:
             # Bookings Collection
             results['bookings'] = await self.create_booking_indexes()
-            
+
             # Guests Collection
             results['guests'] = await self.create_guest_indexes()
-            
+
             # Rooms Collection
             results['rooms'] = await self.create_room_indexes()
-            
+
             # Folios Collection
             results['folios'] = await self.create_folio_indexes()
-            
+
             # Users Collection
             results['users'] = await self.create_user_indexes()
-            
+
             # Tasks/Housekeeping
             results['tasks'] = await self.create_task_indexes()
-            
+
             # Audit Logs
             results['audit_logs'] = await self.create_audit_log_indexes()
-            
+
             # Performance Reports
             results['reports'] = await self.create_report_indexes()
-            
+
             logger.info(f"✅ All indexes created successfully: {results}")
             return results
-            
+
         except Exception as e:
             logger.error(f"❌ Failed to create indexes: {e}")
             return {"error": str(e)}
-    
+
     async def create_booking_indexes(self):
         """Bookings collection indexes"""
         bookings = self.db.bookings
-        
+
         indexes = [
             # Single field indexes
             ([("guest_id", ASCENDING)], {}),
@@ -62,22 +62,22 @@ class DatabaseOptimizer:
             ([("check_out", DESCENDING)], {}),
             ([("created_at", DESCENDING)], {}),
             ([("channel", ASCENDING)], {}),
-            
+
             # Compound indexes for common queries
             ([("status", ASCENDING), ("check_in", DESCENDING)], {}),
             ([("status", ASCENDING), ("check_out", DESCENDING)], {}),
             ([("guest_id", ASCENDING), ("check_in", DESCENDING)], {}),
             ([("room_id", ASCENDING), ("check_in", DESCENDING)], {}),
             ([("check_in", ASCENDING), ("check_out", ASCENDING)], {}),
-            
+
             # Date range queries
             ([("created_at", DESCENDING), ("status", ASCENDING)], {}),
             ([("check_in", DESCENDING), ("status", ASCENDING)], {}),
-            
+
             # Text search
             ([("guest_name", TEXT)], {}),
         ]
-        
+
         created = []
         for index_spec, options in indexes:
             try:
@@ -85,13 +85,13 @@ class DatabaseOptimizer:
                 created.append(result)
             except Exception as e:
                 logger.warning(f"Index creation warning for bookings: {e}")
-        
+
         return {"created": len(created), "indexes": created}
-    
+
     async def create_guest_indexes(self):
         """Guests collection indexes"""
         guests = self.db.guests
-        
+
         indexes = [
             ([("email", ASCENDING)], {"unique": True}),
             ([("phone", ASCENDING)], {}),
@@ -103,7 +103,7 @@ class DatabaseOptimizer:
             # "name" text index already covers text search needs.
             # Removed duplicate "email" TEXT index that caused IndexOptionsConflict.
         ]
-        
+
         created = []
         for index_spec, options in indexes:
             try:
@@ -111,13 +111,13 @@ class DatabaseOptimizer:
                 created.append(result)
             except Exception as e:
                 logger.warning(f"Index creation warning for guests: {e}")
-        
+
         return {"created": len(created), "indexes": created}
-    
+
     async def create_room_indexes(self):
         """Rooms collection indexes"""
         rooms = self.db.rooms
-        
+
         indexes = [
             ([("room_number", ASCENDING)], {}),
             ([("status", ASCENDING)], {}),
@@ -125,7 +125,7 @@ class DatabaseOptimizer:
             ([("floor", ASCENDING)], {}),
             ([("status", ASCENDING), ("room_type", ASCENDING)], {}),
         ]
-        
+
         created = []
         for index_spec, options in indexes:
             try:
@@ -133,13 +133,13 @@ class DatabaseOptimizer:
                 created.append(result)
             except Exception as e:
                 logger.warning(f"Index creation warning for rooms: {e}")
-        
+
         return {"created": len(created), "indexes": created}
-    
+
     async def create_folio_indexes(self):
         """Folios collection indexes"""
         folios = self.db.folios
-        
+
         indexes = [
             ([("booking_id", ASCENDING)], {}),
             ([("guest_id", ASCENDING)], {}),
@@ -148,7 +148,7 @@ class DatabaseOptimizer:
             ([("folio_type", ASCENDING)], {}),
             ([("booking_id", ASCENDING), ("folio_type", ASCENDING)], {}),
         ]
-        
+
         created = []
         for index_spec, options in indexes:
             try:
@@ -156,19 +156,19 @@ class DatabaseOptimizer:
                 created.append(result)
             except Exception as e:
                 logger.warning(f"Index creation warning for folios: {e}")
-        
+
         return {"created": len(created), "indexes": created}
-    
+
     async def create_user_indexes(self):
         """Users collection indexes"""
         users = self.db.users
-        
+
         indexes = [
             ([("email", ASCENDING)], {"unique": True}),
             ([("role", ASCENDING)], {}),
             ([("tenant_id", ASCENDING)], {}),
         ]
-        
+
         created = []
         for index_spec, options in indexes:
             try:
@@ -176,13 +176,13 @@ class DatabaseOptimizer:
                 created.append(result)
             except Exception as e:
                 logger.warning(f"Index creation warning for users: {e}")
-        
+
         return {"created": len(created), "indexes": created}
-    
+
     async def create_task_indexes(self):
         """Tasks/Housekeeping collection indexes"""
         tasks = self.db.housekeeping_tasks
-        
+
         indexes = [
             ([("room_id", ASCENDING)], {}),
             ([("status", ASCENDING)], {}),
@@ -191,7 +191,7 @@ class DatabaseOptimizer:
             ([("task_type", ASCENDING)], {}),
             ([("status", ASCENDING), ("created_at", DESCENDING)], {}),
         ]
-        
+
         created = []
         for index_spec, options in indexes:
             try:
@@ -199,13 +199,13 @@ class DatabaseOptimizer:
                 created.append(result)
             except Exception as e:
                 logger.warning(f"Index creation warning for tasks: {e}")
-        
+
         return {"created": len(created), "indexes": created}
-    
+
     async def create_audit_log_indexes(self):
         """Audit logs collection indexes"""
         audit_logs = self.db.audit_logs
-        
+
         indexes = [
             ([("user_id", ASCENDING)], {}),
             ([("action", ASCENDING)], {}),
@@ -215,7 +215,7 @@ class DatabaseOptimizer:
             # TTL index - auto-delete logs older than 90 days
             ([("timestamp", ASCENDING)], {"expireAfterSeconds": 90 * 24 * 60 * 60}),
         ]
-        
+
         created = []
         for index_spec, options in indexes:
             try:
@@ -223,18 +223,18 @@ class DatabaseOptimizer:
                 created.append(result)
             except Exception as e:
                 logger.warning(f"Index creation warning for audit_logs: {e}")
-        
+
         return {"created": len(created), "indexes": created}
-    
+
     async def create_report_indexes(self):
         """Performance reports collection indexes"""
         reports = self.db.daily_performance_reports
-        
+
         indexes = [
             ([("date", DESCENDING)], {"unique": True}),
             ([("generated_at", DESCENDING)], {}),
         ]
-        
+
         created = []
         for index_spec, options in indexes:
             try:
@@ -242,19 +242,19 @@ class DatabaseOptimizer:
                 created.append(result)
             except Exception as e:
                 logger.warning(f"Index creation warning for reports: {e}")
-        
+
         return {"created": len(created), "indexes": created}
-    
+
     async def verify_indexes(self):
         """Verify all indexes are in place"""
         collections = [
-            'bookings', 'guests', 'rooms', 'folios', 
-            'users', 'housekeeping_tasks', 'audit_logs', 
+            'bookings', 'guests', 'rooms', 'folios',
+            'users', 'housekeeping_tasks', 'audit_logs',
             'daily_performance_reports'
         ]
-        
+
         results = {}
-        
+
         for collection_name in collections:
             try:
                 collection = self.db[collection_name]
@@ -265,22 +265,22 @@ class DatabaseOptimizer:
                 }
             except Exception as e:
                 results[collection_name] = {"error": str(e)}
-        
+
         return results
-    
+
     async def analyze_query_performance(self):
         """Analyze slow queries and suggest optimizations"""
         # Enable profiling
         await self.db.command('profile', 2)  # Profile all operations
-        
+
         # Get slow queries
         slow_queries = await self.db.system.profile.find({
             "millis": {"$gt": 100}  # Queries taking more than 100ms
         }).sort("millis", DESCENDING).limit(20).to_list(20)
-        
+
         # Disable profiling
         await self.db.command('profile', 0)
-        
+
         suggestions = []
         for query in slow_queries:
             suggestions.append({
@@ -290,18 +290,18 @@ class DatabaseOptimizer:
                 "query": query.get("command", {}).get("filter", {}),
                 "suggestion": "Consider adding index" if not query.get("planSummary") else "Existing index may need optimization"
             })
-        
+
         return {
             "slow_queries_count": len(slow_queries),
             "suggestions": suggestions
         }
-    
+
     async def get_collection_stats(self):
         """Get statistics for all collections"""
         collections = await self.db.list_collection_names()
-        
+
         stats = {}
-        
+
         for collection_name in collections:
             try:
                 collection_stats = await self.db.command("collStats", collection_name)
@@ -314,7 +314,7 @@ class DatabaseOptimizer:
                 }
             except Exception as e:
                 stats[collection_name] = {"error": str(e)}
-        
+
         return stats
 
 

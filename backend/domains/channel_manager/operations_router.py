@@ -78,11 +78,11 @@ async def create_channel_connection(
         sync_reservations=payload.sync_reservations,
         status=ChannelStatus.ACTIVE
     )
-    
+
     conn_dict = connection.model_dump()
     conn_dict['created_at'] = conn_dict['created_at'].isoformat()
     await db.channel_connections.insert_one(conn_dict)
-    
+
     # Log connection creation in channel_sync_logs
     sync_log = {
         'id': str(uuid.uuid4()),
@@ -100,7 +100,7 @@ async def create_channel_connection(
         'ip_address': None,
     }
     await db.channel_sync_logs.insert_one(sync_log)
-    
+
     return {'message': f'Channel {payload.channel_name} connected successfully', 'connection': connection}
 
 
@@ -206,7 +206,7 @@ async def get_ota_reservations(
         query['status'] = status
     if channel:
         query['channel_type'] = channel
-    
+
     reservations = await db.ota_reservations.find(query, {'_id': 0}).sort('received_at', -1).to_list(100)
     return {'reservations': reservations, 'count': len(reservations)}
 
@@ -223,19 +223,19 @@ async def import_ota_reservation(
         'id': ota_reservation_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not ota_res:
         raise HTTPException(status_code=404, detail="OTA reservation not found")
-    
+
     if ota_res['status'] == 'imported':
         raise HTTPException(status_code=400, detail="Reservation already imported")
-    
+
     # Find or create guest
     guest = await db.guests.find_one({
         'tenant_id': current_user.tenant_id,
         'email': ota_res['guest_email']
     })
-    
+
     if not guest:
         # Create new guest
         guest_create = GuestCreate(
@@ -248,14 +248,14 @@ async def import_ota_reservation(
         guest_dict = guest.model_dump()
         guest_dict['created_at'] = guest_dict['created_at'].isoformat()
         await db.guests.insert_one(guest_dict)
-    
+
     # Find available room of matching type
     rooms = await db.rooms.find({
         'tenant_id': current_user.tenant_id,
         'room_type': ota_res['room_type'],
         'status': 'available'
     }).to_list(10)
-    
+
     if not rooms:
         # Create exception
         exception = ExceptionQueue(
@@ -269,11 +269,11 @@ async def import_ota_reservation(
         exc_dict = exception.model_dump()
         exc_dict['created_at'] = exc_dict['created_at'].isoformat()
         await db.exception_queue.insert_one(exc_dict)
-        
+
         raise HTTPException(status_code=400, detail=f"No available {ota_res['room_type']} rooms")
-    
+
     room = rooms[0]
-    
+
     # Create booking
     booking_create = BookingCreate(
         guest_id=guest['id'],
@@ -286,14 +286,14 @@ async def import_ota_reservation(
         total_amount=ota_res['total_amount'],
         channel=ota_res['channel_type']
     )
-    
+
     booking = Booking(
         tenant_id=current_user.tenant_id,
         **booking_create.model_dump(exclude={'check_in', 'check_out'}),
         check_in=datetime.fromisoformat(ota_res['check_in']),
         check_out=datetime.fromisoformat(ota_res['check_out'])
     )
-    
+
     booking_dict = booking.model_dump()
     booking_dict['check_in'] = booking_dict['check_in'].isoformat()
     booking_dict['check_out'] = booking_dict['check_out'].isoformat()
@@ -303,7 +303,7 @@ async def import_ota_reservation(
         await create_booking_atomic(booking_dict)
     except BookingConflictError as e:
         raise HTTPException(status_code=409, detail=str(e))
-    
+
     # Update OTA reservation status
     await db.ota_reservations.update_one(
         {'id': ota_reservation_id},
@@ -332,7 +332,7 @@ async def import_ota_reservation(
         'ip_address': ip_address,
     }
     await db.channel_sync_logs.insert_one(sync_log)
-    
+
     return {
         'message': 'OTA reservation imported successfully',
         'pms_booking_id': booking.id,
@@ -355,7 +355,7 @@ async def get_exception_queue(
         query['status'] = status
     if exception_type:
         query['exception_type'] = exception_type
-    
+
     exceptions = await db.exception_queue.find(query, {'_id': 0}).sort('created_at', -1).to_list(100)
     return {'exceptions': exceptions, 'count': len(exceptions)}
 
@@ -372,29 +372,29 @@ async def check_rate_parity(
 ):
     """Check rate parity between OTA and direct rates"""
     target_date = datetime.fromisoformat(date).date() if date else datetime.now(timezone.utc).date()
-    
+
     # Get rooms
     room_query = {'tenant_id': current_user.tenant_id}
     if room_type:
         room_query['room_type'] = room_type
-    
+
     rooms = await db.rooms.find(room_query, {'_id': 0}).to_list(1000)
-    room_types = list(set(r['room_type'] for r in rooms))
-    
+    room_types = list({r['room_type'] for r in rooms})
+
     parity_results = []
-    
+
     for rt in room_types:
         # Get direct rate (base_price from room)
         rt_rooms = [r for r in rooms if r['room_type'] == rt]
         if not rt_rooms:
             continue
-        
+
         direct_rate = rt_rooms[0]['base_price']
-        
+
         # Get OTA rates from recent bookings
         start_of_day = datetime.combine(target_date, datetime.min.time())
         end_of_day = datetime.combine(target_date, datetime.max.time())
-        
+
         # Find bookings on this date by channel
         ota_bookings = await db.bookings.find({
             'tenant_id': current_user.tenant_id,
@@ -402,7 +402,7 @@ async def check_rate_parity(
             'check_in': {'$gte': start_of_day.isoformat(), '$lte': end_of_day.isoformat()},
             'ota_channel': {'$ne': None}
         }, {'_id': 0}).to_list(100)
-        
+
         # Group by OTA channel
         ota_rates = {}
         for booking in ota_bookings:
@@ -414,19 +414,19 @@ async def check_rate_parity(
                     if channel not in ota_rates:
                         ota_rates[channel] = []
                     ota_rates[channel].append(avg_rate)
-        
+
         # Calculate average OTA rate per channel
         for channel, rates in ota_rates.items():
             avg_ota_rate = sum(rates) / len(rates)
             diff = direct_rate - avg_ota_rate
-            
+
             if abs(diff) < 1:
                 parity = ParityStatus.EQUAL
             elif diff > 0:
                 parity = ParityStatus.POSITIVE  # Direct more expensive (good)
             else:
                 parity = ParityStatus.NEGATIVE  # OTA more expensive (bad)
-            
+
             parity_results.append({
                 'date': target_date.isoformat(),
                 'room_type': rt,
@@ -437,7 +437,7 @@ async def check_rate_parity(
                 'parity_status': parity,
                 'sample_size': len(rates)
             })
-    
+
     return {
         'date': target_date.isoformat(),
         'parity_checks': parity_results,
@@ -455,20 +455,20 @@ async def get_channel_status(current_user: User = Depends(get_current_user)):
         {'tenant_id': current_user.tenant_id},
         {'_id': 0}
     ).to_list(100)
-    
+
     # Check exception queue for issues
     recent_exceptions = await db.exception_queue.find({
         'tenant_id': current_user.tenant_id,
         'status': 'pending',
         'created_at': {'$gte': (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()}
     }, {'_id': 0}).to_list(100)
-    
+
     channel_statuses = []
-    
+
     for conn in connections:
         # Check for recent exceptions
         conn_exceptions = [e for e in recent_exceptions if e.get('channel_type') == conn.get('channel_type')]
-        
+
         if len(conn_exceptions) > 10:
             health = ChannelHealth.ERROR
             message = f"{len(conn_exceptions)} pending exceptions"
@@ -481,13 +481,13 @@ async def get_channel_status(current_user: User = Depends(get_current_user)):
         else:
             health = ChannelHealth.HEALTHY
             message = "All systems operational"
-        
+
         # Calculate delay if any
         delay_minutes = 0
         if conn_exceptions:
             oldest = min(conn_exceptions, key=lambda x: x['created_at'])
             delay_minutes = int((datetime.now(timezone.utc) - datetime.fromisoformat(oldest['created_at'])).total_seconds() / 60)
-        
+
         channel_statuses.append({
             'channel_type': conn.get('channel_type'),
             'channel_name': conn.get('channel_name'),
@@ -497,7 +497,7 @@ async def get_channel_status(current_user: User = Depends(get_current_user)):
             'delay_minutes': delay_minutes,
             'last_sync': conn.get('last_sync_at', 'Never')
         })
-    
+
     return {
         'channels': channel_statuses,
         'total_channels': len(channel_statuses),
@@ -518,23 +518,23 @@ async def analyze_ota_insights(
     # Default to last 30 days
     end = datetime.fromisoformat(end_date).date() if end_date else datetime.now(timezone.utc).date()
     start = datetime.fromisoformat(start_date).date() if start_date else (end - timedelta(days=30))
-    
+
     # Get all bookings in date range
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'check_in': {'$gte': start.isoformat(), '$lte': end.isoformat()}
     }, {'_id': 0}).to_list(10000)
-    
+
     # Channel performance analysis
     channel_performance = {}
     total_revenue = 0
     total_commission_cost = 0
-    
+
     for booking in bookings:
         channel = booking.get('ota_channel') or 'direct'
         amount = booking.get('total_amount', 0)
         commission = booking.get('commission_pct', 0)
-        
+
         if channel not in channel_performance:
             channel_performance[channel] = {
                 'bookings': 0,
@@ -542,17 +542,17 @@ async def analyze_ota_insights(
                 'commission_cost': 0,
                 'avg_rate': 0
             }
-        
+
         channel_performance[channel]['bookings'] += 1
         channel_performance[channel]['revenue'] += amount
-        
+
         if commission > 0:
             commission_amount = amount * (commission / 100)
             channel_performance[channel]['commission_cost'] += commission_amount
             total_commission_cost += commission_amount
-        
+
         total_revenue += amount
-    
+
     # Calculate averages and net revenue
     for channel, data in channel_performance.items():
         if data['bookings'] > 0:
@@ -560,17 +560,17 @@ async def analyze_ota_insights(
             data['net_revenue'] = round(data['revenue'] - data['commission_cost'], 2)
             data['revenue_share_pct'] = round((data['revenue'] / total_revenue * 100) if total_revenue > 0 else 0, 2)
             data['commission_cost'] = round(data['commission_cost'], 2)
-    
+
     # Sort by revenue
     sorted_channels = sorted(
         channel_performance.items(),
         key=lambda x: x[1]['revenue'],
         reverse=True
     )
-    
+
     # Generate insights
     insights = []
-    
+
     # Best performing channel
     if sorted_channels:
         best_channel = sorted_channels[0]
@@ -580,7 +580,7 @@ async def analyze_ota_insights(
             'message': f"{best_channel[0]} is your top channel with ${best_channel[1]['revenue']:.2f} revenue ({best_channel[1]['bookings']} bookings)",
             'priority': 'high'
         })
-    
+
     # High commission cost warning
     if total_commission_cost > total_revenue * 0.20:
         insights.append({
@@ -588,14 +588,14 @@ async def analyze_ota_insights(
             'message': f"Commission costs are ${total_commission_cost:.2f} ({(total_commission_cost/total_revenue*100):.1f}% of revenue). Consider direct booking strategies.",
             'priority': 'medium'
         })
-    
+
     # Parity suggestions (placeholder for Phase E AI)
     insights.append({
         'type': 'parity_suggestion',
         'message': "Consider rate parity monitoring to optimize OTA vs Direct pricing",
         'priority': 'low'
     })
-    
+
     return {
         'period': {
             'start_date': start.isoformat(),
@@ -635,11 +635,11 @@ async def check_rate_parity_detailed(
     - Alert on rate mismatches
     """
     target_date = date or datetime.now().date().isoformat()
-    
+
     # Get rates from channel manager
     channels = ['direct', 'booking_com', 'expedia', 'airbnb']
     rate_comparison = []
-    
+
     for channel in channels:
         # In production, fetch actual rates from channel APIs
         # For MVP, simulate rate data
@@ -649,7 +649,7 @@ async def check_rate_parity_detailed(
             'date': target_date,
             'room_type': room_type
         })
-        
+
         if channel_rate:
             rate = channel_rate.get('rate', 0)
         else:
@@ -663,22 +663,22 @@ async def check_rate_parity_detailed(
                 rate = base_rate * 1.18
             else:
                 rate = base_rate * 1.12
-        
+
         rate_comparison.append({
             'channel': channel,
             'rate': round(rate, 2)
         })
-    
+
     # Find direct rate
     direct_rate = next((r['rate'] for r in rate_comparison if r['channel'] == 'direct'), 100)
-    
+
     # Check parity
     parity_issues = []
     for channel_data in rate_comparison:
         if channel_data['channel'] != 'direct':
             diff = channel_data['rate'] - direct_rate
             diff_pct = (diff / direct_rate * 100) if direct_rate > 0 else 0
-            
+
             if diff < 0:
                 # Negative disparity - OTA is cheaper (BAD!)
                 parity_issues.append({
@@ -691,7 +691,7 @@ async def check_rate_parity_detailed(
                     'difference_pct': round(diff_pct, 1),
                     'message': f'⚠️ {channel_data["channel"]} is cheaper by {abs(round(diff_pct, 1))}%'
                 })
-    
+
     return {
         'date': target_date,
         'room_type': room_type or 'All',
@@ -719,7 +719,7 @@ async def get_channel_sync_history(
     """
     end_dt = datetime.now(timezone.utc)
     start_dt = end_dt - timedelta(days=days)
-    
+
     match_criteria = {
         'tenant_id': current_user.tenant_id,
         'timestamp': {
@@ -727,10 +727,10 @@ async def get_channel_sync_history(
             '$lte': end_dt.isoformat()
         }
     }
-    
+
     if channel:
         match_criteria['channel'] = channel
-    
+
     sync_logs = []
     async for log in db.channel_sync_logs.find(match_criteria).sort('timestamp', -1):
         sync_logs.append({
@@ -746,7 +746,7 @@ async def get_channel_sync_history(
             'initiator_id': log.get('initiator_id'),
             'ip_address': log.get('ip_address')
         })
-    
+
     # If no logs, create simulated logs
     if not sync_logs:
         channels = ['booking_com', 'expedia', 'airbnb']
@@ -760,12 +760,12 @@ async def get_channel_sync_history(
                 'records_synced': 45,
                 'error_message': None
             })
-    
+
     # Calculate stats
     total_syncs = len(sync_logs)
     successful = sum(1 for log in sync_logs if log['status'] == 'success')
     failed = total_syncs - successful
-    
+
     return {
         'period_days': days,
         'start_date': start_dt.date().isoformat(),
@@ -793,7 +793,7 @@ async def get_channel_status_v2(
     Get OTA channel connection status
     """
     await get_current_user(credentials)
-    
+
     channels = [
         {
             'channel': 'Booking.com',
@@ -832,7 +832,7 @@ async def get_channel_status_v2(
             'connection_health': 'good'
         }
     ]
-    
+
     return {
         'channels': channels,
         'total_channels': len(channels),
@@ -853,7 +853,7 @@ async def get_rate_parity(
     Check rate parity across channels
     """
     await get_current_user(credentials)
-    
+
     parity_data = [
         {
             'date': datetime.now().date().isoformat(),
@@ -878,7 +878,7 @@ async def get_rate_parity(
             'violating_channel': None
         }
     ]
-    
+
     return {
         'parity_data': parity_data,
         'violations': len([p for p in parity_data if p['parity_status'] == 'violation']),
@@ -897,12 +897,12 @@ async def get_channel_inventory(
     Get inventory distribution across channels
     """
     current_user = await get_current_user(credentials)
-    
+
     today = datetime.now().date()
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     if total_rooms == 0:
         total_rooms = 100
-    
+
     inventory = [
         {
             'date': today.isoformat(),
@@ -925,7 +925,7 @@ async def get_channel_inventory(
             'direct_allocation': 4
         }
     ]
-    
+
     return {
         'inventory': inventory,
         'total_available': sum(i['available'] for i in inventory)
@@ -944,7 +944,7 @@ async def get_channel_performance(
     Get channel performance metrics
     """
     await get_current_user(credentials)
-    
+
     performance = [
         {
             'channel': 'Booking.com',
@@ -979,7 +979,7 @@ async def get_channel_performance(
             'market_share': 25
         }
     ]
-    
+
     return {
         'performance': performance,
         'period_days': days,
@@ -1004,7 +1004,7 @@ async def push_rates_to_channels(
     Push rates to selected OTA channels
     """
     await get_current_user(credentials)
-    
+
     results = []
     for channel in channels:
         results.append({
@@ -1012,7 +1012,7 @@ async def push_rates_to_channels(
             'status': 'success',
             'pushed_at': datetime.now(timezone.utc).isoformat()
         })
-    
+
     return {
         'message': 'Fiyatlar kanallara gönderildi',
         'room_type': room_type,

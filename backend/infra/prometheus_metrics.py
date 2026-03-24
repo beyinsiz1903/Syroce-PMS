@@ -157,7 +157,7 @@ def track_endpoint_metrics(endpoint_name: str = None):
         async def wrapper(*args, **kwargs):
             start_time = time.time()
             endpoint = endpoint_name or func.__name__
-            
+
             try:
                 result = await func(*args, **kwargs)
                 duration = time.time() - start_time
@@ -168,7 +168,7 @@ def track_endpoint_metrics(endpoint_name: str = None):
                 track_http_request('GET', endpoint, 500, duration)
                 track_error(type(e).__name__, endpoint)
                 raise
-        
+
         return wrapper
     return decorator
 
@@ -190,7 +190,7 @@ async def collect_system_metrics(db):
         # Note: This would need to be implemented based on your MongoDB driver
         # db_connection_pool_size.set(get_pool_size())
         # db_active_connections.set(get_active_connections())
-        
+
         # Collect cache metrics
         try:
             from cache_manager import cache
@@ -202,7 +202,7 @@ async def collect_system_metrics(db):
                     cache_hit_rate.labels(cache_type='redis').set(80.0)  # From our tests
         except Exception:
             pass
-        
+
     except Exception as e:
         print(f"Error collecting system metrics: {e}")
 
@@ -213,7 +213,7 @@ async def collect_business_metrics(db):
     try:
         # Get all tenants
         tenants = await db.users.distinct('tenant_id', {'active': True})
-        
+
         for tenant_id in tenants:
             # Room occupancy
             occupied_count = await db.rooms.count_documents({
@@ -221,6 +221,6 @@ async def collect_business_metrics(db):
                 'status': 'occupied'
             })
             update_room_occupancy(tenant_id, occupied_count)
-            
+
     except Exception as e:
         print(f"Error collecting business metrics: {e}")

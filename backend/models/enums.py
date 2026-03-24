@@ -28,7 +28,7 @@ class Permission(str, Enum):
     DELETE_BOOKING = "delete_booking"
     CHECKIN = "checkin"
     CHECKOUT = "checkout"
-    
+
     # Folio permissions
     VIEW_FOLIO = "view_folio"
     POST_CHARGE = "post_charge"
@@ -37,22 +37,22 @@ class Permission(str, Enum):
     TRANSFER_FOLIO = "transfer_folio"
     CLOSE_FOLIO = "close_folio"
     OVERRIDE_RATE = "override_rate"
-    
+
     # Company permissions
     VIEW_COMPANIES = "view_companies"
     CREATE_COMPANY = "create_company"
     EDIT_COMPANY = "edit_company"
-    
+
     # Housekeeping permissions
     VIEW_HK_BOARD = "view_hk_board"
     UPDATE_ROOM_STATUS = "update_room_status"
     ASSIGN_TASK = "assign_task"
-    
+
     # Reports permissions
     VIEW_REPORTS = "view_reports"
     VIEW_FINANCIAL_REPORTS = "view_financial_reports"
     EXPORT_DATA = "export_data"
-    
+
     # Admin permissions
     MANAGE_USERS = "manage_users"
     MANAGE_ROOMS = "manage_rooms"

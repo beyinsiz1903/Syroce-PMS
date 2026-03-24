@@ -295,7 +295,7 @@ SUBSCRIPTION_PLANS: Dict[SubscriptionTier, SubscriptionPlan] = {
         price_yearly=7990.0,
         max_rooms=None,
         max_users=None,
-        features=[f for f in FeatureFlag],  # All features
+        features=list(FeatureFlag),  # All features
         support_level="dedicated",
         support_level_tr="7/24 Dedicated Account Manager",
     ),

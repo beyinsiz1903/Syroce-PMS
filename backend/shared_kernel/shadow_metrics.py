@@ -109,8 +109,8 @@ def compare_availability_payloads(
     legacy_rows = normalize_availability_payload(legacy_payload)
     semantic_keys = set(semantic_rows.keys())
     legacy_keys = set(legacy_rows.keys())
-    missing_rows = sorted(list(legacy_keys - semantic_keys))
-    extra_rows = sorted(list(semantic_keys - legacy_keys))
+    missing_rows = sorted(legacy_keys - semantic_keys)
+    extra_rows = sorted(semantic_keys - legacy_keys)
     mismatch_fields = set()
     mismatch_count = len(missing_rows) + len(extra_rows)
 
@@ -123,7 +123,7 @@ def compare_availability_payloads(
     return {
         "compare_result": "mismatch" if mismatch_count else "match",
         "mismatch_count": mismatch_count,
-        "mismatch_fields": sorted(list(mismatch_fields)),
+        "mismatch_fields": sorted(mismatch_fields),
         "missing_rows": missing_rows,
         "extra_rows": extra_rows,
     }

@@ -41,7 +41,7 @@ class CheckInLoadPredictor:
         ).to_list(5000)
 
         # Count check-ins by hour historically for same day-of-week
-        hour_counts = {h: 0 for h in range(24)}
+        hour_counts = dict.fromkeys(range(24), 0)
         hist_total = 0
         for b in hist_bookings:
             ci_date_str = b.get("check_in", "")
@@ -58,7 +58,7 @@ class CheckInLoadPredictor:
 
         # Default distribution if no history
         if hist_total < 5:
-            hour_counts = {h: 0 for h in range(24)}
+            hour_counts = dict.fromkeys(range(24), 0)
             for h in [14, 15, 16]:
                 hour_counts[h] = 30
             for h in [12, 13, 17, 18]:

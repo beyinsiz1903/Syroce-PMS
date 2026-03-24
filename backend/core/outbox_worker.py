@@ -185,7 +185,7 @@ class OutboxWorker:
 
     async def _claim_event(self) -> Optional[Dict[str, Any]]:
         """Atomically claim the next pending/retry event.
-        
+
         Only claims OTA outbox events (those with max_attempts field set by
         enqueue_outbox_event). Legacy migration events are left for the
         OutboxLifecycleWorker.

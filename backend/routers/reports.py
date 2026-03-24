@@ -74,10 +74,10 @@ async def send_flash_report_now(
     """Flash report'u şimdi gönder"""
     from modules.analytics_export.report_automation import get_report_automation
     from modules.messaging.email_service import email_service
-    
+
     automation = get_report_automation(db, email_service)
     await automation.send_flash_report_email(current_user.tenant_id, recipients)
-    
+
     return {
         'success': True,
         'message': f'Flash report {len(recipients)} alıcıya gönderildi'
@@ -98,10 +98,10 @@ async def get_flash_report(
     target_date = datetime.now(timezone.utc) if not date else datetime.fromisoformat(date)
     today_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = target_date.replace(hour=23, minute=59, second=59)
-    
+
     # Get total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    
+
     # Occupancy today
     occupied_today = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
@@ -109,9 +109,9 @@ async def get_flash_report(
         'check_in': {'$lte': today_end.isoformat()},
         'check_out': {'$gte': today_start.isoformat()}
     })
-    
+
     (occupied_today / total_rooms * 100) if total_rooms > 0 else 0
-    
+
     # Arrivals today
     await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
@@ -121,7 +121,7 @@ async def get_flash_report(
         },
         'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
     })
-    
+
     # Departures today
     await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
@@ -130,13 +130,13 @@ async def get_flash_report(
             '$lte': today_end.isoformat()
         }
     })
-    
+
     # In-house guests
     await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'checked_in'
     })
-    
+
     # Revenue today
     today_bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -145,15 +145,15 @@ async def get_flash_report(
             '$lte': today_end.isoformat()
         }
     }, {'_id': 0, 'total_amount': 1, 'base_rate': 1}).to_list(1000)
-    
+
     total_revenue = sum([b.get('total_amount', 0) for b in today_bookings])
-    
+
     # Calculate ADR (Average Daily Rate)
     total_revenue / occupied_today if occupied_today > 0 else 0
-    
+
     # Calculate RevPAR (Revenue Per Available Room)
     total_revenue / total_rooms if total_rooms > 0 else 0
-    
+
     # No-shows today
     await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
@@ -163,7 +163,7 @@ async def get_flash_report(
         },
         'status': 'no_show'
     })
-    
+
     # Cancellations today
     await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
@@ -173,7 +173,7 @@ async def get_flash_report(
             '$lte': today_end.isoformat()
         }
     })
-    
+
     # F&B Revenue (from POS)
     try:
         fnb_orders = await db.pos_orders.find({
@@ -307,13 +307,13 @@ async def get_official_guest_list(
         other_revenue = sum([c.get('amount', 0) for c in other_charges])
     except Exception:
         pass
-    
+
     # Total Revenue
     total_revenue_all = total_revenue + fnb_revenue + other_revenue
-    
+
     # TRevPAR (Total Revenue Per Available Room)
     trevpar = total_revenue_all / total_rooms if total_rooms > 0 else 0
-    
+
     # VIP arrivals today
     vip_arrivals = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
@@ -324,11 +324,11 @@ async def get_official_guest_list(
         'guest_id': {'$exists': True}
         # TODO: Add VIP tag check when guest tags are implemented
     })
-    
+
     return {
         'report_date': target_date.strftime('%Y-%m-%d'),
         'generated_at': datetime.now(timezone.utc).isoformat(),
-        
+
         # Occupancy Metrics
         'occupancy': {
             'rooms_occupied': occupied_today,
@@ -336,7 +336,7 @@ async def get_official_guest_list(
             'occupancy_pct': round(occupancy_pct, 2),
             'rooms_available': total_rooms - occupied_today
         },
-        
+
         # Guest Flow
         'guest_flow': {
             'arrivals': arrivals_today,
@@ -345,7 +345,7 @@ async def get_official_guest_list(
             'no_shows': no_shows,
             'cancellations': cancellations
         },
-        
+
         # Revenue Metrics
         'revenue': {
             'rooms_revenue': round(total_revenue, 2),
@@ -356,14 +356,14 @@ async def get_official_guest_list(
             'revpar': round(revpar, 2),
             'trevpar': round(trevpar, 2)
         },
-        
+
         # Breakdown
         'revenue_breakdown': {
             'rooms': round((total_revenue / total_revenue_all * 100) if total_revenue_all > 0 else 0, 1),
             'fnb': round((fnb_revenue / total_revenue_all * 100) if total_revenue_all > 0 else 0, 1),
             'other': round((other_revenue / total_revenue_all * 100) if total_revenue_all > 0 else 0, 1)
         },
-        
+
         # Special Notes
         'special_notes': {
             'vip_arrivals': vip_arrivals,
@@ -378,21 +378,21 @@ async def post_room_charges(current_user: User = Depends(get_current_user)):
     """Night audit: Post room charges to all active bookings"""
     import time
     start_time = time.time()
-    
+
     logging_service = get_logging_service(db)
     audit_date = datetime.now(timezone.utc).date().isoformat()
     errors = []
-    
+
     try:
         # Get all checked-in bookings
         bookings = await db.bookings.find({
             'tenant_id': current_user.tenant_id,
             'status': 'checked_in'
         }).to_list(1000)
-        
+
         charges_posted = 0
         total_amount = 0.0
-        
+
         for booking in bookings:
             try:
                 # Get guest folio for this booking
@@ -401,7 +401,7 @@ async def post_room_charges(current_user: User = Depends(get_current_user)):
                     'folio_type': 'guest',
                     'status': 'open'
                 })
-                
+
                 if folio:
                     # Post room charge
                     charge_amount = booking.get('base_rate', booking.get('total_amount', 0))
@@ -418,26 +418,26 @@ async def post_room_charges(current_user: User = Depends(get_current_user)):
                         total=charge_amount,
                         posted_by="SYSTEM"
                     )
-                    
+
                     charge_dict = charge.model_dump()
                     charge_dict['date'] = charge_dict['date'].isoformat()
                     await db.folio_charges.insert_one(charge_dict)
-                    
+
                     # Update folio balance
                     balance = await calculate_folio_balance(folio['id'], current_user.tenant_id)
                     await db.folios.update_one(
                         {'id': folio['id']},
                         {'$set': {'balance': balance}}
                     )
-                    
+
                     charges_posted += 1
                     total_amount += charge_amount
             except Exception as e:
                 errors.append(f"Booking {booking.get('id')}: {str(e)}")
-        
+
         duration = time.time() - start_time
         status = 'completed' if len(errors) == 0 else 'partial' if charges_posted > 0 else 'failed'
-        
+
         # Log night audit
         await logging_service.log_night_audit(
             tenant_id=current_user.tenant_id,
@@ -451,7 +451,7 @@ async def post_room_charges(current_user: User = Depends(get_current_user)):
             duration_seconds=duration,
             errors=errors if errors else None
         )
-        
+
         return {
             "message": "Night audit completed",
             "charges_posted": charges_posted,
@@ -461,7 +461,7 @@ async def post_room_charges(current_user: User = Depends(get_current_user)):
         }
     except Exception as e:
         duration = time.time() - start_time
-        
+
         # Log failed audit
         await logging_service.log_night_audit(
             tenant_id=current_user.tenant_id,
@@ -475,7 +475,7 @@ async def post_room_charges(current_user: User = Depends(get_current_user)):
             duration_seconds=duration,
             errors=[str(e)]
         )
-        
+
         raise HTTPException(status_code=500, detail=f"Night audit failed: {str(e)}")
 
 
@@ -793,11 +793,11 @@ async def get_daily_flash_pdf(current_user: User = Depends(get_current_user)):
     from io import BytesIO
 
     from fastapi.responses import StreamingResponse
-    
+
     try:
         # Get flash report data
         flash_data = await get_daily_flash_report_data(current_user)
-        
+
         # Generate PDF content (simple HTML to PDF conversion)
         html_content = f"""
         <html>
@@ -814,20 +814,20 @@ async def get_daily_flash_pdf(current_user: User = Depends(get_current_user)):
         <body>
             <h1>Daily Flash Report</h1>
             <p><strong>Date:</strong> {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}</p>
-            
+
             <div class="metric">
                 <h3>Occupancy</h3>
                 <p>Occupied Rooms: {flash_data['occupancy']['occupied']}</p>
                 <p>Total Rooms: {flash_data['occupancy']['total']}</p>
                 <p>Occupancy %: {flash_data['occupancy']['percentage']:.1f}%</p>
             </div>
-            
+
             <div class="metric">
                 <h3>Revenue</h3>
                 <p>Room Revenue: ${flash_data['revenue']['room_revenue']:.2f}</p>
                 <p>Total Revenue: ${flash_data['revenue']['total_revenue']:.2f}</p>
             </div>
-            
+
             <div class="metric">
                 <h3>Arrivals & Departures</h3>
                 <p>Arrivals: {flash_data['movements']['arrivals']}</p>
@@ -836,13 +836,13 @@ async def get_daily_flash_pdf(current_user: User = Depends(get_current_user)):
         </body>
         </html>
         """
-        
+
         # Convert HTML to PDF using simple method (can upgrade to weasyprint later)
         # For now, return HTML as PDF placeholder
         pdf_buffer = BytesIO()
         pdf_buffer.write(html_content.encode('utf-8'))
         pdf_buffer.seek(0)
-        
+
         return StreamingResponse(
             pdf_buffer,
             media_type="application/pdf",
@@ -863,14 +863,14 @@ async def email_daily_flash(
     Email daily flash report to recipients
     """
     recipients = data.get('recipients', [])
-    
+
     if not recipients:
         raise HTTPException(status_code=400, detail="Recipients list is required")
-    
+
     try:
         # Get flash report data
         flash_data = await get_daily_flash_report_data(current_user)
-        
+
         # Email content (HTML)
         email_html = f"""
         <html>
@@ -883,44 +883,44 @@ async def email_daily_flash(
         </head>
         <body>
             <h2>Daily Flash Report - {datetime.now(timezone.utc).strftime('%Y-%m-%d')}</h2>
-            
+
             <div class="metric">
                 <h3>Occupancy</h3>
                 <p>Occupied: {flash_data['occupancy']['occupied']} / {flash_data['occupancy']['total']} ({flash_data['occupancy']['percentage']:.1f}%)</p>
             </div>
-            
+
             <div class="metric">
                 <h3>Revenue</h3>
                 <p>Room Revenue: ${flash_data['revenue']['room_revenue']:.2f}</p>
                 <p>Total Revenue: ${flash_data['revenue']['total_revenue']:.2f}</p>
             </div>
-            
+
             <div class="metric">
                 <h3>Movements</h3>
                 <p>Arrivals: {flash_data['movements']['arrivals']}</p>
                 <p>Departures: {flash_data['movements']['departures']}</p>
             </div>
-            
+
             <p><small>Generated by Finance Test Hotel PMS</small></p>
         </body>
         </html>
         """
-        
+
         # Note: Actual email sending requires SMTP configuration
         # For MVP, we'll log the email and return success
         # TODO: Implement actual SMTP email sending
-        
+
         print(f"Email would be sent to: {recipients}")
         print(f"Subject: Daily Flash Report - {datetime.now(timezone.utc).strftime('%Y-%m-%d')}")
         print(f"Content length: {len(email_html)} characters")
-        
+
         return {
             'success': True,
             'message': f'Daily flash report email sent to {len(recipients)} recipients',
             'recipients': recipients,
             'note': 'Email functionality requires SMTP configuration. Currently logging only.'
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Email sending failed: {str(e)}")
 
@@ -932,10 +932,10 @@ async def get_daily_flash_report(date_str: Optional[str] = None, current_user: U
     target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(timezone.utc).date()
     start_of_day = datetime.combine(target_date, datetime.min.time())
     end_of_day = datetime.combine(target_date, datetime.max.time())
-    
+
     # Get total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    
+
     # Get occupancy (checked-in bookings)
     occupied_rooms = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
@@ -943,40 +943,40 @@ async def get_daily_flash_report(date_str: Optional[str] = None, current_user: U
         'check_in': {'$lte': end_of_day.isoformat()},
         'check_out': {'$gte': start_of_day.isoformat()}
     })
-    
+
     occupancy_rate = round((occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0, 2)
-    
+
     # Get arrivals & departures count
     arrivals = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_in': {'$gte': start_of_day.isoformat(), '$lte': end_of_day.isoformat()}
     })
-    
+
     departures = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_out': {'$gte': start_of_day.isoformat(), '$lte': end_of_day.isoformat()}
     })
-    
+
     # Note: Revenue is calculated from folio charges, not bookings directly
-    
+
     # Calculate revenue from folio charges posted today
     charges = await db.folio_charges.find({
         'tenant_id': current_user.tenant_id,
         'date': {'$gte': start_of_day.isoformat(), '$lte': end_of_day.isoformat()},
         'voided': False
     }).to_list(10000)
-    
+
     total_revenue = sum(c['total'] for c in charges)
-    
+
     # Revenue breakdown by category
     room_revenue = sum(c['total'] for c in charges if c['charge_category'] == 'room')
     fb_revenue = sum(c['total'] for c in charges if c['charge_category'] in ['food', 'beverage'])
     other_revenue = total_revenue - room_revenue - fb_revenue
-    
+
     # Calculate ADR and RevPAR
     adr = round(room_revenue / occupied_rooms, 2) if occupied_rooms > 0 else 0
     rev_par = round(total_revenue / total_rooms, 2) if total_rooms > 0 else 0
-    
+
     return {
         'date': target_date.isoformat(),
         'occupancy': {
@@ -1007,9 +1007,9 @@ async def export_daily_flash_excel(date_str: Optional[str] = None, current_user:
     """Export Daily Flash Report to Excel"""
     # Get the report data
     report_data = await get_daily_flash_report(date_str, current_user)
-    
+
     target_date = report_data['date']
-    
+
     # Prepare data for Excel
     headers = ["Metric", "Value"]
     data = [
@@ -1033,14 +1033,14 @@ async def export_daily_flash_excel(date_str: Optional[str] = None, current_user:
         ["ADR (Average Daily Rate)", f"${report_data['revenue']['adr']:,.2f}"],
         ["RevPAR (Revenue Per Available Room)", f"${report_data['revenue']['rev_par']:,.2f}"],
     ]
-    
+
     wb = create_excel_workbook(
         title=f"Daily Flash Report - {target_date}",
         headers=headers,
         data=data,
         sheet_name="Daily Flash"
     )
-    
+
     filename = f"daily_flash_report_{target_date}.xlsx"
     return excel_response(wb, filename)
 
@@ -1061,7 +1061,7 @@ async def run_night_audit(
     """
     audit_date_str = audit_date or datetime.now().date().isoformat()
     datetime.fromisoformat(audit_date_str)
-    
+
     audit_results = {
         'audit_id': str(uuid.uuid4()),
         'audit_date': audit_date_str,
@@ -1069,7 +1069,7 @@ async def run_night_audit(
         'status': 'in_progress',
         'steps': []
     }
-    
+
     # Step 1: Post room charges
     step1_result = await night_audit_post_room_charges(current_user.tenant_id, audit_date_str)
     audit_results['steps'].append({
@@ -1078,7 +1078,7 @@ async def run_night_audit(
         'status': 'completed',
         'details': step1_result
     })
-    
+
     # Step 2: Calculate daily revenue
     step2_result = await night_audit_calculate_revenue(current_user.tenant_id, audit_date_str)
     audit_results['steps'].append({
@@ -1087,7 +1087,7 @@ async def run_night_audit(
         'status': 'completed',
         'details': step2_result
     })
-    
+
     # Step 3: AR recalculation
     step3_result = await night_audit_recalculate_ar(current_user.tenant_id)
     audit_results['steps'].append({
@@ -1096,7 +1096,7 @@ async def run_night_audit(
         'status': 'completed',
         'details': step3_result
     })
-    
+
     # Step 4: Housekeeping roll-up
     step4_result = await night_audit_housekeeping_rollup(current_user.tenant_id, audit_date_str)
     audit_results['steps'].append({
@@ -1105,7 +1105,7 @@ async def run_night_audit(
         'status': 'completed',
         'details': step4_result
     })
-    
+
     # Step 5: OTA reconciliation
     step5_result = await night_audit_ota_reconciliation(current_user.tenant_id, audit_date_str)
     audit_results['steps'].append({
@@ -1114,14 +1114,14 @@ async def run_night_audit(
         'status': 'completed',
         'details': step5_result
     })
-    
+
     # Complete audit
     audit_results['status'] = 'completed'
     audit_results['completed_at'] = datetime.now(timezone.utc).isoformat()
-    
+
     # Store audit record
     await db.night_audit_logs.insert_one(audit_results)
-    
+
     return audit_results
 
 
@@ -1133,23 +1133,23 @@ async def send_weekly_management_email(
 ):
     """Send weekly management summary via email"""
     current_user = await get_current_user(credentials)
-    
+
     # Get weekly summary data
     today = datetime.now(timezone.utc)
     week_start = today - timedelta(days=7)
-    
+
     total_bookings = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'created_at': {'$gte': week_start.isoformat()}
     })
-    
+
     total_revenue = 0
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'check_in': {'$gte': week_start.date().isoformat()}
     }):
         total_revenue += booking.get('total_amount', 0)
-    
+
     # Create email record
     date_str = today.strftime("%B %d, %Y")
     email_record = {
@@ -1172,9 +1172,9 @@ async def send_weekly_management_email(
         'sent_at': datetime.now(timezone.utc).isoformat(),
         'sent_by': current_user.name
     }
-    
+
     await db.email_reports.insert_one(email_record)
-    
+
     return {
         'message': 'Weekly summary email sent',
         'email_id': email_record['id'],
@@ -1189,14 +1189,14 @@ async def get_email_report_history(
 ):
     """Get email report history"""
     current_user = await get_current_user(credentials)
-    
+
     emails = []
     async for email in db.email_reports.find({
         'tenant_id': current_user.tenant_id
     }).sort('sent_at', -1).limit(limit):
         email.pop('_id', None)
         emails.append(email)
-    
+
     return {
         'emails': emails,
         'count': len(emails)
@@ -1209,34 +1209,34 @@ async def get_weekly_management_summary(
 ):
     """Get weekly management summary report"""
     current_user = await get_current_user(credentials)
-    
+
     today = datetime.now(timezone.utc)
     week_start = today - timedelta(days=7)
-    
+
     # Get key metrics for the week
     total_bookings = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'created_at': {'$gte': week_start.isoformat()}
     })
-    
+
     total_revenue = 0
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'check_in': {'$gte': week_start.date().isoformat()}
     }):
         total_revenue += booking.get('total_amount', 0)
-    
+
     # Calculate average occupancy
     await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     occupied_avg = 0
-    
+
     # Get maintenance tasks completed
     completed_tasks = await db.maintenance_tasks.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'completed',
         'completed_at': {'$gte': week_start.isoformat()}
     })
-    
+
     return {
         'week_ending': today.date().isoformat(),
         'total_bookings': total_bookings,
@@ -1258,20 +1258,20 @@ async def start_night_audit(
 ):
     """Start night audit process for specified date"""
     current_user = await get_current_user(credentials)
-    
+
     # Check if audit already exists for this date
     existing_audit = await db.night_audits.find_one({
         'tenant_id': current_user.tenant_id,
         'audit_date': audit_date,
         'status': {'$in': ['in_progress', 'completed']}
     })
-    
+
     if existing_audit:
         raise HTTPException(
             status_code=400,
             detail=f"Night audit for {audit_date} already exists or is in progress"
         )
-    
+
     # Create audit record
     audit = NightAuditRecord(
         tenant_id=current_user.tenant_id,
@@ -1279,10 +1279,10 @@ async def start_night_audit(
         started_by=current_user.name,
         status=AuditStatus.IN_PROGRESS
     )
-    
+
     # Calculate statistics
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    
+
     datetime.fromisoformat(audit_date).replace(tzinfo=timezone.utc)
     occupied_rooms = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
@@ -1290,11 +1290,11 @@ async def start_night_audit(
         'check_in': {'$lte': audit_date},
         'check_out': {'$gt': audit_date}
     })
-    
+
     audit.total_rooms = total_rooms
     audit.occupied_rooms = occupied_rooms
     audit.vacant_rooms = total_rooms - occupied_rooms
-    
+
     # Calculate revenue
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -1302,18 +1302,18 @@ async def start_night_audit(
         'check_out': {'$gt': audit_date},
         'status': {'$in': ['checked_in', 'checked_out']}
     }).to_list(10000)
-    
+
     total_revenue = sum(b.get('total_amount', 0) for b in bookings)
     room_revenue = sum(b.get('base_rate', 0) for b in bookings)
-    
+
     audit.total_revenue = round(total_revenue, 2)
     audit.room_revenue = round(room_revenue, 2)
     audit.tax_revenue = round(total_revenue * 0.1, 2)
     audit.other_revenue = round(total_revenue - room_revenue, 2)
-    
+
     # Save audit record
     await db.night_audits.insert_one(audit.model_dump())
-    
+
     return {
         'success': True,
         'audit_id': audit.id,
@@ -1336,26 +1336,26 @@ async def end_of_day_audit(
 ):
     """Complete end-of-day audit process"""
     current_user = await get_current_user(credentials)
-    
+
     # Get audit record
     audit = await db.night_audits.find_one({
         'id': audit_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not audit:
         raise HTTPException(status_code=404, detail="Audit not found")
-    
+
     if audit['status'] == 'completed':
         raise HTTPException(status_code=400, detail="Audit already completed")
-    
+
     # Process no-shows
     no_shows = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_in': audit['audit_date'],
         'status': 'confirmed'
     })
-    
+
     # Update status
     await db.night_audits.update_one(
         {'id': audit_id},
@@ -1367,7 +1367,7 @@ async def end_of_day_audit(
             }
         }
     )
-    
+
     return {
         'success': True,
         'audit_id': audit_id,
@@ -1387,11 +1387,11 @@ async def automatic_posting(
 ):
     """Automatically post room charges and taxes for all in-house guests"""
     current_user = await get_current_user(credentials)
-    
+
     posted_count = 0
     failed_count = 0
     total_posted = 0.0
-    
+
     # Get all checked-in bookings for this date
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -1399,7 +1399,7 @@ async def automatic_posting(
         'check_in': {'$lte': audit_date},
         'check_out': {'$gt': audit_date}
     }).to_list(10000)
-    
+
     for booking in bookings:
         try:
             # Get or create folio
@@ -1407,7 +1407,7 @@ async def automatic_posting(
                 'booking_id': booking['id'],
                 'folio_type': 'guest'
             })
-            
+
             if not folio:
                 # Create folio
                 folio = {
@@ -1419,7 +1419,7 @@ async def automatic_posting(
                     'created_at': datetime.now(timezone.utc).isoformat()
                 }
                 await db.folios.insert_one(folio)
-            
+
             # Post room charge
             room_charge = {
                 'id': str(uuid.uuid4()),
@@ -1434,9 +1434,9 @@ async def automatic_posting(
                 'posted_by': 'night_audit_system',
                 'voided': False
             }
-            
+
             await db.folio_charges.insert_one(room_charge)
-            
+
             # Post tax
             tax_amount = room_charge['amount'] * 0.10
             tax_charge = {
@@ -1452,15 +1452,15 @@ async def automatic_posting(
                 'posted_by': 'night_audit_system',
                 'voided': False
             }
-            
+
             await db.folio_charges.insert_one(tax_charge)
-            
+
             posted_count += 1
             total_posted += room_charge['amount'] + tax_amount
-            
+
         except Exception:
             failed_count += 1
-    
+
     return {
         'success': True,
         'audit_date': audit_date,
@@ -1478,16 +1478,16 @@ async def get_audit_report(
 ):
     """Get comprehensive night audit report"""
     current_user = await get_current_user(credentials)
-    
+
     # Get audit record
     audit = await db.night_audits.find_one({
         'tenant_id': current_user.tenant_id,
         'audit_date': audit_date
     }, {'_id': 0})
-    
+
     if not audit:
         raise HTTPException(status_code=404, detail="Audit not found for this date")
-    
+
     # Get detailed breakdown
     bookings_summary = await db.bookings.aggregate([
         {
@@ -1505,7 +1505,7 @@ async def get_audit_report(
             }
         }
     ]).to_list(100)
-    
+
     return {
         'audit': audit,
         'bookings_by_status': bookings_summary,
@@ -1526,25 +1526,25 @@ async def handle_no_shows(
     """
     current_user = await get_current_user(credentials)
     logging_service = get_logging_service(db)
-    
+
     no_show_fee = 50.0
     processed_count = 0
     total_charges = 0.0
     no_show_details = []
-    
+
     # Find bookings that should have checked in but didn't
     no_show_bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'check_in': audit_date,
         'status': 'confirmed'
     }).to_list(1000)
-    
+
     for booking in no_show_bookings:
         booking_id = booking.get('id')
         guest_id = booking.get('guest_id')
         room_id = booking.get('room_id')
         room_number = booking.get('room_number')
-        
+
         # Update booking status
         await db.bookings.update_one(
             {'id': booking_id},
@@ -1556,17 +1556,17 @@ async def handle_no_shows(
                 }
             }
         )
-        
+
         fee_posted = False
         folio_id = None
-        
+
         # Post no-show fee if configured
         if charge_no_show_fee:
             folio = await db.folios.find_one({
                 'booking_id': booking_id,
                 'folio_type': 'guest'
             })
-            
+
             if folio:
                 folio_id = folio.get('id')
                 charge = {
@@ -1583,9 +1583,9 @@ async def handle_no_shows(
                 await db.folio_charges.insert_one(charge)
                 total_charges += no_show_fee
                 fee_posted = True
-        
+
         processed_count += 1
-        
+
         no_show_details.append({
             'booking_id': booking_id,
             'guest_id': guest_id,
@@ -1595,7 +1595,7 @@ async def handle_no_shows(
             'fee_posted': fee_posted,
             'fee_amount': no_show_fee if fee_posted else 0.0
         })
-    
+
     # Write detailed night audit log entry
     await logging_service.log_night_audit(
         tenant_id=current_user.tenant_id,
@@ -1614,7 +1614,7 @@ async def handle_no_shows(
             'no_show_details': no_show_details,
         },
     )
-    
+
     return {
         'success': True,
         'audit_date': audit_date,
@@ -1631,22 +1631,22 @@ async def get_night_audit_status_legacy(
 ):
     """Legacy night audit status (use /api/night-audit/status for hardened version)"""
     current_user = await get_current_user(credentials)
-    
+
     if not audit_date:
         audit_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    
+
     audit = await db.night_audits.find_one({
         'tenant_id': current_user.tenant_id,
         'audit_date': audit_date
     }, {'_id': 0})
-    
+
     if not audit:
         return {
             'audit_date': audit_date,
             'status': 'not_started',
             'message': 'Night audit not yet started for this date'
         }
-    
+
     return audit
 
 
@@ -1657,20 +1657,20 @@ async def post_room_rates(
 ):
     """Post room rates for all in-house guests"""
     current_user = await get_current_user(credentials)
-    
+
     posted = 0
     total_amount = 0.0
-    
+
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'status': 'checked_in',
         'check_in': {'$lte': audit_date},
         'check_out': {'$gt': audit_date}
     }).to_list(10000)
-    
+
     for booking in bookings:
         folio = await db.folios.find_one({'booking_id': booking['id'], 'folio_type': 'guest'})
-        
+
         if folio:
             rate = booking.get('base_rate', 0)
             charge = {
@@ -1686,7 +1686,7 @@ async def post_room_rates(
             await db.folio_charges.insert_one(charge)
             posted += 1
             total_amount += rate
-    
+
     return {
         'success': True,
         'posted_count': posted,
@@ -1702,24 +1702,24 @@ async def post_taxes(
 ):
     """Post tax charges for all in-house guests"""
     current_user = await get_current_user(credentials)
-    
+
     posted = 0
     total_tax = 0.0
-    
+
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'status': 'checked_in',
         'check_in': {'$lte': audit_date},
         'check_out': {'$gt': audit_date}
     }).to_list(10000)
-    
+
     for booking in bookings:
         folio = await db.folios.find_one({'booking_id': booking['id'], 'folio_type': 'guest'})
-        
+
         if folio:
             rate = booking.get('base_rate', 0)
             tax_amount = rate * tax_rate
-            
+
             charge = {
                 'id': str(uuid.uuid4()),
                 'tenant_id': current_user.tenant_id,
@@ -1733,7 +1733,7 @@ async def post_taxes(
             await db.folio_charges.insert_one(charge)
             posted += 1
             total_tax += tax_amount
-    
+
     return {
         'success': True,
         'posted_count': posted,
@@ -1751,17 +1751,17 @@ async def get_audit_trail(
 ):
     """Get audit trail of all system changes"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if start_date and end_date:
         query['timestamp'] = {
             '$gte': datetime.fromisoformat(start_date).isoformat(),
             '$lte': datetime.fromisoformat(end_date).isoformat()
         }
-    
+
     trail = await db.audit_trail.find(query, {'_id': 0}).sort('timestamp', -1).limit(limit).to_list(limit)
-    
+
     return {
         'audit_trail': trail,
         'total_entries': len(trail)
@@ -1775,15 +1775,15 @@ async def rollback_audit(
 ):
     """Rollback a completed audit (emergency use)"""
     current_user = await get_current_user(credentials)
-    
+
     audit = await db.night_audits.find_one({
         'id': audit_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not audit:
         raise HTTPException(status_code=404, detail="Audit not found")
-    
+
     # Update status
     await db.night_audits.update_one(
         {'id': audit_id},
@@ -1797,7 +1797,7 @@ async def rollback_audit(
             }
         }
     )
-    
+
     return {
         'success': True,
         'message': 'Audit rolled back successfully',
@@ -1812,12 +1812,12 @@ async def get_audit_history(
 ):
     """Get night audit history for last N days"""
     current_user = await get_current_user(credentials)
-    
+
     audits = await db.night_audits.find(
         {'tenant_id': current_user.tenant_id},
         {'_id': 0}
     ).sort('audit_date', -1).limit(limit).to_list(limit)
-    
+
     return {'audits': audits, 'total_count': len(audits)}
 
 

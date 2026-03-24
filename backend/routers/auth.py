@@ -65,23 +65,23 @@ class MakeSuperAdminRequest(BaseModel):
 @router.post("/setup/make-super-admin")
 async def setup_make_super_admin(request: MakeSuperAdminRequest):
     """One-time setup: Make any user super_admin
-    
+
     ONLY USE FOR INITIAL SETUP!
     Default password: EMERGENT_SUPER_SETUP_2024
     """
     # Security check
     if request.setup_password != "EMERGENT_SUPER_SETUP_2024":
         raise HTTPException(status_code=403, detail="Invalid setup password")
-    
+
     # Update ALL users with this email to super_admin (all tenants)
     result = await db.users.update_many(
         {"email": request.email},
         {"$set": {"role": "super_admin"}}
     )
-    
+
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail=f"No user found with email: {request.email}")
-    
+
     return {
         "success": True,
         "message": f"Updated {result.modified_count} user(s) to super_admin",
@@ -96,23 +96,23 @@ async def make_me_super_admin(
     current_user: User = Depends(get_current_user)
 ):
     """Make YOURSELF super_admin (requires login)
-    
+
     ONLY USE FOR INITIAL SETUP!
     Safer than email-based because you must be logged in.
     """
     # Security check
     if setup_password != "EMERGENT_SUPER_SETUP_2024":
         raise HTTPException(status_code=403, detail="Invalid setup password")
-    
+
     # Update current logged-in user to super_admin
     result = await db.users.update_one(
         {"id": current_user.id},
         {"$set": {"role": "super_admin"}}
     )
-    
+
     if result.modified_count == 0:
         raise HTTPException(status_code=400, detail="Role güncellenemedi veya zaten super_admin")
-    
+
     return {
         "success": True,
         "message": "Artık super_admin'siniz! Lütfen logout yapıp tekrar giriş yapın.",
@@ -127,25 +127,25 @@ async def quick_make_super_admin(
     secret: str = "QUICK_SUPER_2024"
 ):
     """Quick way to make user super_admin via browser URL
-    
+
     Usage: /api/admin/quick-super-admin?email=user@example.com&secret=QUICK_SUPER_2024
     """
     if secret != "QUICK_SUPER_2024":
         raise HTTPException(status_code=403, detail="Invalid secret")
-    
+
     # Try exact match first
     result = await db.users.update_many(
         {"email": email},
         {"$set": {"role": "super_admin"}}
     )
-    
+
     if result.matched_count == 0:
         # Try case-insensitive
         result = await db.users.update_many(
             {"email": {"$regex": f"^{email}$", "$options": "i"}},
             {"$set": {"role": "super_admin"}}
         )
-    
+
     return {
         "success": True,
         "updated": result.modified_count,
@@ -158,14 +158,14 @@ async def quick_make_super_admin(
 @router.get("/admin/list-all-users-debug")
 async def list_all_users_for_debug(secret: str = "DEBUG_2024"):
     """List all users in database (for debugging)
-    
+
     Usage: /api/admin/list-all-users-debug?secret=DEBUG_2024
     """
     if secret != "DEBUG_2024":
         raise HTTPException(status_code=403, detail="Invalid secret")
-    
+
     users = await db.users.find({}, {"_id": 0, "hashed_password": 0, "password_hash": 0}).limit(20).to_list(20)
-    
+
     return {
         "total": len(users),
         "users": [
@@ -185,7 +185,7 @@ async def register_tenant(data: TenantRegister):
     existing = await db.users.find_one({'email': data.email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
-    
+
     tenant = Tenant(
         name=data.name,
         property_name=data.property_name,
@@ -198,7 +198,7 @@ async def register_tenant(data: TenantRegister):
     tenant_dict = tenant.model_dump()
     tenant_dict['created_at'] = tenant_dict['created_at'].isoformat()
     await db.tenants.insert_one(tenant_dict)
-    
+
     user = User(
         tenant_id=tenant.id,
         email=data.email,
@@ -210,7 +210,7 @@ async def register_tenant(data: TenantRegister):
     user_dict['hashed_password'] = hash_password(data.password)
     user_dict['created_at'] = user_dict['created_at'].isoformat()
     await db.users.insert_one(user_dict)
-    
+
     token = create_token(user.id, tenant.id)
     return TokenResponse(access_token=token, user=user, tenant=tenant)
 
@@ -219,7 +219,7 @@ async def register_guest(data: GuestRegister):
     existing = await db.users.find_one({'email': data.email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
-    
+
     user = User(
         tenant_id=None,
         email=data.email,
@@ -231,10 +231,10 @@ async def register_guest(data: GuestRegister):
     user_dict['hashed_password'] = hash_password(data.password)
     user_dict['created_at'] = user_dict['created_at'].isoformat()
     await db.users.insert_one(user_dict)
-    
+
     prefs = NotificationPreferences(user_id=user.id)
     await db.notification_preferences.insert_one(prefs.model_dump())
-    
+
     token = create_token(user.id, None)
     return TokenResponse(access_token=token, user=user, tenant=None)
 
@@ -328,7 +328,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
 async def refresh_token(current_user: User = Depends(get_current_user)):
     """JWT token yenileme - mevcut geçerli token ile yeni token al."""
     new_token = create_token(current_user.id, current_user.tenant_id)
-    
+
     # Audit log
     await db.audit_logs.insert_one({
         "id": str(__import__('uuid').uuid4()),
@@ -341,7 +341,7 @@ async def refresh_token(current_user: User = Depends(get_current_user)):
         "ip_address": "",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
-    
+
     return {
         "access_token": new_token,
         "token_type": "bearer",
@@ -355,21 +355,21 @@ async def get_security_summary(current_user: User = Depends(get_current_user)):
     now = datetime.now(timezone.utc)
     last_24h = (now - timedelta(hours=24)).isoformat()
     last_7d = (now - timedelta(days=7)).isoformat()
-    
+
     # Failed login attempts (last 24h)
     failed_logins_24h = await db.audit_logs.count_documents({
         "tenant_id": current_user.tenant_id,
         "action": "login_failed",
         "timestamp": {"$gte": last_24h},
     })
-    
+
     # Successful logins (last 24h)
     successful_logins_24h = await db.audit_logs.count_documents({
         "tenant_id": current_user.tenant_id,
         "action": {"$in": ["login", "login_success"]},
         "timestamp": {"$gte": last_24h},
     })
-    
+
     # Rate limit hits (from APM)
     rate_limit_stats = {}
     try:
@@ -377,14 +377,14 @@ async def get_security_summary(current_user: User = Depends(get_current_user)):
             rate_limit_stats = _get_rate_limit_stats()
     except Exception:
         pass
-    
+
     # Active sessions estimate (tokens refreshed in last 2h)
     active_sessions = await db.audit_logs.count_documents({
         "tenant_id": current_user.tenant_id,
         "action": {"$in": ["login", "login_success", "token_refresh"]},
         "timestamp": {"$gte": (now - timedelta(hours=2)).isoformat()},
     })
-    
+
     # Recent security events (last 7 days)
     security_events = await db.audit_logs.find(
         {
@@ -394,10 +394,10 @@ async def get_security_summary(current_user: User = Depends(get_current_user)):
         },
         {"_id": 0}
     ).sort("timestamp", -1).limit(50).to_list(50)
-    
+
     # User count
     total_users = await db.users.count_documents({"tenant_id": current_user.tenant_id})
-    
+
     # APM summary
     apm_summary = {}
     try:
@@ -405,7 +405,7 @@ async def get_security_summary(current_user: User = Depends(get_current_user)):
             apm_summary = _apm_store.get_summary(minutes=60)
     except Exception:
         pass
-    
+
     return {
         "overview": {
             "failed_logins_24h": failed_logins_24h,
@@ -458,11 +458,11 @@ async def request_verification_code(data: EmailVerificationRequest):
     existing = await db.users.find_one({'email': data.email})
     if existing:
         raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kayıtlı")
-    
+
     # Doğrulama kodu oluştur
     from modules.messaging.email_service import email_service
     code = email_service.generate_verification_code()
-    
+
     # Kodu veritabanına kaydet
     verification_doc = {
         'email': data.email,
@@ -476,16 +476,16 @@ async def request_verification_code(data: EmailVerificationRequest):
         'expires_at': datetime.now(timezone.utc) + timedelta(minutes=15),
         'verified': False
     }
-    
+
     # Eski kodları sil
     await db.verification_codes.delete_many({'email': data.email})
-    
+
     # Yeni kodu kaydet
     await db.verification_codes.insert_one(verification_doc)
-    
+
     # E-posta gönder (mock)
     await email_service.send_verification_code(data.email, code, data.name)
-    
+
     return {
         'success': True,
         'message': 'Doğrulama kodu e-posta adresinize gönderildi',
@@ -500,10 +500,10 @@ async def verify_email_and_register(data: VerifyCodeRequest):
         'email': data.email,
         'code': data.code
     })
-    
+
     if not verification:
         raise HTTPException(status_code=400, detail="Geçersiz veya hatalı doğrulama kodu")
-    
+
     # Kod süresi dolmuş mu kontrol et
     expires_at = verification['expires_at']
     if not expires_at.tzinfo:
@@ -511,12 +511,12 @@ async def verify_email_and_register(data: VerifyCodeRequest):
     if datetime.now(timezone.utc) > expires_at:
         await db.verification_codes.delete_one({'_id': verification['_id']})
         raise HTTPException(status_code=400, detail="Doğrulama kodu süresi dolmuş. Lütfen yeni kod isteyin")
-    
+
     # E-posta zaten kullanılmış mı kontrol et (tekrar)
     existing = await db.users.find_one({'email': data.email})
     if existing:
         raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kayıtlı")
-    
+
     # Kullanıcı tipine göre kayıt
     if verification['user_type'] == 'hotel':
         # Hotel admin kullanıcısı
@@ -532,7 +532,7 @@ async def verify_email_and_register(data: VerifyCodeRequest):
         tenant_dict = tenant.model_dump()
         tenant_dict['created_at'] = tenant_dict['created_at'].isoformat()
         await db.tenants.insert_one(tenant_dict)
-        
+
         user = User(
             tenant_id=tenant.id,
             email=data.email,
@@ -547,17 +547,17 @@ async def verify_email_and_register(data: VerifyCodeRequest):
         user_dict['email_verified'] = True
         user_dict['email_verified_at'] = datetime.now(timezone.utc).isoformat()
         await db.users.insert_one(user_dict)
-        
+
         # Doğrulama kaydını sil
         await db.verification_codes.delete_one({'_id': verification['_id']})
-        
+
         # Hoşgeldin e-postası gönder
         from modules.messaging.email_service import email_service
         await email_service.send_welcome_email(data.email, verification['name'])
-        
+
         token = create_token(user.id, tenant.id)
         return TokenResponse(access_token=token, user=user, tenant=tenant)
-    
+
     else:
         # Guest kullanıcısı
         user = User(
@@ -574,17 +574,17 @@ async def verify_email_and_register(data: VerifyCodeRequest):
         user_dict['email_verified'] = True
         user_dict['email_verified_at'] = datetime.now(timezone.utc).isoformat()
         await db.users.insert_one(user_dict)
-        
+
         prefs = NotificationPreferences(user_id=user.id)
         await db.notification_preferences.insert_one(prefs.model_dump())
-        
+
         # Doğrulama kaydını sil
         await db.verification_codes.delete_one({'_id': verification['_id']})
-        
+
         # Hoşgeldin e-postası gönder
         from modules.messaging.email_service import email_service
         await email_service.send_welcome_email(data.email, verification['name'])
-        
+
         token = create_token(user.id, None)
         return TokenResponse(access_token=token, user=user, tenant=None)
 
@@ -599,11 +599,11 @@ async def forgot_password(data: ForgotPasswordRequest):
             'success': True,
             'message': 'Eğer bu e-posta kayıtlıysa, şifre sıfırlama kodu gönderildi'
         }
-    
+
     # Sıfırlama kodu oluştur
     from modules.messaging.email_service import email_service
     code = email_service.generate_verification_code()
-    
+
     # Kodu veritabanına kaydet
     reset_doc = {
         'email': data.email,
@@ -612,16 +612,16 @@ async def forgot_password(data: ForgotPasswordRequest):
         'expires_at': datetime.now(timezone.utc) + timedelta(minutes=15),
         'used': False
     }
-    
+
     # Eski kodları sil
     await db.password_reset_codes.delete_many({'email': data.email})
-    
+
     # Yeni kodu kaydet
     await db.password_reset_codes.insert_one(reset_doc)
-    
+
     # E-posta gönder (mock)
     await email_service.send_password_reset_code(data.email, code, user.get('name'))
-    
+
     return {
         'success': True,
         'message': 'Eğer bu e-posta kayıtlıysa, şifre sıfırlama kodu gönderildi',
@@ -637,10 +637,10 @@ async def reset_password(data: ResetPasswordRequest):
         'code': data.code,
         'used': False
     })
-    
+
     if not reset:
         raise HTTPException(status_code=400, detail="Geçersiz veya kullanılmış sıfırlama kodu")
-    
+
     # Kod süresi dolmuş mu kontrol et
     expires_at = reset['expires_at']
     if not expires_at.tzinfo:
@@ -648,12 +648,12 @@ async def reset_password(data: ResetPasswordRequest):
     if datetime.now(timezone.utc) > expires_at:
         await db.password_reset_codes.delete_one({'_id': reset['_id']})
         raise HTTPException(status_code=400, detail="Sıfırlama kodu süresi dolmuş. Lütfen yeni kod isteyin")
-    
+
     # Kullanıcıyı bul
     user = await db.users.find_one({'email': data.email})
     if not user:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
-    
+
     # Şifreyi güncelle
     new_hashed_password = hash_password(data.new_password)
     await db.users.update_one(
@@ -672,13 +672,13 @@ async def reset_password(data: ResetPasswordRequest):
     for k in list(_login_cache._cache.keys()):
         if k.startswith("login:"):
             _login_cache.delete(k)
-    
+
     # Kodu kullanıldı olarak işaretle
     await db.password_reset_codes.update_one(
         {'_id': reset['_id']},
         {'$set': {'used': True, 'used_at': datetime.now(timezone.utc)}}
     )
-    
+
     return {
         'success': True,
         'message': 'Şifreniz başarıyla güncellendi. Şimdi yeni şifrenizle giriş yapabilirsiniz'

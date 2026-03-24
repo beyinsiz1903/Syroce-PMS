@@ -175,15 +175,15 @@ async def scan_passport(
     # - Google Cloud Vision
     # - Azure Computer Vision
     # - Amazon Textract
-    
+
     # For MVP, we'll simulate OCR response
     # In real implementation, send image_base64 to OCR service
-    
+
     try:
         # Simulated OCR extraction (in production, call actual OCR API)
         # Example with Google Vision or OCR.space would be:
         # response = await ocr_service.extract_passport(request.image_base64)
-        
+
         # Simulated response
         extracted_data = PassportScanData(
             passport_number="P12345678",
@@ -194,14 +194,14 @@ async def scan_passport(
             expiry_date="2030-05-15",
             sex="M"
         )
-        
+
         # If booking_id provided, update guest info
         if request.booking_id:
             booking = await db.bookings.find_one({
                 'id': request.booking_id,
                 'tenant_id': current_user.tenant_id
             })
-            
+
             if booking:
                 guest_id = booking.get('guest_id')
                 if guest_id:
@@ -214,7 +214,7 @@ async def scan_passport(
                             'updated_at': datetime.now(timezone.utc).isoformat()
                         }}
                     )
-        
+
         return {
             'success': True,
             'extracted_data': extracted_data.model_dump(),
@@ -222,7 +222,7 @@ async def scan_passport(
             'message': 'Passport scanned successfully. Please verify extracted data.',
             'note': 'In production, integrate with OCR.space, Google Vision, or Azure Computer Vision for real passport scanning'
         }
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Passport scan failed: {str(e)}")
 
@@ -243,19 +243,19 @@ async def create_walk_in_booking(
             'id': request.room_id,
             'tenant_id': current_user.tenant_id
         })
-        
+
         if not room:
             raise HTTPException(status_code=404, detail="Room not found")
-        
+
         if room.get('status') not in ['available', 'inspected']:
             raise HTTPException(
                 status_code=400,
                 detail=f"Room {room.get('room_number')} is not available (status: {room.get('status')})"
             )
-        
+
         # 2. Create or find guest
         guest_email = request.guest_email or f"walkin_{uuid.uuid4().hex[:8]}@hotel.local"
-        
+
         # Try to find existing guest by phone or email
         existing_guest = await db.guests.find_one({
             'tenant_id': current_user.tenant_id,
@@ -264,7 +264,7 @@ async def create_walk_in_booking(
                 {'email': guest_email}
             ]
         })
-        
+
         if existing_guest:
             guest_id = existing_guest['id']
         else:
@@ -277,19 +277,19 @@ async def create_walk_in_booking(
                 id_number=request.guest_id_number or f"WALKIN-{uuid.uuid4().hex[:8]}",
                 nationality=request.nationality
             )
-            
+
             guest_dict = new_guest.model_dump()
             guest_dict['created_at'] = guest_dict['created_at'].isoformat()
             await db.guests.insert_one(guest_dict)
             guest_id = new_guest.id
-        
+
         # 3. Calculate dates and amount
         check_in = datetime.now(timezone.utc).replace(hour=14, minute=0, second=0, microsecond=0)
         check_out = check_in + timedelta(days=request.nights)
-        
+
         rate = request.rate_per_night or room.get('base_price', 100.0)
         total_amount = rate * request.nights
-        
+
         # 4. Create booking
         new_booking = Booking(
             tenant_id=current_user.tenant_id,
@@ -306,7 +306,7 @@ async def create_walk_in_booking(
             channel=ChannelType.DIRECT,
             special_requests=request.special_requests
         )
-        
+
         booking_dict = new_booking.model_dump()
         booking_dict['created_at'] = booking_dict['created_at'].isoformat()
         from core.atomic_booking import BookingConflictError, create_booking_atomic
@@ -314,7 +314,7 @@ async def create_walk_in_booking(
             await create_booking_atomic(booking_dict)
         except BookingConflictError as e:
             raise HTTPException(status_code=409, detail=str(e))
-        
+
         # 5. Atomic check-in (booking + room + folio + audit + outbox in one transaction)
         from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
         try:
@@ -326,7 +326,7 @@ async def create_walk_in_booking(
             )
         except CheckInError as e:
             raise HTTPException(status_code=400, detail=f"Walk-in booking created but check-in failed: {e}")
-        
+
         return {
             'success': True,
             'message': "Walk-in booking created and checked in successfully",
@@ -338,7 +338,7 @@ async def create_walk_in_booking(
             'total_amount': total_amount,
             'checked_in_at': checkin_result.get('checked_in_at'),
         }
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -376,7 +376,7 @@ async def create_guest_alert(
     expires_at = None
     if expires_days:
         expires_at = datetime.now(timezone.utc) + timedelta(days=expires_days)
-    
+
     alert = GuestAlert(
         tenant_id=current_user.tenant_id,
         guest_id=guest_id,
@@ -386,14 +386,14 @@ async def create_guest_alert(
         description=description,
         expires_at=expires_at
     )
-    
+
     alert_dict = alert.model_dump()
     alert_dict['created_at'] = alert_dict['created_at'].isoformat()
     if alert_dict.get('expires_at'):
         alert_dict['expires_at'] = alert_dict['expires_at'].isoformat()
-    
+
     await db.guest_alerts.insert_one(alert_dict)
-    
+
     return {
         'success': True,
         'alert_id': alert.id,
@@ -416,10 +416,10 @@ async def generate_door_qr_code(
     - Room entry tracking
     """
     booking = await db.bookings.find_one({'id': booking_id})
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
+
     # Generate QR code data
     # In production: Integrate with door lock system (Assa Abloy, Salto, Dormakaba)
     qr_data = {
@@ -430,19 +430,19 @@ async def generate_door_qr_code(
         'access_token': str(uuid.uuid4()),
         'generated_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     # Generate QR code image
     import qrcode
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(json.dumps(qr_data))
     qr.make(fit=True)
-    
+
     # Convert to base64
     img = qr.make_image(fill_color="black", back_color="white")
     buffered = io.BytesIO()
     img.save(buffered, format="PNG")
     qr_base64 = base64.b64encode(buffered.getvalue()).decode()
-    
+
     return {
         'success': True,
         'booking_id': booking_id,
@@ -469,10 +469,10 @@ async def capture_digital_signature(
     - Stored with booking
     """
     booking = await db.bookings.find_one({'id': booking_id})
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
+
     # Store signature
     signature_record = {
         'id': str(uuid.uuid4()),
@@ -483,15 +483,15 @@ async def capture_digital_signature(
         'ip_address': None,  # From request in production
         'device_type': 'kiosk'
     }
-    
+
     await db.digital_signatures.insert_one(signature_record)
-    
+
     # Update booking
     await db.bookings.update_one(
         {'id': booking_id},
         {'$set': {'digital_signature_id': signature_record['id']}}
     )
-    
+
     return {
         'success': True,
         'signature_id': signature_record['id'],
@@ -512,18 +512,18 @@ async def auto_police_notification(
     - Automated submission
     """
     booking = await db.bookings.find_one({'id': booking_id})
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
+
     guest = await db.guests.find_one({'id': booking.get('guest_id')})
-    
+
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
-    
+
     # In production: Integrate with local police registration system
     # Turkey: GIYBIS, Italy: Alloggiati Web, etc.
-    
+
     notification_data = {
         'id': str(uuid.uuid4()),
         'booking_id': booking_id,
@@ -537,9 +537,9 @@ async def auto_police_notification(
         'status': 'submitted',
         'reference_number': f"POL-{uuid.uuid4().hex[:8].upper()}"
     }
-    
+
     await db.police_notifications.insert_one(notification_data)
-    
+
     return {
         'success': True,
         'notification_id': notification_data['id'],

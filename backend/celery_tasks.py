@@ -182,11 +182,11 @@ def night_audit_task():
 async def _night_audit_async():
     """Async night audit implementation"""
     db, client = get_db()
-    
+
     try:
         # Get all active tenants
         tenants = await db.users.distinct('tenant_id', {'active': True})
-        
+
         results = []
         for tenant_id in tenants:
             try:
@@ -195,12 +195,12 @@ async def _night_audit_async():
                     'tenant_id': tenant_id,
                     'status': 'checked_in'
                 }).to_list(1000)
-                
+
                 charges_posted = 0
                 for booking in bookings:
                     # Get room rate
                     room_rate = booking.get('total_amount', 0) / max(1, booking.get('nights', 1))
-                    
+
                     # Find guest folio
                     folio = await db.folios.find_one({
                         'tenant_id': tenant_id,
@@ -208,7 +208,7 @@ async def _night_audit_async():
                         'folio_type': 'guest',
                         'status': 'open'
                     })
-                    
+
                     if folio:
                         # Post room charge
                         charge = {
@@ -226,31 +226,31 @@ async def _night_audit_async():
                             'voided': False,
                             'created_at': datetime.now(timezone.utc)
                         }
-                        
+
                         await db.folio_charges.insert_one(charge)
                         charges_posted += 1
-                
+
                 results.append({
                     'tenant_id': tenant_id,
                     'bookings_processed': len(bookings),
                     'charges_posted': charges_posted
                 })
-                
+
                 logger.info(f"Night audit completed for tenant {tenant_id}: {charges_posted} charges posted")
-                
+
             except Exception as e:
                 logger.error(f"Night audit error for tenant {tenant_id}: {e}")
                 results.append({
                     'tenant_id': tenant_id,
                     'error': str(e)
                 })
-        
+
         return {
             'success': True,
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'results': results
         }
-        
+
     except Exception as e:
         logger.error(f"Night audit task failed: {e}")
         return {
@@ -271,64 +271,64 @@ def archive_old_data_task():
 async def _archive_old_data_async():
     """Async data archival implementation"""
     db, client = get_db()
-    
+
     try:
         # Archive cutoff date: 6 months ago
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=180)
-        
+
         results = {
             'cutoff_date': cutoff_date.isoformat(),
             'archived': {}
         }
-        
+
         # Archive old bookings (checked_out > 6 months ago)
         old_bookings = await db.bookings.find({
             'status': 'checked_out',
             'check_out': {'$lt': cutoff_date}
         }).to_list(10000)
-        
+
         if old_bookings:
             # Move to archive collection
             await db.bookings_archive.insert_many(old_bookings)
-            
+
             # Delete from main collection
             booking_ids = [b['booking_id'] for b in old_bookings]
             await db.bookings.delete_many({'booking_id': {'$in': booking_ids}})
-            
+
             results['archived']['bookings'] = len(old_bookings)
             logger.info(f"Archived {len(old_bookings)} old bookings")
-        
+
         # Archive old audit logs (> 1 year)
         audit_cutoff = datetime.now(timezone.utc) - timedelta(days=365)
         old_logs = await db.audit_logs.find({
             'timestamp': {'$lt': audit_cutoff}
         }).to_list(50000)
-        
+
         if old_logs:
             await db.audit_logs_archive.insert_many(old_logs)
             log_ids = [log['_id'] for log in old_logs]
             await db.audit_logs.delete_many({'_id': {'$in': log_ids}})
-            
+
             results['archived']['audit_logs'] = len(old_logs)
             logger.info(f"Archived {len(old_logs)} old audit logs")
-        
+
         # Archive old closed folios
         old_folios = await db.folios.find({
             'status': 'closed',
             'closed_at': {'$lt': cutoff_date}
         }).to_list(10000)
-        
+
         if old_folios:
             await db.folios_archive.insert_many(old_folios)
             folio_ids = [f['folio_id'] for f in old_folios]
             await db.folios.delete_many({'folio_id': {'$in': folio_ids}})
-            
+
             results['archived']['folios'] = len(old_folios)
             logger.info(f"Archived {len(old_folios)} old folios")
-        
+
         results['success'] = True
         return results
-        
+
     except Exception as e:
         logger.error(f"Data archival task failed: {e}")
         return {
@@ -349,22 +349,22 @@ def clean_old_notifications_task():
 async def _clean_old_notifications_async():
     """Async notification cleanup"""
     db, client = get_db()
-    
+
     try:
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=90)
-        
+
         result = await db.notifications.delete_many({
             'created_at': {'$lt': cutoff_date}
         })
-        
+
         logger.info(f"Cleaned {result.deleted_count} old notifications")
-        
+
         return {
             'success': True,
             'deleted_count': result.deleted_count,
             'cutoff_date': cutoff_date.isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"Notification cleanup failed: {e}")
         return {
@@ -385,15 +385,15 @@ def generate_daily_reports_task():
 async def _generate_daily_reports_async():
     """Async daily report generation"""
     db, client = get_db()
-    
+
     try:
         tenants = await db.users.distinct('tenant_id', {'active': True})
-        
+
         results = []
         for tenant_id in tenants:
             try:
                 yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
-                
+
                 # Calculate daily metrics
                 bookings_yesterday = await db.bookings.count_documents({
                     'tenant_id': tenant_id,
@@ -402,7 +402,7 @@ async def _generate_daily_reports_async():
                         '$lt': datetime.combine(yesterday + timedelta(days=1), datetime.min.time())
                     }
                 })
-                
+
                 revenue_yesterday = await db.payments.aggregate([
                     {
                         '$match': {
@@ -420,7 +420,7 @@ async def _generate_daily_reports_async():
                         }
                     }
                 ]).to_list(1)
-                
+
                 report = {
                     'tenant_id': tenant_id,
                     'report_date': yesterday.isoformat(),
@@ -428,19 +428,19 @@ async def _generate_daily_reports_async():
                     'revenue': revenue_yesterday[0]['total'] if revenue_yesterday else 0,
                     'generated_at': datetime.now(timezone.utc)
                 }
-                
+
                 await db.daily_reports.insert_one(report)
                 results.append(report)
-                
+
             except Exception as e:
                 logger.error(f"Daily report generation error for tenant {tenant_id}: {e}")
-        
+
         return {
             'success': True,
             'reports_generated': len(results),
             'timestamp': datetime.now(timezone.utc).isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"Daily reports task failed: {e}")
         return {
@@ -461,17 +461,17 @@ def refresh_materialized_views():
 async def _refresh_materialized_views_async():
     """Async materialized views refresh"""
     db, client = get_db()
-    
+
     try:
         from materialized_views import MaterializedViewsManager
-        
+
         views_manager = MaterializedViewsManager(db)
         result = await views_manager.refresh_dashboard_metrics()
-        
+
         logger.info(f"Materialized views refreshed: {result.get('refresh_duration_ms')}ms")
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"Materialized views refresh failed: {e}")
         return {
@@ -490,13 +490,13 @@ def warm_cache():
 async def _warm_cache_async():
     """Async cache warming"""
     db, client = get_db()
-    
+
     try:
         import redis
 
         from advanced_cache import AdvancedCacheManager, CacheWarmer
         from materialized_views import MaterializedViewsManager
-        
+
         # Initialize Redis
         redis_client = redis.Redis(
             host='127.0.0.1',
@@ -504,25 +504,25 @@ async def _warm_cache_async():
             db=0,
             decode_responses=False
         )
-        
+
         cache_manager = AdvancedCacheManager(redis_client)
         cache_warmer = CacheWarmer(cache_manager)
         views_manager = MaterializedViewsManager(db)
-        
+
         # Warm dashboard cache
         dashboard_result = await cache_warmer.warm_dashboard_cache(views_manager)
-        
+
         # Warm PMS cache
         pms_result = await cache_warmer.warm_pms_cache(db)
-        
+
         logger.info(f"Cache warmed: Dashboard={dashboard_result}, PMS={pms_result}")
-        
+
         return {
             'success': True,
             'dashboard': dashboard_result,
             'pms': pms_result
         }
-        
+
     except Exception as e:
         logger.error(f"Cache warming failed: {e}")
         return {
@@ -541,17 +541,17 @@ def archive_old_bookings():
 async def _archive_old_bookings_async():
     """Async booking archival"""
     db, client = get_db()
-    
+
     try:
         from data_archival import DataArchivalManager
-        
+
         archival_manager = DataArchivalManager(db)
         result = await archival_manager.archive_old_bookings(dry_run=False)
-        
+
         logger.info(f"Archival completed: {result.get('records_archived', 0)} bookings archived")
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"Archival failed: {e}")
         return {
@@ -571,26 +571,26 @@ async def _cleanup_old_cache_async():
     """Async cache cleanup"""
     try:
         import redis
-        
+
         redis_client = redis.Redis(
             host='127.0.0.1',
             port=6379,
             db=0,
             decode_responses=False
         )
-        
+
         # Get all keys
         keys = redis_client.keys('pms:cache:*')
-        
+
         # Redis handles TTL automatically, this is just for logging
         logger.info(f"Cache has {len(keys)} keys")
-        
+
         return {
             'success': True,
             'total_keys': len(keys),
             'message': 'Redis handles TTL automatically'
         }
-        
+
     except Exception as e:
         logger.error(f"Cache cleanup failed: {e}")
         return {
@@ -607,29 +607,29 @@ def database_maintenance():
 async def _database_maintenance_async():
     """Async database maintenance"""
     db, client = get_db()
-    
+
     try:
         # Ensure all indexes exist
         from data_archival import DataArchivalManager
         from materialized_views import MaterializedViewsManager
-        
+
         archival_manager = DataArchivalManager(db)
         views_manager = MaterializedViewsManager(db)
-        
+
         await archival_manager.setup_indexes()
         await views_manager.setup_indexes()
-        
+
         # Get database stats
         stats = await client.admin.command('serverStatus')
-        
+
         logger.info("Database maintenance completed")
-        
+
         return {
             'success': True,
             'uptime': stats['uptime'],
             'connections': stats['connections']['current']
         }
-        
+
     except Exception as e:
         logger.error(f"Database maintenance failed: {e}")
         return {
@@ -648,11 +648,11 @@ def generate_daily_report():
 async def _generate_daily_report_async():
     """Async daily report generation"""
     db, client = get_db()
-    
+
     try:
         today = datetime.now(timezone.utc).date()
         yesterday = today - timedelta(days=1)
-        
+
         # Collect metrics
         bookings_count = await db.bookings.count_documents({
             'created_at': {
@@ -660,7 +660,7 @@ async def _generate_daily_report_async():
                 '$lt': datetime.combine(today, datetime.min.time())
             }
         })
-        
+
         # Revenue calculation
         revenue_pipeline = [
             {
@@ -678,27 +678,27 @@ async def _generate_daily_report_async():
                 }
             }
         ]
-        
+
         revenue_result = await db.bookings.aggregate(revenue_pipeline).to_list(1)
         revenue = revenue_result[0]['total_revenue'] if revenue_result else 0
-        
+
         report = {
             'date': yesterday.isoformat(),
             'bookings_count': bookings_count,
             'revenue': revenue,
             'generated_at': datetime.now(timezone.utc)
         }
-        
+
         # Store report
         await db.daily_performance_reports.insert_one(report)
-        
+
         logger.info(f"Daily report generated: {bookings_count} bookings, ${revenue} revenue")
-        
+
         return {
             'success': True,
             'report': report
         }
-        
+
     except Exception as e:
         logger.error(f"Daily report generation failed: {e}")
         return {
@@ -720,7 +720,7 @@ def check_maintenance_sla_task():
 async def _check_maintenance_sla_async():
     """Async SLA check"""
     db, client = get_db()
-    
+
     try:
         # Define SLA thresholds (hours)
         sla_thresholds = {
@@ -729,19 +729,19 @@ async def _check_maintenance_sla_async():
             'medium': 24,
             'low': 72
         }
-        
+
         violations = []
         now = datetime.now(timezone.utc)
-        
+
         for priority, hours in sla_thresholds.items():
             threshold = now - timedelta(hours=hours)
-            
+
             tasks = await db.maintenance_tasks.find({
                 'status': {'$in': ['open', 'in_progress']},
                 'priority': priority,
                 'created_at': {'$lt': threshold}
             }).to_list(1000)
-            
+
             for task in tasks:
                 violation = {
                     'task_id': task['task_id'],
@@ -752,7 +752,7 @@ async def _check_maintenance_sla_async():
                     'sla_hours': hours
                 }
                 violations.append(violation)
-                
+
                 # Create notification for SLA violation
                 notification = {
                     'notification_id': f"NOTIF-SLA-{task['task_id']}",
@@ -765,22 +765,22 @@ async def _check_maintenance_sla_async():
                     'read': False,
                     'created_at': now
                 }
-                
+
                 await db.notifications.update_one(
                     {'notification_id': notification['notification_id']},
                     {'$set': notification},
                     upsert=True
                 )
-        
+
         logger.info(f"SLA check completed: {len(violations)} violations found")
-        
+
         return {
             'success': True,
             'violations_count': len(violations),
             'violations': violations[:50],  # Return first 50
             'timestamp': now.isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"SLA check task failed: {e}")
         return {
@@ -801,22 +801,22 @@ def update_occupancy_forecast_task():
 async def _update_occupancy_forecast_async():
     """Async occupancy forecast update"""
     db, client = get_db()
-    
+
     try:
         # This would integrate with ML model
         # For now, simple calculation
-        
+
         tenants = await db.users.distinct('tenant_id', {'active': True})
-        
+
         results = []
         for tenant_id in tenants:
             # Get next 30 days bookings
             today = datetime.now(timezone.utc).date()
             forecasts = []
-            
+
             for days_ahead in range(30):
                 target_date = today + timedelta(days=days_ahead)
-                
+
                 # Count confirmed/guaranteed bookings
                 bookings_count = await db.bookings.count_documents({
                     'tenant_id': tenant_id,
@@ -824,19 +824,19 @@ async def _update_occupancy_forecast_async():
                     'check_out': {'$gt': target_date},
                     'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
                 })
-                
+
                 # Get total rooms
                 total_rooms = await db.rooms.count_documents({'tenant_id': tenant_id})
-                
+
                 occupancy_pct = (bookings_count / max(1, total_rooms)) * 100
-                
+
                 forecasts.append({
                     'date': target_date.isoformat(),
                     'forecasted_occupancy': round(occupancy_pct, 2),
                     'booked_rooms': bookings_count,
                     'total_rooms': total_rooms
                 })
-            
+
             # Store forecast
             await db.occupancy_forecasts.update_one(
                 {'tenant_id': tenant_id},
@@ -849,18 +849,18 @@ async def _update_occupancy_forecast_async():
                 },
                 upsert=True
             )
-            
+
             results.append({
                 'tenant_id': tenant_id,
                 'forecasts_generated': len(forecasts)
             })
-        
+
         return {
             'success': True,
             'tenants_updated': len(results),
             'timestamp': datetime.now(timezone.utc).isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"Occupancy forecast task failed: {e}")
         return {
@@ -881,20 +881,20 @@ def process_pending_efaturas_task():
 async def _process_pending_efaturas_async():
     """Async e-fatura processing"""
     db, client = get_db()
-    
+
     try:
         # Find invoices with pending e-fatura
         pending_invoices = await db.accounting_invoices.find({
             'efatura_status': 'pending',
             'invoice_type': 'sales'
         }).limit(100).to_list(100)
-        
+
         processed = 0
         for invoice in pending_invoices:
             try:
                 # Generate e-fatura (mock - would call actual API)
                 efatura_uuid = f"EFATURA-{invoice['invoice_number']}"
-                
+
                 await db.accounting_invoices.update_one(
                     {'invoice_number': invoice['invoice_number']},
                     {
@@ -905,18 +905,18 @@ async def _process_pending_efaturas_async():
                         }
                     }
                 )
-                
+
                 processed += 1
-                
+
             except Exception as e:
                 logger.error(f"E-fatura generation error for {invoice['invoice_number']}: {e}")
-        
+
         return {
             'success': True,
             'processed': processed,
             'timestamp': datetime.now(timezone.utc).isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"E-fatura processing task failed: {e}")
         return {
@@ -938,23 +938,23 @@ async def _warm_cache_async():
     """Async cache warming"""
     try:
         from cache_manager import warm_dashboard_cache, warm_room_cache
-        
+
         db, client = get_db()
-        
+
         tenants = await db.users.distinct('tenant_id', {'active': True})
-        
+
         for tenant_id in tenants:
             await warm_dashboard_cache(tenant_id, db)
             await warm_room_cache(tenant_id, db)
-        
+
         await client.close()
-        
+
         return {
             'success': True,
             'tenants_warmed': len(tenants),
             'timestamp': datetime.now(timezone.utc).isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"Cache warming task failed: {e}")
         return {
@@ -973,31 +973,31 @@ def database_health_check_task():
 async def _database_health_check_async():
     """Async database health check"""
     db, client = get_db()
-    
+
     try:
         # Test database connection
         await db.command('ping')
-        
+
         # Check collection sizes
         collections_info = {}
         for coll_name in ['bookings', 'rooms', 'guests', 'folios']:
             count = await db[coll_name].count_documents({})
             collections_info[coll_name] = count
-        
+
         # Check for slow queries (would need profiling enabled)
         health_status = {
             'status': 'healthy',
             'collections': collections_info,
             'timestamp': datetime.now(timezone.utc).isoformat()
         }
-        
+
         # Store health check result
         await db.health_checks.insert_one(health_status)
-        
+
         await client.close()
-        
+
         return health_status
-        
+
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
         return {

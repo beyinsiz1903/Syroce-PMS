@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 def init_workers() -> None:
     """Initialize Celery workers and background schedulers.
-    
+
     This is called during app startup. It does NOT block –
     it simply ensures Celery configuration is loaded and
     beat schedules are registered.

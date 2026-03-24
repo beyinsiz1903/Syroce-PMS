@@ -46,7 +46,7 @@ async def get_pos_daily_summary(date: str = None, current_user: User = Depends(g
             'tenant_id': current_user.tenant_id,
             'type': {'$in': ['fnb_charge', 'room_charge']}
         }, {'_id': 0}).to_list(1000)
-        
+
         total_sales = sum(t.get('amount', 0) for t in transactions)
         return {
             'total_sales': total_sales,
@@ -74,9 +74,9 @@ async def get_z_report(date: str = None, current_user: User = Depends(get_curren
         transactions = await db.transactions.find({
             'tenant_id': current_user.tenant_id
         }, {'_id': 0}).to_list(1000)
-        
+
         total_sales = sum(t.get('amount', 0) for t in transactions)
-        
+
         return {
             'report_date': date or datetime.utcnow().isoformat(),
             'report_number': f'Z-{datetime.utcnow().strftime("%Y%m%d")}',
@@ -106,7 +106,7 @@ async def get_void_transactions(start_date: str = None, end_date: str = None, cu
             'tenant_id': current_user.tenant_id,
             'status': 'void'
         }, {'_id': 0}).to_list(100)
-        
+
         return {'void_transactions': void_transactions}
     except Exception:
         return {'void_transactions': []}
@@ -132,9 +132,9 @@ async def get_anomaly_detection(
 ):
     """Detect anomalies in room operations"""
     current_user = await get_current_user(credentials)
-    
+
     anomalies = []
-    
+
     # 1. Price Anomalies - Rooms priced significantly below average
     avg_rate_pipeline = [
         {
@@ -153,11 +153,11 @@ async def get_anomaly_detection(
             }
         }
     ]
-    
+
     rate_stats = {}
     async for stat in db.bookings.aggregate(avg_rate_pipeline):
         rate_stats[stat['_id']] = stat
-    
+
     # Check for low-priced bookings
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -166,7 +166,7 @@ async def get_anomaly_detection(
     }):
         room_type = booking.get('room_type')
         room_rate = booking.get('room_rate', 0)
-        
+
         if room_type in rate_stats:
             avg_rate = rate_stats[room_type]['avg_rate']
             if room_rate < avg_rate * 0.7:  # 30% below average
@@ -181,7 +181,7 @@ async def get_anomaly_detection(
                     'difference_pct': ((avg_rate - room_rate) / avg_rate * 100),
                     'message': f"Oda {booking.get('room_number')} ortalamanın %{((avg_rate - room_rate) / avg_rate * 100):.0f} altında fiyatlandırılmış"
                 })
-    
+
     # 2. Cleaning Delay Anomalies
     async for task in db.housekeeping_tasks.find({
         'tenant_id': current_user.tenant_id,
@@ -190,12 +190,12 @@ async def get_anomaly_detection(
         'started_at': {'$lte': datetime.now(timezone.utc) - timedelta(hours=1)}
     }):
         duration = (datetime.now(timezone.utc) - task.get('started_at')).total_seconds() / 60
-        
+
         room = await db.rooms.find_one({
             'id': task.get('room_id'),
             'tenant_id': current_user.tenant_id
         })
-        
+
         anomalies.append({
             'type': 'cleaning_delay',
             'severity': 'high' if duration > 90 else 'medium',
@@ -205,7 +205,7 @@ async def get_anomaly_detection(
             'assigned_to': task.get('assigned_to'),
             'message': f"Oda {room.get('room_number') if room else 'N/A'} {int(duration)} dakikadır temizleniyor"
         })
-    
+
     # 3. Overstay Risk Detection
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
     async for booking in db.bookings.find({
@@ -214,7 +214,7 @@ async def get_anomaly_detection(
         'status': 'checked_in'
     }):
         days_over = (today - booking.get('check_out')).days
-        
+
         anomalies.append({
             'type': 'overstay',
             'severity': 'high',
@@ -225,7 +225,7 @@ async def get_anomaly_detection(
             'original_checkout': booking.get('check_out').date().isoformat(),
             'message': f"Misafir {booking.get('guest_name')} check-out yapması gerekirken hala odada ({days_over} gün geçti)"
         })
-    
+
     # 4. High Maintenance Frequency Rooms
     maintenance_pipeline = [
         {
@@ -249,7 +249,7 @@ async def get_anomaly_detection(
             '$sort': {'count': -1}
         }
     ]
-    
+
     async for room_stat in db.tasks.aggregate(maintenance_pipeline):
         anomalies.append({
             'type': 'high_maintenance',
@@ -259,7 +259,7 @@ async def get_anomaly_detection(
             'maintenance_count': room_stat['count'],
             'message': f"Oda {room_stat['room_number']} son 30 günde {room_stat['count']} kez bakıma girdi"
         })
-    
+
     return {
         'anomalies': anomalies,
         'count': len(anomalies),
@@ -277,21 +277,21 @@ async def get_weekly_forecast(
 ):
     """Get weekly forecast for next 4 weeks"""
     current_user = await get_current_user(credentials)
-    
+
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
     forecast_weeks = []
-    
+
     for week_num in range(4):
         week_start = today + timedelta(days=week_num * 7)
         week_end = week_start + timedelta(days=6)
-        
+
         # Get bookings for this week
         bookings_count = await db.bookings.count_documents({
             'tenant_id': current_user.tenant_id,
             'check_in': {'$gte': week_start, '$lte': week_end},
             'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
         })
-        
+
         # Calculate revenue
         revenue_pipeline = [
             {
@@ -309,17 +309,17 @@ async def get_weekly_forecast(
                 }
             }
         ]
-        
+
         revenue_data = None
         async for data in db.bookings.aggregate(revenue_pipeline):
             revenue_data = data
-        
+
         # Get total rooms
         total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-        
+
         # Calculate occupancy
         expected_occupancy = (bookings_count / (total_rooms * 7)) * 100 if total_rooms > 0 else 0
-        
+
         forecast_weeks.append({
             'week_number': week_num + 1,
             'start_date': week_start.date().isoformat(),
@@ -329,7 +329,7 @@ async def get_weekly_forecast(
             'avg_rate': revenue_data['avg_rate'] if revenue_data else 0,
             'expected_occupancy': expected_occupancy
         })
-    
+
     return {
         'forecast_period': 'weekly',
         'weeks': forecast_weeks,
@@ -344,10 +344,10 @@ async def get_monthly_forecast(
 ):
     """Get monthly forecast for next 3 months"""
     current_user = await get_current_user(credentials)
-    
+
     today = datetime.now(timezone.utc)
     forecast_months = []
-    
+
     for month_offset in range(3):
         # Calculate month start and end
         if month_offset == 0:
@@ -359,20 +359,20 @@ async def get_monthly_forecast(
                 month = month - 12
                 year += 1
             month_start = datetime(year, month, 1, tzinfo=timezone.utc)
-        
+
         # Calculate month end
         if month_start.month == 12:
             month_end = datetime(month_start.year + 1, 1, 1, tzinfo=timezone.utc) - timedelta(days=1)
         else:
             month_end = datetime(month_start.year, month_start.month + 1, 1, tzinfo=timezone.utc) - timedelta(days=1)
-        
+
         # Get bookings
         bookings_count = await db.bookings.count_documents({
             'tenant_id': current_user.tenant_id,
             'check_in': {'$gte': month_start, '$lte': month_end},
             'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
         })
-        
+
         # Calculate revenue
         revenue_pipeline = [
             {
@@ -390,21 +390,21 @@ async def get_monthly_forecast(
                 }
             }
         ]
-        
+
         revenue_data = None
         async for data in db.bookings.aggregate(revenue_pipeline):
             revenue_data = data
-        
+
         # Get total rooms and days
         total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
         days_in_month = (month_end - month_start).days + 1
-        
+
         # Calculate metrics
         expected_occupancy = (bookings_count / (total_rooms * days_in_month)) * 100 if total_rooms > 0 else 0
         expected_revenue = revenue_data['total_revenue'] if revenue_data else 0
         avg_rate = revenue_data['avg_rate'] if revenue_data else 0
         revpar = expected_revenue / (total_rooms * days_in_month) if total_rooms > 0 else 0
-        
+
         forecast_months.append({
             'month': month_start.strftime('%B %Y'),
             'month_number': month_start.month,
@@ -418,7 +418,7 @@ async def get_monthly_forecast(
             'expected_occupancy': expected_occupancy,
             'revpar': revpar
         })
-    
+
     return {
         'forecast_period': 'monthly',
         'months': forecast_months,
@@ -441,16 +441,16 @@ async def get_rooms_with_filters(
 ):
     """Get rooms with advanced filters for room moves"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if bed_type:
         query['bed_type'] = bed_type
     if floor is not None:
         query['floor'] = floor
     if status:
         query['status'] = status
-    
+
     rooms = []
     async for room in db.rooms.find(query).sort('room_number', 1):
         rooms.append({
@@ -463,7 +463,7 @@ async def get_rooms_with_filters(
             'max_occupancy': room.get('max_occupancy', 2),
             'features': room.get('features', [])
         })
-    
+
     return {
         'rooms': rooms,
         'count': len(rooms),
@@ -489,15 +489,15 @@ async def get_available_rooms_mobile(
 ):
     """Get available rooms for check-in"""
     current_user = await get_current_user(credentials)
-    
+
     query = {
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['available', 'clean']}
     }
-    
+
     if room_type:
         query['room_type'] = room_type
-    
+
     available_rooms = []
     async for room in db.rooms.find(query).sort('room_number', 1):
         # Check if room is not booked for the dates
@@ -512,7 +512,7 @@ async def get_available_rooms_mobile(
                 }
             ]
         })
-        
+
         if not booking_conflict:
             available_rooms.append({
                 'id': room.get('id'),
@@ -525,7 +525,7 @@ async def get_available_rooms_mobile(
                 'features': room.get('features', []),
                 'rate': room.get('rate', 0)
             })
-    
+
     return {
         'available_rooms': available_rooms,
         'count': len(available_rooms),
@@ -549,7 +549,7 @@ async def scan_id_mobile(
 ):
     """Scan and save ID/Passport information"""
     current_user = await get_current_user(credentials)
-    
+
     scan_id = str(uuid.uuid4())
     scan_result = {
         'id': scan_id,
@@ -566,9 +566,9 @@ async def scan_id_mobile(
         'scanned_at': datetime.now(timezone.utc),
         'scanned_by': current_user.username
     }
-    
+
     await db.id_scans.insert_one(scan_result)
-    
+
     return {
         'message': 'ID scan saved successfully',
         'scan_id': scan_id,
@@ -593,29 +593,29 @@ async def mobile_checkin(
 ):
     """Perform mobile check-in"""
     current_user = await get_current_user(credentials)
-    
+
     # Get booking
     booking = await db.bookings.find_one({
         'id': booking_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
+
     # Get room
     room = await db.rooms.find_one({
         'id': room_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
-    
+
     # Check room availability
     if room.get('status') not in ['available', 'clean']:
         raise HTTPException(status_code=400, detail=f"Room {room.get('room_number')} is not available")
-    
+
     # Create check-in record
     checkin_id = str(uuid.uuid4())
     checkin_record = {
@@ -637,9 +637,9 @@ async def mobile_checkin(
         'created_at': datetime.now(timezone.utc),
         'updated_at': datetime.now(timezone.utc)
     }
-    
+
     await db.mobile_checkins.insert_one(checkin_record)
-    
+
     # Update booking status
     await db.bookings.update_one(
         {'id': booking_id, 'tenant_id': current_user.tenant_id},
@@ -651,7 +651,7 @@ async def mobile_checkin(
             'updated_at': datetime.now(timezone.utc)
         }}
     )
-    
+
     # Update room status
     await db.rooms.update_one(
         {'id': room_id, 'tenant_id': current_user.tenant_id},
@@ -660,13 +660,13 @@ async def mobile_checkin(
             'updated_at': datetime.now(timezone.utc)
         }}
     )
-    
+
     # Get guest info
     guest = await db.guests.find_one({
         'id': booking.get('guest_id'),
         'tenant_id': current_user.tenant_id
     })
-    
+
     return {
         'message': 'Check-in completed successfully',
         'checkin_id': checkin_id,
@@ -686,23 +686,23 @@ async def assign_room_mobile(
 ):
     """Assign room to booking (pre-checkin)"""
     current_user = await get_current_user(credentials)
-    
+
     booking = await db.bookings.find_one({
         'id': booking_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
+
     room = await db.rooms.find_one({
         'id': room_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
-    
+
     # Update booking with room assignment
     await db.bookings.update_one(
         {'id': booking_id, 'tenant_id': current_user.tenant_id},
@@ -715,7 +715,7 @@ async def assign_room_mobile(
             'updated_at': datetime.now(timezone.utc)
         }}
     )
-    
+
     # Update room status to blocked
     await db.rooms.update_one(
         {'id': room_id, 'tenant_id': current_user.tenant_id},
@@ -724,7 +724,7 @@ async def assign_room_mobile(
             'updated_at': datetime.now(timezone.utc)
         }}
     )
-    
+
     return {
         'message': 'Room assigned successfully',
         'booking_id': booking_id,
@@ -740,21 +740,21 @@ async def get_reservation_detail_mobile(
 ):
     """Get detailed reservation information"""
     current_user = await get_current_user(credentials)
-    
+
     booking = await db.bookings.find_one({
         'id': booking_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
+
     # Get guest
     guest = await db.guests.find_one({
         'id': booking.get('guest_id'),
         'tenant_id': current_user.tenant_id
     })
-    
+
     # Get room if assigned
     room = None
     if booking.get('room_id'):
@@ -762,19 +762,19 @@ async def get_reservation_detail_mobile(
             'id': booking.get('room_id'),
             'tenant_id': current_user.tenant_id
         })
-    
+
     # Get folio
     folio = await db.folios.find_one({
         'booking_id': booking_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     # Get guest preferences
     preferences = await db.guest_preferences.find_one({
         'guest_id': booking.get('guest_id'),
         'tenant_id': current_user.tenant_id
     })
-    
+
     # Get previous stays
     previous_stays = []
     async for prev_booking in db.bookings.find({
@@ -789,7 +789,7 @@ async def get_reservation_detail_mobile(
             'room_number': prev_booking.get('room_number'),
             'total_amount': prev_booking.get('total_amount', 0)
         })
-    
+
     return {
         'booking': {
             'id': booking.get('id'),
@@ -846,27 +846,27 @@ async def get_guest_history_mobile(
 ):
     """Get guest stay history"""
     current_user = await get_current_user(credentials)
-    
+
     guest = await db.guests.find_one({
         'id': guest_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
-    
+
     # Get all bookings
     bookings = []
     total_spent = 0.0
     total_nights = 0
-    
+
     async for booking in db.bookings.find({
         'guest_id': guest_id,
         'tenant_id': current_user.tenant_id
     }).sort('check_in', -1):
         total_spent += booking.get('total_amount', 0)
         total_nights += booking.get('nights', 0)
-        
+
         bookings.append({
             'booking_id': booking.get('id'),
             'confirmation_number': booking.get('confirmation_number'),
@@ -878,7 +878,7 @@ async def get_guest_history_mobile(
             'status': booking.get('status'),
             'total_amount': booking.get('total_amount', 0)
         })
-    
+
     return {
         'guest': {
             'id': guest.get('id'),
@@ -910,7 +910,7 @@ async def create_guest_request_mobile(
 ):
     """Create guest request"""
     current_user = await get_current_user(credentials)
-    
+
     request_id = str(uuid.uuid4())
     request = {
         'id': request_id,
@@ -926,9 +926,9 @@ async def create_guest_request_mobile(
         'created_by': current_user.username,
         'updated_at': datetime.now(timezone.utc)
     }
-    
+
     await db.guest_requests.insert_one(request)
-    
+
     return {
         'message': 'Guest request created successfully',
         'request_id': request_id,
@@ -945,14 +945,14 @@ async def get_guest_requests_mobile(
 ):
     """Get guest requests"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if status:
         query['status'] = status
     if room_number:
         query['room_number'] = room_number
-    
+
     requests = []
     async for request in db.guest_requests.find(query).sort('requested_at', -1).limit(100):
         requests.append({
@@ -967,7 +967,7 @@ async def get_guest_requests_mobile(
             'requested_at': request.get('requested_at').isoformat() if request.get('requested_at') else None,
             'completed_at': request.get('completed_at').isoformat() if request.get('completed_at') else None
         })
-    
+
     # Summary by status
     summary = {
         'pending': len([r for r in requests if r['status'] == 'pending']),
@@ -975,7 +975,7 @@ async def get_guest_requests_mobile(
         'completed': len([r for r in requests if r['status'] == 'completed']),
         'total': len(requests)
     }
-    
+
     return {
         'requests': requests,
         'summary': summary
@@ -992,36 +992,36 @@ async def update_guest_request_status_mobile(
 ):
     """Update guest request status"""
     current_user = await get_current_user(credentials)
-    
+
     request = await db.guest_requests.find_one({
         'id': request_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not request:
         raise HTTPException(status_code=404, detail="Request not found")
-    
+
     update_data = {
         'status': new_status,
         'updated_at': datetime.now(timezone.utc)
     }
-    
+
     if assigned_to:
         update_data['assigned_to'] = assigned_to
         if new_status == 'assigned':
             update_data['assigned_at'] = datetime.now(timezone.utc)
-    
+
     if new_status == 'completed':
         update_data['completed_at'] = datetime.now(timezone.utc)
-    
+
     if notes:
         update_data['notes'] = notes
-    
+
     await db.guest_requests.update_one(
         {'id': request_id, 'tenant_id': current_user.tenant_id},
         {'$set': update_data}
     )
-    
+
     return {
         'message': f'Request status updated to {new_status}',
         'request_id': request_id,
@@ -1042,20 +1042,20 @@ async def add_folio_charge_mobile(
 ):
     """Add charge to folio"""
     current_user = await get_current_user(credentials)
-    
+
     folio = await db.folios.find_one({
         'id': folio_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not folio:
         raise HTTPException(status_code=404, detail="Folio not found")
-    
+
     # Calculate amounts
     amount = quantity * unit_price
     tax_amount = amount * tax_rate
     total = amount + tax_amount
-    
+
     # Create charge
     charge_id = str(uuid.uuid4())
     charge = {
@@ -1075,9 +1075,9 @@ async def add_folio_charge_mobile(
         'voided': False,
         'department': department
     }
-    
+
     await db.folio_charges.insert_one(charge)
-    
+
     # Update folio balance
     new_balance = folio.get('balance', 0) + total
     await db.folios.update_one(
@@ -1087,7 +1087,7 @@ async def add_folio_charge_mobile(
             'updated_at': datetime.now(timezone.utc)
         }}
     )
-    
+
     return {
         'message': 'Charge added successfully',
         'charge_id': charge_id,
@@ -1106,18 +1106,18 @@ async def void_folio_charge_mobile(
 ):
     """Void a folio charge"""
     current_user = await get_current_user(credentials)
-    
+
     charge = await db.folio_charges.find_one({
         'id': charge_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not charge:
         raise HTTPException(status_code=404, detail="Charge not found")
-    
+
     if charge.get('voided'):
         raise HTTPException(status_code=400, detail="Charge already voided")
-    
+
     # Mark charge as voided
     await db.folio_charges.update_one(
         {'id': charge_id, 'tenant_id': current_user.tenant_id},
@@ -1128,13 +1128,13 @@ async def void_folio_charge_mobile(
             'void_reason': void_reason
         }}
     )
-    
+
     # Update folio balance
     folio = await db.folios.find_one({
         'id': charge.get('folio_id'),
         'tenant_id': current_user.tenant_id
     })
-    
+
     if folio:
         new_balance = folio.get('balance', 0) - charge.get('total', 0)
         await db.folios.update_one(
@@ -1144,7 +1144,7 @@ async def void_folio_charge_mobile(
                 'updated_at': datetime.now(timezone.utc)
             }}
         )
-    
+
     return {
         'message': 'Charge voided successfully',
         'charge_id': charge_id,
@@ -1160,15 +1160,15 @@ async def get_folio_transactions_mobile(
 ):
     """Get folio transactions (charges and payments)"""
     current_user = await get_current_user(credentials)
-    
+
     folio = await db.folios.find_one({
         'id': folio_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not folio:
         raise HTTPException(status_code=404, detail="Folio not found")
-    
+
     # Get charges
     charges = []
     total_charges = 0.0
@@ -1178,7 +1178,7 @@ async def get_folio_transactions_mobile(
     }).sort('posted_at', 1):
         if not charge.get('voided'):
             total_charges += charge.get('total', 0)
-        
+
         charges.append({
             'id': charge.get('id'),
             'type': 'charge',
@@ -1194,7 +1194,7 @@ async def get_folio_transactions_mobile(
             'posted_by': charge.get('posted_by'),
             'posted_at': charge.get('posted_at').isoformat() if charge.get('posted_at') else None
         })
-    
+
     # Get payments
     payments = []
     total_payments = 0.0
@@ -1203,7 +1203,7 @@ async def get_folio_transactions_mobile(
         'tenant_id': current_user.tenant_id
     }).sort('created_at', 1):
         total_payments += payment.get('amount', 0)
-        
+
         payments.append({
             'id': payment.get('id'),
             'type': 'payment',
@@ -1214,11 +1214,11 @@ async def get_folio_transactions_mobile(
             'posted_by': payment.get('created_by'),
             'posted_at': payment.get('created_at').isoformat() if payment.get('created_at') else None
         })
-    
+
     # Combine and sort by date
     all_transactions = charges + payments
     all_transactions.sort(key=lambda x: x['posted_at'] if x['posted_at'] else '')
-    
+
     return {
         'folio': {
             'id': folio.get('id'),
@@ -1246,21 +1246,21 @@ async def calculate_early_late_fees(
 ):
     """Calculate early check-in and late checkout fees"""
     current_user = await get_current_user(credentials)
-    
+
     # Get booking
     booking = await db.bookings.find_one({
         'id': booking_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
+
     # Calculate fees (simplified implementation)
     early_checkin_fee = 50.0 if early_checkin_time else 0.0
     late_checkout_fee = 75.0 if late_checkout_time else 0.0
     total_fees = early_checkin_fee + late_checkout_fee
-    
+
     return {
         'booking_id': booking_id,
         'early_checkin_fee': early_checkin_fee,
@@ -1281,20 +1281,20 @@ async def get_revenue_dashboard_mobile(
 ):
     """Get comprehensive revenue dashboard"""
     current_user = await get_current_user(credentials)
-    
+
     # Default to current month
     if not start_date or not end_date:
         today = datetime.now(timezone.utc).date()
         start_date = today.replace(day=1).isoformat()
         last_day = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
         end_date = last_day.isoformat()
-    
+
     start_dt = datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc)
     end_dt = datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc)
-    
+
     # Total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    
+
     # Bookings in period
     bookings_query = {
         'tenant_id': current_user.tenant_id,
@@ -1302,26 +1302,26 @@ async def get_revenue_dashboard_mobile(
         'check_out': {'$gte': start_date},
         'status': {'$in': ['confirmed', 'guaranteed', 'checked_in', 'checked_out']}
     }
-    
+
     total_revenue = 0.0
     total_room_nights = 0
     bookings_list = []
-    
+
     async for booking in db.bookings.find(bookings_query):
         revenue = booking.get('total_amount', 0)
         nights = booking.get('nights', 1)
         total_revenue += revenue
         total_room_nights += nights
         bookings_list.append(booking)
-    
+
     # Calculate metrics
     days_in_period = (end_dt - start_dt).days + 1
     total_room_nights_available = total_rooms * days_in_period
-    
+
     occupancy = (total_room_nights / total_room_nights_available * 100) if total_room_nights_available > 0 else 0
     adr = (total_revenue / total_room_nights) if total_room_nights > 0 else 0
     revpar = (total_revenue / total_room_nights_available) if total_room_nights_available > 0 else 0
-    
+
     return {
         'period': {
             'start_date': start_date,
@@ -1348,28 +1348,28 @@ async def get_segment_analysis_mobile(
 ):
     """Get revenue by market segment"""
     current_user = await get_current_user(credentials)
-    
+
     # Default to current month
     if not start_date or not end_date:
         today = datetime.now(timezone.utc).date()
         start_date = today.replace(day=1).isoformat()
         last_day = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
         end_date = last_day.isoformat()
-    
+
     bookings_query = {
         'tenant_id': current_user.tenant_id,
         'check_in': {'$lte': end_date},
         'check_out': {'$gte': start_date},
         'status': {'$in': ['confirmed', 'guaranteed', 'checked_in', 'checked_out']}
     }
-    
+
     segments = {}
-    
+
     async for booking in db.bookings.find(bookings_query):
         segment = booking.get('market_segment', 'other')
         revenue = booking.get('total_amount', 0)
         nights = booking.get('nights', 1)
-        
+
         if segment not in segments:
             segments[segment] = {
                 'segment': segment,
@@ -1378,25 +1378,25 @@ async def get_segment_analysis_mobile(
                 'room_nights': 0,
                 'adr': 0
             }
-        
+
         segments[segment]['revenue'] += revenue
         segments[segment]['bookings'] += 1
         segments[segment]['room_nights'] += nights
-    
+
     # Calculate ADR for each segment
     for segment in segments.values():
         if segment['room_nights'] > 0:
             segment['adr'] = segment['revenue'] / segment['room_nights']
-    
+
     # Sort by revenue
     segments_list = sorted(segments.values(), key=lambda x: x['revenue'], reverse=True)
-    
+
     total_revenue = sum(s['revenue'] for s in segments_list)
-    
+
     # Add percentage
     for segment in segments_list:
         segment['percentage'] = (segment['revenue'] / total_revenue * 100) if total_revenue > 0 else 0
-    
+
     return {
         'period': {
             'start_date': start_date,
@@ -1415,27 +1415,27 @@ async def get_channel_distribution_mobile(
 ):
     """Get revenue by booking channel"""
     current_user = await get_current_user(credentials)
-    
+
     # Default to current month
     if not start_date or not end_date:
         today = datetime.now(timezone.utc).date()
         start_date = today.replace(day=1).isoformat()
         last_day = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
         end_date = last_day.isoformat()
-    
+
     bookings_query = {
         'tenant_id': current_user.tenant_id,
         'check_in': {'$lte': end_date},
         'check_out': {'$gte': start_date},
         'status': {'$in': ['confirmed', 'guaranteed', 'checked_in', 'checked_out']}
     }
-    
+
     channels = {}
-    
+
     async for booking in db.bookings.find(bookings_query):
         channel = booking.get('channel', 'direct')
         revenue = booking.get('total_amount', 0)
-        
+
         if channel not in channels:
             channels[channel] = {
                 'channel': channel,
@@ -1443,21 +1443,21 @@ async def get_channel_distribution_mobile(
                 'bookings': 0,
                 'adr': 0
             }
-        
+
         channels[channel]['revenue'] += revenue
         channels[channel]['bookings'] += 1
-    
+
     # Calculate ADR
     for channel in channels.values():
         if channel['bookings'] > 0:
             channel['adr'] = channel['revenue'] / channel['bookings']
-    
+
     channels_list = sorted(channels.values(), key=lambda x: x['revenue'], reverse=True)
     total_revenue = sum(c['revenue'] for c in channels_list)
-    
+
     for channel in channels_list:
         channel['percentage'] = (channel['revenue'] / total_revenue * 100) if total_revenue > 0 else 0
-    
+
     return {
         'period': {
             'start_date': start_date,
@@ -1475,9 +1475,9 @@ async def get_pickup_graph_mobile(
 ):
     """Get booking pickup graph for specific arrival date"""
     current_user = await get_current_user(credentials)
-    
+
     arrival_dt = datetime.fromisoformat(arrival_date).date()
-    
+
     # Get bookings for this arrival date
     bookings = []
     async for booking in db.bookings.find({
@@ -1489,29 +1489,29 @@ async def get_pickup_graph_mobile(
             'created_at': booking.get('created_at'),
             'room_nights': booking.get('nights', 1)
         })
-    
+
     # Generate pickup data points
     pickup_points = []
-    
+
     # Group by days before arrival
     today = datetime.now(timezone.utc).date()
     days_until_arrival = (arrival_dt - today).days
-    
+
     for i in range(365, -1, -7):  # Weekly points going back 1 year
         cutoff_date = arrival_dt - timedelta(days=i)
         cutoff_dt = datetime.combine(cutoff_date, datetime.max.time()).replace(tzinfo=timezone.utc)
-        
+
         rooms_at_cutoff = sum(
-            b['room_nights'] for b in bookings 
+            b['room_nights'] for b in bookings
             if b['created_at'] <= cutoff_dt
         )
-        
+
         pickup_points.append({
             'days_before_arrival': i,
             'date': cutoff_date.isoformat(),
             'cumulative_rooms': rooms_at_cutoff
         })
-    
+
     return {
         'arrival_date': arrival_date,
         'days_until_arrival': days_until_arrival,
@@ -1527,53 +1527,53 @@ async def get_revenue_forecast_mobile(
 ):
     """Get revenue forecast"""
     current_user = await get_current_user(credentials)
-    
+
     today = datetime.now(timezone.utc).date()
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    
+
     # Get historical data for forecasting
     lookback_days = 30
     start_historical = (today - timedelta(days=lookback_days)).isoformat()
     end_historical = today.isoformat()
-    
+
     historical_query = {
         'tenant_id': current_user.tenant_id,
         'check_in': {'$gte': start_historical, '$lte': end_historical},
         'status': {'$in': ['confirmed', 'guaranteed', 'checked_in', 'checked_out']}
     }
-    
+
     historical_revenue = 0.0
     historical_nights = 0
-    
+
     async for booking in db.bookings.find(historical_query):
         historical_revenue += booking.get('total_amount', 0)
         historical_nights += booking.get('nights', 1)
-    
+
     # Calculate historical averages
     avg_daily_revenue = historical_revenue / lookback_days if lookback_days > 0 else 0
     avg_occupancy = (historical_nights / (total_rooms * lookback_days) * 100) if lookback_days > 0 else 0
     avg_adr = (historical_revenue / historical_nights) if historical_nights > 0 else 0
-    
+
     # Generate forecast
     forecast_data = []
-    
+
     for i in range(forecast_days):
         forecast_date = today + timedelta(days=i)
-        
+
         # Get existing bookings
         existing_bookings = await db.bookings.count_documents({
             'tenant_id': current_user.tenant_id,
             'check_in': forecast_date.isoformat(),
             'status': {'$in': ['confirmed', 'guaranteed']}
         })
-        
+
         # Simple projection (can be enhanced with ML)
         projected_occupancy = min((existing_bookings / total_rooms * 100) + (avg_occupancy * 0.3), 100)
         projected_rooms = total_rooms * (projected_occupancy / 100)
         projected_adr = avg_adr * (1 + (projected_occupancy - 70) * 0.002)  # Price elasticity
         projected_revenue = projected_rooms * projected_adr
         projected_revpar = projected_revenue / total_rooms
-        
+
         forecast_data.append({
             'date': forecast_date.isoformat(),
             'day_of_week': forecast_date.strftime('%A'),
@@ -1583,7 +1583,7 @@ async def get_revenue_forecast_mobile(
             'projected_revpar': round(projected_revpar, 2),
             'projected_revenue': round(projected_revenue, 2)
         })
-    
+
     return {
         'forecast_period': {
             'start_date': today.isoformat(),
@@ -1606,13 +1606,13 @@ async def get_demand_heatmap_mobile(
 ):
     """Get demand heatmap"""
     current_user = await get_current_user(credentials)
-    
+
     today = datetime.now(timezone.utc).date()
     end_date = today + timedelta(days=months_ahead * 30)
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    
+
     heatmap_data = []
-    
+
     # Generate data for each day
     current_date = today
     while current_date <= end_date:
@@ -1622,9 +1622,9 @@ async def get_demand_heatmap_mobile(
             'check_in': current_date.isoformat(),
             'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
         })
-        
+
         occupancy = (bookings_count / total_rooms * 100) if total_rooms > 0 else 0
-        
+
         # Determine demand level
         if occupancy >= 90:
             demand_level = 'very_high'
@@ -1634,7 +1634,7 @@ async def get_demand_heatmap_mobile(
             demand_level = 'medium'
         else:
             demand_level = 'low'
-        
+
         heatmap_data.append({
             'date': current_date.isoformat(),
             'day_of_week': current_date.strftime('%A'),
@@ -1643,9 +1643,9 @@ async def get_demand_heatmap_mobile(
             'demand_level': demand_level,
             'available_rooms': total_rooms - bookings_count
         })
-        
+
         current_date += timedelta(days=1)
-    
+
     return {
         'period': {
             'start_date': today.isoformat(),
@@ -1664,18 +1664,18 @@ async def get_cancellations_noshows_mobile(
 ):
     """Get cancellation and no-show analysis"""
     current_user = await get_current_user(credentials)
-    
+
     # Default to current month
     if not start_date or not end_date:
         today = datetime.now(timezone.utc).date()
         start_date = today.replace(day=1).isoformat()
         last_day = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
         end_date = last_day.isoformat()
-    
+
     # Cancelled bookings
     cancelled_bookings = []
     cancelled_revenue = 0.0
-    
+
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'status': 'cancelled',
@@ -1683,7 +1683,7 @@ async def get_cancellations_noshows_mobile(
     }):
         revenue_lost = booking.get('total_amount', 0)
         cancelled_revenue += revenue_lost
-        
+
         cancelled_bookings.append({
             'booking_id': booking.get('id'),
             'confirmation_number': booking.get('confirmation_number'),
@@ -1693,11 +1693,11 @@ async def get_cancellations_noshows_mobile(
             'cancelled_at': booking.get('cancelled_at').isoformat() if booking.get('cancelled_at') else None,
             'channel': booking.get('channel', 'unknown')
         })
-    
+
     # No-show bookings
     noshow_bookings = []
     noshow_revenue = 0.0
-    
+
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'status': 'no_show',
@@ -1705,7 +1705,7 @@ async def get_cancellations_noshows_mobile(
     }):
         revenue_lost = booking.get('total_amount', 0)
         noshow_revenue += revenue_lost
-        
+
         noshow_bookings.append({
             'booking_id': booking.get('id'),
             'confirmation_number': booking.get('confirmation_number'),
@@ -1714,16 +1714,16 @@ async def get_cancellations_noshows_mobile(
             'revenue_lost': revenue_lost,
             'channel': booking.get('channel', 'unknown')
         })
-    
+
     # Total bookings in period for comparison
     total_bookings = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_in': {'$gte': start_date, '$lte': end_date}
     })
-    
+
     cancellation_rate = (len(cancelled_bookings) / total_bookings * 100) if total_bookings > 0 else 0
     noshow_rate = (len(noshow_bookings) / total_bookings * 100) if total_bookings > 0 else 0
-    
+
     return {
         'period': {
             'start_date': start_date,
@@ -1756,11 +1756,11 @@ async def create_rate_override_mobile(
 ):
     """Create rate override for specific date"""
     current_user = await get_current_user(credentials)
-    
+
     # Get current rate (simplified - should fetch from rate table)
     # For demo, using a default rate
     original_rate = 1000.0  # This should come from rate management system
-    
+
     override_id = str(uuid.uuid4())
     override = {
         'id': override_id,
@@ -1774,9 +1774,9 @@ async def create_rate_override_mobile(
         'created_by': current_user.username,
         'created_at': datetime.now(timezone.utc)
     }
-    
+
     await db.rate_overrides.insert_one(override)
-    
+
     return {
         'message': 'Rate override created',
         'override_id': override_id,
@@ -1797,9 +1797,9 @@ async def get_rate_overrides_mobile(
 ):
     """Get rate overrides"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if start_date or end_date:
         date_filter = {}
         if start_date:
@@ -1807,7 +1807,7 @@ async def get_rate_overrides_mobile(
         if end_date:
             date_filter['$lte'] = datetime.fromisoformat(end_date)
         query['date'] = date_filter
-    
+
     overrides = []
     async for override in db.rate_overrides.find(query).sort('date', 1):
         overrides.append({
@@ -1821,7 +1821,7 @@ async def get_rate_overrides_mobile(
             'approved_by': override.get('approved_by'),
             'created_at': override.get('created_at').isoformat() if override.get('created_at') else None
         })
-    
+
     return {
         'overrides': overrides,
         'count': len(overrides)
@@ -1834,10 +1834,10 @@ async def get_guest_alerts(
 ):
     """Get guest alerts (VIP, birthday, health issues, etc.)"""
     current_user = await get_current_user(credentials)
-    
+
     alerts = []
     today = datetime.now(timezone.utc).date()
-    
+
     # Get all in-house and arriving guests
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -1856,10 +1856,10 @@ async def get_guest_alerts(
             'id': booking.get('guest_id'),
             'tenant_id': current_user.tenant_id
         })
-        
+
         if not guest:
             continue
-        
+
         # VIP Status Alert
         if guest.get('vip_status'):
             alerts.append({
@@ -1874,13 +1874,13 @@ async def get_guest_alerts(
                     'preferences': guest.get('preferences', [])
                 }
             })
-        
+
         # Birthday Alert
         if guest.get('date_of_birth'):
             birthday = guest.get('date_of_birth')
             if isinstance(birthday, str):
                 birthday = datetime.fromisoformat(birthday).date()
-            
+
             if birthday.month == today.month and birthday.day == today.day:
                 alerts.append({
                     'type': 'birthday',
@@ -1893,7 +1893,7 @@ async def get_guest_alerts(
                         'age': today.year - birthday.year
                     }
                 })
-        
+
         # Health Issues Alert
         if guest.get('health_notes') or guest.get('allergies'):
             alerts.append({
@@ -1908,7 +1908,7 @@ async def get_guest_alerts(
                     'allergies': guest.get('allergies', [])
                 }
             })
-        
+
         # Special Requests Alert
         if booking.get('special_requests'):
             alerts.append({
@@ -1922,14 +1922,14 @@ async def get_guest_alerts(
                     'requests': booking.get('special_requests')
                 }
             })
-        
+
         # Repeat Guest Alert
         guest_booking_count = await db.bookings.count_documents({
             'guest_id': guest.get('id'),
             'tenant_id': current_user.tenant_id,
             'status': 'checked_out'
         })
-        
+
         if guest_booking_count >= 5:
             alerts.append({
                 'type': 'repeat_guest',
@@ -1942,7 +1942,7 @@ async def get_guest_alerts(
                     'total_stays': guest_booking_count
                 }
             })
-    
+
     return {
         'alerts': alerts,
         'count': len(alerts),
@@ -1966,22 +1966,22 @@ async def get_status_change_logs(
 ):
     """Get room status change logs (audit trail)"""
     current_user = await get_current_user(credentials)
-    
+
     query = {
         'tenant_id': current_user.tenant_id,
         'action': 'ROOM_STATUS_CHANGE'
     }
-    
+
     if room_id:
         query['entity_id'] = room_id
-    
+
     logs = []
     async for log in db.audit_logs.find(query).sort('timestamp', -1).limit(limit):
         room = await db.rooms.find_one({
             'id': log.get('entity_id'),
             'tenant_id': current_user.tenant_id
         })
-        
+
         logs.append({
             'log_id': log.get('id'),
             'room_id': log.get('entity_id'),
@@ -1992,7 +1992,7 @@ async def get_status_change_logs(
             'timestamp': log.get('timestamp').isoformat() if log.get('timestamp') else None,
             'reason': log.get('changes', {}).get('reason', '')
         })
-    
+
     return {
         'logs': logs,
         'count': len(logs)
@@ -2015,7 +2015,7 @@ async def create_lost_found_item(
 ):
     """Create a new lost and found item"""
     current_user = await get_current_user(credentials)
-    
+
     item_id = str(uuid.uuid4())
     lost_found_item = {
         'id': item_id,
@@ -2032,9 +2032,9 @@ async def create_lost_found_item(
         'created_by': current_user.username,
         'created_at': datetime.now(timezone.utc)
     }
-    
+
     await db.lost_found.insert_one(lost_found_item)
-    
+
     return {
         'message': 'Lost & found item created',
         'item_id': item_id,
@@ -2049,11 +2049,11 @@ async def get_lost_found_items(
 ):
     """Get lost and found items"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
     if status:
         query['status'] = status
-    
+
     items = []
     async for item in db.lost_found.find(query).sort('found_date', -1):
         items.append({
@@ -2068,7 +2068,7 @@ async def get_lost_found_items(
             'status': item.get('status'),
             'notes': item.get('notes')
         })
-    
+
     return {
         'items': items,
         'count': len(items),
@@ -2087,15 +2087,15 @@ async def get_task_assignments(
 ):
     """Get housekeeping task assignments and routes"""
     current_user = await get_current_user(credentials)
-    
+
     if date:
         target_date = datetime.fromisoformat(date).replace(tzinfo=timezone.utc)
     else:
         target_date = datetime.now(timezone.utc)
-    
+
     start_of_day = target_date.replace(hour=0, minute=0, second=0)
     end_of_day = target_date.replace(hour=23, minute=59, second=59)
-    
+
     # Get all housekeeping staff
     staff_list = []
     async for task in db.housekeeping_tasks.find({
@@ -2105,25 +2105,25 @@ async def get_task_assignments(
         staff_name = task.get('assigned_to')
         if staff_name and staff_name not in staff_list:
             staff_list.append(staff_name)
-    
+
     # Get assignments for each staff
     assignments = []
-    
+
     for staff_name in staff_list:
         staff_tasks = []
         completed_count = 0
-        
+
         async for task in db.housekeeping_tasks.find({
             'tenant_id': current_user.tenant_id,
             'assigned_to': staff_name,
             'created_at': {'$gte': start_of_day, '$lte': end_of_day}
         }).sort('room_number', 1):
-            
+
             room = await db.rooms.find_one({
                 'id': task.get('room_id'),
                 'tenant_id': current_user.tenant_id
             })
-            
+
             task_info = {
                 'task_id': task.get('id'),
                 'room_id': task.get('room_id'),
@@ -2134,15 +2134,15 @@ async def get_task_assignments(
                 'priority': task.get('priority', 'normal'),
                 'started_at': task.get('started_at').isoformat() if task.get('started_at') else None
             }
-            
+
             staff_tasks.append(task_info)
-            
+
             if task.get('status') == 'completed':
                 completed_count += 1
-        
+
         # Sort tasks by floor and room number for optimal route
         staff_tasks.sort(key=lambda x: (x['floor'], x['room_number']))
-        
+
         assignments.append({
             'staff_name': staff_name,
             'total_tasks': len(staff_tasks),
@@ -2152,7 +2152,7 @@ async def get_task_assignments(
             'tasks': staff_tasks,
             'route': [t['room_number'] for t in staff_tasks]
         })
-    
+
     return {
         'date': target_date.date().isoformat(),
         'assignments': assignments,
@@ -2172,30 +2172,30 @@ async def get_asset_maintenance_history(
 ):
     """Get maintenance history for a specific asset/equipment"""
     current_user = await get_current_user(credentials)
-    
+
     # Get asset info
     asset = await db.equipment.find_one({
         'id': asset_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not asset:
         # Try finding by room_id
         room = await db.rooms.find_one({
             'id': asset_id,
             'tenant_id': current_user.tenant_id
         })
-        
+
         if not room:
             raise HTTPException(status_code=404, detail="Asset not found")
-        
+
         asset = {
             'id': room.get('id'),
             'name': f"Room {room.get('room_number')}",
             'type': 'room',
             'room_number': room.get('room_number')
         }
-    
+
     # Get all maintenance tasks for this asset
     history = []
     async for task in db.tasks.find({
@@ -2206,7 +2206,7 @@ async def get_asset_maintenance_history(
         'tenant_id': current_user.tenant_id,
         'department': 'maintenance'
     }).sort('created_at', -1):
-        
+
         history.append({
             'task_id': task.get('id'),
             'title': task.get('title'),
@@ -2220,12 +2220,12 @@ async def get_asset_maintenance_history(
             'resolution_notes': task.get('resolution_notes', ''),
             'cost': task.get('cost', 0)
         })
-    
+
     # Calculate statistics
     total_tasks = len(history)
     completed_tasks = len([h for h in history if h['status'] == 'completed'])
     total_cost = sum(h['cost'] for h in history)
-    
+
     # Calculate average resolution time
     resolution_times = []
     for h in history:
@@ -2234,9 +2234,9 @@ async def get_asset_maintenance_history(
             completed = datetime.fromisoformat(h['completed_at'])
             duration = (completed - created).total_seconds() / 3600  # hours
             resolution_times.append(duration)
-    
+
     avg_resolution_time = sum(resolution_times) / len(resolution_times) if resolution_times else 0
-    
+
     return {
         'asset': {
             'id': asset.get('id'),
@@ -2267,52 +2267,52 @@ async def get_z_report_detailed(
 ):
     """Get Z report (end of day report) for POS"""
     current_user = await get_current_user(credentials)
-    
+
     if date:
         target_date = datetime.fromisoformat(date)
     else:
         target_date = datetime.now(timezone.utc)
-    
+
     start_of_day = target_date.replace(hour=0, minute=0, second=0)
     end_of_day = target_date.replace(hour=23, minute=59, second=59)
-    
+
     query = {
         'tenant_id': current_user.tenant_id,
         'created_at': {'$gte': start_of_day, '$lte': end_of_day}
     }
-    
+
     if outlet_id:
         query['outlet_id'] = outlet_id
-    
+
     # Get all transactions
     total_sales = 0
     total_tax = 0
     transaction_count = 0
     payment_methods = {}
     voided_amount = 0
-    
+
     async for transaction in db.pos_transactions.find(query):
         if transaction.get('status') == 'voided':
             voided_amount += transaction.get('total_amount', 0)
             continue
-        
+
         total_sales += transaction.get('total_amount', 0)
         total_tax += transaction.get('tax_amount', 0)
         transaction_count += 1
-        
+
         payment_method = transaction.get('payment_method', 'cash')
         payment_methods[payment_method] = payment_methods.get(payment_method, 0) + transaction.get('total_amount', 0)
-    
+
     # Get category breakdown
     category_sales = {}
     async for order in db.pos_orders.find(query):
         for item in order.get('items', []):
             category = item.get('category', 'other')
             category_sales[category] = category_sales.get(category, 0) + item.get('total', 0)
-    
+
     # Calculate net sales
     net_sales = total_sales - voided_amount
-    
+
     return {
         'date': target_date.date().isoformat(),
         'outlet_id': outlet_id,
@@ -2339,26 +2339,26 @@ async def get_void_report(
 ):
     """Get voided transactions report"""
     current_user = await get_current_user(credentials)
-    
+
     if not start_date:
         start_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
     else:
         start_date = datetime.fromisoformat(start_date)
-    
+
     if not end_date:
         end_date = datetime.now(timezone.utc).replace(hour=23, minute=59, second=59)
     else:
         end_date = datetime.fromisoformat(end_date)
-    
+
     voided_transactions = []
     total_voided_amount = 0
-    
+
     async for transaction in db.pos_transactions.find({
         'tenant_id': current_user.tenant_id,
         'status': 'voided',
         'voided_at': {'$gte': start_date, '$lte': end_date}
     }).sort('voided_at', -1):
-        
+
         voided_transactions.append({
             'transaction_id': transaction.get('id'),
             'outlet_name': transaction.get('outlet_name'),
@@ -2369,9 +2369,9 @@ async def get_void_report(
             'void_reason': transaction.get('void_reason', ''),
             'items': transaction.get('items', [])
         })
-        
+
         total_voided_amount += transaction.get('total_amount', 0)
-    
+
     return {
         'date_range': {
             'start': start_date.date().isoformat(),
@@ -2399,7 +2399,7 @@ async def create_menu_item(
 ):
     """Create a new menu item"""
     current_user = await get_current_user(credentials)
-    
+
     item_id = str(uuid.uuid4())
     menu_item = {
         'id': item_id,
@@ -2414,9 +2414,9 @@ async def create_menu_item(
         'created_at': datetime.now(timezone.utc),
         'created_by': current_user.username
     }
-    
+
     await db.pos_menu_items.insert_one(menu_item)
-    
+
     return {
         'message': 'Menu item created',
         'item_id': item_id,
@@ -2432,15 +2432,15 @@ async def update_menu_item(
 ):
     """Update a menu item"""
     current_user = await get_current_user(credentials)
-    
+
     existing_item = await db.pos_menu_items.find_one({
         'id': item_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not existing_item:
         raise HTTPException(status_code=404, detail="Menu item not found")
-    
+
     await db.pos_menu_items.update_one(
         {'id': item_id, 'tenant_id': current_user.tenant_id},
         {
@@ -2457,7 +2457,7 @@ async def update_menu_item(
             }
         }
     )
-    
+
     return {
         'message': 'Menu item updated',
         'item_id': item_id
@@ -2471,15 +2471,15 @@ async def delete_menu_item(
 ):
     """Delete a menu item"""
     current_user = await get_current_user(credentials)
-    
+
     result = await db.pos_menu_items.delete_one({
         'id': item_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Menu item not found")
-    
+
     return {
         'message': 'Menu item deleted',
         'item_id': item_id

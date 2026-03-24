@@ -124,7 +124,7 @@ class EventBroadcastService:
     def get_active_sessions(self, tenant_id: str) -> list:
         sessions = self._sessions.get(tenant_id, {})
         return [
-            {"session_id": sid, **{k: v for k, v in s.items()}}
+            {"session_id": sid, **dict(s.items())}
             for sid, s in sessions.items()
         ]
 

@@ -46,7 +46,7 @@ class SendMessageRequest(BaseModel):
     recipient: str
     message_content: str
     booking_id: Optional[str] = None
-    
+
     @field_validator('message_type', mode='before')
     @classmethod
     def lowercase_message_type(cls, v):
@@ -109,25 +109,25 @@ async def send_whatsapp_confirmation(
 ):
     """WhatsApp ile rezervasyon onayı gönder"""
     from domains.guest.whatsapp_service import whatsapp_service
-    
+
     # Get booking
     booking = await db.bookings.find_one({
         'id': booking_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
-    
+
     # Get guest
     guest = await db.guests.find_one({'id': booking['guest_id']}, {'_id': 0})
-    
+
     if not guest or not guest.get('phone'):
         raise HTTPException(status_code=400, detail="Misafir telefon numarası bulunamadı")
-    
+
     # Get room
     room = await db.rooms.find_one({'id': booking['room_id']}, {'_id': 0})
-    
+
     booking_details = {
         'booking_id': booking['id'],
         'guest_name': guest['name'],
@@ -136,9 +136,9 @@ async def send_whatsapp_confirmation(
         'room_type': room.get('room_type', 'Standard') if room else 'Standard',
         'total_amount': booking['total_amount']
     }
-    
+
     await whatsapp_service.send_booking_confirmation(guest['phone'], booking_details)
-    
+
     return {
         'success': True,
         'message': 'WhatsApp onay mesajı gönderildi',
@@ -163,7 +163,7 @@ async def send_whatsapp_message(
         'sent_at': datetime.now(timezone.utc).isoformat(),
         'sent_by': current_user.id
     }
-    
+
     msg_copy = msg_record.copy()
     await db.messages.insert_one(msg_copy)
     return {'message': 'WhatsApp message sent successfully', 'message_id': msg_record['id']}
@@ -188,7 +188,7 @@ async def send_email_message(
         'sent_at': datetime.now(timezone.utc).isoformat(),
         'sent_by': current_user.id
     }
-    
+
     msg_copy = msg_record.copy()
     await db.messages.insert_one(msg_copy)
     return {'message': 'Email sent successfully', 'message_id': msg_record['id']}
@@ -212,7 +212,7 @@ async def send_sms_message(
         'sent_at': datetime.now(timezone.utc).isoformat(),
         'sent_by': current_user.id
     }
-    
+
     msg_copy = msg_record.copy()
     await db.messages.insert_one(msg_copy)
     return {'message': 'SMS sent successfully', 'message_id': msg_record['id']}
@@ -228,12 +228,12 @@ async def get_conversations(
     query = {'tenant_id': current_user.tenant_id}
     if channel:
         query['channel'] = channel
-    
+
     messages = await db.messages.find(
         query,
         {'_id': 0}
     ).sort('sent_at', -1).limit(100).to_list(100)
-    
+
     return {'messages': messages, 'count': len(messages)}
 
 
@@ -245,7 +245,7 @@ async def get_ota_integrations(current_user: User = Depends(get_current_user)):
         {'tenant_id': current_user.tenant_id},
         {'_id': 0}
     ).to_list(100)
-    
+
     return {'integrations': integrations, 'count': len(integrations)}
 
 
@@ -279,7 +279,7 @@ async def send_internal_message(
     if to_user_id:
         to_user = await db.users.find_one({'id': to_user_id})
         to_user_name = to_user.get('name') if to_user else None
-    
+
     # Determine from_department based on user role
     department_mapping = {
         'front_desk': 'Reception',
@@ -290,7 +290,7 @@ async def send_internal_message(
         'admin': 'Management'
     }
     from_department = department_mapping.get(current_user.role.value, 'General')
-    
+
     message_obj = InternalMessage(
         tenant_id=current_user.tenant_id,
         from_user_id=current_user.id,
@@ -303,11 +303,11 @@ async def send_internal_message(
         priority=priority,
         message_type=message_type
     )
-    
+
     msg_dict = message_obj.model_dump()
     msg_dict['created_at'] = msg_dict['created_at'].isoformat()
     await db.internal_messages.insert_one(msg_dict)
-    
+
     # Create alert for urgent messages
     if priority == 'urgent':
         await db.alerts.insert_one({
@@ -323,7 +323,7 @@ async def send_internal_message(
             'status': 'unread',
             'created_at': datetime.now(timezone.utc).isoformat()
         })
-    
+
     return {
         'success': True,
         'message_id': message_obj.id,
@@ -356,7 +356,7 @@ async def get_internal_messages_inbox(
         'admin': 'Management'
     }
     my_department = department_mapping.get(current_user.role.value, 'General')
-    
+
     match_criteria = {
         'tenant_id': current_user.tenant_id,
         '$or': [
@@ -365,13 +365,13 @@ async def get_internal_messages_inbox(
             {'to_department': None}  # Broadcast
         ]
     }
-    
+
     if unread_only:
         match_criteria['read'] = False
-    
+
     if department:
         match_criteria['from_department'] = department
-    
+
     messages = []
     async for msg in db.internal_messages.find(match_criteria).sort('created_at', -1).limit(limit):
         messages.append({
@@ -387,12 +387,12 @@ async def get_internal_messages_inbox(
             'created_at': msg.get('created_at'),
             'time_ago': calculate_time_ago(msg.get('created_at'))
         })
-    
+
     unread_count = await db.internal_messages.count_documents({
         **match_criteria,
         'read': False
     })
-    
+
     return {
         'messages': messages,
         'total_count': len(messages),
@@ -416,7 +416,7 @@ async def mark_internal_message_read(
             'read_at': datetime.now(timezone.utc).isoformat()
         }}
     )
-    
+
     return {'success': True, 'message': 'Message marked as read'}
 
 
@@ -445,7 +445,7 @@ async def get_conversation_thread(
             'created_at': msg.get('created_at'),
             'is_from_me': msg.get('from_user_id') == current_user.id
         })
-    
+
     return {
         'user_id': user_id,
         'message_count': len(messages),
@@ -464,12 +464,12 @@ async def send_message(
 ):
     """Send a message (WhatsApp/SMS/Email) to a guest"""
     current_user = await get_current_user(credentials)
-    
+
     # Verify guest exists
     guest = await db.guests.find_one({'id': data.guest_id, 'tenant_id': current_user.tenant_id})
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
-    
+
     # In production, integrate with Twilio/WhatsApp Business API
     # For now, simulate sending
     message = SentMessage(
@@ -481,9 +481,9 @@ async def send_message(
         message_content=data.message_content,
         status="sent"
     )
-    
+
     await db.sent_messages.insert_one(message.model_dump())
-    
+
     return {
         'success': True,
         'message': f'{data.message_type.value.upper()} sent successfully',
@@ -500,15 +500,15 @@ async def trigger_auto_messages(
 ):
     """Trigger automatic messages based on trigger type"""
     current_user = await get_current_user(credentials)
-    
+
     messages_sent = 0
-    
+
     if trigger_type == AutoMessageTrigger.PRE_ARRIVAL:
         # Find bookings with check-in tomorrow
         tomorrow = datetime.now(timezone.utc) + timedelta(days=1)
         tomorrow_start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
         tomorrow_end = tomorrow.replace(hour=23, minute=59, second=59, microsecond=999999)
-        
+
         async for booking in db.bookings.find({
             'tenant_id': current_user.tenant_id,
             'check_in': {'$gte': tomorrow_start, '$lte': tomorrow_end},
@@ -523,14 +523,14 @@ async def trigger_auto_messages(
                     'trigger': trigger_type.value,
                     'active': True
                 })
-                
+
                 if template:
                     # Replace variables
                     room = await db.rooms.find_one({'id': booking['room_id'], 'tenant_id': current_user.tenant_id})
                     message_content = template['message_content'].replace('{guest_name}', guest['name'])
                     message_content = message_content.replace('{room_number}', room.get('room_number', 'N/A') if room else 'N/A')
                     message_content = message_content.replace('{check_in_date}', booking['check_in'].strftime('%Y-%m-%d') if isinstance(booking['check_in'], datetime) else str(booking['check_in']))
-                    
+
                     # Send message
                     message = SentMessage(
                         tenant_id=current_user.tenant_id,
@@ -540,10 +540,10 @@ async def trigger_auto_messages(
                         recipient=guest['phone'],
                         message_content=message_content
                     )
-                    
+
                     await db.sent_messages.insert_one(message.model_dump())
                     messages_sent += 1
-    
+
     return {
         'success': True,
         'trigger_type': trigger_type.value,

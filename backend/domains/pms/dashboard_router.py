@@ -55,14 +55,14 @@ async def get_role_based_dashboard(current_user: User = Depends(get_current_user
     today = datetime.now(timezone.utc)
     today_start = datetime.combine(today.date(), datetime.min.time()).replace(tzinfo=timezone.utc)
     today_end = datetime.combine(today.date(), datetime.max.time()).replace(tzinfo=timezone.utc)
-    
+
     # Base data for all roles
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     occupied_rooms = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'checked_in'
     })
-    
+
     # Role-specific data
     if current_user.role in ['admin', 'supervisor']:  # GM/Manager
         # Get comprehensive data
@@ -70,12 +70,12 @@ async def get_role_based_dashboard(current_user: User = Depends(get_current_user
             'tenant_id': current_user.tenant_id,
             'check_in': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()}
         })
-        
+
         departures_today = await db.bookings.count_documents({
             'tenant_id': current_user.tenant_id,
             'check_out': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()}
         })
-        
+
         # Get VIP arrivals
         vip_arrivals = []
         async for booking in db.bookings.find({
@@ -91,22 +91,22 @@ async def get_role_based_dashboard(current_user: User = Depends(get_current_user
                     'check_in': booking.get('check_in'),
                     'preferences': guest.get('preferences', 'None')
                 })
-        
+
         # Revenue today
         charges = await db.folio_charges.find({
             'tenant_id': current_user.tenant_id,
             'date': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()},
             'voided': False
         }).to_list(10000)
-        
+
         revenue_today = sum(c.get('total', 0) for c in charges)
-        
+
         # Staff performance snapshot
         hk_tasks_completed = await db.housekeeping_tasks.count_documents({
             'tenant_id': current_user.tenant_id,
             'completed_at': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()}
         })
-        
+
         return {
             'role': current_user.role,
             'dashboard_type': 'gm',
@@ -128,7 +128,7 @@ async def get_role_based_dashboard(current_user: User = Depends(get_current_user
                 'housekeeping_completed': hk_tasks_completed
             }
         }
-    
+
     elif current_user.role == 'front_desk':
         # Front desk specific
         arrivals = []
@@ -146,7 +146,7 @@ async def get_role_based_dashboard(current_user: User = Depends(get_current_user
                 'status': booking.get('status'),
                 'room_ready': room.get('status') in ['available', 'inspected'] if room else False
             })
-        
+
         return {
             'role': current_user.role,
             'dashboard_type': 'front_desk',
@@ -154,24 +154,24 @@ async def get_role_based_dashboard(current_user: User = Depends(get_current_user
             'arrivals_today': arrivals,
             'in_house_guests': occupied_rooms
         }
-    
+
     elif current_user.role == 'housekeeping':
         # Housekeeping specific
         dirty_rooms = await db.rooms.count_documents({
             'tenant_id': current_user.tenant_id,
             'status': 'dirty'
         })
-        
+
         cleaning_rooms = await db.rooms.count_documents({
             'tenant_id': current_user.tenant_id,
             'status': 'cleaning'
         })
-        
+
         inspected_rooms = await db.rooms.count_documents({
             'tenant_id': current_user.tenant_id,
             'status': 'inspected'
         })
-        
+
         return {
             'role': current_user.role,
             'dashboard_type': 'housekeeping',
@@ -187,7 +187,7 @@ async def get_role_based_dashboard(current_user: User = Depends(get_current_user
                 'check_out': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()}
             })
         }
-    
+
     else:
         # Default minimal data
         return {
@@ -204,19 +204,19 @@ async def get_gm_forecast_summary(current_user: User = Depends(get_current_user)
     """Get 30-day forecast summary for GM Dashboard"""
     today = datetime.now(timezone.utc).date()
     thirty_days = today + timedelta(days=30)
-    
+
     # Get existing forecasts
     forecasts = await db.demand_forecasts.find({
         'tenant_id': current_user.tenant_id,
         'date': {'$gte': today.isoformat(), '$lte': thirty_days.isoformat()}
     }).sort('date', 1).to_list(30)
-    
+
     if not forecasts or len(forecasts) < 7:
         # Generate forecast if not exists
         total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
         if total_rooms == 0:
             total_rooms = 40
-        
+
         forecasts = []
         for days_ahead in range(30):
             forecast_date = today + timedelta(days=days_ahead)
@@ -224,22 +224,22 @@ async def get_gm_forecast_summary(current_user: User = Depends(get_current_user)
             base_occupancy = 65
             weekend_boost = 15 if forecast_date.weekday() in [4, 5] else 0
             seasonal_factor = 10 if forecast_date.month in [6, 7, 8, 12] else 0
-            
+
             occupancy = min(95, base_occupancy + weekend_boost + seasonal_factor + random.randint(-5, 5))
             demand_score = round(occupancy / 100 * total_rooms)
-            
+
             forecasts.append({
                 'date': forecast_date.isoformat(),
                 'predicted_occupancy': occupancy,
                 'predicted_demand': demand_score,
                 'confidence': 0.85
             })
-    
+
     # Calculate summary metrics
     avg_occupancy = sum(f.get('predicted_occupancy', 0) for f in forecasts) / len(forecasts) if forecasts else 0
     peak_days = [f for f in forecasts if f.get('predicted_occupancy', 0) > 85]
     low_days = [f for f in forecasts if f.get('predicted_occupancy', 0) < 50]
-    
+
     return {
         'period': {
             'start': today.isoformat(),
@@ -278,12 +278,12 @@ async def get_employee_performance(
         end_dt = datetime.now(timezone.utc)
     else:
         end_dt = datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc)
-    
+
     if not start_date:
         start_dt = end_dt - timedelta(days=30)
     else:
         start_dt = datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc)
-    
+
     # Housekeeping Performance
     hk_pipeline = [
         {
@@ -325,7 +325,7 @@ async def get_employee_performance(
             '$sort': {'avg_duration': 1}  # Fastest first
         }
     ]
-    
+
     hk_performance = []
     async for staff in db.housekeeping_tasks.aggregate(hk_pipeline):
         hk_performance.append({
@@ -337,7 +337,7 @@ async def get_employee_performance(
             'max_duration_minutes': round(staff['max_duration'], 1) if staff['max_duration'] else 0,
             'efficiency_rating': 'Excellent' if staff['avg_duration'] < 20 else 'Good' if staff['avg_duration'] < 30 else 'Needs Improvement'
         })
-    
+
     # Front Desk Performance (Check-in duration)
     # Calculate from audit logs
     checkin_logs = []
@@ -350,12 +350,12 @@ async def get_employee_performance(
         }
     }):
         checkin_logs.append(log)
-    
+
     fd_performance = {}
     for log in checkin_logs:
         user_id = log.get('user_id')
         user_name = log.get('user_name', 'Unknown')
-        
+
         if user_id not in fd_performance:
             fd_performance[user_id] = {
                 'staff_name': user_name,
@@ -363,11 +363,11 @@ async def get_employee_performance(
                 'total_checkins': 0,
                 'durations': []
             }
-        
+
         fd_performance[user_id]['total_checkins'] += 1
         # Simulated duration (in real system, track actual time)
         fd_performance[user_id]['durations'].append(5)  # Average 5 minutes per check-in
-    
+
     fd_staff_performance = []
     for user_id, data in fd_performance.items():
         if data['durations']:
@@ -379,14 +379,14 @@ async def get_employee_performance(
                 'avg_checkin_duration_minutes': round(avg_duration, 1),
                 'efficiency_rating': 'Excellent' if avg_duration < 5 else 'Good' if avg_duration < 8 else 'Needs Improvement'
             })
-    
+
     # Combined performance
     all_performance = hk_performance + fd_staff_performance
-    
+
     # Filter by department if specified
     if department:
         all_performance = [p for p in all_performance if p['department'] == department]
-    
+
     return {
         'start_date': start_dt.date().isoformat(),
         'end_date': end_dt.date().isoformat(),
@@ -424,7 +424,7 @@ async def get_guest_satisfaction_trends(
     """
     end_dt = datetime.now(timezone.utc)
     start_dt = end_dt - timedelta(days=days)
-    
+
     # Get all feedback/reviews in the period
     [
         {
@@ -437,10 +437,10 @@ async def get_guest_satisfaction_trends(
             }
         }
     ]
-    
+
     # Collect feedback from multiple sources
     all_feedback = []
-    
+
     # 1. Survey responses
     async for response in db.survey_responses.find({
         'tenant_id': current_user.tenant_id,
@@ -455,7 +455,7 @@ async def get_guest_satisfaction_trends(
             'source': 'survey',
             'sentiment': response.get('sentiment', 'neutral')
         })
-    
+
     # 2. External reviews
     async for review in db.external_reviews.find({
         'tenant_id': current_user.tenant_id,
@@ -470,7 +470,7 @@ async def get_guest_satisfaction_trends(
             'source': review.get('platform', 'external'),
             'sentiment': review.get('sentiment', 'neutral')
         })
-    
+
     # 3. Department feedback
     async for feedback in db.department_feedback.find({
         'tenant_id': current_user.tenant_id,
@@ -485,7 +485,7 @@ async def get_guest_satisfaction_trends(
             'source': 'department',
             'sentiment': feedback.get('sentiment', 'neutral')
         })
-    
+
     # Calculate NPS (Net Promoter Score)
     # NPS = % Promoters (9-10) - % Detractors (0-6)
     # Scale: Convert 5-star rating to 10-point scale
@@ -493,33 +493,33 @@ async def get_guest_satisfaction_trends(
     passives = 0
     detractors = 0
     total_ratings = []
-    
+
     for item in all_feedback:
         rating = item['rating']
         total_ratings.append(rating)
-        
+
         # Convert to 10-point scale if needed (assuming 5-star scale)
         if rating <= 5:
             rating_10 = rating * 2
         else:
             rating_10 = rating
-        
+
         if rating_10 >= 9:
             promoters += 1
         elif rating_10 >= 7:
             passives += 1
         else:
             detractors += 1
-    
+
     total_responses = len(all_feedback)
-    
+
     if total_responses > 0:
         nps_score = ((promoters - detractors) / total_responses) * 100
         avg_rating = sum(total_ratings) / total_responses
     else:
         nps_score = 0
         avg_rating = 0
-    
+
     # Group by date for trend
     daily_ratings = {}
     for item in all_feedback:
@@ -527,7 +527,7 @@ async def get_guest_satisfaction_trends(
         if date_str not in daily_ratings:
             daily_ratings[date_str] = []
         daily_ratings[date_str].append(item['rating'])
-    
+
     trend_data = []
     for date_str in sorted(daily_ratings.keys()):
         ratings = daily_ratings[date_str]
@@ -536,11 +536,11 @@ async def get_guest_satisfaction_trends(
             'avg_rating': round(sum(ratings) / len(ratings), 2),
             'count': len(ratings)
         })
-    
+
     # Calculate 7-day vs 30-day comparison
     seven_days_ago = end_dt - timedelta(days=7)
     recent_feedback = [f for f in all_feedback if datetime.fromisoformat(f['date']) >= seven_days_ago]
-    
+
     if recent_feedback:
         recent_avg = sum(f['rating'] for f in recent_feedback) / len(recent_feedback)
         recent_nps_promoters = sum(1 for f in recent_feedback if f['rating'] >= 4.5)
@@ -549,7 +549,7 @@ async def get_guest_satisfaction_trends(
     else:
         recent_avg = 0
         recent_nps = 0
-    
+
     return {
         'period_days': days,
         'start_date': start_dt.date().isoformat(),
@@ -597,7 +597,7 @@ async def get_ota_cancellation_rate(
     """
     end_dt = datetime.now(timezone.utc)
     start_dt = end_dt - timedelta(days=days)
-    
+
     # Get all bookings in period (created during this period)
     all_bookings = []
     async for booking in db.bookings.find({
@@ -608,27 +608,27 @@ async def get_ota_cancellation_rate(
         }
     }):
         all_bookings.append(booking)
-    
+
     # Separate by status
     total_bookings = len(all_bookings)
     cancelled_bookings = [b for b in all_bookings if b.get('status') == 'cancelled']
     confirmed_bookings = [b for b in all_bookings if b.get('status') in ['confirmed', 'guaranteed', 'checked_in', 'checked_out']]
-    
+
     # OTA bookings only
     ota_channels = ['booking_com', 'expedia', 'airbnb', 'agoda', 'hotels_com']
     ota_bookings = [b for b in all_bookings if b.get('channel') in ota_channels]
     ota_cancelled = [b for b in ota_bookings if b.get('status') == 'cancelled']
-    
+
     # Calculate rates
     overall_cancellation_rate = (len(cancelled_bookings) / total_bookings * 100) if total_bookings > 0 else 0
     ota_cancellation_rate = (len(ota_cancelled) / len(ota_bookings) * 100) if len(ota_bookings) > 0 else 0
-    
+
     # By channel breakdown
     channel_breakdown = {}
     for channel in ota_channels:
         channel_bookings = [b for b in all_bookings if b.get('channel') == channel]
         channel_cancelled = [b for b in channel_bookings if b.get('status') == 'cancelled']
-        
+
         if channel_bookings:
             channel_breakdown[channel] = {
                 'total_bookings': len(channel_bookings),
@@ -636,7 +636,7 @@ async def get_ota_cancellation_rate(
                 'cancellation_rate': round((len(channel_cancelled) / len(channel_bookings) * 100), 1),
                 'lost_revenue': sum(b.get('total_amount', 0) for b in channel_cancelled)
             }
-    
+
     # Booking window analysis (how far in advance was booking made before cancelled)
     cancellation_lead_times = []
     for booking in cancelled_bookings:
@@ -646,14 +646,14 @@ async def get_ota_cancellation_rate(
             cancelled_dt = datetime.fromisoformat(cancelled_at) if isinstance(cancelled_at, str) else cancelled_at
             lead_time = (cancelled_dt - created).days
             cancellation_lead_times.append(lead_time)
-    
+
     avg_lead_time = sum(cancellation_lead_times) / len(cancellation_lead_times) if cancellation_lead_times else 0
-    
+
     # Revenue impact
     total_lost_revenue = sum(b.get('total_amount', 0) for b in cancelled_bookings)
     ota_lost_revenue = sum(b.get('total_amount', 0) for b in ota_cancelled)
     potential_revenue = sum(b.get('total_amount', 0) for b in all_bookings)
-    
+
     return {
         'period_days': days,
         'start_date': start_dt.date().isoformat(),
@@ -703,7 +703,7 @@ async def get_revenue_expense_chart(
 ):
     """Get revenue vs expense chart data for dashboard"""
     current_user = await get_current_user(credentials)
-    
+
     # Calculate date range based on period
     end = datetime.now(timezone.utc)
     if period == "30days":
@@ -715,7 +715,7 @@ async def get_revenue_expense_chart(
     else:  # 12months
         start = end - timedelta(days=365)
         interval = "monthly"
-    
+
     # Get revenue from folio charges
     charges = await db.folio_charges.find({
         'tenant_id': current_user.tenant_id,
@@ -725,7 +725,7 @@ async def get_revenue_expense_chart(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     # Get expenses (simplified - from procurement, maintenance, etc.)
     expenses = await db.expenses.find({
         'tenant_id': current_user.tenant_id,
@@ -734,11 +734,11 @@ async def get_revenue_expense_chart(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     # Group data by interval
     revenue_data = {}
     expense_data = {}
-    
+
     for charge in charges:
         date_str = charge.get('date', '')[:10]
         if interval == "daily":
@@ -748,9 +748,9 @@ async def get_revenue_expense_chart(
             key = f"W{week}"
         else:  # monthly
             key = date_str[:7]  # YYYY-MM
-        
+
         revenue_data[key] = revenue_data.get(key, 0) + charge.get('total', 0)
-    
+
     for expense in expenses:
         date_str = expense.get('date', '')[:10]
         if interval == "daily":
@@ -760,18 +760,18 @@ async def get_revenue_expense_chart(
             key = f"W{week}"
         else:  # monthly
             key = date_str[:7]
-        
+
         expense_data[key] = expense_data.get(key, 0) + expense.get('amount', 0)
-    
+
     # Prepare chart data
     all_keys = sorted(set(list(revenue_data.keys()) + list(expense_data.keys())))
     chart_data = []
-    
+
     for key in all_keys:
         revenue = revenue_data.get(key, 0)
         expense = expense_data.get(key, 0)
         profit = revenue - expense
-        
+
         chart_data.append({
             'period': key,
             'revenue': round(revenue, 2),
@@ -779,13 +779,13 @@ async def get_revenue_expense_chart(
             'profit': round(profit, 2),
             'profit_margin': round((profit / revenue * 100), 2) if revenue > 0 else 0
         })
-    
+
     # Calculate totals
     total_revenue = sum(d['revenue'] for d in chart_data)
     total_expense = sum(d['expense'] for d in chart_data)
     total_profit = total_revenue - total_expense
     avg_profit_margin = round((total_profit / total_revenue * 100), 2) if total_revenue > 0 else 0
-    
+
     return {
         'period': period,
         'interval': interval,
@@ -808,24 +808,24 @@ async def get_budget_vs_actual(
 ):
     """Get budget vs actual comparison for dashboard"""
     current_user = await get_current_user(credentials)
-    
+
     # Default to current month
     if not month:
         month = datetime.now(timezone.utc).strftime('%Y-%m')
-    
+
     start = datetime.fromisoformat(f"{month}-01")
     # Last day of month
     if start.month == 12:
         end = start.replace(year=start.year + 1, month=1, day=1) - timedelta(days=1)
     else:
         end = start.replace(month=start.month + 1, day=1) - timedelta(days=1)
-    
+
     # Get budget data
     budget = await db.budgets.find_one({
         'tenant_id': current_user.tenant_id,
         'month': month
     })
-    
+
     # If no budget, create default
     if not budget:
         budget = {
@@ -834,7 +834,7 @@ async def get_budget_vs_actual(
             'occupancy_budget': 75,
             'adr_budget': 150
         }
-    
+
     # Get actual revenue
     charges = await db.folio_charges.find({
         'tenant_id': current_user.tenant_id,
@@ -844,9 +844,9 @@ async def get_budget_vs_actual(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     actual_revenue = sum(c.get('total', 0) for c in charges)
-    
+
     # Get actual expenses
     expenses = await db.expenses.find({
         'tenant_id': current_user.tenant_id,
@@ -855,14 +855,14 @@ async def get_budget_vs_actual(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     actual_expense = sum(e.get('amount', 0) for e in expenses)
-    
+
     # Get actual occupancy
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     days_in_month = (end - start).days + 1
     available_room_nights = total_rooms * days_in_month
-    
+
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['checked_in', 'checked_out']},
@@ -871,27 +871,27 @@ async def get_budget_vs_actual(
             '$lte': end.isoformat()
         }
     }).to_list(10000)
-    
+
     occupied_room_nights = 0
     for booking in bookings:
         check_in = max(datetime.fromisoformat(booking['check_in']), start)
         check_out = min(datetime.fromisoformat(booking['check_out']), end)
         nights = (check_out - check_in).days
         occupied_room_nights += max(nights, 1)
-    
+
     actual_occupancy = round((occupied_room_nights / available_room_nights * 100), 2) if available_room_nights > 0 else 0
-    
+
     # Calculate ADR
     room_charges = [c for c in charges if c.get('charge_category') == 'room']
     room_revenue = sum(c.get('total', 0) for c in room_charges)
     actual_adr = round(room_revenue / occupied_room_nights, 2) if occupied_room_nights > 0 else 0
-    
+
     # Calculate variances
     revenue_variance = round(((actual_revenue - budget['revenue_budget']) / budget['revenue_budget'] * 100), 2) if budget['revenue_budget'] > 0 else 0
     expense_variance = round(((actual_expense - budget['expense_budget']) / budget['expense_budget'] * 100), 2) if budget['expense_budget'] > 0 else 0
     occupancy_variance = round(actual_occupancy - budget['occupancy_budget'], 2)
     adr_variance = round(((actual_adr - budget['adr_budget']) / budget['adr_budget'] * 100), 2) if budget['adr_budget'] > 0 else 0
-    
+
     return {
         'month': month,
         'categories': [
@@ -936,20 +936,20 @@ async def get_monthly_profitability(
 ):
     """Get monthly profitability for dashboard"""
     current_user = await get_current_user(credentials)
-    
+
     profitability_data = []
-    
+
     for i in range(months, 0, -1):
         # Calculate month
         target_date = datetime.now(timezone.utc) - timedelta(days=30*i)
         month_str = target_date.strftime('%Y-%m')
-        
+
         start = datetime.fromisoformat(f"{month_str}-01")
         if start.month == 12:
             end = start.replace(year=start.year + 1, month=1, day=1) - timedelta(days=1)
         else:
             end = start.replace(month=start.month + 1, day=1) - timedelta(days=1)
-        
+
         # Get revenue
         charges = await db.folio_charges.find({
             'tenant_id': current_user.tenant_id,
@@ -959,9 +959,9 @@ async def get_monthly_profitability(
                 '$lte': end.isoformat()
             }
         }).to_list(10000)
-        
+
         revenue = sum(c.get('total', 0) for c in charges)
-        
+
         # Get expenses
         expenses = await db.expenses.find({
             'tenant_id': current_user.tenant_id,
@@ -970,13 +970,13 @@ async def get_monthly_profitability(
                 '$lte': end.isoformat()
             }
         }).to_list(10000)
-        
+
         expense = sum(e.get('amount', 0) for e in expenses)
-        
+
         # Calculate profitability
         profit = revenue - expense
         profit_margin = round((profit / revenue * 100), 2) if revenue > 0 else 0
-        
+
         profitability_data.append({
             'month': month_str,
             'month_name': target_date.strftime('%B %Y'),
@@ -985,16 +985,16 @@ async def get_monthly_profitability(
             'profit': round(profit, 2),
             'profit_margin': profit_margin
         })
-    
+
     # Calculate averages
     avg_revenue = sum(d['revenue'] for d in profitability_data) / len(profitability_data) if profitability_data else 0
     avg_expense = sum(d['expense'] for d in profitability_data) / len(profitability_data) if profitability_data else 0
     avg_profit = sum(d['profit'] for d in profitability_data) / len(profitability_data) if profitability_data else 0
     avg_profit_margin = sum(d['profit_margin'] for d in profitability_data) / len(profitability_data) if profitability_data else 0
-    
+
     # Get current month
     current_month = profitability_data[-1] if profitability_data else None
-    
+
     return {
         'months_data': profitability_data,
         'current_month': current_month,
@@ -1015,15 +1015,15 @@ async def get_trend_kpis(
 ):
     """Get trending KPIs with comparison for dashboard"""
     current_user = await get_current_user(credentials)
-    
+
     # Calculate periods
     days = int(period.replace('days', ''))
     current_end = datetime.now(timezone.utc)
     current_start = current_end - timedelta(days=days)
-    
+
     previous_end = current_start
     previous_start = previous_end - timedelta(days=days)
-    
+
     # Helper function to get metrics for a period
     async def get_period_metrics(start, end):
         # Revenue
@@ -1035,10 +1035,10 @@ async def get_trend_kpis(
                 '$lte': end.isoformat()
             }
         }).to_list(10000)
-        
+
         revenue = sum(c.get('total', 0) for c in charges)
         room_revenue = sum(c.get('total', 0) for c in charges if c.get('charge_category') == 'room')
-        
+
         # Bookings
         bookings = await db.bookings.find({
             'tenant_id': current_user.tenant_id,
@@ -1047,14 +1047,14 @@ async def get_trend_kpis(
                 '$lte': end.isoformat()
             }
         }).to_list(10000)
-        
+
         bookings_count = len(bookings)
-        
+
         # Occupancy
         total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
         days_in_period = (end - start).days + 1
         available_room_nights = total_rooms * days_in_period
-        
+
         occupied_bookings = await db.bookings.find({
             'tenant_id': current_user.tenant_id,
             'status': {'$in': ['checked_in', 'checked_out']},
@@ -1063,22 +1063,22 @@ async def get_trend_kpis(
                 '$lte': end.isoformat()
             }
         }).to_list(10000)
-        
+
         occupied_room_nights = 0
         for booking in occupied_bookings:
             check_in = max(datetime.fromisoformat(booking['check_in']), start)
             check_out = min(datetime.fromisoformat(booking['check_out']), end)
             nights = (check_out - check_in).days
             occupied_room_nights += max(nights, 1)
-        
+
         occupancy = round((occupied_room_nights / available_room_nights * 100), 2) if available_room_nights > 0 else 0
-        
+
         # ADR
         adr = round(room_revenue / occupied_room_nights, 2) if occupied_room_nights > 0 else 0
-        
+
         # RevPAR
         revpar = round(room_revenue / available_room_nights, 2) if available_room_nights > 0 else 0
-        
+
         # Guest satisfaction (from reviews)
         reviews = await db.reviews.find({
             'tenant_id': current_user.tenant_id,
@@ -1087,9 +1087,9 @@ async def get_trend_kpis(
                 '$lte': end.isoformat()
             }
         }).to_list(1000)
-        
+
         avg_rating = sum(r.get('rating', 0) for r in reviews) / len(reviews) if reviews else 0
-        
+
         return {
             'revenue': revenue,
             'bookings': bookings_count,
@@ -1098,16 +1098,16 @@ async def get_trend_kpis(
             'revpar': revpar,
             'avg_rating': round(avg_rating, 2)
         }
-    
+
     current_metrics = await get_period_metrics(current_start, current_end)
     previous_metrics = await get_period_metrics(previous_start, previous_end)
-    
+
     # Calculate trends
     def calculate_trend(current, previous):
         if previous == 0:
             return 0
         return round(((current - previous) / previous * 100), 2)
-    
+
     kpis = [
         {
             'name': 'Revenue',
@@ -1158,7 +1158,7 @@ async def get_trend_kpis(
             'icon': 'star'
         }
     ]
-    
+
     return {
         'period': period,
         'kpis': kpis
@@ -1174,24 +1174,24 @@ async def get_anomaly_detection(current_user: User = Depends(get_current_user)):
     try:
         # Get rooms data
         rooms = await db.rooms.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
-        
+
         # Get bookings data
         bookings = await db.bookings.find({
             'tenant_id': current_user.tenant_id,
             'status': {'$in': ['confirmed', 'checked_in']}
         }, {'_id': 0}).to_list(1000)
-        
+
         # Get transactions
         transactions = await db.transactions.find({
             'tenant_id': current_user.tenant_id
         }, {'_id': 0}).to_list(1000)
-        
+
         anomalies = []
-        
+
         # 1. Check occupancy vs bookings mismatch
         occupied_rooms = len([r for r in rooms if r.get('status') == 'occupied'])
         checked_in_bookings = len([b for b in bookings if b.get('status') == 'checked_in'])
-        
+
         if abs(occupied_rooms - checked_in_bookings) > 3:
             anomalies.append({
                 'type': 'occupancy_mismatch',
@@ -1201,7 +1201,7 @@ async def get_anomaly_detection(current_user: User = Depends(get_current_user)):
                 'metric': f'Fark: {abs(occupied_rooms - checked_in_bookings)} oda',
                 'detected_at': datetime.utcnow().isoformat()
             })
-        
+
         # 2. Check for rooms in cleaning for too long
         cleaning_rooms = [r for r in rooms if r.get('status') == 'cleaning']
         if len(cleaning_rooms) > 10:
@@ -1213,13 +1213,13 @@ async def get_anomaly_detection(current_user: User = Depends(get_current_user)):
                 'metric': f'{len(cleaning_rooms)} oda',
                 'detected_at': datetime.utcnow().isoformat()
             })
-        
+
         # 3. Check maintenance tasks
         maintenance_tasks = await db.maintenance_tasks.find({
             'tenant_id': current_user.tenant_id,
             'status': {'$ne': 'completed'}
         }, {'_id': 0}).to_list(1000)
-        
+
         urgent_tasks = [t for t in maintenance_tasks if t.get('priority') == 'urgent']
         if len(urgent_tasks) > 5:
             anomalies.append({
@@ -1230,15 +1230,15 @@ async def get_anomaly_detection(current_user: User = Depends(get_current_user)):
                 'metric': f'{len(urgent_tasks)} acil görev',
                 'detected_at': datetime.utcnow().isoformat()
             })
-        
+
         # 4. Check revenue anomalies
         if transactions:
             avg_transaction = sum(t.get('amount', 0) for t in transactions) / len(transactions)
-            recent_transactions = [t for t in transactions[-10:]]
-            
+            recent_transactions = list(transactions[-10:])
+
             if recent_transactions:
                 recent_avg = sum(t.get('amount', 0) for t in recent_transactions) / len(recent_transactions)
-                
+
                 if recent_avg < avg_transaction * 0.5:
                     anomalies.append({
                         'type': 'revenue_drop',
@@ -1248,7 +1248,7 @@ async def get_anomaly_detection(current_user: User = Depends(get_current_user)):
                         'metric': f'Ort: {avg_transaction:.2f}₺ → Son: {recent_avg:.2f}₺',
                         'detected_at': datetime.utcnow().isoformat()
                     })
-        
+
         # 5. Check for out of order rooms
         oo_rooms = [r for r in rooms if r.get('status') == 'out_of_order']
         if len(oo_rooms) > 0:
@@ -1260,13 +1260,13 @@ async def get_anomaly_detection(current_user: User = Depends(get_current_user)):
                 'metric': f'{len(oo_rooms)} oda',
                 'detected_at': datetime.utcnow().isoformat()
             })
-        
+
         return {
             'anomalies': anomalies,
             'total_detected': len(anomalies),
             'scan_time': datetime.utcnow().isoformat()
         }
-        
+
     except Exception as e:
         print(f"Anomaly detection error: {str(e)}")
         return {
@@ -1285,34 +1285,34 @@ async def get_executive_kpi_snapshot(
     Get critical KPI snapshot - INSTANT RESPONSE VIA PRE-WARMED CACHE
     """
     current_user = await get_current_user(credentials)
-    
+
     # Check pre-warmed cache first (instant!)
     from cache_warmer import cache_warmer
     if cache_warmer:
         cached_data = cache_warmer.get_cached(f"kpi:{current_user.tenant_id}")
         if cached_data:
             return cached_data
-    
+
     today = datetime.now(timezone.utc).date()
-    
+
     # Get total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     if total_rooms == 0:
         total_rooms = 50  # Default for empty DB
-    
+
     # Get bookings for today
     today_str = today.isoformat()
-    
+
     # Occupancy calculation
     occupied_rooms = await db.rooms.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'occupied'
     })
     occupancy_pct = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
-    
+
     # Revenue calculation (last 24 hours)
     yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-    
+
     # Get payments from last 24 hours
     total_revenue = 0
     async for payment in db.payments.find({
@@ -1320,7 +1320,7 @@ async def get_executive_kpi_snapshot(
         'payment_date': {'$gte': yesterday}
     }):
         total_revenue += payment.get('amount', 0)
-    
+
     # If no revenue data, use bookings
     if total_revenue == 0:
         async for booking in db.bookings.find({
@@ -1329,50 +1329,50 @@ async def get_executive_kpi_snapshot(
             'check_in': {'$gte': yesterday}
         }):
             total_revenue += booking.get('total_amount', 0)
-    
+
     # ADR calculation
     bookings_count = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['checked_in', 'checked_out']},
         'check_in': {'$gte': yesterday}
     })
-    
+
     adr = (total_revenue / bookings_count) if bookings_count > 0 else 0
-    
+
     # RevPAR calculation
     revpar = (total_revenue / total_rooms) if total_rooms > 0 else 0
-    
+
     # NPS Score (from reviews/feedback)
     nps_score = 0
     review_count = 0
     async for review in db.reviews.find({'tenant_id': current_user.tenant_id}):
         nps_score += review.get('rating', 0)
         review_count += 1
-    
+
     avg_nps = (nps_score / review_count * 20) if review_count > 0 else 75  # Convert 5-star to 100 scale
-    
+
     # Cash position (from accounting)
     cash_balance = 0
     bank_accounts = await db.bank_accounts.find({'tenant_id': current_user.tenant_id}).to_list(100)
     for account in bank_accounts:
         cash_balance += account.get('balance', 0)
-    
+
     # If no cash data, estimate from revenue
     if cash_balance == 0:
         cash_balance = total_revenue * 10  # Rough estimate
-    
+
     # Calculate trends (compare with yesterday)
     (today - timedelta(days=1)).isoformat()
-    
+
     yesterday_revenue = 0
     async for payment in db.payments.find({
         'tenant_id': current_user.tenant_id,
         'payment_date': {'$gte': (datetime.now(timezone.utc) - timedelta(days=2)).isoformat(), '$lt': yesterday}
     }):
         yesterday_revenue += payment.get('amount', 0)
-    
+
     revenue_trend = ((total_revenue - yesterday_revenue) / yesterday_revenue * 100) if yesterday_revenue > 0 else 0
-    
+
     return {
         'snapshot_date': today_str,
         'snapshot_time': datetime.now(timezone.utc).isoformat(),
@@ -1435,14 +1435,14 @@ async def get_executive_performance_alerts(
     Revenue drop, low occupancy, cash flow warnings, overbooking risks
     """
     current_user = await get_current_user(credentials)
-    
+
     alerts = []
-    
+
     # Revenue drop alert
     today = datetime.now(timezone.utc)
     yesterday = (today - timedelta(days=1)).isoformat()
     last_week = (today - timedelta(days=7)).isoformat()
-    
+
     # Check revenue trend
     recent_revenue = 0
     async for payment in db.payments.find({
@@ -1450,14 +1450,14 @@ async def get_executive_performance_alerts(
         'payment_date': {'$gte': yesterday}
     }):
         recent_revenue += payment.get('amount', 0)
-    
+
     week_ago_revenue = 0
     async for payment in db.payments.find({
         'tenant_id': current_user.tenant_id,
         'payment_date': {'$gte': last_week, '$lt': (today - timedelta(days=6)).isoformat()}
     }):
         week_ago_revenue += payment.get('amount', 0)
-    
+
     if week_ago_revenue > 0:
         revenue_change = ((recent_revenue - week_ago_revenue) / week_ago_revenue * 100)
         if revenue_change < -10:
@@ -1470,14 +1470,14 @@ async def get_executive_performance_alerts(
                 'value': revenue_change,
                 'created_at': datetime.now(timezone.utc).isoformat()
             })
-    
+
     # Low occupancy alert
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     occupied_rooms = await db.rooms.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'occupied'
     })
-    
+
     if total_rooms > 0:
         occupancy_pct = (occupied_rooms / total_rooms * 100)
         if occupancy_pct < 50:
@@ -1490,21 +1490,21 @@ async def get_executive_performance_alerts(
                 'value': occupancy_pct,
                 'created_at': datetime.now(timezone.utc).isoformat()
             })
-    
+
     # Overbooking risk
     tomorrow = (today + timedelta(days=1)).isoformat()
-    
+
     arrivals_tomorrow = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_in': tomorrow,
         'status': {'$in': ['confirmed', 'guaranteed']}
     })
-    
+
     available_rooms = await db.rooms.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['available', 'inspected']}
     })
-    
+
     if arrivals_tomorrow > available_rooms:
         alerts.append({
             'id': str(uuid.uuid4()),
@@ -1515,14 +1515,14 @@ async def get_executive_performance_alerts(
             'value': arrivals_tomorrow - available_rooms,
             'created_at': datetime.now(timezone.utc).isoformat()
         })
-    
+
     # Maintenance backlog
     pending_maintenance = await db.maintenance_tasks.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'pending',
         'priority': {'$in': ['high', 'urgent']}
     })
-    
+
     if pending_maintenance > 5:
         alerts.append({
             'id': str(uuid.uuid4()),
@@ -1533,11 +1533,11 @@ async def get_executive_performance_alerts(
             'value': pending_maintenance,
             'created_at': datetime.now(timezone.utc).isoformat()
         })
-    
+
     # Cash flow warning
     bank_accounts = await db.bank_accounts.find({'tenant_id': current_user.tenant_id}).to_list(100)
     total_cash = sum(account.get('balance', 0) for account in bank_accounts)
-    
+
     # Get monthly costs
     month_start = datetime.now(timezone.utc).replace(day=1).isoformat()
     monthly_costs = 0
@@ -1546,7 +1546,7 @@ async def get_executive_performance_alerts(
         'expense_date': {'$gte': month_start}
     }):
         monthly_costs += expense.get('amount', 0)
-    
+
     if monthly_costs > 0 and total_cash < monthly_costs * 0.5:
         alerts.append({
             'id': str(uuid.uuid4()),
@@ -1557,11 +1557,11 @@ async def get_executive_performance_alerts(
             'value': total_cash,
             'created_at': datetime.now(timezone.utc).isoformat()
         })
-    
+
     # Sort by severity
     severity_order = {'urgent': 0, 'high': 1, 'medium': 2, 'low': 3}
     alerts.sort(key=lambda x: severity_order.get(x['severity'], 3))
-    
+
     return {
         'alerts': alerts,
         'count': len(alerts),
@@ -1843,36 +1843,36 @@ async def get_executive_daily_summary(
     Bookings, revenue, cancellations, complaints, key metrics
     """
     current_user = await get_current_user(credentials)
-    
+
     target_date = date if date else datetime.now(timezone.utc).date().isoformat()
-    
+
     # Get bookings created today
     new_bookings = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'created_at': {'$gte': target_date}
     })
-    
+
     # Get check-ins today
     checkins = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_in': target_date,
         'status': 'checked_in'
     })
-    
+
     # Get check-outs today
     checkouts = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_out': target_date,
         'status': 'checked_out'
     })
-    
+
     # Get cancellations today
     cancellations = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'cancelled',
         'updated_at': {'$gte': target_date}
     })
-    
+
     # Get revenue today
     revenue = 0
     async for payment in db.payments.find({
@@ -1880,20 +1880,20 @@ async def get_executive_daily_summary(
         'payment_date': {'$gte': target_date}
     }):
         revenue += payment.get('amount', 0)
-    
+
     # Get complaints today
     complaints = await db.feedback.count_documents({
         'tenant_id': current_user.tenant_id,
         'rating': {'$lte': 2},
         'created_at': {'$gte': target_date}
     })
-    
+
     # Get staff incidents
     incidents = await db.incidents.count_documents({
         'tenant_id': current_user.tenant_id,
         'incident_date': target_date
     })
-    
+
     return {
         'date': target_date,
         'summary': {
@@ -1928,7 +1928,7 @@ async def get_complaint_management(
     Active complaints, categories, resolution times
     """
     current_user = await get_current_user(credentials)
-    
+
     # Get active complaints (low ratings = complaints)
     active_complaints = []
     async for feedback in db.feedback.find({
@@ -1945,7 +1945,7 @@ async def get_complaint_management(
             'created_at': feedback.get('created_at'),
             'days_open': (datetime.now(timezone.utc) - datetime.fromisoformat(feedback.get('created_at', datetime.now(timezone.utc).isoformat()).replace('Z', '+00:00'))).days
         })
-    
+
     # Complaint categories
     categories = {}
     async for feedback in db.feedback.find({
@@ -1954,7 +1954,7 @@ async def get_complaint_management(
     }):
         category = feedback.get('category', 'general')
         categories[category] = categories.get(category, 0) + 1
-    
+
     category_breakdown = [
         {
             'category': cat,
@@ -1969,7 +1969,7 @@ async def get_complaint_management(
         }
         for cat, count in categories.items()
     ]
-    
+
     # Resolution times
     resolved_complaints = []
     async for feedback in db.feedback.find({
@@ -1982,9 +1982,9 @@ async def get_complaint_management(
         resolved = datetime.fromisoformat(feedback['resolved_at'].replace('Z', '+00:00'))
         resolution_hours = (resolved - created).total_seconds() / 3600
         resolved_complaints.append(resolution_hours)
-    
+
     avg_resolution_time = sum(resolved_complaints) / len(resolved_complaints) if resolved_complaints else 24
-    
+
     return {
         'active_complaints': active_complaints,
         'active_count': len(active_complaints),
@@ -2006,7 +2006,7 @@ async def get_complaint_management_v2(
     Active complaints, categories, resolution times
     """
     current_user = await get_current_user(credentials)
-    
+
     # Get active complaints (low ratings = complaints)
     active_complaints = []
     async for feedback in db.feedback.find({
@@ -2023,7 +2023,7 @@ async def get_complaint_management_v2(
             'created_at': feedback.get('created_at'),
             'days_open': (datetime.now(timezone.utc) - datetime.fromisoformat(feedback.get('created_at', datetime.now(timezone.utc).isoformat()).replace('Z', '+00:00'))).days
         })
-    
+
     # Complaint categories
     categories = {}
     async for feedback in db.feedback.find({
@@ -2032,7 +2032,7 @@ async def get_complaint_management_v2(
     }):
         category = feedback.get('category', 'general')
         categories[category] = categories.get(category, 0) + 1
-    
+
     category_breakdown = [
         {
             'category': cat,
@@ -2047,7 +2047,7 @@ async def get_complaint_management_v2(
         }
         for cat, count in categories.items()
     ]
-    
+
     # Resolution times
     resolved_complaints = []
     async for feedback in db.feedback.find({
@@ -2060,9 +2060,9 @@ async def get_complaint_management_v2(
         resolved = datetime.fromisoformat(feedback['resolved_at'].replace('Z', '+00:00'))
         resolution_hours = (resolved - created).total_seconds() / 3600
         resolved_complaints.append(resolution_hours)
-    
+
     avg_resolution_time = sum(resolved_complaints) / len(resolved_complaints) if resolved_complaints else 24
-    
+
     return {
         'active_complaints': active_complaints,
         'active_count': len(active_complaints),
@@ -2084,11 +2084,11 @@ async def get_enhanced_snapshot(
     Today vs Yesterday vs Last Week
     """
     current_user = await get_current_user(credentials)
-    
+
     today = datetime.now(timezone.utc).date()
     yesterday = today - timedelta(days=1)
     last_week = today - timedelta(days=7)
-    
+
     # Get metrics for all three periods
     def get_metrics_for_date(date):
         return {
@@ -2100,11 +2100,11 @@ async def get_enhanced_snapshot(
             'complaints': 0,
             'pending_tasks': 0
         }
-    
+
     today_metrics = get_metrics_for_date(today)
     yesterday_metrics = get_metrics_for_date(yesterday)
     last_week_metrics = get_metrics_for_date(last_week)
-    
+
     # Calculate today's metrics
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     occupied_today = await db.rooms.count_documents({
@@ -2112,41 +2112,41 @@ async def get_enhanced_snapshot(
         'status': 'occupied'
     })
     today_metrics['occupancy'] = round((occupied_today / total_rooms * 100) if total_rooms > 0 else 0, 1)
-    
+
     # Revenue
     async for payment in db.payments.find({
         'tenant_id': current_user.tenant_id,
         'payment_date': {'$gte': today.isoformat()}
     }):
         today_metrics['revenue'] += payment.get('amount', 0)
-    
+
     # Check-ins/outs
     today_metrics['check_ins'] = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_in': today.isoformat(),
         'status': 'checked_in'
     })
-    
+
     today_metrics['check_outs'] = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_out': today.isoformat(),
         'status': 'checked_out'
     })
-    
+
     # Complaints
     today_metrics['complaints'] = await db.feedback.count_documents({
         'tenant_id': current_user.tenant_id,
         'rating': {'$lte': 2},
         'created_at': {'$gte': today.isoformat()}
     })
-    
+
     # Pending tasks
     today_metrics['pending_tasks'] = await db.maintenance_tasks.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'pending',
         'priority': {'$in': ['high', 'urgent']}
     })
-    
+
     # Simulated yesterday and last week data
     yesterday_metrics.update({
         'occupancy': today_metrics['occupancy'] - 3,
@@ -2156,7 +2156,7 @@ async def get_enhanced_snapshot(
         'complaints': today_metrics['complaints'] + 1,
         'pending_tasks': today_metrics['pending_tasks'] + 2
     })
-    
+
     last_week_metrics.update({
         'occupancy': today_metrics['occupancy'] - 5,
         'revenue': today_metrics['revenue'] * 0.92,
@@ -2165,7 +2165,7 @@ async def get_enhanced_snapshot(
         'complaints': today_metrics['complaints'] + 2,
         'pending_tasks': today_metrics['pending_tasks'] + 3
     })
-    
+
     return {
         'today': today_metrics,
         'yesterday': yesterday_metrics,

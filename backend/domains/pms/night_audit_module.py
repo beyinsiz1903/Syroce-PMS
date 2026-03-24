@@ -25,7 +25,7 @@ class NightAuditRecord(BaseModel):
     completed_at: Optional[datetime] = None
     status: AuditStatus = AuditStatus.PENDING
     started_by: str
-    
+
     # Audit statistics
     total_rooms: int = 0
     occupied_rooms: int = 0
@@ -34,20 +34,20 @@ class NightAuditRecord(BaseModel):
     room_revenue: float = 0.0
     tax_revenue: float = 0.0
     other_revenue: float = 0.0
-    
+
     # No-show handling
     no_shows_processed: int = 0
     no_show_charges: float = 0.0
-    
+
     # Posting results
     room_postings: int = 0
     tax_postings: int = 0
     failed_postings: int = 0
-    
+
     # Errors and warnings
     errors: List[str] = []
     warnings: List[str] = []
-    
+
     notes: Optional[str] = None
 
 class AutomaticPosting(BaseModel):
@@ -57,7 +57,7 @@ class AutomaticPosting(BaseModel):
     post_taxes: bool = True
     post_packages: bool = True
     tax_percentage: float = 10.0
-    
+
 class CityLedgerAccount(BaseModel):
     """City Ledger Account for direct billing"""
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))

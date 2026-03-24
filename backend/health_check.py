@@ -18,15 +18,15 @@ async def check_mongodb(db) -> Dict[str, Any]:
     """Check MongoDB connectivity and performance"""
     try:
         start_time = datetime.utcnow()
-        
+
         # Ping database
         await db.command('ping')
-        
+
         # Get server status
         server_status = await db.command('serverStatus')
-        
+
         response_time = (datetime.utcnow() - start_time).total_seconds() * 1000
-        
+
         return {
             "status": "healthy",
             "response_time_ms": round(response_time, 2),
@@ -44,15 +44,15 @@ async def check_redis(redis_client: redis.Redis) -> Dict[str, Any]:
     """Check Redis connectivity and performance"""
     try:
         start_time = datetime.utcnow()
-        
+
         # Ping Redis
         redis_client.ping()
-        
+
         # Get info
         info = redis_client.info()
-        
+
         response_time = (datetime.utcnow() - start_time).total_seconds() * 1000
-        
+
         return {
             "status": "healthy",
             "response_time_ms": round(response_time, 2),
@@ -73,7 +73,7 @@ def check_system_resources() -> Dict[str, Any]:
         cpu_percent = psutil.cpu_percent(interval=0)  # Instant reading, no wait
         memory = psutil.virtual_memory()
         disk = psutil.disk_usage('/')
-        
+
         return {
             "status": "healthy",
             "cpu": {
@@ -132,29 +132,29 @@ async def readiness_probe(db=None, redis_client=None):
     """
     checks = {}
     all_healthy = True
-    
+
     # Check MongoDB
     if db:
         mongo_health = await check_mongodb(db)
         checks["mongodb"] = mongo_health
         if mongo_health["status"] != "healthy":
             all_healthy = False
-    
+
     # Check Redis
     if redis_client:
         redis_health = await check_redis(redis_client)
         checks["redis"] = redis_health
         if redis_health["status"] != "healthy":
             all_healthy = False
-    
+
     # Check system resources
     system_health = check_system_resources()
     checks["system"] = system_health
     if system_health["status"] != "healthy":
         all_healthy = False
-    
+
     status_code = status.HTTP_200_OK if all_healthy else status.HTTP_503_SERVICE_UNAVAILABLE
-    
+
     return Response(
         content="OK" if all_healthy else "NOT_READY",
         status_code=status_code,
@@ -168,7 +168,7 @@ async def detailed_health_check(db=None, redis_client=None):
     """
     checks = {}
     overall_status = "healthy"
-    
+
     # MongoDB check
     if db:
         mongo_health = await check_mongodb(db)
@@ -177,7 +177,7 @@ async def detailed_health_check(db=None, redis_client=None):
             overall_status = "degraded"
     else:
         checks["mongodb"] = {"status": "not_configured"}
-    
+
     # Redis check
     if redis_client:
         redis_health = await check_redis(redis_client)
@@ -186,16 +186,16 @@ async def detailed_health_check(db=None, redis_client=None):
             overall_status = "degraded"
     else:
         checks["redis"] = {"status": "not_configured"}
-    
+
     # System resources
     checks["system"] = check_system_resources()
     if checks["system"]["status"] != "healthy":
         overall_status = "degraded"
-    
+
     # Check optimization systems
     try:
         from optimization_endpoints import archival_manager, cache_manager, materialized_views_manager
-        
+
         checks["optimization"] = {
             "data_archival": archival_manager is not None,
             "materialized_views": materialized_views_manager is not None,
@@ -203,7 +203,7 @@ async def detailed_health_check(db=None, redis_client=None):
         }
     except Exception:
         checks["optimization"] = {"status": "not_available"}
-    
+
     response = {
         "status": overall_status,
         "timestamp": datetime.utcnow().isoformat(),
@@ -211,9 +211,9 @@ async def detailed_health_check(db=None, redis_client=None):
         "version": "1.0.0",
         "checks": checks
     }
-    
+
     status_code = status.HTTP_200_OK if overall_status == "healthy" else status.HTTP_503_SERVICE_UNAVAILABLE
-    
+
     return Response(
         content=str(response),
         status_code=status_code,

@@ -101,7 +101,7 @@ async def get_connector(
     if not connector:
         raise HTTPException(status_code=404, detail="Connector not found")
     if "credentials" in connector:
-        connector["credentials"] = {k: "***" for k in connector["credentials"]}
+        connector["credentials"] = dict.fromkeys(connector["credentials"], "***")
     return connector
 
 

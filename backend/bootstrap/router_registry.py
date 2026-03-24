@@ -30,6 +30,8 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("routers.housekeeping", "router", ["housekeeping"], None, None),
     ("routers.departments", "router", ["departments"], None, None),
     ("routers.pms", "router", ["pms"], None, None),
+    ("routers.pms_rooms", "router", ["pms"], None, None),
+    ("routers.pms_guests", "router", ["pms"], None, None),
     ("routers.reservation_detail", "router", ["reservation-detail"], None, None),
     ("routers.hotel_services", "router", ["hotel-services"], None, None),
     ("routers.finance", "router", ["finance"], None, None),
@@ -175,7 +177,7 @@ _OPTIONAL_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[str]]
 
 def register_routers(app: FastAPI, api_router, require_super_admin_dep: Callable = None) -> None:
     """Mount all extracted and optional routers onto the app."""
-    
+
     # Mount extracted routers onto the api_router (these all use /api prefix already)
     for mod_path, attr, tags, prefix_override, deps in _EXTRACTED_ROUTERS:
         router = _safe_import(mod_path, attr)

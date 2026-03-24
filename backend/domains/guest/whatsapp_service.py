@@ -5,11 +5,11 @@ Simplified version - requires WhatsApp Business API credentials
 
 class WhatsAppService:
     """WhatsApp Business service"""
-    
+
     def __init__(self):
         self.mode = "mock"  # mock or production
         # Production needs: WHATSAPP_API_KEY, WHATSAPP_PHONE_NUMBER
-    
+
     async def send_booking_confirmation(self, phone: str, booking_details: dict) -> bool:
         """Rezervasyon onay mesajı gönder"""
         message = f"""
@@ -28,7 +28,7 @@ Rezervasyon numaranız: *{booking_details['booking_id'][:8].upper()}*
 
 Görüşmek üzere!
 """
-        
+
         if self.mode == "production":
             # WhatsApp Business API call
             # Example: requests.post(whatsapp_api_url, ...)
@@ -40,9 +40,9 @@ Görüşmek üzere!
             print(f"To: {phone}")
             print(f"Message:\n{message}")
             print("="*60 + "\n")
-        
+
         return True
-    
+
     async def send_pre_arrival_message(self, phone: str, guest_name: str, checkin_date: str) -> bool:
         """Pre-arrival mesajı"""
         message = f"""
@@ -59,15 +59,15 @@ Teklif almak için yanıtlayın!
 
 Syroce Ekibi 🌟
 """
-        
+
         if self.mode == "production":
             # API call
             pass
         else:
             print(f"\n📱 WhatsApp Pre-Arrival to {phone}\n{message}\n")
-        
+
         return True
-    
+
     async def send_upsell_offer(self, phone: str, offer_details: dict) -> bool:
         """Upsell teklifi gönder"""
         message = f"""
@@ -83,12 +83,12 @@ Syroce Ekibi 🌟
 
 Kabul etmek için 'EVET' yazın.
 """
-        
+
         if self.mode == "production":
             pass
         else:
             print(f"\n📱 WhatsApp Upsell to {phone}\n{message}\n")
-        
+
         return True
 
 # Global instance

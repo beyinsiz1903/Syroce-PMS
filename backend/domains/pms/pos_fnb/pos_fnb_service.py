@@ -146,7 +146,7 @@ class PosFnbService:
 
         orders_count = len(orders)
         avg_val = round(total_rev / orders_count, 2) if orders_count > 0 else 0
-        tables_used = len(set(o.get("table_number") for o in orders if o.get("table_number")))
+        tables_used = len({o.get("table_number") for o in orders if o.get("table_number")})
 
         return ServiceResult.success({
             "date": date_str,

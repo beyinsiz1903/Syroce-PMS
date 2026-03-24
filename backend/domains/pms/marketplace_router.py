@@ -44,7 +44,7 @@ async def get_outlets(current_user: User = Depends(get_current_user)):
         {'tenant_id': current_user.tenant_id},
         {'_id': 0}
     ).to_list(100)
-    
+
     # Get transaction counts per outlet
     for outlet in outlets:
         today_trans = await db.pos_menu_transactions.count_documents({
@@ -53,7 +53,7 @@ async def get_outlets(current_user: User = Depends(get_current_user)):
             'transaction_date': datetime.now(timezone.utc).date().isoformat()
         })
         outlet['today_transactions'] = today_trans
-    
+
     return {'outlets': outlets, 'count': len(outlets)}
 
 @router.post("/pos/outlets")
@@ -73,7 +73,7 @@ async def create_outlet(
         'status': 'active',
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     outlet_copy = outlet.copy()
     await db.pos_outlets.insert_one(outlet_copy)
     return outlet
@@ -88,16 +88,16 @@ async def get_outlet_details(
         'id': outlet_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not outlet:
         raise HTTPException(status_code=404, detail="Outlet not found")
-    
+
     # Get menu items
     menu_items = await db.pos_menu_items.find({
         'tenant_id': current_user.tenant_id,
         'outlet_id': outlet_id
     }, {'_id': 0}).to_list(1000)
-    
+
     # Get today's stats
     today = datetime.now(timezone.utc).date().isoformat()
     today_transactions = await db.pos_menu_transactions.find({
@@ -105,9 +105,9 @@ async def get_outlet_details(
         'outlet_id': outlet_id,
         'transaction_date': today
     }, {'_id': 0}).to_list(1000)
-    
+
     today_revenue = sum(t.get('total_amount', 0) for t in today_transactions)
-    
+
     return {
         'outlet': outlet,
         'menu_items': menu_items,
@@ -128,14 +128,14 @@ async def get_menu_items(
 ):
     """Get menu items with optional filters"""
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if outlet_id:
         query['outlet_id'] = outlet_id
     if category:
         query['category'] = category
-    
+
     menu_items = await db.pos_menu_items.find(query, {'_id': 0}).to_list(1000)
-    
+
     return {'menu_items': menu_items, 'count': len(menu_items)}
 
 @router.post("/pos/menu-items")
@@ -149,10 +149,10 @@ async def create_menu_item(
         'id': request.outlet_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not outlet:
         raise HTTPException(status_code=404, detail="Outlet not found")
-    
+
     menu_item = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -165,7 +165,7 @@ async def create_menu_item(
         'status': 'active',
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     menu_copy = menu_item.copy()
     await db.pos_menu_items.insert_one(menu_copy)
     return menu_item
@@ -181,27 +181,27 @@ async def create_pos_transaction_with_menu(
         'id': request.outlet_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not outlet:
         raise HTTPException(status_code=404, detail="Outlet not found")
-    
+
     # Calculate totals
     subtotal = sum(item.get('quantity', 0) * item.get('price', 0) for item in request.items)
-    
+
     # Get menu item details and calculate costs
     enriched_items = []
     total_cost = 0
-    
+
     for item in request.items:
         menu_item = await db.pos_menu_items.find_one({
             'id': item.get('menu_item_id'),
             'tenant_id': current_user.tenant_id
         }, {'_id': 0})
-        
+
         if menu_item:
             item_cost = menu_item.get('cost', 0) * item.get('quantity', 0)
             total_cost += item_cost
-            
+
             enriched_items.append({
                 'menu_item_id': item.get('menu_item_id'),
                 'item_name': menu_item.get('item_name'),
@@ -212,7 +212,7 @@ async def create_pos_transaction_with_menu(
                 'total_price': item.get('quantity') * item.get('price'),
                 'total_cost': item_cost
             })
-    
+
     # Create transaction
     transaction = {
         'id': str(uuid.uuid4()),
@@ -234,10 +234,10 @@ async def create_pos_transaction_with_menu(
         'processed_by': current_user.id,
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     trans_copy = transaction.copy()
     await db.pos_menu_transactions.insert_one(trans_copy)
-    
+
     # Post to folio if folio_id provided
     if request.folio_id:
         folio_charge = {
@@ -256,7 +256,7 @@ async def create_pos_transaction_with_menu(
         }
         folio_copy = folio_charge.copy()
         await db.folio_charges.insert_one(folio_copy)
-    
+
     return transaction
 
 @router.get("/pos/menu-sales-breakdown")
@@ -271,31 +271,31 @@ async def get_menu_sales_breakdown(
         start_date = datetime.now(timezone.utc).date().isoformat()
     if not end_date:
         end_date = start_date
-    
+
     # Get transactions
     query = {
         'tenant_id': current_user.tenant_id,
         'transaction_date': {'$gte': start_date, '$lte': end_date}
     }
-    
+
     if outlet_id:
         query['outlet_id'] = outlet_id
-    
+
     transactions = await db.pos_menu_transactions.find(query, {'_id': 0}).to_list(10000)
-    
+
     # Aggregate by menu item
     menu_sales = {}
     category_sales = {}
     outlet_sales = {}
-    
+
     for trans in transactions:
         outlet_name = trans.get('outlet_name', 'Unknown')
         outlet_sales[outlet_name] = outlet_sales.get(outlet_name, 0) + trans.get('total_amount', 0)
-        
+
         for item in trans.get('items', []):
             item_name = item.get('item_name')
             category = item.get('category', 'Other')
-            
+
             if item_name not in menu_sales:
                 menu_sales[item_name] = {
                     'item_name': item_name,
@@ -305,21 +305,21 @@ async def get_menu_sales_breakdown(
                     'total_cost': 0,
                     'gross_profit': 0
                 }
-            
+
             menu_sales[item_name]['quantity_sold'] += item.get('quantity', 0)
             menu_sales[item_name]['total_revenue'] += item.get('total_price', 0)
             menu_sales[item_name]['total_cost'] += item.get('total_cost', 0)
             menu_sales[item_name]['gross_profit'] += (item.get('total_price', 0) - item.get('total_cost', 0))
-            
+
             category_sales[category] = category_sales.get(category, 0) + item.get('total_price', 0)
-    
+
     # Sort by revenue
     sorted_menu_sales = sorted(menu_sales.values(), key=lambda x: x['total_revenue'], reverse=True)
-    
+
     # Calculate totals
     total_revenue = sum(item['total_revenue'] for item in sorted_menu_sales)
     total_cost = sum(item['total_cost'] for item in sorted_menu_sales)
-    
+
     return {
         'date_range': f"{start_date} to {end_date}",
         'menu_items': sorted_menu_sales,
@@ -350,52 +350,52 @@ async def generate_z_report(
     """Generate Z Report (End of Day report)"""
     date = request.date or datetime.now(timezone.utc).date().isoformat()
     outlet_id = request.outlet_id
-    
+
     # Get transactions for the day
     query = {
         'tenant_id': current_user.tenant_id,
         'transaction_date': date
     }
-    
+
     if outlet_id:
         query['outlet_id'] = outlet_id
         outlet = await db.pos_outlets.find_one({'id': outlet_id}, {'_id': 0})
         outlet_name = outlet.get('outlet_name') if outlet else 'Unknown'
     else:
         outlet_name = 'All Outlets'
-    
+
     transactions = await db.pos_menu_transactions.find(query, {'_id': 0}).to_list(10000)
-    
+
     if not transactions:
         return {
             'message': 'No transactions found for this date',
             'date': date,
             'outlet': outlet_name
         }
-    
+
     # Calculate totals
     total_transactions = len(transactions)
     gross_sales = sum(t.get('total_amount', 0) for t in transactions)
     total_cost = sum(t.get('total_cost', 0) for t in transactions)
     gross_profit = gross_sales - total_cost
-    
+
     # Payment method breakdown
     payment_methods = {}
     for trans in transactions:
         method = trans.get('payment_method', 'cash')
         payment_methods[method] = payment_methods.get(method, 0) + trans.get('total_amount', 0)
-    
+
     # Category breakdown
     category_sales = {}
     menu_item_sales = {}
-    
+
     for trans in transactions:
         for item in trans.get('items', []):
             category = item.get('category', 'Other')
             item_name = item.get('item_name')
-            
+
             category_sales[category] = category_sales.get(category, 0) + item.get('total_price', 0)
-            
+
             if item_name not in menu_item_sales:
                 menu_item_sales[item_name] = {
                     'quantity': 0,
@@ -403,26 +403,26 @@ async def generate_z_report(
                 }
             menu_item_sales[item_name]['quantity'] += item.get('quantity', 0)
             menu_item_sales[item_name]['revenue'] += item.get('total_price', 0)
-    
+
     # Server breakdown
     server_sales = {}
     for trans in transactions:
         server = trans.get('server_name', 'Unknown')
         server_sales[server] = server_sales.get(server, 0) + trans.get('total_amount', 0)
-    
+
     # Hourly breakdown
     hourly_sales = {}
     for trans in transactions:
         hour = trans.get('transaction_time', '00:00:00')[:2]
         hourly_sales[hour] = hourly_sales.get(hour, 0) + trans.get('total_amount', 0)
-    
+
     # Top selling items
     top_items = sorted(
         [{'item': k, **v} for k, v in menu_item_sales.items()],
         key=lambda x: x['revenue'],
         reverse=True
     )[:10]
-    
+
     # Create Z Report
     z_report = {
         'id': str(uuid.uuid4()),
@@ -433,7 +433,7 @@ async def generate_z_report(
         'report_type': 'Z-Report',
         'generated_at': datetime.now(timezone.utc).isoformat(),
         'generated_by': current_user.id,
-        
+
         # Summary
         'summary': {
             'total_transactions': total_transactions,
@@ -443,31 +443,31 @@ async def generate_z_report(
             'profit_margin': round((gross_profit / gross_sales * 100), 1) if gross_sales > 0 else 0,
             'average_check': round(gross_sales / total_transactions, 2) if total_transactions > 0 else 0
         },
-        
+
         # Payment methods
         'payment_methods': [
             {'method': method, 'amount': round(amount, 2), 'count': sum(1 for t in transactions if t.get('payment_method') == method)}
             for method, amount in payment_methods.items()
         ],
-        
+
         # Category breakdown
         'categories': [
             {'category': cat, 'revenue': round(rev, 2)}
             for cat, rev in sorted(category_sales.items(), key=lambda x: x[1], reverse=True)
         ],
-        
+
         # Server performance
         'servers': [
             {'server_name': server, 'revenue': round(rev, 2)}
             for server, rev in sorted(server_sales.items(), key=lambda x: x[1], reverse=True)
         ],
-        
+
         # Hourly sales
         'hourly_breakdown': [
             {'hour': f"{hour}:00", 'revenue': round(rev, 2)}
             for hour, rev in sorted(hourly_sales.items())
         ],
-        
+
         # Top selling items
         'top_items': [
             {
@@ -478,11 +478,11 @@ async def generate_z_report(
             for item in top_items
         ]
     }
-    
+
     # Save Z Report
     z_copy = z_report.copy()
     await db.z_reports.insert_one(z_copy)
-    
+
     return z_report
 
 @router.get("/pos/z-reports")
@@ -494,18 +494,18 @@ async def get_z_reports(
 ):
     """Get Z Reports history"""
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if outlet_id:
         query['outlet_id'] = outlet_id
-    
+
     if start_date and end_date:
         query['report_date'] = {'$gte': start_date, '$lte': end_date}
-    
+
     reports = await db.z_reports.find(
         query,
         {'_id': 0}
     ).sort('report_date', -1).to_list(100)
-    
+
     return {'reports': reports, 'count': len(reports)}
 
 
@@ -519,7 +519,7 @@ async def get_fnb_outlets_mobile(
 ):
     """Get all F&B outlets with details"""
     current_user = await get_current_user(credentials)
-    
+
     outlets = []
     async for outlet in db.outlets.find({
         'tenant_id': current_user.tenant_id,
@@ -537,7 +537,7 @@ async def get_fnb_outlets_mobile(
             'manager': outlet.get('manager'),
             'is_active': outlet.get('is_active', True)
         })
-    
+
     return {
         'outlets': outlets,
         'count': len(outlets)
@@ -551,18 +551,18 @@ async def get_active_orders_mobile(
 ):
     """Get active POS orders (pending, preparing, ready)"""
     current_user = await get_current_user(credentials)
-    
+
     query = {
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['pending', 'preparing', 'ready']}
     }
-    
+
     if outlet_id:
         query['outlet_id'] = outlet_id
-    
+
     orders = []
     total_value = 0.0
-    
+
     async for order in db.pos_orders.find(query).sort('created_at', -1).limit(100):
         order_data = {
             'id': order.get('id'),
@@ -579,15 +579,15 @@ async def get_active_orders_mobile(
             'created_at': order.get('created_at').isoformat() if order.get('created_at') else None,
             'wait_time_minutes': None
         }
-        
+
         # Calculate wait time
         if order.get('created_at'):
             wait_time = datetime.now(timezone.utc) - order['created_at']
             order_data['wait_time_minutes'] = int(wait_time.total_seconds() / 60)
-        
+
         orders.append(order_data)
         total_value += order.get('total', 0)
-    
+
     # Summary by status
     summary = {
         'pending': len([o for o in orders if o['status'] == 'pending']),
@@ -597,7 +597,7 @@ async def get_active_orders_mobile(
         'total_value': total_value,
         'average_wait_time': sum(o.get('wait_time_minutes', 0) for o in orders) / len(orders) if orders else 0
     }
-    
+
     return {
         'orders': orders,
         'summary': summary
@@ -611,15 +611,15 @@ async def get_order_detail_mobile(
 ):
     """Get order detail with items"""
     current_user = await get_current_user(credentials)
-    
+
     order = await db.pos_orders.find_one({
         'id': order_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    
+
     return {
         'order': {
             'id': order.get('id'),
@@ -653,32 +653,32 @@ async def update_order_status_mobile(
 ):
     """Update order status"""
     current_user = await get_current_user(credentials)
-    
+
     order = await db.pos_orders.find_one({
         'id': order_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    
+
     update_data = {
         'status': new_status,
         'updated_at': datetime.now(timezone.utc)
     }
-    
+
     if new_status == 'preparing' and not order.get('started_at'):
         update_data['started_at'] = datetime.now(timezone.utc)
     elif new_status == 'ready' and not order.get('ready_at'):
         update_data['ready_at'] = datetime.now(timezone.utc)
     elif new_status == 'served' and not order.get('served_at'):
         update_data['served_at'] = datetime.now(timezone.utc)
-    
+
     await db.pos_orders.update_one(
         {'id': order_id, 'tenant_id': current_user.tenant_id},
         {'$set': update_data}
     )
-    
+
     return {
         'message': f'Order status updated to {new_status}',
         'order_id': order_id,
@@ -693,11 +693,11 @@ async def get_recipes_mobile(
 ):
     """Get recipes with ingredient details"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
     if menu_item_id:
         query['menu_item_id'] = menu_item_id
-    
+
     recipes = []
     async for recipe in db.recipes.find(query).sort('menu_item_name', 1):
         recipes.append({
@@ -713,7 +713,7 @@ async def get_recipes_mobile(
             'profit_margin': recipe.get('profit_margin', 0),
             'notes': recipe.get('notes')
         })
-    
+
     return {
         'recipes': recipes,
         'count': len(recipes)
@@ -728,29 +728,29 @@ async def get_ingredients_mobile(
 ):
     """Get ingredient inventory"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
     if category:
         query['category'] = category
-    
+
     ingredients = []
     low_stock_count = 0
     total_value = 0.0
-    
+
     async for ingredient in db.ingredients.find(query).sort('name', 1):
         current_stock = ingredient.get('current_stock', 0)
         minimum_stock = ingredient.get('minimum_stock', 0)
         is_low_stock = current_stock <= minimum_stock
-        
+
         if low_stock_only and not is_low_stock:
             continue
-        
+
         if is_low_stock:
             low_stock_count += 1
-        
+
         stock_value = current_stock * ingredient.get('unit_cost', 0)
         total_value += stock_value
-        
+
         ingredients.append({
             'id': ingredient.get('id'),
             'name': ingredient.get('name'),
@@ -766,14 +766,14 @@ async def get_ingredients_mobile(
             'expiry_date': ingredient.get('expiry_date').isoformat() if ingredient.get('expiry_date') else None,
             'last_restocked': ingredient.get('last_restocked').isoformat() if ingredient.get('last_restocked') else None
         })
-    
+
     return {
         'ingredients': ingredients,
         'summary': {
             'total_count': len(ingredients),
             'low_stock_count': low_stock_count,
             'total_inventory_value': total_value,
-            'categories': list(set(i['category'] for i in ingredients))
+            'categories': list({i['category'] for i in ingredients})
         }
     }
 
@@ -787,12 +787,12 @@ async def get_stock_consumption_mobile(
 ):
     """Get stock consumption report"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if outlet_id:
         query['outlet_id'] = outlet_id
-    
+
     if start_date or end_date:
         date_filter = {}
         if start_date:
@@ -806,18 +806,18 @@ async def get_stock_consumption_mobile(
         start_of_day = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
         end_of_day = datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
         query['consumed_at'] = {'$gte': start_of_day, '$lte': end_of_day}
-    
+
     consumptions = []
     total_cost = 0.0
     by_ingredient = {}
     by_outlet = {}
-    
+
     async for consumption in db.stock_consumption.find(query).sort('consumed_at', -1):
         ingredient_name = consumption.get('ingredient_name')
         outlet_name = consumption.get('outlet_name')
         cost = consumption.get('cost', 0)
         quantity = consumption.get('consumed_quantity', 0)
-        
+
         consumptions.append({
             'id': consumption.get('id'),
             'ingredient_name': ingredient_name,
@@ -827,21 +827,21 @@ async def get_stock_consumption_mobile(
             'cost': cost,
             'consumed_at': consumption.get('consumed_at').isoformat() if consumption.get('consumed_at') else None
         })
-        
+
         total_cost += cost
-        
+
         # Aggregate by ingredient
         if ingredient_name not in by_ingredient:
             by_ingredient[ingredient_name] = {'quantity': 0, 'cost': 0}
         by_ingredient[ingredient_name]['quantity'] += quantity
         by_ingredient[ingredient_name]['cost'] += cost
-        
+
         # Aggregate by outlet
         if outlet_name not in by_outlet:
             by_outlet[outlet_name] = {'cost': 0, 'item_count': 0}
         by_outlet[outlet_name]['cost'] += cost
         by_outlet[outlet_name]['item_count'] += 1
-    
+
     return {
         'consumptions': consumptions,
         'summary': {
@@ -860,56 +860,56 @@ async def get_fnb_daily_summary_mobile(
 ):
     """Get comprehensive F&B daily summary"""
     current_user = await get_current_user(credentials)
-    
+
     if date:
         target_date = datetime.fromisoformat(date).date()
     else:
         target_date = datetime.now(timezone.utc).date()
-    
+
     start_of_day = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
     end_of_day = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=timezone.utc)
-    
+
     # Orders summary
     orders_query = {
         'tenant_id': current_user.tenant_id,
         'created_at': {'$gte': start_of_day, '$lte': end_of_day}
     }
-    
+
     total_orders = 0
     total_revenue = 0.0
     orders_by_outlet = {}
     orders_by_status = {'pending': 0, 'preparing': 0, 'ready': 0, 'served': 0, 'cancelled': 0}
-    
+
     async for order in db.pos_orders.find(orders_query):
         total_orders += 1
         total_revenue += order.get('total', 0)
-        
+
         outlet = order.get('outlet_name', 'Unknown')
         if outlet not in orders_by_outlet:
             orders_by_outlet[outlet] = {'count': 0, 'revenue': 0}
         orders_by_outlet[outlet]['count'] += 1
         orders_by_outlet[outlet]['revenue'] += order.get('total', 0)
-        
+
         status = order.get('status', 'pending')
         orders_by_status[status] = orders_by_status.get(status, 0) + 1
-    
+
     # Stock consumption summary
     consumption_query = {
         'tenant_id': current_user.tenant_id,
         'consumed_at': {'$gte': start_of_day, '$lte': end_of_day}
     }
-    
+
     total_consumption_cost = 0.0
     consumption_count = 0
-    
+
     async for consumption in db.stock_consumption.find(consumption_query):
         total_consumption_cost += consumption.get('cost', 0)
         consumption_count += 1
-    
+
     # Calculate profit
     gross_profit = total_revenue - total_consumption_cost
     profit_margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else 0
-    
+
     return {
         'date': target_date.isoformat(),
         'orders': {
@@ -943,12 +943,12 @@ async def get_marketplace_products(
     query = {}
     if category:
         query['category'] = category
-    
+
     products = await db.marketplace_products.find(
         query,
         {'_id': 0}
     ).to_list(1000)
-    
+
     return {'products': products, 'count': len(products)}
 
 @router.post("/marketplace/products")
@@ -968,7 +968,7 @@ async def create_marketplace_product(
         'status': 'active',
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     product_copy = product.copy()
     await db.marketplace_products.insert_one(product_copy)
     return product
@@ -982,12 +982,12 @@ async def get_inventory(
     query = {'tenant_id': current_user.tenant_id}
     if location:
         query['location'] = location
-    
+
     inventory = await db.inventory.find(
         query,
         {'_id': 0}
     ).to_list(1000)
-    
+
     return {'inventory': inventory, 'count': len(inventory)}
 
 @router.post("/marketplace/inventory/adjust")
@@ -1003,7 +1003,7 @@ async def adjust_inventory(
         'location': request.location
     })
     quantity_change = request.quantity_change
-    
+
     if not inventory:
         # Create new inventory record
         inventory = {
@@ -1027,7 +1027,7 @@ async def adjust_inventory(
                 }
             }
         )
-    
+
     # Log adjustment
     log = {
         'id': str(uuid.uuid4()),
@@ -1040,7 +1040,7 @@ async def adjust_inventory(
         'adjusted_at': datetime.now(timezone.utc).isoformat()
     }
     await db.inventory_adjustments.insert_one(log)
-    
+
     return {'message': 'Inventory adjusted successfully'}
 
 @router.get("/marketplace/purchase-orders")
@@ -1052,12 +1052,12 @@ async def get_purchase_orders(
     query = {'tenant_id': current_user.tenant_id}
     if status:
         query['status'] = status
-    
+
     orders = await db.purchase_orders.find(
         query,
         {'_id': 0}
     ).sort('created_at', -1).to_list(100)
-    
+
     return {'orders': orders, 'count': len(orders)}
 
 @router.post("/marketplace/purchase-orders", dependencies=[Depends(require_feature("hidden_marketplace"))])
@@ -1068,7 +1068,7 @@ async def create_purchase_order(
     """Create purchase order"""
     # Calculate total
     total_amount = sum(item.get('quantity', 0) * item.get('unit_price', 0) for item in request.items)
-    
+
     po = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -1082,7 +1082,7 @@ async def create_purchase_order(
         'created_at': datetime.now(timezone.utc).isoformat(),
         'created_by': current_user.id
     }
-    
+
     po_copy = po.copy()
     await db.purchase_orders.insert_one(po_copy)
     return po
@@ -1097,10 +1097,10 @@ async def approve_purchase_order(
         'id': po_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
-    
+
     await db.purchase_orders.update_one(
         {'id': po_id},
         {
@@ -1111,7 +1111,7 @@ async def approve_purchase_order(
             }
         }
     )
-    
+
     return {'message': 'Purchase order approved successfully'}
 
 @router.post("/marketplace/purchase-orders/{po_id}/receive")
@@ -1126,10 +1126,10 @@ async def receive_purchase_order(
         'id': po_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
-    
+
     # Update inventory for received items
     for item in received_items:
         await db.inventory.update_one(
@@ -1144,7 +1144,7 @@ async def receive_purchase_order(
             },
             upsert=True
         )
-    
+
     # Update PO status
     await db.purchase_orders.update_one(
         {'id': po_id},
@@ -1157,7 +1157,7 @@ async def receive_purchase_order(
             }
         }
     )
-    
+
     return {'message': 'Purchase order received and inventory updated'}
 
 @router.get("/marketplace/deliveries")
@@ -1169,12 +1169,12 @@ async def get_deliveries(
     query = {'tenant_id': current_user.tenant_id}
     if status:
         query['status'] = status
-    
+
     deliveries = await db.deliveries.find(
         query,
         {'_id': 0}
     ).sort('created_at', -1).to_list(100)
-    
+
     return {'deliveries': deliveries, 'count': len(deliveries)}
 
 @router.post("/marketplace/deliveries")
@@ -1193,7 +1193,7 @@ async def create_delivery(
         'status': 'in_transit',
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     delivery_copy = delivery.copy()
     await db.deliveries.insert_one(delivery_copy)
     return delivery
@@ -1206,7 +1206,7 @@ async def get_stock_alerts(current_user: User = Depends(get_current_user)):
         {'tenant_id': current_user.tenant_id},
         {'_id': 0}
     ).to_list(1000)
-    
+
     alerts = []
     for item in inventory_items:
         # Get product details
@@ -1214,7 +1214,7 @@ async def get_stock_alerts(current_user: User = Depends(get_current_user)):
             {'id': item['product_id']},
             {'_id': 0}
         )
-        
+
         if product:
             # Check if below minimum (using min_order_qty * 2 as threshold)
             threshold = product.get('min_order_qty', 1) * 2
@@ -1227,7 +1227,7 @@ async def get_stock_alerts(current_user: User = Depends(get_current_user)):
                     'threshold': threshold,
                     'status': 'low_stock'
                 })
-    
+
     return {'alerts': alerts, 'count': len(alerts)}
 
 
@@ -1243,12 +1243,12 @@ async def get_suppliers(
     query = {'tenant_id': current_user.tenant_id}
     if status:
         query['status'] = status
-    
+
     suppliers = await db.suppliers.find(
         query,
         {'_id': 0}
     ).to_list(100)
-    
+
     return {'suppliers': suppliers, 'count': len(suppliers)}
 
 @router.post("/marketplace/suppliers")
@@ -1271,7 +1271,7 @@ async def create_supplier(
         'status': request.status,
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     supplier_copy = supplier.copy()
     await db.suppliers.insert_one(supplier_copy)
     return supplier
@@ -1287,13 +1287,13 @@ async def update_supplier_credit(
         'id': supplier_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
-    
+
     # Update available credit based on outstanding
     available_credit = request.credit_limit - supplier.get('current_outstanding', 0.0)
-    
+
     await db.suppliers.update_one(
         {'id': supplier_id},
         {
@@ -1305,7 +1305,7 @@ async def update_supplier_credit(
             }
         }
     )
-    
+
     return {
         'message': 'Supplier credit updated successfully',
         'credit_limit': request.credit_limit,
@@ -1322,10 +1322,10 @@ async def get_supplier_credit_status(
         {'id': supplier_id, 'tenant_id': current_user.tenant_id},
         {'_id': 0}
     )
-    
+
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
-    
+
     # Get all outstanding purchase orders
     outstanding_pos = await db.purchase_orders.find({
         'tenant_id': current_user.tenant_id,
@@ -1333,9 +1333,9 @@ async def get_supplier_credit_status(
         'status': {'$in': ['approved', 'received']},
         'payment_status': {'$ne': 'paid'}
     }, {'_id': 0}).to_list(100)
-    
+
     total_outstanding = sum(po.get('total_amount', 0) for po in outstanding_pos)
-    
+
     return {
         'supplier_id': supplier_id,
         'supplier_name': supplier['supplier_name'],
@@ -1358,13 +1358,13 @@ async def submit_po_for_approval(
         'id': po_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
-    
+
     if po.get('status') != 'pending':
         raise HTTPException(status_code=400, detail="Only pending orders can be submitted for approval")
-    
+
     # Update PO status to awaiting_approval
     await db.purchase_orders.update_one(
         {'id': po_id},
@@ -1376,7 +1376,7 @@ async def submit_po_for_approval(
             }
         }
     )
-    
+
     # Create approval request record
     approval_request = {
         'id': str(uuid.uuid4()),
@@ -1389,10 +1389,10 @@ async def submit_po_for_approval(
         'requested_by': current_user.id,
         'requested_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     approval_copy = approval_request.copy()
     await db.approval_requests.insert_one(approval_copy)
-    
+
     return {
         'message': 'Purchase order submitted for GM approval',
         'approval_request_id': approval_request['id']
@@ -1405,7 +1405,7 @@ async def get_pending_approvals(current_user: User = Depends(get_current_user)):
         'tenant_id': current_user.tenant_id,
         'status': 'pending'
     }, {'_id': 0}).sort('requested_at', -1).to_list(100)
-    
+
     return {'approvals': approvals, 'count': len(approvals)}
 
 @router.post("/marketplace/purchase-orders/{po_id}/approve")
@@ -1419,13 +1419,13 @@ async def approve_purchase_order_by_gm(
         'id': po_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
-    
+
     # Check user has GM/approval permission
     # (In production, add proper permission check here)
-    
+
     # Update PO status
     await db.purchase_orders.update_one(
         {'id': po_id},
@@ -1438,7 +1438,7 @@ async def approve_purchase_order_by_gm(
             }
         }
     )
-    
+
     # Update approval request
     await db.approval_requests.update_one(
         {'po_id': po_id, 'tenant_id': current_user.tenant_id},
@@ -1451,13 +1451,13 @@ async def approve_purchase_order_by_gm(
             }
         }
     )
-    
+
     # Update supplier outstanding balance
     supplier = await db.suppliers.find_one({
         'tenant_id': current_user.tenant_id,
         'supplier_name': po.get('supplier')
     })
-    
+
     if supplier:
         new_outstanding = supplier.get('current_outstanding', 0.0) + po.get('total_amount', 0.0)
         await db.suppliers.update_one(
@@ -1469,7 +1469,7 @@ async def approve_purchase_order_by_gm(
                 }
             }
         )
-    
+
     return {'message': 'Purchase order approved successfully'}
 
 @router.post("/marketplace/purchase-orders/{po_id}/reject")
@@ -1483,10 +1483,10 @@ async def reject_purchase_order(
         'id': po_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
-    
+
     await db.purchase_orders.update_one(
         {'id': po_id},
         {
@@ -1498,7 +1498,7 @@ async def reject_purchase_order(
             }
         }
     )
-    
+
     await db.approval_requests.update_one(
         {'po_id': po_id, 'tenant_id': current_user.tenant_id},
         {
@@ -1510,7 +1510,7 @@ async def reject_purchase_order(
             }
         }
     )
-    
+
     return {'message': 'Purchase order rejected', 'reason': request.rejection_reason}
 
 
@@ -1522,7 +1522,7 @@ async def get_warehouses(current_user: User = Depends(get_current_user)):
         {'tenant_id': current_user.tenant_id},
         {'_id': 0}
     ).to_list(100)
-    
+
     return {'warehouses': warehouses, 'count': len(warehouses)}
 
 @router.post("/marketplace/warehouses")
@@ -1542,7 +1542,7 @@ async def create_warehouse(
         'status': 'active',
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     warehouse_copy = warehouse.copy()
     await db.warehouses.insert_one(warehouse_copy)
     return warehouse
@@ -1557,16 +1557,16 @@ async def get_warehouse_inventory(
         'id': warehouse_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not warehouse:
         raise HTTPException(status_code=404, detail="Warehouse not found")
-    
+
     # Get all inventory items for this warehouse
     inventory = await db.inventory.find({
         'tenant_id': current_user.tenant_id,
         'location': warehouse['warehouse_name']
     }, {'_id': 0}).to_list(1000)
-    
+
     # Enrich with product details
     for item in inventory:
         product = await db.marketplace_products.find_one(
@@ -1577,9 +1577,9 @@ async def get_warehouse_inventory(
             item['product_name'] = product.get('product_name')
             item['category'] = product.get('category')
             item['unit_of_measure'] = product.get('unit_of_measure')
-    
+
     total_items = sum(item.get('quantity', 0) for item in inventory)
-    
+
     return {
         'warehouse': warehouse,
         'inventory': inventory,
@@ -1594,17 +1594,17 @@ async def get_stock_summary_by_warehouse(current_user: User = Depends(get_curren
         {'tenant_id': current_user.tenant_id},
         {'_id': 0}
     ).to_list(100)
-    
+
     summary = []
     for warehouse in warehouses:
         inventory = await db.inventory.find({
             'tenant_id': current_user.tenant_id,
             'location': warehouse['warehouse_name']
         }, {'_id': 0}).to_list(1000)
-        
+
         total_items = sum(item.get('quantity', 0) for item in inventory)
         unique_products = len(inventory)
-        
+
         summary.append({
             'warehouse_id': warehouse['id'],
             'warehouse_name': warehouse['warehouse_name'],
@@ -1614,7 +1614,7 @@ async def get_stock_summary_by_warehouse(current_user: User = Depends(get_curren
             'capacity': warehouse.get('capacity', 0),
             'utilization': round((total_items / warehouse.get('capacity', 1)) * 100, 1) if warehouse.get('capacity') else 0
         })
-    
+
     return {'summary': summary, 'warehouse_count': len(warehouses)}
 
 
@@ -1630,10 +1630,10 @@ async def update_delivery_status(
         'id': delivery_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not delivery:
         raise HTTPException(status_code=404, detail="Delivery not found")
-    
+
     # Create tracking event
     tracking_event = {
         'status': request.status,
@@ -1642,7 +1642,7 @@ async def update_delivery_status(
         'timestamp': datetime.now(timezone.utc).isoformat(),
         'updated_by': current_user.id
     }
-    
+
     # Update delivery
     await db.deliveries.update_one(
         {'id': delivery_id},
@@ -1657,14 +1657,14 @@ async def update_delivery_status(
             }
         }
     )
-    
+
     # If delivered, update PO status
     if request.status == 'delivered':
         await db.deliveries.update_one(
             {'id': delivery_id},
             {'$set': {'delivered_at': datetime.now(timezone.utc).isoformat()}}
         )
-    
+
     return {
         'message': 'Delivery status updated successfully',
         'new_status': request.status,
@@ -1681,15 +1681,15 @@ async def get_delivery_tracking(
         'id': delivery_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not delivery:
         raise HTTPException(status_code=404, detail="Delivery not found")
-    
+
     # Get associated PO
     po = await db.purchase_orders.find_one({
         'id': delivery.get('po_id')
     }, {'_id': 0})
-    
+
     return {
         'delivery': delivery,
         'purchase_order': po,
@@ -1705,7 +1705,7 @@ async def get_in_transit_deliveries(current_user: User = Depends(get_current_use
         'tenant_id': current_user.tenant_id,
         'status': 'in_transit'
     }, {'_id': 0}).sort('estimated_delivery', 1).to_list(100)
-    
+
     return {'deliveries': deliveries, 'count': len(deliveries)}
 
 

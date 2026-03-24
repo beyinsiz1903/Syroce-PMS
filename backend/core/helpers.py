@@ -95,7 +95,7 @@ def resolve_tenant_features(tenant_doc: Dict[str, Any]) -> Dict[str, bool]:
     for _plan, feats in FEATURES_BY_PLAN.items():
         for k in (feats or {}).keys():
             all_keys.add(k)
-    resolved: Dict[str, bool] = {k: False for k in all_keys}
+    resolved: Dict[str, bool] = dict.fromkeys(all_keys, False)
     plan_feats = FEATURES_BY_PLAN.get(plan) or FEATURES_BY_PLAN.get("core_small_hotel") or {}
     for k, v in plan_feats.items():
         resolved[k] = bool(v)

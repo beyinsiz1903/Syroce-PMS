@@ -89,10 +89,10 @@ class MigrationVerifier:
                     for idx in indexes:
                         if idx["name"] not in existing_idx_names:
                             # Check if an equivalent index exists with different name
-                            idx_key_set = set(tuple(k) for k in idx["keys"])
+                            idx_key_set = {tuple(k) for k in idx["keys"]}
                             found = False
                             for eidx_name, eidx_info in existing_idx_info.items():
-                                existing_key_set = set(tuple(k) for k in eidx_info.get("key", []))
+                                existing_key_set = {tuple(k) for k in eidx_info.get("key", [])}
                                 if idx_key_set == existing_key_set:
                                     found = True
                                     break

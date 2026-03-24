@@ -99,7 +99,7 @@ class TracingService:
         try:
             from core.database import db
             # Insert without _id issues
-            docs = [{k: v for k, v in t.items()} for t in to_flush]
+            docs = [dict(t.items()) for t in to_flush]
             await db.observability_traces.insert_many(docs)
             logger.info(f"Flushed {len(docs)} traces to MongoDB")
             return len(docs)

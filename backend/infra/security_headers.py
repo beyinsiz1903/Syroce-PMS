@@ -10,7 +10,7 @@ class SecurityHeadersMiddleware:
     Middleware to add comprehensive security headers to all responses
     Implements OWASP security best practices
     """
-    
+
     def __init__(
         self,
         app,
@@ -24,11 +24,11 @@ class SecurityHeadersMiddleware:
     ):
         self.app = app
         self.headers = {}
-        
+
         # Strict-Transport-Security (HSTS)
         if strict_transport_security:
             self.headers['Strict-Transport-Security'] = strict_transport_security
-        
+
         # Content-Security-Policy
         if content_security_policy:
             self.headers['Content-Security-Policy'] = content_security_policy
@@ -45,23 +45,23 @@ class SecurityHeadersMiddleware:
                 "base-uri 'self'; "
                 "form-action 'self'"
             )
-        
+
         # X-Frame-Options
         if x_frame_options:
             self.headers['X-Frame-Options'] = x_frame_options
-        
+
         # X-Content-Type-Options
         if x_content_type_options:
             self.headers['X-Content-Type-Options'] = x_content_type_options
-        
+
         # X-XSS-Protection
         if x_xss_protection:
             self.headers['X-XSS-Protection'] = x_xss_protection
-        
+
         # Referrer-Policy
         if referrer_policy:
             self.headers['Referrer-Policy'] = referrer_policy
-        
+
         # Permissions-Policy (formerly Feature-Policy)
         if permissions_policy:
             self.headers['Permissions-Policy'] = permissions_policy
@@ -76,38 +76,38 @@ class SecurityHeadersMiddleware:
                 "gyroscope=(), "
                 "accelerometer=()"
             )
-        
+
         # Additional security headers
         self.headers['X-Permitted-Cross-Domain-Policies'] = 'none'
         self.headers['X-DNS-Prefetch-Control'] = 'off'
         self.headers['X-Download-Options'] = 'noopen'
-    
+
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':
             await self.app(scope, receive, send)
             return
-        
+
         async def send_wrapper(message):
             if message['type'] == 'http.response.start':
                 existing_headers = list(message.get('headers', []))
                 existing_names = {h[0].lower() if isinstance(h[0], bytes) else h[0].lower().encode() for h in existing_headers}
-                
+
                 for header, value in self.headers.items():
                     h_bytes = header.lower().encode()
                     if h_bytes not in existing_names:
                         existing_headers.append((header.encode(), value.encode()))
-                
+
                 message['headers'] = existing_headers
-            
+
             await send(message)
-        
+
         await self.app(scope, receive, send_wrapper)
 
 
 def add_security_headers(app, **kwargs):
     """
     Add security headers middleware to FastAPI app
-    
+
     Usage:
         app = FastAPI()
         add_security_headers(app)
@@ -129,7 +129,7 @@ def configure_cors(
 ):
     """
     Configure CORS with security best practices
-    
+
     Args:
         app: FastAPI app
         allowed_origins: List of allowed origins (default: localhost only)
@@ -145,10 +145,10 @@ def configure_cors(
             "http://127.0.0.1:3000",
             "http://127.0.0.1:8000",
         ]
-    
+
     if allowed_methods is None:
         allowed_methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
-    
+
     if allowed_headers is None:
         allowed_headers = [
             "Content-Type",
@@ -157,7 +157,7 @@ def configure_cors(
             "Accept",
             "Origin",
         ]
-    
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
@@ -166,7 +166,7 @@ def configure_cors(
         allow_headers=allowed_headers,
         max_age=max_age,
     )
-    
+
     return app
 
 
@@ -185,7 +185,7 @@ async def security_audit(request: Request):
     """
     issues = []
     recommendations = []
-    
+
     # Check HTTPS
     if request.url.scheme != 'https' and request.headers.get('host') != 'localhost:8001':
         issues.append({
@@ -193,37 +193,37 @@ async def security_audit(request: Request):
             "issue": "Not using HTTPS",
             "recommendation": "Enable HTTPS in production"
         })
-    
+
     # Check security headers
-    
-    # Note: These would be checked on the response, 
+
+    # Note: These would be checked on the response,
     # but we're checking configuration here
-    
+
     recommendations.append({
         "category": "Headers",
         "recommendation": "Ensure all security headers are present in responses"
     })
-    
+
     recommendations.append({
         "category": "Authentication",
         "recommendation": "Use JWT with short expiration times"
     })
-    
+
     recommendations.append({
         "category": "Rate Limiting",
         "recommendation": "Implement rate limiting on all public endpoints"
     })
-    
+
     recommendations.append({
         "category": "Input Validation",
         "recommendation": "Validate and sanitize all user inputs"
     })
-    
+
     recommendations.append({
         "category": "Database",
         "recommendation": "Use parameterized queries to prevent injection attacks"
     })
-    
+
     return {
         "timestamp": datetime.utcnow().isoformat(),
         "issues": issues,
@@ -236,7 +236,7 @@ async def security_audit(request: Request):
 async def check_security_headers():
     """Check which security headers are configured"""
     middleware = SecurityHeadersMiddleware(None)
-    
+
     return {
         "configured_headers": list(middleware.headers.keys()),
         "headers": middleware.headers,

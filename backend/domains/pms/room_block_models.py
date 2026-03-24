@@ -29,7 +29,7 @@ class RoomBlock(BaseModel):
     created_by: str
     created_at: str
     status: BlockStatus = BlockStatus.ACTIVE
-    
+
 class RoomBlockCreate(BaseModel):
     room_id: str
     type: BlockType

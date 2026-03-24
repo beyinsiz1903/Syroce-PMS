@@ -36,22 +36,22 @@ async def get_guest_360(
         'id': guest_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
-    
+
     # Get all bookings
     bookings = await db.bookings.find({
         'guest_id': guest_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0}).sort('check_in', -1).to_list(100)
-    
+
     # Calculate stats
     total_stays = len([b for b in bookings if b['status'] in ['checked_out', 'checked_in']])
     total_nights = 0
     lifetime_value = 0.0
     adr_values = []
-    
+
     for booking in bookings:
         if booking['status'] in ['checked_out', 'checked_in', 'confirmed']:
             nights = (datetime.fromisoformat(booking['check_out']) - datetime.fromisoformat(booking['check_in'])).days
@@ -59,27 +59,27 @@ async def get_guest_360(
             lifetime_value += booking.get('total_amount', 0)
             if nights > 0:
                 adr_values.append(booking.get('total_amount', 0) / nights)
-    
+
     average_adr = sum(adr_values) / len(adr_values) if adr_values else 0
-    
+
     # Get preferences
     preferences = await db.guest_preferences.find_one({
         'guest_id': guest_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     # Get behavior
     behavior = await db.guest_behavior.find_one({
         'guest_id': guest_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     # Get profile or create one
     profile = await db.guest_profiles.find_one({
         'guest_id': guest_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not profile:
         # Create profile
         profile = {
@@ -103,19 +103,19 @@ async def get_guest_360(
             'updated_at': datetime.now(timezone.utc).isoformat()
         }
         await db.guest_profiles.insert_one(profile)
-    
+
     # Channel distribution
     channel_mix = {}
     for booking in bookings:
         channel = booking.get('ota_channel') or 'direct'
         channel_mix[channel] = channel_mix.get(channel, 0) + 1
-    
+
     # Recent upsells
     upsell_offers = await db.upsell_offers.find({
         'guest_id': guest_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0}).sort('created_at', -1).to_list(10)
-    
+
     return {
         'guest': guest,
         'profile': profile,
@@ -143,10 +143,10 @@ async def add_guest_tag(
         {'id': guest_id, 'tenant_id': current_user.tenant_id},
         {'$addToSet': {'tags': tag}}
     )
-    
+
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Guest not found")
-    
+
     return {'message': f'Tag "{tag}" added successfully'}
 
 @router.post("/crm/guest/note")
@@ -161,15 +161,15 @@ async def add_guest_note(
         'created_by': current_user.name,
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     result = await db.guests.update_one(
         {'id': guest_id, 'tenant_id': current_user.tenant_id},
         {'$push': {'notes': note_obj}}
     )
-    
+
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Guest not found")
-    
+
     return {'message': 'Note added successfully', 'note': note_obj}
 
 @router.post("/ai/upsell/generate")
@@ -183,33 +183,33 @@ async def generate_upsell_offers(
         'id': booking_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
+
     # Get guest info
     guest = await db.guests.find_one({
         'id': booking['guest_id'],
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     # Get room info
     room = await db.rooms.find_one({
         'id': booking['room_id'],
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     offers = []
-    
+
     # 1. Room Upgrade Logic
     rooms = await db.rooms.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
     better_rooms = [r for r in rooms if r['base_price'] > room['base_price']]
-    
+
     for better_room in better_rooms[:3]:  # Top 3 upgrades
         # Check availability
         check_in = booking['check_in']
         check_out = booking['check_out']
-        
+
         conflicts = await db.bookings.count_documents({
             'tenant_id': current_user.tenant_id,
             'room_id': better_room['id'],
@@ -217,35 +217,35 @@ async def generate_upsell_offers(
             'check_in': {'$lt': check_out},
             'check_out': {'$gt': check_in}
         })
-        
+
         if conflicts == 0:
             # Calculate confidence
             loyalty_tier = guest.get('loyalty_tier', 'standard')
             confidence = 0.5
-            
+
             if loyalty_tier == 'vip':
                 confidence = 0.9
             elif loyalty_tier == 'gold':
                 confidence = 0.75
             elif loyalty_tier == 'silver':
                 confidence = 0.6
-            
+
             # Check historical acceptance
             past_bookings = await db.bookings.count_documents({
                 'guest_id': booking['guest_id'],
                 'tenant_id': current_user.tenant_id,
                 'status': 'checked_out'
             })
-            
+
             if past_bookings > 5:
                 confidence += 0.1
-            
+
             confidence = min(0.95, confidence)
-            
+
             price_diff = better_room['base_price'] - room['base_price']
             nights = (datetime.fromisoformat(check_out) - datetime.fromisoformat(check_in)).days
             total_upgrade_cost = price_diff * nights
-            
+
             offers.append({
                 'id': str(uuid.uuid4()),
                 'tenant_id': current_user.tenant_id,
@@ -261,11 +261,11 @@ async def generate_upsell_offers(
                 'status': 'pending',
                 'created_at': datetime.now(timezone.utc).isoformat()
             })
-    
+
     # 2. Early Check-in (if arrival is tomorrow or later)
     arrival_date = datetime.fromisoformat(check_in).date()
     today = datetime.now(timezone.utc).date()
-    
+
     if arrival_date > today:
         offers.append({
             'id': str(uuid.uuid4()),
@@ -282,7 +282,7 @@ async def generate_upsell_offers(
             'status': 'pending',
             'created_at': datetime.now(timezone.utc).isoformat()
         })
-    
+
     # 3. Late Checkout
     offers.append({
         'id': str(uuid.uuid4()),
@@ -299,7 +299,7 @@ async def generate_upsell_offers(
         'status': 'pending',
         'created_at': datetime.now(timezone.utc).isoformat()
     })
-    
+
     # 4. Airport Transfer
     offers.append({
         'id': str(uuid.uuid4()),
@@ -316,16 +316,16 @@ async def generate_upsell_offers(
         'status': 'pending',
         'created_at': datetime.now(timezone.utc).isoformat()
     })
-    
+
     # Sort by confidence
     offers.sort(key=lambda x: x['confidence'], reverse=True)
-    
+
     # Save offers
     if offers:
         await db.upsell_offers.insert_many(offers)
-    
+
     estimated_revenue = sum(o['price'] * o['confidence'] for o in offers)
-    
+
     return {
         'booking_id': booking_id,
         'guest_name': guest.get('name', 'Unknown'),
@@ -337,13 +337,13 @@ async def generate_upsell_offers(
 async def check_rate_limit(tenant_id: str, channel: str, limit_per_hour: int = 100) -> bool:
     """Check if rate limit is exceeded for messaging"""
     one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-    
+
     count = await db.messages.count_documents({
         'tenant_id': tenant_id,
         'channel': channel,
         'sent_at': {'$gte': one_hour_ago}
     })
-    
+
     return count < limit_per_hour
 
 @router.post("/messages/send-email")
@@ -359,18 +359,18 @@ async def send_email(
     # Check rate limit (100 emails per hour)
     if not await check_rate_limit(current_user.tenant_id, 'email', limit_per_hour=100):
         raise HTTPException(
-            status_code=429, 
+            status_code=429,
             detail="Rate limit exceeded. Maximum 100 emails per hour. Please try again later."
         )
-    
+
     # Validate email format
     if not recipient or '@' not in recipient:
         raise HTTPException(status_code=400, detail="Invalid email address")
-    
+
     # Validate message body
     if not body or len(body.strip()) == 0:
         raise HTTPException(status_code=400, detail="Message body cannot be empty")
-    
+
     message = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -384,9 +384,9 @@ async def send_email(
         'sent_by': current_user.id,
         'status': 'sent'
     }
-    
+
     await db.messages.insert_one(message)
-    
+
     return {
         'message': 'Email sent successfully',
         'message_id': message['id'],
@@ -416,21 +416,21 @@ async def send_sms(
             status_code=429,
             detail="Rate limit exceeded. Maximum 50 SMS per hour. Please try again later."
         )
-    
+
     # Validate phone number format
     if not recipient or not recipient.startswith('+'):
         raise HTTPException(status_code=400, detail="Invalid phone number format. Must start with + and country code")
-    
+
     # Validate message body
     if not body or len(body.strip()) == 0:
         raise HTTPException(status_code=400, detail="Message body cannot be empty")
-    
+
     # Warn if message is too long for single SMS
     if len(body) > 160:
         message_warning = f"Message is {len(body)} characters. Will be sent as {(len(body) // 160) + 1} SMS segments."
     else:
         message_warning = None
-    
+
     message = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -444,9 +444,9 @@ async def send_sms(
         'character_count': len(body),
         'segment_count': (len(body) // 160) + 1
     }
-    
+
     await db.messages.insert_one(message)
-    
+
     response = {
         'message': 'SMS sent successfully',
         'message_id': message['id'],
@@ -463,10 +463,10 @@ async def send_sms(
             })
         }
     }
-    
+
     if message_warning:
         response['warning'] = message_warning
-    
+
     return response
 
 @router.post("/messages/send-whatsapp")
@@ -483,15 +483,15 @@ async def send_whatsapp(
             status_code=429,
             detail="Rate limit exceeded. Maximum 80 WhatsApp messages per hour. Please try again later."
         )
-    
+
     # Validate phone number format
     if not recipient or not recipient.startswith('+'):
         raise HTTPException(status_code=400, detail="Invalid phone number format. Must start with + and country code")
-    
+
     # Validate message body
     if not body or len(body.strip()) == 0:
         raise HTTPException(status_code=400, detail="Message body cannot be empty")
-    
+
     message = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -504,9 +504,9 @@ async def send_whatsapp(
         'status': 'sent',
         'character_count': len(body)
     }
-    
+
     await db.messages.insert_one(message)
-    
+
     return {
         'message': 'WhatsApp sent successfully',
         'message_id': message['id'],
@@ -532,7 +532,7 @@ async def get_message_templates(
     query = {'tenant_id': current_user.tenant_id, 'active': True}
     if channel:
         query['channel'] = channel
-    
+
     templates = await db.message_templates.find(query, {'_id': 0}).to_list(100)
     return {'templates': templates, 'count': len(templates)}
 
@@ -546,30 +546,30 @@ async def generate_rms_suggestions(
     """Generate RMS rate suggestions based on occupancy and demand"""
     start = datetime.fromisoformat(start_date).date()
     end = datetime.fromisoformat(end_date).date()
-    
+
     # Get all rooms or specific room type
     room_query = {'tenant_id': current_user.tenant_id}
     if room_type:
         room_query['room_type'] = room_type
-    
+
     rooms = await db.rooms.find(room_query, {'_id': 0}).to_list(1000)
-    room_types = list(set(r['room_type'] for r in rooms))
-    
+    room_types = list({r['room_type'] for r in rooms})
+
     suggestions = []
-    
+
     for rt in room_types:
         rt_rooms = [r for r in rooms if r['room_type'] == rt]
         total_rooms = len(rt_rooms)
-        
+
         # For each date in range
         current_date = start
         while current_date <= end:
             date_str = current_date.isoformat()
-            
+
             # Calculate occupancy for this date
             start_of_day = datetime.combine(current_date, datetime.min.time())
             end_of_day = datetime.combine(current_date, datetime.max.time())
-            
+
             bookings = await db.bookings.count_documents({
                 'tenant_id': current_user.tenant_id,
                 'room_id': {'$in': [r['id'] for r in rt_rooms]},
@@ -577,12 +577,12 @@ async def generate_rms_suggestions(
                 'check_in': {'$lte': end_of_day.isoformat()},
                 'check_out': {'$gte': start_of_day.isoformat()}
             })
-            
+
             occupancy_rate = (bookings / total_rooms * 100) if total_rooms > 0 else 0
-            
+
             # Get current rate (or use base rate)
             base_rate = rt_rooms[0].get('base_price', 100)
-            
+
             # Simple dynamic pricing logic
             if occupancy_rate >= 90:
                 suggested_rate = base_rate * 1.3  # +30%
@@ -604,7 +604,7 @@ async def generate_rms_suggestions(
                 suggested_rate = base_rate
                 reason = "Normal demand (30-60% occupancy)"
                 confidence = 60
-            
+
             # Create suggestion
             suggestion = RMSSuggestion(
                 tenant_id=current_user.tenant_id,
@@ -620,15 +620,15 @@ async def generate_rms_suggestions(
                     'total_rooms': total_rooms
                 }
             )
-            
+
             sugg_dict = suggestion.model_dump()
             sugg_dict['created_at'] = sugg_dict['created_at'].isoformat()
             await db.rms_suggestions.insert_one(sugg_dict)
-            
+
             suggestions.append(suggestion)
-            
+
             current_date += timedelta(days=1)
-    
+
     return {
         'message': f'Generated {len(suggestions)} rate suggestions',
         'suggestions': suggestions[:20],  # Return first 20
@@ -650,7 +650,7 @@ async def get_rms_suggestions(
         query['date'] = date
     if room_type:
         query['room_type'] = room_type
-    
+
     suggestions = await db.rms_suggestions.find(query, {'_id': 0}).sort('date', 1).to_list(100)
     return {'suggestions': suggestions, 'count': len(suggestions)}
 
@@ -664,13 +664,13 @@ async def apply_rms_suggestion(
         'id': suggestion_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not suggestion:
         raise HTTPException(status_code=404, detail="Suggestion not found")
-    
+
     if suggestion['status'] == 'applied':
         raise HTTPException(status_code=400, detail="Suggestion already applied")
-    
+
     # Update rooms of this type with new rate
     await db.rooms.update_many(
         {
@@ -679,13 +679,13 @@ async def apply_rms_suggestion(
         },
         {'$set': {'base_price': suggestion['suggested_rate']}}
     )
-    
+
     # Mark suggestion as applied
     await db.rms_suggestions.update_one(
         {'id': suggestion_id},
         {'$set': {'status': 'applied'}}
     )
-    
+
     # Audit log
     await create_audit_log(
         tenant_id=current_user.tenant_id,
@@ -695,7 +695,7 @@ async def apply_rms_suggestion(
         entity_id=suggestion_id,
         changes={'old_rate': suggestion['current_rate'], 'new_rate': suggestion['suggested_rate'], 'room_type': suggestion['room_type']}
     )
-    
+
     return {
         'message': f"Applied rate suggestion: {suggestion['room_type']} → ${suggestion['suggested_rate']}",
         'room_type': suggestion['room_type'],
@@ -756,10 +756,10 @@ async def receive_external_review(
         'sentiment': 'positive' if request.rating >= 4.0 else ('neutral' if request.rating >= 3.0 else 'negative'),
         'received_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     review_copy = review.copy()
     await db.external_reviews.insert_one(review_copy)
-    
+
     return {'message': 'External review received successfully', 'review_id': review['id']}
 
 @router.get("/feedback/external-reviews")
@@ -772,19 +772,19 @@ async def get_external_reviews(
 ):
     """Get reviews from external platforms"""
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if platform:
         query['platform'] = platform
     if sentiment:
         query['sentiment'] = sentiment
     if start_date and end_date:
         query['review_date'] = {'$gte': start_date, '$lte': end_date}
-    
+
     reviews = await db.external_reviews.find(
         query,
         {'_id': 0}
     ).sort('review_date', -1).to_list(1000)
-    
+
     return {'reviews': reviews, 'count': len(reviews)}
 
 @router.get("/feedback/external-reviews/summary")
@@ -795,18 +795,18 @@ async def get_external_reviews_summary(
 ):
     """Get aggregated summary of external reviews"""
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if start_date and end_date:
         query['review_date'] = {'$gte': start_date, '$lte': end_date}
-    
+
     reviews = await db.external_reviews.find(query, {'_id': 0}).to_list(10000)
-    
+
     if not reviews:
         return {
             'message': 'No external reviews found',
             'summary': {}
         }
-    
+
     # Calculate platform breakdown
     platform_stats = {}
     for review in reviews:
@@ -819,28 +819,28 @@ async def get_external_reviews_summary(
                 'neutral': 0,
                 'negative': 0
             }
-        
+
         platform_stats[platform]['count'] += 1
         platform_stats[platform]['total_rating'] += review.get('rating', 0)
-        
+
         sentiment = review.get('sentiment', 'neutral')
         platform_stats[platform][sentiment] += 1
-    
+
     # Calculate averages
     for platform, stats in platform_stats.items():
         if stats['count'] > 0:
             stats['avg_rating'] = round(stats['total_rating'] / stats['count'], 2)
-    
+
     # Overall stats
     total_reviews = len(reviews)
     avg_rating = sum(r.get('rating', 0) for r in reviews) / total_reviews if total_reviews > 0 else 0
-    
+
     sentiment_breakdown = {
         'positive': sum(1 for r in reviews if r.get('sentiment') == 'positive'),
         'neutral': sum(1 for r in reviews if r.get('sentiment') == 'neutral'),
         'negative': sum(1 for r in reviews if r.get('sentiment') == 'negative')
     }
-    
+
     return {
         'summary': {
             'total_reviews': total_reviews,
@@ -862,10 +862,10 @@ async def respond_to_external_review(
         'id': review_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
-    
+
     await db.external_reviews.update_one(
         {'id': review_id},
         {
@@ -877,7 +877,7 @@ async def respond_to_external_review(
             }
         }
     )
-    
+
     return {'message': 'Response posted successfully'}
 
 
@@ -889,7 +889,7 @@ async def get_surveys(current_user: User = Depends(get_current_user)):
         {'tenant_id': current_user.tenant_id},
         {'_id': 0}
     ).to_list(100)
-    
+
     # Get response counts
     for survey in surveys:
         response_count = await db.survey_responses.count_documents({
@@ -897,7 +897,7 @@ async def get_surveys(current_user: User = Depends(get_current_user)):
             'survey_id': survey['id']
         })
         survey['response_count'] = response_count
-    
+
     return {'surveys': surveys, 'count': len(surveys)}
 
 @router.post("/feedback/surveys")
@@ -918,7 +918,7 @@ async def create_survey(
         'created_at': datetime.now(timezone.utc).isoformat(),
         'created_by': current_user.id
     }
-    
+
     survey_copy = survey.copy()
     await db.surveys.insert_one(survey_copy)
     return survey
@@ -934,14 +934,14 @@ async def submit_survey_response(
         'id': request.survey_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not survey:
         raise HTTPException(status_code=404, detail="Survey not found")
-    
+
     # Calculate overall rating
     ratings = [r.get('rating') for r in request.responses if r.get('rating')]
     avg_rating = sum(ratings) / len(ratings) if ratings else None
-    
+
     response = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -954,10 +954,10 @@ async def submit_survey_response(
         'overall_rating': round(avg_rating, 2) if avg_rating else None,
         'submitted_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     response_copy = response.copy()
     await db.survey_responses.insert_one(response_copy)
-    
+
     return {'message': 'Survey response submitted successfully', 'response_id': response['id']}
 
 @router.get("/feedback/surveys/{survey_id}/responses")
@@ -971,21 +971,21 @@ async def get_survey_responses(
         'id': survey_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not survey:
         raise HTTPException(status_code=404, detail="Survey not found")
-    
+
     # Get responses
     responses = await db.survey_responses.find({
         'tenant_id': current_user.tenant_id,
         'survey_id': survey_id
     }, {'_id': 0}).to_list(1000)
-    
+
     # Calculate statistics
     if responses:
         ratings = [r.get('overall_rating') for r in responses if r.get('overall_rating')]
         avg_rating = sum(ratings) / len(ratings) if ratings else 0
-        
+
         # Aggregate answers per question
         question_stats = {}
         for response in responses:
@@ -996,12 +996,12 @@ async def get_survey_responses(
                         'ratings': [],
                         'answers': []
                     }
-                
+
                 if answer.get('rating'):
                     question_stats[q_id]['ratings'].append(answer['rating'])
                 if answer.get('answer'):
                     question_stats[q_id]['answers'].append(answer['answer'])
-        
+
         # Calculate averages
         for q_id, stats in question_stats.items():
             if stats['ratings']:
@@ -1009,7 +1009,7 @@ async def get_survey_responses(
     else:
         avg_rating = 0
         question_stats = {}
-    
+
     return {
         'survey': survey,
         'responses': responses,
@@ -1040,10 +1040,10 @@ async def submit_department_feedback(
         'sentiment': 'positive' if request.rating >= 4 else ('neutral' if request.rating == 3 else 'negative'),
         'submitted_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     feedback_copy = feedback.copy()
     await db.department_feedback.insert_one(feedback_copy)
-    
+
     return {'message': 'Department feedback submitted successfully', 'feedback_id': feedback['id']}
 
 @router.get("/feedback/department")
@@ -1055,18 +1055,18 @@ async def get_department_feedback(
 ):
     """Get department feedback"""
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if department:
         query['department'] = department
-    
+
     if start_date and end_date:
         query['submitted_at'] = {'$gte': start_date, '$lte': end_date}
-    
+
     feedback = await db.department_feedback.find(
         query,
         {'_id': 0}
     ).sort('submitted_at', -1).to_list(1000)
-    
+
     return {'feedback': feedback, 'count': len(feedback)}
 
 @router.get("/feedback/department/summary")
@@ -1077,35 +1077,35 @@ async def get_department_satisfaction_summary(
 ):
     """Get department satisfaction summary"""
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if start_date and end_date:
         query['submitted_at'] = {'$gte': start_date, '$lte': end_date}
-    
+
     feedback = await db.department_feedback.find(query, {'_id': 0}).to_list(10000)
-    
+
     if not feedback:
         return {
             'message': 'No department feedback found',
             'summary': {}
         }
-    
+
     # Aggregate by department
     dept_stats = {}
     departments = ['housekeeping', 'front_desk', 'fnb', 'spa', 'concierge']
-    
+
     for dept in departments:
         dept_feedback = [f for f in feedback if f.get('department') == dept]
-        
+
         if dept_feedback:
             ratings = [f.get('rating', 0) for f in dept_feedback]
             avg_rating = sum(ratings) / len(ratings) if ratings else 0
-            
+
             sentiment_counts = {
                 'positive': sum(1 for f in dept_feedback if f.get('sentiment') == 'positive'),
                 'neutral': sum(1 for f in dept_feedback if f.get('sentiment') == 'neutral'),
                 'negative': sum(1 for f in dept_feedback if f.get('sentiment') == 'negative')
             }
-            
+
             dept_stats[dept] = {
                 'total_feedback': len(dept_feedback),
                 'avg_rating': round(avg_rating, 2),
@@ -1119,11 +1119,11 @@ async def get_department_satisfaction_summary(
                 'sentiment_breakdown': {'positive': 0, 'neutral': 0, 'negative': 0},
                 'satisfaction_rate': 0
             }
-    
+
     # Overall stats
     all_ratings = [f.get('rating', 0) for f in feedback]
     overall_avg = sum(all_ratings) / len(all_ratings) if all_ratings else 0
-    
+
     # Staff member performance
     staff_performance = {}
     for f in feedback:
@@ -1135,7 +1135,7 @@ async def get_department_satisfaction_summary(
                     'department': f.get('department')
                 }
             staff_performance[staff]['ratings'].append(f.get('rating', 0))
-    
+
     # Calculate staff averages
     staff_stats = []
     for staff, data in staff_performance.items():
@@ -1147,9 +1147,9 @@ async def get_department_satisfaction_summary(
                 'avg_rating': round(avg, 2),
                 'feedback_count': len(data['ratings'])
             })
-    
+
     staff_stats.sort(key=lambda x: x['avg_rating'], reverse=True)
-    
+
     return {
         'summary': {
             'total_feedback': len(feedback),
@@ -1178,25 +1178,25 @@ async def get_guest_bookings(
     guest_records = []
     async for guest in db.guests.find({'email': current_user.email}):
         guest_records.append(guest)
-    
+
     guest_ids = [g['id'] for g in guest_records]
-    
+
     if not guest_ids:
         # No guest records found, return empty
         return {'active_bookings': [], 'past_bookings': []}
-    
+
     # Get ALL bookings across all tenants for these guest IDs
     all_bookings = []
     async for booking in db.bookings.find({'guest_id': {'$in': guest_ids}}).sort('check_in', -1):
         # Get room details
         room = await db.rooms.find_one({'id': booking.get('room_id')})
-        
+
         # Get guest details
         guest = await db.guests.find_one({'id': booking.get('guest_id')})
-        
+
         # Get tenant/hotel details for THIS booking
         tenant = await db.tenants.find_one({'id': booking.get('tenant_id')})
-        
+
         # Helper to make datetime timezone-aware
         def make_aware(dt_str):
             if not dt_str:
@@ -1208,10 +1208,10 @@ async def get_guest_bookings(
                 return dt
             except Exception:
                 return None
-        
+
         check_in_dt = make_aware(booking.get('check_in'))
         now_utc = datetime.now(timezone.utc)
-        
+
         booking_data = {
             'id': booking.get('id'),
             'tenant_id': booking.get('tenant_id'),
@@ -1240,21 +1240,21 @@ async def get_guest_bookings(
                 'floor': room.get('floor', 1) if room else 1
             }
         }
-        
+
         all_bookings.append(booking_data)
-    
+
     # Separate active and past
     now = datetime.now(timezone.utc)
     active_bookings = []
     past_bookings = []
-    
+
     for b in all_bookings:
         try:
             # Parse checkout date and make it timezone aware if needed
             checkout_dt = datetime.fromisoformat(b['check_out'])
             if checkout_dt.tzinfo is None:
                 checkout_dt = checkout_dt.replace(tzinfo=timezone.utc)
-            
+
             # Categorize booking
             if b['status'] in ['confirmed', 'checked_in', 'guaranteed'] and checkout_dt >= now:
                 active_bookings.append(b)
@@ -1266,7 +1266,7 @@ async def get_guest_bookings(
                 past_bookings.append(b)
             else:
                 active_bookings.append(b)
-    
+
     return {
         'active_bookings': active_bookings,
         'past_bookings': past_bookings[:10]  # Last 10
@@ -1282,7 +1282,7 @@ async def get_guest_loyalty(
     guest_records = []
     async for guest in db.guests.find({'email': current_user.email}):
         guest_records.append(guest)
-    
+
     if not guest_records:
         return {
             'total_points': 0,
@@ -1290,28 +1290,28 @@ async def get_guest_loyalty(
             'upcoming_rewards': [],
             'global_tier': 'bronze'
         }
-    
+
     # Build loyalty programs array - one per hotel
     loyalty_programs = []
     total_points_all_hotels = 0
-    
+
     for guest in guest_records:
         tenant = await db.tenants.find_one({'id': guest.get('tenant_id')})
         loyalty_points = guest.get('loyalty_points', 0)
         loyalty_tier = guest.get('loyalty_tier', 'bronze')
         total_points_all_hotels += loyalty_points
-        
+
         # Get loyalty program benefits for this hotel
         benefits = await db.loyalty_benefits.find_one({
             'tenant_id': guest.get('tenant_id'),
             'tier': loyalty_tier
         })
-        
+
         # Calculate points to next tier
-        
+
         next_tier = None
         points_to_next = 0
-        
+
         if loyalty_tier == 'bronze':
             next_tier = 'silver'
             points_to_next = 1000 - loyalty_points
@@ -1321,7 +1321,7 @@ async def get_guest_loyalty(
         elif loyalty_tier == 'gold':
             next_tier = 'platinum'
             points_to_next = 10000 - loyalty_points
-        
+
         # Get recent point transactions for this hotel
         transactions = []
         async for txn in db.loyalty_transactions.find({
@@ -1329,7 +1329,7 @@ async def get_guest_loyalty(
             'guest_id': guest.get('id')
         }).sort('created_at', -1).limit(5):
             transactions.append(txn)
-        
+
         loyalty_programs.append({
             'id': guest.get('id'),
             'hotel_id': guest.get('tenant_id'),
@@ -1341,7 +1341,7 @@ async def get_guest_loyalty(
             'tier_benefits': benefits.get('benefits', []) if benefits else [],
             'recent_transactions': transactions
         })
-    
+
     # Calculate global tier based on total points across all hotels
     if total_points_all_hotels >= 10000:
         global_tier = 'platinum'
@@ -1351,7 +1351,7 @@ async def get_guest_loyalty(
         global_tier = 'silver'
     else:
         global_tier = 'bronze'
-    
+
     return {
         'total_points': total_points_all_hotels,
         'global_tier': global_tier,
@@ -1385,7 +1385,7 @@ async def get_notification_preferences(
         {'user_id': current_user.id},
         {'_id': 0}  # Exclude MongoDB ObjectId
     )
-    
+
     if not prefs:
         # Default preferences
         return {
@@ -1399,7 +1399,7 @@ async def get_notification_preferences(
             'promotional_offers': True,
             'loyalty_updates': True
         }
-    
+
     return prefs
 
 
@@ -1411,13 +1411,13 @@ async def update_notification_preferences(
     """Update guest notification preferences (user-level, applies to all hotels)"""
     # Add user_id to the update
     update_data = {**preferences, 'user_id': current_user.id}
-    
+
     await db.guest_notification_preferences.update_one(
         {'user_id': current_user.id},
         {'$set': update_data},
         upsert=True
     )
-    
+
     return {'message': 'Preferences updated successfully', 'preferences': update_data}
 
 
@@ -1445,7 +1445,7 @@ async def register_device_token(
         },
         upsert=True
     )
-    
+
     return {
         'success': True,
         'message': 'Device token registered'
@@ -1463,7 +1463,7 @@ async def get_room_service_menu(
         'available': True
     }).sort('category', 1):
         menu_items.append(item)
-    
+
     # If no menu exists, return sample menu
     if not menu_items:
         return {
@@ -1491,7 +1491,7 @@ async def get_room_service_menu(
                 }
             ]
         }
-    
+
     # Group by category
     categories = {}
     for item in menu_items:
@@ -1499,7 +1499,7 @@ async def get_room_service_menu(
         if cat not in categories:
             categories[cat] = []
         categories[cat].append(item)
-    
+
     return {
         'categories': [
             {'name': cat, 'items': items}
@@ -1522,13 +1522,13 @@ async def create_room_service_order(
         'tenant_id': current_user.tenant_id,
         'status': 'checked_in'
     })
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Active booking not found")
-    
+
     # Calculate total
     total_amount = sum(item.get('price', 0) * item.get('quantity', 1) for item in items)
-    
+
     order = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -1542,16 +1542,16 @@ async def create_room_service_order(
         'ordered_at': datetime.now(timezone.utc).isoformat(),
         'estimated_delivery': (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
     }
-    
+
     await db.room_service_orders.insert_one(order)
-    
+
     # Post charge to folio
     folio = await db.folios.find_one({
         'booking_id': booking_id,
         'folio_type': 'guest',
         'status': 'open'
     })
-    
+
     if folio:
         charge = {
             'id': str(uuid.uuid4()),
@@ -1569,9 +1569,9 @@ async def create_room_service_order(
             'total': round(total_amount * 1.18, 2),
             'posted_by': 'Guest App'
         }
-        
+
         await db.folio_charges.insert_one(charge)
-    
+
     return {
         'success': True,
         'order_id': order['id'],
@@ -1592,7 +1592,7 @@ async def get_room_service_orders(
         'booking_id': booking_id
     }).sort('ordered_at', -1):
         orders.append(order)
-    
+
     return {'orders': orders}
 
 
@@ -1611,10 +1611,10 @@ async def create_guest_request(
         'tenant_id': current_user.tenant_id,
         'status': 'checked_in'
     })
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Active booking not found")
-    
+
     request = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -1628,9 +1628,9 @@ async def create_guest_request(
         'created_at': datetime.now(timezone.utc).isoformat(),
         'resolved_at': None
     }
-    
+
     await db.guest_requests.insert_one(request)
-    
+
     # Create task for appropriate department
     department_map = {
         'housekeeping': 'housekeeping',
@@ -1638,7 +1638,7 @@ async def create_guest_request(
         'concierge': 'concierge',
         'other': 'front_desk'
     }
-    
+
     task = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -1651,9 +1651,9 @@ async def create_guest_request(
         'related_request_id': request['id'],
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     await db.staff_tasks.insert_one(task)
-    
+
     return {
         'success': True,
         'request_id': request['id'],
@@ -1673,7 +1673,7 @@ async def get_guest_requests(
         'booking_id': booking_id
     }).sort('created_at', -1):
         requests.append(req)
-    
+
     return {'requests': requests}
 
 
@@ -1686,7 +1686,7 @@ async def get_guest_profile(
         'email': current_user.email,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not guest:
         return {
             'name': current_user.name,
@@ -1695,7 +1695,7 @@ async def get_guest_profile(
             'nationality': '',
             'preferences': {}
         }
-    
+
     return {
         'id': guest.get('id'),
         'name': guest.get('name'),
@@ -1719,7 +1719,7 @@ async def update_guest_profile(
         'email': current_user.email,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not guest:
         # Create guest profile
         guest_id = str(uuid.uuid4())
@@ -1736,7 +1736,7 @@ async def update_guest_profile(
         }
         await db.guests.insert_one(guest_data)
         return {'success': True, 'message': 'Profile created'}
-    
+
     # Update existing profile
     update_data = {
         'name': profile_data.get('name', guest.get('name')),
@@ -1746,12 +1746,12 @@ async def update_guest_profile(
         'preferences': profile_data.get('preferences', guest.get('preferences', {})),
         'updated_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     await db.guests.update_one(
         {'id': guest['id']},
         {'$set': update_data}
     )
-    
+
     return {'success': True, 'message': 'Profile updated'}
 
 
@@ -1766,15 +1766,15 @@ async def web_checkin(
         'tenant_id': current_user.tenant_id,
         'status': 'confirmed'
     })
-    
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found or already checked in")
-    
+
     # Check if check-in date is today or past
     check_in_date = datetime.fromisoformat(booking['check_in'])
     if check_in_date.date() > datetime.now(timezone.utc).date():
         raise HTTPException(status_code=400, detail="Cannot check in before check-in date")
-    
+
     # Update booking status to web_checked_in
     await db.bookings.update_one(
         {'id': booking_id},
@@ -1783,7 +1783,7 @@ async def web_checkin(
             'web_checkin_at': datetime.now(timezone.utc).isoformat()
         }}
     )
-    
+
     # Generate digital key QR code
     digital_key = {
         'booking_id': booking_id,
@@ -1792,7 +1792,7 @@ async def web_checkin(
         'valid_until': booking['check_out'],
         'key_code': str(uuid.uuid4())[:8].upper()
     }
-    
+
     return {
         'success': True,
         'message': 'Web check-in completed',
@@ -1821,7 +1821,7 @@ async def get_alert_history(
     - Includes response time metrics
     """
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if start_date or end_date:
         date_filter = {}
         if start_date:
@@ -1830,7 +1830,7 @@ async def get_alert_history(
             date_filter['$lte'] = end_date
         if date_filter:
             query['timestamp'] = date_filter
-    
+
     if alert_type:
         query['alert_type'] = alert_type
     if severity:
@@ -1839,13 +1839,13 @@ async def get_alert_history(
         query['status'] = status
     if source_module:
         query['source_module'] = source_module
-    
+
     alerts = []
     async for alert in db.alert_history.find(query).sort('timestamp', -1).skip(skip).limit(limit):
         alerts.append(alert)
-    
+
     total_count = await db.alert_history.count_documents(query)
-    
+
     # Calculate stats
     stats = {
         'total_alerts': total_count,
@@ -1855,7 +1855,7 @@ async def get_alert_history(
         'by_severity': {},
         'by_module': {}
     }
-    
+
     async for alert in db.alert_history.find({'tenant_id': current_user.tenant_id}):
         status = alert.get('status', 'unread')
         if status == 'unread':
@@ -1864,15 +1864,15 @@ async def get_alert_history(
             stats['acknowledged'] += 1
         elif status == 'resolved':
             stats['resolved'] += 1
-        
+
         # Count by severity
         severity = alert.get('severity', 'medium')
         stats['by_severity'][severity] = stats['by_severity'].get(severity, 0) + 1
-        
+
         # Count by module
         module = alert.get('source_module', 'system')
         stats['by_module'][module] = stats['by_module'].get(module, 0) + 1
-    
+
     return {
         'alerts': alerts,
         'total_count': total_count,
@@ -1902,7 +1902,7 @@ async def acknowledge_alert(
             }
         }
     )
-    
+
     # Also update history
     await db.alert_history.update_one(
         {'id': alert_id},
@@ -1914,10 +1914,10 @@ async def acknowledge_alert(
             }
         }
     )
-    
+
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Alert not found")
-    
+
     return {
         'success': True,
         'message': 'Alert acknowledged'
@@ -1945,7 +1945,7 @@ async def resolve_alert(
             }
         }
     )
-    
+
     # Also update history
     await db.alert_history.update_one(
         {'id': alert_id},
@@ -1958,10 +1958,10 @@ async def resolve_alert(
             }
         }
     )
-    
+
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Alert not found")
-    
+
     return {
         'success': True,
         'message': 'Alert resolved'
@@ -1985,11 +1985,11 @@ async def get_logs_dashboard(
     rms_publish_count = await db.rms_publish_logs.count_documents({'tenant_id': current_user.tenant_id})
     maintenance_prediction_count = await db.maintenance_prediction_logs.count_documents({'tenant_id': current_user.tenant_id})
     alert_count = await db.alert_history.count_documents({'tenant_id': current_user.tenant_id})
-    
+
     # Recent critical errors (last 24 hours)
     from datetime import timedelta
     yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-    
+
     recent_critical_errors = []
     async for error in db.error_logs.find({
         'tenant_id': current_user.tenant_id,
@@ -1998,7 +1998,7 @@ async def get_logs_dashboard(
         'resolved': False
     }).sort('timestamp', -1).limit(5):
         recent_critical_errors.append(error)
-    
+
     # Unread alerts
     unread_alerts = []
     async for alert in db.alerts.find({
@@ -2006,13 +2006,13 @@ async def get_logs_dashboard(
         'status': 'unread'
     }).sort('timestamp', -1).limit(10):
         unread_alerts.append(alert)
-    
+
     # System health indicators
     health = {
         'overall_status': 'healthy',
         'indicators': []
     }
-    
+
     # Check for critical errors
     if len(recent_critical_errors) > 0:
         health['overall_status'] = 'warning'
@@ -2021,14 +2021,14 @@ async def get_logs_dashboard(
             'status': 'warning',
             'message': f'{len(recent_critical_errors)} critical errors in last 24 hours'
         })
-    
+
     # Check for failed night audits
     failed_audits = await db.night_audit_logs.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'failed',
         'timestamp': {'$gte': yesterday}
     })
-    
+
     if failed_audits > 0:
         health['overall_status'] = 'warning'
         health['indicators'].append({
@@ -2036,14 +2036,14 @@ async def get_logs_dashboard(
             'status': 'warning',
             'message': f'{failed_audits} failed night audits in last 24 hours'
         })
-    
+
     # Check for OTA sync failures
     failed_syncs = await db.ota_sync_logs.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'failed',
         'timestamp': {'$gte': yesterday}
     })
-    
+
     if failed_syncs > 2:
         health['overall_status'] = 'warning'
         health['indicators'].append({
@@ -2051,14 +2051,14 @@ async def get_logs_dashboard(
             'status': 'warning',
             'message': f'{failed_syncs} failed OTA syncs in last 24 hours'
         })
-    
+
     if len(health['indicators']) == 0:
         health['indicators'].append({
             'type': 'all_systems',
             'status': 'healthy',
             'message': 'All systems operating normally'
         })
-    
+
     return {
         'summary': {
             'total_errors': error_count,

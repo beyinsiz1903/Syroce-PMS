@@ -33,7 +33,7 @@ async def get_comp_set(current_user: User = Depends(get_current_user)):
         {'tenant_id': current_user.tenant_id},
         {'_id': 0}
     ).to_list(100)
-    
+
     return {'comp_set': comp_set, 'count': len(comp_set)}
 
 @router.post("/rms/comp-set")
@@ -52,7 +52,7 @@ async def add_competitor(
         'status': 'active',
         'created_at': datetime.now(timezone.utc).isoformat()
     }
-    
+
     competitor_copy = competitor.copy()
     await db.comp_set.insert_one(competitor_copy)
     return competitor
@@ -66,12 +66,12 @@ async def get_competitor_pricing(
     query = {'tenant_id': current_user.tenant_id}
     if date:
         query['date'] = date
-    
+
     pricing = await db.comp_pricing.find(
         query,
         {'_id': 0}
     ).sort('date', -1).limit(100).to_list(100)
-    
+
     return {'pricing': pricing, 'count': len(pricing)}
 
 @router.post("/rms/scrape-comp-prices")
@@ -86,7 +86,7 @@ async def scrape_competitor_prices(
         {'tenant_id': current_user.tenant_id, 'status': 'active'},
         {'_id': 0}
     ).to_list(100)
-    
+
     scraped_prices = []
     for comp in competitors:
         price_data = {
@@ -101,7 +101,7 @@ async def scrape_competitor_prices(
         }
         await db.comp_pricing.insert_one(price_data.copy())
         scraped_prices.append(price_data)
-    
+
     return {
         'message': f'Scraped prices for {len(scraped_prices)} competitors',
         'prices': scraped_prices
@@ -118,33 +118,33 @@ async def generate_auto_pricing(
     end = datetime.fromisoformat(request.end_date)
     room_type = request.room_type
     days = (end - start).days + 1
-    
+
     # Get room types
     room_types_query = {'tenant_id': current_user.tenant_id}
     if room_type:
         room_types_query['name'] = room_type
-    
+
     room_types = await db.room_types.find(room_types_query, {'_id': 0}).to_list(100)
-    
+
     # Get competitor pricing for comparison
     comp_avg_prices = {}
     comp_pricing = await db.comp_pricing.find(
         {'tenant_id': current_user.tenant_id},
         {'_id': 0}
     ).to_list(1000)
-    
+
     for price in comp_pricing:
         date = price.get('date')
         if date:
             if date not in comp_avg_prices:
                 comp_avg_prices[date] = []
             comp_avg_prices[date].append(price.get('standard_rate', 0))
-    
+
     recommendations = []
     for day in range(days):
         current_date = (start + timedelta(days=day)).date().isoformat()
         date_obj = datetime.fromisoformat(current_date)
-        
+
         for rt in room_types:
             # Get bookings for this date
             bookings = await db.bookings.count_documents({
@@ -154,16 +154,16 @@ async def generate_auto_pricing(
                 'check_out_date': {'$gt': current_date},
                 'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
             })
-            
+
             # Get total rooms
             total_rooms = await db.rooms.count_documents({
                 'tenant_id': current_user.tenant_id,
                 'room_type': rt['name']
             })
-            
+
             occupancy = (bookings / total_rooms * 100) if total_rooms > 0 else 0
             base_rate = rt.get('base_rate', 100.0)
-            
+
             # Get booking pace (bookings in last 7 days for this date)
             recent_bookings = await db.bookings.count_documents({
                 'tenant_id': current_user.tenant_id,
@@ -172,24 +172,24 @@ async def generate_auto_pricing(
                 'check_out_date': {'$gt': current_date},
                 'created_at': {'$gte': (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()}
             })
-            
+
             booking_pace = recent_bookings / 7 if recent_bookings > 0 else 0
-            
+
             # Get competitor average price for this date
             comp_avg = sum(comp_avg_prices.get(current_date, [])) / len(comp_avg_prices.get(current_date, [1])) if comp_avg_prices.get(current_date) else base_rate
-            
+
             # Day of week factor
             day_of_week = date_obj.weekday()
             is_weekend = day_of_week in [4, 5]  # Friday, Saturday
-            
+
             # Seasonal factor
             month = date_obj.month
             is_peak_season = month in [6, 7, 8, 12]
-            
+
             # ENHANCED PRICING ALGORITHM with multiple factors
             price_multiplier = 1.0
             reasoning_factors = []
-            
+
             # Factor 1: Current Occupancy (40% weight)
             if occupancy > 90:
                 price_multiplier *= 1.25
@@ -206,7 +206,7 @@ async def generate_auto_pricing(
             else:
                 price_multiplier *= 0.85
                 reasoning_factors.append(f"Very low occupancy ({occupancy:.0f}%): -15%")
-            
+
             # Factor 2: Booking Pace (20% weight)
             if booking_pace > 2:
                 price_multiplier *= 1.08
@@ -217,17 +217,17 @@ async def generate_auto_pricing(
             elif booking_pace < 0.5 and occupancy < 60:
                 price_multiplier *= 0.95
                 reasoning_factors.append(f"Slow booking pace ({booking_pace:.1f}/day): -5%")
-            
+
             # Factor 3: Day of Week (15% weight)
             if is_weekend:
                 price_multiplier *= 1.10
                 reasoning_factors.append("Weekend demand: +10%")
-            
+
             # Factor 4: Seasonality (15% weight)
             if is_peak_season:
                 price_multiplier *= 1.12
                 reasoning_factors.append("Peak season: +12%")
-            
+
             # Factor 5: Competitor Pricing (10% weight)
             if comp_avg > 0:
                 price_position = (base_rate / comp_avg) * 100
@@ -239,23 +239,23 @@ async def generate_auto_pricing(
                     reasoning_factors.append(f"Above market (${comp_avg:.0f}): -3%")
                 else:
                     reasoning_factors.append(f"Market aligned (${comp_avg:.0f})")
-            
+
             suggested_rate = base_rate * price_multiplier
-            
+
             # DYNAMIC CONFIDENCE SCORING
             confidence_factors = []
             confidence_score = 0.0
-            
+
             # Historical data availability
             if bookings > 0:
                 confidence_score += 0.25
                 confidence_factors.append("Has booking history")
-            
+
             # Booking pace reliability
             if booking_pace > 0.5:
                 confidence_score += 0.20
                 confidence_factors.append("Active booking pace")
-            
+
             # Competitor data availability
             if comp_avg > 0 and len(comp_avg_prices.get(current_date, [])) >= 2:
                 confidence_score += 0.25
@@ -263,7 +263,7 @@ async def generate_auto_pricing(
             elif comp_avg > 0:
                 confidence_score += 0.15
                 confidence_factors.append("Limited competitor data")
-            
+
             # Time to arrival
             days_to_arrival = (date_obj - datetime.now(timezone.utc)).days
             if days_to_arrival < 30:
@@ -272,15 +272,15 @@ async def generate_auto_pricing(
             elif days_to_arrival < 90:
                 confidence_score += 0.10
                 confidence_factors.append("Medium-term forecast")
-            
+
             # Room type data quality
             if total_rooms >= 5:
                 confidence_score += 0.10
                 confidence_factors.append("Adequate room inventory")
-            
+
             # Cap confidence at 0.95
             confidence_score = min(confidence_score, 0.95)
-            
+
             # Determine confidence level
             if confidence_score >= 0.75:
                 confidence_level = "High"
@@ -288,7 +288,7 @@ async def generate_auto_pricing(
                 confidence_level = "Medium"
             else:
                 confidence_level = "Low"
-            
+
             # Determine strategy
             if price_multiplier >= 1.15:
                 strategy = 'Premium Pricing'
@@ -300,7 +300,7 @@ async def generate_auto_pricing(
                 strategy = 'Competitive Pricing'
             else:
                 strategy = 'Promotional Pricing'
-            
+
             recommendation = {
                 'id': str(uuid.uuid4()),
                 'tenant_id': current_user.tenant_id,
@@ -323,11 +323,11 @@ async def generate_auto_pricing(
                 'generated_at': datetime.now(timezone.utc).isoformat()
             }
             recommendations.append(recommendation)
-    
+
     # Save recommendations
     if recommendations:
         await db.rms_pricing_recommendations.insert_many([r.copy() for r in recommendations])
-    
+
     return {
         'message': f'Generated {len(recommendations)} pricing recommendations',
         'recommendations': recommendations,
@@ -349,12 +349,12 @@ async def get_demand_forecast(
     query = {'tenant_id': current_user.tenant_id}
     if start_date and end_date:
         query['date'] = {'$gte': start_date, '$lte': end_date}
-    
+
     forecasts = await db.demand_forecasts.find(
         query,
         {'_id': 0}
     ).sort('date', 1).to_list(365)
-    
+
     return {'forecasts': forecasts, 'count': len(forecasts)}
 
 @router.post("/rms/demand-forecast")
@@ -366,18 +366,18 @@ async def generate_demand_forecast(
     start = datetime.fromisoformat(request.start_date)
     end = datetime.fromisoformat(request.end_date)
     days = (end - start).days + 1
-    
+
     # Get historical booking data for trend analysis
     historical_start = datetime.now(timezone.utc) - timedelta(days=365)
     historical_bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'created_at': {'$gte': historical_start.isoformat()}
     }, {'_id': 0, 'check_in_date': 1, 'check_out_date': 1, 'created_at': 1}).to_list(10000)
-    
+
     # Calculate historical occupancy patterns
     historical_occupancy_by_dow = {i: [] for i in range(7)}  # Day of week
     historical_occupancy_by_month = {i: [] for i in range(1, 13)}  # Month
-    
+
     for booking in historical_bookings:
         try:
             checkin = datetime.fromisoformat(booking['check_in_date'])
@@ -387,22 +387,22 @@ async def generate_demand_forecast(
             historical_occupancy_by_month[month].append(1)
         except Exception:
             pass
-    
+
     # Get total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     if total_rooms == 0:
         total_rooms = 100  # Default for demo
-    
+
     forecasts = []
     for day in range(days):
         current_date = (start + timedelta(days=day)).date().isoformat()
         date_obj = datetime.fromisoformat(current_date).replace(tzinfo=timezone.utc)
-        
+
         # Advanced forecast model with multiple factors
         day_of_week = date_obj.weekday()
         month = date_obj.month
         days_from_now = (date_obj - datetime.now(timezone.utc)).days
-        
+
         # 1. Day of Week Pattern (30% weight)
         dow_historical_count = len(historical_occupancy_by_dow.get(day_of_week, []))
         if dow_historical_count > 10:
@@ -415,7 +415,7 @@ async def generate_demand_forecast(
                 dow_factor = 0.70
             else:
                 dow_factor = 0.60
-        
+
         # 2. Seasonal Pattern (25% weight)
         month_historical_count = len(historical_occupancy_by_month.get(month, []))
         if month_historical_count > 20:
@@ -430,7 +430,7 @@ async def generate_demand_forecast(
                 seasonal_factor = 1.05
             else:
                 seasonal_factor = 0.95
-        
+
         # 3. Lead Time Factor (20% weight)
         if days_from_now < 7:
             lead_factor = 1.15  # Last minute bookings boost
@@ -440,7 +440,7 @@ async def generate_demand_forecast(
             lead_factor = 1.00
         else:
             lead_factor = 0.92  # Far future less certain
-        
+
         # 4. Current Booking Trend (15% weight)
         recent_booking_count = len([b for b in historical_bookings if b.get('created_at') and (datetime.now(timezone.utc) - datetime.fromisoformat(b['created_at']).replace(tzinfo=timezone.utc)).days < 30])
         if recent_booking_count > 50:
@@ -449,26 +449,26 @@ async def generate_demand_forecast(
             trend_factor = 1.05
         else:
             trend_factor = 1.00
-        
+
         # 5. Special Events (10% weight) - Can be enhanced with event calendar
         # Check if weekend or holiday
         is_friday_saturday = day_of_week in [4, 5]
         event_factor = 1.12 if is_friday_saturday else 1.0
-        
+
         # Combine all factors
         base_demand = 0.65  # Base occupancy
         forecasted_demand = base_demand * dow_factor * (seasonal_factor / 1.1) * lead_factor * (trend_factor / 1.05) * event_factor
-        
+
         # Cap at realistic bounds
         forecasted_demand = min(max(forecasted_demand, 0.15), 0.98)
-        
+
         forecasted_rooms = int(total_rooms * forecasted_demand)
         forecasted_occupancy = round(forecasted_demand * 100, 1)
-        
+
         # Dynamic confidence based on factors
         confidence = 0.0
         confidence_factors = []
-        
+
         # Historical data quality
         if dow_historical_count > 20:
             confidence += 0.25
@@ -479,7 +479,7 @@ async def generate_demand_forecast(
         else:
             confidence += 0.05
             confidence_factors.append("Limited day-of-week history")
-        
+
         # Seasonal data quality
         if month_historical_count > 30:
             confidence += 0.25
@@ -490,7 +490,7 @@ async def generate_demand_forecast(
         else:
             confidence += 0.05
             confidence_factors.append("Limited seasonal data")
-        
+
         # Lead time certainty
         if days_from_now < 30:
             confidence += 0.30
@@ -501,7 +501,7 @@ async def generate_demand_forecast(
         else:
             confidence += 0.10
             confidence_factors.append("Long-term forecast (lower certainty)")
-        
+
         # Recent booking trend
         if recent_booking_count > 30:
             confidence += 0.20
@@ -509,9 +509,9 @@ async def generate_demand_forecast(
         elif recent_booking_count > 10:
             confidence += 0.10
             confidence_factors.append("Moderate booking activity")
-        
+
         confidence = min(confidence, 0.95)
-        
+
         # Confidence level
         if confidence >= 0.70:
             confidence_level = "High"
@@ -519,7 +519,7 @@ async def generate_demand_forecast(
             confidence_level = "Medium"
         else:
             confidence_level = "Low"
-        
+
         # Forecast trend
         if forecasted_occupancy > 80:
             trend = "High Demand"
@@ -529,7 +529,7 @@ async def generate_demand_forecast(
             trend = "Moderate Demand"
         else:
             trend = "Low Demand"
-        
+
         forecast = {
             'id': str(uuid.uuid4()),
             'tenant_id': current_user.tenant_id,
@@ -549,16 +549,16 @@ async def generate_demand_forecast(
             'generated_at': datetime.now(timezone.utc).isoformat()
         }
         forecasts.append(forecast)
-    
+
     # Calculate summary statistics
     avg_occupancy = sum(f['forecasted_occupancy'] for f in forecasts) / len(forecasts) if forecasts else 0
     high_demand_days = sum(1 for f in forecasts if f['forecasted_occupancy'] > 75)
     low_demand_days = sum(1 for f in forecasts if f['forecasted_occupancy'] < 40)
-    
+
     # Save forecasts
     if forecasts:
         await db.demand_forecasts.insert_many([f.copy() for f in forecasts])
-    
+
     return {
         'message': f'Generated {len(forecasts)} demand forecasts',
         'forecasts': forecasts,
@@ -585,12 +585,12 @@ async def get_pricing_recommendations(
         query['date'] = date
     if status:
         query['status'] = status
-    
+
     recommendations = await db.rms_pricing_recommendations.find(
         query,
         {'_id': 0}
     ).sort('date', 1).to_list(1000)
-    
+
     return {'recommendations': recommendations, 'count': len(recommendations)}
 
 @router.post("/rms/apply-pricing/{recommendation_id}")
@@ -603,10 +603,10 @@ async def apply_pricing_recommendation(
         'id': recommendation_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
-    
+
     if not recommendation:
         raise HTTPException(status_code=404, detail="Recommendation not found")
-    
+
     # Update rate in rate calendar
     await db.rate_calendar.update_one(
         {
@@ -623,7 +623,7 @@ async def apply_pricing_recommendation(
         },
         upsert=True
     )
-    
+
     # Mark recommendation as applied
     await db.rms_pricing_recommendations.update_one(
         {'id': recommendation_id},
@@ -635,7 +635,7 @@ async def apply_pricing_recommendation(
             }
         }
     )
-    
+
     return {'message': 'Pricing recommendation applied successfully'}
 
 
@@ -652,38 +652,38 @@ async def get_comp_set_price_comparison(
         start_date = datetime.now(timezone.utc).date().isoformat()
     if not end_date:
         end_date = (datetime.now(timezone.utc) + timedelta(days=30)).date().isoformat()
-    
+
     # Get all competitors
     competitors = await db.comp_set.find({
         'tenant_id': current_user.tenant_id,
         'status': 'active'
     }, {'_id': 0}).to_list(100)
-    
+
     # Get competitor pricing
     comp_pricing = await db.comp_pricing.find({
         'tenant_id': current_user.tenant_id,
         'date': {'$gte': start_date, '$lte': end_date}
     }, {'_id': 0}).to_list(1000)
-    
+
     # Get your hotel's rates
     room_types = await db.room_types.find({
         'tenant_id': current_user.tenant_id
     }, {'_id': 0}).to_list(100)
-    
+
     # Organize data by date
     comparison_data = {}
-    
+
     # Process each date
     start = datetime.fromisoformat(start_date)
     end = datetime.fromisoformat(end_date)
     days = (end - start).days + 1
-    
+
     for day in range(days):
         current_date = (start + timedelta(days=day)).date().isoformat()
-        
+
         # Get competitor prices for this date
         date_comp_prices = [p for p in comp_pricing if p.get('date') == current_date]
-        
+
         comp_data = []
         for comp in competitors:
             comp_price = next((p for p in date_comp_prices if p.get('competitor_id') == comp['id']), None)
@@ -693,14 +693,14 @@ async def get_comp_set_price_comparison(
                     'rate': comp_price.get('standard_rate', 0),
                     'star_rating': comp.get('star_rating', 0)
                 })
-        
+
         # Get your hotel's average rate
         your_avg_rate = sum(rt.get('base_rate', 0) for rt in room_types) / len(room_types) if room_types else 100
-        
+
         comp_avg = sum(c['rate'] for c in comp_data) / len(comp_data) if comp_data else 0
         comp_min = min([c['rate'] for c in comp_data]) if comp_data else 0
         comp_max = max([c['rate'] for c in comp_data]) if comp_data else 0
-        
+
         comparison_data[current_date] = {
             'date': current_date,
             'your_rate': round(your_avg_rate, 2),
@@ -711,15 +711,15 @@ async def get_comp_set_price_comparison(
             'price_index': round((your_avg_rate / comp_avg * 100), 1) if comp_avg > 0 else 100,
             'position': 'Above Market' if your_avg_rate > comp_avg and comp_avg > 0 else ('Below Market' if your_avg_rate < comp_avg and comp_avg > 0 else 'At Market')
         }
-    
+
     # Convert to list
     comparison_list = list(comparison_data.values())
-    
+
     # Calculate summary
     avg_price_index = sum(d['price_index'] for d in comparison_list) / len(comparison_list) if comparison_list else 100
     days_above_market = sum(1 for d in comparison_list if d['position'] == 'Above Market')
     days_below_market = sum(1 for d in comparison_list if d['position'] == 'Below Market')
-    
+
     return {
         'comparison': comparison_list,
         'summary': {
@@ -741,20 +741,20 @@ async def get_pricing_insights(
     """Get detailed pricing insights and breakdown for specific date"""
     if not date:
         date = datetime.now(timezone.utc).date().isoformat()
-    
+
     # Get recommendations for this date
     recommendations = await db.rms_pricing_recommendations.find({
         'tenant_id': current_user.tenant_id,
         'date': date
     }, {'_id': 0}).to_list(100)
-    
+
     if not recommendations:
         return {
             'date': date,
             'message': 'No pricing recommendations available for this date',
             'insights': []
         }
-    
+
     # Aggregate insights
     insights = []
     for rec in recommendations:
@@ -775,11 +775,11 @@ async def get_pricing_insights(
             'confidence_factors': rec.get('confidence_factors', [])
         }
         insights.append(insight)
-    
+
     # Calculate aggregate metrics
     avg_confidence = sum(i['confidence'] for i in insights) / len(insights) if insights else 0
     total_price_change = sum(i['price_change'] for i in insights)
-    
+
     return {
         'date': date,
         'insights': insights,
@@ -808,15 +808,15 @@ async def get_group_bookings(
 ):
     """Get group bookings (weddings, meetings, conferences)"""
     current_user = await get_current_user(credentials)
-    
+
     query = {
         'tenant_id': current_user.tenant_id,
         'booking_type': 'group'
     }
-    
+
     if status:
         query['status'] = status
-    
+
     group_bookings = []
     async for booking in db.group_bookings.find(query).sort('event_date', 1):
         group_bookings.append({
@@ -833,7 +833,7 @@ async def get_group_bookings(
             'contact_person': booking.get('contact_person'),
             'contact_email': booking.get('contact_email'),
         })
-    
+
     return group_bookings
 
 class GroupBookingCreate(BaseModel):
@@ -857,7 +857,7 @@ async def create_group_booking(
 ):
     """Create a new group booking"""
     current_user = await get_current_user(credentials)
-    
+
     booking_id = str(uuid.uuid4())
     group_booking = {
         'id': booking_id,
@@ -879,9 +879,9 @@ async def create_group_booking(
         'created_at': datetime.now(timezone.utc),
         'created_by': current_user.username
     }
-    
+
     await db.group_bookings.insert_one(group_booking)
-    
+
     return {
         'message': 'Group booking created',
         'booking_id': booking_id,
@@ -896,11 +896,11 @@ async def get_corporate_contracts(
 ):
     """Get corporate contracts"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
     if status:
         query['status'] = status
-    
+
     contracts = []
     async for contract in db.corporate_contracts.find(query).sort('start_date', -1):
         contracts.append({
@@ -921,7 +921,7 @@ async def get_corporate_contracts(
             'contact_person': contract.get('contact_person'),
             'notes': contract.get('notes', '')
         })
-    
+
     return {
         'contracts': contracts,
         'count': len(contracts),
@@ -951,7 +951,7 @@ async def create_corporate_contract(
 ):
     """Create a new corporate contract"""
     current_user = await get_current_user(credentials)
-    
+
     contract_id = str(uuid.uuid4())
     corporate_contract = {
         'id': contract_id,
@@ -976,9 +976,9 @@ async def create_corporate_contract(
         'created_at': datetime.now(timezone.utc),
         'created_by': current_user.username
     }
-    
+
     await db.corporate_contracts.insert_one(corporate_contract)
-    
+
     return {
         'message': 'Corporate contract created',
         'contract_id': contract_id,
@@ -994,15 +994,15 @@ async def update_corporate_contract(
 ):
     """Update a corporate contract"""
     current_user = await get_current_user(credentials)
-    
+
     existing = await db.corporate_contracts.find_one({
         'id': contract_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not existing:
         raise HTTPException(status_code=404, detail="Contract not found")
-    
+
     await db.corporate_contracts.update_one(
         {'id': contract_id, 'tenant_id': current_user.tenant_id},
         {
@@ -1025,7 +1025,7 @@ async def update_corporate_contract(
             }
         }
     )
-    
+
     return {
         'message': 'Contract updated',
         'contract_id': contract_id
@@ -1039,15 +1039,15 @@ async def get_ota_promotions(
 ):
     """Get OTA promotions"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if active_only:
         today = datetime.now(timezone.utc)
         query['start_date'] = {'$lte': today}
         query['end_date'] = {'$gte': today}
         query['is_active'] = True
-    
+
     promotions = []
     async for promo in db.ota_promotions.find(query).sort('start_date', -1):
         promotions.append({
@@ -1066,7 +1066,7 @@ async def get_ota_promotions(
             'terms': promo.get('terms', ''),
             'created_at': promo.get('created_at').isoformat() if promo.get('created_at') else None
         })
-    
+
     return {
         'promotions': promotions,
         'count': len(promotions),
@@ -1093,7 +1093,7 @@ async def create_ota_promotion(
 ):
     """Create a new OTA promotion"""
     current_user = await get_current_user(credentials)
-    
+
     promo_id = str(uuid.uuid4())
     ota_promotion = {
         'id': promo_id,
@@ -1113,9 +1113,9 @@ async def create_ota_promotion(
         'created_at': datetime.now(timezone.utc),
         'created_by': current_user.username
     }
-    
+
     await db.ota_promotions.insert_one(ota_promotion)
-    
+
     return {
         'message': 'OTA promotion created',
         'promotion_id': promo_id,
@@ -1136,26 +1136,26 @@ async def get_pickup_report(
 ):
     """Get pickup report with export capability (JSON, CSV ready)"""
     current_user = await get_current_user(credentials)
-    
+
     if not start_date:
         start_date = datetime.now(timezone.utc).replace(day=1)
     else:
         start_date = datetime.fromisoformat(start_date)
-    
+
     if not end_date:
         end_date = start_date + timedelta(days=30)
     else:
         end_date = datetime.fromisoformat(end_date)
-    
+
     # Get booking pace by arrival date
     pickup_report = []
-    
+
     # Iterate through each day in range
     current_date = start_date
     while current_date <= end_date:
         # Get bookings for this arrival date
         day_bookings = []
-        
+
         async for booking in db.bookings.find({
             'tenant_id': current_user.tenant_id,
             'check_in': {
@@ -1172,11 +1172,11 @@ async def get_pickup_report(
                 'room_nights': booking.get('nights', 1),
                 'revenue': booking.get('total_amount', 0)
             })
-        
+
         # Aggregate data
         total_rooms = len(day_bookings)
         total_revenue = sum(b['revenue'] for b in day_bookings)
-        
+
         # Group by booking window
         booking_windows = {
             '0-7_days': 0,
@@ -1185,7 +1185,7 @@ async def get_pickup_report(
             '31-60_days': 0,
             '61+_days': 0
         }
-        
+
         for booking in day_bookings:
             days = booking['days_before_arrival']
             if days <= 7:
@@ -1198,16 +1198,16 @@ async def get_pickup_report(
                 booking_windows['31-60_days'] += 1
             else:
                 booking_windows['61+_days'] += 1
-        
+
         pickup_report.append({
             'arrival_date': current_date.date().isoformat(),
             'total_rooms': total_rooms,
             'total_revenue': total_revenue,
             'booking_windows': booking_windows
         })
-        
+
         current_date += timedelta(days=1)
-    
+
     # If CSV format requested, prepare for export
     if format == 'csv':
         # Return data in CSV-friendly format
@@ -1223,13 +1223,13 @@ async def get_pickup_report(
                 '31-60 Days': row['booking_windows']['31-60_days'],
                 '61+ Days': row['booking_windows']['61+_days']
             })
-        
+
         return {
             'format': 'csv',
             'data': csv_data,
             'filename': f"pickup_report_{start_date.date()}_{end_date.date()}.csv"
         }
-    
+
     return {
         'format': 'json',
         'date_range': {
@@ -1250,10 +1250,10 @@ async def get_compset_analysis(
 ):
     """Get competitive set analysis"""
     current_user = await get_current_user(credentials)
-    
+
     # Get competitor data (would be manually entered or API integrated)
     competitors = []
-    
+
     async for comp in db.competitors.find({
         'tenant_id': current_user.tenant_id,
         'is_active': True
@@ -1266,7 +1266,7 @@ async def get_compset_analysis(
             },
             sort=[('date', -1)]
         )
-        
+
         competitors.append({
             'competitor_id': comp.get('id'),
             'competitor_name': comp.get('name'),
@@ -1277,7 +1277,7 @@ async def get_compset_analysis(
             'current_occupancy': latest_rate.get('occupancy_pct') if latest_rate else 0,
             'last_updated': latest_rate.get('date').isoformat() if latest_rate and latest_rate.get('date') else None
         })
-    
+
     # Get own property data
     today = datetime.now(timezone.utc)
     own_bookings = await db.bookings.count_documents({
@@ -1288,10 +1288,10 @@ async def get_compset_analysis(
         },
         'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
     })
-    
+
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     own_occupancy = (own_bookings / total_rooms * 100) if total_rooms > 0 else 0
-    
+
     # Calculate own ADR
     own_adr = 0
     async for booking in db.bookings.find({
@@ -1300,15 +1300,15 @@ async def get_compset_analysis(
         'status': {'$in': ['checked_in', 'checked_out']}
     }):
         own_adr += booking.get('room_rate', 0)
-    
+
     booking_count = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_in': {'$gte': today - timedelta(days=30)},
         'status': {'$in': ['checked_in', 'checked_out']}
     })
-    
+
     own_adr = own_adr / booking_count if booking_count > 0 else 0
-    
+
     return {
         'own_property': {
             'adr': own_adr,
@@ -1327,18 +1327,18 @@ async def get_market_share(
 ):
     """Get market share analysis"""
     current_user = await get_current_user(credentials)
-    
+
     # Calculate market share based on bookings and revenue
     today = datetime.now(timezone.utc)
     last_30_days = today - timedelta(days=30)
-    
+
     # Own performance
     own_rooms = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_in': {'$gte': last_30_days},
         'status': {'$in': ['checked_in', 'checked_out']}
     })
-    
+
     own_revenue = 0
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -1346,28 +1346,28 @@ async def get_market_share(
         'status': {'$in': ['checked_in', 'checked_out']}
     }):
         own_revenue += booking.get('total_amount', 0)
-    
+
     # Market data (would need competitor API or manual entry)
     # For now, estimating based on competitor count and average
     total_market_rooms = own_rooms  # Base
     total_market_revenue = own_revenue  # Base
-    
+
     competitor_count = await db.competitors.count_documents({
         'tenant_id': current_user.tenant_id,
         'is_active': True
     })
-    
+
     # Estimate market (assuming similar performance)
     if competitor_count > 0:
         total_market_rooms += (own_rooms * competitor_count)
         total_market_revenue += (own_revenue * competitor_count)
-    
+
     room_share = (own_rooms / total_market_rooms * 100) if total_market_rooms > 0 else 0
     revenue_share = (own_revenue / total_market_revenue * 100) if total_market_revenue > 0 else 0
-    
+
     # Calculate fair share (1 / number of properties in compset)
     fair_share = 100 / (competitor_count + 1) if competitor_count >= 0 else 100
-    
+
     return {
         'period': '30_days',
         'own_performance': {
@@ -1403,14 +1403,14 @@ async def get_user_activity_logs(
 ):
     """Get user activity logs for security monitoring"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if user_id:
         query['user_id'] = user_id
     if action_type:
         query['action'] = action_type
-    
+
     logs = []
     async for log in db.audit_logs.find(query).sort('timestamp', -1).limit(limit):
         logs.append({
@@ -1425,13 +1425,13 @@ async def get_user_activity_logs(
             'timestamp': log.get('timestamp').isoformat() if log.get('timestamp') else None,
             'changes': log.get('changes', {})
         })
-    
+
     # Get activity summary
     activity_summary = {}
     for log in logs:
         action = log['action']
         activity_summary[action] = activity_summary.get(action, 0) + 1
-    
+
     return {
         'logs': logs,
         'total_count': len(logs),
@@ -1445,19 +1445,19 @@ async def get_api_rate_limits(
 ):
     """Get API rate limit monitoring data"""
     current_user = await get_current_user(credentials)
-    
+
     # Track API calls per endpoint
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
-    
+
     # Get API access logs
     endpoint_stats = {}
-    
+
     async for log in db.api_access_logs.find({
         'tenant_id': current_user.tenant_id,
         'timestamp': {'$gte': today}
     }):
         endpoint = log.get('endpoint', 'unknown')
-        
+
         if endpoint not in endpoint_stats:
             endpoint_stats[endpoint] = {
                 'endpoint': endpoint,
@@ -1467,27 +1467,27 @@ async def get_api_rate_limits(
                 'avg_response_time_ms': [],
                 'rate_limit_hits': 0
             }
-        
+
         endpoint_stats[endpoint]['total_requests'] += 1
-        
+
         if log.get('status_code', 200) < 400:
             endpoint_stats[endpoint]['successful_requests'] += 1
         else:
             endpoint_stats[endpoint]['failed_requests'] += 1
-        
+
         if log.get('status_code') == 429:  # Too Many Requests
             endpoint_stats[endpoint]['rate_limit_hits'] += 1
-        
+
         if log.get('response_time_ms'):
             endpoint_stats[endpoint]['avg_response_time_ms'].append(log.get('response_time_ms'))
-    
+
     # Calculate averages
     for endpoint in endpoint_stats.values():
         if endpoint['avg_response_time_ms']:
             endpoint['avg_response_time_ms'] = sum(endpoint['avg_response_time_ms']) / len(endpoint['avg_response_time_ms'])
         else:
             endpoint['avg_response_time_ms'] = 0
-    
+
     return {
         'date': today.date().isoformat(),
         'endpoint_stats': list(endpoint_stats.values()),
@@ -1508,15 +1508,15 @@ async def get_inventory(
 ):
     """Get housekeeping inventory"""
     current_user = await get_current_user(credentials)
-    
+
     query = {'tenant_id': current_user.tenant_id}
-    
+
     if category:
         query['category'] = category
-    
+
     if low_stock_only:
         query['$expr'] = {'$lte': ['$current_stock', '$minimum_stock']}
-    
+
     inventory_items = []
     async for item in db.housekeeping_inventory.find(query).sort('name', 1):
         inventory_items.append({
@@ -1532,12 +1532,12 @@ async def get_inventory(
             'last_restock_date': item.get('last_restock_date').isoformat() if item.get('last_restock_date') else None,
             'is_low_stock': item.get('current_stock', 0) <= item.get('minimum_stock', 0)
         })
-    
+
     return {
         'inventory_items': inventory_items,
         'total_items': len(inventory_items),
         'low_stock_items': len([i for i in inventory_items if i['is_low_stock']]),
-        'categories': list(set(i['category'] for i in inventory_items))
+        'categories': list({i['category'] for i in inventory_items})
     }
 
 
@@ -1558,7 +1558,7 @@ async def create_inventory_item(
 ):
     """Create a new inventory item"""
     current_user = await get_current_user(credentials)
-    
+
     item_id = str(uuid.uuid4())
     inventory_item = {
         'id': item_id,
@@ -1575,9 +1575,9 @@ async def create_inventory_item(
         'created_at': datetime.now(timezone.utc),
         'created_by': current_user.username
     }
-    
+
     await db.housekeeping_inventory.insert_one(inventory_item)
-    
+
     return {
         'message': 'Inventory item created',
         'item_id': item_id,
@@ -1598,26 +1598,26 @@ async def record_inventory_usage(
 ):
     """Record inventory usage"""
     current_user = await get_current_user(credentials)
-    
+
     item = await db.housekeeping_inventory.find_one({
         'id': item_id,
         'tenant_id': current_user.tenant_id
     })
-    
+
     if not item:
         raise HTTPException(status_code=404, detail="Inventory item not found")
-    
+
     new_stock = item.get('current_stock', 0) - usage.quantity
-    
+
     if new_stock < 0:
         raise HTTPException(status_code=400, detail="Insufficient stock")
-    
+
     # Update stock
     await db.housekeeping_inventory.update_one(
         {'id': item_id, 'tenant_id': current_user.tenant_id},
         {'$set': {'current_stock': new_stock}}
     )
-    
+
     # Log usage
     await db.inventory_usage_logs.insert_one({
         'id': str(uuid.uuid4()),
@@ -1629,7 +1629,7 @@ async def record_inventory_usage(
         'notes': usage.notes,
         'timestamp': datetime.now(timezone.utc)
     })
-    
+
     return {
         'message': 'Usage recorded',
         'item_id': item_id,
@@ -1643,14 +1643,14 @@ async def get_finance_notifications_mobile(
 ):
     """Get notifications for finance mobile dashboard"""
     current_user = await get_current_user(credentials)
-    
+
     notifications = []
     today = datetime.now(timezone.utc)
-    
+
     # Overdue receivables
     overdue_count = 0
     overdue_amount = 0.0
-    
+
     async for folio in db.folios.find({
         'tenant_id': current_user.tenant_id,
         'status': 'open',
@@ -1660,7 +1660,7 @@ async def get_finance_notifications_mobile(
             'id': folio.get('booking_id'),
             'tenant_id': current_user.tenant_id
         })
-        
+
         if booking:
             checkout = booking.get('check_out')
             if checkout:
@@ -1670,13 +1670,13 @@ async def get_finance_notifications_mobile(
                         checkout_date = datetime.fromisoformat(checkout).replace(tzinfo=timezone.utc)
                     else:
                         checkout_date = checkout if checkout.tzinfo else checkout.replace(tzinfo=timezone.utc)
-                    
+
                     if checkout_date < today - timedelta(days=7):
                         overdue_count += 1
                         overdue_amount += folio.get('balance', 0)
                 except (ValueError, AttributeError):
                     pass  # Skip invalid dates
-    
+
     if overdue_count > 0:
         notifications.append({
             'id': str(uuid.uuid4()),
@@ -1686,7 +1686,7 @@ async def get_finance_notifications_mobile(
             'priority': 'high',
             'created_at': today.isoformat()
         })
-    
+
     # Large payment approvals needed (> 10000 TL)
     async for payment in db.payment_approvals.find({
         'tenant_id': current_user.tenant_id,
@@ -1701,7 +1701,7 @@ async def get_finance_notifications_mobile(
             'priority': 'medium',
             'created_at': payment.get('created_at').isoformat()
         })
-    
+
     return {
         'notifications': notifications,
         'unread_count': len(notifications)
@@ -1722,7 +1722,7 @@ async def get_system_status_mobile(
 ):
     """Get system status for security/IT mobile dashboard"""
     current_user = await get_current_user(credentials)
-    
+
     # Check various system components
     system_status = {
         'database': 'operational',
@@ -1731,11 +1731,11 @@ async def get_system_status_mobile(
         'channel_manager': 'operational',
         'payment_gateway': 'operational'
     }
-    
+
     # Check for recent errors in logs
     recent_errors = []
     last_hour = datetime.now(timezone.utc) - timedelta(hours=1)
-    
+
     async for log in db.system_logs.find({
         'tenant_id': current_user.tenant_id,
         'log_level': 'error',
@@ -1746,16 +1746,16 @@ async def get_system_status_mobile(
             'message': log.get('message', ''),
             'timestamp': log.get('created_at').isoformat()
         })
-        
+
         # Update system status if errors found
         component = log.get('component', 'unknown')
         if component in system_status:
             system_status[component] = 'degraded'
-    
+
     # Overall health score
     operational_count = sum(1 for status in system_status.values() if status == 'operational')
     health_score = (operational_count / len(system_status)) * 100
-    
+
     return {
         'overall_status': 'healthy' if health_score >= 80 else 'degraded' if health_score >= 50 else 'critical',
         'health_score': health_score,
@@ -1771,19 +1771,19 @@ async def get_connection_status_mobile(
 ):
     """Get POS and Channel Manager connection status"""
     current_user = await get_current_user(credentials)
-    
+
     connections = {}
-    
+
     # Check POS connection (last successful transaction)
     last_pos_transaction = await db.pos_transactions.find_one(
         {'tenant_id': current_user.tenant_id},
         sort=[('created_at', -1)]
     )
-    
+
     if last_pos_transaction:
         last_activity = last_pos_transaction.get('created_at')
         minutes_ago = (datetime.now(timezone.utc) - last_activity).total_seconds() / 60
-        
+
         connections['pos'] = {
             'status': 'connected' if minutes_ago < 60 else 'idle' if minutes_ago < 240 else 'disconnected',
             'last_activity': last_activity.isoformat(),
@@ -1795,17 +1795,17 @@ async def get_connection_status_mobile(
             'last_activity': None,
             'minutes_since_activity': None
         }
-    
+
     # Check Channel Manager sync (last successful sync)
     last_cm_sync = await db.channel_manager_syncs.find_one(
         {'tenant_id': current_user.tenant_id},
         sort=[('sync_timestamp', -1)]
     )
-    
+
     if last_cm_sync:
         last_sync = last_cm_sync.get('sync_timestamp')
         minutes_ago = (datetime.now(timezone.utc) - last_sync).total_seconds() / 60
-        
+
         connections['channel_manager'] = {
             'status': 'connected' if minutes_ago < 15 else 'idle' if minutes_ago < 60 else 'disconnected',
             'last_sync': last_sync.isoformat(),
@@ -1818,7 +1818,7 @@ async def get_connection_status_mobile(
             'last_sync': None,
             'minutes_since_sync': None
         }
-    
+
     return {
         'connections': connections,
         'timestamp': datetime.now(timezone.utc).isoformat()
@@ -1831,16 +1831,16 @@ async def get_security_alerts_mobile(
 ):
     """Get security alerts for security/IT mobile dashboard"""
     current_user = await get_current_user(credentials)
-    
+
     alerts = []
-    
+
     # Check for unauthorized access attempts
     failed_logins = await db.auth_logs.count_documents({
         'tenant_id': current_user.tenant_id,
         'action': 'login_failed',
         'timestamp': {'$gte': datetime.now(timezone.utc) - timedelta(hours=1)}
     })
-    
+
     if failed_logins > 5:
         alerts.append({
             'id': str(uuid.uuid4()),
@@ -1850,7 +1850,7 @@ async def get_security_alerts_mobile(
             'severity': 'high',
             'timestamp': datetime.now(timezone.utc).isoformat()
         })
-    
+
     # Check for unusual data access patterns
     async for log in db.audit_logs.find({
         'tenant_id': current_user.tenant_id,
@@ -1865,16 +1865,16 @@ async def get_security_alerts_mobile(
             'severity': 'medium',
             'timestamp': log.get('timestamp').isoformat()
         })
-    
+
     # GDPR compliance alerts (guest data older than retention period)
     retention_period = 365 * 2  # 2 years
     old_data_cutoff = datetime.now(timezone.utc) - timedelta(days=retention_period)
-    
+
     old_guest_count = await db.guests.count_documents({
         'tenant_id': current_user.tenant_id,
         'last_stay_date': {'$lt': old_data_cutoff}
     })
-    
+
     if old_guest_count > 0:
         alerts.append({
             'id': str(uuid.uuid4()),
@@ -1884,7 +1884,7 @@ async def get_security_alerts_mobile(
             'severity': 'low',
             'timestamp': datetime.now(timezone.utc).isoformat()
         })
-    
+
     return {
         'alerts': alerts,
         'alert_count': len(alerts)
@@ -1897,16 +1897,16 @@ async def get_security_notifications_mobile(
 ):
     """Get notifications for security/IT mobile dashboard"""
     current_user = await get_current_user(credentials)
-    
+
     notifications = []
-    
+
     # System errors in last hour
     error_count = await db.system_logs.count_documents({
         'tenant_id': current_user.tenant_id,
         'log_level': 'error',
         'created_at': {'$gte': datetime.now(timezone.utc) - timedelta(hours=1)}
     })
-    
+
     if error_count > 0:
         notifications.append({
             'id': str(uuid.uuid4()),
@@ -1916,7 +1916,7 @@ async def get_security_notifications_mobile(
             'priority': 'high',
             'created_at': datetime.now(timezone.utc).isoformat()
         })
-    
+
     # Connection failures
     async for error in db.system_logs.find({
         'tenant_id': current_user.tenant_id,
@@ -1931,14 +1931,14 @@ async def get_security_notifications_mobile(
             'priority': 'medium',
             'created_at': error.get('created_at').isoformat()
         })
-    
+
     # Security alerts
     failed_logins = await db.auth_logs.count_documents({
         'tenant_id': current_user.tenant_id,
         'action': 'login_failed',
         'timestamp': {'$gte': datetime.now(timezone.utc) - timedelta(hours=1)}
     })
-    
+
     if failed_logins > 5:
         notifications.append({
             'id': str(uuid.uuid4()),
@@ -1948,7 +1948,7 @@ async def get_security_notifications_mobile(
             'priority': 'urgent',
             'created_at': datetime.now(timezone.utc).isoformat()
         })
-    
+
     return {
         'notifications': notifications,
         'unread_count': len(notifications)
