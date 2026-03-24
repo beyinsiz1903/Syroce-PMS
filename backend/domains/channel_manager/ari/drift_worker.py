@@ -5,11 +5,11 @@ Periodically compares PMS snapshot vs provider snapshot.
 On mismatch: generates corrective delta → push queue.
 """
 import logging
-from datetime import date, datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from datetime import datetime, timezone
+from typing import List
 
 from . import repositories as repo
-from .repositories import compute_delta_hash, compute_outbound_delta_hash
+from .repositories import compute_outbound_delta_hash
 
 logger = logging.getLogger(__name__)
 

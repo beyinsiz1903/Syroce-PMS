@@ -16,20 +16,25 @@ The worker supports:
   - Batching to avoid full table scans
 """
 import logging
-import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from core.database import db
 from domains.channel_manager import unified_repository as repo
 from domains.channel_manager.data_model import (
-    ConnectorProvider, CaseType, CaseSeverity, CaseStatus,
-    ReconciliationCase, COLL_RECONCILIATION_CASES,
-    COLL_RESERVATION_LINEAGE, COLL_PROVIDER_CONNECTIONS,
+    COLL_PROVIDER_CONNECTIONS,
+    COLL_RECONCILIATION_CASES,
+    COLL_RESERVATION_LINEAGE,
+    CaseSeverity,
+    CaseStatus,
+    CaseType,
+    ConnectorProvider,
+    ReconciliationCase,
 )
+
+from .auto_resolver import attempt_auto_resolve
 from .comparison_engine import compare_reservations
 from .snapshot_collectors import collect_provider_snapshot
-from .auto_resolver import attempt_auto_resolve, can_auto_resolve
 
 logger = logging.getLogger("reconciliation.worker")
 

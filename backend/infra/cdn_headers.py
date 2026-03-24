@@ -2,9 +2,10 @@
 CDN Cache Headers Middleware
 Optimizes browser and CDN caching with proper headers
 """
-from fastapi import Request, Response
 import os
 from datetime import datetime, timedelta
+
+from fastapi import Request, Response
 
 # Cache durations (in seconds)
 CACHE_DURATIONS = {

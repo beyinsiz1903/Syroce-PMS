@@ -3,14 +3,14 @@ Connector Service - Manages connector account lifecycle (CRUD, activation, crede
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
 
-from ..domain.models.connector_account import ConnectorAccount, ConnectorStatus, ConnectorProvider
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
-from ..infrastructure.repository import ChannelManagerRepository
-from ..connectors.hotelrunner.client import HotelRunnerClient
 from ..connectors.hotelrunner.auth import HotelRunnerAuth
+from ..connectors.hotelrunner.client import HotelRunnerClient
 from ..connectors.hotelrunner.errors import AuthenticationError
+from ..domain.models.audit import AuditAction, IntegrationAuditLog
+from ..domain.models.connector_account import ConnectorAccount, ConnectorProvider, ConnectorStatus
+from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.connector_service")
 

@@ -5,7 +5,7 @@ This ensures HotelRunner (or any future provider) differences are absorbed at th
 """
 import uuid
 from enum import Enum
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 

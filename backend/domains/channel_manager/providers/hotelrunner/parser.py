@@ -8,14 +8,14 @@ Each parser takes raw API data and returns typed schemas.
 import logging
 from typing import Any, Dict, List
 
+from .errors import HotelRunnerParseError
 from .schemas import (
-    HotelRunnerRoom,
     HotelRunnerChannel,
     HotelRunnerConnectedChannel,
     HotelRunnerReservation,
     HotelRunnerReservationPage,
+    HotelRunnerRoom,
 )
-from .errors import HotelRunnerParseError
 
 logger = logging.getLogger("hotelrunner.parser")
 

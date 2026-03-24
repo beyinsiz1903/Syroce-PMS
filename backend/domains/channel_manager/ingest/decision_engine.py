@@ -21,10 +21,13 @@ import logging
 from typing import Any, Dict, Optional, Tuple
 
 from domains.channel_manager.data_model import (
-    MutationType, ReservationState, is_valid_transition,
+    MutationType,
+    ReservationState,
+    is_valid_transition,
 )
 from domains.channel_manager.mapping_validator import (
-    validate_room_mapping, validate_rate_plan_mapping,
+    validate_rate_plan_mapping,
+    validate_room_mapping,
 )
 
 logger = logging.getLogger("ingest.decision_engine")

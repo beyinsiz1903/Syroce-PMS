@@ -13,17 +13,14 @@ Responsibilities:
 import logging
 import time
 import uuid as _uuid
-from typing import Any, Dict, Optional
 
 import httpx
 
 from .errors import (
     ExelyAuthError,
+    ExelyPayloadError,
     ExelyRateLimitError,
     ExelyTemporaryError,
-    ExelyPayloadError,
-    ExelyParseError,
-    ExelySOAPFaultError,
 )
 
 logger = logging.getLogger("exely.client")

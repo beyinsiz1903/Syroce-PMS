@@ -4,6 +4,7 @@ Implements OWASP security best practices
 """
 from fastapi import Request
 
+
 class SecurityHeadersMiddleware:
     """
     Middleware to add comprehensive security headers to all responses
@@ -117,6 +118,7 @@ def add_security_headers(app, **kwargs):
 # CORS security configuration
 from fastapi.middleware.cors import CORSMiddleware
 
+
 def configure_cors(
     app,
     allowed_origins: list = None,
@@ -169,8 +171,9 @@ def configure_cors(
 
 
 # Security audit endpoint
-from fastapi import APIRouter
 from datetime import datetime
+
+from fastapi import APIRouter
 
 security_router = APIRouter(prefix="/api/security", tags=["security"])
 

@@ -5,6 +5,7 @@ Competitor rate tracking, ML-powered pricing recommendations
 import random
 from datetime import datetime, timezone
 
+
 class DynamicPricingEngine:
     """AI-powered dynamic pricing"""
     

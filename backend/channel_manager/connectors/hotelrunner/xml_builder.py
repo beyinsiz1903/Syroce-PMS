@@ -8,7 +8,7 @@ Supported message types:
   - OTA_NotifReportRQ (acknowledgement)
 """
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 

@@ -2,12 +2,13 @@
 Email Service - AWS SES SMTP Implementation
 Gerçek e-posta gönderimi için AWS SES kullanır
 """
+import os
 import random
 import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from datetime import datetime
-import os
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
 
 class EmailService:
     """Email service with AWS SES SMTP support"""

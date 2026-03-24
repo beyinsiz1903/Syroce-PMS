@@ -3,16 +3,16 @@ Domain Router: Mobile
 
 Extracted from legacy_routes.py — Mobile dashboard, GM mobile, department mobile endpoints.
 """
-from fastapi import APIRouter, HTTPException, Depends
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta
-import uuid
 
 from core.database import db
 from core.security import get_current_user, security
-from core.cache import cached
 
 router = APIRouter(prefix="/api", tags=["mobile"])
 

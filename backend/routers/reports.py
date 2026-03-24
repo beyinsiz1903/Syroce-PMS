@@ -1,28 +1,29 @@
 """
 REPORTS Router - Extracted from server.py
 """
-import uuid
 import asyncio
-from datetime import datetime, timezone, timedelta
+import uuid
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from core.database import db
-from core.security import get_current_user
 from core.helpers import (
     require_module,
 )
+from core.security import get_current_user
 from models.enums import (
     ChargeCategory,
 )
 from models.schemas import (
-    User, FolioCharge,
+    FolioCharge,
+    User,
 )
 
 try:
-    from domains.pms.night_audit_module import NightAuditRecord, AuditStatus, AutomaticPosting
+    from domains.pms.night_audit_module import AuditStatus, AutomaticPosting, NightAuditRecord
 except ImportError:
     NightAuditRecord = None
     AuditStatus = None
@@ -30,10 +31,13 @@ except ImportError:
 
 from core.utils import (
     calculate_folio_balance,
-    create_excel_workbook, excel_response,
-    night_audit_post_room_charges, night_audit_calculate_revenue,
-    night_audit_recalculate_ar, night_audit_housekeeping_rollup,
+    create_excel_workbook,
+    excel_response,
+    night_audit_calculate_revenue,
+    night_audit_housekeeping_rollup,
     night_audit_ota_reconciliation,
+    night_audit_post_room_charges,
+    night_audit_recalculate_ar,
 )
 from shared_kernel.migration_observability import MigrationObservabilityService
 
@@ -787,6 +791,7 @@ async def get_daily_flash_pdf(current_user: User = Depends(get_current_user)):
     Export daily flash report as PDF
     """
     from io import BytesIO
+
     from fastapi.responses import StreamingResponse
     
     try:

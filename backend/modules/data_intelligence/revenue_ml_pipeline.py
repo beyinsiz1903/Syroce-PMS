@@ -8,16 +8,19 @@ Integrates with:
 - modules/platform_scaling/revenue_ml.py (existing ML models)
 - modules/platform_scaling/revenue_autopricing.py (existing auto-pricing workflow)
 """
+import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
 from core.database import db
-from modules.platform_scaling.revenue_ml import (
-    DemandForecastingModel, RateElasticityModel,
-    BookingProbabilityModel, CancellationPredictionModel,
-)
 from modules.platform_scaling.revenue_autopricing import autopricing
-import logging
+from modules.platform_scaling.revenue_ml import (
+    BookingProbabilityModel,
+    CancellationPredictionModel,
+    DemandForecastingModel,
+    RateElasticityModel,
+)
 
 logger = logging.getLogger(__name__)
 

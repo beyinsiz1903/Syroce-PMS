@@ -10,11 +10,12 @@ Actions: acknowledge, resolve, mute, snooze, dismiss
 """
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 from core.database import db
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
+
+from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.alerting")

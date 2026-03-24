@@ -3,23 +3,34 @@ Domain Router: POS Marketplace
 
 POS enhancements, warehouse procurement, marketplace extensions.
 """
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPAuthorizationCredentials
-from typing import Optional
-from datetime import datetime, timezone
 import uuid
+from datetime import datetime, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
 
 from core.database import db
-from core.security import get_current_user, security
 from core.helpers import require_feature
+from core.security import get_current_user, security
 from models.schemas import (
-    User, CreateOutletRequest, CreateMenuItemRequest, CreateSupplierRequest,
-    CreateWarehouseRequest, CreateMarketplaceProductRequest, CreatePurchaseOrderRequest,
-    ApprovePurchaseOrderRequest, RejectPurchaseOrderRequest, ReceivePurchaseOrderRequest,
-    AdjustInventoryRequest, CreatePOSTransactionWithMenuRequest, CreateDeliveryRequest,
-    UpdateDeliveryStatusRequest, UpdateSupplierCreditRequest, GenerateZReportRequest,
+    AdjustInventoryRequest,
+    ApprovePurchaseOrderRequest,
+    CreateDeliveryRequest,
+    CreateMarketplaceProductRequest,
+    CreateMenuItemRequest,
+    CreateOutletRequest,
+    CreatePOSTransactionWithMenuRequest,
+    CreatePurchaseOrderRequest,
+    CreateSupplierRequest,
+    CreateWarehouseRequest,
+    GenerateZReportRequest,
+    ReceivePurchaseOrderRequest,
+    RejectPurchaseOrderRequest,
+    UpdateDeliveryStatusRequest,
+    UpdateSupplierCreditRequest,
+    User,
 )
-
 
 router = APIRouter(prefix="/api", tags=["pos-marketplace"])
 

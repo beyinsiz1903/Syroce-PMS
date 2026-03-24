@@ -9,9 +9,9 @@ from core.security import get_current_user
 from models.schemas import User
 
 from ...application.connector_service import ConnectorService
+from ...domain.models.audit import AuditAction, IntegrationAuditLog
 from ...infrastructure.credential_vault import CredentialVault
 from ...infrastructure.rbac import enforce_credential_access
-from ...domain.models.audit import IntegrationAuditLog, AuditAction
 
 logger = logging.getLogger("channel_manager.routers.connector")
 

@@ -2,8 +2,9 @@
 Revenue / RMS Domain — Pydantic Schemas
 Extracted from rms_router.py inline models.
 """
-from pydantic import BaseModel
 from typing import List, Optional
+
+from pydantic import BaseModel
 
 
 class GroupBookingCreate(BaseModel):

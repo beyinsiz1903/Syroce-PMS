@@ -1,9 +1,11 @@
 """
 Room Block Models - Out of Order / Out of Service / Maintenance
 """
-from pydantic import BaseModel, Field
-from typing import Optional
 from enum import Enum
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
 
 class BlockType(str, Enum):
     OUT_OF_ORDER = "out_of_order"

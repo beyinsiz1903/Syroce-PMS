@@ -9,6 +9,7 @@ For system operations (startup, health), use `_raw_db` directly.
 """
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -37,4 +38,5 @@ _raw_db = client[db_name]
 
 # Tenant-aware proxy — auto-injects tenant_id when context is available
 from core.tenant_db import TenantAwareDBProxy  # noqa: E402
+
 db = TenantAwareDBProxy(_raw_db)

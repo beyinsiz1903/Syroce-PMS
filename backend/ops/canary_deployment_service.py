@@ -4,12 +4,12 @@ Phase 7 — Canary Deployment Strategy Service
 Manages staged rollout from internal → pilot → gradual traffic increase.
 Feature flags, rollback triggers, canary monitoring.
 """
-import uuid
 import logging
+import uuid
 from datetime import datetime, timezone
 
-from common.result import ServiceResult
 from common.context import OperationContext
+from common.result import ServiceResult
 
 logger = logging.getLogger(__name__)
 

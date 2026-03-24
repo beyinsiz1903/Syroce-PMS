@@ -9,13 +9,14 @@ Generates canonical reservations with configurable chaos:
   - Delayed/failed ACK responses
 """
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 from ...domain.models.canonical import (
-    CanonicalReservation, CanonicalGuest, ReservationStatus,
+    CanonicalGuest,
+    CanonicalReservation,
+    ReservationStatus,
 )
-
 
 PROVIDER_PROFILES = {
     "hotelrunner": {

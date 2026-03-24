@@ -4,14 +4,12 @@ Deploy Pipeline — Hard Gate CI/CD Orchestrator
 Each gate MUST pass before the next runs. No || true, no soft failures.
 Pipeline state persisted in MongoDB for audit trail.
 """
-import uuid
-import logging
 import asyncio
-import subprocess
+import logging
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, List, Optional
 
 from common.result import ServiceResult
 

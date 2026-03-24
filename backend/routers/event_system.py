@@ -2,7 +2,7 @@
 Real-Time Operational Event System Router - Event bus, live feed, notifications.
 All endpoints under /api/event-system/
 """
-from typing import Optional, List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel

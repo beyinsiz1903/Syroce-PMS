@@ -13,15 +13,19 @@ Features:
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
 
-from ..domain.models.mapping import (
-    MappingRule, MappingStatus, MappingEntityType, ValidationStatus,
-    SUPPORTED_MAPPING_TYPES,
-)
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
-from ..infrastructure.repository import ChannelManagerRepository
 from core.database import db
+
+from ..domain.models.audit import AuditAction, IntegrationAuditLog
+from ..domain.models.mapping import (
+    SUPPORTED_MAPPING_TYPES,
+    MappingEntityType,
+    MappingRule,
+    MappingStatus,
+    ValidationStatus,
+)
+from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.mapping_service")
 

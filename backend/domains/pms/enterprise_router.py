@@ -3,21 +3,26 @@ Domain Router: Enterprise Features
 
 Critical features, task management, RBAC, enterprise audit logging.
 """
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPAuthorizationCredentials
-from typing import Optional
-from datetime import datetime, timezone, timedelta
 import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
-from core.database import db
-from core.security import get_current_user, security
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
+
 from core.cache import cached
+from core.database import db
 from core.helpers import require_feature
+from core.security import get_current_user, security
 from models.schemas import (
-    User, CreateTaskRequest, AssignTaskRequest, UpdateTaskStatusRequest,
-    AssignRoleRequest, CreateRoleRequest, CreateBackupRequest,
+    AssignRoleRequest,
+    AssignTaskRequest,
+    CreateBackupRequest,
+    CreateRoleRequest,
+    CreateTaskRequest,
+    UpdateTaskStatusRequest,
+    User,
 )
-
 
 router = APIRouter(prefix="/api", tags=["enterprise-features"])
 

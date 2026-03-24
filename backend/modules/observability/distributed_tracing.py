@@ -6,9 +6,9 @@ slow endpoint detection, and correlation_id propagation.
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Optional, Dict, List
 from collections import defaultdict
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
 
 logger = logging.getLogger("observability.tracing")
 

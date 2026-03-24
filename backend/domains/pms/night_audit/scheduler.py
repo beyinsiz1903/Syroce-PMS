@@ -5,7 +5,7 @@ Checks every 60 seconds if any tenant's scheduled audit time has arrived.
 """
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 

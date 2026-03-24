@@ -2,18 +2,20 @@
 PMS / Dashboard Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
+import logging
+import random
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from typing import List, Optional
-from datetime import datetime, timezone, timedelta
-import uuid
-import random
-import logging
 
 from core.database import db
 from core.security import (
-    get_current_user, security,
+    get_current_user,
+    security,
 )
 from models.schemas import User
 

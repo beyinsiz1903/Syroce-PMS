@@ -3,7 +3,8 @@ Infrastructure Hardening Router — API endpoints for all infrastructure
 hardening components: containers, Redis cluster, workers, secrets,
 backups, observability, scaling, and unified dashboard data.
 """
-from fastapi import APIRouter, Depends, Query, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
+
 from core.security import get_current_user
 from models.schemas import User
 
@@ -15,13 +16,13 @@ router = APIRouter(prefix="/api/infra", tags=["infrastructure-hardening"])
 @router.get("/summary")
 async def get_infrastructure_summary(current_user: User = Depends(get_current_user)):
     """Complete infrastructure hardening dashboard data."""
-    from infra.redis_cluster import redis_cluster
-    from infra.worker_queue import worker_queue_manager
-    from infra.secrets_manager import secrets_manager
     from infra.backup_manager import backup_manager
-    from infra.cloud_observability import otel_tracer, sentry_integration, cloud_metrics
-    from infra.horizontal_scaling import scaling_manager
+    from infra.cloud_observability import cloud_metrics, otel_tracer, sentry_integration
     from infra.distributed_lock import lock_manager
+    from infra.horizontal_scaling import scaling_manager
+    from infra.redis_cluster import redis_cluster
+    from infra.secrets_manager import secrets_manager
+    from infra.worker_queue import worker_queue_manager
 
     redis_health = await redis_cluster.health_check()
     secrets_health = await secrets_manager.health_check()
@@ -166,7 +167,7 @@ async def cleanup_backups(current_user: User = Depends(get_current_user)):
 
 @router.get("/observability/status")
 async def observability_status(current_user: User = Depends(get_current_user)):
-    from infra.cloud_observability import otel_tracer, sentry_integration, cloud_metrics
+    from infra.cloud_observability import cloud_metrics, otel_tracer, sentry_integration
     return {
         "otel": otel_tracer.get_status(),
         "sentry": sentry_integration.get_status(),

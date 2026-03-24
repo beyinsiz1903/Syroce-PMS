@@ -2,11 +2,12 @@
 Channel Manager Domain — Schemas
 Request/response models extracted from channel_manager routers.
 """
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+import uuid
 from datetime import datetime, timezone
 from enum import Enum
-import uuid
+from typing import List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CMActorType(str, Enum):

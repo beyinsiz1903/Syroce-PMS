@@ -2,7 +2,7 @@
 Channel Manager Domain — Inventory Sync Repository
 Data access layer for channel inventory sync operations. No FastAPI dependencies.
 """
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from core.tenant_db import LazyCollection
 

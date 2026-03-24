@@ -4,11 +4,11 @@ Production runtime APIs for audit status, rate limiting,
 credential checks, tenant guard, and log sanitization status.
 Thin router: delegates all business logic to SecurityRuntimeService.
 """
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from common.context import OperationContext
 from core.security import get_current_user
 from models.schemas import User
-from common.context import OperationContext
 from security.security_runtime_service import security_runtime_service
 
 router = APIRouter(prefix="/api/security", tags=["Security / Hardening"])

@@ -11,17 +11,15 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
 
 from core.security import get_current_user
-from models.schemas import User
 from domains.channel_manager.notification_events_service import (
     evaluate_tenant_readiness,
+    get_event_config,
     get_event_history,
     get_event_summary,
-    get_event_config,
-    emit_event,
 )
+from models.schemas import User
 
 logger = logging.getLogger("lockdown.notifications")
 router = APIRouter(prefix="/api/lockdown/notifications", tags=["Notification Events"])

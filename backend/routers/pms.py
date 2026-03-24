@@ -2,37 +2,53 @@
 PMS Router - Extracted from server.py
 """
 import asyncio
+import csv
+import io
 import os
 import uuid
-import io
-import csv
-from pathlib import Path
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any, Literal
 from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, ConfigDict
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, ConfigDict, Field
 
 from core.database import db
-from core.security import get_current_user
 from core.helpers import (
-    require_module, create_audit_log, require_super_admin_guard,
+    create_audit_log,
+    require_module,
+    require_super_admin_guard,
 )
+from core.security import get_current_user
 from models.enums import (
-    UserRole, BookingStatus, FolioType,
-    CompanyStatus, ChannelType, ContractedRateType, RateType,
-    MarketSegment, CancellationPolicyType,
+    BookingStatus,
+    CancellationPolicyType,
+    ChannelType,
+    CompanyStatus,
+    ContractedRateType,
+    FolioType,
+    MarketSegment,
+    RateType,
 )
 from models.schemas import (
-    User, Room, RoomCreate, Guest, GuestCreate,
-    Booking, BookingCreate, Folio, RateOverrideLog, RoomMoveHistory, _ensure_hotel_context,
+    Booking,
+    BookingCreate,
+    Folio,
+    Guest,
+    GuestCreate,
+    RateOverrideLog,
+    Room,
+    RoomCreate,
+    RoomMoveHistory,
+    User,
+    _ensure_hotel_context,
 )
 
 try:
-    from domains.pms.room_block_models import RoomBlockCreate
     from domains.pms.night_audit_module import QueueRoom
+    from domains.pms.room_block_models import RoomBlockCreate
 except ImportError:
     RoomBlockCreate = None
     QueueRoom = None
@@ -41,7 +57,9 @@ UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/app/backend/uploads"))
 REJECTED_STATUS = "rejected"
 
 from core.utils import (
-    generate_folio_number, generate_qr_code, generate_time_based_qr_token,
+    generate_folio_number,
+    generate_qr_code,
+    generate_time_based_qr_token,
     get_cancellation_policy_details,
 )
 from modules.inventory.services.availability_read_service import AvailabilityReadService
@@ -2610,7 +2628,7 @@ async def create_multi_room_booking(
         booking_dict["check_in"] = booking_dict["check_in"].isoformat()
         booking_dict["check_out"] = booking_dict["check_out"].isoformat()
         booking_dict["created_at"] = booking_dict["created_at"].isoformat()
-        from core.atomic_booking import create_booking_atomic, BookingConflictError
+        from core.atomic_booking import BookingConflictError, create_booking_atomic
         try:
             await create_booking_atomic(booking_dict)
         except BookingConflictError as e:

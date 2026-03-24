@@ -9,19 +9,19 @@ Retry: timeout, network error, 429, 500/502/503/504, transient SOAP faults
 No retry: auth error, payload error, parse error, mapping error
 """
 import asyncio
-import random
 import logging
-from typing import Callable, Any
+import random
+from typing import Any, Callable
 
 from .errors import (
-    ExelyError,
     ExelyAuthError,
-    ExelyPayloadError,
-    ExelyParseError,
+    ExelyError,
     ExelyMappingError,
-    ExelyValidationError,
+    ExelyParseError,
+    ExelyPayloadError,
     ExelyRateLimitError,
     ExelyTemporaryError,
+    ExelyValidationError,
 )
 
 logger = logging.getLogger("exely.retry")

@@ -4,13 +4,13 @@ Tracks request durations, error rates, endpoint performance, and rate limit stat
 Provides real-time metrics for the monitoring dashboard.
 """
 
-import time
+import logging
 import os
 import threading
-from collections import deque, defaultdict
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional
-import logging
+import time
+from collections import defaultdict, deque
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

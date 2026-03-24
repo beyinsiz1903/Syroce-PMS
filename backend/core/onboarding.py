@@ -4,7 +4,7 @@ Structured per-tenant onboarding checklist with auto-detection and progress trac
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List
 
 from core.database import db
 

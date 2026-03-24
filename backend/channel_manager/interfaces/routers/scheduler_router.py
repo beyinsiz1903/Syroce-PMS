@@ -2,14 +2,14 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from core.security import get_current_user
 from models.schemas import User
 
 from ...application.scheduled_import_service import ScheduledImportService
-from ...connectors.hotelrunner.environment_config import get_environment_config, get_all_environments
+from ...connectors.hotelrunner.environment_config import get_all_environments, get_environment_config
 
 logger = logging.getLogger("channel_manager.routers.scheduler")
 

@@ -4,7 +4,7 @@ Provider Contract Error Classes — Typed error hierarchy for XML builder/parser
 Covers: invalid_xml, missing_required_field, schema_mismatch,
         provider_error_response, unknown_response_format.
 """
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 
 class ProviderContractError(Exception):

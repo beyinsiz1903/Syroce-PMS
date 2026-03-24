@@ -4,7 +4,7 @@ Production-grade: aggregates real tenant guard violations, credential scan resul
 audit completeness, rate limit metrics, log sanitization coverage, and security event history.
 """
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -18,11 +18,11 @@ class SecurityRuntimeService:
 
     def __init__(self):
         from security.audit_validator import audit_validator
-        from security.rate_limiter import tenant_rate_limiter
         from security.credential_guard import credential_guard
-        from security.tenant_guard import tenant_guard
+        from security.log_sanitizer import detect_secret_leakage, sanitize_string
         from security.property_guard import property_guard
-        from security.log_sanitizer import sanitize_string, detect_secret_leakage
+        from security.rate_limiter import tenant_rate_limiter
+        from security.tenant_guard import tenant_guard
         self._audit = audit_validator
         self._rate_limiter = tenant_rate_limiter
         self._credential_guard = credential_guard

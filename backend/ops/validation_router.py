@@ -7,13 +7,13 @@ observability validation, go-live scoring.
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from core.security import get_current_user
 from common.context import OperationContext
 from common.response import from_service_result
-from ops.runtime_validation import runtime_validation
+from core.security import get_current_user
+from ops.golive_scorer import golive_scorer
 from ops.incident_drill import incident_drill_service
 from ops.observability_validation import observability_validation_service
-from ops.golive_scorer import golive_scorer
+from ops.runtime_validation import runtime_validation
 
 router = APIRouter(prefix="/api/validation", tags=["Phase 6 — Runtime Validation"])
 

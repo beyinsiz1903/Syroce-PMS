@@ -8,10 +8,10 @@ Environment:
     SENTRY_DSN             — Sentry DSN for error tracking
     SENTRY_ENVIRONMENT     — Sentry environment tag
 """
-import os
 import logging
-from typing import Dict, Any, Optional, List
+import os
 from collections import defaultdict
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("infra.observability")
 
@@ -37,10 +37,10 @@ class OTelTracer:
 
         try:
             from opentelemetry import trace
-            from opentelemetry.sdk.trace import TracerProvider
-            from opentelemetry.sdk.trace.export import BatchSpanProcessor
             from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
             from opentelemetry.sdk.resources import Resource
+            from opentelemetry.sdk.trace import TracerProvider
+            from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
             resource = Resource.create({"service.name": self._service_name})
             provider = TracerProvider(resource=resource)
@@ -104,8 +104,8 @@ class SentryIntegration:
 
         try:
             import sentry_sdk
-            from sentry_sdk.integrations.fastapi import FastApiIntegration
             from sentry_sdk.integrations.celery import CeleryIntegration
+            from sentry_sdk.integrations.fastapi import FastApiIntegration
 
             sentry_sdk.init(
                 dsn=self._dsn,

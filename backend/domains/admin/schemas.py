@@ -2,9 +2,10 @@
 Admin Domain — Schemas
 Request/response models extracted from admin/router.py.
 """
-from pydantic import BaseModel, Field, EmailStr, conint
-from typing import Optional, Dict
 from enum import Enum
+from typing import Dict, Optional
+
+from pydantic import BaseModel, EmailStr, Field, conint
 
 
 class PermissionCheckRequest(BaseModel):

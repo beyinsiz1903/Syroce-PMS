@@ -2,10 +2,10 @@
 Prediction Service - Serves predictions from deployed models with confidence monitoring.
 """
 import logging
-import uuid
 import random
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 from core.database import db
 from modules.data_pipeline.model_registry import model_registry

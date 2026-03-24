@@ -2,7 +2,7 @@
 Guest Domain — Guest Journey Repository
 Data access layer for guest profile and journey operations. No FastAPI dependencies.
 """
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from core.tenant_db import LazyCollection
 

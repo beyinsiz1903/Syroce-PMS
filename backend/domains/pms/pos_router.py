@@ -3,16 +3,17 @@ Domain Router: POS & F&B
 
 Extracted from legacy_routes.py — Point of Sale, F&B operations, kitchen, transactions.
 """
-from fastapi import APIRouter, HTTPException, Depends
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
-from datetime import datetime, timezone, timedelta
-import uuid
 
+from core.cache import cached
 from core.database import db
 from core.security import get_current_user, security
-from core.cache import cached
 from models.schemas import User
 
 router = APIRouter(prefix="/api", tags=["pos-fnb"])

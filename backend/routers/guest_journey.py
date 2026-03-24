@@ -2,7 +2,7 @@
 Guest Journey Layer Router - Pre-arrival, stay management, messaging, reviews.
 All endpoints under /api/guest-journey/
 """
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel

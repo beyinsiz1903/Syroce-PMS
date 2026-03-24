@@ -5,7 +5,7 @@ Configurable retry with exponential backoff, jitter, and max attempts.
 import asyncio
 import logging
 import random
-from typing import Callable, Awaitable, Optional, Dict, Any, Tuple, Type
+from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, Type
 
 logger = logging.getLogger(__name__)
 

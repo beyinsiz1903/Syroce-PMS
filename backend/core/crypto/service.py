@@ -20,13 +20,16 @@ from typing import Dict, Optional
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from .engine import AESGCMEngine, AADContext
+from .engine import AADContext, AESGCMEngine
 from .envelope import is_envelope
 from .errors import CryptoError, DecryptionError
-from .keys import KeyRing, load_keyring
-from .masking import mask_value, mask_dict
+from .keys import load_keyring
+from .masking import mask_dict, mask_value
 from .migration import (
-    CiphertextFormat, LegacyDecryptor, detect_format, AES_LEGACY_PREFIX,
+    AES_LEGACY_PREFIX,
+    CiphertextFormat,
+    LegacyDecryptor,
+    detect_format,
 )
 
 logger = logging.getLogger("core.crypto.service")

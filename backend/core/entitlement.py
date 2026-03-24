@@ -9,14 +9,13 @@ conflicts in async test runners and improve performance.
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 from starlette.datastructures import MutableHeaders
-from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from core.database import db
-from core.metering import record_usage, UsageEventType
+from core.metering import UsageEventType, record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -72,8 +71,9 @@ def _get_token_from_headers(headers: list) -> Optional[str]:
 def _decode_tenant_from_token(token: str) -> Optional[str]:
     """Decode tenant_id from JWT without full validation (for middleware speed)."""
     try:
-        import jwt
         import os
+
+        import jwt
         secret = os.environ.get("JWT_SECRET", "secret-key-change-in-production")
         payload = jwt.decode(token, secret, algorithms=["HS256"])
         return payload.get("tenant_id")
@@ -193,8 +193,8 @@ async def check_quota(tenant_id: str, resource: str) -> Dict[str, Any]:
 
     Returns: {"allowed": bool, "current": int, "limit": int|None, "resource": str}
     """
-    from domains.admin.subscription_models import SUBSCRIPTION_PLANS, SubscriptionTier
     from core.database import _raw_db
+    from domains.admin.subscription_models import SUBSCRIPTION_PLANS, SubscriptionTier
 
     tenant = await _raw_db.tenants.find_one({"id": tenant_id}, {"_id": 0, "subscription_tier": 1})
     if not tenant:
@@ -230,10 +230,9 @@ async def get_tenant_entitlements(tenant_id: str) -> Dict[str, Any]:
     """Get full entitlement view for a tenant.
     Uses _raw_db for cross-tenant admin queries.
     """
-    from domains.admin.subscription_models import SUBSCRIPTION_PLANS, SubscriptionTier
-    from core.helpers import get_tenant_modules
-    from core.feature_flags import is_flag_enabled
     from core.database import _raw_db
+    from core.helpers import get_tenant_modules
+    from domains.admin.subscription_models import SUBSCRIPTION_PLANS, SubscriptionTier
 
     tenant = await _raw_db.tenants.find_one({"id": tenant_id}, {"_id": 0})
     if not tenant:

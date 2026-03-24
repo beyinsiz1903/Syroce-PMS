@@ -18,7 +18,7 @@ Cooldown / Deduplication:
 """
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from core.database import db
@@ -221,11 +221,11 @@ async def evaluate_tenant_readiness(tenant_id: str, property_id: str = "default"
     Evaluate tenant readiness and emit appropriate events.
     This is the main evaluation function called periodically or on demand.
     """
-    from domains.channel_manager.ari.hard_fail_gate import get_hard_fail_stats
-    from domains.channel_manager.auto_heal_service import get_auto_heal_stats
-    from domains.channel_manager.ari.push_loop_worker import get_push_worker
-    from domains.channel_manager.mapping_validator import compute_mapping_health
     from domains.channel_manager import unified_repository as repo
+    from domains.channel_manager.ari.hard_fail_gate import get_hard_fail_stats
+    from domains.channel_manager.ari.push_loop_worker import get_push_worker
+    from domains.channel_manager.auto_heal_service import get_auto_heal_stats
+    from domains.channel_manager.mapping_validator import compute_mapping_health
 
     events_emitted = []
 

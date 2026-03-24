@@ -11,9 +11,8 @@ from typing import Any, Dict, Optional
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from core.database import db
+from core.tenant_db import get_system_db
 from shared_kernel.migration_observability import MIGRATION_EVENT_TYPES
-
 
 logger = logging.getLogger(__name__)
 
@@ -63,15 +62,16 @@ class OutboxLifecycleWorker:
         self._stop_event = asyncio.Event()
 
     async def ensure_indexes(self) -> None:
-        await db.outbox_events.create_index(
+        sysdb = get_system_db()
+        await sysdb.outbox_events.create_index(
             [("tenant_id", 1), ("status", 1), ("next_attempt_at", 1), ("created_at", 1)],
             name="idx_outbox_lifecycle_claim",
         )
-        await db.outbox_events.create_index(
+        await sysdb.outbox_events.create_index(
             [("status", 1), ("processing_started_at", 1)],
             name="idx_outbox_processing_timeout",
         )
-        await db.outbox_worker_locks.create_index(
+        await sysdb.outbox_worker_locks.create_index(
             [("expires_at", 1)],
             name="idx_outbox_worker_lock_expires",
         )
@@ -123,7 +123,7 @@ class OutboxLifecycleWorker:
         now_iso = _iso(now)
         expires_at = _iso(now + timedelta(seconds=self.lease_duration_seconds))
 
-        doc = await db.outbox_worker_locks.find_one_and_update(
+        doc = await get_system_db().outbox_worker_locks.find_one_and_update(
             {
                 "_id": OUTBOX_WORKER_LOCK_ID,
                 "$or": [
@@ -146,7 +146,7 @@ class OutboxLifecycleWorker:
             return True
 
         try:
-            await db.outbox_worker_locks.insert_one(
+            await get_system_db().outbox_worker_locks.insert_one(
                 {
                     "_id": OUTBOX_WORKER_LOCK_ID,
                     "owner_id": self.owner_id,
@@ -159,7 +159,7 @@ class OutboxLifecycleWorker:
             return False
 
     async def release_lock(self) -> None:
-        await db.outbox_worker_locks.delete_one(
+        await get_system_db().outbox_worker_locks.delete_one(
             {
                 "_id": OUTBOX_WORKER_LOCK_ID,
                 "owner_id": self.owner_id,
@@ -168,7 +168,7 @@ class OutboxLifecycleWorker:
 
     async def recover_stuck_processing(self, *, limit: int = 5) -> int:
         cutoff = _iso(utc_now() - timedelta(seconds=self.processing_timeout_seconds))
-        stuck_events = await db.outbox_events.find(
+        stuck_events = await get_system_db().outbox_events.find(
             {
                 "event_type": {"$in": MIGRATION_EVENT_TYPES},
                 "status": "processing",
@@ -203,7 +203,7 @@ class OutboxLifecycleWorker:
 
     async def claim_next_event(self) -> Optional[Dict[str, Any]]:
         now_iso = iso_now()
-        event = await db.outbox_events.find_one_and_update(
+        event = await get_system_db().outbox_events.find_one_and_update(
             {
                 "event_type": {"$in": MIGRATION_EVENT_TYPES},
                 "$or": [
@@ -261,7 +261,7 @@ class OutboxLifecycleWorker:
 
     async def mark_processed(self, event: Dict[str, Any]) -> bool:
         now_iso = iso_now()
-        update_result = await db.outbox_events.update_one(
+        update_result = await get_system_db().outbox_events.update_one(
             {
                 "event_id": event.get("event_id"),
                 "status": "processing",
@@ -327,7 +327,7 @@ class OutboxLifecycleWorker:
                 },
             }
 
-        update_result = await db.outbox_events.update_one(
+        update_result = await get_system_db().outbox_events.update_one(
             {
                 "event_id": event.get("event_id"),
                 "status": previous_status,

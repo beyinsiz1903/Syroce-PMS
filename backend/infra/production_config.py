@@ -5,11 +5,11 @@ missing secrets detection, and masked configuration audit.
 Validates all required production environment variables at startup and
 provides a masked inspection endpoint for debugging without exposing secrets.
 """
+import logging
 import os
 import re
-import logging
-from typing import Dict, Any, Optional
 from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger("infra.production_config")
 

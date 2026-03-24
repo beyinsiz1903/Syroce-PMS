@@ -5,9 +5,9 @@ Pilot Hotel Readiness — API Router
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from core.security import get_current_user
 from common.context import OperationContext
 from common.response import from_service_result
+from core.security import get_current_user
 from ops.pilot_readiness import pilot_readiness_service
 
 router = APIRouter(prefix="/api/pilot", tags=["Pilot Readiness"])

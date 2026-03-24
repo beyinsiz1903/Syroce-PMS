@@ -4,7 +4,7 @@ Production-grade: aggregates real queue health, stuck task management,
 failure archive stats, retry pressure, worker heartbeat, and dead-letter trends.
 """
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 
 from common.context import OperationContext
@@ -18,9 +18,9 @@ class WorkerRuntimeService:
     """Production worker/queue runtime operations with real DB queries."""
 
     def __init__(self):
-        from workers.task_status_service import task_status_service
-        from workers.queue_monitor import queue_monitor
         from workers.failure_archive import failure_archive
+        from workers.queue_monitor import queue_monitor
+        from workers.task_status_service import task_status_service
         self._task_status = task_status_service
         self._queue_monitor = queue_monitor
         self._failure_archive = failure_archive

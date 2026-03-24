@@ -10,13 +10,14 @@ Runs per-property and performs:
 Rule: Full refresh is NOT default. Incremental requeue only.
 """
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
-from ..domain.models.sync import SyncJobStatus
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
-from ..infrastructure.repository import ChannelManagerRepository
 from core.database import db
+
+from ..domain.models.audit import AuditAction, IntegrationAuditLog
+from ..domain.models.sync import SyncJobStatus
+from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.scheduler_service")
 

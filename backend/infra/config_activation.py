@@ -3,11 +3,11 @@ Production Config Activation Workflow — Required/optional config validation,
 secret source inspection, invalid format detection, boot blocker/warning
 classification, and readiness validator integration.
 """
+import logging
 import os
 import re
-import logging
-from typing import Dict, Any, List
 from datetime import datetime, timezone
+from typing import Any, Dict, List
 
 logger = logging.getLogger("infra.config_activation")
 

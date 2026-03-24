@@ -12,7 +12,7 @@ Endpoints:
   - POST /api/imports/{id}/dismiss        → Dismiss a review item
 """
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -21,12 +21,6 @@ from pydantic import BaseModel
 from core.database import db
 from core.import_bridge_service import (
     COLL_IMPORTED,
-    STATUS_PENDING,
-    STATUS_REVIEW,
-    STATUS_FAILED,
-    STATUS_RETRY,
-    STATUS_IMPORTED,
-    STATUS_DUPLICATE,
     auto_import_reservation_to_pms,
 )
 

@@ -1,11 +1,12 @@
 """
 Data models for the messaging module.
 """
-from pydantic import BaseModel
-from typing import Optional, List, Dict
-from enum import Enum
-from datetime import datetime, timezone
 import uuid
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Dict, List, Optional
+
+from pydantic import BaseModel
 
 
 class ProviderType(str, Enum):

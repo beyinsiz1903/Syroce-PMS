@@ -64,7 +64,7 @@ async def validate_startup(*, strict: bool = False) -> Dict[str, any]:
 
     # ── 2. Secrets Manager ────────────────────────────────────────
     try:
-        from core.secrets import get_secrets_manager, get_secrets_config
+        from core.secrets import get_secrets_config, get_secrets_manager
         config = get_secrets_config()
         sm = get_secrets_manager()
         await sm.ensure_indexes()

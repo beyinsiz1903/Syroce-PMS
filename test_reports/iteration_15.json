@@ -82,7 +82,7 @@
   "context_for_next_testing_agent": "RoomBlockRelease semantic migration fully tested and working. Backend tests validate happy path, idempotency, validation (missing key, wrong property, wrong tenant), and availability projection. Outbox events and audit logs confirmed in MongoDB (hotel_pms database). Frontend Idempotency-Key header integration in PMSModule.js is correct. Minor frontend navigation issue where /pms route redirects to dashboard - may need to test PMS module via nav menu click instead of direct URL.",
 
   "test_environment": {
-    "backend_url": "https://docker-build-fix-1.preview.emergentagent.com",
+    "backend_url": "https://debt-cleanup-1.preview.emergentagent.com",
     "mongodb": "mongodb://localhost:27017/hotel_pms",
     "database_stats": {
       "outbox_events": 124,

@@ -10,7 +10,7 @@ Architecture:
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, Literal
+from typing import Any, Dict, Optional
 
 from core.database import db
 

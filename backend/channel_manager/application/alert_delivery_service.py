@@ -19,12 +19,13 @@ import asyncio
 import hashlib
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 import httpx
 
 from core.database import db
+
 from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.alert_delivery")
@@ -227,8 +228,8 @@ class AlertDeliveryService:
     async def _send_email_smtp(self, config: Dict, to: str, subject: str, body: str) -> bool:
         """Send email via SMTP (asyncio-compatible)."""
         import smtplib
-        from email.mime.text import MIMEText
         from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
 
         smtp_host = config.get("smtp_host", "")
         smtp_port = int(config.get("smtp_port", 587))

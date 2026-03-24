@@ -10,11 +10,12 @@ Broadcasts real-time events to connected admin clients:
 
 Uses a simple in-process pub/sub pattern with connected WebSocket clients.
 """
-import logging
-import json
 import asyncio
+import json
+import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, Set
+from typing import Any, Dict, Set
+
 from fastapi import WebSocket
 
 logger = logging.getLogger("channel_manager.application.ws_realtime")

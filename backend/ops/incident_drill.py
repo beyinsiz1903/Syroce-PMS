@@ -5,16 +5,16 @@ Simulates production incidents: worker failure, provider outage,
 database latency, cache failure. Measures detection latency,
 alert generation, recovery effectiveness, MTTA/MTTR.
 """
-import uuid
-import time
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
+import time
+import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Dict
 
+from common.audit_hook import SEVERITY_WARNING, audited
 from common.context import OperationContext
 from common.result import ServiceResult
-from common.audit_hook import audited, SEVERITY_WARNING
 
 logger = logging.getLogger(__name__)
 

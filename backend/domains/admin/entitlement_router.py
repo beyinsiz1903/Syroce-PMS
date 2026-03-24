@@ -2,33 +2,33 @@
 Entitlement, Metering & Feature Flags — Admin API
 Super-admin endpoints for viewing/managing entitlements, usage, and feature flags.
 """
-from fastapi import APIRouter, HTTPException, Depends, Query
-from typing import Optional, Dict, Any
 from datetime import datetime, timezone
+from typing import Dict, Optional
 
-from core.database import db, _raw_db
-from core.security import get_current_user
-from core.helpers import require_super_admin_guard
-from models.schemas import User
-from core.metering import (
-    get_tenant_usage_summary,
-    get_tenant_usage_timeline,
-    get_system_usage_overview,
-    flush_buffer,
-)
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from core.database import _raw_db
 from core.entitlement import (
-    get_tenant_entitlements,
     check_quota,
+    get_tenant_entitlements,
 )
 from core.feature_flags import (
-    list_flags,
-    get_flag,
-    upsert_flag,
     delete_flag,
-    set_tenant_override,
-    remove_tenant_override,
+    get_flag,
     is_flag_enabled,
+    list_flags,
+    remove_tenant_override,
+    set_tenant_override,
+    upsert_flag,
 )
+from core.helpers import require_super_admin_guard
+from core.metering import (
+    flush_buffer,
+    get_system_usage_overview,
+    get_tenant_usage_summary,
+    get_tenant_usage_timeline,
+)
+from models.schemas import User
 
 require_super_admin = require_super_admin_guard()
 
@@ -247,10 +247,10 @@ async def api_check_flag_for_tenant(
 # ─── ONBOARDING ───
 
 from core.onboarding import (
+    get_all_onboarding_status,
     get_onboarding_progress,
     mark_step_complete,
     reset_onboarding,
-    get_all_onboarding_status,
 )
 
 

@@ -4,8 +4,8 @@ Manages scheduled and event-driven inventory synchronization.
 """
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict
 
 from core.database import db
 

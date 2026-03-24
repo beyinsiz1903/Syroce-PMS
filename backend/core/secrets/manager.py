@@ -19,10 +19,10 @@ Usage:
 import logging
 from typing import Any, Dict, Optional
 
+from .audit import SecretAuditLogger
 from .config import SecretsConfig, get_secrets_config
 from .naming import SecretIdentity
-from .provider import SecretsProviderBase, SecretMetadata
-from .audit import SecretAuditLogger
+from .provider import SecretMetadata, SecretsProviderBase
 
 logger = logging.getLogger("core.secrets.manager")
 
@@ -34,6 +34,7 @@ def _build_provider(config: SecretsConfig) -> SecretsProviderBase:
         return AWSSecretsProvider(region=config.aws_region)
     elif config.provider == "vault":
         import os
+
         from .vault_provider import VaultSecretsProvider
         return VaultSecretsProvider(
             vault_addr=os.environ.get("VAULT_ADDR", ""),

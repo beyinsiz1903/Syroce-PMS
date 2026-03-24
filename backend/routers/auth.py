@@ -2,23 +2,32 @@
 Auth Router - Authentication, Registration, Email Verification, Password Reset
 Extracted from server.py for modularity.
 """
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, EmailStr
 
-from core.database import db
-from core.security import (
-    get_current_user, hash_password, verify_password,
-    create_token, JWT_EXPIRATION_HOURS,
-)
+from core.database import db as _tenant_db  # noqa: F401
 from core.helpers import load_tenant_doc, resolve_tenant_features
+from core.security import (
+    JWT_EXPIRATION_HOURS,
+    create_token,
+    get_current_user,
+    hash_password,
+    verify_password,
+)
+from core.tenant_db import get_system_db
 from models.enums import UserRole
 from models.schemas import (
-    User, Tenant, TenantRegister, GuestRegister, UserLogin,
-    TokenResponse, NotificationPreferences,
+    GuestRegister,
+    NotificationPreferences,
+    Tenant,
+    TenantRegister,
+    TokenResponse,
+    User,
+    UserLogin,
 )
 
 try:
@@ -28,6 +37,9 @@ except ImportError:
         def decorator(func):
             return func
         return decorator
+
+# Auth operations are system-level (no tenant context during login/register)
+db = get_system_db()
 
 router = APIRouter(prefix="/api", tags=["auth"])
 security = HTTPBearer()
@@ -229,6 +241,7 @@ async def register_guest(data: GuestRegister):
 @router.post("/auth/login", response_model=TokenResponse)
 async def login(data: UserLogin):
     import hashlib as _hl
+
     from infra.simple_cache import simple_cache as _login_cache
 
     cache_key = f"login:{_hl.sha256(f'{data.email}:{data.password}'.encode()).hexdigest()[:24]}"
@@ -292,7 +305,7 @@ async def login(data: UserLogin):
     # Usage metering
     if user.tenant_id:
         try:
-            from core.metering import record_usage, UsageEventType
+            from core.metering import UsageEventType, record_usage
             await record_usage(user.tenant_id, UsageEventType.LOGIN)
         except Exception:
             pass

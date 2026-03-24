@@ -3,14 +3,14 @@ Redis Pub/Sub Backend for Event Bus — Production Mode.
 Connection manager, health check, reconnect strategy, delivery metrics,
 channel cardinality monitoring, backpressure safety, and observability hooks.
 """
-import logging
-import json
 import asyncio
+import json
+import logging
 import os
 import time
 import uuid
-from typing import Callable, Dict, Optional, List
 from datetime import datetime, timezone
+from typing import Callable, Dict, List, Optional
 
 logger = logging.getLogger("event_bus.redis")
 

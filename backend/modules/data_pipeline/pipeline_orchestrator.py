@@ -5,11 +5,11 @@ feature extraction -> dataset generation -> model training -> deployment -> pred
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from core.database import db
-from modules.data_pipeline.feature_store import feature_store
 from modules.data_pipeline.dataset_generator import dataset_generator
+from modules.data_pipeline.feature_store import feature_store
 from modules.data_pipeline.model_registry import model_registry
 from modules.data_pipeline.prediction_service import prediction_service
 from shared_kernel.audit_helper import audit_log

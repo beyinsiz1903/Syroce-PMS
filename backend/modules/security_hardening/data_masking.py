@@ -3,7 +3,7 @@ Data Masking - Sensitive data masking for API responses and logs.
 """
 import logging
 import re
-from typing import Dict, Any
+from typing import Any, Dict
 
 logger = logging.getLogger("security.masking")
 

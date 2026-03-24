@@ -3,9 +3,9 @@ Error Tracker — production error classification, tracking, and persistence.
 """
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, List
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Optional
 
 logger = logging.getLogger("observability.error_tracker")
 

@@ -7,9 +7,9 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Optional, Dict, Any
-from datetime import datetime, timezone
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger("infra.distributed_lock")
 

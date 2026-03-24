@@ -4,10 +4,11 @@ Domain Router: Sales CRM, Marketing & Service Recovery
 Extracted from legacy_routes.py — leads, funnel, activities,
 campaigns, segments, complaints, spa, events.
 """
-from fastapi import APIRouter, Depends
-from typing import Optional
-from datetime import datetime, timezone
 import uuid
+from datetime import datetime, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends
 
 from core.database import db
 from core.security import get_current_user

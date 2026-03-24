@@ -2,7 +2,7 @@
 PMS Dashboard Service - Aggregates operational data for the PMS dashboard.
 Arrivals, departures, in-house, room status, folio issues, audit exceptions.
 """
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict
 
 from core.database import db

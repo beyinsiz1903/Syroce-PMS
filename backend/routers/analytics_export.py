@@ -1,12 +1,14 @@
 """
 Analytics Export Router.
 """
+import io
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
 from core.security import get_current_user
 from models.schemas import User
-import io
 
 router = APIRouter(prefix="/api/reports/export", tags=["analytics-export"])
 
@@ -16,8 +18,8 @@ _service = None
 def _get_service():
     global _service
     if _service is None:
-        from server import db
         from modules.analytics_export.service import AnalyticsExportService
+        from server import db
         _service = AnalyticsExportService(db)
     return _service
 

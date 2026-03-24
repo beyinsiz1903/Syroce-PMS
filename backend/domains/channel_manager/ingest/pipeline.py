@@ -17,18 +17,22 @@ Unified ingest pipeline with full traceability and hardening:
 TIMELINE: Writes normalized, deduplicated, validated stages for end-to-end traceability.
 """
 import logging
-import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from domains.channel_manager import unified_repository as repo
 from domains.channel_manager.data_model import (
-    ConnectorProvider, CaseType, CaseSeverity, CaseStatus,
-    ReconciliationCase, ReservationLineage, ProcessingStatus,
+    CaseSeverity,
+    CaseStatus,
+    CaseType,
+    ConnectorProvider,
     MutationType,
+    ReconciliationCase,
+    ReservationLineage,
 )
-from .normalizer import normalize, compute_canonical_hash
-from .decision_engine import decide, detect_mutation_type, IngestDecision
+
+from .decision_engine import IngestDecision, decide, detect_mutation_type
+from .normalizer import compute_canonical_hash, normalize
 
 logger = logging.getLogger("ingest.pipeline")
 
@@ -46,7 +50,6 @@ def _timeline_append(**kwargs):
         from controlplane.timeline_writer import get_timeline_writer
         return get_timeline_writer().append(**kwargs)
     except Exception:
-        import asyncio
         async def _noop():
             return None
         return _noop()
@@ -599,8 +602,8 @@ async def _trigger_import_bridge(
     DATA-001: After a new lineage record is created, classify and enqueue
     for PMS booking import.
     """
-    from core.import_decision import classify_for_import, check_already_imported
     from core.import_bridge_service import create_import_record
+    from core.import_decision import check_already_imported, classify_for_import
 
     ext_res_id = canonical.get("external_reservation_id", "")
 

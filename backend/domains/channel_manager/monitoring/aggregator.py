@@ -13,17 +13,16 @@ Health Domains:
   5. Queue & Worker Health
 """
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict
 
 from core.database import db
 from domains.channel_manager.data_model import (
+    COLL_ARI_CHANGE_SETS,
+    COLL_ARI_DRIFT_STATE,
+    COLL_ARI_OUTBOUND_LOGS,
     COLL_PROVIDER_CONNECTIONS,
     COLL_RAW_CHANNEL_EVENTS,
-    COLL_RESERVATION_LINEAGE,
-    COLL_ARI_CHANGE_SETS,
-    COLL_ARI_OUTBOUND_LOGS,
-    COLL_ARI_DRIFT_STATE,
     COLL_RECONCILIATION_CASES,
 )
 

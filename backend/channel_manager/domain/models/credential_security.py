@@ -4,7 +4,8 @@ secret rotation, and secure credential lifecycle management.
 """
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
 

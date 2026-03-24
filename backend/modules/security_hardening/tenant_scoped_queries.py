@@ -4,7 +4,7 @@ Every database query must pass through tenant context validation.
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 from core.database import db
 

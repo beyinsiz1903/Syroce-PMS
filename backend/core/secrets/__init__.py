@@ -9,8 +9,8 @@ Provides a unified, multi-backend secrets manager with:
   - Access auditing
   - Migration support from legacy stores
 """
-from .manager import get_secrets_manager, SecretsManager
 from .config import SecretsConfig, get_secrets_config
+from .manager import SecretsManager, get_secrets_manager
 from .naming import SecretIdentity
 
 __all__ = [

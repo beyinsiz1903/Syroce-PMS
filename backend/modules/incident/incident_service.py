@@ -4,14 +4,14 @@ Incident Response & Recovery Service
 Tooling for first production incidents: stuck worker recovery, queue replay,
 drift workflow, degraded service detection, incident lifecycle management.
 """
-import uuid
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 
+from common.audit_hook import SEVERITY_CRITICAL, SEVERITY_WARNING, audited
 from common.context import OperationContext
 from common.result import ServiceResult
-from common.audit_hook import audited, SEVERITY_WARNING, SEVERITY_CRITICAL
 
 logger = logging.getLogger(__name__)
 

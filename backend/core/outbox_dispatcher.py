@@ -9,8 +9,6 @@ Error classification determines retry vs. permanent failure.
 import logging
 from typing import Any, Dict, Tuple
 
-from core.database import db
-
 logger = logging.getLogger("core.outbox_dispatcher")
 
 

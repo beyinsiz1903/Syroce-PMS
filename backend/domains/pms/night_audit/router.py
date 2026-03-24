@@ -3,14 +3,15 @@ Night Audit — API Router (NA-001 / NA-002 Hardened)
 Exposes hardened night audit execution, status, items, resume, abort,
 plus legacy schedule management and financial reporting.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
 import logging
 from datetime import datetime, timezone
 
-from core.security import get_current_user
-from models.schemas import User
+from fastapi import APIRouter, Depends, HTTPException, Query
+
 from common.context import OperationContext
-from domains.pms.night_audit.schemas import RunNightAuditRequest, NightAuditScheduleRequest
+from core.security import get_current_user
+from domains.pms.night_audit.schemas import NightAuditScheduleRequest, RunNightAuditRequest
+from models.schemas import User
 
 logger = logging.getLogger(__name__)
 
@@ -180,8 +181,8 @@ async def get_schedule_status(current_user: User = Depends(get_current_user)):
 
 @router.get("/financial-summary")
 async def get_financial_summary(date: str = Query(None), current_user: User = Depends(get_current_user)):
-    from domains.pms.night_audit.service import night_audit_core_service
     from domains.pms.night_audit.financial_service import financial_service
+    from domains.pms.night_audit.service import night_audit_core_service
     ctx = OperationContext.from_user(current_user)
     if not date:
         bd_result = await night_audit_core_service.get_business_date(ctx)
@@ -192,8 +193,8 @@ async def get_financial_summary(date: str = Query(None), current_user: User = De
 
 @router.get("/payment-reconciliation")
 async def get_payment_reconciliation(date: str = Query(None), current_user: User = Depends(get_current_user)):
-    from domains.pms.night_audit.service import night_audit_core_service
     from domains.pms.night_audit.financial_service import financial_service
+    from domains.pms.night_audit.service import night_audit_core_service
     ctx = OperationContext.from_user(current_user)
     if not date:
         bd_result = await night_audit_core_service.get_business_date(ctx)
@@ -217,8 +218,8 @@ async def get_financial_report(
 
 @router.get("/integrity-check")
 async def get_integrity_check(date: str = Query(None), current_user: User = Depends(get_current_user)):
-    from domains.pms.night_audit.service import night_audit_core_service
     from domains.pms.night_audit.financial_service import financial_service
+    from domains.pms.night_audit.service import night_audit_core_service
     ctx = OperationContext.from_user(current_user)
     if not date:
         bd_result = await night_audit_core_service.get_business_date(ctx)

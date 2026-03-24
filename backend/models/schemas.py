@@ -3,22 +3,52 @@ Syroce PMS - Pydantic Schema Definitions
 All request/response models used across the application.
 Extracted from server.py for modularity.
 """
-from pydantic import BaseModel, Field, ConfigDict, EmailStr
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
 import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
 from fastapi import HTTPException
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from models.enums import (
-    UserRole, RoomStatus, BookingStatus, PaymentStatus, PaymentMethod,
-    InvoiceStatus, LoyaltyTier, ChannelType, ChannelStatus,
-    FolioType, FolioStatus, ChargeCategory, FolioOperationType, PaymentType,
-    DepartmentType, RiskLevel, MaintenanceTaskStatus, MaintenancePriority,
-    ContractedRateType, RateType, MarketSegment, CancellationPolicyType,
-    CompanyStatus, OTAChannel, MappingStatus, PricingStrategy, OrderStatus,
-    OutletType, GuestRequestType, GuestRequestStatus, CheckInStatus,
-    InspectionStatus, LostFoundStatus, WarehouseLocation, MaintenanceType,
-    MeasurementUnit, RoomServiceStatus, OTAPaymentModel,
+    BookingStatus,
+    CancellationPolicyType,
+    ChannelStatus,
+    ChannelType,
+    ChargeCategory,
+    CheckInStatus,
+    CompanyStatus,
+    ContractedRateType,
+    DepartmentType,
+    FolioOperationType,
+    FolioStatus,
+    FolioType,
+    GuestRequestStatus,
+    GuestRequestType,
+    InspectionStatus,
+    InvoiceStatus,
+    LostFoundStatus,
+    LoyaltyTier,
+    MaintenancePriority,
+    MaintenanceTaskStatus,
+    MaintenanceType,
+    MappingStatus,
+    MarketSegment,
+    MeasurementUnit,
+    OrderStatus,
+    OTAChannel,
+    OTAPaymentModel,
+    OutletType,
+    PaymentMethod,
+    PaymentStatus,
+    PaymentType,
+    PricingStrategy,
+    RateType,
+    RiskLevel,
+    RoomServiceStatus,
+    RoomStatus,
+    UserRole,
+    WarehouseLocation,
 )
 
 # ============= MODELS =============

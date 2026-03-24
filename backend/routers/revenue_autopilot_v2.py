@@ -2,8 +2,10 @@
 Revenue Autopilot Router - Policy, approval queue, apply, rollback, dashboard.
 """
 from typing import Optional
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
+
 from core.security import get_current_user
 from models.schemas import User
 
@@ -15,8 +17,8 @@ _service = None
 def _get_service():
     global _service
     if _service is None:
-        from server import db
         from modules.revenue_autopilot.service import RevenueAutopilotService
+        from server import db
         _service = RevenueAutopilotService(db)
     return _service
 

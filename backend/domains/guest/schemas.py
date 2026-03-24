@@ -2,11 +2,12 @@
 Guest Domain — Schemas
 Request/response models extracted from guest routers.
 """
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional, Dict
+import uuid
 from datetime import datetime, timezone
 from enum import Enum
-import uuid
+from typing import Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class GuestStayHistory(BaseModel):

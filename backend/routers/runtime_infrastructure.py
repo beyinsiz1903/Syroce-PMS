@@ -133,9 +133,9 @@ async def get_alert_engine_status(current_user: User = Depends(get_current_user)
 
 @router.get("/observability/summary")
 async def get_observability_summary(current_user: User = Depends(get_current_user)):
-    from modules.observability.metrics_collector import metrics
     from modules.observability.distributed_tracing import tracing
     from modules.observability.error_tracker import error_tracker
+    from modules.observability.metrics_collector import metrics
     from modules.observability.service_health import service_health
 
     dashboard_metrics = metrics.get_dashboard_metrics()

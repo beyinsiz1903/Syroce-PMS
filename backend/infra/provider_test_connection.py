@@ -4,11 +4,11 @@ latency measurement, failure classification, and audit logging for all external 
 
 Supports: Twilio SMS, SendGrid Email, WhatsApp, Redis, Sentry, OTel Exporter.
 """
+import logging
 import os
 import time
-import logging
-from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("infra.provider_test_connection")
 

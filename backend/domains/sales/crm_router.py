@@ -2,19 +2,21 @@
 Sales / CRM Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends, Header
-from fastapi.security import HTTPAuthorizationCredentials
-from typing import Optional
-from datetime import datetime, timezone, timedelta
-import uuid
 import logging
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
 
 from core.database import db
 from core.security import (
-    get_current_user, security,
+    get_current_user,
+    security,
 )
-from models.schemas import User
 from models.enums import CompanyStatus
+from models.schemas import User
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +24,12 @@ router = APIRouter(prefix="/api", tags=["Sales / CRM"])
 
 
 from domains.sales.schemas import (  # noqa: E402
-    CreateLeadRequest, UpdateLeadStageRequest,
-    PmsLiteLeadStatus, PmsLiteLeadMetadata, PmsLiteLeadCreateRequest,
+    CreateLeadRequest,
+    PmsLiteLeadCreateRequest,
+    PmsLiteLeadMetadata,
+    PmsLiteLeadStatus,
+    UpdateLeadStageRequest,
 )
-
 
 
 @router.get("/sales/customers")

@@ -19,16 +19,17 @@ Checks:
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
 
-from ..connectors.hotelrunner.client import HotelRunnerClient
-from ..connectors.hotelrunner.auth import HotelRunnerAuth
 from ..connectors.hotelrunner import xml_parser
+from ..connectors.hotelrunner.auth import HotelRunnerAuth
+from ..connectors.hotelrunner.client import HotelRunnerClient
 from ..connectors.hotelrunner.errors import (
-    AuthenticationError, ProviderUnavailableError,
+    AuthenticationError,
+    ProviderUnavailableError,
 )
 from ..connectors.hotelrunner.retry_policy import RetryPolicy
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
+from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.sandbox_validation")

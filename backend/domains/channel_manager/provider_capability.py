@@ -10,8 +10,8 @@ Every provider difference should be encoded here, not scattered
 across ad-hoc if-else branches.
 """
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 from enum import Enum
+from typing import Dict, List
 
 from .data_model import ConnectorProvider, ErrorClass
 

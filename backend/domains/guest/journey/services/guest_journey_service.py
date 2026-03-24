@@ -4,7 +4,7 @@ Business logic for guest profile and journey management. No FastAPI dependencies
 """
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from domains.guest.journey.repositories.guest_repository import GuestRepository
 

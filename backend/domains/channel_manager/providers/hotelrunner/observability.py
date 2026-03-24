@@ -6,7 +6,6 @@ Records provider call metrics, logs, and health indicators.
 Writes to monitoring_metrics and ari_outbound_logs collections.
 """
 import logging
-import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 

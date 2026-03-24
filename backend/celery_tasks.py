@@ -3,19 +3,16 @@ Celery Tasks for Background Processing
 All long-running and periodic tasks
 """
 
-from celery_app import celery_app
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
-from datetime import datetime, timedelta, timezone
 import asyncio
 import logging
-from typing import Dict, Any, Optional
-from integrations.booking import (
-    BookingIntegrationLogger,
-    BookingCredentialManager,
-    BookingAPIClient,
-    BookingReservationMapper
-)
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
+
+from motor.motor_asyncio import AsyncIOMotorClient
+
+from celery_app import celery_app
+from integrations.booking import BookingAPIClient, BookingCredentialManager, BookingIntegrationLogger, BookingReservationMapper
 from server import ChannelType
 
 logger = logging.getLogger(__name__)
@@ -113,7 +110,7 @@ async def _booking_pull_async(tenant_id: str):
 
             if guest_id and room_id:
                 booking_payload = mapper.to_booking_payload(reservation, guest_id, room_id)
-                from core.atomic_booking import create_booking_atomic, BookingConflictError
+                from core.atomic_booking import BookingConflictError, create_booking_atomic
                 try:
                     await create_booking_atomic(booking_payload)
                 except BookingConflictError:
@@ -496,6 +493,7 @@ async def _warm_cache_async():
     
     try:
         import redis
+
         from advanced_cache import AdvancedCacheManager, CacheWarmer
         from materialized_views import MaterializedViewsManager
         

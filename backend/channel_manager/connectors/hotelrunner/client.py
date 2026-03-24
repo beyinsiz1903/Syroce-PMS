@@ -12,19 +12,23 @@ import logging
 import time
 import uuid as _uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
+from . import xml_builder, xml_parser
 from .auth import HotelRunnerAuth
+from .errors import (
+    AcknowledgementError,
+    AuthenticationError,
+    ConnectorError,
+    PaginationExhaustedError,
+    ProviderUnavailableError,
+    RateLimitError,
+    ResponseParseError,
+)
 from .rate_limit import RateLimiter
 from .retry_policy import RetryPolicy
-from .errors import (
-    ConnectorError, AuthenticationError, RateLimitError,
-    ProviderUnavailableError, ResponseParseError,
-    PaginationExhaustedError, AcknowledgementError,
-)
-from . import xml_builder, xml_parser
 
 logger = logging.getLogger("channel_manager.hotelrunner.client")
 

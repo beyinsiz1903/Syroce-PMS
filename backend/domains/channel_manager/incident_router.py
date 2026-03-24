@@ -8,7 +8,7 @@ Endpoints for managing operational incidents:
 - Audit trail per incident
 """
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,15 +16,16 @@ from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user
-from models.schemas import User
-from domains.channel_manager.data_model import (
-    COLL_RECONCILIATION_CASES, COLL_RESERVATION_LINEAGE,
-    COLL_ROOM_MAPPINGS, COLL_RATE_PLAN_MAPPINGS,
-)
 from domains.channel_manager.ari.models import COLL_ARI_CHANGE_SETS
-from domains.channel_manager.reconciliation_truth import (
-    get_resolution_for_drift, can_auto_heal,
+from domains.channel_manager.data_model import (
+    COLL_RECONCILIATION_CASES,
+    COLL_RESERVATION_LINEAGE,
 )
+from domains.channel_manager.reconciliation_truth import (
+    can_auto_heal,
+    get_resolution_for_drift,
+)
+from models.schemas import User
 
 logger = logging.getLogger("incident.panel")
 router = APIRouter(prefix="/api/ops/incidents", tags=["Operator Incident Panel"])

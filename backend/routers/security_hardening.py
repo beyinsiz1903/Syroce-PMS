@@ -1,16 +1,16 @@
 """
 Security Hardening Router - API endpoints for multi-tenant security.
 """
-from fastapi import APIRouter, Depends, Query, Body
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
-from shared_kernel.tenancy_context import get_current_tenant, TenantContext
+from fastapi import APIRouter, Body, Depends, Query
 
-from modules.security_hardening.tenant_scoped_queries import tenant_query_guard
-from modules.security_hardening.property_permissions import property_permissions
+from modules.security_hardening.audit_completeness import audit_completeness
 from modules.security_hardening.credential_vault import credential_vault
 from modules.security_hardening.data_masking import data_masking
-from modules.security_hardening.audit_completeness import audit_completeness
+from modules.security_hardening.property_permissions import property_permissions
+from modules.security_hardening.tenant_scoped_queries import tenant_query_guard
+from shared_kernel.tenancy_context import TenantContext, get_current_tenant
 
 router = APIRouter(prefix="/api/security-hardening", tags=["security-hardening"])
 

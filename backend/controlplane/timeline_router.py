@@ -13,6 +13,7 @@ from typing import Optional
 from fastapi import APIRouter, Query
 
 from core.database import db
+
 from .timeline_reader import get_timeline_reader
 
 logger = logging.getLogger("controlplane.timeline_router")

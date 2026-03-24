@@ -28,10 +28,10 @@ Usage in system operations (startup, health):
     raw = get_system_db()
     await raw.rooms.create_index(...)
 """
-import os
 import logging
-from contextvars import ContextVar
+import os
 from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, Dict, Optional, Set
 
 logger = logging.getLogger("core.tenant_db")
@@ -287,6 +287,34 @@ class TenantScopedDB:
         return self.__getattr__(name)
 
 
+class SchemaOnlyCollection:
+    """
+    Guarded wrapper that allows only schema operations (indexes) but
+    blocks data operations. Used in STRICT_TENANT_MODE when a
+    tenant-scoped collection is accessed without tenant context.
+    """
+
+    __slots__ = ("_coll", "_name")
+
+    _SCHEMA_OPS = frozenset({
+        "create_index", "create_indexes", "list_indexes", "drop_index",
+        "index_information", "name", "full_name",
+    })
+
+    def __init__(self, collection, name: str):
+        self._coll = collection
+        self._name = name
+
+    def __getattr__(self, attr: str):
+        if attr in SchemaOnlyCollection._SCHEMA_OPS:
+            return getattr(self._coll, attr)
+        raise TenantViolationError(
+            f"Data operation '{attr}' on tenant-scoped collection '{self._name}' "
+            f"without tenant context is forbidden (STRICT_TENANT_MODE=true). "
+            f"Use get_system_db() for system ops or set tenant context."
+        )
+
+
 # ── TenantAwareDBProxy (transparent) ───────────────────────────
 
 class TenantAwareDBProxy:
@@ -295,7 +323,8 @@ class TenantAwareDBProxy:
     Reads tenant_id from contextvars (set by middleware).
 
     - If tenant context exists → returns TenantScopedCollection
-    - If no context + STRICT_MODE → raises TenantViolationError
+    - If no context + STRICT_MODE → returns SchemaOnlyCollection
+      (allows index creation, blocks data operations)
     - If no context + soft mode → returns raw collection with warning
     """
 
@@ -340,10 +369,8 @@ class TenantAwareDBProxy:
         # No tenant context
         if name in TENANT_SCOPED_COLLECTIONS:
             if STRICT_TENANT_MODE:
-                raise TenantViolationError(
-                    f"Access to tenant-scoped collection '{name}' "
-                    f"without tenant context is forbidden (STRICT_TENANT_MODE=true)"
-                )
+                # Return schema-only wrapper: allows indexes, blocks data ops
+                return SchemaOnlyCollection(raw_coll, name)
             # Soft mode: warn but allow (for startup, health, auth)
             return raw_coll
 

@@ -7,11 +7,11 @@ and the rules for drift resolution.
 
 This is the system's constitutional document for data ownership.
 """
+from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Any, List
-from dataclasses import dataclass, field
+from typing import Any, Dict, List
 
-from .data_model import DriftType, DriftResolution
+from .data_model import DriftResolution, DriftType
 
 
 class GoldSource(str, Enum):

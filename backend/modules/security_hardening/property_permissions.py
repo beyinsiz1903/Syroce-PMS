@@ -3,7 +3,7 @@ Property-Scoped Permissions - RBAC enforcement at the property level.
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from core.database import db
 

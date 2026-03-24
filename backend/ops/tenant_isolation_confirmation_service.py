@@ -5,13 +5,13 @@ Production-grade tenant isolation validation:
 cross-tenant access, cache isolation, queue scope,
 websocket room isolation, noisy tenant simulation.
 """
-import uuid
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Dict
 
-from common.result import ServiceResult
 from common.context import OperationContext
+from common.result import ServiceResult
 
 logger = logging.getLogger(__name__)
 

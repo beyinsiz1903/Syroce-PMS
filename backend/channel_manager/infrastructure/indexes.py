@@ -3,6 +3,7 @@ Channel Manager MongoDB Index Initialization.
 Run once during application startup to create required indexes.
 """
 import logging
+
 from core.database import db
 
 logger = logging.getLogger("channel_manager.infrastructure.indexes")

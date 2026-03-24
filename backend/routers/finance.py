@@ -3,42 +3,54 @@ FINANCE Router - Extracted from server.py
 """
 import asyncio
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import List, Optional, Dict, Any
+from datetime import datetime, timedelta, timezone
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, ConfigDict, EmailStr
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 try:
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side  # noqa: F401
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side  # noqa: F401
     from openpyxl.utils import get_column_letter  # noqa: F401
 except ImportError:
     Workbook = None
 
 from core.database import db
-from core.security import get_current_user
 from core.helpers import (
-    require_module, create_audit_log,
+    create_audit_log,
+    require_module,
 )
-from models.enums import (
-    PaymentStatus,
-    ChargeCategory, FolioOperationType,
-)
-from models.schemas import (
-    User, Folio, FolioCreate, FolioCharge, ChargeCreate,
-    Payment, PaymentCreate, FolioOperation, FolioOperationCreate,
-    Invoice, InvoiceCreate, CashFlow,
-    CityLedgerTransaction,
-    GenerateInvoiceFromFolioRequest, ConvertCurrencyRequest,
-    CreateCurrencyRateRequest, CreateMultiCurrencyInvoiceRequest,
-)
-
+from core.security import get_current_user
 from core.utils import (
     calculate_folio_balance,
     excel_response,
+)
+from models.enums import (
+    ChargeCategory,
+    FolioOperationType,
+    PaymentStatus,
+)
+from models.schemas import (
+    CashFlow,
+    ChargeCreate,
+    CityLedgerTransaction,
+    ConvertCurrencyRequest,
+    CreateCurrencyRateRequest,
+    CreateMultiCurrencyInvoiceRequest,
+    Folio,
+    FolioCharge,
+    FolioCreate,
+    FolioOperation,
+    FolioOperationCreate,
+    GenerateInvoiceFromFolioRequest,
+    Invoice,
+    InvoiceCreate,
+    Payment,
+    PaymentCreate,
+    User,
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService

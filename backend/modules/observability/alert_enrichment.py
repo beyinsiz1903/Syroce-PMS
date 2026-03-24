@@ -5,11 +5,11 @@ Production-grade alert rules engine with severity mapping, cooldown/dedupe,
 runbook hints, blast radius assessment, and route compatibility
 (Grafana/Alertmanager/PagerDuty/Slack).
 """
-import uuid
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional
+import uuid
+from datetime import datetime, timedelta, timezone
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
 from common.context import OperationContext
 from common.result import ServiceResult

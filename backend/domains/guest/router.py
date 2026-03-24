@@ -4,10 +4,11 @@ Domain Router: Guest Profile Management
 Extracted from legacy_routes.py — VIP protocols, blacklist, celebrations,
 enhanced preferences, complete profile, VIP list.
 """
-from fastapi import APIRouter, HTTPException, Depends
-from typing import Optional
-from datetime import datetime, timezone, date
 import uuid
+from datetime import date, datetime, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from core.database import db
 from core.security import get_current_user

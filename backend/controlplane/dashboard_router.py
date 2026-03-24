@@ -28,11 +28,11 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Query, Body
+from fastapi import APIRouter, Body, Query
 
 from .dashboard_aggregator import (
-    get_dashboard_aggregator,
     COLL_SNAPSHOTS,
+    get_dashboard_aggregator,
 )
 
 logger = logging.getLogger("controlplane.dashboard_router")
@@ -317,10 +317,12 @@ async def get_ops_kpis_endpoint(
     hours: int = Query(24, ge=1, le=168),
 ):
     """Unified KPI panel data — MTTR, drift trend, sync success, auto-heal stats."""
-    from core.database import db as _db
-    from .drift_alerting import get_drift_alert_summary, COLL_DRIFT_ALERTS, COLL_DRIFT_EVAL_LOG
-    from .auto_actions import COLL_AUTO_ACTIONS
     from datetime import datetime, timedelta, timezone
+
+    from core.database import db as _db
+
+    from .auto_actions import COLL_AUTO_ACTIONS
+    from .drift_alerting import COLL_DRIFT_EVAL_LOG, get_drift_alert_summary
 
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(hours=hours)).isoformat()

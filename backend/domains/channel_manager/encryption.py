@@ -10,7 +10,7 @@ continue to work without changes.
 import logging
 import os
 
-from core.crypto import get_crypto_service, AADContext, mask_value
+from core.crypto import AADContext, get_crypto_service, mask_value
 
 logger = logging.getLogger(__name__)
 

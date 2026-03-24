@@ -16,8 +16,8 @@ Safety:
   - Supports dry-run mode
   - Idempotent: skip already-migrated records
 """
-import asyncio
 import argparse
+import asyncio
 import logging
 import os
 import sys

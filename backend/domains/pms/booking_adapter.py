@@ -7,7 +7,7 @@ Booking.com connectivity API payloads.
 For now, this is a skeleton that **normalizes** the internal data and logs it.
 Real HTTP calls to Booking.com can be added later in a controlled way.
 """
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 from _legacy.booking_availability import normalize_availability_response
 

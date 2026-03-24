@@ -2,20 +2,22 @@
 Channel Manager / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends, Request
+import logging
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta
-import uuid
-import logging
 
 from core.database import db
 from core.security import (
-    get_current_user, security,
+    get_current_user,
+    security,
 )
-from models.schemas import User, RoomMappingCreate
-from models.enums import ChannelType, ChannelStatus, ParityStatus
+from models.enums import ChannelStatus, ChannelType, ParityStatus
+from models.schemas import RoomMappingCreate, User
 
 logger = logging.getLogger(__name__)
 
@@ -296,7 +298,7 @@ async def import_ota_reservation(
     booking_dict['check_in'] = booking_dict['check_in'].isoformat()
     booking_dict['check_out'] = booking_dict['check_out'].isoformat()
     booking_dict['created_at'] = booking_dict['created_at'].isoformat()
-    from core.atomic_booking import create_booking_atomic, BookingConflictError
+    from core.atomic_booking import BookingConflictError, create_booking_atomic
     try:
         await create_booking_atomic(booking_dict)
     except BookingConflictError as e:

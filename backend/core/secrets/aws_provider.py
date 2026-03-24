@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from .provider import SecretsProviderBase, SecretPayload, SecretMetadata
+from .provider import SecretMetadata, SecretPayload, SecretsProviderBase
 
 logger = logging.getLogger("core.secrets.aws")
 

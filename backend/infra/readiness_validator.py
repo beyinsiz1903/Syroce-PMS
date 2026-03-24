@@ -3,8 +3,8 @@ Production Readiness Validator — Comprehensive system health check
 that aggregates all subsystem statuses into READY / DEGRADED / NOT_READY.
 """
 import logging
-from typing import Dict, Any
 from datetime import datetime, timezone
+from typing import Any, Dict
 
 logger = logging.getLogger("infra.readiness_validator")
 

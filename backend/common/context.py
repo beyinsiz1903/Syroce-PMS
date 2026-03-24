@@ -3,8 +3,8 @@ Common — Operation Context
 Carries tenant, property, actor, and audit info through service calls.
 """
 from dataclasses import dataclass, field
-from typing import Optional
 from datetime import datetime, timezone
+from typing import Optional
 
 
 @dataclass(frozen=True)

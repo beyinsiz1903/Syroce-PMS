@@ -4,16 +4,15 @@ Scheduled pull via OTA_ReadRQ → common ingest pipeline.
 """
 import asyncio
 import logging
-import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict
 
 from core.database import db
-from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
-from domains.channel_manager.providers.exely.provider import ExelyProvider
-from domains.channel_manager.providers.exely.normalizer import normalize_reservation
-from domains.channel_manager.providers.exely.auto_import import auto_import_pending
 from domains.channel_manager.credential_vault import get_decrypted_credentials
+from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
+from domains.channel_manager.providers.exely.auto_import import auto_import_pending
+from domains.channel_manager.providers.exely.normalizer import normalize_reservation
+from domains.channel_manager.providers.exely.provider import ExelyProvider
 
 logger = logging.getLogger(__name__)
 

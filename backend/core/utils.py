@@ -2,14 +2,13 @@
 Syroce PMS - Shared Utility Functions
 Used across multiple routers. Extracted from server.py to avoid circular imports.
 """
-import io
 import base64
+import io
 import secrets
-from datetime import datetime, timezone, timedelta
-from typing import List, Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, List
 
 from core.database import db
-
 
 # ── Folio Helpers ──
 
@@ -50,7 +49,7 @@ async def calculate_folio_balance(folio_id: str, tenant_id: str) -> float:
 def create_excel_workbook(title: str, headers: List[str], data: List[List[Any]], sheet_name: str = "Report"):
     """Create a formatted Excel workbook with data"""
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
     wb = Workbook()
@@ -153,8 +152,9 @@ def generate_qr_code(data: str) -> str:
 
 def generate_time_based_qr_token(booking_id: str, expiry_hours: int = 72) -> str:
     """Generate time-based QR token for booking"""
-    import jwt as pyjwt
     import os
+
+    import jwt as pyjwt
 
     JWT_SECRET = os.environ.get('JWT_SECRET', 'fallback-secret')
     JWT_ALGORITHM = 'HS256'

@@ -15,15 +15,14 @@ Collections:
   8. ari_drift_state            — ARI parity / consistency tracking
   9. channel_reconciliation_cases — Discrepancy tracking
 """
-import uuid
 import hashlib
 import json
+import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
-
 
 # ── Provider Enum (HotelRunner + Exely only) ──────────────────────────
 

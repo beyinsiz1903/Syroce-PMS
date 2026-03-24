@@ -10,11 +10,11 @@ Endpoints for:
 Prefix: /api/channel-manager/config/
 """
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user
@@ -23,8 +23,12 @@ from models.schemas import User
 from . import credential_vault as vault
 from . import unified_repository as repo
 from .data_model import (
-    COLL_PROVIDER_CONNECTIONS, COLL_ROOM_MAPPINGS, COLL_RATE_PLAN_MAPPINGS,
-    ConnectorProvider, ConnectionStatus, ProviderConnection,
+    COLL_PROVIDER_CONNECTIONS,
+    COLL_RATE_PLAN_MAPPINGS,
+    COLL_ROOM_MAPPINGS,
+    ConnectionStatus,
+    ConnectorProvider,
+    ProviderConnection,
 )
 
 logger = logging.getLogger("channel_manager.provider_config_router")
@@ -392,6 +396,7 @@ async def _test_hotelrunner_connection(creds: Dict[str, str]) -> Dict[str, Any]:
 
 async def _validate_hotelrunner(creds: Dict[str, str], tenant_id: str) -> List[Dict[str, Any]]:
     import time
+
     from .providers.hotelrunner import HotelRunnerProvider
 
     token = creds.get("token") or creds.get("api_key", "")
@@ -516,6 +521,7 @@ async def _test_exely_connection(creds: Dict[str, str]) -> Dict[str, Any]:
 
 async def _validate_exely(creds: Dict[str, str], tenant_id: str) -> List[Dict[str, Any]]:
     import time
+
     from .providers.exely import ExelyProvider
 
     username = creds.get("username", "")
@@ -562,7 +568,8 @@ async def _validate_exely(creds: Dict[str, str], tenant_id: str) -> List[Dict[st
     # 2. Room discovery (OTA_HotelAvailRQ)
     t0 = time.time()
     try:
-        from datetime import datetime as dt, timedelta
+        from datetime import datetime as dt
+        from datetime import timedelta
         checkin = dt.now().strftime("%Y-%m-%d")
         checkout = (dt.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         discover_result = await provider.legacy_discover_rooms(checkin, checkout)
@@ -585,7 +592,8 @@ async def _validate_exely(creds: Dict[str, str], tenant_id: str) -> List[Dict[st
     # 3. Reservation pull (OTA_ReadRQ)
     t0 = time.time()
     try:
-        from datetime import datetime as dt, timedelta
+        from datetime import datetime as dt
+        from datetime import timedelta
         from_date = (dt.now() - timedelta(days=7)).strftime("%Y-%m-%d")
         to_date = dt.now().strftime("%Y-%m-%d")
         pull_result = await provider.legacy_pull_reservations(from_date=from_date, to_date=to_date)

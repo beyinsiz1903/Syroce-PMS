@@ -2,9 +2,10 @@
 Database Optimization & Index Management
 Ensures all collections have proper indexes for performance
 """
-from pymongo import ASCENDING, DESCENDING, TEXT
 import logging
 from datetime import datetime
+
+from pymongo import ASCENDING, DESCENDING, TEXT
 
 logger = logging.getLogger(__name__)
 

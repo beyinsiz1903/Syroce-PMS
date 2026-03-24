@@ -31,10 +31,13 @@ from typing import Any, Dict, List, Optional
 
 from core.database import db
 from domains.channel_manager.data_model import (
-    COLL_RECONCILIATION_CASES, DriftType, DriftResolution,
+    COLL_RECONCILIATION_CASES,
+    DriftResolution,
+    DriftType,
 )
 from domains.channel_manager.reconciliation_truth import (
-    TRUTH_TABLE, TruthRule, GoldSource, can_auto_heal,
+    TRUTH_TABLE,
+    TruthRule,
 )
 
 logger = logging.getLogger("channel_manager.auto_heal")

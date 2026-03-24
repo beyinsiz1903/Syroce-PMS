@@ -2,16 +2,17 @@
 PMS / Night Audit Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends
-from typing import Optional
 import logging
+from typing import Optional
 
+from fastapi import APIRouter, Depends, HTTPException
+
+from common.context import OperationContext
 from core.security import (
     get_current_user,
 )
-from models.schemas import User
-from common.context import OperationContext
 from domains.pms.night_audit_service import night_audit_service
+from models.schemas import User
 
 logger = logging.getLogger(__name__)
 

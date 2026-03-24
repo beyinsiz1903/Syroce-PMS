@@ -6,6 +6,7 @@ import random
 from datetime import datetime, timezone
 from typing import Dict, List
 
+
 class RevenueAutopilot:
     """Otonom revenue management sistemi"""
     

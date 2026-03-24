@@ -3,8 +3,10 @@ Production Go-Live Router — All endpoints for production readiness validation,
 provider test connections, config activation, pre-launch validation suite,
 live ops alerts, and full dashboard data.
 """
-from fastapi import APIRouter, Depends, Query, Body
 from typing import Optional
+
+from fastapi import APIRouter, Body, Depends, Query
+
 from core.security import get_current_user
 from models.schemas import User
 
@@ -23,10 +25,10 @@ async def get_readiness(current_user: User = Depends(get_current_user)):
 @router.get("/summary")
 async def get_golive_summary(current_user: User = Depends(get_current_user)):
     """Complete production go-live dashboard data — aggregates all subsystems."""
-    from infra.readiness_validator import readiness_validator
-    from infra.production_config import production_config
     from infra.mongo_production import mongo_validator
+    from infra.production_config import production_config
     from infra.provider_activation import provider_manager
+    from infra.readiness_validator import readiness_validator
     from infra.security_checklist import security_checklist
 
     readiness = await readiness_validator.validate()
@@ -44,7 +46,7 @@ async def get_golive_summary(current_user: User = Depends(get_current_user)):
     backup_data = backup_manager.get_status()
 
     # Observability
-    from infra.cloud_observability import otel_tracer, sentry_integration, cloud_metrics
+    from infra.cloud_observability import cloud_metrics, otel_tracer, sentry_integration
     observability_data = {
         "otel": otel_tracer.get_status(),
         "sentry": sentry_integration.get_status(),
@@ -194,8 +196,8 @@ async def provider_delivery_metrics(current_user: User = Depends(get_current_use
 
 @router.get("/redis/cluster-validation")
 async def redis_cluster_validation(current_user: User = Depends(get_current_user)):
-    from infra.redis_cluster import redis_cluster
     from infra.distributed_lock import lock_manager
+    from infra.redis_cluster import redis_cluster
     health = await redis_cluster.health_check()
     return {
         "mode": redis_cluster.mode,
@@ -307,8 +309,8 @@ async def worker_scaling_readiness(current_user: User = Depends(get_current_user
 @router.post("/validate/run")
 async def run_prelaunch_validation(current_user: User = Depends(get_current_user)):
     """Run full pre-launch validation suite."""
-    from infra.prelaunch_validator import prelaunch_validator
     from core.database import db
+    from infra.prelaunch_validator import prelaunch_validator
     prelaunch_validator.set_db(db)
     result = await prelaunch_validator.run_full_validation()
 
@@ -393,7 +395,7 @@ async def alert_delivery_log(
 
 @router.get("/observability/validation")
 async def observability_validation(current_user: User = Depends(get_current_user)):
-    from infra.cloud_observability import otel_tracer, sentry_integration, cloud_metrics
+    from infra.cloud_observability import cloud_metrics, otel_tracer, sentry_integration
     return {
         "otel": {
             **otel_tracer.get_status(),

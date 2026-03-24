@@ -2,8 +2,9 @@
 Revenue / Pricing Domain — Pydantic Schemas
 Extracted from pricing_router.py inline models.
 """
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
 
 
 class RatePlanFilter(BaseModel):

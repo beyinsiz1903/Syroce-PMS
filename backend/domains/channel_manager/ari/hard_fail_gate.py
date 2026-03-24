@@ -17,18 +17,23 @@ this module ensures it ACTUALLY blocks bad pushes in production.
 """
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from core.database import db
+from domains.channel_manager.ari.models import COLL_ARI_CHANGE_SETS
 from domains.channel_manager.data_model import (
-    COLL_ROOM_MAPPINGS, COLL_RATE_PLAN_MAPPINGS,
-    COLL_PROVIDER_CONNECTIONS, COLL_RECONCILIATION_CASES,
-    CaseType, CaseSeverity, CaseStatus, MappingFailure,
+    COLL_PROVIDER_CONNECTIONS,
+    COLL_RATE_PLAN_MAPPINGS,
+    COLL_RECONCILIATION_CASES,
+    COLL_ROOM_MAPPINGS,
+    CaseSeverity,
+    CaseStatus,
+    CaseType,
 )
 from domains.channel_manager.mapping_validator import (
-    validate_room_mapping, validate_rate_plan_mapping,
+    validate_rate_plan_mapping,
+    validate_room_mapping,
 )
-from domains.channel_manager.ari.models import COLL_ARI_CHANGE_SETS
 
 logger = logging.getLogger("ari.hard_fail_gate")
 

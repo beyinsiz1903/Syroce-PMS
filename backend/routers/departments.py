@@ -4,23 +4,23 @@ Front Office, Housekeeping Manager, Finance, Revenue, F&B, Maintenance,
 Sales, HR, IT/Security department dashboards.
 Extracted from server.py for modularity.
 """
-import uuid
 import random
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from core.database import db
-from core.security import get_current_user
 from core.helpers import require_module
+from core.security import get_current_user
 from core.utils import calculate_folio_balance, create_excel_workbook, excel_response
 from models.schemas import User
 
 try:
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side  # noqa: F401
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side  # noqa: F401
 except ImportError:
     Workbook = None
 
@@ -2583,7 +2583,7 @@ async def create_walk_in_booking(data: dict, current_user: User = Depends(get_cu
         raise HTTPException(status_code=400, detail='No rooms available')
     
     # Create booking (atomic overbooking check)
-    from core.atomic_booking import create_booking_atomic, BookingConflictError
+    from core.atomic_booking import BookingConflictError, create_booking_atomic
     try:
         await create_booking_atomic({
             'id': booking_id,

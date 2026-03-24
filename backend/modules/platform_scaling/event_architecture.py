@@ -4,11 +4,11 @@ event persistence, and operational notification system.
 Extends existing EventBus with enterprise-grade features.
 """
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional, Set
 from collections import defaultdict
-from core.database import db
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Set
 
+from core.database import db
 
 # ── ENHANCED EVENT TYPES ──
 PLATFORM_EVENT_TYPES = [

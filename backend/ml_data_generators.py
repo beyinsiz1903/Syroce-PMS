@@ -3,9 +3,10 @@ ML Data Generators for Hotel PMS
 Generates synthetic training data for all ML models
 """
 
-import pandas as pd
-from datetime import datetime, timedelta
 import random
+from datetime import datetime, timedelta
+
+import pandas as pd
 
 
 class RMSDataGenerator:

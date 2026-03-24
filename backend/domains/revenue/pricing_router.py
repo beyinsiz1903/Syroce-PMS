@@ -2,22 +2,24 @@
 Revenue / Pricing Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta, date
-import uuid
 import logging
+import uuid
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import BaseModel, ConfigDict, Field
+
+from common.context import OperationContext
 from core.database import db
 from core.security import (
-    get_current_user, security,
+    get_current_user,
+    security,
 )
-from models.schemas import User, RatePlan, Package, PriceAnalysis
-from models.enums import RateType, MarketSegment, ChannelType, CancellationPolicyType
-from common.context import OperationContext
 from domains.revenue.pricing.pricing_service import pricing_service
+from models.enums import CancellationPolicyType, ChannelType, MarketSegment, RateType
+from models.schemas import Package, PriceAnalysis, RatePlan, User
 
 logger = logging.getLogger(__name__)
 

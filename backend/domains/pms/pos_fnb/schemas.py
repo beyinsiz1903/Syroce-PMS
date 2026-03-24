@@ -2,11 +2,12 @@
 POS & F&B Domain — Pydantic Schemas
 Extracted from pos_fnb_router.py inline models.
 """
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+import uuid
 from datetime import datetime, timezone
 from enum import Enum
-import uuid
+from typing import List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class POSCategory(str, Enum):

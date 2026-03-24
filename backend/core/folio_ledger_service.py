@@ -4,8 +4,8 @@ Immutable Folio Ledger Service
 Append-only ledger for all folio financial entries.
 Entries are NEVER updated — voids, adjustments, and transfers create new entries.
 """
-import uuid
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 

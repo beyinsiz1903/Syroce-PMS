@@ -5,13 +5,14 @@ Incident lifecycle: create, ack, resolve, list.
 Recovery tools: replay DLQ, recover stuck workers, force recon.
 Service health matrix.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
 from typing import Optional
 
-from core.security import get_current_user
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+
 from common.context import OperationContext
 from common.response import from_service_result
+from core.security import get_current_user
 from modules.incident.incident_service import incident_response_service
 
 router = APIRouter(prefix="/api/incidents", tags=["Incident Response"])

@@ -4,9 +4,9 @@ Tenant Isolation — Validation & Noisy Tenant Hardening
 Tenant isolation validation suite, noisy tenant detection/throttling,
 cross-tenant leak tests, resource fairness metrics.
 """
-import uuid
 import logging
-from datetime import datetime, timezone, timedelta
+import uuid
+from datetime import datetime, timedelta, timezone
 
 from common.context import OperationContext
 from common.result import ServiceResult

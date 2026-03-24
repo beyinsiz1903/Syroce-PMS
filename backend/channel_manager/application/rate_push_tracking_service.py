@@ -22,9 +22,10 @@ Response parsing + failure classification:
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from core.database import db
+
 from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.rate_push_tracking")

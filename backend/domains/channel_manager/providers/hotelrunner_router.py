@@ -5,14 +5,14 @@ API endpoints for HotelRunner connection management, testing, and operations.
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from fastapi import APIRouter, HTTPException, Depends
-
 from core.database import db
-from core.security import get_current_user
 from core.secrets import get_secrets_manager
+from core.security import get_current_user
 from models.schemas import User
 
 logger = logging.getLogger(__name__)

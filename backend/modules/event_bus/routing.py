@@ -3,7 +3,7 @@ Tenant-Aware Event Routing.
 Routes events based on tenant, property, and role context.
 """
 import logging
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
 
 logger = logging.getLogger("event_bus.routing")
 

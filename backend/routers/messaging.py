@@ -1,12 +1,14 @@
 """
 Messaging Router - Provider management, template CRUD, sending, delivery logs.
 """
-from typing import Optional, List
+import logging
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+
 from core.security import get_current_user
 from models.schemas import User
-import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/messaging-center", tags=["messaging-center"])
@@ -209,8 +211,8 @@ class ConsentReq(BaseModel):
 @router.post("/consent")
 async def update_consent(req: ConsentReq, current_user: User = Depends(get_current_user)):
     svc = _get_service()
-    from datetime import datetime, timezone
     import uuid
+    from datetime import datetime, timezone
     await svc.db.messaging_consents.update_one(
         {"tenant_id": current_user.tenant_id, "recipient": req.recipient, "channel": req.channel},
         {"$set": {

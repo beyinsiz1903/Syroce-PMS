@@ -4,13 +4,13 @@ Deploy Router — Production Deploy Pipeline API
 Hard-gate CI/CD, progressive deploy, auto-rollback, migration verification,
 smoke tests, and canary analysis — all wired through a single router.
 """
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from typing import Optional
 
-from core.security import get_current_user
 from common.context import OperationContext
 from common.response import from_service_result
+from core.security import get_current_user
 
 router = APIRouter(prefix="/api/deploy", tags=["Deploy Pipeline"])
 
@@ -213,8 +213,8 @@ async def run_smoke_tests(user=Depends(get_current_user)):
 @router.get("/analysis/overview")
 async def deploy_analysis_overview(user=Depends(get_current_user)):
     """Combined view: canary status + trigger evaluation + last pipeline."""
-    from ops.canary_deployment_service import canary_deployment_service
     from ops.auto_rollback_engine import auto_rollback_engine
+    from ops.canary_deployment_service import canary_deployment_service
     from ops.deploy_pipeline import deploy_pipeline
 
     ctx = OperationContext.from_user(user)

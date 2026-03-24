@@ -6,9 +6,9 @@ runtime validation, provider validation, incident drills,
 tenant isolation, observability, audit timeline, pilot checklist.
 Produces final go-live score with breakdown.
 """
-import uuid
 import logging
-from datetime import datetime, timezone, timedelta
+import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Dict
 
 from common.context import OperationContext

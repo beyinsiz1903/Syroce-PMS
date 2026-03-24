@@ -7,7 +7,7 @@ Called by server.py during bootstrap orchestration.
 import logging
 import os
 
-from core.database import db, client
+from core.database import _raw_db, client, db
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ async def on_startup(app):
 
     # ── Secrets Manager Validation ───────────────────────────────────
     try:
-        from core.secrets import get_secrets_manager, get_secrets_config
+        from core.secrets import get_secrets_config, get_secrets_manager
         config = get_secrets_config()  # Validates config, fails loudly if invalid
         sm = get_secrets_manager()
         await sm.ensure_indexes()
@@ -71,19 +71,19 @@ async def on_startup(app):
 
     # ── Webhook Raw Payload indexes ───────────────────────────────────
     try:
-        await db.webhook_raw_payloads.create_index(
+        await _raw_db.webhook_raw_payloads.create_index(
             [("correlation_id", 1)],
             name="idx_raw_payload_correlation",
         )
-        await db.webhook_raw_payloads.create_index(
+        await _raw_db.webhook_raw_payloads.create_index(
             [("tenant_id", 1), ("external_id", 1), ("received_at", -1)],
             name="idx_raw_payload_tenant_ext",
         )
-        await db.webhook_raw_payloads.create_index(
+        await _raw_db.webhook_raw_payloads.create_index(
             [("tenant_id", 1), ("provider", 1), ("received_at", -1)],
             name="idx_raw_payload_provider",
         )
-        await db.webhook_raw_payloads.create_index(
+        await _raw_db.webhook_raw_payloads.create_index(
             [("received_at", 1)],
             name="idx_raw_payload_ttl",
             expireAfterSeconds=7776000,  # 90 days
@@ -117,18 +117,18 @@ async def on_startup(app):
     # ── Auto-seed demo data ─────────────────────────────────────────
     try:
         from auto_seed import auto_seed_if_empty
-        await auto_seed_if_empty(db)
+        await auto_seed_if_empty(_raw_db)
     except Exception as e:
         logger.warning(f"Auto-seed error: {e}")
 
     # ── Ensure Exely webhook test connection exists ──────────────────
     try:
-        existing = await db.exely_connections.find_one({"hotel_code": "501694"}, {"_id": 1})
+        existing = await _raw_db.exely_connections.find_one({"hotel_code": "501694"}, {"_id": 1})
         if not existing:
-            tenant = await db.tenants.find_one({}, {"_id": 0, "id": 1})
+            tenant = await _raw_db.tenants.find_one({}, {"_id": 0, "id": 1})
             tid = tenant["id"] if tenant else "demo"
             from datetime import datetime, timezone
-            await db.exely_connections.insert_one({
+            await _raw_db.exely_connections.insert_one({
                 "id": str(__import__("uuid").uuid4()),
                 "tenant_id": tid,
                 "hotel_code": "501694",
@@ -211,7 +211,7 @@ async def on_startup(app):
 
     # ── Agency booking indexes ──────────────────────────────────────
     try:
-        col = db.agency_booking_requests
+        col = _raw_db.agency_booking_requests
         await col.create_index([("idempotency_key", 1)], unique=True, name="uniq_idempotency_key")
         await col.create_index([("status", 1), ("hotel_id", 1)], name="idx_status_hotel")
         await col.create_index([("agency_id", 1), ("status", 1)], name="idx_agency_status")
@@ -234,7 +234,7 @@ async def on_startup(app):
     try:
         print("🔥 Initializing ultra-fast cache warmer...")
         from cache_warmer import initialize_cache_warmer
-        await initialize_cache_warmer(db)
+        await initialize_cache_warmer(_raw_db)
         print("✅ Cache warmer initialized - responses will be instant!")
     except Exception as e:
         logger.warning(f"Cache warmer initialization: {e}")
@@ -242,7 +242,7 @@ async def on_startup(app):
     # ── Optimization systems ────────────────────────────────────────
     try:
         print("🚀 Initializing enterprise optimization systems...")
-        any_rms_enabled = await db.organizations.find_one(
+        any_rms_enabled = await _raw_db.organizations.find_one(
             {"$or": [{"plan": "enterprise"}, {"subscription_tier": "enterprise"}, {"features.hidden_rms": True}]},
             {"_id": 1},
         )
@@ -250,10 +250,11 @@ async def on_startup(app):
             print("ℹ️ No orgs with RMS enabled; skipping optimization init")
         else:
             import redis
+
             from optimization_endpoints import init_optimization_managers
             redis_client = redis.Redis(host="127.0.0.1", port=6379, db=0, socket_connect_timeout=2, decode_responses=False)
             redis_client.ping()
-            init_optimization_managers(db, redis_client)
+            init_optimization_managers(_raw_db, redis_client)
             from optimization_endpoints import archival_manager, materialized_views_manager
             if archival_manager:
                 await archival_manager.setup_indexes()
@@ -276,7 +277,7 @@ async def on_startup(app):
     try:
         print("🚀 Running comprehensive database optimization...")
         from infra.database_optimizer import DatabaseOptimizer
-        db_optimizer = DatabaseOptimizer(db)
+        db_optimizer = DatabaseOptimizer(_raw_db)
         opt_result = await db_optimizer.create_all_indexes()
         total_idx = sum(r.get("created", 0) for r in opt_result.values() if isinstance(r, dict) and "created" in r)
         print(f"✅ Database optimization complete: {total_idx} indexes ensured")
@@ -286,15 +287,15 @@ async def on_startup(app):
     # ── Performance indexes ─────────────────────────────────────────
     try:
         print("🚀 Creating performance indexes for large-scale operations...")
-        await db.bookings.create_index([("tenant_id", 1), ("check_in", 1), ("check_out", 1)], name="idx_bookings_tenant_checkin_checkout")
-        await db.bookings.create_index([("tenant_id", 1), ("status", 1), ("check_in", 1)], name="idx_bookings_tenant_status_checkin")
-        await db.bookings.create_index([("tenant_id", 1), ("room_id", 1), ("check_in", 1)], name="idx_bookings_tenant_room_checkin")
-        await db.rooms.create_index([("tenant_id", 1), ("room_number", 1)], name="idx_rooms_tenant_number", unique=True)
-        await db.rooms.create_index([("tenant_id", 1), ("status", 1), ("room_type", 1)], name="idx_rooms_tenant_status_type")
-        await db.guests.create_index([("tenant_id", 1), ("email", 1)], name="idx_guests_tenant_email")
-        await db.guests.create_index([("tenant_id", 1), ("phone", 1)], name="idx_guests_tenant_phone")
-        await db.folios.create_index([("tenant_id", 1), ("booking_id", 1)], name="idx_folios_tenant_booking")
-        await db.folios.create_index([("tenant_id", 1), ("status", 1), ("created_at", -1)], name="idx_folios_tenant_status_created")
+        await _raw_db.bookings.create_index([("tenant_id", 1), ("check_in", 1), ("check_out", 1)], name="idx_bookings_tenant_checkin_checkout")
+        await _raw_db.bookings.create_index([("tenant_id", 1), ("status", 1), ("check_in", 1)], name="idx_bookings_tenant_status_checkin")
+        await _raw_db.bookings.create_index([("tenant_id", 1), ("room_id", 1), ("check_in", 1)], name="idx_bookings_tenant_room_checkin")
+        await _raw_db.rooms.create_index([("tenant_id", 1), ("room_number", 1)], name="idx_rooms_tenant_number", unique=True)
+        await _raw_db.rooms.create_index([("tenant_id", 1), ("status", 1), ("room_type", 1)], name="idx_rooms_tenant_status_type")
+        await _raw_db.guests.create_index([("tenant_id", 1), ("email", 1)], name="idx_guests_tenant_email")
+        await _raw_db.guests.create_index([("tenant_id", 1), ("phone", 1)], name="idx_guests_tenant_phone")
+        await _raw_db.folios.create_index([("tenant_id", 1), ("booking_id", 1)], name="idx_folios_tenant_booking")
+        await _raw_db.folios.create_index([("tenant_id", 1), ("status", 1), ("created_at", -1)], name="idx_folios_tenant_status_created")
         print("✅ Performance indexes created successfully!")
     except Exception as e:
         logger.warning(f"Index creation warning: {e}")
@@ -316,10 +317,10 @@ async def on_startup(app):
 
     # ── Deploy Pipeline indexes ──────────────────────────────────────
     try:
-        await db.deploy_pipelines.create_index([("pipeline_id", 1)], unique=True, name="idx_pipeline_id")
-        await db.deploy_pipelines.create_index([("started_at", -1)], name="idx_pipeline_started")
-        await db.rollback_evaluations.create_index([("evaluated_at", -1)], name="idx_rollback_eval_time")
-        await db.rollback_history.create_index([("executed_at", -1)], name="idx_rollback_history_time")
+        await _raw_db.deploy_pipelines.create_index([("pipeline_id", 1)], unique=True, name="idx_pipeline_id")
+        await _raw_db.deploy_pipelines.create_index([("started_at", -1)], name="idx_pipeline_started")
+        await _raw_db.rollback_evaluations.create_index([("evaluated_at", -1)], name="idx_rollback_eval_time")
+        await _raw_db.rollback_history.create_index([("executed_at", -1)], name="idx_rollback_history_time")
         print("✅ Deploy pipeline indexes ensured")
     except Exception as e:
         logger.warning(f"Deploy pipeline index creation: {e}")
@@ -327,7 +328,7 @@ async def on_startup(app):
     # ── OTA-002: Outbox Pattern indexes ─────────────────────────────
     try:
         from core.outbox_service import ensure_outbox_indexes
-        await ensure_outbox_indexes(db)
+        await ensure_outbox_indexes(_raw_db)
         print("Outbox pattern indexes ensured (OTA-002)")
     except Exception as e:
         logger.warning(f"Outbox index creation error: {e}")
@@ -422,11 +423,11 @@ async def on_startup(app):
     # ── Production Go-Live validators ───────────────────────────────
     try:
         from infra.mongo_production import mongo_validator
-        mongo_validator.set_db(db, client)
+        mongo_validator.set_db(_raw_db, client)
         from infra.security_checklist import security_checklist
-        security_checklist.set_db(db)
+        security_checklist.set_db(_raw_db)
         from infra.readiness_validator import readiness_validator
-        readiness_validator.set_db(db)
+        readiness_validator.set_db(_raw_db)
         from infra.production_config import production_config
         startup_result = production_config.startup_check()
         print(f"✅ Production Go-Live validators initialized (config: {startup_result['status']})")
@@ -435,18 +436,18 @@ async def on_startup(app):
 
     # ── ARI Push Engine ──────────────────────────────────────────────
     try:
-        from domains.channel_manager.ari.outbound_service import register_provider_adapter
-        from domains.channel_manager.ari.adapters.hotelrunner_ari_adapter import HotelRunnerARIAdapter
         from domains.channel_manager.ari.adapters.exely_ari_adapter import ExelyARIAdapter
+        from domains.channel_manager.ari.adapters.hotelrunner_ari_adapter import HotelRunnerARIAdapter
+        from domains.channel_manager.ari.outbound_service import register_provider_adapter
         register_provider_adapter("hotelrunner", HotelRunnerARIAdapter())
         register_provider_adapter("exely", ExelyARIAdapter())
         # Create MongoDB indexes for ARI collections
-        await db["ari_events"].create_index([("tenant_id", 1), ("property_id", 1), ("created_at", -1)])
-        await db["ari_change_sets"].create_index([("tenant_id", 1), ("status", 1), ("created_at", 1)])
-        await db["ari_change_sets"].create_index([("coalescing_key", 1), ("status", 1)])
-        await db["ari_change_sets"].create_index([("provider", 1), ("property_id", 1), ("provider_delta_hash", 1)])
-        await db["ari_outbound_logs"].create_index([("tenant_id", 1), ("property_id", 1), ("pushed_at", -1)])
-        await db["ari_drift_state"].create_index([("tenant_id", 1), ("property_id", 1), ("provider", 1)])
+        await _raw_db["ari_events"].create_index([("tenant_id", 1), ("property_id", 1), ("created_at", -1)])
+        await _raw_db["ari_change_sets"].create_index([("tenant_id", 1), ("status", 1), ("created_at", 1)])
+        await _raw_db["ari_change_sets"].create_index([("coalescing_key", 1), ("status", 1)])
+        await _raw_db["ari_change_sets"].create_index([("provider", 1), ("property_id", 1), ("provider_delta_hash", 1)])
+        await _raw_db["ari_outbound_logs"].create_index([("tenant_id", 1), ("property_id", 1), ("pushed_at", -1)])
+        await _raw_db["ari_drift_state"].create_index([("tenant_id", 1), ("property_id", 1), ("provider", 1)])
         print("✅ ARI Push Engine initialized (HotelRunner + Exely adapters)")
     except Exception as e:
         logger.warning(f"ARI Push Engine init warning: {e}")
@@ -454,7 +455,7 @@ async def on_startup(app):
     # ── Cache re-warm ───────────────────────────────────────────────
     try:
         from cache_warmer import initialize_cache_warmer
-        await initialize_cache_warmer(db)
+        await initialize_cache_warmer(_raw_db)
     except Exception:
         pass
 
@@ -468,7 +469,7 @@ async def on_startup(app):
 
     # ── Exely Pull Scheduler (auto-start) ────────────────────────────
     try:
-        active_exely = await db.exely_connections.find_one(
+        active_exely = await _raw_db.exely_connections.find_one(
             {"is_active": True, "auto_sync_reservations": True}, {"_id": 1}
         )
         if active_exely:
@@ -484,7 +485,7 @@ async def on_startup(app):
     # ── Cockpit Snapshot Worker ────────────────────────────────────────
     try:
         from domains.channel_manager.cockpit_snapshot_worker import start_cockpit_worker
-        tenant = await db.organizations.find_one({}, {"_id": 0, "id": 1})
+        tenant = await _raw_db.organizations.find_one({}, {"_id": 0, "id": 1})
         if tenant:
             start_cockpit_worker(tenant["id"], interval=3.0)
             print("✅ Cockpit snapshot worker started (3s interval)")
@@ -623,7 +624,7 @@ async def _ensure_performance_indexes():
     ]
     for coll_name, keys, name, kwargs in indexes:
         try:
-            await db[coll_name].create_index(keys, name=name, background=True, **kwargs)
+            await _raw_db[coll_name].create_index(keys, name=name, background=True, **kwargs)
         except Exception as e:
             if "already exists" in str(e) or "IndexOptionsConflict" in str(e):
                 pass

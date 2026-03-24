@@ -3,10 +3,10 @@ Guest / Messaging — Service Layer
 Orchestrates guest messaging, internal messaging, and templates.
 No FastAPI dependencies.
 """
-from datetime import datetime, timezone
-from typing import Optional, Dict, Any
-import uuid
 import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 from common.context import OperationContext
 from common.result import ServiceResult

@@ -15,10 +15,10 @@ Each run produces:
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-from core.database import db
 from channel_manager.application.sandbox_simulation.engine import SandboxSimulationEngine
+from core.database import db
 
 logger = logging.getLogger("controlplane.cicd_pipeline_runner")
 

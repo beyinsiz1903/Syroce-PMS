@@ -16,12 +16,12 @@ import logging
 import os
 import socket
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from pymongo import ReturnDocument
 
-from core.database import db
 from core.import_bridge_service import (
     COLL_IMPORTED,
     STATUS_PENDING,
@@ -29,8 +29,14 @@ from core.import_bridge_service import (
     STATUS_RETRY,
     auto_import_reservation_to_pms,
 )
+from core.tenant_db import get_system_db, tenant_context
 
 logger = logging.getLogger("core.import_retry_worker")
+
+
+@contextmanager
+def _nullcontext():
+    yield
 
 
 def _utc_now() -> datetime:
@@ -116,8 +122,9 @@ class ImportRetryWorker:
         """Recover records stuck in 'processing' state beyond timeout."""
         cutoff = _iso(_utc_now() - timedelta(seconds=self.processing_timeout))
         now = _iso(_utc_now())
+        sysdb = get_system_db()
 
-        result = await db[COLL_IMPORTED].update_many(
+        result = await sysdb[COLL_IMPORTED].update_many(
             {
                 "import_status": STATUS_PROCESSING,
                 "updated_at": {"$lte": cutoff},
@@ -151,8 +158,9 @@ class ImportRetryWorker:
     async def _claim_record(self) -> Optional[Dict[str, Any]]:
         """Atomically claim the next eligible import record."""
         now = _iso(_utc_now())
+        sysdb = get_system_db()
 
-        record = await db[COLL_IMPORTED].find_one_and_update(
+        record = await sysdb[COLL_IMPORTED].find_one_and_update(
             {
                 "import_status": {"$in": [STATUS_PENDING, STATUS_RETRY]},
                 "$or": [
@@ -173,21 +181,23 @@ class ImportRetryWorker:
         return record
 
     async def _process_record(self, record: Dict[str, Any]) -> None:
-        """Process a single import record."""
+        """Process a single import record within tenant context."""
         record_id = record.get("id", "unknown")
+        tenant_id = record.get("tenant_id", "")
 
-        success, message = await auto_import_reservation_to_pms(record_id)
+        with tenant_context(tenant_id) if tenant_id else _nullcontext():
+            success, message = await auto_import_reservation_to_pms(record_id)
 
-        if success:
-            self._processed_count += 1
-            self._last_processed_at = _iso(_utc_now())
-            logger.info("Import worker processed: %s → %s", record_id, message[:100])
-        else:
-            if "retry" in message.lower() or "error" in message.lower():
-                self._retry_count += 1
+            if success:
+                self._processed_count += 1
+                self._last_processed_at = _iso(_utc_now())
+                logger.info("Import worker processed: %s → %s", record_id, message[:100])
             else:
-                self._failed_count += 1
-            logger.warning("Import worker result: %s → %s", record_id, message[:200])
+                if "retry" in message.lower() or "error" in message.lower():
+                    self._retry_count += 1
+                else:
+                    self._failed_count += 1
+                logger.warning("Import worker result: %s → %s", record_id, message[:200])
 
 
 # Singleton worker instance

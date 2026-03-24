@@ -37,6 +37,12 @@ jobs:
           cd backend
           ruff check .
 
+      - name: Orphan-file regression guard
+        run: python backend/scripts/check_orphan_files.py
+
+      - name: Import boundary guard
+        run: python backend/scripts/check_import_boundaries.py
+
   # ============ FRONTEND LINTING (HARD GATE) ============
   frontend-lint:
     runs-on: ubuntu-latest

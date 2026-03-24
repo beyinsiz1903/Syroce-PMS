@@ -3,9 +3,10 @@ Celery Configuration for Background Jobs
 Handles long-running tasks, periodic jobs, and async processing
 """
 
+import os
+
 from celery import Celery
 from celery.schedules import crontab
-import os
 from dotenv import load_dotenv
 
 load_dotenv()

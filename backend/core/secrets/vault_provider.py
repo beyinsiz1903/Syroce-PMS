@@ -10,7 +10,7 @@ Do NOT overbuild this. Wait until Vault is actually needed.
 import logging
 from typing import Any, Dict, Optional
 
-from .provider import SecretsProviderBase, SecretPayload, SecretMetadata
+from .provider import SecretMetadata, SecretPayload, SecretsProviderBase
 
 logger = logging.getLogger("core.secrets.vault")
 

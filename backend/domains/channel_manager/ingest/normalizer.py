@@ -6,7 +6,7 @@ Convert HotelRunner / Exely payloads into canonical reservation format.
 """
 import hashlib
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 
 def _safe_str(v: Any) -> str:

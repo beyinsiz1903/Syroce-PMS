@@ -12,8 +12,9 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from .provider import SecretsProviderBase, SecretPayload, SecretMetadata
-from core.crypto import get_crypto_service, AADContext
+from core.crypto import AADContext, get_crypto_service
+
+from .provider import SecretMetadata, SecretPayload, SecretsProviderBase
 
 logger = logging.getLogger("core.secrets.local_dev")
 

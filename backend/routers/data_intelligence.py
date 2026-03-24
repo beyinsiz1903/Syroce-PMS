@@ -5,15 +5,17 @@ Endpoint groups:
   /api/data-intelligence/operations/*
   /api/data-intelligence/guests/*
 """
+import logging
 from typing import Optional
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
+
 from core.security import get_current_user
 from models.schemas import User
-from modules.data_intelligence.revenue_ml_pipeline import revenue_pipeline
-from modules.data_intelligence.operational_ai import operational_ai
 from modules.data_intelligence.guest_intelligence import guest_intelligence
-import logging
+from modules.data_intelligence.operational_ai import operational_ai
+from modules.data_intelligence.revenue_ml_pipeline import revenue_pipeline
 
 logger = logging.getLogger(__name__)
 

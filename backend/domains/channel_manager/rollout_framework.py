@@ -32,8 +32,8 @@ Phase Gates:
     - all incidents actionable
 """
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List
 
 from core.database import db
 
@@ -294,8 +294,8 @@ async def _evaluate_gate(
 ) -> List[Dict[str, Any]]:
     """Evaluate all gate checks for a phase transition."""
     from domains.channel_manager.ari.hard_fail_gate import get_hard_fail_stats
-    from domains.channel_manager.auto_heal_service import get_auto_heal_stats
     from domains.channel_manager.ari.push_loop_worker import get_push_worker
+    from domains.channel_manager.auto_heal_service import get_auto_heal_stats
     from domains.channel_manager.quarantine_service import get_quarantine_overview
 
     checks = []

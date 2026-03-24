@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional
 from core.database import db
 from shared_kernel.shadow_metrics import shadow_metrics_store
 
-
 MIGRATION_EVENT_TYPES = [
     "reservation.created.v1",
     "inventory.blocked.v1",

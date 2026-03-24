@@ -5,14 +5,14 @@ Adds: duplicate posting prevention, folio posting consistency,
 order lifecycle management, table reservation contention,
 void/refund safety, stock race protection.
 """
-from datetime import datetime, timezone
-from typing import Optional, Dict, List
-import uuid
 import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
 
+from common.audit_hook import SEVERITY_CRITICAL, SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
 from common.result import ServiceResult
-from common.audit_hook import audited, SEVERITY_INFO, SEVERITY_WARNING, SEVERITY_CRITICAL
 
 logger = logging.getLogger(__name__)
 

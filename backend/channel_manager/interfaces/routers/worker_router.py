@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query
 
 from core.security import get_current_user
 from models.schemas import User
+
 from ...application.background_worker_service import BackgroundWorkerService
 
 logger = logging.getLogger("channel_manager.routers.worker")

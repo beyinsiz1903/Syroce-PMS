@@ -19,7 +19,7 @@ from typing import Optional
 
 from fastapi import HTTPException
 
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
+from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.infrastructure.rbac")

@@ -2,9 +2,9 @@
 Bootstrap: Middleware Registry
 All middleware configuration in one place.
 """
+from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
-from fastapi import FastAPI
 
 
 def register_middleware(app: FastAPI) -> None:
@@ -25,8 +25,8 @@ def register_middleware(app: FastAPI) -> None:
     # TI-003: Tenant context middleware — sets tenant_id from JWT
     # Must be added AFTER CORS (runs BEFORE route handlers due to LIFO)
     try:
+        from core.security import JWT_ALGORITHM, JWT_SECRET
         from core.tenant_middleware import TenantContextMiddleware
-        from core.security import JWT_SECRET, JWT_ALGORITHM
         app.add_middleware(
             TenantContextMiddleware,
             jwt_secret=JWT_SECRET,

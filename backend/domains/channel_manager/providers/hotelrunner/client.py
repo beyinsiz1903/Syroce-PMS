@@ -15,7 +15,7 @@ Responsibilities:
 import logging
 import time
 import uuid as _uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 import httpx
@@ -24,10 +24,10 @@ from . import endpoints as ep
 from .auth import build_auth_params, validate_credentials
 from .errors import (
     HotelRunnerAuthError,
+    HotelRunnerParseError,
+    HotelRunnerPayloadError,
     HotelRunnerRateLimitError,
     HotelRunnerTemporaryError,
-    HotelRunnerPayloadError,
-    HotelRunnerParseError,
 )
 
 logger = logging.getLogger("hotelrunner.client")

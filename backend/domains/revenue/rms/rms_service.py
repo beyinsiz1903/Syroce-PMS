@@ -3,14 +3,14 @@ Revenue / RMS — Service Layer
 Orchestrates group bookings, corporate contracts, OTA promotions,
 inventory management, and yield analysis. No FastAPI dependencies.
 """
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any
-import uuid
 import logging
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 
+from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
 from common.result import ServiceResult
-from common.audit_hook import audited, SEVERITY_INFO, SEVERITY_WARNING
 
 logger = logging.getLogger(__name__)
 

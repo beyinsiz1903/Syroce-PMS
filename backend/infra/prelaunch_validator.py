@@ -7,8 +7,8 @@ Verdicts: NOT_READY | CONDITIONALLY_READY | GO_LIVE_READY
 """
 import logging
 import time
-from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("infra.prelaunch_validator")
 

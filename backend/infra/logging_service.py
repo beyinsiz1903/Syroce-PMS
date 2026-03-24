@@ -3,10 +3,10 @@ Logging Service for Hotel PMS
 Centralized logging for production monitoring
 """
 
-from datetime import datetime, timezone
-from typing import Optional, Dict, List
-from enum import Enum
 import traceback
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Dict, List, Optional
 
 
 class LogLevel(str, Enum):

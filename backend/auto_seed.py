@@ -3,9 +3,10 @@ Auto Seed Data - Creates demo data on startup if database is empty
 Generates: demo user, tenant, rooms, guests, bookings, folios, housekeeping tasks
 """
 
-import uuid
 import random
+import uuid
 from datetime import datetime, timedelta, timezone
+
 from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

@@ -4,12 +4,11 @@ ARI Ack Service.
 Processes provider push results: success → ack, failure → retry or dead-letter.
 """
 import logging
-from typing import Optional
 
-from .events import ProviderResult
-from .retry_policy import classify_error, should_retry
 from . import repositories as repo
-from .models import STATUS_ACKED, STATUS_FAILED_RETRYABLE, STATUS_FAILED_PERMANENT
+from .events import ProviderResult
+from .models import STATUS_ACKED, STATUS_FAILED_PERMANENT, STATUS_FAILED_RETRYABLE
+from .retry_policy import classify_error, should_retry
 
 logger = logging.getLogger(__name__)
 

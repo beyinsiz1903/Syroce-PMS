@@ -6,11 +6,12 @@ All encryption delegates to CredentialEncryptionService.
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
-from ..infrastructure.repository import ChannelManagerRepository
 from core.crypto import get_crypto_service
+
+from ..domain.models.audit import AuditAction, IntegrationAuditLog
+from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.infrastructure.credential_vault")
 

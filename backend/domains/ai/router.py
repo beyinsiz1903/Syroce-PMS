@@ -2,20 +2,22 @@
 AI / ML Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPAuthorizationCredentials
-from typing import Optional
-from datetime import datetime, timezone, timedelta
+import logging
 import os
 import uuid
-import logging
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
 
 from core.database import db
-from core.security import (
-    get_current_user, security,
-)
 from core.helpers import (
     require_module,
+)
+from core.security import (
+    get_current_user,
+    security,
 )
 from models.schemas import User
 
@@ -291,7 +293,8 @@ async def ai_chat(
                 data_context = f"\n\n## MİSAFİR LİSTESİ ({len(all_guests)} toplam):\n" + "\n".join(lines)
 
         try:
-            from emergentintegrations.llm.chat import LlmChat, UserMessage as LlmUserMessage
+            from emergentintegrations.llm.chat import LlmChat
+            from emergentintegrations.llm.chat import UserMessage as LlmUserMessage
         except ImportError:
             raise HTTPException(status_code=503, detail="AI servisi şu anda kullanılamıyor")
 
@@ -2377,18 +2380,8 @@ async def train_all_models(
     
     try:
         # Import all required modules
-        from ml_data_generators import (
-            RMSDataGenerator,
-            PersonaDataGenerator,
-            PredictiveMaintenanceDataGenerator,
-            HKSchedulerDataGenerator
-        )
-        from ml_trainers import (
-            RMSModelTrainer,
-            PersonaModelTrainer,
-            PredictiveMaintenanceModelTrainer,
-            HKSchedulerModelTrainer
-        )
+        from ml_data_generators import HKSchedulerDataGenerator, PersonaDataGenerator, PredictiveMaintenanceDataGenerator, RMSDataGenerator
+        from ml_trainers import HKSchedulerModelTrainer, PersonaModelTrainer, PredictiveMaintenanceModelTrainer, RMSModelTrainer
         
         # 1. Train RMS Model
         try:

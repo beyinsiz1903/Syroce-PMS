@@ -14,10 +14,11 @@ Metrics tracked over time:
 Enables SLA tracking and early detection of degradation patterns.
 """
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 from core.database import db
+
 from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.health_trend")

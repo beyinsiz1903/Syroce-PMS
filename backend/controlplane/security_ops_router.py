@@ -18,11 +18,11 @@ SEC-002 Endpoints:
 """
 import logging
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from core.database import db
 from security.ops_guard import require_ops_access

@@ -2,7 +2,7 @@
 PMS Domain — Folio Repository
 Data access layer for folios, charges, and payments. No FastAPI dependencies.
 """
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from core.tenant_db import LazyCollection
 

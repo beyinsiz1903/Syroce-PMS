@@ -7,9 +7,8 @@ Returns structured results for dashboard display.
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Optional
 
-from .events import ARIChangeEvent, ARIDelta, ProviderResult
+from .events import ARIDelta
 
 logger = logging.getLogger(__name__)
 

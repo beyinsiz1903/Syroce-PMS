@@ -11,22 +11,22 @@ Unified API for:
 - Post-launch monitoring
 - Final platform maturity score
 """
+from typing import Any, Dict, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
 
-from core.security import get_current_user
 from common.context import OperationContext
 from common.response import from_service_result
-
-from ops.production_env_service import production_env_service
+from core.security import get_current_user
 from ops.canary_deployment_service import canary_deployment_service
-from ops.pilot_onboarding_service import pilot_onboarding_service
+from ops.golive_scorer import golive_scorer
 from ops.pilot_monitoring_service import pilot_monitoring_service
+from ops.pilot_onboarding_service import pilot_onboarding_service
+from ops.post_launch_monitoring_service import post_launch_monitoring_service
+from ops.production_env_service import production_env_service
 from ops.production_load_validation_service import production_load_validation_service
 from ops.tenant_isolation_confirmation_service import tenant_isolation_confirmation_service
-from ops.post_launch_monitoring_service import post_launch_monitoring_service
-from ops.golive_scorer import golive_scorer
 
 router = APIRouter(prefix="/api/production", tags=["Phase 7 — Production Rollout"])
 

@@ -210,8 +210,8 @@ async def migrate_dev_secrets(db, svc, dry_run: bool):
 
 
 async def run_migration(args):
-    from core.database import db
     from core.crypto import get_crypto_service
+    from core.database import db
 
     svc = get_crypto_service()
     health = svc.health()

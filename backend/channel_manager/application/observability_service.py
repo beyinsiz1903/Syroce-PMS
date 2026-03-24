@@ -3,7 +3,7 @@ Channel Manager Observability Service - Aggregates health metrics and operationa
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from ..infrastructure.repository import ChannelManagerRepository
 

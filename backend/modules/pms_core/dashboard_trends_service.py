@@ -3,7 +3,7 @@ Dashboard Trends Service - Trend graphs data + date range filters.
 Arrivals, departures, occupancy, housekeeping readiness, folio issues,
 night audit exceptions, blocked check-ins trends.
 """
-from datetime import timedelta, date
+from datetime import date, timedelta
 from typing import Dict, List
 
 from core.database import db

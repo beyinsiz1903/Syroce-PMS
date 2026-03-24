@@ -3,13 +3,11 @@ Hotel Services Router - Housekeeping Status, Wake-up Calls, Lost & Found,
 Hotel Settings (logo/template), Group Folio Merging, PDF Invoice Generation
 """
 import uuid
-import base64
-from datetime import datetime, timezone, timedelta
-from typing import Optional, List, Dict, Any
+from datetime import datetime, timezone
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user

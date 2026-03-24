@@ -4,9 +4,10 @@ Domain Router: Online Check-in & Pre-Arrival
 Extracted from legacy_routes.py — online check-in submission,
 upsell acceptance, pre-arrival communications.
 """
-from fastapi import APIRouter, HTTPException, Depends
-from datetime import datetime, timezone
 import uuid
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from core.database import db
 from core.security import get_current_user

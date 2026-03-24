@@ -5,8 +5,7 @@ from typing import List
 
 from fastapi import HTTPException, status
 
-from models.enums import UserRole, Permission, ROLE_PERMISSIONS
-
+from models.enums import ROLE_PERMISSIONS, Permission, UserRole
 
 # Operation-to-permission mapping
 OPERATION_PERMISSIONS = {

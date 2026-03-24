@@ -5,11 +5,11 @@ and failure routing to dead-letter archive.
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from core.database import db
-from workers.task_guard import task_guard
 from workers.failure_archive import failure_archive
+from workers.task_guard import task_guard
 
 logger = logging.getLogger(__name__)
 

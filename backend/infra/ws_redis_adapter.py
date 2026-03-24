@@ -2,11 +2,11 @@
 WebSocket Redis Adapter — Distributed WebSocket broadcasting via Redis Pub/Sub.
 Enables multi-instance WebSocket support. Falls back to local broadcast.
 """
-import logging
-import json
 import asyncio
-from typing import Optional, Dict, Any, Set
+import json
+import logging
 from datetime import datetime, timezone
+from typing import Any, Dict, Optional, Set
 
 logger = logging.getLogger("infra.ws_redis_adapter")
 

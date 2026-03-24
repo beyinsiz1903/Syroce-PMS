@@ -16,17 +16,17 @@ Score Components:
   - Quarantine clear (5 pts)
 """
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from core.database import db
-from domains.channel_manager.data_model import (
-    COLL_RECONCILIATION_CASES, COLL_ROOM_MAPPINGS, COLL_RATE_PLAN_MAPPINGS,
-)
-from domains.channel_manager.ari.models import COLL_ARI_CHANGE_SETS
 from domains.channel_manager.ari.hard_fail_gate import get_hard_fail_stats
-from domains.channel_manager.auto_heal_service import get_auto_heal_stats
 from domains.channel_manager.ari.push_loop_worker import get_push_worker
+from domains.channel_manager.data_model import (
+    COLL_RATE_PLAN_MAPPINGS,
+    COLL_RECONCILIATION_CASES,
+    COLL_ROOM_MAPPINGS,
+)
 from domains.channel_manager.quarantine_service import get_quarantine_overview
 
 logger = logging.getLogger("channel_manager.readiness_scorer")

@@ -5,6 +5,7 @@ Misafirlerin otel ile mesajlaşmasını sağlar.
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel

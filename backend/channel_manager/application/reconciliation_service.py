@@ -15,17 +15,20 @@ Severity: critical > high > medium > low
 Lifecycle: open -> investigating -> retrying -> resolved | dismissed
 """
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List
-
-from ..domain.models.reconciliation import (
-    ReconciliationIssue, ReconciliationSeverity, IssueType,
-    IssueStatus, SuggestedAction,
-)
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
-from ..infrastructure.repository import ChannelManagerRepository
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 from core.database import db
+
+from ..domain.models.audit import AuditAction, IntegrationAuditLog
+from ..domain.models.reconciliation import (
+    IssueStatus,
+    IssueType,
+    ReconciliationIssue,
+    ReconciliationSeverity,
+    SuggestedAction,
+)
+from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.reconciliation_service")
 

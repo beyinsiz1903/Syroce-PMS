@@ -4,14 +4,14 @@ PMS / Front Desk — Production-Grade Service Layer v2
 Adds: room_move, late_checkout, no_show, walk_in, concurrent operation guard,
 folio mutation safety, idempotency, supervisor override, housekeeping interaction.
 """
-from datetime import datetime, timezone, timedelta
-from typing import Optional
-import uuid
 import logging
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
+from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
 from common.result import ServiceResult
-from common.audit_hook import audited, SEVERITY_INFO, SEVERITY_WARNING
 
 logger = logging.getLogger(__name__)
 
@@ -729,7 +729,7 @@ class FrontdeskServiceV2:
             "checked_in_by": ctx.actor_id,
             "created_at": now.isoformat(),
         }
-        from core.atomic_booking import create_booking_atomic, BookingConflictError
+        from core.atomic_booking import BookingConflictError, create_booking_atomic
         try:
             await create_booking_atomic(booking_doc)
         except BookingConflictError as e:

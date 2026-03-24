@@ -2,12 +2,13 @@
 Comprehensive Health Check System
 Kubernetes/Docker ready health endpoints
 """
-from fastapi import APIRouter, Response, status, Request
+import logging
 from datetime import datetime
+from typing import Any, Dict
+
 import psutil
 import redis
-import logging
-from typing import Dict, Any
+from fastapi import APIRouter, Request, Response, status
 
 logger = logging.getLogger(__name__)
 
@@ -193,7 +194,7 @@ async def detailed_health_check(db=None, redis_client=None):
     
     # Check optimization systems
     try:
-        from optimization_endpoints import archival_manager, materialized_views_manager, cache_manager
+        from optimization_endpoints import archival_manager, cache_manager, materialized_views_manager
         
         checks["optimization"] = {
             "data_archival": archival_manager is not None,
@@ -229,6 +230,7 @@ async def health_db_check(request: Request):
     - Useful for narrowing down 520 root cause
     """
     import time
+
     from fastapi.responses import ORJSONResponse
 
     t0 = time.time()
@@ -274,6 +276,7 @@ async def deep_health_check(request: Request):
     Returns status of MongoDB, Redis, outbox queue, and background workers.
     """
     import time
+
     from fastapi.responses import ORJSONResponse
 
     result = {

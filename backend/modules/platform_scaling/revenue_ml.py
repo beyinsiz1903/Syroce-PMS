@@ -3,8 +3,9 @@ Revenue ML - Machine learning models for demand forecasting, rate elasticity,
 booking probability, and cancellation prediction.
 Uses statistical models (no external ML dependencies needed).
 """
-from datetime import datetime, timezone, timedelta, date
-from typing import Dict, Any, List, Optional
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
 from core.database import db
 
 

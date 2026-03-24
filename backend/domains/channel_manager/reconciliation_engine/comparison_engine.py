@@ -14,7 +14,7 @@ Mismatch types:
   - duplicate_reservation (multiple with same external_reservation_id)
 """
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 logger = logging.getLogger("reconciliation.comparison_engine")
 

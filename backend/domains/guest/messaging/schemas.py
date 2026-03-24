@@ -2,11 +2,12 @@
 Guest / Messaging Domain — Pydantic Schemas
 Extracted from messaging/router.py inline models.
 """
-from pydantic import BaseModel, Field, ConfigDict, field_validator
-from typing import List, Optional
+import uuid
 from datetime import datetime, timezone
 from enum import Enum
-import uuid
+from typing import List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class MessageType(str, Enum):

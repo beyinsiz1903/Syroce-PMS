@@ -14,29 +14,28 @@ These endpoints produce DATA, not dashboards.
 Visibility first, visuals later.
 """
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Query
 
 from core.database import db
 from core.security import get_current_user
-from models.schemas import User
-
 from domains.channel_manager import unified_repository as repo
 from domains.channel_manager.data_model import (
-    COLL_RAW_CHANNEL_EVENTS, COLL_RESERVATION_LINEAGE,
-    COLL_RECONCILIATION_CASES, COLL_ARI_OUTBOUND_LOGS,
-    COLL_ARI_DRIFT_STATE, COLL_ROOM_MAPPINGS, COLL_RATE_PLAN_MAPPINGS,
-)
-from domains.channel_manager.provider_capability import (
-    PROVIDER_CAPABILITIES, get_capability, classify_error,
-)
-from domains.channel_manager.reconciliation_truth import (
-    get_truth_table_summary, get_resolution_for_drift,
+    COLL_RAW_CHANNEL_EVENTS,
+    COLL_RECONCILIATION_CASES,
+    COLL_RESERVATION_LINEAGE,
+    COLL_ROOM_MAPPINGS,
 )
 from domains.channel_manager.mapping_validator import compute_mapping_health
+from domains.channel_manager.provider_capability import (
+    PROVIDER_CAPABILITIES,
+)
+from domains.channel_manager.reconciliation_truth import (
+    get_truth_table_summary,
+)
+from models.schemas import User
 
 logger = logging.getLogger("lockdown.router")
 router = APIRouter(prefix="/api/lockdown", tags=["Core Lockdown"])

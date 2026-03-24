@@ -8,8 +8,8 @@ Dual-mode operation:
 import asyncio
 import logging
 
-from domains.channel_manager.ari.drift_worker import check_drift
 from core.database import db
+from domains.channel_manager.ari.drift_worker import check_drift
 
 logger = logging.getLogger(__name__)
 

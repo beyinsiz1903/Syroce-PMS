@@ -2,11 +2,13 @@
 Group Sales Management Models
 Group bookings, blocks, rooming lists, master folios
 """
-from pydantic import BaseModel, Field
-from typing import Optional, List
+import uuid
 from datetime import datetime, timezone
 from enum import Enum
-import uuid
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
+
 
 class GroupBlockStatus(str, Enum):
     """Grup bloğu durumu"""

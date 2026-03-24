@@ -2,11 +2,12 @@
 Guest Intelligence - Guest analytics, segmentation, churn prediction, and upsell recommendations.
 Uses existing guest journey, reservations, messaging, and review data.
 """
-import uuid
-from datetime import datetime, timezone, date
-from typing import Dict, Any, List, Optional
-from core.database import db
 import logging
+import uuid
+from datetime import date, datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from core.database import db
 
 logger = logging.getLogger(__name__)
 

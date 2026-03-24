@@ -6,12 +6,12 @@ Environment:
     INSTANCE_ID     — Unique instance identifier (default: auto-generated)
     SCALING_MODE    — single | multi (default: single)
 """
-import os
 import asyncio
-import uuid
 import logging
-from typing import Dict, Any, List, Optional
+import os
+import uuid
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("infra.scaling")
 

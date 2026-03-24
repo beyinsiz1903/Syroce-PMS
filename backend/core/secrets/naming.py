@@ -11,7 +11,6 @@ Examples:
 import re
 from dataclasses import dataclass
 
-
 # Only alphanumeric, hyphens, underscores allowed in path segments
 _SAFE_SEGMENT = re.compile(r"^[a-zA-Z0-9_-]+$")
 

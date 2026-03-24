@@ -4,7 +4,7 @@ Business logic for channel inventory synchronization. No FastAPI dependencies.
 """
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from domains.channel_manager.inventory_sync.repositories.inventory_sync_repository import (
     InventorySyncRepository,

@@ -4,12 +4,15 @@ Production runtime with credential vault integration, delivery metrics,
 provider latency tracking, cost/usage summary, and per-tenant policy.
 """
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, List
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Optional
+
 from .models import (
-    DeliveryStatus, new_delivery_log, ConsentStatus,
+    ConsentStatus,
+    DeliveryStatus,
+    new_delivery_log,
 )
-from .providers import PROVIDER_MAP, CHANNEL_PROVIDER_MAP, FALLBACK_CHAIN, ProviderMode
+from .providers import CHANNEL_PROVIDER_MAP, FALLBACK_CHAIN, PROVIDER_MAP, ProviderMode
 
 logger = logging.getLogger(__name__)
 

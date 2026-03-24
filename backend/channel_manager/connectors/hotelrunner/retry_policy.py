@@ -2,11 +2,11 @@
 HotelRunner Retry Policy - Exponential backoff with jitter for failed requests.
 """
 import asyncio
-import random
 import logging
-from typing import Optional, Callable, Any
+import random
+from typing import Any, Callable, Optional
 
-from .errors import ConnectorError, RateLimitError, ProviderUnavailableError, AuthenticationError
+from .errors import AuthenticationError, ConnectorError, ProviderUnavailableError, RateLimitError
 
 logger = logging.getLogger("channel_manager.hotelrunner.retry")
 

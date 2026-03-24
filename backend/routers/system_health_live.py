@@ -2,9 +2,10 @@
 System Health — Live Events API
 Provides live event replay, audit metrics, and WebSocket status for the dashboard.
 """
-from fastapi import APIRouter, Depends, Query
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+from fastapi import APIRouter, Depends, Query
 
 from core.database import db
 from core.security import get_current_user

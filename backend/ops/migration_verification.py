@@ -6,7 +6,7 @@ Used as a hard gate in the deploy pipeline.
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 from common.result import ServiceResult
 

@@ -3,13 +3,14 @@ PMS / POS & F&B — Production Router v2
 Routes for enhanced POS operations:
 create_order, close_order, void_order, stock_adjust, table_reserve.
 """
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List
 
-from core.security import get_current_user
 from common.context import OperationContext
 from common.response import from_service_result
+from core.security import get_current_user
 from domains.pms.pos_fnb.pos_fnb_service_v2 import pos_fnb_service_v2
 
 router = APIRouter(prefix="/api/pos/v2", tags=["POS & F&B v2"])

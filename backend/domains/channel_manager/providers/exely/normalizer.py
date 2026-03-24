@@ -4,7 +4,7 @@ Converts Exely-specific reservation format to the canonical PMS format
 used by the common ingest pipeline.
 """
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 
 def normalize_reservation(raw: Dict[str, Any], source: str = "pull") -> Dict[str, Any]:

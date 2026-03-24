@@ -4,11 +4,11 @@ Service-level audit decorator for consistent audit trail generation.
 Wraps service methods to automatically log audit events.
 """
 import functools
+import logging
 import time
 import uuid
-import logging
 from datetime import datetime, timezone
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 

@@ -2,17 +2,18 @@
 PMS / Maintenance Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends
-from typing import List, Optional, Dict
-from datetime import datetime, timezone, timedelta
-import uuid
 import logging
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from core.database import db
 from core.security import (
     get_current_user,
 )
-from models.schemas import User, MaintenanceWorkOrder, SensorAlert, MaintenanceAsset, PreventiveMaintenancePlan
+from models.schemas import MaintenanceAsset, MaintenanceWorkOrder, PreventiveMaintenancePlan, SensorAlert, User
 
 logger = logging.getLogger(__name__)
 

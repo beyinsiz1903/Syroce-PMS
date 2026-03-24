@@ -4,11 +4,11 @@ Provides full reservation detail view, folio operations, activity logging,
 payment processing, cari transfers, room changes, and front office operations.
 """
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import List, Optional, Dict, Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user
@@ -692,7 +692,7 @@ async def early_checkin(
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
-    from core.atomic_checkin_checkout import check_in_booking_atomic, CheckInError
+    from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
 
     extra_fields = {"early_checkin": True}
     if data.checkin_time:
@@ -1329,7 +1329,7 @@ async def group_check_in_all(
     if not group:
         raise HTTPException(status_code=404, detail="Grup bulunamadi")
 
-    from core.atomic_checkin_checkout import check_in_booking_atomic, CheckInError
+    from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
 
     checked_in = 0
     errors = []
@@ -1361,7 +1361,7 @@ async def group_check_out_all(
     if not group:
         raise HTTPException(status_code=404, detail="Grup bulunamadi")
 
-    from core.atomic_checkin_checkout import check_out_booking_atomic, CheckOutError
+    from core.atomic_checkin_checkout import CheckOutError, check_out_booking_atomic
 
     checked_out = 0
     errors = []

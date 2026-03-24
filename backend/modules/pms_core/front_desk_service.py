@@ -2,9 +2,9 @@
 Front Desk Workflow Service - Production-grade check-in, checkout, room move, walk-in flows.
 Enforces room readiness, folio dependencies, and audit trail.
 """
-from datetime import datetime, timezone, timedelta
-from typing import Dict, List
 import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List
 
 from core.database import db
 from modules.pms_core.reservation_state_machine import ReservationStateMachine
@@ -19,7 +19,7 @@ class FrontDeskService:
 
     async def check_in(self, tenant_id: str, booking_id: str, user_id: str, user_name: str, override_reason: str = None) -> Dict:
         """Full check-in flow — delegates to atomic transaction."""
-        from core.atomic_checkin_checkout import check_in_booking_atomic, CheckInError
+        from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
         try:
             result = await check_in_booking_atomic(
                 booking_id=booking_id,
@@ -40,7 +40,7 @@ class FrontDeskService:
 
     async def checkout(self, tenant_id: str, booking_id: str, user_id: str, user_name: str, force: bool = False) -> Dict:
         """Full checkout flow — delegates to atomic transaction."""
-        from core.atomic_checkin_checkout import check_out_booking_atomic, CheckOutError
+        from core.atomic_checkin_checkout import CheckOutError, check_out_booking_atomic
         try:
             result = await check_out_booking_atomic(
                 booking_id=booking_id,
@@ -237,7 +237,7 @@ class FrontDeskService:
         total_amount = rate * nights
 
         # Create booking atomically (overbooking prevention)
-        from core.atomic_booking import create_booking_atomic, BookingConflictError
+        from core.atomic_booking import BookingConflictError, create_booking_atomic
         try:
             await create_booking_atomic({
                 "id": booking_id,
@@ -264,7 +264,7 @@ class FrontDeskService:
             return {"success": False, "error": str(e)}
 
         # Atomic check-in (booking + room + folio + audit + outbox in one transaction)
-        from core.atomic_checkin_checkout import check_in_booking_atomic, CheckInError
+        from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
         try:
             result = await check_in_booking_atomic(
                 booking_id=booking_id,

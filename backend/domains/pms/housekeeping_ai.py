@@ -5,6 +5,7 @@ Oda dağılımı optimizasyonu, tahminli temizlik süreleri
 import random
 from typing import List
 
+
 class HousekeepingAI:
     """AI-powered housekeeping optimization"""
     

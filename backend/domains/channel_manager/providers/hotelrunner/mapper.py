@@ -8,9 +8,9 @@ Inbound:  HotelRunner reservation → canonical reservation dict
 Outbound: PMS ARI delta → HotelRunner inventory payload
 """
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from .schemas import HotelRunnerReservation, InventoryDailyPayload, InventoryDateRangePayload
+from .schemas import HotelRunnerReservation
 
 logger = logging.getLogger("hotelrunner.mapper")
 

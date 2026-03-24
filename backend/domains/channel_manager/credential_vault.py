@@ -6,14 +6,14 @@ Delegates all encryption to core.crypto.CredentialEncryptionService.
 
 provider_connections stores credentials_ref → provider_secrets stores encrypted payload.
 """
-import uuid
 import logging
 import os
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from core.crypto import AADContext, get_crypto_service
 from core.database import db
-from core.crypto import get_crypto_service, AADContext
 
 logger = logging.getLogger("channel_manager.credential_vault")
 

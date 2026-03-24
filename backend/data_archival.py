@@ -2,10 +2,11 @@
 Data Archival System
 Archives old bookings (>1 year) to separate collection for performance
 """
-from datetime import datetime, timedelta
-from pymongo import ASCENDING, DESCENDING
-from typing import Dict, Any
 import logging
+from datetime import datetime, timedelta
+from typing import Any, Dict
+
+from pymongo import ASCENDING, DESCENDING
 
 logger = logging.getLogger(__name__)
 

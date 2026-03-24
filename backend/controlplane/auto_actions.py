@@ -246,7 +246,7 @@ async def _write_timeline(result: Dict[str, Any]) -> None:
 async def _fire_action_failure_alert(result: Dict[str, Any]) -> None:
     """Fire a new alert when an auto-action fails."""
     try:
-        from .alerting import get_alerting_engine, AlertSeverity
+        from .alerting import AlertSeverity, get_alerting_engine
         engine = get_alerting_engine()
         await engine.fire(
             trigger="auto_action_failure",

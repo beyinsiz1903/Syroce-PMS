@@ -2,8 +2,9 @@
 Mobile Domain — Pydantic Schemas
 Extracted from mobile_router.py inline models.
 """
-from pydantic import BaseModel
 from typing import List, Optional
+
+from pydantic import BaseModel
 
 
 class ProcessNoShowRequest(BaseModel):

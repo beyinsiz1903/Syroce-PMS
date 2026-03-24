@@ -2,7 +2,7 @@
 HotelRunner Authentication Manager.
 Handles token-based auth with hr_id for all HotelRunner API calls.
 """
-from typing import Dict, Any
+from typing import Any, Dict
 
 
 class HotelRunnerAuth:

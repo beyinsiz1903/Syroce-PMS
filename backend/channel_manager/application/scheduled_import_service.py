@@ -13,13 +13,13 @@ Features:
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
+from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..infrastructure.repository import ChannelManagerRepository
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
-from .reservation_import_service import ReservationImportService
 from .alerting_service import AlertingService
+from .reservation_import_service import ReservationImportService
 
 logger = logging.getLogger("channel_manager.application.scheduled_import")
 

@@ -1,24 +1,24 @@
 """Reconciliation, observability, audit-trail, webhook, error-queue, admin endpoints."""
 import logging
-from typing import Optional, List
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from core.security import get_current_user
 from models.schemas import User
 
 from ...application.connector_service import ConnectorService
-from ...application.mapping_service import MappingService
+from ...application.error_queue_service import ErrorQueueService
 from ...application.inventory_sync_service import InventorySyncService
-from ...application.reconciliation_service import ReconciliationService
+from ...application.mapping_service import MappingService
 from ...application.observability_service import ObservabilityService
+from ...application.production_readiness_service import ProductionReadinessService
+from ...application.reconciliation_service import ReconciliationService
+from ...application.sandbox_validation_service import SandboxValidationService
 from ...application.scheduler_service import SchedulerService
 from ...application.webhook_service import WebhookService
-from ...application.error_queue_service import ErrorQueueService
-from ...application.production_readiness_service import ProductionReadinessService
-from ...application.sandbox_validation_service import SandboxValidationService
 from ...infrastructure.credential_vault import CredentialVault
 from ...infrastructure.rbac import enforce_credential_access
 
@@ -486,7 +486,7 @@ async def admin_disable_connector(
     connector["disabled_by"] = current_user.id
     await repo.upsert_connector(connector)
 
-    from ...domain.models.audit import IntegrationAuditLog, AuditAction
+    from ...domain.models.audit import AuditAction, IntegrationAuditLog
     log = IntegrationAuditLog(
         tenant_id=current_user.tenant_id,
         connector_id=connector_id,

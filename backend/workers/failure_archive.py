@@ -4,7 +4,7 @@ Archives permanently failed tasks for post-mortem analysis.
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from core.tenant_db import LazyCollection
 

@@ -2,22 +2,25 @@
 PMS / Housekeeping Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends, File, UploadFile, Form
+import logging
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from typing import Optional
-from datetime import datetime, timezone, timedelta
-import uuid
-import logging
 
 from core.database import db
-from core.security import (
-    get_current_user, security,
-)
 from core.helpers import (
-    create_audit_log, require_module,
+    create_audit_log,
+    require_module,
 )
-from models.schemas import User, ReportIssueRequest, UploadPhotoRequest
+from core.security import (
+    get_current_user,
+    security,
+)
+from models.schemas import ReportIssueRequest, UploadPhotoRequest, User
 
 logger = logging.getLogger(__name__)
 

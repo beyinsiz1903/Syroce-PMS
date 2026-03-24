@@ -3,10 +3,11 @@ Domain Router: HR Operations
 
 HR complete suite, F&B complete suite for department managers.
 """
-from fastapi import APIRouter, HTTPException, Depends
-from typing import List, Optional, Dict, Any
-from datetime import date, datetime, timezone, timedelta
 import uuid
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from core.database import db
 from core.security import get_current_user

@@ -4,9 +4,9 @@ Tracks per-tenant usage events: API calls, reservations, rooms, users, etc.
 Fire-and-forget recording with background aggregation.
 """
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 from core.database import db
 

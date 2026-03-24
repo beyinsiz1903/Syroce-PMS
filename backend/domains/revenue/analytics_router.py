@@ -3,16 +3,17 @@ Domain Router: Analytics
 
 Extracted from legacy_routes.py — GM Dashboard, pickup analysis, anomaly detection, revenue analytics.
 """
-from fastapi import APIRouter, HTTPException, Depends, Request
-from fastapi.security import HTTPAuthorizationCredentials
-from typing import Optional
-from datetime import datetime, timezone, timedelta
 import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
-from core.database import db
-from core.security import get_current_user, security
-from core.helpers import require_module
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials
+
 from core.cache import cached
+from core.database import db
+from core.helpers import require_module
+from core.security import get_current_user, security
 from models.enums import ChannelType
 
 router = APIRouter(prefix="/api", tags=["analytics"])
@@ -2168,8 +2169,9 @@ async def get_system_health_detailed(
     if current_user.role not in ['admin', 'it_manager']:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    import psutil
     import platform
+
+    import psutil
     
     # Get system info
     try:

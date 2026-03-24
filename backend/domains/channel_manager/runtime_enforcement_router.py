@@ -17,15 +17,17 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from core.security import get_current_user
-from models.schemas import User
-
 from domains.channel_manager.ari.hard_fail_gate import (
-    get_hard_fail_stats, release_quarantine,
-)
-from domains.channel_manager.auto_heal_service import (
-    run_auto_heal_cycle, get_auto_heal_stats, get_auto_heal_history,
+    get_hard_fail_stats,
+    release_quarantine,
 )
 from domains.channel_manager.ari.push_loop_worker import get_push_worker
+from domains.channel_manager.auto_heal_service import (
+    get_auto_heal_history,
+    get_auto_heal_stats,
+    run_auto_heal_cycle,
+)
+from models.schemas import User
 
 logger = logging.getLogger("lockdown.runtime")
 router = APIRouter(prefix="/api/lockdown/runtime", tags=["Runtime Enforcement"])
@@ -372,7 +374,8 @@ async def readiness_score(
     Returns: score (0-100), issues sorted by severity, fix order suggestion.
     """
     from domains.channel_manager.readiness_scorer import (
-        compute_readiness_score, log_ready_state_transition,
+        compute_readiness_score,
+        log_ready_state_transition,
     )
     property_id = getattr(current_user, "property_id", "default")
     result = await compute_readiness_score(current_user.tenant_id, property_id)

@@ -2,11 +2,12 @@
 AI Intelligence API Endpoints
 """
 
-from fastapi import APIRouter, Depends, HTTPException
 from datetime import datetime
 
+from fastapi import APIRouter, Depends, HTTPException
+
 from domains.ai.service import get_ai_service
-from server import get_current_user, User
+from server import User, get_current_user
 
 api_router = APIRouter()
 

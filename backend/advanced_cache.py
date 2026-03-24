@@ -4,12 +4,13 @@ L1: 1 minute (critical real-time data)
 L2: 5 minutes (standard data)
 L3: 1 hour (reports and analytics)
 """
-import redis
+import hashlib
 import json
 import logging
-from typing import Any, Optional, Callable
 from functools import wraps
-import hashlib
+from typing import Any, Callable, Optional
+
+import redis
 
 logger = logging.getLogger(__name__)
 

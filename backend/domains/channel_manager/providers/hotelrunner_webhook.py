@@ -11,20 +11,23 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Request, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
 from core.database import db
 from core.security import get_current_user
-from models.schemas import User
 from domains.channel_manager import unified_repository as repo
 from domains.channel_manager.data_model import (
-    ConnectorProvider, RawChannelEvent, RawEventSource, ProcessingStatus,
+    ConnectorProvider,
+    ProcessingStatus,
+    RawChannelEvent,
+    RawEventSource,
 )
 from domains.channel_manager.ingest.normalizer import extract_hotelrunner_identity
 from domains.channel_manager.ingest.pipeline import process_event
+from models.schemas import User
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ Compares PMS inventory with OTA-reported availability to detect discrepancies.
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 from core.database import db
 

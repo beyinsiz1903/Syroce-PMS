@@ -3,15 +3,16 @@ Audit Timeline — API Foundations
 Provides timeline-friendly audit log queries, entity audit trails,
 and summary endpoints for the upcoming Audit Timeline Panel.
 """
-from fastapi import APIRouter, Depends, Query
-from typing import Optional
-from datetime import datetime, timezone, timedelta
 import logging
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
+from fastapi import APIRouter, Depends, Query
+
+from common.context import OperationContext
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
-from common.context import OperationContext
 
 logger = logging.getLogger(__name__)
 

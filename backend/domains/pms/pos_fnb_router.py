@@ -2,22 +2,24 @@
 PMS / POS & F&B Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional, Dict
-from datetime import datetime, timezone, timedelta
-import uuid
 import logging
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import BaseModel, ConfigDict, Field
 
 from core.database import db
-from core.security import (
-    get_current_user, security,
-)
 from core.helpers import (
     require_feature,
 )
-from models.schemas import User, Order, CreatePOSTransactionRequest, OrderCreate
+from core.security import (
+    get_current_user,
+    security,
+)
+from models.schemas import CreatePOSTransactionRequest, Order, OrderCreate, User
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,7 @@ router = APIRouter(prefix="/api", tags=["PMS / POS & F&B"])
 # ── Inline Models ──
 
 from enum import Enum
+
 
 class POSCategory(str, Enum):
     FOOD = "food"

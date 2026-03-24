@@ -15,10 +15,10 @@ All failures across the system (reservation ingest, ARI push, outbox events,
 sync jobs, secret access) flow through this control plane.
 """
 from .failure_model import (
-    FailureType,
-    Severity,
-    OperationType,
     FailureStatus,
+    FailureType,
+    OperationType,
+    Severity,
 )
 from .failure_tracker import FailureTracker, get_failure_tracker
 

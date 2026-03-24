@@ -2,23 +2,26 @@
 Admin / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends, status
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta
-import uuid
 import logging
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.database import db
+from core.helpers import (
+    get_tenant_modules,
+    require_super_admin_guard,
+)
 from core.security import (
     get_current_user,
 )
-from core.helpers import (
-    require_super_admin_guard, get_tenant_modules,
-)
+
 require_super_admin = require_super_admin_guard()
-from models.schemas import User, Tenant, TenantRegister, UpdateUserRoleRequest
+from domains.admin.subscription_models import PLAN_MODULE_DEFAULTS, SUBSCRIPTION_PLANS, SubscriptionTier, get_all_module_keys, get_feature_comparison, get_plan_default_modules
 from models.enums import UserRole
-from domains.admin.subscription_models import SubscriptionTier, SUBSCRIPTION_PLANS, get_plan_default_modules, PLAN_MODULE_DEFAULTS, get_all_module_keys, get_feature_comparison
+from models.schemas import Tenant, TenantRegister, UpdateUserRoleRequest, User
 
 logger = logging.getLogger(__name__)
 
@@ -34,15 +37,22 @@ def is_role_allowed_for_tier(role: str, tier: str) -> bool:
     return role in allowed
 
 
-from domains.admin.schemas import (  # noqa: E402
-    PermissionCheckRequest, TenantModulesUpdate, SubscriptionUpdateRequest,
-    ChangePlanRequest, UpdateHotelInfoRequest, CreateTeamMemberRequest,
-    UpdateTeamMemberRoleRequest, SLAConfig, DemoRequest,
-    PmsLiteLeadStatus, PmsLiteLeadAdminUpdateRequest,
-    AdminUpdateTenantInfoRequest, AdminCreateTeamMemberRequest,
-)
 from core.security import hash_password
-
+from domains.admin.schemas import (  # noqa: E402
+    AdminCreateTeamMemberRequest,
+    AdminUpdateTenantInfoRequest,
+    ChangePlanRequest,
+    CreateTeamMemberRequest,
+    DemoRequest,
+    PermissionCheckRequest,
+    PmsLiteLeadAdminUpdateRequest,
+    PmsLiteLeadStatus,
+    SLAConfig,
+    SubscriptionUpdateRequest,
+    TenantModulesUpdate,
+    UpdateHotelInfoRequest,
+    UpdateTeamMemberRoleRequest,
+)
 
 router = APIRouter(prefix="/api", tags=["Admin / Operations"])
 
@@ -1221,7 +1231,6 @@ async def remove_team_member(
 from demo_data_generator import DemoDataGenerator
 
 
-
 @router.post("/demo/populate")
 async def populate_demo_data(
     hotel_type: str = 'boutique',  # boutique, resort, city
@@ -1372,8 +1381,8 @@ async def admin_export_pms_lite_leads_csv(
     if current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Only super_admin can export leads")
 
-    from io import StringIO
     import csv
+    from io import StringIO
 
     query: Dict[str, Any] = {"source": "pms_lite_landing"}
     if status:
@@ -1627,13 +1636,15 @@ async def get_sla_configs(
 # SYSTEM MONITORING & PERFORMANCE - APM INTEGRATED
 # ============================================================================
 
-import psutil
 import time
+
+import psutil
 
 # api_metrics is now provided by apm_store from apm_middleware.py
 # Backward compat: alias api_metrics to apm_store.requests
 try:
-    from apm_middleware import apm_store as _apm_store_ref, get_rate_limit_stats as _get_rl_stats
+    from apm_middleware import apm_store as _apm_store_ref
+    from apm_middleware import get_rate_limit_stats as _get_rl_stats
     api_metrics = _apm_store_ref.requests
 except ImportError:
     from collections import deque

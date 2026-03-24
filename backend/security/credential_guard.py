@@ -5,7 +5,7 @@ Detects default/weak credentials and enforces credential policies.
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Any, Dict
 
 from core.database import db
 

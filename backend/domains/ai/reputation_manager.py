@@ -2,8 +2,9 @@
 Reputation Management System
 Review aggregation, sentiment analysis, auto-response
 """
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
+
 
 class ReputationManager:
     """Online reputation yönetimi"""

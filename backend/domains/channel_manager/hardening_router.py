@@ -6,10 +6,10 @@ Thin router: delegates all business logic to CMRuntimeService.
 """
 from fastapi import APIRouter, Depends, Query
 
-from core.security import get_current_user
-from models.schemas import User
 from common.context import OperationContext
+from core.security import get_current_user
 from domains.channel_manager.cm_runtime_service import cm_runtime_service
+from models.schemas import User
 
 router = APIRouter(prefix="/api/channel-manager", tags=["Channel Manager / Hardening"])
 

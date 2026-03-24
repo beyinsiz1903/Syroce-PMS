@@ -19,12 +19,12 @@ from typing import Any, Dict, Optional, Tuple
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
+from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.database import db
 from core.import_decision import (
     COLL_IMPORTED,
     check_booking_source_exists,
 )
-from core.atomic_booking import create_booking_atomic, BookingConflictError
 
 logger = logging.getLogger("core.import_bridge_service")
 
@@ -35,7 +35,6 @@ def _timeline_append(**kwargs):
         from controlplane.timeline_writer import get_timeline_writer
         return get_timeline_writer().append(**kwargs)
     except Exception:
-        import asyncio
         async def _noop():
             return None
         return _noop()
@@ -47,7 +46,6 @@ def _failure_record(**kwargs):
         from controlplane.failure_tracker import get_failure_tracker
         return get_failure_tracker().record(**kwargs)
     except Exception:
-        import asyncio
         async def _noop():
             return None
         return _noop()
@@ -413,7 +411,7 @@ async def auto_import_reservation_to_pms(
 
         # ── 10. Enqueue outbox event for confirmation ────────────
         try:
-            from core.outbox_service import enqueue_outbox_event, BOOKING_CREATED
+            from core.outbox_service import BOOKING_CREATED, enqueue_outbox_event
             await enqueue_outbox_event(
                 db,
                 tenant_id=tenant_id,

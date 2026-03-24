@@ -3,15 +3,16 @@ Enterprise Messaging Gateway - Provider-agnostic messaging with
 Twilio (SMS), SendGrid (Email), WhatsApp abstraction.
 Template-based messaging, delivery tracking, retry, audit, consent, rate limiting.
 """
-import uuid
 import asyncio
-import time
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional
-from collections import defaultdict
-from core.database import db
 import logging
 import os
+import time
+import uuid
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
+from core.database import db
 
 logger = logging.getLogger(__name__)
 

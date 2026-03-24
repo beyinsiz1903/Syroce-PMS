@@ -1,11 +1,14 @@
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
 import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from server import db, get_current_user, User, OTAReservation, ChannelType, BookingCreate, Booking, GuestCreate, Guest
+
 from celery_app import celery_app
-import httpx
+from server import Booking, BookingCreate, ChannelType, Guest, GuestCreate, OTAReservation, User, db, get_current_user
+
 
 class BookingCredentialManager:
     @staticmethod

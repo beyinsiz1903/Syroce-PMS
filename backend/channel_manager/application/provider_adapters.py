@@ -13,16 +13,20 @@ import logging
 import time
 import uuid as _uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
 
-from ..connectors.hotelrunner.client import HotelRunnerClient
 from ..connectors.hotelrunner.auth import HotelRunnerAuth
+from ..connectors.hotelrunner.client import HotelRunnerClient
 from ..connectors.hotelrunner.errors import (
-    AuthenticationError, RateLimitError, ProviderUnavailableError,
-    XmlParseError, ProviderValidationError, SchemaMismatchError,
+    AuthenticationError,
+    ProviderUnavailableError,
+    ProviderValidationError,
+    RateLimitError,
+    SchemaMismatchError,
     UnknownResponseFormatError,
+    XmlParseError,
 )
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
+from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.provider_adapters")

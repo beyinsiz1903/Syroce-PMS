@@ -5,32 +5,32 @@ Replaces legacy mock endpoints in server.py with production-grade implementation
 All routes are prefixed with /api/channel-manager/v2/ to coexist with legacy endpoints.
 """
 import logging
-from typing import Optional, List
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from core.security import get_current_user
 from models.schemas import User
 
-from ..application.connector_service import ConnectorService
-from ..application.mapping_service import MappingService
-from ..application.inventory_sync_service import InventorySyncService
-from ..application.reservation_import_service import ReservationImportService
-from ..application.reconciliation_service import ReconciliationService
-from ..application.observability_service import ObservabilityService
-from ..application.scheduler_service import SchedulerService
-from ..application.event_sync_service import EventSyncService
-from ..application.sandbox_validation_service import SandboxValidationService
-from ..application.provider_adapters import InventoryProviderAdapter, RateProviderAdapter
-from ..application.webhook_service import WebhookService
-from ..application.error_queue_service import ErrorQueueService
-from ..application.production_readiness_service import ProductionReadinessService
-from ..application.historical_metrics_service import HistoricalMetricsService
 from ..application.alerting_service import AlertingService
-from ..application.reliability_service import ReliabilityService
+from ..application.connector_service import ConnectorService
+from ..application.error_queue_service import ErrorQueueService
+from ..application.event_sync_service import EventSyncService
+from ..application.historical_metrics_service import HistoricalMetricsService
+from ..application.inventory_sync_service import InventorySyncService
+from ..application.mapping_service import MappingService
 from ..application.multi_property_service import MultiPropertyService
+from ..application.observability_service import ObservabilityService
+from ..application.production_readiness_service import ProductionReadinessService
+from ..application.provider_adapters import InventoryProviderAdapter, RateProviderAdapter
+from ..application.reconciliation_service import ReconciliationService
+from ..application.reliability_service import ReliabilityService
+from ..application.reservation_import_service import ReservationImportService
+from ..application.sandbox_validation_service import SandboxValidationService
+from ..application.scheduler_service import SchedulerService
+from ..application.webhook_service import WebhookService
 from ..infrastructure.credential_vault import CredentialVault
 from ..infrastructure.rbac import enforce_credential_access
 
@@ -811,7 +811,8 @@ async def get_masked_credentials(
         raise HTTPException(status_code=404, detail="Connector not found")
 
     # Audit the access
-    from ..domain.models.audit import IntegrationAuditLog, AuditAction as AA
+    from ..domain.models.audit import AuditAction as AA
+    from ..domain.models.audit import IntegrationAuditLog
     log = IntegrationAuditLog(
         tenant_id=current_user.tenant_id,
         connector_id=connector_id,
@@ -1180,7 +1181,8 @@ async def admin_disable_connector(
     connector["disabled_by"] = current_user.id
     await repo.upsert_connector(connector)
 
-    from ..domain.models.audit import IntegrationAuditLog, AuditAction as AA
+    from ..domain.models.audit import AuditAction as AA
+    from ..domain.models.audit import IntegrationAuditLog
     log = IntegrationAuditLog(
         tenant_id=current_user.tenant_id,
         connector_id=connector_id,

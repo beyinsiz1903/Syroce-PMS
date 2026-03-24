@@ -7,7 +7,7 @@ file/package naming conflict (Python package shadows the .py file).
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 from core.database import db
 from domains.channel_manager.drift_detector import drift_detector

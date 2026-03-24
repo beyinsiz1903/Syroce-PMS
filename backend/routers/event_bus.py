@@ -1,8 +1,9 @@
 """
 Event Bus Router — publish, subscribe, replay, status, metrics.
 """
-from fastapi import APIRouter, Depends, Query
 from typing import Optional
+
+from fastapi import APIRouter, Depends, Query
 
 from core.security import get_current_user
 from models.schemas import User
@@ -53,7 +54,8 @@ async def replay_events(
 
 @router.get("/replay/summary")
 async def replay_summary(current_user: User = Depends(get_current_user)):
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
+
     from core.database import db
 
     one_day_ago = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()

@@ -7,12 +7,12 @@ Every subsystem (outbox, import, sync, secrets) calls this service.
 Multi-tenant aware. Provider-aware. Never leaks plaintext.
 """
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .failure_model import (
-    FailureType,
     FailureStatus,
+    FailureType,
     Severity,
     build_failure_event,
     classify_failure,

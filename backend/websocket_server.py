@@ -2,10 +2,11 @@
 WebSocket Server for Real-time Updates
 Provides live dashboard metrics, booking updates, and notifications
 """
-import socketio
 import logging
 from datetime import datetime
-from typing import Dict, Any, Set
+from typing import Any, Dict, Set
+
+import socketio
 
 logger = logging.getLogger(__name__)
 

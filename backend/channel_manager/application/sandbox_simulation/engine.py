@@ -6,20 +6,21 @@ Produces a complete simulation report with per-provider result tables.
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from core.database import db
+
 from ...infrastructure.repository import ChannelManagerRepository
+from .provider_harness import PROVIDER_PROFILES
 from .scenarios import (
-    run_duplicate_delivery,
-    run_delayed_ack,
-    run_retry_storm,
-    run_stale_provider_state,
-    run_modify_cancel_race,
     SANDBOX_RESULTS,
     SANDBOX_TIMELINE,
+    run_delayed_ack,
+    run_duplicate_delivery,
+    run_modify_cancel_race,
+    run_retry_storm,
+    run_stale_provider_state,
 )
-from .provider_harness import PROVIDER_PROFILES
 
 logger = logging.getLogger("channel_manager.sandbox_simulation.engine")
 

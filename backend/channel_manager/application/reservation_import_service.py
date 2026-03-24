@@ -13,25 +13,28 @@ Features:
   - Full audit trail
 """
 import logging
-import uuid
 import time
+import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
-
-from ..domain.models.reservation_import import (
-    ReservationImportBatch, ImportedReservation, ImportStatus,
-    ReviewReasonCode, AckStatus,
-)
-from ..domain.models.connector_account import ConnectorAccount, ConnectorProvider
-from ..domain.models.canonical import CanonicalReservation, ReservationStatus
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
-from ..infrastructure.repository import ChannelManagerRepository
-from ..connectors.hotelrunner.client import HotelRunnerClient
-from ..connectors.hotelrunner.auth import HotelRunnerAuth
-from ..connectors.hotelrunner.mapper import HotelRunnerMapper
-from ..connectors.hotelrunner.errors import ConnectorError
+from typing import Any, Dict, List, Optional
 
 from core.database import db
+
+from ..connectors.hotelrunner.auth import HotelRunnerAuth
+from ..connectors.hotelrunner.client import HotelRunnerClient
+from ..connectors.hotelrunner.errors import ConnectorError
+from ..connectors.hotelrunner.mapper import HotelRunnerMapper
+from ..domain.models.audit import AuditAction, IntegrationAuditLog
+from ..domain.models.canonical import CanonicalReservation, ReservationStatus
+from ..domain.models.connector_account import ConnectorAccount, ConnectorProvider
+from ..domain.models.reservation_import import (
+    AckStatus,
+    ImportedReservation,
+    ImportStatus,
+    ReservationImportBatch,
+    ReviewReasonCode,
+)
+from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.reservation_import_service")
 
@@ -529,7 +532,7 @@ class ReservationImportService:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "created_by": "channel_manager",
         }
-        from core.atomic_booking import create_booking_atomic, BookingConflictError
+        from core.atomic_booking import BookingConflictError, create_booking_atomic
         try:
             await create_booking_atomic(booking)
         except BookingConflictError:

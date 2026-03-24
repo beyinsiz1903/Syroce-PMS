@@ -11,13 +11,14 @@ Contract hardening:
 import hashlib
 import logging
 import uuid
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 from xml.etree import ElementTree as ET
 
-from .errors import XmlParseError
 from .contract_errors import (
-    InvalidXmlError, ProviderErrorResponseError,
+    InvalidXmlError,
+    ProviderErrorResponseError,
 )
+from .errors import XmlParseError
 
 logger = logging.getLogger("channel_manager.hotelrunner.xml_parser")
 

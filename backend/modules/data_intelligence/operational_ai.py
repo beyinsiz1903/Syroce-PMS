@@ -3,12 +3,13 @@ Operational AI - Predictive models for hotel operations.
 Models: check-in load, housekeeping workload, room readiness ETA, maintenance failure risk.
 Integrates with existing housekeeping, front desk, maintenance, and event systems.
 """
-import uuid
-import math
-from datetime import datetime, timezone, timedelta, date
-from typing import Dict, Any, List, Optional
-from core.database import db
 import logging
+import math
+import uuid
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
+from core.database import db
 
 logger = logging.getLogger(__name__)
 

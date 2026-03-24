@@ -11,9 +11,10 @@ Uses pure ASGI middleware (not BaseHTTPMiddleware) to avoid event-loop
 conflicts in async test runners and improve performance.
 """
 import logging
+
 import jwt
 
-from core.tenant_db import set_tenant_context, clear_tenant_context
+from core.tenant_db import clear_tenant_context, set_tenant_context
 
 logger = logging.getLogger("core.tenant_middleware")
 

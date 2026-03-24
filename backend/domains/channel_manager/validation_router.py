@@ -5,9 +5,9 @@ Channel Manager — Provider Validation API Router
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from core.security import get_current_user
 from common.context import OperationContext
 from common.response import from_service_result
+from core.security import get_current_user
 from domains.channel_manager.provider_validation import provider_validation_service
 
 router = APIRouter(prefix="/api/cm/validation", tags=["CM Provider Validation"])

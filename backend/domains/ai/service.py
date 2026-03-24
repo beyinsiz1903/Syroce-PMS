@@ -5,8 +5,10 @@ Provides AI-powered insights, predictions, and recommendations
 
 import os
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from dotenv import load_dotenv
+
 try:
     from emergentintegrations.llm.chat import LlmChat, UserMessage
     _AI_BACKEND_AVAILABLE = True

@@ -2,23 +2,25 @@
 PMS / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends
+import logging
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from typing import Optional
-from datetime import datetime, timezone, timedelta
-import uuid
-import logging
 
 from core.database import db
-from core.security import (
-    get_current_user, security,
-)
 from core.helpers import (
     require_module,
 )
-from models.schemas import User, Company, CompanyCreate, CreatePropertyRequest
-from models.enums import UserRole, RoomStatus, BookingStatus, CompanyStatus
+from core.security import (
+    get_current_user,
+    security,
+)
+from models.enums import CompanyStatus, UserRole
+from models.schemas import Company, CompanyCreate, CreatePropertyRequest, User
 
 logger = logging.getLogger(__name__)
 
@@ -528,8 +530,8 @@ async def export_folio_csv(folio_id: str, current_user: User = Depends(get_curre
     if not has_permission(current_user.role, Permission.EXPORT_DATA):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     
-    from io import StringIO
     import csv
+    from io import StringIO
     
     # Get folio details
     folio_details = await get_folio_details(folio_id, current_user)
@@ -769,7 +771,7 @@ async def mobile_quick_checkin(
     current_user: User = Depends(get_current_user)
 ):
     """Quick check-in from mobile — atomic transaction."""
-    from core.atomic_checkin_checkout import check_in_booking_atomic, CheckInError
+    from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
     try:
         result = await check_in_booking_atomic(
             booking_id=booking_id,

@@ -3,13 +3,14 @@ Observability — Alert Enrichment API Router
 ============================================
 Alert management: evaluate rules, list active, acknowledge, resolve, get summary.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
 from typing import Optional
 
-from core.security import get_current_user
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+
 from common.context import OperationContext
 from common.response import from_service_result
+from core.security import get_current_user
 from modules.observability.alert_enrichment import alert_enrichment_engine
 
 router = APIRouter(prefix="/api/alerts", tags=["Alert Enrichment"])

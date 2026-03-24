@@ -19,23 +19,18 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from core.database import db
 from core.security import get_current_user
 from models.schemas import User
-from core.database import db
 
-from .models import COLL_MONITORING_ALERTS, AlertStatus
 from .aggregator import (
     collect_all_metrics,
     collect_provider_health,
-    collect_ingest_health,
-    collect_ari_health,
-    collect_reconciliation_health,
-    collect_queue_worker_health,
 )
+from .models import COLL_MONITORING_ALERTS, AlertStatus
 from .monitoring_worker import (
-    get_monitoring_worker_state,
     get_last_metrics,
-    monitoring_run_once,
+    get_monitoring_worker_state,
 )
 
 logger = logging.getLogger("monitoring.router")
@@ -288,6 +283,7 @@ async def get_metrics_trends(
 ):
     """Get time-series metrics for trend charts (last N hours)."""
     from datetime import timedelta
+
     from .monitoring_worker import COLL_METRICS_HISTORY
 
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()

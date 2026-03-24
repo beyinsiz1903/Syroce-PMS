@@ -30,7 +30,6 @@ def _timeline_append(**kwargs):
         from controlplane.timeline_writer import get_timeline_writer
         return get_timeline_writer().append(**kwargs)
     except Exception:
-        import asyncio
         async def _noop():
             return None
         return _noop()

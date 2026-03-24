@@ -6,7 +6,7 @@ Called after each successful pull.
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Any, Dict
 
 from core.database import db
 
@@ -127,7 +127,7 @@ async def auto_import_reservation(tenant_id: str, channel_res: Dict[str, Any]) -
         "created_at": now,
     }
 
-    from core.atomic_booking import create_booking_atomic, BookingConflictError
+    from core.atomic_booking import BookingConflictError, create_booking_atomic
     try:
         await create_booking_atomic({**booking})
     except BookingConflictError:

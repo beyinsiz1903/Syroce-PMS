@@ -3,9 +3,9 @@ Exely SOAP Response Parser
 Parses OTA-standard XML responses from the Exely channel manager.
 """
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, Optional
+
 from defusedxml import ElementTree as safe_ET
-from lxml import etree
 
 logger = logging.getLogger(__name__)
 

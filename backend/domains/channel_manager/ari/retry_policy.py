@@ -4,7 +4,8 @@ ARI Retry Policy.
 Exponential backoff with configurable delays per attempt.
 """
 import logging
-from .models import RETRY_DELAYS, MAX_RETRY_ATTEMPTS
+
+from .models import MAX_RETRY_ATTEMPTS, RETRY_DELAYS
 
 logger = logging.getLogger(__name__)
 

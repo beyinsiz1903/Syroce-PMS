@@ -12,8 +12,8 @@ Rules:
 - No secret values in audit logs
 """
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger("controlplane.secret_audit")
 
@@ -237,8 +237,8 @@ class SecretAccessControl:
     ) -> None:
         """Emit a failure event to the control plane failure tracker."""
         try:
-            from controlplane.failure_tracker import get_failure_tracker
             from controlplane.failure_model import FailureType, Severity
+            from controlplane.failure_tracker import get_failure_tracker
             tracker = get_failure_tracker()
             await tracker.record(
                 tenant_id=tenant_id,

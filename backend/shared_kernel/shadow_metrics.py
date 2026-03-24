@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any, Dict, Optional
 
-
 logger = logging.getLogger("shadow_metrics")
 
 

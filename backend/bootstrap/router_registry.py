@@ -3,10 +3,11 @@ Bootstrap: Router Registry
 Centralised router mounting. Each router is imported and mounted
 with proper error isolation so one broken module cannot crash the app.
 """
-from fastapi import FastAPI, Depends
 import importlib
 import traceback
-from typing import List, Tuple, Optional, Callable
+from typing import Callable, List, Optional, Tuple
+
+from fastapi import Depends, FastAPI
 
 
 def _safe_import(module_path: str, attr: str):

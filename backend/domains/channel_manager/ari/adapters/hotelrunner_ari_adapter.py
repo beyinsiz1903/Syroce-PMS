@@ -5,7 +5,6 @@ Translates ARIDelta into HotelRunner REST API calls.
 """
 import logging
 import time
-from typing import Optional
 
 from domains.channel_manager.ari.events import ARIDelta, ProviderResult
 

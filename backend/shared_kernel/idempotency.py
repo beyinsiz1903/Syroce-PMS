@@ -2,7 +2,6 @@ from typing import Optional
 
 from fastapi import HTTPException, Request, status
 
-
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 
 

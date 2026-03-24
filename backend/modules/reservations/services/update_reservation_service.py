@@ -13,7 +13,6 @@ from shared_kernel.event_envelope import build_event_envelope
 from shared_kernel.idempotency import ensure_idempotent_request
 from shared_kernel.tenancy_context import build_property_context, build_tenant_context
 
-
 DEFAULT_EMPTY_FIELDS = {
     "source_channel": "direct",
     "origin": "ui",
@@ -112,7 +111,7 @@ class UpdateReservationService:
 
             # ── If status is transitioning to checked_in → use atomic check-in ──
             if new_status == "checked_in" and old_status != "checked_in":
-                from core.atomic_checkin_checkout import check_in_booking_atomic, CheckInError
+                from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
                 status_fields = {k: v for k, v in update_data.items() if k != "status"}
                 try:
                     await check_in_booking_atomic(
@@ -132,7 +131,7 @@ class UpdateReservationService:
 
             # ── If status is transitioning to checked_out → use atomic check-out ──
             elif new_status == "checked_out" and old_status != "checked_out":
-                from core.atomic_checkin_checkout import check_out_booking_atomic, CheckOutError
+                from core.atomic_checkin_checkout import CheckOutError, check_out_booking_atomic
                 try:
                     await check_out_booking_atomic(
                         booking_id=booking_id,

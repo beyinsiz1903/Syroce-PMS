@@ -2,14 +2,15 @@
 Observability — Night Audit & Operational Metrics API
 Exposes runtime metrics for load tests, night audit, and operational monitoring.
 """
-from fastapi import APIRouter, Depends
-from datetime import datetime, timezone, timedelta
 import logging
+from datetime import datetime, timedelta, timezone
 
+from fastapi import APIRouter, Depends
+
+from common.context import OperationContext
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
-from common.context import OperationContext
 
 logger = logging.getLogger(__name__)
 

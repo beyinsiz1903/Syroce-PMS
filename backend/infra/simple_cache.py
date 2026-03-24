@@ -3,8 +3,9 @@ Simple In-Memory Cache System
 Ultra-fast caching without Redis dependency
 """
 from datetime import datetime, timedelta
-from typing import Any, Optional, Dict
 from functools import wraps
+from typing import Any, Dict, Optional
+
 
 class SimpleCache:
     """Thread-safe in-memory cache"""

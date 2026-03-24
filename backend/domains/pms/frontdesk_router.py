@@ -2,26 +2,24 @@
 PMS / Front Desk Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPAuthorizationCredentials
-from typing import Optional, Dict, Any
-from datetime import datetime, timezone, timedelta
-import uuid
-import logging
 import io
+import logging
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 
-from core.database import db
-from core.security import (
-    get_current_user, security,
-)
-from core.helpers import (
-    create_audit_log,
-)
-from models.schemas import User
-from models.enums import RoomStatus, BookingStatus, FolioType, ChannelType
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
 
 from common.context import OperationContext
+from core.database import db
+from core.security import (
+    get_current_user,
+    security,
+)
 from domains.pms.frontdesk_service import frontdesk_service
+from models.enums import BookingStatus, ChannelType
+from models.schemas import User
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +35,11 @@ router = APIRouter(prefix="/api", tags=["PMS / Front Desk"])
 
 
 from domains.pms.schemas import (  # noqa: E402
-    PassportScanData, PassportScanRequest, WalkInBookingRequest,
-    GuestAlert, KeycardIssueRequest,
+    GuestAlert,
+    KeycardIssueRequest,
+    PassportScanData,
+    PassportScanRequest,
+    WalkInBookingRequest,
 )
 
 
@@ -308,14 +309,14 @@ async def create_walk_in_booking(
         
         booking_dict = new_booking.model_dump()
         booking_dict['created_at'] = booking_dict['created_at'].isoformat()
-        from core.atomic_booking import create_booking_atomic, BookingConflictError
+        from core.atomic_booking import BookingConflictError, create_booking_atomic
         try:
             await create_booking_atomic(booking_dict)
         except BookingConflictError as e:
             raise HTTPException(status_code=409, detail=str(e))
         
         # 5. Atomic check-in (booking + room + folio + audit + outbox in one transaction)
-        from core.atomic_checkin_checkout import check_in_booking_atomic, CheckInError
+        from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
         try:
             checkin_result = await check_in_booking_atomic(
                 booking_id=new_booking.id,

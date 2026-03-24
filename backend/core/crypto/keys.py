@@ -15,8 +15,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional
 
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from .errors import KeyDerivationError, KeyNotFoundError
 

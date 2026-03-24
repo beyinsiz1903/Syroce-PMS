@@ -7,21 +7,21 @@ Worker 2: Exely Pull          (5-10 min interval)
 Worker 3: Ingest Processor    (processes pending raw events)
 Worker 4: Replay Worker       (retries failed events)
 """
-import asyncio
 import logging
-import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List
 
 from core.database import db
-
 from domains.channel_manager import unified_repository as repo
 from domains.channel_manager.data_model import (
-    ConnectorProvider, RawChannelEvent, RawEventSource, ProcessingStatus,
-    COLL_RAW_CHANNEL_EVENTS,
+    ConnectorProvider,
+    ProcessingStatus,
+    RawChannelEvent,
+    RawEventSource,
 )
 from domains.channel_manager.ingest.normalizer import (
-    extract_hotelrunner_identity, extract_exely_identity,
+    extract_exely_identity,
+    extract_hotelrunner_identity,
 )
 from domains.channel_manager.ingest.pipeline import process_event
 
@@ -78,8 +78,8 @@ async def hotelrunner_pull_once() -> Dict[str, Any]:
     Pull reservations from HotelRunner REST API for all active connections.
     Fetches updated reservations since last cursor, persists into raw_channel_events.
     """
-    from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
     from domains.channel_manager.data_model import COLL_PROVIDER_CONNECTIONS
+    from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
 
     state = _worker_state["hotelrunner_pull"]
     if state["running"]:
@@ -223,8 +223,8 @@ async def exely_pull_once() -> Dict[str, Any]:
     Pull reservations from Exely via OTA_ReadRQ SOAP for all active connections.
     Fetches updated reservations since last cursor, persists into raw_channel_events.
     """
-    from domains.channel_manager.providers.exely import ExelyProvider
     from domains.channel_manager.data_model import COLL_PROVIDER_CONNECTIONS
+    from domains.channel_manager.providers.exely import ExelyProvider
 
     state = _worker_state["exely_pull"]
     if state["running"]:

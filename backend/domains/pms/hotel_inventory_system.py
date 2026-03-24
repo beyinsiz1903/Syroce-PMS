@@ -3,9 +3,9 @@ Hotel Inventory Management System
 Automatic stock deduction for room amenities based on guest count
 """
 
-from typing import Dict, List
 import uuid
 from datetime import datetime, timezone
+from typing import Dict, List
 
 # Room amenity consumption rules - per guest
 AMENITY_CONSUMPTION_RULES = {

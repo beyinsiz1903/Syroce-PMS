@@ -57,8 +57,9 @@ class RequestTracingMiddleware:
                 try:
                     auth_val = value.decode("latin-1")
                     if auth_val.startswith("Bearer "):
-                        import jwt as pyjwt
                         import os
+
+                        import jwt as pyjwt
                         token = auth_val[7:]
                         secret = os.environ.get("JWT_SECRET", "")
                         if secret:
@@ -136,8 +137,9 @@ class RequestTracingMiddleware:
             # Track error in error tracker for 5xx
             if status_code >= 500 and error_msg:
                 try:
-                    from modules.observability.error_tracker import error_tracker
                     import asyncio
+
+                    from modules.observability.error_tracker import error_tracker
                     asyncio.create_task(error_tracker.track_error(
                         error_type="http_500",
                         message=error_msg[:300],

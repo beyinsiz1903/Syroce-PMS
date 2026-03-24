@@ -2,20 +2,22 @@
 Guest / Messaging Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, ConfigDict, field_validator
-from typing import List, Optional
-from datetime import datetime, timezone, timedelta
-import uuid
 import logging
+import uuid
+from datetime import datetime, timedelta, timezone
+from enum import Enum
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from core.database import db
 from core.security import (
-    get_current_user, security,
+    get_current_user,
+    security,
 )
-from models.schemas import User, SendWhatsAppRequest, SendEmailRequest, SendSMSRequest
-from enum import Enum
+from models.schemas import SendEmailRequest, SendSMSRequest, SendWhatsAppRequest, User
 
 logger = logging.getLogger(__name__)
 

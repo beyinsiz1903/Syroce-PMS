@@ -12,8 +12,8 @@ API Docs: https://developers.hotelrunner.com/custom-apps/rest-api
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone, date
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
 import httpx
 
 logger = logging.getLogger(__name__)

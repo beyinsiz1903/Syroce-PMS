@@ -5,8 +5,7 @@ Monitors real system health metrics and triggers rollback when thresholds are br
 Works with the canary deployment service for progressive deploy safety.
 """
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List
+from datetime import datetime, timedelta, timezone
 
 from common.result import ServiceResult
 

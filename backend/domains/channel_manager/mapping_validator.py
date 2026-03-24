@@ -12,7 +12,7 @@ Every mapping failure produces:
 """
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from .data_model import MappingFailure
 

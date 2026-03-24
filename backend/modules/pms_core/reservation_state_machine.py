@@ -4,7 +4,7 @@ Hospitality-standard states: pending, confirmed, guaranteed, checked_in, checked
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from core.database import db
 
@@ -176,7 +176,7 @@ class ReservationStateMachine:
 
         # OTA-002: Enqueue outbox event for guaranteed OTA delivery on cancellation
         try:
-            from core.outbox_service import enqueue_outbox_event, BOOKING_CANCELLED
+            from core.outbox_service import BOOKING_CANCELLED, enqueue_outbox_event
             await enqueue_outbox_event(
                 db,
                 tenant_id=tenant_id,

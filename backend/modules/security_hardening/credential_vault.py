@@ -3,13 +3,13 @@ Credential Vault — Secure credential storage with rotation support.
 REFACTORED: Uses core.crypto for real encryption instead of base64 encoding.
 """
 import logging
-import uuid
 import os
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 
+from core.crypto import AADContext, get_crypto_service
 from core.database import db
-from core.crypto import get_crypto_service, AADContext
 
 logger = logging.getLogger("security.vault")
 

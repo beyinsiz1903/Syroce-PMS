@@ -1,7 +1,7 @@
 """Inventory/rate sync, mapping, event-driven sync, scheduler, provider push endpoints."""
 import logging
-from typing import Optional, List
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -10,11 +10,11 @@ from core.security import get_current_user
 from models.schemas import User
 
 from ...application.connector_service import ConnectorService
-from ...application.mapping_service import MappingService
-from ...application.inventory_sync_service import InventorySyncService
-from ...application.scheduler_service import SchedulerService
 from ...application.event_sync_service import EventSyncService
+from ...application.inventory_sync_service import InventorySyncService
+from ...application.mapping_service import MappingService
 from ...application.provider_adapters import InventoryProviderAdapter, RateProviderAdapter
+from ...application.scheduler_service import SchedulerService
 
 logger = logging.getLogger("channel_manager.routers.sync")
 

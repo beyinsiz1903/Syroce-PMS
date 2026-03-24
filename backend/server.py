@@ -10,8 +10,8 @@ domains/ and routers/.
 
 Target: < 300 lines.
 """
-import os
 import logging
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -37,25 +37,25 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── Core (single-instance DB, auth) ────────────────────────────────
-from core.database import db, client  # noqa: E402
+from core.database import client, db  # noqa: E402
+from core.helpers import (  # noqa: E402
+    require_admin,
+    require_feature,
+    require_module,
+    require_super_admin_guard,
+)
 from core.security import (  # noqa: E402
-    get_current_user,
-    create_token,
-    hash_password,
-    verify_password,
-    security,
-    JWT_SECRET,
     JWT_ALGORITHM,
     JWT_EXPIRATION_HOURS,
+    JWT_SECRET,
+    create_token,
+    get_current_user,
+    hash_password,
+    security,
+    verify_password,
 )
-from core.helpers import (  # noqa: E402
-    require_feature,
-    require_super_admin_guard,
-    require_module,
-    require_admin,
-)
-from models.schemas import User  # noqa: E402
 from models.enums import ChannelType  # noqa: E402
+from models.schemas import User  # noqa: E402
 
 # Backward compat alias
 require_super_admin = require_super_admin_guard()
@@ -134,6 +134,7 @@ except Exception:
 # ── Global exception handler for Exely provider errors ──────────────
 from fastapi import Request
 from fastapi.responses import JSONResponse
+
 try:
     from domains.channel_manager.providers.exely.errors import ExelyError
 
@@ -145,6 +146,7 @@ except ImportError:
 
 # ── Additional API router (AI endpoints) ─────────────────────────────
 from fastapi import APIRouter
+
 api_router = APIRouter(prefix="/api")
 
 try:
@@ -194,14 +196,16 @@ for mod_name, factory_name, tag in _optional_factory_routers:
 
 # Report Builder & Guest Messaging (init pattern)
 try:
-    from routers.report_builder import router as report_builder_router, init_report_builder
+    from routers.report_builder import init_report_builder
+    from routers.report_builder import router as report_builder_router
     init_report_builder(db, get_current_user)
     app.include_router(report_builder_router, tags=["Report Builder"])
 except Exception:
     pass
 
 try:
-    from routers.guest_messaging import router as guest_messaging_router, init_guest_messaging
+    from routers.guest_messaging import init_guest_messaging
+    from routers.guest_messaging import router as guest_messaging_router
     init_guest_messaging(db, get_current_user)
     app.include_router(guest_messaging_router, tags=["Guest Messaging"])
 except Exception:
@@ -210,6 +214,7 @@ except Exception:
 # GraphQL
 try:
     from strawberry.fastapi import GraphQLRouter
+
     from _legacy.graphql_schema import schema
 
     graphql_app = GraphQLRouter(schema, context_getter=lambda: {"db": db, "cache": None, "materialized_views": None})
@@ -272,8 +277,17 @@ try:
 except Exception as _dep_err:
     logger.warning(f"Deploy Pipeline router skipped: {_dep_err}")
 
+# Wire Status — Unified failure chain visibility
+try:
+    from routers.wire_status import router as wire_status_router
+    app.include_router(wire_status_router, tags=["Wire Status"])
+    logger.info("  ✅ Wire Status router loaded")
+except Exception as _ws_err:
+    logger.warning(f"Wire Status router skipped: {_ws_err}")
+
+
 # ── Lifecycle events ────────────────────────────────────────────────
-from startup import on_startup, on_shutdown  # noqa: E402
+from startup import on_shutdown, on_startup  # noqa: E402
 
 
 @app.on_event("startup")

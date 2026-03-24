@@ -3,10 +3,11 @@ Prometheus Metrics Exporter for Hotel PMS
 Exposes custom metrics for monitoring and alerting
 """
 
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
-from fastapi import Response
-from functools import wraps
 import time
+from functools import wraps
+
+from fastapi import Response
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
 # ============= METRICS DEFINITIONS =============
 

@@ -3,25 +3,28 @@ Domain Router: Channel Manager
 
 Extracted from legacy_routes.py — CM ARI endpoints + Admin API key management.
 """
-from fastapi import APIRouter, HTTPException, Depends, status, Body, Request
-from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta, date
-from enum import Enum
-import uuid
-import os
 import hashlib
+import os
 import secrets
-import jwt
+import uuid
+from datetime import date, datetime, timedelta, timezone
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
+import jwt
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import BaseModel, ConfigDict, Field
+
+from core.audit import log_audit_event
 from core.database import db
 from core.security import (
-    security, JWT_SECRET, JWT_ALGORITHM,
+    JWT_ALGORITHM,
+    JWT_SECRET,
+    security,
 )
-from core.audit import log_audit_event
-from models.schemas import User
 from models.enums import BookingStatus
+from models.schemas import User
 
 try:
     from domains.pms.room_block_models import BlockStatus

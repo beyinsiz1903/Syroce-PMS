@@ -2,19 +2,21 @@
 Guest / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPAuthorizationCredentials
-from typing import List, Optional
-from datetime import datetime, timezone, timedelta, date
-import uuid
 import logging
+import uuid
+from datetime import date, datetime, timedelta, timezone
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
 
 from core.database import db
 from core.security import (
-    get_current_user, security,
+    get_current_user,
+    security,
 )
-from models.schemas import User, LoyaltyProgramCreate, LoyaltyTransactionCreate, RoomServiceCreate, LoyaltyProgram, LoyaltyTransaction
 from models.enums import UserRole
+from models.schemas import LoyaltyProgram, LoyaltyProgramCreate, LoyaltyTransaction, LoyaltyTransactionCreate, RoomServiceCreate, User
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +32,12 @@ router = APIRouter(prefix="/api", tags=["Guest / Operations"])
 
 
 from domains.guest.schemas import (  # noqa: E402
-    GuestPreference, GuestTag, RedeemPointsRequest, MinimumStockAlertRequest, CleaningRequestCreate,
+    CleaningRequestCreate,
+    GuestPreference,
+    GuestTag,
+    MinimumStockAlertRequest,
+    RedeemPointsRequest,
 )
-
 
 
 @router.post("/loyalty/points")

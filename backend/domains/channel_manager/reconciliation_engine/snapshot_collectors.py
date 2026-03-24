@@ -8,11 +8,11 @@ Normalize into canonical structure for comparison.
 Uses real provider API clients with graceful error handling.
 """
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
 from domains.channel_manager.ingest.normalizer import (
-    normalize_hotelrunner, normalize_exely,
+    normalize_hotelrunner,
 )
 
 logger = logging.getLogger("reconciliation.snapshot_collectors")

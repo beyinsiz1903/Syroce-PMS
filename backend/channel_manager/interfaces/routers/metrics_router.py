@@ -2,7 +2,7 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, Body
+from fastapi import APIRouter, Body, Depends, Query
 from pydantic import BaseModel
 
 from core.security import get_current_user

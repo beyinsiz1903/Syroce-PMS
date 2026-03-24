@@ -5,10 +5,9 @@ Backward-compatible wrapper. All callers that import EncryptionService
 or KeyManagementService continue to work without changes.
 """
 import logging
-import os
 from typing import Dict, Optional
 
-from core.crypto import get_crypto_service, AADContext
+from core.crypto import get_crypto_service
 
 logger = logging.getLogger("channel_manager.infrastructure.encryption")
 

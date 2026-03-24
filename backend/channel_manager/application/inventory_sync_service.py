@@ -16,25 +16,34 @@ Supported change types:
 """
 import logging
 import time
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List, Tuple
 from collections import defaultdict
-
-from ..domain.models.sync import (
-    SyncJob, SyncEvent, PushReceipt,
-    SyncJobStatus, SyncDirection, SyncType, ChangeType,
-)
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
-from ..domain.models.connector_account import ConnectorAccount, ConnectorProvider
-from ..infrastructure.repository import ChannelManagerRepository
-from ..connectors.hotelrunner.client import HotelRunnerClient
-from ..connectors.hotelrunner.auth import HotelRunnerAuth
-from ..connectors.hotelrunner.errors import (
-    ConnectorError, AuthenticationError, RateLimitError,
-    ProviderUnavailableError, ValidationError, XmlParseError,
-)
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
 from core.database import db
+
+from ..connectors.hotelrunner.auth import HotelRunnerAuth
+from ..connectors.hotelrunner.client import HotelRunnerClient
+from ..connectors.hotelrunner.errors import (
+    AuthenticationError,
+    ConnectorError,
+    ProviderUnavailableError,
+    RateLimitError,
+    ValidationError,
+    XmlParseError,
+)
+from ..domain.models.audit import AuditAction, IntegrationAuditLog
+from ..domain.models.connector_account import ConnectorAccount, ConnectorProvider
+from ..domain.models.sync import (
+    ChangeType,
+    PushReceipt,
+    SyncDirection,
+    SyncEvent,
+    SyncJob,
+    SyncJobStatus,
+    SyncType,
+)
+from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.inventory_sync_engine")
 

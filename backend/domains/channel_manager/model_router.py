@@ -9,10 +9,10 @@ Replaces the over-abstracted v2 connector/mapping/reconciliation endpoints
 with a simpler, 2-provider-optimized API surface.
 """
 import logging
-from typing import Optional, List
 from datetime import datetime, timezone
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.security import get_current_user
@@ -20,10 +20,15 @@ from models.schemas import User
 
 from . import unified_repository as repo
 from .data_model import (
-    ConnectorProvider, ConnectionStatus,
-    ProviderConnection, RoomMapping, RatePlanMapping,
-    RawChannelEvent, ReservationLineage, ReconciliationCase,
-    CaseType, CaseSeverity, CaseStatus,
+    CaseSeverity,
+    CaseStatus,
+    CaseType,
+    ConnectionStatus,
+    ConnectorProvider,
+    ProviderConnection,
+    RatePlanMapping,
+    ReconciliationCase,
+    RoomMapping,
 )
 
 logger = logging.getLogger("channel_manager.model_router")

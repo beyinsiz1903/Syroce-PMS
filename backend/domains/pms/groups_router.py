@@ -2,17 +2,18 @@
 PMS / Groups Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends
-from typing import List, Optional
-from datetime import datetime, timezone, timedelta
-import uuid
 import logging
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from core.database import db
 from core.security import (
     get_current_user,
 )
-from models.schemas import User, CreateGroupReservationRequest, AssignGroupRoomsRequest, CreateBlockReservationRequest, UseBlockRoomRequest
+from models.schemas import AssignGroupRoomsRequest, CreateBlockReservationRequest, CreateGroupReservationRequest, UseBlockRoomRequest, User
 
 logger = logging.getLogger(__name__)
 
@@ -272,7 +273,7 @@ async def upload_rooming_list(
                 'created_by': current_user.id
             }
             
-            from core.atomic_booking import create_booking_atomic, BookingConflictError
+            from core.atomic_booking import BookingConflictError, create_booking_atomic
             try:
                 await create_booking_atomic(booking)
             except BookingConflictError as e:
@@ -527,7 +528,7 @@ async def assign_group_rooms(
             'created_at': datetime.now(timezone.utc).isoformat()
         }
         
-        from core.atomic_booking import create_booking_atomic, BookingConflictError
+        from core.atomic_booking import BookingConflictError, create_booking_atomic
         try:
             await create_booking_atomic(booking)
         except BookingConflictError as e:
@@ -627,7 +628,7 @@ async def use_block_room(
         'created_at': datetime.now(timezone.utc).isoformat()
     }
     
-    from core.atomic_booking import create_booking_atomic, BookingConflictError
+    from core.atomic_booking import BookingConflictError, create_booking_atomic
     try:
         await create_booking_atomic(booking.copy())
     except BookingConflictError as e:

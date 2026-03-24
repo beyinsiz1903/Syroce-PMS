@@ -2,12 +2,13 @@
 Sandbox Simulation Router — API endpoints for running and viewing simulation results.
 """
 import logging
-from typing import Optional, List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
 
 from core.security import get_current_user
 from models.schemas import User
+
 from ...application.sandbox_simulation.engine import SandboxSimulationEngine
 
 logger = logging.getLogger("channel_manager.routers.sandbox")

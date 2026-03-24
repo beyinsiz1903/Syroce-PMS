@@ -3,17 +3,16 @@ ARI Outbound Service — Main push orchestrator.
 
 Coordinates: buffer → coalesce → compile delta → rate limit check → provider push → ack.
 """
-import asyncio
 import logging
 from typing import Dict, List, Optional
 
-from .events import ARIChangeEvent, ARIDelta, ProviderResult
+from . import repositories as repo
+from .ack_service import process_ack
 from .buffer import ARIEventBuffer
 from .coalescer import coalesce_events
 from .delta_compiler import compile_delta
+from .events import ARIChangeEvent, ARIDelta, ProviderResult
 from .rate_limit_service import rate_limiter
-from .ack_service import process_ack
-from . import repositories as repo
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +107,7 @@ async def push_pending_changes(
         prop_id = cs["property_id"]
 
         # Hard fail gate check (runtime mapping enforcement)
-        from .hard_fail_gate import enforce_hard_fail_gate, HF_PASS
+        from .hard_fail_gate import HF_PASS, enforce_hard_fail_gate
         verdict = await enforce_hard_fail_gate(cs)
         if verdict.status != HF_PASS:
             results["failed"] += 1
@@ -192,6 +191,7 @@ async def _push_to_provider(adapter, delta: ARIDelta) -> ProviderResult:
 async def force_push_change_set(cs_id: str) -> dict:
     """Force push a specific change set (manual override)."""
     from core.database import db
+
     from .models import COLL_ARI_CHANGE_SETS
 
     cs = await db[COLL_ARI_CHANGE_SETS].find_one({"id": cs_id}, {"_id": 0})

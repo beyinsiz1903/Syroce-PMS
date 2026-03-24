@@ -4,8 +4,8 @@ Extracts features from reservations, stays, folios, guest journey events, and ch
 """
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 
 from core.database import db
 

@@ -12,7 +12,7 @@ Rules:
 """
 import logging
 from datetime import date, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 
 from .events import ARIChangeEvent
 from .repositories import compute_delta_hash, compute_outbound_delta_hash

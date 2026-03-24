@@ -4,9 +4,9 @@ Learning Loop System
 Closed-loop incident learning: auto-classification, recurrence detection,
 RCA tracking, and never-again rule enforcement.
 """
-import uuid
 import hashlib
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 

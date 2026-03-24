@@ -3,8 +3,9 @@ Social Media Command Center
 Instagram, Twitter, Facebook mention tracking ve sentiment analysis
 """
 import random
-from datetime import datetime, timezone, timedelta
-from typing import List, Dict
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List
+
 
 class SocialMediaRadar:
     """Social media monitoring ve analiz"""

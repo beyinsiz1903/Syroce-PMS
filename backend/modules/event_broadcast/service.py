@@ -6,9 +6,9 @@ Falls back to in-memory pub/sub when Redis is not available.
 """
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, List
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

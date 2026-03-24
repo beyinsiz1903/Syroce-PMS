@@ -1,9 +1,10 @@
 """
 ARI Push Engine — Pydantic schemas for API request/response.
 """
-from pydantic import BaseModel, Field
-from typing import Optional, List
-from datetime import date, datetime
+from datetime import date
+from typing import List, Optional
+
+from pydantic import BaseModel
 
 
 class PublishARIEventRequest(BaseModel):

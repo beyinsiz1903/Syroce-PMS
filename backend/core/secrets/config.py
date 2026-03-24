@@ -12,9 +12,9 @@ Optional:
   SECRET_ACCESS_AUDIT_ENABLED    — true/false (default: true)
   CM_CREDENTIAL_KEY              — encryption key for local dev backend
 """
-import os
 import logging
-from dataclasses import dataclass, field
+import os
+from dataclasses import dataclass
 
 logger = logging.getLogger("core.secrets.config")
 

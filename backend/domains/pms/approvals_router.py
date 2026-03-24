@@ -2,17 +2,19 @@
 PMS / Approvals Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from typing import List, Optional
-from datetime import datetime, timezone
-import uuid
-import logging
 
 from core.database import db
 from core.security import (
-    get_current_user, security,
+    get_current_user,
+    security,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,6 +25,7 @@ router = APIRouter(prefix="/api", tags=["PMS / Approvals"])
 # ── Inline Models ──
 
 from enum import Enum
+
 
 class ApprovalType(str, Enum):
     DISCOUNT = "discount"

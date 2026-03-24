@@ -5,23 +5,31 @@ Platform Scaling Router - Unified API for all enterprise scaling modules:
 - Revenue ML
 - Competitive Set Analysis
 """
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.platform_scaling.competitive_analysis import (
+    ADRAdjustmentEngine,
+    CompetitiveSetDashboard,
+    CompetitorPriceTracker,
+    MarketPositioning,
+)
 from modules.platform_scaling.event_architecture import EnhancedEventBus
 from modules.platform_scaling.multi_property_platform import (
-    CentralReservationService, CentralRevenueManagement, GlobalAlertSystem,
+    CentralReservationService,
+    CentralRevenueManagement,
+    GlobalAlertSystem,
 )
 from modules.platform_scaling.revenue_ml import (
-    DemandForecastingModel, RateElasticityModel,
-    BookingProbabilityModel, CancellationPredictionModel, RevenueMLDashboard,
-)
-from modules.platform_scaling.competitive_analysis import (
-    CompetitorPriceTracker, MarketPositioning, ADRAdjustmentEngine, CompetitiveSetDashboard,
+    BookingProbabilityModel,
+    CancellationPredictionModel,
+    DemandForecastingModel,
+    RateElasticityModel,
+    RevenueMLDashboard,
 )
 
 router = APIRouter(prefix="/api/platform", tags=["platform-scaling"])

@@ -4,9 +4,9 @@ Generates realistic demo data for new tenants
 """
 
 import random
-from datetime import datetime, timedelta, timezone
-from typing import List, Dict
 import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List
 
 
 class DemoDataGenerator:

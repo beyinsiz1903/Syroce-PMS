@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from core.database import db
+from core.tenant_db import get_system_db, tenant_context
 
 logger = logging.getLogger("core.room_type_inventory")
 
@@ -357,10 +358,10 @@ class RoomTypeInventoryWorker:
 
     async def _run_once(self) -> None:
         """Run reconciliation for all tenants, today + 30 days."""
-        tenants = await db.organizations.find({}, {"_id": 0, "id": 1}).to_list(100)
+        sysdb = get_system_db()
+        tenants = await sysdb.organizations.find({}, {"_id": 0, "id": 1}).to_list(100)
         if not tenants:
-            # Fallback: get tenant from rooms
-            room = await db.rooms.find_one({}, {"_id": 0, "tenant_id": 1})
+            room = await sysdb.rooms.find_one({}, {"_id": 0, "tenant_id": 1})
             if room and room.get("tenant_id"):
                 tenants = [{"id": room["tenant_id"]}]
 
@@ -373,7 +374,8 @@ class RoomTypeInventoryWorker:
             if not tid:
                 continue
             try:
-                result = await reconcile_date_range(tid, start_date, end_date)
+                with tenant_context(tid):
+                    result = await reconcile_date_range(tid, start_date, end_date)
                 if result["drift_detected"] > 0:
                     logger.warning(
                         "Inventory drift detected for tenant %s: %d drifts",

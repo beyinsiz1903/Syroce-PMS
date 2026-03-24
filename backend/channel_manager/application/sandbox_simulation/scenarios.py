@@ -10,21 +10,23 @@ Done criteria (per user spec):
 """
 import logging
 import uuid
-import asyncio
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict
 
 from core.database import db
 
 from ...domain.models.canonical import CanonicalReservation, ReservationStatus
 from ...domain.models.reservation_import import (
-    ImportedReservation, ImportStatus, AckStatus, ReservationImportBatch,
+    AckStatus,
+    ImportedReservation,
+    ImportStatus,
 )
 from ...infrastructure.repository import ChannelManagerRepository
 from .provider_harness import (
-    generate_reservation, generate_duplicate_batch,
-    generate_modify_then_cancel, generate_stale_inventory_snapshot,
     PROVIDER_PROFILES,
+    generate_duplicate_batch,
+    generate_modify_then_cancel,
+    generate_reservation,
 )
 
 logger = logging.getLogger("channel_manager.sandbox_simulation.scenarios")

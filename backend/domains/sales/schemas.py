@@ -2,9 +2,10 @@
 Sales Domain — Schemas
 Request/response models extracted from sales routers.
 """
-from pydantic import BaseModel, EmailStr, conint
-from typing import Optional
 from enum import Enum
+from typing import Optional
+
+from pydantic import BaseModel, EmailStr, conint
 
 
 class LeadStage(str, Enum):

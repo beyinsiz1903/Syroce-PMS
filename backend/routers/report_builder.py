@@ -5,7 +5,8 @@ Kullanıcıların dinamik rapor oluşturmasını, filtrelemesini ve dışa aktar
 import io
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
@@ -324,7 +325,7 @@ async def export_report_excel(config: ReportConfig, credentials=Depends(HTTPBear
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
 
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
     data = await fetch_report_data(config, tenant_id)

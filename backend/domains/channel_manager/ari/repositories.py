@@ -8,9 +8,12 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from core.database import db
+
 from .models import (
-    COLL_ARI_EVENTS, COLL_ARI_CHANGE_SETS,
-    COLL_ARI_OUTBOUND_LOGS, COLL_ARI_DRIFT_STATE,
+    COLL_ARI_CHANGE_SETS,
+    COLL_ARI_DRIFT_STATE,
+    COLL_ARI_EVENTS,
+    COLL_ARI_OUTBOUND_LOGS,
     STATUS_PENDING,
 )
 

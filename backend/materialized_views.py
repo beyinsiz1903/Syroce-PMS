@@ -2,10 +2,11 @@
 Materialized Views System
 Pre-computed dashboard metrics for ultra-fast loading
 """
-from datetime import datetime, timedelta
-from pymongo import ASCENDING, DESCENDING
 import logging
-from typing import Dict, Any, Optional
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional
+
+from pymongo import ASCENDING, DESCENDING
 
 logger = logging.getLogger(__name__)
 

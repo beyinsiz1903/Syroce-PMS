@@ -4,21 +4,21 @@ API endpoints for Exely connection management, room discovery, mapping, ARI push
 """
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Optional, List
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
-
 from core.database import db
-from core.security import get_current_user
 from core.secrets import get_secrets_manager
-from models.schemas import User
+from core.security import get_current_user
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
-from domains.channel_manager.providers.exely.provider import ExelyProvider
-from domains.channel_manager.providers.exely.normalizer import normalize_reservation
-from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
 from domains.channel_manager.providers.exely.errors import ExelyError
+from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
+from domains.channel_manager.providers.exely.normalizer import normalize_reservation
+from domains.channel_manager.providers.exely.provider import ExelyProvider
+from models.schemas import User
 
 logger = logging.getLogger(__name__)
 

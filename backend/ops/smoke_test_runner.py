@@ -4,11 +4,10 @@ Smoke Test Runner — Post-Deploy Critical Path Validation
 Executes real HTTP requests against critical endpoints.
 Used as the final gate in the deploy pipeline and after canary promotion.
 """
-import time
 import logging
-import asyncio
+import time
 from datetime import datetime, timezone
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 import httpx
 

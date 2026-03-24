@@ -3,13 +3,14 @@ System Health — Normalized API Contract (Enriched)
 Real runtime data from services; standard response envelope with data freshness,
 evidence summary, degraded reason, critical blockers, and trend delta.
 """
-from fastapi import APIRouter, Depends
 from datetime import datetime, timezone
 
+from fastapi import APIRouter, Depends
+
+from common.context import OperationContext
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
-from common.context import OperationContext
 
 router = APIRouter(prefix="/api/system-health", tags=["System Health Normalized"])
 

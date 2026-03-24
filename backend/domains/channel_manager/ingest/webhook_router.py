@@ -13,15 +13,18 @@ Endpoints:
 import logging
 from typing import Any, Dict
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from domains.channel_manager import unified_repository as repo
 from domains.channel_manager.data_model import (
-    ConnectorProvider, RawChannelEvent, RawEventSource, ProcessingStatus,
+    ConnectorProvider,
+    ProcessingStatus,
+    RawChannelEvent,
+    RawEventSource,
 )
 from domains.channel_manager.ingest.normalizer import (
-    extract_hotelrunner_identity, RawChannelEvent as _,
+    extract_hotelrunner_identity,
 )
 
 logger = logging.getLogger("ingest.hotelrunner_webhooks")

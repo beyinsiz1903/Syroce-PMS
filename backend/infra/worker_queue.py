@@ -3,9 +3,9 @@ Worker Queue Manager — Celery task routing, queue monitoring, and worker healt
 Provides named queues, retry policies, dead letter handling, and status APIs.
 """
 import logging
-from typing import Dict, Any, List
-from datetime import datetime, timezone
 from collections import defaultdict
+from datetime import datetime, timezone
+from typing import Any, Dict, List
 
 logger = logging.getLogger("infra.worker_queue")
 

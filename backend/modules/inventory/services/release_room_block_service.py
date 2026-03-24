@@ -119,8 +119,8 @@ class ReleaseRoomBlockService:
             }
 
             # OTA-002: Enqueue outbox event for guaranteed OTA delivery
-            from core.outbox_service import enqueue_outbox_event, INVENTORY_RELEASED
             from core.database import db as _outbox_db
+            from core.outbox_service import INVENTORY_RELEASED, enqueue_outbox_event
 
             await enqueue_outbox_event(
                 _outbox_db,

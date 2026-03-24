@@ -6,7 +6,7 @@ Centralizes pagination logic for the reservations endpoint.
 Includes safety limits, duplicate page detection, and infinite loop protection.
 """
 import logging
-from typing import Any, Callable, Awaitable, Dict, List
+from typing import Any, Awaitable, Callable, Dict, List
 
 from .errors import HotelRunnerPaginationError
 

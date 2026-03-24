@@ -18,9 +18,9 @@ from typing import Optional
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from .envelope import EncryptionEnvelope, is_envelope
+from .envelope import EncryptionEnvelope
+from .errors import DecryptionError, KeyNotFoundError, TamperDetectedError
 from .keys import KeyRing
-from .errors import DecryptionError, TamperDetectedError, KeyNotFoundError
 
 logger = logging.getLogger("core.crypto.engine")
 

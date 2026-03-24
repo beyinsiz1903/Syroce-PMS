@@ -5,7 +5,7 @@ Ensures no cross-tenant data leakage.
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from core.tenant_db import LazyCollection
 
