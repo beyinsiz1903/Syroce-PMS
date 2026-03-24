@@ -32,6 +32,8 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("routers.pms", "router", ["pms"], None, None),
     ("routers.pms_rooms", "router", ["pms"], None, None),
     ("routers.pms_guests", "router", ["pms"], None, None),
+    ("routers.pms_bookings", "router", ["pms"], None, None),
+    ("routers.pms_dashboard", "router", ["pms"], None, None),
     ("routers.reservation_detail", "router", ["reservation-detail"], None, None),
     ("routers.hotel_services", "router", ["hotel-services"], None, None),
     ("routers.finance", "router", ["finance"], None, None),
