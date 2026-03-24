@@ -18,7 +18,7 @@ import subprocess
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://debt-cleanup-1.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://tenant-guard-8.preview.emergentagent.com").rstrip("/")
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
