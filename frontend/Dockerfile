@@ -6,6 +6,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package.json yarn.lock ./
+COPY scripts/ scripts/
 RUN yarn install --frozen-lockfile --ignore-engines --production=false
 
 COPY . .

@@ -104,7 +104,7 @@ Enhanced alerts with severity, runbook links, tenant/provider context.
 
 ## CI/CD Pipeline GitHub Actions Fix (February 2026)
 ### What was fixed:
-1. **docker-build failure**: Added `--ignore-engines` flag to Dockerfile `yarn install` command + regenerated `yarn.lock`
+1. **docker-build failure**: Added `--ignore-engines` flag to Dockerfile `yarn install` + copied `scripts/` directory before `yarn install` (postinstall hook needs `patch-vite-client.js`) + regenerated `yarn.lock`
 2. **Node.js 20 deprecation warnings**: Upgraded all GitHub Action versions to Node.js 24 compatible:
    - `actions/checkout@v4` → `@v5`
    - `actions/setup-node@v4` → `@v5`
