@@ -102,6 +102,18 @@ Enhanced alerts with severity, runbook links, tenant/provider context.
 - `CICDPipelineDashboard.jsx` — Health badges, tier trigger buttons, trend chart, recent runs with drill-down
 - Integrated into `UnifiedOpsView.jsx` on `/control-plane` page
 
+## CI/CD Pipeline GitHub Actions Fix (February 2026)
+### What was fixed:
+1. **docker-build failure**: Added `--ignore-engines` flag to Dockerfile `yarn install` command + regenerated `yarn.lock`
+2. **Node.js 20 deprecation warnings**: Upgraded all GitHub Action versions to Node.js 24 compatible:
+   - `actions/checkout@v4` → `@v5`
+   - `actions/setup-node@v4` → `@v5`
+   - `actions/upload-artifact@v4` → `@v5`
+   - `docker/login-action@v3` → `@v4`
+   - `docker/setup-buildx-action@v3` → `@v4`
+   - `docker/build-push-action@v5` → `@v6`
+3. Added `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` env var to both workflows
+
 ## Key Endpoints
 - `POST /api/auth/login` -> `{access_token, user, tenant}`
 - `GET /api/pms/operational-alerts` -> `{alerts[], summary{}, available_clean_rooms[]}`
