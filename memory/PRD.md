@@ -114,6 +114,34 @@ Enhanced alerts with severity, runbook links, tenant/provider context.
    - `docker/build-push-action@v5` → `@v6`
 3. Added `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` env var to both workflows
 
+## Codebase Truth Cleanup & Backend Organization (February 2026)
+### Faz A — package.json & README (COMPLETED)
+1. Removed CRA-era `browserslist` config from `package.json`
+2. Removed CRA-era `jest` config from `package.json`
+3. Updated `package.json` name: `frontend` → `syroce-frontend`, version: `0.1.0` → `2.1.0`
+4. Regenerated `yarn.lock` (clean tree, 0 high/critical vulnerabilities)
+5. Updated README architecture section and version info
+
+### Faz C — Backend File Organization (COMPLETED)
+Moved 25 orphan files from `backend/` root to proper domain directories:
+- **AI Domain (7 files)**: `ai_service.py`, `ai_endpoints.py`, `predictive_engine.py`, `reputation_manager.py`, `social_media_radar.py`, `revenue_autopilot.py`, `dynamic_pricing_engine.py` → `domains/ai/`
+- **PMS Domain (6 files)**: `group_sales_models.py`, `housekeeping_ai.py`, `hotel_inventory_system.py`, `night_audit_module.py`, `booking_adapter.py`, `room_block_models.py` → `domains/pms/`
+- **Guest Domain (2 files)**: `online_checkin_models.py`, `whatsapp_service.py` → `domains/guest/`
+- **Admin Domain (1 file)**: `subscription_models.py` → `domains/admin/`
+- **Infra (7 files)**: `cdn_headers.py`, `security_headers.py`, `prometheus_metrics.py`, `logging_service.py`, `database_optimizer.py`, `simple_cache.py`, `report_automation.py` → `infra/` / `modules/`
+- **Legacy (1 file)**: `graphql_schema.py` → `_legacy/`
+- All import references updated across codebase (0 import errors)
+
+### Faz B — CI/CD Lint Hardening, First Wave (COMPLETED)
+1. Added `F811` (redefinition-of-unused) and `F841` (unused-variable) to ruff rules
+2. Fixed 16 F811 violations: renamed duplicate route handlers, removed dead model definitions
+3. Fixed 6 F841 violations: prefixed unused variables with `_`
+4. Removed duplicate `MarketSegment` enum, `FolioCharge` class, `RatePlan` class
+5. Removed unused `date` import from `models/schemas.py`
+
+### Remaining Backend Orphans (13 files — deferred to Faz C-2):
+Infrastructure cluster with high cross-references: `cache_manager.py` (21 refs), `websocket_server.py` (12 refs), `cache_warmer.py` (6 refs), `redis_cache.py` (5 refs), `ml_data_generators.py` (5 refs), `ml_trainers.py` (5 refs), `apm_middleware.py` (4 refs), `materialized_views.py` (4 refs), `celery_app.py` (3 refs), `celery_tasks.py` (1 ref), `data_archival.py` (3 refs), `optimization_endpoints.py` (3 refs), `advanced_cache.py` (2 refs)
+
 ## Key Endpoints
 - `POST /api/auth/login` -> `{access_token, user, tenant}`
 - `GET /api/pms/operational-alerts` -> `{alerts[], summary{}, available_clean_rooms[]}`
@@ -140,8 +168,12 @@ Enhanced alerts with severity, runbook links, tenant/provider context.
 - pms.py decomposition (2714 lines -> modular services)
 - Legacy collection cleanup (~489 collections)
 - Load and chaos testing
+- Faz C-2: Move remaining 13 infra orphan files (cache_manager, websocket_server, etc.)
+- Faz B-2: Ruff import sorting rules
+- Faz B-3: Node.js 20 → 22 LTS upgrade in CI workflows (separate PR)
 
 ## Backlog (P3)
+- Faz D: App.jsx route-config refactoring (requires route snapshot + smoke tests first)
 - Vite production build + Nginx
 - Go-live runbook, SLO/SLA docs
 - AWS KMS, HashiCorp Vault integration
