@@ -6,7 +6,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://hotel-pipeline-sim.preview.emergentagent.com')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://docker-build-fix-1.preview.emergentagent.com')
 
 class TestAuth:
     """Authentication tests"""
