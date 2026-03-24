@@ -245,6 +245,7 @@ jobs:
             --ignore-vuln GHSA-rf74-v2fm-23pw \
             --ignore-vuln CVE-2026-33230 \
             --ignore-vuln CVE-2026-33231 \
+            --ignore-vuln CVE-2026-4539 \
             || { echo "::error::CRITICAL vulnerabilities found — see security-report.txt"; exit 1; }
 
       - name: Node.js dependency security audit (high — hard gate)

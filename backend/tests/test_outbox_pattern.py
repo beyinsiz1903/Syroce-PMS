@@ -180,7 +180,7 @@ async def test_worker_processes_pending_event():
             mock_dispatch.return_value = (True, "Test success")
 
             # Override worker's db reference
-            with patch("core.outbox_worker.db", db):
+            with patch("core.outbox_worker.get_system_db", return_value=db):
                 from pymongo import ReturnDocument
                 claimed = await db.outbox_events.find_one_and_update(
                     {
@@ -228,7 +228,7 @@ async def test_worker_retries_on_transient_failure():
         with patch("core.outbox_dispatcher.dispatch_outbox_event", new_callable=AsyncMock) as mock_dispatch:
             mock_dispatch.return_value = (False, "retryable: connection timeout")
 
-            with patch("core.outbox_worker.db", db):
+            with patch("core.outbox_worker.get_system_db", return_value=db):
                 claimed = await db.outbox_events.find_one_and_update(
                     {"id": event["id"], "status": STATUS_PENDING},
                     {
@@ -271,7 +271,7 @@ async def test_event_fails_after_max_attempts():
         worker = OutboxWorker()
         updated = await db.outbox_events.find_one({"id": event["id"]}, {"_id": 0})
 
-        with patch("core.outbox_worker.db", db):
+        with patch("core.outbox_worker.get_system_db", return_value=db):
             await worker._handle_failure(updated, "retryable: server error 503")
 
         stored = await db.outbox_events.find_one({"id": event["id"]}, {"_id": 0})
@@ -299,7 +299,7 @@ async def test_permanent_error_fails_immediately():
         with patch("core.outbox_dispatcher.dispatch_outbox_event", new_callable=AsyncMock) as mock_dispatch:
             mock_dispatch.return_value = (False, "permanent: invalid payload schema_mismatch")
 
-            with patch("core.outbox_worker.db", db):
+            with patch("core.outbox_worker.get_system_db", return_value=db):
                 claimed = await db.outbox_events.find_one_and_update(
                     {"id": event["id"], "status": STATUS_PENDING},
                     {
@@ -540,7 +540,7 @@ async def test_worker_metrics():
         with patch("core.outbox_dispatcher.dispatch_outbox_event", new_callable=AsyncMock) as mock_dispatch:
             mock_dispatch.return_value = (True, "OK")
 
-            with patch("core.outbox_worker.db", db):
+            with patch("core.outbox_worker.get_system_db", return_value=db):
                 claimed = await db.outbox_events.find_one_and_update(
                     {"id": event["id"], "status": STATUS_PENDING},
                     {"$set": {"status": STATUS_PROCESSING}, "$inc": {"attempt_count": 1}},
