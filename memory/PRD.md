@@ -1,48 +1,63 @@
 # Syroce PMS — Product Requirements Document
 
-## Original Problem Statement
-Hotel management system (PMS) with multi-tenant architecture. Current focus: technical debt reduction and CI/CD hardening.
+## Problem Statement
+Hotel management system with significant technical debt requiring systematic refactoring.
 
-## Architecture
-- **Backend**: FastAPI + MongoDB (strict tenant mode active)
-- **Frontend**: React (Vite)
-- **Auth**: JWT-based with tenant isolation
-- **CI/CD**: GitHub Actions with hard gates
+## Architecture Overview
+- **Backend**: FastAPI + MongoDB
+- **Frontend**: Vite + React
+- **DB**: MongoDB (MONGO_URL from env)
 
-## What's Been Implemented
+## PMS Router Decomposition Map
 
-### Sprint 1 (Previous Session)
-- Strict Tenant Mode (`STRICT_TENANT_MODE=true`)
-- Wire Failure Tracking (`/api/wire-status`)
-- Ruff Wave 2 (I001, F401 rules)
-- CI Guards (orphan-file, import-boundary checks)
+### Completed
+| Module | File | Routes | Stage |
+|--------|------|--------|-------|
+| Rooms & Companies | `pms_rooms.py` | 14 routes | Stage 1 |
+| Guests | `pms_guests.py` | Guest CRUD | Stage 1 |
+| Bookings | `pms_bookings.py` | 10 routes (CRUD, approve/reject, multi-room) | Stage 2 |
+| Dashboard | `pms_dashboard.py` | 3 routes (dashboard, alerts, alternatives) | Stage 2 |
+| Shared Helpers | `pms_shared.py` | `get_guest_name` (pure helper) | Stage 2 |
 
-### Sprint 2 (Current Session - 2026-03-24)
-- **CI/CD Final — `|| true` removal**: Channel Health smoke test hardened to hard gate. Seed script now fails-fast. Justified `|| true` entries (Slack, grep) documented with inline comments.
-- **CI/CD Wave 3 — Ruff stricter rules**: Added `W` (whitespace) and `C4` (comprehensions) rules. ~5800 violations auto-fixed. Zero remaining violations.
-- **CI/CD Wave 4 — Node.js upgrade**: NODE_VERSION 20 → 22 in GitHub Actions.
-- **Security Ignore Registry**: Created `/app/backend/docs/SECURITY_IGNORE_REGISTRY.md` with reason, expiry, owner for each CVE ignore.
-- **pms.py Decomposition Stage 1**: Extracted rooms (9 routes, 611 lines) and guests (5 routes, 164 lines) into `pms_rooms.py` and `pms_guests.py`. pms.py reduced from 2934 → 2194 lines. 59/59 route wiring regression test passes.
-- **Outbox test fix**: Updated 5 tests in `test_outbox_pattern.py` to use `patch("core.outbox_worker.get_system_db")` instead of non-existent `db` attribute.
+### Remaining in pms.py (~1384 lines, 32 routes)
+| Domain | Routes | Stage |
+|--------|--------|-------|
+| Room Services | 2 | Stage 3 |
+| Room Blocks | 4 | Stage 3 |
+| Availability | 1 + helper | Stage 3 (CRITICAL) |
+| Staff Tasks | 3 | Stage 3 |
+| Allotment Contracts | 3 | Stage 3 |
+| Group Reservations | 2 | Stage 3 |
+| Setup Status | 1 | Stage 3 |
+| Room Details Enhanced | 3 + 2 models | Stage 3 |
+| Reservation Details | 8 + 4 models | Stage 3 |
+| Room Queue | 5 | Stage 3 |
 
-## Prioritized Backlog
+## CI/CD Status
+- Pipeline hardened: `|| true` removed from critical steps
+- Ruff rules: W, C4 enabled; B008 ignored for FastAPI Depends
+- Node.js: 22 in CI
+- Security: pygments CVE documented in SECURITY_IGNORE_REGISTRY.md
 
-### P0 — In Progress
-- **pms.py Decomposition Stage 2**: Extract bookings + dashboard routes
-- **pms.py Decomposition Stage 3**: Extract remaining routes (reservations, availability, queue, services)
+## Regression Test
+- `test_pms_route_wiring.py`: 59 routes verified after each stage
+- `test_pms_decomposition_stage2.py`: 22 API integration tests
 
-### P1 — Next
-- Load + Chaos Testing
-- Frontend refactoring (App.jsx decomposition)
-- Import Boundary exceptions (3 known)
-
-### P2 — Future
-- UP (pyupgrade) rules — 9018 violations, large scope
-- B (bugbear) rules — B008 false positives with FastAPI Depends()
-
-## Test Reports
-- `/app/test_reports/iteration_152.json` — Sprint 1 final
-- `/app/test_reports/iteration_153.json` — Sprint 2 (CI/CD + Stage 1 decomposition)
-
-## Credentials
+## Test Credentials
 - Email: `demo@hotel.com`, Password: `demo123`
+
+## Backlog
+
+### P0 — Next
+- **Stage 3 Decomposition**: Extract reservations, availability (CRITICAL), queue, services
+  - Availability extraction needs expanded test coverage BEFORE extraction
+  - Risk: overbooking, inventory drift if done wrong
+
+### P1
+- Frontend Refactoring: Monolithic `App.jsx` decomposition
+- Architectural Debt: 3 exceptions in `check_import_boundaries.py`
+- CI/CD Ruff Wave UP: pyupgrade rules
+
+### P2
+- Load & Chaos Testing
+- Pre-existing bugs: room-move-history optional param handling, _id projection missing in several reservation routes
