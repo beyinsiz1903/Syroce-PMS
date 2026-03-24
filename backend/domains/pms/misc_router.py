@@ -402,7 +402,7 @@ async def get_folios_by_booking(booking_id: str, current_user: User = Depends(ge
 @router.get("/inventory/alerts")
 async def get_inventory_alerts(current_user: User = Depends(get_current_user)):
     """Get low stock and critical stock alerts"""
-    from hotel_inventory_system import get_suggested_orders
+    from domains.pms.hotel_inventory_system import get_suggested_orders
     
     suggestions = await get_suggested_orders(db, current_user.tenant_id)
     

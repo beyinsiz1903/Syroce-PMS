@@ -229,7 +229,7 @@ async def register_guest(data: GuestRegister):
 @router.post("/auth/login", response_model=TokenResponse)
 async def login(data: UserLogin):
     import hashlib as _hl
-    from simple_cache import simple_cache as _login_cache
+    from infra.simple_cache import simple_cache as _login_cache
 
     cache_key = f"login:{_hl.sha256(f'{data.email}:{data.password}'.encode()).hexdigest()[:24]}"
 
@@ -447,7 +447,7 @@ async def request_verification_code(data: EmailVerificationRequest):
         raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kayıtlı")
     
     # Doğrulama kodu oluştur
-    from email_service import email_service
+    from modules.messaging.email_service import email_service
     code = email_service.generate_verification_code()
     
     # Kodu veritabanına kaydet
@@ -539,7 +539,7 @@ async def verify_email_and_register(data: VerifyCodeRequest):
         await db.verification_codes.delete_one({'_id': verification['_id']})
         
         # Hoşgeldin e-postası gönder
-        from email_service import email_service
+        from modules.messaging.email_service import email_service
         await email_service.send_welcome_email(data.email, verification['name'])
         
         token = create_token(user.id, tenant.id)
@@ -569,7 +569,7 @@ async def verify_email_and_register(data: VerifyCodeRequest):
         await db.verification_codes.delete_one({'_id': verification['_id']})
         
         # Hoşgeldin e-postası gönder
-        from email_service import email_service
+        from modules.messaging.email_service import email_service
         await email_service.send_welcome_email(data.email, verification['name'])
         
         token = create_token(user.id, None)
@@ -588,7 +588,7 @@ async def forgot_password(data: ForgotPasswordRequest):
         }
     
     # Sıfırlama kodu oluştur
-    from email_service import email_service
+    from modules.messaging.email_service import email_service
     code = email_service.generate_verification_code()
     
     # Kodu veritabanına kaydet
@@ -654,7 +654,7 @@ async def reset_password(data: ResetPasswordRequest):
     )
 
     # Invalidate login cache for this user
-    from simple_cache import simple_cache as _login_cache
+    from infra.simple_cache import simple_cache as _login_cache
     _login_cache.cleanup_expired()
     for k in list(_login_cache._cache.keys()):
         if k.startswith("login:"):

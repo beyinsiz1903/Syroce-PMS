@@ -193,7 +193,7 @@ async def check_quota(tenant_id: str, resource: str) -> Dict[str, Any]:
 
     Returns: {"allowed": bool, "current": int, "limit": int|None, "resource": str}
     """
-    from subscription_models import SUBSCRIPTION_PLANS, SubscriptionTier
+    from domains.admin.subscription_models import SUBSCRIPTION_PLANS, SubscriptionTier
     from core.database import _raw_db
 
     tenant = await _raw_db.tenants.find_one({"id": tenant_id}, {"_id": 0, "subscription_tier": 1})
@@ -230,7 +230,7 @@ async def get_tenant_entitlements(tenant_id: str) -> Dict[str, Any]:
     """Get full entitlement view for a tenant.
     Uses _raw_db for cross-tenant admin queries.
     """
-    from subscription_models import SUBSCRIPTION_PLANS, SubscriptionTier
+    from domains.admin.subscription_models import SUBSCRIPTION_PLANS, SubscriptionTier
     from core.helpers import get_tenant_modules
     from core.feature_flags import is_flag_enabled
     from core.database import _raw_db

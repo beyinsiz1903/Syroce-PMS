@@ -407,7 +407,7 @@ async def run_retry_storm(
     total = len(all_results)
 
     # Verify: exactly unique_count PMS bookings
-    pms_bookings = await db.bookings.count_documents({
+    _pms_bookings = await db.bookings.count_documents({
         "tenant_id": tenant_id,
         "source": "ota_sandbox",
         "created_by": "sandbox_simulation",
@@ -472,7 +472,7 @@ async def run_stale_provider_state(
     })
 
     # Step 1: Create synthetic "last pushed" state (what we told the provider)
-    snapshot_id = str(uuid.uuid4())
+    _snapshot_id = str(uuid.uuid4())
     for date in dates:
         await db.cm_sync_snapshots.insert_one({
             "id": str(uuid.uuid4()),
@@ -514,7 +514,7 @@ async def run_stale_provider_state(
 
     # Step 3: Run reconciliation check — detect drift
     from ...application.reconciliation_service import ReconciliationService
-    recon_svc = ReconciliationService(repo)
+    _recon_svc = ReconciliationService(repo)
 
     # Simulate the inventory mismatch detection
     drift_detected = False

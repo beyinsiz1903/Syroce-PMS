@@ -44,14 +44,14 @@ def register_middleware(app: FastAPI) -> None:
 
     # CDN cache-control headers
     try:
-        from cdn_headers import CDNHeaderMiddleware
+        from infra.cdn_headers import CDNHeaderMiddleware
         app.add_middleware(CDNHeaderMiddleware)
     except ImportError:
         pass
 
     # Security headers
     try:
-        from security_headers import SecurityHeadersMiddleware
+        from infra.security_headers import SecurityHeadersMiddleware
         app.add_middleware(SecurityHeadersMiddleware)
     except ImportError:
         pass

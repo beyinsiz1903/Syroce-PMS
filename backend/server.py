@@ -148,7 +148,7 @@ from fastapi import APIRouter
 api_router = APIRouter(prefix="/api")
 
 try:
-    from ai_endpoints import api_router as ai_ai_router
+    from domains.ai.endpoints import api_router as ai_ai_router
     api_router.include_router(ai_ai_router, tags=["AI Intelligence"])
     logger.info("  ✅ AI Intelligence endpoints loaded")
 except Exception:
@@ -210,7 +210,7 @@ except Exception:
 # GraphQL
 try:
     from strawberry.fastapi import GraphQLRouter
-    from graphql_schema import schema
+    from _legacy.graphql_schema import schema
 
     graphql_app = GraphQLRouter(schema, context_getter=lambda: {"db": db, "cache": None, "materialized_views": None})
     app.include_router(graphql_app, prefix="/api/graphql", tags=["graphql"])

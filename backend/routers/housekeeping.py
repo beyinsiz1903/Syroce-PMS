@@ -16,7 +16,7 @@ from modules.inventory.services.release_room_block_service import ReleaseRoomBlo
 from models.schemas import User, HousekeepingTask
 
 try:
-    from room_block_models import RoomBlock, RoomBlockCreate, RoomBlockUpdate, BlockStatus
+    from domains.pms.room_block_models import RoomBlock, RoomBlockCreate, RoomBlockUpdate, BlockStatus
 except ImportError:
     RoomBlock = RoomBlockCreate = RoomBlockUpdate = BlockStatus = None
 

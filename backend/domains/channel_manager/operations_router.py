@@ -621,7 +621,7 @@ async def analyze_ota_insights(
 
 
 @router.get("/channel-manager/rate-parity-check")
-async def check_rate_parity(
+async def check_rate_parity_detailed(
     date: Optional[str] = None,
     room_type: Optional[str] = None,
     current_user: User = Depends(get_current_user)
@@ -784,7 +784,7 @@ async def get_channel_sync_history(
 
 
 @router.get("/channels/status")
-async def get_channel_status(
+async def get_channel_status_v2(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """

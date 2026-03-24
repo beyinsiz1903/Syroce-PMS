@@ -204,7 +204,7 @@ async def upload_rooming_list(
     current_user: User = Depends(get_current_user)
 ):
     """Rooming list upload (Excel'den gelen data)"""
-    from group_sales_models import RoomingListEntry
+    from domains.pms.group_sales_models import RoomingListEntry
     
     # Verify block exists
     block = await db.group_blocks.find_one({

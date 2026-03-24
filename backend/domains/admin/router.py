@@ -18,7 +18,7 @@ from core.helpers import (
 require_super_admin = require_super_admin_guard()
 from models.schemas import User, Tenant, TenantRegister, UpdateUserRoleRequest
 from models.enums import UserRole
-from subscription_models import SubscriptionTier, SUBSCRIPTION_PLANS, get_plan_default_modules, PLAN_MODULE_DEFAULTS, get_all_module_keys, get_feature_comparison
+from domains.admin.subscription_models import SubscriptionTier, SUBSCRIPTION_PLANS, get_plan_default_modules, PLAN_MODULE_DEFAULTS, get_all_module_keys, get_feature_comparison
 
 logger = logging.getLogger(__name__)
 
@@ -1794,7 +1794,7 @@ async def get_database_stats(
 ):
     """Get database optimization and performance statistics"""
     try:
-        from database_optimizer import DatabaseOptimizer
+        from infra.database_optimizer import DatabaseOptimizer
         optimizer = DatabaseOptimizer(db)
 
         # Get index info

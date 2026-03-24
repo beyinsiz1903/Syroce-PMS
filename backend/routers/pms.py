@@ -31,8 +31,8 @@ from models.schemas import (
 )
 
 try:
-    from room_block_models import RoomBlockCreate
-    from night_audit_module import QueueRoom
+    from domains.pms.room_block_models import RoomBlockCreate
+    from domains.pms.night_audit_module import QueueRoom
 except ImportError:
     RoomBlockCreate = None
     QueueRoom = None

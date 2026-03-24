@@ -64,17 +64,27 @@ Multi-tenant Property Management System with integrated Channel Manager, Control
     controlplane/     # OPS: timeline, dashboard, failure tracker, alerting
     core/             # Entitlement, metering, feature flags, outbox, crypto
     channel_manager/  # OTA adapters (Exely, HotelRunner), domain model
-    domains/          # Business domains: admin, PMS, guest, revenue, sales
-    modules/          # Standalone modules: folio, reservations, analytics
+    domains/          # Business domains:
+      admin/          #   Subscriptions, entitlements, control panel
+      ai/             #   AI service, dynamic pricing, predictions, reputation
+      channel_manager/#   CM domain logic, mappings, ARI
+      guest/          #   Check-in, messaging, WhatsApp, journey
+      hr/             #   Staff & HR management
+      pms/            #   Front desk, rooms, housekeeping, night audit, folio
+      revenue/        #   RMS, pricing, analytics, forecasting
+      sales/          #   CRM, group sales
+    infra/            # Infrastructure: cache, headers, metrics, DB optimizer
+    modules/          # Standalone modules: folio, reservations, analytics, ML
     ops/              # Deploy pipeline, rollback engine, smoke tests
     routers/          # HTTP route handlers
     security/         # Tenant guard, rate limiter, credential guard
     workers/          # Background: ARI push, retry, queue monitor
     tests/            # Test suite (391+ curated CI tests)
+    _legacy/          # Deprecated modules (excluded from lint/CI)
   frontend/
     src/
       components/     # Shared components + shadcn/ui primitives
-      pages/          # Route-level pages
+      pages/          # Route-level pages (164 modules, lazy-loaded)
       hooks/          # Custom React hooks
       i18n/           # Translations (8 languages)
 ```
@@ -170,7 +180,7 @@ VITE_BACKEND_URL=<backend-url>
 | Layer | Tool | Status | Detail |
 |-------|------|--------|--------|
 | Backend (Python) | `pip-audit` | **0 unignored** | 2 known-accepted: ecdsa timing (out-of-scope), nltk WordNet (unused) |
-| Frontend (Node) | `yarn audit --level high` | **0 High / 0 Critical** | Vite 8 migration eliminated 87 CRA-era vulnerabilities |
+| Frontend (Node) | `yarn audit --level high` | **0 High / 0 Critical** | Clean Vite 8 dependency tree |
 | Secrets | `grep` + Trivy | **Clean** | No hardcoded secrets, CRITICAL filesystem scan passes |
 | CI Gate | GitHub Actions | **Hard gate** | pip-audit + yarn audit high + Trivy CRITICAL = merge blocker |
 
@@ -215,4 +225,4 @@ MIT
 
 ---
 
-**Version**: 2.1.0 | **Last Updated**: 2026-03
+**Version**: 2.1.1 | **Last Updated**: 2026-02

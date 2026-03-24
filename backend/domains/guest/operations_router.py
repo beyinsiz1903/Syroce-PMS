@@ -243,7 +243,7 @@ async def send_pre_arrival_welcome(
     if isinstance(check_in_date, str):
         check_in_date = datetime.fromisoformat(check_in_date.replace('Z', '+00:00'))
     
-    from email_service import email_service
+    from modules.messaging.email_service import email_service
     
     # Generate 6-digit confirmation code for express check-in
     confirmation_code = email_service.generate_verification_code()
@@ -690,7 +690,7 @@ async def refresh_digital_key(
 
 
 @router.get("/guest/upsell-offers/{booking_id}")
-async def get_upsell_offers(
+async def get_upsell_offers_v2(
     booking_id: str,
     current_user: User = Depends(get_current_user)
 ):

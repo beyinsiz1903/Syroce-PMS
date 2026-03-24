@@ -183,7 +183,7 @@ class TestBookingAdapterImportFix:
         
         try:
             # This should not raise ModuleNotFoundError
-            from booking_adapter import BookingAdapter
+            from domains.pms.booking_adapter import BookingAdapter
             print("✅ booking_adapter imports successfully")
         except ModuleNotFoundError as e:
             pytest.fail(f"ModuleNotFoundError: {e}")

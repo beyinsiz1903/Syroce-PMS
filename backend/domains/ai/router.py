@@ -43,7 +43,7 @@ async def ai_chat(
         return {'response': 'Lütfen bir mesaj yazın.'}
 
     try:
-        from ai_service import get_ai_service
+        from domains.ai.service import get_ai_service
         ai_svc = get_ai_service()
 
         if not ai_svc.llm_enabled:
@@ -447,7 +447,7 @@ async def get_ai_pricing_recommendation(
         if not target_date:
             target_date = datetime.now().strftime("%Y-%m-%d")
 
-        from dynamic_pricing_engine import get_pricing_engine
+        from domains.ai.dynamic_pricing_engine import get_pricing_engine
         engine = get_pricing_engine(db)
         recommendation = await engine.recommend_price(
             current_user.tenant_id,
@@ -509,7 +509,7 @@ async def get_competitor_rates(
 @router.get("/reputation/overview")
 async def get_reputation_overview(current_user: User = Depends(get_current_user)):
     """Online reputation özeti"""
-    from reputation_manager import get_reputation_manager
+    from domains.ai.reputation_manager import get_reputation_manager
     
     manager = get_reputation_manager(db)
     overview = await manager.aggregate_reviews(current_user.tenant_id)
@@ -524,7 +524,7 @@ async def get_reputation_trends(
     current_user: User = Depends(get_current_user)
 ):
     """Reputation trend analizi"""
-    from reputation_manager import get_reputation_manager
+    from domains.ai.reputation_manager import get_reputation_manager
     
     manager = get_reputation_manager(db)
     trends = await manager.get_reputation_trends(current_user.tenant_id, days)
@@ -539,7 +539,7 @@ async def suggest_review_response(
     current_user: User = Depends(get_current_user)
 ):
     """AI review yanıt önerisi"""
-    from reputation_manager import get_reputation_manager
+    from domains.ai.reputation_manager import get_reputation_manager
     
     manager = get_reputation_manager(db)
     response = await manager.suggest_response(
@@ -556,7 +556,7 @@ async def suggest_review_response(
 @router.get("/reputation/negative-alerts")
 async def get_negative_review_alerts(current_user: User = Depends(get_current_user)):
     """Son 24 saatteki negatif review'lar"""
-    from reputation_manager import get_reputation_manager
+    from domains.ai.reputation_manager import get_reputation_manager
     
     manager = get_reputation_manager(db)
     alerts = await manager.detect_negative_reviews(current_user.tenant_id)
@@ -658,7 +658,7 @@ async def demand_forecast(
     current_user: User = Depends(get_current_user)
 ):
     """30 günlük talep tahmini"""
-    from predictive_engine import get_predictive_engine
+    from domains.ai.predictive_engine import get_predictive_engine
     
     engine = get_predictive_engine(db)
     forecast = await engine.predict_demand(current_user.tenant_id, days)
@@ -691,7 +691,7 @@ async def predict_complaint_risk(guest_id: str, current_user: User = Depends(get
 @router.get("/social-media/mentions")
 async def get_social_mentions(hours: int = 24, current_user: User = Depends(get_current_user)):
     """Son 24 saatteki social media mentions"""
-    from social_media_radar import get_social_radar
+    from domains.ai.social_media_radar import get_social_radar
     radar = get_social_radar(db)
     mentions = await radar.scan_mentions(current_user.tenant_id, hours)
     return {'mentions': mentions, 'total': len(mentions)}
@@ -701,7 +701,7 @@ async def get_social_mentions(hours: int = 24, current_user: User = Depends(get_
 @router.get("/social-media/sentiment")
 async def get_sentiment_summary(days: int = 7, current_user: User = Depends(get_current_user)):
     """Sentiment özeti"""
-    from social_media_radar import get_social_radar
+    from domains.ai.social_media_radar import get_social_radar
     radar = get_social_radar(db)
     summary = await radar.get_sentiment_summary(current_user.tenant_id, days)
     return summary
@@ -711,7 +711,7 @@ async def get_sentiment_summary(days: int = 7, current_user: User = Depends(get_
 @router.get("/social-media/crisis-alerts")
 async def get_crisis_alerts(current_user: User = Depends(get_current_user)):
     """Kriz uyarıları"""
-    from social_media_radar import get_social_radar
+    from domains.ai.social_media_radar import get_social_radar
     radar = get_social_radar(db)
     alerts = await radar.detect_crisis(current_user.tenant_id)
     return {'alerts': alerts, 'crisis_detected': len(alerts) > 0}
@@ -723,7 +723,7 @@ async def get_crisis_alerts(current_user: User = Depends(get_current_user)):
 @router.get("/autopilot/status")
 async def get_autopilot_status(current_user: User = Depends(get_current_user)):
     """Autopilot durumu"""
-    from revenue_autopilot import get_revenue_autopilot
+    from domains.ai.revenue_autopilot import get_revenue_autopilot
     autopilot = get_revenue_autopilot(db)
     return {
         'mode': autopilot.mode,
@@ -736,7 +736,7 @@ async def get_autopilot_status(current_user: User = Depends(get_current_user)):
 @router.post("/autopilot/run-cycle")
 async def run_autopilot_cycle(current_user: User = Depends(get_current_user)):
     """Autopilot cycle manuel çalıştır"""
-    from revenue_autopilot import get_revenue_autopilot
+    from domains.ai.revenue_autopilot import get_revenue_autopilot
     autopilot = get_revenue_autopilot(db)
     report = await autopilot.daily_optimization_cycle(current_user.tenant_id)
     return report
@@ -746,7 +746,7 @@ async def run_autopilot_cycle(current_user: User = Depends(get_current_user)):
 @router.post("/autopilot/set-mode")
 async def set_autopilot_mode(mode_data: dict, current_user: User = Depends(get_current_user)):
     """Autopilot modunu ayarla"""
-    from revenue_autopilot import get_revenue_autopilot
+    from domains.ai.revenue_autopilot import get_revenue_autopilot
     autopilot = get_revenue_autopilot(db)
     autopilot.mode = mode_data.get('mode', 'advisory')  # full_auto, supervised, advisory
     return {'success': True, 'new_mode': autopilot.mode}
@@ -1140,7 +1140,7 @@ async def recommend_rates(
 
 
 @router.post("/ai/predict-no-shows")
-async def predict_no_shows(
+async def predict_no_shows_detailed(
     date: str,
     current_user: User = Depends(get_current_user)
 ):

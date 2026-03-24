@@ -21,7 +21,7 @@ async def submit_online_checkin(
     current_user: User = Depends(get_current_user),
 ):
     """Online check-in submission"""
-    from online_checkin_models import OnlineCheckinRequest
+    from domains.guest.online_checkin_models import OnlineCheckinRequest
 
     request = OnlineCheckinRequest(**checkin_data)
 

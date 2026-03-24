@@ -30,7 +30,7 @@ from models.enums import (
 from models.schemas import (
     User, Folio, FolioCreate, FolioCharge, ChargeCreate,
     Payment, PaymentCreate, FolioOperation, FolioOperationCreate,
-    Invoice, InvoiceCreate, Expense, CashFlow, BankAccount,
+    Invoice, InvoiceCreate, CashFlow,
     CityLedgerTransaction,
     GenerateInvoiceFromFolioRequest, ConvertCurrencyRequest,
     CreateCurrencyRateRequest, CreateMultiCurrencyInvoiceRequest,
@@ -2553,7 +2553,7 @@ async def get_monthly_collections_mobile(
 
 
 @router.get("/finance/profit-loss")
-async def get_profit_loss_report(
+async def get_profit_loss_report_v2(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)

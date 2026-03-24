@@ -369,15 +369,7 @@ class LostFoundStatus(str, Enum):
     CLAIMED = "claimed"
 
 
-# Revenue Management Enums
-class MarketSegment(str, Enum):
-    CORPORATE = "corporate"
-    LEISURE = "leisure"
-    GROUP = "group"
-    MICE = "mice"
-    GOVERNMENT = "government"
-    WHOLESALE = "wholesale"
-    NEGOTIATED = "negotiated"
+# Revenue Management Enums (MarketSegment duplicate removed — using first definition above)
 
 # Duplicate PricingStrategy enum removed - using the first one
 

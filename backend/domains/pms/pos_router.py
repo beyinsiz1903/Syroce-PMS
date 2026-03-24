@@ -2259,7 +2259,7 @@ async def get_asset_maintenance_history(
 # --------------------------------------------------------------------------
 
 @router.get("/pos/z-report")
-async def get_z_report(
+async def get_z_report_detailed(
     date: Optional[str] = None,
     outlet_id: Optional[str] = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)

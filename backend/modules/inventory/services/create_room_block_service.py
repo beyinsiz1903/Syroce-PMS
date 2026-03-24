@@ -7,7 +7,7 @@ from typing import Dict, Optional
 from fastapi import HTTPException, Request, status
 
 from modules.inventory.repository import InventoryRepository
-from room_block_models import BlockStatus, RoomBlock, RoomBlockCreate
+from domains.pms.room_block_models import BlockStatus, RoomBlock, RoomBlockCreate
 from shared_kernel.audit_helper import audit_log
 from shared_kernel.idempotency import ensure_idempotent_request
 from shared_kernel.tenancy_context import build_property_context, build_tenant_context

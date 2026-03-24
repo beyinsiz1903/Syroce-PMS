@@ -275,7 +275,7 @@ async def on_startup(app):
     # ── Database optimization ───────────────────────────────────────
     try:
         print("🚀 Running comprehensive database optimization...")
-        from database_optimizer import DatabaseOptimizer
+        from infra.database_optimizer import DatabaseOptimizer
         db_optimizer = DatabaseOptimizer(db)
         opt_result = await db_optimizer.create_all_indexes()
         total_idx = sum(r.get("created", 0) for r in opt_result.values() if isinstance(r, dict) and "created" in r)

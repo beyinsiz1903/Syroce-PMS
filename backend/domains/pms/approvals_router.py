@@ -191,7 +191,7 @@ async def approve_request(
 
 @router.get("/approvals/my-requests")
 @router.put("/approvals/{approval_id}/approve")
-async def approve_request(
+async def approve_request_v2(
     approval_id: str,
     request: ApprovalActionRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -263,7 +263,7 @@ async def approve_request(
 
 
 @router.put("/approvals/{approval_id}/approve")
-async def approve_request(
+async def approve_request_v3(
     approval_id: str,
     request: ApprovalActionRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security)

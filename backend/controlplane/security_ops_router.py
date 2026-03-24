@@ -410,7 +410,7 @@ async def crypto_cutover_metrics():
     """Migration cutover metrics — shows format distribution across all credential collections."""
     try:
         from core.crypto import get_crypto_service
-        svc = get_crypto_service()
+        _svc = get_crypto_service()
     except Exception as e:
         return {"error": str(e)}
 

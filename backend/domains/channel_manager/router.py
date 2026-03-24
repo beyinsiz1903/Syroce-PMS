@@ -24,7 +24,7 @@ from models.schemas import User
 from models.enums import BookingStatus
 
 try:
-    from room_block_models import BlockStatus
+    from domains.pms.room_block_models import BlockStatus
 except ImportError:
     class BlockStatus:
         ACTIVE = "active"

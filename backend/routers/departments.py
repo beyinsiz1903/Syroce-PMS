@@ -698,7 +698,7 @@ async def get_ai_dashboard_briefing(
     # Try AI-generated briefing
     ai_summary = None
     try:
-        from ai_service import get_ai_service
+        from domains.ai.service import get_ai_service
         ai_svc = get_ai_service()
         if ai_svc.llm_enabled:
             ai_summary = await ai_svc.generate_daily_briefing(

@@ -404,7 +404,7 @@ async def bulk_grid_update(
     tenant_id = current_user.tenant_id
     now = datetime.now(timezone.utc).isoformat()
     saved = 0
-    push_results = []
+    _push_results = []
 
     conn = await db.exely_connections.find_one(
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}

@@ -47,8 +47,8 @@ async def predict_cleaning_time(
     current_user: User = Depends(get_current_user)
 ):
     """Flash report otomatik gönderim ayarla"""
-    from report_automation import get_report_automation
-    from email_service import email_service
+    from modules.analytics_export.report_automation import get_report_automation
+    from modules.messaging.email_service import email_service
     
     automation = get_report_automation(db, email_service)
     schedule = automation.schedule_daily_report(
@@ -74,7 +74,7 @@ async def get_ai_room_assignment(
     current_user: User = Depends(get_current_user)
 ):
     """AI ile oda dağılımı optimizasyonu"""
-    from housekeeping_ai import get_housekeeping_ai
+    from domains.pms.housekeeping_ai import get_housekeeping_ai
     
     ai = get_housekeeping_ai(db)
     assignments = await ai.optimize_room_assignment(
@@ -92,13 +92,13 @@ async def get_ai_room_assignment(
 
 
 @router.get("/housekeeping/predict-time")
-async def predict_cleaning_time(
+async def predict_cleaning_time_simple(
     room_type: str,
     staff_id: str,
     current_user: User = Depends(get_current_user)
 ):
     """Temizlik süresi tahmini"""
-    from housekeeping_ai import get_housekeeping_ai
+    from domains.pms.housekeeping_ai import get_housekeeping_ai
     
     ai = get_housekeeping_ai(db)
     prediction = await ai.predict_cleaning_time(room_type, staff_id)

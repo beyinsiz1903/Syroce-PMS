@@ -106,7 +106,7 @@ async def send_whatsapp_confirmation(
     current_user: User = Depends(get_current_user)
 ):
     """WhatsApp ile rezervasyon onayı gönder"""
-    from whatsapp_service import whatsapp_service
+    from domains.guest.whatsapp_service import whatsapp_service
     
     # Get booking
     booking = await db.bookings.find_one({

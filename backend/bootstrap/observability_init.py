@@ -36,7 +36,7 @@ def init_observability() -> None:
 
     # Prometheus metrics endpoint is handled by prometheus_metrics.py
     try:
-        from prometheus_metrics import setup_metrics  # noqa: F401
+        from infra.prometheus_metrics import setup_metrics  # noqa: F401
         logging.info("Prometheus metrics available")
     except ImportError:
         pass

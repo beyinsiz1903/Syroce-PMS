@@ -40,7 +40,7 @@ async def record_usage(tenant_id: str, event_type: str, count: int = 1, metadata
     """Fire-and-forget usage event recording. Buffers in memory, flushes periodically."""
     global _last_flush
     try:
-        key = f"{tenant_id}:{event_type}"
+        _key = f"{tenant_id}:{event_type}"
         _buffer[tenant_id][event_type] += count
 
         now = datetime.now(timezone.utc)

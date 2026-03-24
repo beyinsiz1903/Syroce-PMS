@@ -22,7 +22,7 @@ from models.schemas import (
 )
 
 try:
-    from night_audit_module import NightAuditRecord, AuditStatus, AutomaticPosting
+    from domains.pms.night_audit_module import NightAuditRecord, AuditStatus, AutomaticPosting
 except ImportError:
     NightAuditRecord = None
     AuditStatus = None
@@ -38,7 +38,7 @@ from core.utils import (
 from shared_kernel.migration_observability import MigrationObservabilityService
 
 try:
-    from logging_service import get_logging_service
+    from infra.logging_service import get_logging_service
 except ImportError:
     get_logging_service = None
 
@@ -68,8 +68,8 @@ async def send_flash_report_now(
     current_user: User = Depends(get_current_user)
 ):
     """Flash report'u şimdi gönder"""
-    from report_automation import get_report_automation
-    from email_service import email_service
+    from modules.analytics_export.report_automation import get_report_automation
+    from modules.messaging.email_service import email_service
     
     automation = get_report_automation(db, email_service)
     await automation.send_flash_report_email(current_user.tenant_id, recipients)

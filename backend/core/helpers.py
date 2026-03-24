@@ -181,7 +181,7 @@ MODULE_DEFAULTS: Dict[str, bool] = {
 
 def get_tenant_modules(tenant_doc: Dict[str, Any]) -> Dict[str, bool]:
     """Merge stored tenant modules with tier-based defaults."""
-    from subscription_models import get_plan_default_modules
+    from domains.admin.subscription_models import get_plan_default_modules
 
     tier = (tenant_doc.get("subscription_tier") or "basic").lower()
     if tier == "pro":

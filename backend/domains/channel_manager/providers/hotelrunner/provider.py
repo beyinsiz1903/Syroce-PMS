@@ -490,7 +490,7 @@ class HotelRunnerProvider:
 
     # ── Canonical helpers (for snapshot collectors & ingest) ───────────
 
-    def map_reservation_to_canonical(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+    def map_reservation_to_canonical_format(self, raw: Dict[str, Any]) -> Dict[str, Any]:
         """Map a raw HR reservation to canonical format."""
         return map_raw_payload_to_canonical(raw)
 

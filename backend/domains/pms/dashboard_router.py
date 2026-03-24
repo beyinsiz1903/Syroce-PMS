@@ -1996,7 +1996,7 @@ async def get_complaint_management(
 
 
 @router.get("/gm/complaint-management")
-async def get_complaint_management(
+async def get_complaint_management_v2(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
