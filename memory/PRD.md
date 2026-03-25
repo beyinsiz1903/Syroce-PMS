@@ -35,24 +35,19 @@ Hotel Property Management System - full-stack application with React frontend an
 - [x] PII anomaly detection
 - [x] Secret inventory and classification API
 - [x] **P1: Secret Rotation + Rollback Flow (COMPLETED 2026-03-25)**
-  - Safe rotation: initiate → test → activate
-  - Version history with full audit trail
-  - Rollback to any previous version (single command)
-  - Connector-based dry-run testing (Exely, HotelRunner)
-  - Alert integration on rotation failure/rollback
-  - Expiration tracking with overdue/warning dashboard
-  - 8 new API endpoints, 21/21 tests passed
 - [x] **P1: Rotation Ops Panel Frontend (COMPLETED 2026-03-25)**
-  - Risk Summary Cards: overdue, warning, 7-day rollback, test failures, riskiest connector
-  - Rotation Dashboard table: status, connector, secret path, active version, last rotated, next due, age bar
-  - Audit Trail with expand/collapse (51 entries)
-  - Secret Detail Sheet: status overview, timeline, version history, action buttons
-  - Confirm dialogs for activate/rollback/test (safety controls)
-  - Column sorting (status, connector, age)
-  - All Turkish labels, dark theme, data-testid coverage
-  - Testing: iteration_160 — 100% backend + 100% frontend pass
+- [x] **P2: At-Rest PII Field Encryption — Faz 1 (COMPLETED 2026-03-25)**
+  - FieldEncryptionService: AES-256-GCM encrypt/decrypt with HMAC-SHA256 search hashes
+  - Encrypted write + dual read (plaintext compat during migration)
+  - Hash indexes (_hash_email, _hash_phone, etc.) for exact-match search
+  - Migration API: batch encrypt existing plaintext documents
+  - Status/Progress/Audit endpoints for operational visibility
+  - Frontend FieldEncryptionPanel: coverage bars, migrate buttons, audit trail
+  - guests collection: 268/268 docs encrypted (100% coverage)
+  - Testing: iteration_161 — 100% backend + 100% frontend pass
+- [ ] P2 Faz 2: Migration for users/bookings collections + progress dashboard
+- [ ] P2 Faz 3: Plaintext cleanup + mandatory encrypted-only mode
 - [ ] P1: API response role-based masking (guest endpoints, export/report)
-- [ ] P2: At-rest encryption for critical PII fields (phone, email, passport)
 
 ### Backlog
 - Wire failure tracking into import bridge, outbox worker, ARI push engine
@@ -78,34 +73,19 @@ Hotel Property Management System - full-stack application with React frontend an
 - Comprehensive load test suite (5 files, 32 tests, 11 CI-gated)
 - Clean import boundaries with zero violations
 - CI guards: orphan files + import boundaries + load tests
-- Ruff UP safe auto-fix across entire codebase
-- **AWS KMS / PII Masking (P0 items):**
-  - PII Registry with 31 fields across 4 categories (identity, contact, financial, authentication)
-  - Role-based masking (super_admin sees all, admin sees contact, others see masked)
-  - AWS KMS envelope encryption provider (KMS1: format)
-  - Secret classification (7 types: jwt_app, connector, webhook, encryption, third_party, database, internal)
-  - Log sanitization filter (SanitizedLogFilter) on all handlers
-  - PII audit trail with MongoDB indexes and 180-day TTL
-  - PII anomaly detection for excessive unmask patterns
-  - 8 new API endpoints for security operations
-- **Secret Rotation + Rollback System (P1 item, 2026-03-25):**
-  - Rotation Engine: initiate → dry-run test → activate → rollback
-  - Version management: auto-incrementing versions, status tracking (pending_test → test_passed → active → archived → rolled_back)
-  - Connector-specific testing: Exely (api_key + hotel_id), HotelRunner (token validation)
-  - Rollback: instant restore to any previous version
-  - Alert integration: fires on rotation failure (severity=high) and rollback (severity=warning)
-  - Expiration dashboard: overdue/warning/healthy status per secret
-  - Full audit trail: every rotation action logged with actor, timestamp, version
-  - 8 new endpoints under /api/ops/secrets/rotation/
-  - 21/21 tests passed (iteration 159)
-- **Rotation Ops Panel Frontend (2026-03-25):**
-  - Risk Summary Cards with 5 risk indicators
-  - Rotation Dashboard table with status, connector, age, due dates
-  - Audit Trail with 51+ entries and expand/collapse
-  - Secret Detail Sheet with version history and action buttons
-  - Confirm dialogs for critical operations (activate/rollback/test)
-  - Column sorting, refresh, Turkish localization
-  - Iteration 160: 100% backend + 100% frontend tests passed
+- **AWS KMS / PII Masking (P0 items)**
+- **Secret Rotation + Rollback System (P1 item, 2026-03-25)**
+- **Rotation Ops Panel Frontend (2026-03-25)**
+- **At-Rest PII Field Encryption — Faz 1 (2026-03-25):**
+  - FieldEncryptionService: encrypt/decrypt/migrate/search for PII fields
+  - AES-256-GCM encryption with aes256gcm: envelope format
+  - HMAC-SHA256 search hashes with dedicated pepper
+  - Dual-read: encrypted values decrypted, plaintext returned as-is
+  - Hash indexes on 15 fields across 4 collections
+  - Migration API: batch processing with progress tracking and audit trail
+  - Frontend FieldEncryptionPanel with coverage bars, migrate buttons, audit
+  - Guest CRUD fully integrated: encrypt on write, decrypt on read, hash search
+  - Guests: 268/268 encrypted (100%), Users: 0/154, Bookings: 0/3100
 
 ## Key Files
 - Backend entry: `/app/backend/server.py`
@@ -123,9 +103,13 @@ Hotel Property Management System - full-stack application with React frontend an
   - Sensitive Output: `/app/backend/security/sensitive_output.py`
   - KMS Provider: `/app/backend/core/crypto/kms_provider.py`
   - PII Masking Context: `/app/backend/security/pii_masking_middleware.py`
-  - **Rotation Engine: `/app/backend/security/rotation_engine.py`**
-  - **Rotation Router: `/app/backend/security/rotation_router.py`**
-  - **Rotation Ops Panel: `/app/frontend/src/components/RotationOpsPanel.jsx`**
+  - Rotation Engine: `/app/backend/security/rotation_engine.py`
+  - Rotation Router: `/app/backend/security/rotation_router.py`
+  - Rotation Ops Panel: `/app/frontend/src/components/RotationOpsPanel.jsx`
+  - **Field Encryption Service: `/app/backend/security/field_encryption.py`**
+  - **Field Encryption Router: `/app/backend/security/field_encryption_router.py`**
+  - **Field Encryption Panel: `/app/frontend/src/components/FieldEncryptionPanel.jsx`**
+  - **Guest Router (encrypted): `/app/backend/routers/pms_guests.py`**
 
 ## DB Collections (Security)
 - `secret_rotation_versions` — Version history with encrypted payloads and status
@@ -133,6 +117,8 @@ Hotel Property Management System - full-stack application with React frontend an
 - `secret_access_audit` — General secret access audit (90-day TTL)
 - `pii_access_audit` — PII field access audit (180-day TTL)
 - `_dev_secrets` — Live secret store (local dev backend)
+- `field_encryption_progress` — Migration progress per collection
+- `field_encryption_audit` — Field encryption operation audit trail
 
 ## Test Credentials
 - Email: demo@hotel.com / Password: demo123
@@ -151,3 +137,9 @@ Hotel Property Management System - full-stack application with React frontend an
 - **Rotation uses system DB (`get_system_db()`) to bypass tenant isolation — ops-level operation**
 - **Activation writes live secret FIRST, then updates version status (transactional safety)**
 - **Version must pass test before activation — untested versions are blocked**
+- **Field encryption uses AES-256-GCM (aes256gcm: format) via existing CredentialEncryptionService**
+- **HMAC-SHA256 with dedicated pepper for deterministic search hashes**
+- **Dual-read pattern: encrypted → decrypt, plaintext → return as-is (migration compat)**
+- **Hash indexes stored as `_hash_{field}` alongside encrypted fields, sparse index**
+- **Migration is batch-based with progress tracking and audit trail**
+- **Encrypted documents marked with `_enc_version: 1` and `_encrypted_at` timestamp**
