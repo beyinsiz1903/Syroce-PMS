@@ -18,7 +18,7 @@ import subprocess
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://perf-gate-ci.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://security-pii-masking.preview.emergentagent.com").rstrip("/")
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
