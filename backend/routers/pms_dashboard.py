@@ -3,7 +3,6 @@ PMS Dashboard Router — Extracted from routers/pms.py (Stage 2 decomposition)
 Dashboard overview, operational alerts, room alternatives.
 """
 from datetime import datetime, timezone
-from typing import Optional
 
 from fastapi import APIRouter, Depends
 

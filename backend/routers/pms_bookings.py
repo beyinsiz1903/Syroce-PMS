@@ -4,11 +4,11 @@ Booking CRUD, approval/rejection, multi-room bookings, room move history.
 """
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, List, Literal, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from core.database import db
 from core.helpers import create_audit_log, require_module

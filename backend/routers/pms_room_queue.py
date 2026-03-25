@@ -16,7 +16,6 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from core.database import db
 from core.security import get_current_user
-from models.schemas import User
 
 try:
     from domains.pms.night_audit_module import QueueRoom
