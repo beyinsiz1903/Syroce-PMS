@@ -34,112 +34,97 @@ Hotel Property Management System - full-stack application with React frontend an
 - [x] PII access audit trail (MongoDB-backed, 180-day TTL)
 - [x] PII anomaly detection
 - [x] Secret inventory and classification API
-- [x] **P1: Secret Rotation + Rollback Flow (COMPLETED 2026-03-25)**
-- [x] **P1: Rotation Ops Panel Frontend (COMPLETED 2026-03-25)**
-- [x] **P2: At-Rest PII Field Encryption — Faz 1 (COMPLETED 2026-03-25)**
-  - FieldEncryptionService: AES-256-GCM encrypt/decrypt with HMAC-SHA256 search hashes
-  - Encrypted write + dual read (plaintext compat during migration)
-  - Hash indexes (_hash_email, _hash_phone, etc.) for exact-match search
-  - Migration API: batch encrypt existing plaintext documents
-  - Status/Progress/Audit endpoints for operational visibility
-  - Frontend FieldEncryptionPanel: coverage bars, migrate buttons, audit trail
-  - guests collection: 268/268 docs encrypted (100% coverage)
-  - Testing: iteration_161 — 100% backend + 100% frontend pass
-- [ ] P2 Faz 2: Migration for users/bookings collections + progress dashboard
-- [ ] P2 Faz 3: Plaintext cleanup + mandatory encrypted-only mode
-- [ ] P1: API response role-based masking (guest endpoints, export/report)
+- [x] Secret Rotation + Rollback Flow (COMPLETED 2026-03-25)
+- [x] Rotation Ops Panel Frontend (COMPLETED 2026-03-25)
+- [x] At-Rest PII Field Encryption — Faz 1 & 2 (COMPLETED 2026-03-25)
+- [ ] P2 Faz 3: Plaintext cleanup + mandatory encrypted-only mode (PARKED)
+
+### P4 - HotelRunner Provider Parity (ACTIVE — P0 Priority)
+- [x] **Faz 1: Auth + Credential Güvenliği (COMPLETED 2026-03-25)**
+  - HotelRunner Mock Server (localhost:9999, supervisor-managed)
+  - Environment-aware provider: mock / sandbox / production URL resolution
+  - Credential rotation integration with existing KMS infrastructure
+  - Multi-step connection test: auth → channels → rooms → rates → reservations
+  - Testing: iteration_162 — 15/15 pass (100%)
+- [x] **Faz 2: Mock + Read/Write Path E2E (COMPLETED 2026-03-25)**
+  - Mock server: realistic responses for channels, rooms, reservations, ARI push
+  - Chaos engineering: 429 rate limit, 500 errors, timeout, malformed payload simulation
+  - Normalizer fix: handles real HR API format (checkin_date, firstname, address.email, rooms[].room_code, state)
+  - Read path: fetch_rooms, fetch_channels, fetch_reservations, paginated fetch — all verified
+  - Write path: ARI push (availability, rates, stop_sale, min/max stay, CTA/CTD) — all verified
+  - Ingest pipeline E2E: new → duplicate → modify → cancel lifecycle verified
+  - Duplicate delivery detection via provider_event_id + payload hash
+  - Parser fix: handles string guest field (was failing on `.get()`)
+  - Parity test suite: 27/27 pass (/app/backend/tests/test_hr_parity.py)
+- [ ] **Faz 3: Reconciliation / Snapshot doğrulama (UPCOMING)**
+  - Snapshot collector updated with environment support
+  - Cross-provider comparison engine already exists
+  - Need: E2E reconciliation test with mock server data vs lineage
+- [ ] **Faz 4: Write Path — DRY-RUN controlled exit (UPCOMING)**
+  - ARI adapter currently in DRY-RUN
+  - Controlled exit: read only → limited write → full ARI
+  - CTA/CTD and min/max stay must be verified at provider level
+- [ ] **Faz 5: Ops Dashboard — Provider Health Panel (UPCOMING)**
+  - Frontend: provider health (HR + Exely side by side)
+  - Sync status, error rates, last operations
+  - Deferred room assignment visibility
 
 ### Backlog
-- Wire failure tracking into import bridge, outbox worker, ARI push engine
-- Legacy DB import migration (~264 imports)
-- Legacy collection cleanup (~489 collections)
+- App.jsx decomposition (after security tasks)
+- Legacy migration / cleanup jobs
 - Motor -> pymongo async migration
 - HMR guard decommission
 - Configure Slack webhook for production alerts
-- App.jsx decomposition
+- P2 Faz 2: Migration for users/bookings collections
+- API response role-based masking
 
 ## Architecture
 - Frontend: React + Vite + Shadcn UI
 - Backend: FastAPI + Motor (async MongoDB)
 - Database: MongoDB (hotel_pms)
 - CI/CD: GitHub Actions
-
-## What's Been Implemented
-- Full PMS functionality (bookings, rooms, guests, housekeeping, etc.)
-- Channel manager integrations (Exely, Booking.com adapter)
-- Enterprise features (analytics, reports, revenue management)
-- Go-Live Hardening (P0) - completed
-- All P1 critical fixes and improvements - completed
-- Comprehensive load test suite (5 files, 32 tests, 11 CI-gated)
-- Clean import boundaries with zero violations
-- CI guards: orphan files + import boundaries + load tests
-- **AWS KMS / PII Masking (P0 items)**
-- **Secret Rotation + Rollback System (P1 item, 2026-03-25)**
-- **Rotation Ops Panel Frontend (2026-03-25)**
-- **At-Rest PII Field Encryption — Faz 1 (2026-03-25):**
-  - FieldEncryptionService: encrypt/decrypt/migrate/search for PII fields
-  - AES-256-GCM encryption with aes256gcm: envelope format
-  - HMAC-SHA256 search hashes with dedicated pepper
-  - Dual-read: encrypted values decrypted, plaintext returned as-is
-  - Hash indexes on 15 fields across 4 collections
-  - Migration API: batch processing with progress tracking and audit trail
-  - Frontend FieldEncryptionPanel with coverage bars, migrate buttons, audit
-  - Guest CRUD fully integrated: encrypt on write, decrypt on read, hash search
-  - Guests: 268/268 encrypted (100%), Users: 0/154, Bookings: 0/3100
+- Mock Server: HotelRunner Mock API (port 9999, supervisor-managed)
 
 ## Key Files
 - Backend entry: `/app/backend/server.py`
 - Frontend entry: `/app/frontend/src/App.jsx`
-- Routers: `/app/backend/routers/`
-- Load tests: `/app/backend/load_tests/`
-- CI scripts: `/app/backend/scripts/`
-- Docs: `/app/docs/`
-- CI: `/.github/workflows/ci-cd.yml`
-- **Security:**
-  - PII Registry: `/app/backend/security/pii_registry.py`
-  - PII Audit: `/app/backend/security/pii_audit.py`
-  - Classification Router: `/app/backend/security/classification_router.py`
-  - Log Sanitizer: `/app/backend/security/log_sanitizer.py`
-  - Sensitive Output: `/app/backend/security/sensitive_output.py`
-  - KMS Provider: `/app/backend/core/crypto/kms_provider.py`
-  - PII Masking Context: `/app/backend/security/pii_masking_middleware.py`
+- **HotelRunner Provider:**
+  - Provider facade: `/app/backend/domains/channel_manager/providers/hotelrunner/provider.py`
+  - HTTP client: `/app/backend/domains/channel_manager/providers/hotelrunner/client.py`
+  - Mock server: `/app/backend/domains/channel_manager/providers/hotelrunner/mock_server.py`
+  - Parser: `/app/backend/domains/channel_manager/providers/hotelrunner/parser.py`
+  - Router: `/app/backend/domains/channel_manager/providers/hotelrunner_router.py`
+  - Webhook: `/app/backend/domains/channel_manager/providers/hotelrunner_webhook.py`
+  - Ingest: `/app/backend/domains/channel_manager/providers/hotelrunner_ingest.py`
+  - Normalizer: `/app/backend/domains/channel_manager/ingest/normalizer.py`
+  - Pipeline: `/app/backend/domains/channel_manager/ingest/pipeline.py`
+  - ARI adapter: `/app/backend/domains/channel_manager/ari/adapters/hotelrunner_ari_adapter.py`
+  - Snapshot collector: `/app/backend/domains/channel_manager/reconciliation_engine/snapshot_collectors.py`
+  - Comparison engine: `/app/backend/domains/channel_manager/reconciliation_engine/comparison_engine.py`
+- **Security:** (unchanged from before)
   - Rotation Engine: `/app/backend/security/rotation_engine.py`
-  - Rotation Router: `/app/backend/security/rotation_router.py`
-  - Rotation Ops Panel: `/app/frontend/src/components/RotationOpsPanel.jsx`
-  - **Field Encryption Service: `/app/backend/security/field_encryption.py`**
-  - **Field Encryption Router: `/app/backend/security/field_encryption_router.py`**
-  - **Field Encryption Panel: `/app/frontend/src/components/FieldEncryptionPanel.jsx`**
-  - **Guest Router (encrypted): `/app/backend/routers/pms_guests.py`**
+  - Field Encryption: `/app/backend/security/field_encryption.py`
+- **Tests:**
+  - Parity test: `/app/backend/tests/test_hr_parity.py`
+  - Test report: `/app/test_reports/iteration_162.json`
 
-## DB Collections (Security)
-- `secret_rotation_versions` — Version history with encrypted payloads and status
-- `secret_rotation_audit` — Rotation audit trail (1-year TTL)
-- `secret_access_audit` — General secret access audit (90-day TTL)
-- `pii_access_audit` — PII field access audit (180-day TTL)
-- `_dev_secrets` — Live secret store (local dev backend)
-- `field_encryption_progress` — Migration progress per collection
-- `field_encryption_audit` — Field encryption operation audit trail
+## DB Collections (Channel Manager)
+- `raw_channel_events` — Raw webhook/pull events from all providers
+- `reservation_lineage` — Canonical reservation state (versioned, with mutation tracking)
+- `room_mappings` — Provider room code → PMS room type mapping
+- `rate_plan_mappings` — Provider rate code → PMS rate plan mapping
+- `webhook_raw_payloads` — Raw JSON payloads for debugging
+- `hotelrunner_connections` — Provider connection config per tenant
 
 ## Test Credentials
 - Email: demo@hotel.com / Password: demo123
+- Mock HR token: mock-hr-token-001 / HR ID: HR-HOTEL-001
 
 ## Key Decisions
-- BlockStatus/BlockType enums moved to `models/enums.py` (shared)
-- BookingAdapter moved to `integrations/booking_adapter.py` (canonical location)
-- Worker health exposed via `core/worker_health.py` facade (layer boundary)
-- Room move history uses canonical fields: from_room_number, to_room_number, moved_at
-- CI load tests use `@pytest.mark.ci_load` marker for selective execution
-- Ruff UP rules applied in safe wave first, noisy rules deferred
-- **PII masking uses application-layer approach (not middleware) to avoid GZip compression conflicts**
-- **Passwords are NEVER unmaskable regardless of role**
-- **AWS KMS envelope encryption (KMS1: format) for production key management**
-- **Log sanitization auto-attached to root logger via SanitizedLogFilter**
-- **Rotation uses system DB (`get_system_db()`) to bypass tenant isolation — ops-level operation**
-- **Activation writes live secret FIRST, then updates version status (transactional safety)**
-- **Version must pass test before activation — untested versions are blocked**
-- **Field encryption uses AES-256-GCM (aes256gcm: format) via existing CredentialEncryptionService**
-- **HMAC-SHA256 with dedicated pepper for deterministic search hashes**
-- **Dual-read pattern: encrypted → decrypt, plaintext → return as-is (migration compat)**
-- **Hash indexes stored as `_hash_{field}` alongside encrypted fields, sparse index**
-- **Migration is batch-based with progress tracking and audit trail**
-- **Encrypted documents marked with `_enc_version: 1` and `_encrypted_at` timestamp**
+- **HotelRunner provider uses environment-aware URL resolution (mock/sandbox/production)**
+- **Mock server supports chaos engineering: 429, 500, timeout, malformed payload injection**
+- **Normalizer handles both real HR API format and simplified format (backward compat)**
+- **Ingest pipeline: 9-stage processing with idempotency, dedup, stale detection, mapping resolution**
+- **Deferred room assignment: reservations stay in pending_mapping until room is explicitly mapped**
+- **Credential rotation for HotelRunner uses existing KMS + versioning infrastructure**
+- **DRY-RUN exit will be controlled: read only → limited write → full ARI**
