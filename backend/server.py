@@ -309,6 +309,14 @@ try:
 except Exception as _cls_err:
     logger.warning(f"Security Classification router skipped: {_cls_err}")
 
+# Secret Rotation — Safe rotate + test + activate + rollback
+try:
+    from security.rotation_router import router as rotation_router
+    app.include_router(rotation_router, tags=["Security — Secret Rotation"])
+    logger.info("  ✅ Secret Rotation router loaded")
+except Exception as _rot_err:
+    logger.warning(f"Secret Rotation router skipped: {_rot_err}")
+
 
 # ── Lifecycle events ────────────────────────────────────────────────
 from startup import on_shutdown, on_startup  # noqa: E402

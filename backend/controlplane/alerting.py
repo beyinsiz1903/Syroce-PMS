@@ -43,6 +43,7 @@ class AlertTrigger:
     PROVIDER_AUTH_FAILURE = "provider_auth_failure"
     HIGH_ERROR_RATE = "high_error_rate"
     CRYPTO_FAILURE = "crypto_failure"
+    SECRET_ROTATION_FAILURE = "secret_rotation_failure"
 
 
 # ── Thresholds ─────────────────────────────────────────────────────
@@ -54,6 +55,7 @@ DEFAULT_THRESHOLDS = {
     AlertTrigger.PROVIDER_AUTH_FAILURE: {"count": 2, "window_minutes": 15},
     AlertTrigger.HIGH_ERROR_RATE: {"count": 20, "window_minutes": 60},
     AlertTrigger.CRYPTO_FAILURE: {"count": 1, "window_minutes": 60},
+    AlertTrigger.SECRET_ROTATION_FAILURE: {"count": 1, "window_minutes": 30},
 }
 
 # Cooldown: don't re-fire the same alert within this window

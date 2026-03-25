@@ -56,6 +56,15 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"PII audit index creation error: {e}")
 
+    # ── Rotation Engine indexes ──────────────────────────────────────
+    try:
+        from security.rotation_engine import get_rotation_engine
+        rotation_engine = get_rotation_engine()
+        await rotation_engine.ensure_indexes()
+        logger.info("Rotation engine indexes ensured")
+    except Exception as e:
+        logger.warning(f"Rotation engine index creation error: {e}")
+
     # ── Control Plane Startup Validation ────────────────────────────
     try:
         from controlplane.startup_validator import validate_startup
