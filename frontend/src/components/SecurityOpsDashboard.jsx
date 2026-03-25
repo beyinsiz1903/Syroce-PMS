@@ -10,6 +10,7 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
+import { RotationOpsPanel } from "./RotationOpsPanel";
 
 function SecretHealthCard({ data }) {
   if (!data) return <Skeleton className="h-40 bg-zinc-800" />;
@@ -357,6 +358,9 @@ export function SecurityOpsDashboard() {
         <CutoverMetricsCard data={cutoverMetrics} />
         <RotationPlanCard data={rotationPlan} />
       </div>
+
+      {/* Secret Rotation Operations Panel */}
+      <RotationOpsPanel />
     </div>
   );
 }
