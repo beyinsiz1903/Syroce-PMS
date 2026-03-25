@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from models.enums import BlockStatus, BlockType
 
+
 class RoomBlock(BaseModel):
     id: str
     room_id: str
