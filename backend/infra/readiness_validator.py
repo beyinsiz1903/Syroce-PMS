@@ -3,8 +3,8 @@ Production Readiness Validator — Comprehensive system health check
 that aggregates all subsystem statuses into READY / DEGRADED / NOT_READY.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.readiness_validator")
 
@@ -22,7 +22,7 @@ class ReadinessValidator:
     def db(self):
         return self._db
 
-    async def validate(self) -> Dict[str, Any]:
+    async def validate(self) -> dict[str, Any]:
         """Run all subsystem checks and produce readiness verdict."""
         checks = {}
         scores = []
@@ -156,7 +156,7 @@ class ReadinessValidator:
             readiness = "NOT_READY"
 
         return {
-            "validated_at": datetime.now(timezone.utc).isoformat(),
+            "validated_at": datetime.now(UTC).isoformat(),
             "readiness": readiness,
             "readiness_score": readiness_score,
             "subsystem_count": len(checks),

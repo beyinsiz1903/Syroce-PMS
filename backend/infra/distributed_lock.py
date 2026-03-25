@@ -8,8 +8,8 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.distributed_lock")
 
@@ -79,7 +79,7 @@ class DistributedLockManager:
 
     def __init__(self):
         self._redis = None
-        self._fallback_locks: Dict[str, asyncio.Lock] = {}
+        self._fallback_locks: dict[str, asyncio.Lock] = {}
         self._metrics = {
             "locks_acquired": 0,
             "locks_released": 0,
@@ -89,14 +89,14 @@ class DistributedLockManager:
             "active_locks": 0,
             "contention_events": 0,
         }
-        self._active_locks: Dict[str, Dict[str, Any]] = {}
+        self._active_locks: dict[str, dict[str, Any]] = {}
 
     def set_redis(self, redis_client):
         self._redis = redis_client
 
     @asynccontextmanager
     async def lock(self, name: str, timeout: float = 30.0,
-                   tenant_id: Optional[str] = None):
+                   tenant_id: str | None = None):
         """Acquire a distributed lock as async context manager."""
         lock_name = f"{tenant_id}:{name}" if tenant_id else name
         acquired = False
@@ -110,7 +110,7 @@ class DistributedLockManager:
                     self._metrics["locks_acquired"] += 1
                     self._metrics["active_locks"] += 1
                     self._active_locks[lock_name] = {
-                        "acquired_at": datetime.now(timezone.utc).isoformat(),
+                        "acquired_at": datetime.now(UTC).isoformat(),
                         "timeout": timeout,
                         "tenant_id": tenant_id,
                     }
@@ -148,10 +148,10 @@ class DistributedLockManager:
             logger.error(f"Lock error for {lock_name}: {e}")
             raise
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         return {**self._metrics, "active_lock_names": list(self._active_locks.keys())}
 
-    def get_active_locks(self) -> Dict[str, Any]:
+    def get_active_locks(self) -> dict[str, Any]:
         return dict(self._active_locks)
 
 

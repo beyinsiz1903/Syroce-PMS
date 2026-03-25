@@ -11,7 +11,7 @@ determines the correct import_status:
   - duplicate           : booking already exists for this external reservation
 """
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from core.database import db
 
@@ -29,10 +29,10 @@ REASON_CANCELLED = "reservation_cancelled"
 
 
 def classify_for_import(
-    lineage: Dict[str, Any],
-    room_mapping: Optional[Dict[str, Any]],
-    rate_mapping: Optional[Dict[str, Any]],
-) -> Tuple[str, Optional[str]]:
+    lineage: dict[str, Any],
+    room_mapping: dict[str, Any] | None,
+    rate_mapping: dict[str, Any] | None,
+) -> tuple[str, str | None]:
     """
     Determine import eligibility from a lineage record.
 
@@ -94,7 +94,7 @@ async def check_booking_source_exists(
     tenant_id: str,
     provider: str,
     external_reservation_id: str,
-) -> Optional[str]:
+) -> str | None:
     """Check if a PMS booking already exists for this source."""
     booking = await db.bookings.find_one(
         {

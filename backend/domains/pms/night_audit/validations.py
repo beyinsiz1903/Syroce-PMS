@@ -3,15 +3,15 @@ Night Audit — Pre-Run Validations
 Validates system state before allowing night audit execution.
 """
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-async def validate_pre_audit(db, tenant_id: str, business_date: str) -> Dict[str, Any]:
+async def validate_pre_audit(db, tenant_id: str, business_date: str) -> dict[str, Any]:
     """Run pre-audit validations. Returns dict with pass/fail + blockers."""
-    blockers: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
+    blockers: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
 
     # 1. Check for in-progress housekeeping tasks on occupied rooms
     cleaning_in_progress = await db.housekeeping_tasks.count_documents({

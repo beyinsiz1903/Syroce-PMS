@@ -16,8 +16,8 @@ Routes:
   GET  /pms/setup-status
 """
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -48,9 +48,9 @@ async def get_hotel_room_services(current_user: User = Depends(get_current_user)
 
 
 @router.put("/pms/room-services/{service_id}")
-async def update_room_service(service_id: str, updates: Dict[str, Any], current_user: User = Depends(get_current_user)):
+async def update_room_service(service_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
     if 'status' in updates and updates['status'] == 'completed':
-        updates['completed_at'] = datetime.now(timezone.utc).isoformat()
+        updates['completed_at'] = datetime.now(UTC).isoformat()
     await db.room_services.update_one({'id': service_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
     service = await db.room_services.find_one({'id': service_id}, {'_id': 0})
     return service
@@ -62,8 +62,8 @@ async def update_room_service(service_id: str, updates: Dict[str, Any], current_
 
 @router.get("/pms/staff-tasks")
 async def get_staff_tasks(
-    department: Optional[str] = None,
-    status: Optional[str] = None,
+    department: str | None = None,
+    status: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Get staff tasks (engineering, housekeeping, maintenance)"""
@@ -95,7 +95,7 @@ async def create_staff_task(
         'assigned_to': task_data.get('assigned_to'),
         'status': task_data.get('status', 'pending'),
         'created_by': current_user.id,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     # Get room number if room_id provided
@@ -207,7 +207,7 @@ async def create_allotment_contract(
         'rate': contract_data.get('rate'),
         'release_days': contract_data.get('release_days', 7),
         'status': 'active',
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     await db.allotment_contracts.insert_one(contract)
@@ -235,7 +235,7 @@ async def release_allotment_rooms(
         {'id': contract_id},
         {'$set': {
             'released_rooms': available_rooms,
-            'released_at': datetime.now(timezone.utc).isoformat()
+            'released_at': datetime.now(UTC).isoformat()
         }}
     )
 
@@ -264,7 +264,7 @@ async def create_group_reservation(
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
         **group_data,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
     await db.group_reservations.insert_one(group)
     group.pop('_id', None)

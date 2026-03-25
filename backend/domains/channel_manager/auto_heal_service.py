@@ -26,8 +26,8 @@ NOT auto-healed (manual only):
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 from domains.channel_manager.data_model import (
@@ -69,9 +69,9 @@ class AutoHealResult:
         self.skipped: int = 0
         self.failed: int = 0
         self.escalated: int = 0
-        self.details: List[Dict[str, Any]] = []
+        self.details: list[dict[str, Any]] = []
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "processed": self.processed,
             "healed": self.healed,
@@ -156,7 +156,7 @@ async def run_auto_heal_cycle(
 
 
 async def _attempt_heal(
-    case: Dict[str, Any],
+    case: dict[str, Any],
     drift_type: str,
     whitelist: set,
 ) -> bool:
@@ -184,7 +184,7 @@ async def _attempt_heal(
     if not action:
         return False
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # Create evidence record BEFORE healing
     evidence_id = str(uuid.uuid4())
@@ -230,7 +230,7 @@ async def _attempt_heal(
     return True
 
 
-def _get_heal_action(drift_type: str, rule: TruthRule) -> Optional[Dict[str, str]]:
+def _get_heal_action(drift_type: str, rule: TruthRule) -> dict[str, str] | None:
     """Determine the concrete healing action for a drift type."""
     actions = {
         DriftType.STALE_LOCALLY.value: {
@@ -249,9 +249,9 @@ def _get_heal_action(drift_type: str, rule: TruthRule) -> Optional[Dict[str, str
     return actions.get(drift_type)
 
 
-async def _escalate_case(case: Dict[str, Any], error: str) -> None:
+async def _escalate_case(case: dict[str, Any], error: str) -> None:
     """Escalate a failed auto-heal to manual review."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     await db[COLL_RECONCILIATION_CASES].update_one(
         {"id": case["id"]},
         {"$set": {
@@ -277,7 +277,7 @@ async def _escalate_case(case: Dict[str, Any], error: str) -> None:
     })
 
 
-async def get_auto_heal_stats(tenant_id: str) -> Dict[str, Any]:
+async def get_auto_heal_stats(tenant_id: str) -> dict[str, Any]:
     """Get auto-heal statistics for the dashboard."""
     # Total auto-healed
     total_healed = await db[COLL_AUTO_HEAL_LOG].count_documents({
@@ -302,7 +302,7 @@ async def get_auto_heal_stats(tenant_id: str) -> Dict[str, Any]:
 
     # Recent heals (last 24h)
     from datetime import timedelta
-    since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    since = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
     recent_healed = await db[COLL_AUTO_HEAL_LOG].count_documents({
         "tenant_id": tenant_id,
         "status": "completed",
@@ -334,7 +334,7 @@ async def get_auto_heal_history(
     tenant_id: str,
     limit: int = 50,
     skip: int = 0,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Get recent auto-heal operations."""
     return await db[COLL_AUTO_HEAL_LOG].find(
         {"tenant_id": tenant_id},

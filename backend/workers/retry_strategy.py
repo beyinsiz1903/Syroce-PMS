@@ -5,7 +5,7 @@ Configurable retry with exponential backoff, jitter, and max attempts.
 import asyncio
 import logging
 import random
-from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, Type
+from typing import Any, Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class RetryStrategy:
         max_delay: float = 60.0,
         backoff_factor: float = 2.0,
         jitter: bool = True,
-        retryable_exceptions: Optional[Tuple[Type[Exception], ...]] = None,
+        retryable_exceptions: tuple[type[Exception], ...] | None = None,
     ):
         self.max_retries = max_retries
         self.base_delay = base_delay
@@ -35,7 +35,7 @@ class RetryStrategy:
             delay *= (0.5 + random.random())
         return delay
 
-    async def execute(self, fn: Callable[..., Awaitable], *args, **kwargs) -> Dict[str, Any]:
+    async def execute(self, fn: Callable[..., Awaitable], *args, **kwargs) -> dict[str, Any]:
         """Execute function with retry strategy."""
         last_error = None
         for attempt in range(self.max_retries + 1):

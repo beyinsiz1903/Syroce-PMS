@@ -5,16 +5,16 @@ Fire-and-forget recording with background aggregation.
 """
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
 logger = logging.getLogger(__name__)
 
 # ─── In-memory buffer for high-frequency events ───
-_buffer: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
-_last_flush = datetime.now(timezone.utc)
+_buffer: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+_last_flush = datetime.now(UTC)
 FLUSH_INTERVAL_SECONDS = 60
 
 
@@ -36,14 +36,14 @@ class UsageEventType:
     LOGIN = "login"
 
 
-async def record_usage(tenant_id: str, event_type: str, count: int = 1, metadata: Optional[Dict] = None):
+async def record_usage(tenant_id: str, event_type: str, count: int = 1, metadata: dict | None = None):
     """Fire-and-forget usage event recording. Buffers in memory, flushes periodically."""
     global _last_flush
     try:
         _key = f"{tenant_id}:{event_type}"
         _buffer[tenant_id][event_type] += count
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if (now - _last_flush).total_seconds() >= FLUSH_INTERVAL_SECONDS:
             await flush_buffer()
     except Exception as e:
@@ -56,7 +56,7 @@ async def flush_buffer():
     if not _buffer:
         return
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     date_key = now.strftime("%Y-%m-%d")
     month_key = now.strftime("%Y-%m")
 
@@ -86,9 +86,9 @@ async def flush_buffer():
                 logger.warning(f"Metering flush error for {tenant_id}/{event_type}: {e}")
 
 
-async def get_tenant_usage_summary(tenant_id: str, days: int = 30) -> Dict[str, Any]:
+async def get_tenant_usage_summary(tenant_id: str, days: int = 30) -> dict[str, Any]:
     """Get aggregated usage summary for a tenant."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     pipeline = [
         {"$match": {"tenant_id": tenant_id, "date": {"$gte": cutoff}}},
@@ -116,11 +116,11 @@ async def get_tenant_usage_summary(tenant_id: str, days: int = 30) -> Dict[str, 
     }
 
 
-async def get_tenant_usage_timeline(tenant_id: str, days: int = 30, event_type: Optional[str] = None) -> List[Dict]:
+async def get_tenant_usage_timeline(tenant_id: str, days: int = 30, event_type: str | None = None) -> list[dict]:
     """Get daily usage timeline for charts."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
 
-    match_q: Dict[str, Any] = {"tenant_id": tenant_id, "date": {"$gte": cutoff}}
+    match_q: dict[str, Any] = {"tenant_id": tenant_id, "date": {"$gte": cutoff}}
     if event_type:
         match_q["event_type"] = event_type
 
@@ -141,11 +141,11 @@ async def get_tenant_usage_timeline(tenant_id: str, days: int = 30, event_type: 
     return timeline
 
 
-async def get_system_usage_overview() -> Dict[str, Any]:
+async def get_system_usage_overview() -> dict[str, Any]:
     """System-wide usage overview for super admin. Uses raw DB for cross-tenant access."""
     from core.database import _raw_db
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     today = now.strftime("%Y-%m-%d")
     month = now.strftime("%Y-%m")
 

@@ -8,8 +8,8 @@ conflicts in async test runners and improve performance.
 """
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from starlette.datastructures import MutableHeaders
 from starlette.responses import JSONResponse
@@ -20,7 +20,7 @@ from core.metering import UsageEventType, record_usage
 logger = logging.getLogger(__name__)
 
 # ─── Route → Required Module Mapping ───
-ROUTE_MODULE_MAP: Dict[str, str] = {
+ROUTE_MODULE_MAP: dict[str, str] = {
     "/api/channel-manager": "channel_manager",
     "/api/cm/": "channel_manager",
     "/api/webhooks/exely": "channel_manager",
@@ -58,7 +58,7 @@ EXEMPT_PREFIXES = [
 ]
 
 
-def _get_token_from_headers(headers: list) -> Optional[str]:
+def _get_token_from_headers(headers: list) -> str | None:
     """Extract JWT token from raw ASGI headers."""
     for key, value in headers:
         if key == b"authorization":
@@ -68,7 +68,7 @@ def _get_token_from_headers(headers: list) -> Optional[str]:
     return None
 
 
-def _decode_tenant_from_token(token: str) -> Optional[str]:
+def _decode_tenant_from_token(token: str) -> str | None:
     """Decode tenant_id from JWT without full validation (for middleware speed)."""
     try:
         import os
@@ -81,7 +81,7 @@ def _decode_tenant_from_token(token: str) -> Optional[str]:
         return None
 
 
-def _match_route_module(path: str) -> Optional[str]:
+def _match_route_module(path: str) -> str | None:
     """Find the required module for a given route path."""
     for prefix, module in ROUTE_MODULE_MAP.items():
         if path.startswith(prefix):
@@ -187,7 +187,7 @@ class EntitlementMiddleware:
         await self.app(scope, receive, send_with_headers)
 
 
-async def check_quota(tenant_id: str, resource: str) -> Dict[str, Any]:
+async def check_quota(tenant_id: str, resource: str) -> dict[str, Any]:
     """Check if tenant is within quota limits.
     Uses _raw_db for cross-tenant admin queries.
 
@@ -226,7 +226,7 @@ async def check_quota(tenant_id: str, resource: str) -> Dict[str, Any]:
     }
 
 
-async def get_tenant_entitlements(tenant_id: str) -> Dict[str, Any]:
+async def get_tenant_entitlements(tenant_id: str) -> dict[str, Any]:
     """Get full entitlement view for a tenant.
     Uses _raw_db for cross-tenant admin queries.
     """
@@ -260,7 +260,7 @@ async def get_tenant_entitlements(tenant_id: str) -> Dict[str, Any]:
     if sub_end:
         try:
             end_dt = datetime.fromisoformat(sub_end.replace("Z", "+00:00"))
-            if datetime.now(timezone.utc) > end_dt:
+            if datetime.now(UTC) > end_dt:
                 is_expired = True
                 sub_status = "expired"
         except Exception:

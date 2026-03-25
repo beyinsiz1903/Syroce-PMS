@@ -7,8 +7,7 @@ provider circuit breaker live behaviour monitoring.
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List
+from datetime import UTC, datetime, timedelta
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -71,7 +70,7 @@ class ProviderValidationService:
         if not contract:
             return ServiceResult.fail(f"Unknown provider: {provider_id}", "UNKNOWN_PROVIDER")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         validation_id = str(uuid.uuid4())
         results = []
 
@@ -216,7 +215,7 @@ class ProviderValidationService:
         self, ctx: OperationContext, provider_id: str, hours: int = 24
     ) -> ServiceResult:
         """Measure sync lag for a provider."""
-        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
         logs = await self._db.channel_sync_logs.find(
             {
                 "provider_id": provider_id,
@@ -226,7 +225,7 @@ class ProviderValidationService:
             {"_id": 0, "sync_type": 1, "duration_ms": 1, "status": 1, "timestamp": 1},
         ).to_list(500)
 
-        by_type: Dict[str, List[int]] = {}
+        by_type: dict[str, list[int]] = {}
         for log in logs:
             st = log.get("sync_type", "unknown")
             dur = log.get("duration_ms", 0)

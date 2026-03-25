@@ -61,12 +61,12 @@ def scan_file(filepath, backend_dir):
 
     violations = []
     try:
-        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+        with open(filepath, encoding="utf-8", errors="ignore") as f:
             for line_no, line in enumerate(f, 1):
                 for pattern in RAW_DB_PATTERNS:
                     if pattern.search(line):
                         violations.append((rel_path, line_no, line.strip()))
-    except (IOError, OSError):
+    except OSError:
         pass
 
     return violations

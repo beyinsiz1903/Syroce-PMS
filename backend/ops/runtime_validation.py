@@ -8,8 +8,7 @@ import asyncio
 import logging
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Dict
+from datetime import UTC, datetime, timedelta
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -149,7 +148,7 @@ class RuntimeValidationOrchestrator:
             return ServiceResult.fail(f"Unknown scenario: {scenario_type}/{scenario_id}", "NOT_FOUND")
 
         run_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         result = await self._execute_scenario(ctx, scenario_type, scenario, run_id)
 
@@ -163,7 +162,7 @@ class RuntimeValidationOrchestrator:
             "metrics": result["metrics"],
             "threshold_checks": result["threshold_checks"],
             "started_at": now.isoformat(),
-            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "completed_at": datetime.now(UTC).isoformat(),
             "duration_ms": result.get("duration_ms", 0),
             "executed_by": ctx.actor_id,
         }
@@ -172,8 +171,8 @@ class RuntimeValidationOrchestrator:
         return ServiceResult.success(run_doc)
 
     async def _execute_scenario(
-        self, ctx: OperationContext, stype: str, scenario: Dict, run_id: str
-    ) -> Dict:
+        self, ctx: OperationContext, stype: str, scenario: dict, run_id: str
+    ) -> dict:
         """Execute scenario and measure metrics."""
         start = time.monotonic()
         metrics = {}
@@ -215,7 +214,7 @@ class RuntimeValidationOrchestrator:
 
         return {"metrics": metrics, "threshold_checks": checks, "passed": all_passed, "duration_ms": duration_ms}
 
-    async def _run_load_scenario(self, ctx: OperationContext, scenario: Dict) -> Dict:
+    async def _run_load_scenario(self, ctx: OperationContext, scenario: dict) -> dict:
         """Execute a load scenario by sending concurrent requests internally."""
         sid = scenario["id"]
         latencies = []
@@ -259,7 +258,7 @@ class RuntimeValidationOrchestrator:
             "avg_ms": round(sum(sorted_lat) / max(n, 1), 1),
         }
 
-    async def _run_stress_scenario(self, ctx: OperationContext, scenario: Dict) -> Dict:
+    async def _run_stress_scenario(self, ctx: OperationContext, scenario: dict) -> dict:
         """Execute stress scenarios with high concurrency."""
         sid = scenario["id"]
         latencies = []
@@ -289,7 +288,7 @@ class RuntimeValidationOrchestrator:
             "recovery_seconds": 0,
         }
 
-    async def _run_chaos_scenario(self, ctx: OperationContext, scenario: Dict) -> Dict:
+    async def _run_chaos_scenario(self, ctx: OperationContext, scenario: dict) -> dict:
         """Chaos scenario: measure resilience under failure conditions."""
         sid = scenario["id"]
         start = time.monotonic()
@@ -360,7 +359,7 @@ class RuntimeValidationOrchestrator:
         self, ctx: OperationContext, hours: int = 24
     ) -> ServiceResult:
         """Generate a comprehensive validation report."""
-        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
         runs = await self._db.validation_runs.find(
             {"tenant_id": ctx.tenant_id, "started_at": {"$gte": since}},
             {"_id": 0},
@@ -395,7 +394,7 @@ class RuntimeValidationOrchestrator:
             "failed": total_failed,
             "pass_rate": round(total_passed / max(total, 1) * 100, 1),
             "by_type": by_type,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
         })
 
 

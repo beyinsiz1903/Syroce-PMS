@@ -4,8 +4,7 @@ Converts ML recommendations into auto-applied or queued pricing decisions.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +23,7 @@ class ApprovalStatus:
     ROLLED_BACK = "rolled_back"
 
 
-def new_autopilot_policy(tenant_id: str, property_id: Optional[str] = None) -> dict:
+def new_autopilot_policy(tenant_id: str, property_id: str | None = None) -> dict:
     return {
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
@@ -37,21 +36,21 @@ def new_autopilot_policy(tenant_id: str, property_id: Optional[str] = None) -> d
         "protected_room_types": [],
         "enabled": True,
         "daily_summary_enabled": True,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
 
 
 def new_approval_item(
     tenant_id: str,
-    property_id: Optional[str],
+    property_id: str | None,
     room_type: str,
     target_date: str,
     current_price: float,
     recommended_price: float,
     confidence: float,
     reason: str,
-    source_job_id: Optional[str] = None,
+    source_job_id: str | None = None,
 ) -> dict:
     return {
         "id": str(uuid.uuid4()),
@@ -71,8 +70,8 @@ def new_approval_item(
         "rejected_reason": None,
         "rollback_price": None,
         "channel_push_status": None,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -95,7 +94,7 @@ def new_apply_result(
         "channels_pushed": channels_pushed,
         "success": success,
         "error_message": None,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -105,7 +104,7 @@ class RevenueAutopilotService:
     def __init__(self, db):
         self.db = db
 
-    async def get_policy(self, tenant_id: str, property_id: Optional[str] = None) -> dict:
+    async def get_policy(self, tenant_id: str, property_id: str | None = None) -> dict:
         q = {"tenant_id": tenant_id}
         if property_id:
             q["property_id"] = property_id
@@ -121,7 +120,7 @@ class RevenueAutopilotService:
                     "max_price_change_pct", "blackout_dates", "protected_room_types",
                     "enabled", "daily_summary_enabled"]
         filtered = {k: v for k, v in updates.items() if k in allowed}
-        filtered["updated_at"] = datetime.now(timezone.utc).isoformat()
+        filtered["updated_at"] = datetime.now(UTC).isoformat()
         result = await self.db.revenue_autopilot_policies.update_one(
             {"tenant_id": tenant_id},
             {"$set": filtered},
@@ -176,7 +175,7 @@ class RevenueAutopilotService:
                 recommendation.get("source_job_id"),
             )
             item["status"] = ApprovalStatus.AUTO_APPLIED
-            item["applied_at"] = datetime.now(timezone.utc).isoformat()
+            item["applied_at"] = datetime.now(UTC).isoformat()
             item["applied_by"] = "autopilot"
             item["channel_push_status"] = "pushed" if result.get("success") else "failed"
             await self.db.revenue_approval_queue.insert_one(item)
@@ -205,7 +204,7 @@ class RevenueAutopilotService:
         try:
             await self.db.rate_plans.update_many(
                 {"tenant_id": tenant_id, "room_type": room_type},
-                {"$set": {"base_price": new_price, "updated_at": datetime.now(timezone.utc).isoformat()}},
+                {"$set": {"base_price": new_price, "updated_at": datetime.now(UTC).isoformat()}},
             )
             channels = ["booking_com", "expedia", "hotel_website"]
             # audit
@@ -217,7 +216,7 @@ class RevenueAutopilotService:
                 "entity_type": "rate_plan",
                 "entity_id": room_type,
                 "changes": {"old_price": old_price, "new_price": new_price, "target_date": target_date},
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             })
             return {"success": True, "channels": channels}
         except Exception as e:
@@ -239,10 +238,10 @@ class RevenueAutopilotService:
             {"id": item_id},
             {"$set": {
                 "status": ApprovalStatus.APPROVED,
-                "applied_at": datetime.now(timezone.utc).isoformat(),
+                "applied_at": datetime.now(UTC).isoformat(),
                 "applied_by": user_id,
                 "channel_push_status": "pushed" if result.get("success") else "failed",
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }},
         )
         apply_doc = new_apply_result(tenant_id, item_id, item["room_type"],
@@ -258,7 +257,7 @@ class RevenueAutopilotService:
                 "status": ApprovalStatus.REJECTED,
                 "applied_by": user_id,
                 "rejected_reason": reason,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }},
         )
         if result.matched_count == 0:
@@ -284,12 +283,12 @@ class RevenueAutopilotService:
                 "status": ApprovalStatus.ROLLED_BACK,
                 "rollback_price": item["current_price"],
                 "applied_by": user_id,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }},
         )
         return {"success": True, "rolled_back_to": item["current_price"]}
 
-    async def get_approval_queue(self, tenant_id: str, status_filter: Optional[str] = None,
+    async def get_approval_queue(self, tenant_id: str, status_filter: str | None = None,
                                   limit: int = 50) -> list:
         q = {"tenant_id": tenant_id}
         if status_filter:
@@ -299,7 +298,7 @@ class RevenueAutopilotService:
         ).sort("created_at", -1).to_list(limit)
 
     async def get_daily_summary(self, tenant_id: str) -> dict:
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         cutoff = f"{today}T00:00:00"
         pipeline = [
             {"$match": {"tenant_id": tenant_id, "created_at": {"$gte": cutoff}}},

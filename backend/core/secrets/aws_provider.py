@@ -7,8 +7,8 @@ Never logs secret values.
 """
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from .provider import SecretMetadata, SecretPayload, SecretsProviderBase
 
@@ -32,10 +32,10 @@ class AWSSecretsProvider(SecretsProviderBase):
     async def create_secret(
         self,
         path: str,
-        payload: Dict[str, str],
-        tags: Optional[Dict[str, str]] = None,
+        payload: dict[str, str],
+        tags: dict[str, str] | None = None,
     ) -> SecretMetadata:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         secret_doc = {
             "data": payload,
             "version": "1",
@@ -67,7 +67,7 @@ class AWSSecretsProvider(SecretsProviderBase):
             tags=tags or {},
         )
 
-    async def get_secret(self, path: str) -> Optional[SecretPayload]:
+    async def get_secret(self, path: str) -> SecretPayload | None:
         try:
             response = self._client.get_secret_value(SecretId=path)
         except self._client.exceptions.ResourceNotFoundException:
@@ -88,13 +88,13 @@ class AWSSecretsProvider(SecretsProviderBase):
     async def update_secret(
         self,
         path: str,
-        payload: Dict[str, str],
+        payload: dict[str, str],
     ) -> SecretMetadata:
         existing = await self.get_secret(path)
         if not existing:
             raise ValueError(f"Secret not found for update: {path}")
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         secret_doc = {
             "data": payload,
             "version": existing.version,
@@ -134,13 +134,13 @@ class AWSSecretsProvider(SecretsProviderBase):
     async def rotate_secret(
         self,
         path: str,
-        new_payload: Dict[str, str],
+        new_payload: dict[str, str],
     ) -> SecretMetadata:
         existing = await self.get_secret(path)
         if not existing:
             raise ValueError(f"Secret not found for rotation: {path}")
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         new_count = existing.rotation_count + 1
         new_version = str(int(existing.version) + 1)
 
@@ -171,7 +171,7 @@ class AWSSecretsProvider(SecretsProviderBase):
             rotation_count=new_count,
         )
 
-    async def get_secret_metadata(self, path: str) -> Optional[SecretMetadata]:
+    async def get_secret_metadata(self, path: str) -> SecretMetadata | None:
         try:
             response = self._client.describe_secret(SecretId=path)
         except self._client.exceptions.ResourceNotFoundException:
@@ -198,7 +198,7 @@ class AWSSecretsProvider(SecretsProviderBase):
             tags=tags_dict,
         )
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         try:
             self._client.list_secrets(MaxResults=1)
             return {

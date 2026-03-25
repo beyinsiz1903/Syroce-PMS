@@ -6,8 +6,8 @@ drift workflow, degraded service detection, incident lifecycle management.
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from common.audit_hook import SEVERITY_CRITICAL, SEVERITY_WARNING, audited
 from common.context import OperationContext
@@ -41,11 +41,11 @@ class IncidentResponseService:
         description: str,
         severity: str = IncidentSeverity.P2,
         affected_service: str = "",
-        affected_tenant_id: Optional[str] = None,
-        affected_property_id: Optional[str] = None,
+        affected_tenant_id: str | None = None,
+        affected_property_id: str | None = None,
     ) -> ServiceResult:
         incident_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         incident = {
             "id": incident_id,
             "tenant_id": ctx.tenant_id,
@@ -83,7 +83,7 @@ class IncidentResponseService:
     async def acknowledge_incident(
         self, ctx: OperationContext, incident_id: str
     ) -> ServiceResult:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = await self._db.incidents.update_one(
             {"id": incident_id, "tenant_id": ctx.tenant_id, "status": "open"},
             {
@@ -112,7 +112,7 @@ class IncidentResponseService:
         incident_id: str,
         resolution_note: str,
     ) -> ServiceResult:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = await self._db.incidents.update_one(
             {"id": incident_id, "tenant_id": ctx.tenant_id, "status": {"$in": ["open", "acknowledged"]}},
             {
@@ -139,11 +139,11 @@ class IncidentResponseService:
     async def list_incidents(
         self,
         ctx: OperationContext,
-        status: Optional[str] = None,
-        severity: Optional[str] = None,
+        status: str | None = None,
+        severity: str | None = None,
         limit: int = 50,
     ) -> ServiceResult:
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id}
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if status:
             query["status"] = status
         if severity:
@@ -182,14 +182,14 @@ class IncidentResponseService:
                 "payload": dl.get("payload"),
                 "status": "pending",
                 "replayed_from": dl.get("id"),
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             })
             await self._db.dead_letter_queue.update_one(
                 {"id": dl["id"]},
                 {
                     "$set": {
                         "replayed": True,
-                        "replayed_at": datetime.now(timezone.utc).isoformat(),
+                        "replayed_at": datetime.now(UTC).isoformat(),
                         "replayed_by": ctx.actor_id,
                     }
                 },
@@ -210,7 +210,7 @@ class IncidentResponseService:
         if ctx.actor_role not in ("admin", "super_admin"):
             return ServiceResult.fail("Admin only operation", "FORBIDDEN")
 
-        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=stale_minutes)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(minutes=stale_minutes)).isoformat()
         stuck = await self._db.task_queue.find(
             {
                 "tenant_id": ctx.tenant_id,
@@ -227,7 +227,7 @@ class IncidentResponseService:
                 {
                     "$set": {
                         "status": "pending",
-                        "recovered_at": datetime.now(timezone.utc).isoformat(),
+                        "recovered_at": datetime.now(UTC).isoformat(),
                         "recovered_by": ctx.actor_id,
                         "recovery_reason": "stuck_worker_timeout",
                     },
@@ -251,7 +251,7 @@ class IncidentResponseService:
     ) -> ServiceResult:
         """Queue a force reconciliation for a specific provider."""
         recon_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         await self._db.reconciliation_queue.insert_one({
             "id": recon_id,
             "tenant_id": ctx.tenant_id,
@@ -278,7 +278,7 @@ class IncidentResponseService:
             "queue_workers", "security", "ml_pipeline", "websocket",
         ]
         matrix = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         for svc in services:
             last_heartbeat = await self._db.service_heartbeats.find_one(

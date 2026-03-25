@@ -2,7 +2,7 @@
 PMS Domain — Folio Repository
 Data access layer for folios, charges, and payments. No FastAPI dependencies.
 """
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from core.tenant_db import LazyCollection
 
@@ -14,11 +14,11 @@ class FolioRepository:
 
     @classmethod
     async def find_by_tenant(
-        cls, tenant_id: str, *, booking_id: Optional[str] = None,
-        guest_id: Optional[str] = None, status: Optional[str] = None,
+        cls, tenant_id: str, *, booking_id: str | None = None,
+        guest_id: str | None = None, status: str | None = None,
         limit: int = 50, offset: int = 0,
-    ) -> List[Dict[str, Any]]:
-        query: Dict[str, Any] = {"tenant_id": tenant_id}
+    ) -> list[dict[str, Any]]:
+        query: dict[str, Any] = {"tenant_id": tenant_id}
         if booking_id:
             query["booking_id"] = booking_id
         if guest_id:
@@ -30,23 +30,23 @@ class FolioRepository:
         return await cursor.to_list(limit)
 
     @classmethod
-    async def find_one(cls, tenant_id: str, folio_id: str) -> Optional[Dict[str, Any]]:
+    async def find_one(cls, tenant_id: str, folio_id: str) -> dict[str, Any] | None:
         return await cls.collection.find_one(
             {"tenant_id": tenant_id, "id": folio_id}, {"_id": 0}
         )
 
     @classmethod
-    async def find_by_booking(cls, tenant_id: str, booking_id: str) -> Optional[Dict[str, Any]]:
+    async def find_by_booking(cls, tenant_id: str, booking_id: str) -> dict[str, Any] | None:
         return await cls.collection.find_one(
             {"tenant_id": tenant_id, "booking_id": booking_id}, {"_id": 0}
         )
 
     @classmethod
-    async def insert(cls, folio_dict: Dict[str, Any]) -> None:
+    async def insert(cls, folio_dict: dict[str, Any]) -> None:
         await cls.collection.insert_one(folio_dict)
 
     @classmethod
-    async def update(cls, tenant_id: str, folio_id: str, update_data: Dict[str, Any]) -> bool:
+    async def update(cls, tenant_id: str, folio_id: str, update_data: dict[str, Any]) -> bool:
         result = await cls.collection.update_one(
             {"tenant_id": tenant_id, "id": folio_id},
             {"$set": update_data},
@@ -54,7 +54,7 @@ class FolioRepository:
         return result.modified_count > 0
 
     @classmethod
-    async def add_charge(cls, tenant_id: str, folio_id: str, charge: Dict[str, Any]) -> bool:
+    async def add_charge(cls, tenant_id: str, folio_id: str, charge: dict[str, Any]) -> bool:
         result = await cls.collection.update_one(
             {"tenant_id": tenant_id, "id": folio_id},
             {"$push": {"charges": charge}},
@@ -62,7 +62,7 @@ class FolioRepository:
         return result.modified_count > 0
 
     @classmethod
-    async def add_payment(cls, tenant_id: str, folio_id: str, payment: Dict[str, Any]) -> bool:
+    async def add_payment(cls, tenant_id: str, folio_id: str, payment: dict[str, Any]) -> bool:
         result = await cls.collection.update_one(
             {"tenant_id": tenant_id, "id": folio_id},
             {"$push": {"payments": payment}},
@@ -76,13 +76,13 @@ class ChargeRepository:
     collection = LazyCollection("charges")
 
     @classmethod
-    async def find_by_folio(cls, tenant_id: str, folio_id: str) -> List[Dict[str, Any]]:
+    async def find_by_folio(cls, tenant_id: str, folio_id: str) -> list[dict[str, Any]]:
         return await cls.collection.find(
             {"tenant_id": tenant_id, "folio_id": folio_id}, {"_id": 0}
         ).to_list(500)
 
     @classmethod
-    async def insert(cls, charge_dict: Dict[str, Any]) -> None:
+    async def insert(cls, charge_dict: dict[str, Any]) -> None:
         await cls.collection.insert_one(charge_dict)
 
 
@@ -92,11 +92,11 @@ class PaymentRepository:
     collection = LazyCollection("payments")
 
     @classmethod
-    async def find_by_folio(cls, tenant_id: str, folio_id: str) -> List[Dict[str, Any]]:
+    async def find_by_folio(cls, tenant_id: str, folio_id: str) -> list[dict[str, Any]]:
         return await cls.collection.find(
             {"tenant_id": tenant_id, "folio_id": folio_id}, {"_id": 0}
         ).to_list(500)
 
     @classmethod
-    async def insert(cls, payment_dict: Dict[str, Any]) -> None:
+    async def insert(cls, payment_dict: dict[str, Any]) -> None:
         await cls.collection.insert_one(payment_dict)

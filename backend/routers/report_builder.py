@@ -4,8 +4,7 @@ Kullanıcıların dinamik rapor oluşturmasını, filtrelemesini ve dışa aktar
 """
 import io
 import uuid
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -25,19 +24,19 @@ class ReportFilter(BaseModel):
 
 class ReportConfig(BaseModel):
     data_source: str  # reservations, revenue, guests, rooms, housekeeping, folios
-    columns: List[str]
-    filters: Optional[List[ReportFilter]] = []
-    sort_by: Optional[str] = None
-    sort_order: Optional[str] = "desc"
-    date_from: Optional[str] = None
-    date_to: Optional[str] = None
-    group_by: Optional[str] = None
-    limit: Optional[int] = 500
+    columns: list[str]
+    filters: list[ReportFilter] | None = []
+    sort_by: str | None = None
+    sort_order: str | None = "desc"
+    date_from: str | None = None
+    date_to: str | None = None
+    group_by: str | None = None
+    limit: int | None = 500
 
 
 class SavedTemplate(BaseModel):
     name: str
-    description: Optional[str] = ""
+    description: str | None = ""
     config: ReportConfig
 
 
@@ -217,7 +216,7 @@ def build_mongo_filter(config: ReportConfig, tenant_id: str) -> dict:
     return query
 
 
-def build_projection(columns: List[str]) -> dict:
+def build_projection(columns: list[str]) -> dict:
     """Build MongoDB projection from column list."""
     proj = {"_id": 0}
     for col in columns:
@@ -311,7 +310,7 @@ async def generate_report(config: ReportConfig, credentials=Depends(HTTPBearer()
         "total_count": len(data),
         "column_labels": column_labels,
         "summary": summary,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -357,7 +356,7 @@ async def export_report_excel(config: ReportConfig, credentials=Depends(HTTPBear
         date_parts.append(f"Başlangıç: {config.date_from}")
     if config.date_to:
         date_parts.append(f"Bitiş: {config.date_to}")
-    date_cell.value = " | ".join(date_parts) if date_parts else f"Oluşturma: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}"
+    date_cell.value = " | ".join(date_parts) if date_parts else f"Oluşturma: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
     date_cell.font = Font(size=10, italic=True, color="666666")
     date_cell.alignment = Alignment(horizontal="center")
 
@@ -438,7 +437,7 @@ async def export_report_excel(config: ReportConfig, credentials=Depends(HTTPBear
     wb.save(output)
     output.seek(0)
 
-    filename = f"ozel_rapor_{config.data_source}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.xlsx"
+    filename = f"ozel_rapor_{config.data_source}_{datetime.now(UTC).strftime('%Y%m%d_%H%M')}.xlsx"
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -510,7 +509,7 @@ async def export_report_pdf(config: ReportConfig, credentials=Depends(HTTPBearer
 </style></head><body>
 <div class="header">
   <h1>{source_def.get('label', 'Rapor')} - Özel Rapor</h1>
-  <p>Toplam {len(data)} kayıt | Oluşturma: {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')}</p>
+  <p>Toplam {len(data)} kayıt | Oluşturma: {datetime.now(UTC).strftime('%d.%m.%Y %H:%M')}</p>
 </div>
 {date_info}
 <table><thead><tr>{header_cells}</tr></thead><tbody>{rows_html}</tbody></table>
@@ -526,7 +525,7 @@ async def export_report_pdf(config: ReportConfig, credentials=Depends(HTTPBearer
         output = io.BytesIO(html.encode('utf-8'))
 
     output.seek(0)
-    filename = f"ozel_rapor_{config.data_source}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.pdf"
+    filename = f"ozel_rapor_{config.data_source}_{datetime.now(UTC).strftime('%Y%m%d_%H%M')}.pdf"
     return StreamingResponse(
         output,
         media_type="application/pdf",
@@ -566,8 +565,8 @@ async def save_template(template: SavedTemplate, credentials=Depends(HTTPBearer(
         "name": template.name,
         "description": template.description,
         "config": template.config.dict(),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
     await db.report_templates.insert_one(doc)
     doc.pop("_id", None)

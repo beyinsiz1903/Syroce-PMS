@@ -5,8 +5,8 @@ REFACTORED: Uses core.crypto for real encryption instead of base64 encoding.
 import logging
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.crypto import AADContext, get_crypto_service
 from core.database import db
@@ -38,10 +38,10 @@ class CredentialVault:
     async def store_credential(self, tenant_id: str, credential_type: str,
                                credential_key: str, credential_value: str,
                                description: str = "",
-                               rotation_days: int = 90) -> Dict[str, Any]:
+                               rotation_days: int = 90) -> dict[str, Any]:
         """Store a credential securely with real encryption."""
         cred_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         svc = get_crypto_service()
         aad = self._build_aad(tenant_id, credential_type, credential_key)
@@ -77,7 +77,7 @@ class CredentialVault:
         }
 
     async def get_credential(self, tenant_id: str, credential_type: str,
-                             credential_key: str) -> Optional[str]:
+                             credential_key: str) -> str | None:
         """Retrieve and decrypt a credential value."""
         record = await db.credential_vault.find_one(
             {
@@ -96,7 +96,7 @@ class CredentialVault:
             {"id": record["id"]},
             {
                 "$inc": {"access_count": 1},
-                "$set": {"last_accessed": datetime.now(timezone.utc).isoformat()},
+                "$set": {"last_accessed": datetime.now(UTC).isoformat()},
             },
         )
 
@@ -117,9 +117,9 @@ class CredentialVault:
         return None
 
     async def rotate_credential(self, tenant_id: str, credential_id: str,
-                                new_value: str) -> Dict[str, Any]:
+                                new_value: str) -> dict[str, Any]:
         """Rotate a credential to a new value."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         record = await db.credential_vault.find_one(
             {"id": credential_id, "tenant_id": tenant_id},
             {"_id": 0},
@@ -152,9 +152,9 @@ class CredentialVault:
             "next_rotation": (now + timedelta(days=record.get("rotation_days", 90))).isoformat(),
         }
 
-    async def get_vault_status(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_vault_status(self, tenant_id: str) -> dict[str, Any]:
         """Get vault status and rotation needs."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         creds = await db.credential_vault.find(
             {"tenant_id": tenant_id, "status": "active"}, {"_id": 0}
         ).to_list(100)
@@ -165,7 +165,7 @@ class CredentialVault:
                 "type": c["credential_type"],
                 "key": c["credential_key"],
                 "next_rotation": c.get("next_rotation"),
-                "days_overdue": max(0, (datetime.now(timezone.utc) - datetime.fromisoformat(
+                "days_overdue": max(0, (datetime.now(UTC) - datetime.fromisoformat(
                     c.get("next_rotation", now).replace("Z", "+00:00")
                 )).days) if c.get("next_rotation") else 0,
             }
@@ -183,7 +183,7 @@ class CredentialVault:
             "checked_at": now,
         }
 
-    async def check_leakage(self, tenant_id: str) -> Dict[str, Any]:
+    async def check_leakage(self, tenant_id: str) -> dict[str, Any]:
         """Check for potential credential leakage indicators."""
         creds = await db.credential_vault.find(
             {"tenant_id": tenant_id, "status": "active"},

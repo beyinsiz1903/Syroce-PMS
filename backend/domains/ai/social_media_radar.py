@@ -3,8 +3,7 @@ Social Media Command Center
 Instagram, Twitter, Facebook mention tracking ve sentiment analysis
 """
 import random
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List
+from datetime import UTC, datetime, timedelta
 
 
 class SocialMediaRadar:
@@ -13,7 +12,7 @@ class SocialMediaRadar:
     def __init__(self, db):
         self.db = db
 
-    async def scan_mentions(self, tenant_id: str, hours: int = 24) -> List[Dict]:
+    async def scan_mentions(self, tenant_id: str, hours: int = 24) -> list[dict]:
         """Son 24 saatteki mention'ları bul (simulated)"""
         # Gerçekte: Instagram API, Twitter API, Facebook Graph API
 
@@ -32,7 +31,7 @@ class SocialMediaRadar:
                 ]),
                 'sentiment': random.choice(['positive', 'neutral', 'negative']),
                 'engagement': random.randint(10, 500),
-                'posted_at': (datetime.now(timezone.utc) - timedelta(hours=random.randint(1, hours))).isoformat(),
+                'posted_at': (datetime.now(UTC) - timedelta(hours=random.randint(1, hours))).isoformat(),
                 'has_booking': random.choice([True, False])
             }
             for i in range(random.randint(5, 15))
@@ -47,7 +46,7 @@ class SocialMediaRadar:
 
         return mentions
 
-    async def get_sentiment_summary(self, tenant_id: str, days: int = 7) -> Dict:
+    async def get_sentiment_summary(self, tenant_id: str, days: int = 7) -> dict:
         """Sentiment özeti"""
         # Simulated data
         total_mentions = random.randint(100, 300)
@@ -67,7 +66,7 @@ class SocialMediaRadar:
             'trend': 'improving' if sentiment_score > 50 else 'declining' if sentiment_score < 30 else 'stable'
         }
 
-    async def detect_crisis(self, tenant_id: str) -> List[Dict]:
+    async def detect_crisis(self, tenant_id: str) -> list[dict]:
         """Kriz tespiti - negatif mention spike"""
         # Simulated crisis detection
         # Gerçekte: Unusual negative mention spike detection
@@ -80,7 +79,7 @@ class SocialMediaRadar:
                 'severity': 'high',
                 'description': f'{recent_negative} negative mentions in last 2 hours',
                 'recommended_action': 'Immediate response required - Check social media',
-                'detected_at': datetime.now(timezone.utc).isoformat()
+                'detected_at': datetime.now(UTC).isoformat()
             }]
 
         return []

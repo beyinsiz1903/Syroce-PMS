@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 from shared_kernel.shadow_metrics import shadow_metrics_store
@@ -90,23 +90,23 @@ EVENT_SOURCE_HINTS = {
 }
 
 
-def _parse_timestamp(raw_value: Any) -> Optional[datetime]:
+def _parse_timestamp(raw_value: Any) -> datetime | None:
     if isinstance(raw_value, datetime):
-        return raw_value if raw_value.tzinfo else raw_value.replace(tzinfo=timezone.utc)
+        return raw_value if raw_value.tzinfo else raw_value.replace(tzinfo=UTC)
 
     if not raw_value or not isinstance(raw_value, str):
         return None
 
     try:
         parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     except ValueError:
         return None
 
 
-def _bucket_series(events: List[Dict[str, Any]], key: str, hours: int = 24) -> List[Dict[str, Any]]:
-    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
-    buckets: Dict[str, int] = {}
+def _bucket_series(events: list[dict[str, Any]], key: str, hours: int = 24) -> list[dict[str, Any]]:
+    now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+    buckets: dict[str, int] = {}
 
     for offset in range(hours - 1, -1, -1):
         bucket_start = now - timedelta(hours=offset)
@@ -116,7 +116,7 @@ def _bucket_series(events: List[Dict[str, Any]], key: str, hours: int = 24) -> L
         parsed = _parse_timestamp(event.get(key))
         if not parsed:
             continue
-        bucket_start = parsed.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        bucket_start = parsed.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
         bucket_key = bucket_start.isoformat()
         if bucket_key in buckets:
             buckets[bucket_key] += 1
@@ -131,7 +131,7 @@ def _bucket_series(events: List[Dict[str, Any]], key: str, hours: int = 24) -> L
     ]
 
 
-def _derive_event_source(event: Dict[str, Any]) -> Dict[str, str]:
+def _derive_event_source(event: dict[str, Any]) -> dict[str, str]:
     event_type = str(event.get("event_type") or "unknown")
     payload = event.get("payload") or {}
     hint = EVENT_SOURCE_HINTS.get(event_type, {})
@@ -161,8 +161,8 @@ def _derive_event_source(event: Dict[str, Any]) -> Dict[str, str]:
 def build_stale_pending_triage(
     *,
     generated_at: str,
-    stale_events: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    stale_events: list[dict[str, Any]],
+) -> dict[str, Any]:
     if not stale_events:
         return {
             "generated_at": generated_at,
@@ -190,16 +190,16 @@ def build_stale_pending_triage(
             "sample_events": [],
         }
 
-    now = _parse_timestamp(generated_at) or datetime.now(timezone.utc)
+    now = _parse_timestamp(generated_at) or datetime.now(UTC)
     event_type_counter: Counter[str] = Counter()
     tenant_counter: Counter[str] = Counter()
     property_counter: Counter[str] = Counter()
     source_counter: Counter[str] = Counter()
     origin_counter: Counter[str] = Counter()
-    source_origin_map: Dict[str, str] = {}
+    source_origin_map: dict[str, str] = {}
     processed_count = 0
     retry_metadata_count = 0
-    samples: List[Dict[str, Any]] = []
+    samples: list[dict[str, Any]] = []
 
     sorted_events = sorted(
         stale_events,
@@ -343,8 +343,8 @@ def build_health_score(
     failed_outbox_count: int,
     stale_pending_count: int,
     audit_gap_count: int,
-    shadow_summary: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    shadow_summary: list[dict[str, Any]],
+) -> dict[str, Any]:
     compare_error_count = sum(int(item.get("errors") or 0) for item in shadow_summary)
     max_mismatch_rate_percent = max(
         [float(item.get("mismatch_rate_percent") or 0.0) for item in shadow_summary] or [0.0]
@@ -356,7 +356,7 @@ def build_health_score(
     )
 
     status = "green"
-    reasons: List[str] = []
+    reasons: list[str] = []
 
     if audit_gap_count > 0:
         status = "red"
@@ -416,8 +416,8 @@ def build_health_score(
 
 
 class MigrationObservabilityService:
-    async def get_dashboard(self, tenant_id: str) -> Dict[str, Any]:
-        now = datetime.now(timezone.utc)
+    async def get_dashboard(self, tenant_id: str) -> dict[str, Any]:
+        now = datetime.now(UTC)
         twenty_four_hours_ago = now - timedelta(hours=24)
         five_minutes_ago = now - timedelta(minutes=5)
         fifteen_minutes_ago = now - timedelta(minutes=15)
@@ -463,17 +463,17 @@ class MigrationObservabilityService:
         ]
 
         recent_outbox = []
-        stale_pending_events: List[Dict[str, Any]] = []
+        stale_pending_events: list[dict[str, Any]] = []
         stale_pending_count = 0
         status_counter: Counter[str] = Counter()
         event_counter: Counter[str] = Counter()
-        event_status_breakdown: Dict[str, Counter[str]] = defaultdict(Counter)
-        latest_event_at: Dict[str, str] = {}
+        event_status_breakdown: dict[str, Counter[str]] = defaultdict(Counter)
+        latest_event_at: dict[str, str] = {}
         retry_attempts_total = 0
         retry_fields_found = False
-        latency_values: List[float] = []
-        oldest_pending_at: Optional[datetime] = None
-        oldest_failed_at: Optional[datetime] = None
+        latency_values: list[float] = []
+        oldest_pending_at: datetime | None = None
+        oldest_failed_at: datetime | None = None
 
         for event in outbox_events:
             created_at = _parse_timestamp(event.get("created_at"))
@@ -568,7 +568,7 @@ class MigrationObservabilityService:
 
         audit_action_breakdown = Counter(log.get("action") or "unknown" for log in audit_logs_24h)
 
-        endpoint_metrics: Dict[str, Dict[str, Any]] = defaultdict(
+        endpoint_metrics: dict[str, dict[str, Any]] = defaultdict(
             lambda: {
                 "endpoint": "unknown",
                 "total_compares": 0,

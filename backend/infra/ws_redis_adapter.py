@@ -5,8 +5,8 @@ Enables multi-instance WebSocket support. Falls back to local broadcast.
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Set
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.ws_redis_adapter")
 
@@ -19,8 +19,8 @@ class WebSocketRedisAdapter:
     def __init__(self):
         self._redis = None
         self._pubsub = None
-        self._subscribed_channels: Set[str] = set()
-        self._listener_task: Optional[asyncio.Task] = None
+        self._subscribed_channels: set[str] = set()
+        self._listener_task: asyncio.Task | None = None
         self._local_handler = None
         self._active = False
         self._instance_id = ""
@@ -65,14 +65,14 @@ class WebSocketRedisAdapter:
         except Exception as e:
             logger.error(f"WS subscribe error ({room}): {e}")
 
-    async def publish(self, room: str, event: str, data: Dict[str, Any]):
+    async def publish(self, room: str, event: str, data: dict[str, Any]):
         """Publish event to all instances via Redis."""
         message = json.dumps({
             "room": room,
             "event": event,
             "data": data,
             "source_instance": self._instance_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
 
         if self._active and self._redis:
@@ -130,7 +130,7 @@ class WebSocketRedisAdapter:
                 pass
         self._active = False
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         return {
             **self._metrics,
             "active": self._active,

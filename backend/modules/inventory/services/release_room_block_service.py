@@ -1,8 +1,7 @@
 import hashlib
 import json
 import uuid
-from datetime import datetime, timezone
-from typing import Dict, Optional
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, Request, status
 
@@ -13,7 +12,7 @@ from shared_kernel.tenancy_context import build_property_context, build_tenant_c
 
 
 class ReleaseRoomBlockService:
-    def __init__(self, repository: Optional[InventoryRepository] = None):
+    def __init__(self, repository: InventoryRepository | None = None):
         self.repository = repository or InventoryRepository()
 
     async def release(
@@ -21,8 +20,8 @@ class ReleaseRoomBlockService:
         block_id: str,
         current_user,
         request: Request,
-        reason: Optional[str] = None,
-    ) -> Dict:
+        reason: str | None = None,
+    ) -> dict:
         tenant_context = build_tenant_context(current_user, request)
         property_context = build_property_context(current_user, request)
         self._enforce_property_scope(tenant_context.tenant_id, property_context.property_id)
@@ -78,7 +77,7 @@ class ReleaseRoomBlockService:
             if existing_block.get("status") == "expired":
                 raise HTTPException(status_code=400, detail="Block already expired")
 
-            released_at = datetime.now(timezone.utc).isoformat()
+            released_at = datetime.now(UTC).isoformat()
             update_doc = {
                 "status": "released",
                 "released_at": released_at,
@@ -177,7 +176,7 @@ class ReleaseRoomBlockService:
             await self.repository.fail_idempotency_lock(lock["lock_id"], str(exc))
             raise
 
-    def _build_request_hash(self, tenant_id: str, block_id: str, reason: Optional[str]) -> str:
+    def _build_request_hash(self, tenant_id: str, block_id: str, reason: str | None) -> str:
         serialized = json.dumps(
             {
                 "tenant_id": tenant_id,
@@ -189,7 +188,7 @@ class ReleaseRoomBlockService:
         )
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
-    def _build_response(self, block: Dict, room: Dict, property_id: str, correlation_id: str) -> Dict:
+    def _build_response(self, block: dict, room: dict, property_id: str, correlation_id: str) -> dict:
         released_at = block.get("released_at") or block.get("cancelled_at")
         return {
             "message": "Block cancelled successfully",
@@ -203,7 +202,7 @@ class ReleaseRoomBlockService:
             "correlation_id": block.get("release_correlation_id") or correlation_id,
         }
 
-    def _enforce_property_scope(self, tenant_id: str, property_id: Optional[str]) -> None:
+    def _enforce_property_scope(self, tenant_id: str, property_id: str | None) -> None:
         if property_id and property_id != tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

@@ -11,7 +11,7 @@ Environment:
 import logging
 import os
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("infra.observability")
 
@@ -55,7 +55,7 @@ class OTelTracer:
         except Exception as e:
             logger.error(f"OpenTelemetry init failed: {e}")
 
-    def start_span(self, name: str, attributes: Optional[Dict] = None):
+    def start_span(self, name: str, attributes: dict | None = None):
         self._spans_created += 1
         if self._tracer and self._active:
             span = self._tracer.start_span(name)
@@ -65,7 +65,7 @@ class OTelTracer:
             return span
         return _NoOpSpan()
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {
             "active": self._active,
             "endpoint": self._endpoint or "not configured",
@@ -122,7 +122,7 @@ class SentryIntegration:
         except Exception as e:
             logger.error(f"Sentry init failed: {e}")
 
-    def capture_error(self, error: Exception, tags: Optional[Dict] = None):
+    def capture_error(self, error: Exception, tags: dict | None = None):
         self._errors_captured += 1
         if not self._active:
             return
@@ -138,7 +138,7 @@ class SentryIntegration:
             pass
 
     def capture_message(self, message: str, level: str = "info",
-                        tags: Optional[Dict] = None):
+                        tags: dict | None = None):
         if not self._active:
             return
         try:
@@ -152,7 +152,7 @@ class SentryIntegration:
         except Exception:
             pass
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {
             "active": self._active,
             "dsn_configured": bool(self._dsn),
@@ -168,9 +168,9 @@ class CloudMetricsCollector:
     """Extended metrics for cloud observability."""
 
     def __init__(self):
-        self._histograms: Dict[str, List[float]] = defaultdict(list)
-        self._counters: Dict[str, int] = defaultdict(int)
-        self._gauges: Dict[str, float] = defaultdict(float)
+        self._histograms: dict[str, list[float]] = defaultdict(list)
+        self._counters: dict[str, int] = defaultdict(int)
+        self._gauges: dict[str, float] = defaultdict(float)
         self._max_histogram_size = 1000
 
     def record_latency(self, name: str, duration_sec: float):
@@ -192,7 +192,7 @@ class CloudMetricsCollector:
         idx = int(len(data) * percentile)
         return round(data[min(idx, len(data) - 1)], 4)
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         latency_summary = {}
         for name, values in self._histograms.items():
             if values:

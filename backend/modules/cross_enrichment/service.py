@@ -14,7 +14,7 @@ Wires up inter-module events:
 """
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class CrossEnrichmentService:
                 "price": price,
                 "channels": channels,
                 "status": "pushed",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             })
             actions.append("rate_push_tracked")
         else:
@@ -61,7 +61,7 @@ class CrossEnrichmentService:
                 "trigger": "churn_risk",
                 "score": churn_score,
                 "status": "pending",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             })
             actions.append("campaign_candidate_added")
         return {"actions": actions}
@@ -75,7 +75,7 @@ class CrossEnrichmentService:
                 "priority": "vip",
                 "guest_id": guest_id,
                 "booking_id": booking_id,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }},
             upsert=True,
         )
@@ -113,7 +113,7 @@ class CrossEnrichmentService:
             "delivery_id": delivery_id,
             "original_channel": original_channel,
             "recipient": recipient,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         })
         return {"actions": ["fallback_tracked"]}
 
@@ -153,5 +153,5 @@ class CrossEnrichmentService:
             "entity_type": "cross_enrichment",
             "entity_id": "",
             "acknowledged": False,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         })

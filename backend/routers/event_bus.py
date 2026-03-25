@@ -1,7 +1,8 @@
 """
 Event Bus Router — publish, subscribe, replay, status, metrics.
 """
-from typing import Optional
+
+from datetime import UTC
 
 from fastapi import APIRouter, Depends, Query
 
@@ -42,8 +43,8 @@ async def publish_event(
 
 @router.get("/replay")
 async def replay_events(
-    since: Optional[str] = None,
-    event_types: Optional[str] = None,
+    since: str | None = None,
+    event_types: str | None = None,
     limit: int = Query(50, le=500),
     current_user: User = Depends(get_current_user),
 ):
@@ -54,11 +55,11 @@ async def replay_events(
 
 @router.get("/replay/summary")
 async def replay_summary(current_user: User = Depends(get_current_user)):
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from core.database import db
 
-    one_day_ago = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    one_day_ago = (datetime.now(UTC) - timedelta(days=1)).isoformat()
     count = await db.event_bus_log.count_documents({
         "tenant_id": current_user.tenant_id,
         "timestamp": {"$gte": one_day_ago},

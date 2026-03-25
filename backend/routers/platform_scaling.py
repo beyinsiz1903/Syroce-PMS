@@ -5,7 +5,6 @@ Platform Scaling Router - Unified API for all enterprise scaling modules:
 - Revenue ML
 - Competitive Set Analysis
 """
-from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -57,30 +56,30 @@ comp_dashboard = CompetitiveSetDashboard()
 class PublishEventReq(BaseModel):
     event_type: str
     payload: dict
-    property_id: Optional[str] = None
-    priority: Optional[str] = None
+    property_id: str | None = None
+    priority: str | None = None
 
 class MarkNotificationsReadReq(BaseModel):
-    notification_ids: List[str]
+    notification_ids: list[str]
 
 class AcknowledgeEventReq(BaseModel):
     event_id: str
-    note: Optional[str] = None
+    note: str | None = None
 
 class CrossPropertySearchReq(BaseModel):
     check_in: str
     check_out: str
-    room_type: Optional[str] = None
+    room_type: str | None = None
     guests: int = 2
 
 class TransferReservationReq(BaseModel):
     booking_id: str
     target_property_id: str
-    reason: Optional[str] = None
+    reason: str | None = None
 
 class GlobalRateAdjustReq(BaseModel):
     adjustment_pct: float
-    room_type: Optional[str] = None
+    room_type: str | None = None
 
 class BookingProbReq(BaseModel):
     check_in: str
@@ -92,8 +91,8 @@ class BookingProbReq(BaseModel):
 class AddCompetitorReq(BaseModel):
     name: str
     star_rating: int = 4
-    room_types: Optional[List[str]] = None
-    location: Optional[str] = None
+    room_types: list[str] | None = None
+    location: str | None = None
 
 class RecordCompRateReq(BaseModel):
     competitor_id: str
@@ -103,7 +102,7 @@ class RecordCompRateReq(BaseModel):
     source: str = "manual"
 
 class BulkCompRatesReq(BaseModel):
-    rates: List[Dict]
+    rates: list[dict]
 
 class ApplyADRReq(BaseModel):
     room_type: str
@@ -127,9 +126,9 @@ async def api_publish_event(req: PublishEventReq, current_user: User = Depends(g
 
 @router.get("/events/stream")
 async def api_event_stream(
-    limit: int = 100, event_type: Optional[str] = None,
-    priority: Optional[str] = None, property_id: Optional[str] = None,
-    since: Optional[str] = None,
+    limit: int = 100, event_type: str | None = None,
+    priority: str | None = None, property_id: str | None = None,
+    since: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Get platform event stream."""
@@ -139,7 +138,7 @@ async def api_event_stream(
 
 @router.get("/events/notifications")
 async def api_notifications(
-    role: Optional[str] = None, unread_only: bool = False, limit: int = 50,
+    role: str | None = None, unread_only: bool = False, limit: int = 50,
     current_user: User = Depends(get_current_user),
 ):
     """Get notifications for a role."""
@@ -240,7 +239,7 @@ async def api_demand_forecast(days: int = 30, current_user: User = Depends(get_c
     return await demand_model.forecast_demand(current_user.tenant_id, days)
 
 @router.get("/ml/rate-elasticity")
-async def api_rate_elasticity(room_type: Optional[str] = None, current_user: User = Depends(get_current_user)):
+async def api_rate_elasticity(room_type: str | None = None, current_user: User = Depends(get_current_user)):
     """Analyze rate elasticity."""
     return await elasticity_model.analyze_elasticity(current_user.tenant_id, room_type)
 
@@ -311,7 +310,7 @@ async def api_bulk_rates(req: BulkCompRatesReq, current_user: User = Depends(get
 
 @router.get("/competitive/rates")
 async def api_comp_rates(
-    target_date: Optional[str] = None, competitor_id: Optional[str] = None,
+    target_date: str | None = None, competitor_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Get competitor rates."""

@@ -4,8 +4,7 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
 import uuid
-from datetime import date, datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -44,7 +43,7 @@ from domains.guest.schemas import (  # noqa: E402
 async def add_points(data: dict, current_user: User = Depends(get_current_user)):
     await db.loyalty_transactions.insert_one({
         'id': str(uuid.uuid4()), 'guest_id': data['guest_id'],
-        'points': data['points'], 'created_at': datetime.now(timezone.utc).isoformat()
+        'points': data['points'], 'created_at': datetime.now(UTC).isoformat()
     })
     return {'success': True}
 
@@ -68,7 +67,7 @@ async def log_journey_event(event_data: dict, current_user: User = Depends(get_c
         'touchpoint': event_data.get('touchpoint', 'check_in'),
         'event_type': event_data.get('event_type', 'general'),
         'description': event_data.get('description', ''),
-        'occurred_at': datetime.now(timezone.utc).isoformat()
+        'occurred_at': datetime.now(UTC).isoformat()
     }
     await db.guest_journey_events.insert_one(event)
     return {'success': True, 'event_id': event['id']}
@@ -93,7 +92,7 @@ async def submit_nps_survey(survey_data: dict, current_user: User = Depends(get_
         'nps_score': score,
         'category': category,
         'feedback': survey_data.get('feedback'),
-        'responded_at': datetime.now(timezone.utc).isoformat()
+        'responded_at': datetime.now(UTC).isoformat()
     }
     await db.nps_surveys.insert_one(survey)
     return {'success': True, 'survey_id': survey['id'], 'category': category}
@@ -104,7 +103,7 @@ async def submit_nps_survey(survey_data: dict, current_user: User = Depends(get_
 async def get_nps_score(days: int = 30, current_user: User = Depends(get_current_user)):
     """NPS skoru hesapla"""
     from datetime import timedelta
-    start = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    start = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
     surveys = await db.nps_surveys.find({
         'tenant_id': current_user.tenant_id,
@@ -135,7 +134,7 @@ async def earn_points(points_data: dict, current_user: User = Depends(get_curren
     await db.loyalty_points_transactions.insert_one({
         'id': str(uuid.uuid4()), 'guest_id': points_data['guest_id'],
         'points': points_data['points'], 'type': 'earn',
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     })
     return {'success': True, 'message': f'{points_data["points"]} puan kazanıldı'}
 
@@ -332,7 +331,7 @@ async def send_pre_arrival_welcome(
         'tenant_id': current_user.tenant_id,
         'guest_id': booking['guest_id'],
         'communication_type': 'welcome_email',
-        'sent_at': datetime.now(timezone.utc).isoformat(),
+        'sent_at': datetime.now(UTC).isoformat(),
         'subject': 'Syroce\'ye Hoş Geldiniz - Rezervasyon Onayı',
         'message': html_content,
         'opened': False,
@@ -394,7 +393,7 @@ async def get_guest_bookings_old(current_user: User = Depends(get_current_user))
 
     all_bookings = await db.bookings.find({'guest_id': {'$in': guest_ids}}, {'_id': 0}).to_list(1000)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     active_bookings = []
     past_bookings = []
 
@@ -565,7 +564,7 @@ async def guest_self_checkin(
         {'id': booking_id},
         {'$set': {
             'status': 'checked_in',
-            'actual_check_in': datetime.now(timezone.utc).isoformat(),
+            'actual_check_in': datetime.now(UTC).isoformat(),
             'guest_info': checkin_data.get('guest_info'),
             'preferences': checkin_data.get('preferences')
         }}
@@ -590,7 +589,7 @@ async def guest_self_checkin(
         'guest_id': booking.get('guest_id'),
         'room_number': booking.get('room_number'),
         'status': 'active',
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'expires_at': booking.get('check_out'),
         'last_used': None
     }
@@ -647,7 +646,7 @@ async def get_digital_key(
                 'guest_id': booking.get('guest_id'),
                 'room_number': booking.get('room_number'),
                 'status': 'active',
-                'created_at': datetime.now(timezone.utc).isoformat(),
+                'created_at': datetime.now(UTC).isoformat(),
                 'expires_at': booking.get('check_out'),
                 'last_used': None
             }
@@ -683,7 +682,7 @@ async def refresh_digital_key(
         'guest_id': booking.get('guest_id'),
         'room_number': booking.get('room_number'),
         'status': 'active',
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'expires_at': booking.get('check_out'),
         'last_used': None
     }
@@ -747,7 +746,7 @@ async def purchase_upsell(
         'offer_id': purchase_data.get('offer_id'),
         'offer_name': purchase_data.get('offer_name', 'Upsell'),
         'amount': purchase_data.get('price', 0),
-        'purchased_at': datetime.now(timezone.utc).isoformat(),
+        'purchased_at': datetime.now(UTC).isoformat(),
         'status': 'confirmed'
     }
 
@@ -765,7 +764,7 @@ async def purchase_upsell(
             'amount': purchase_data.get('amount'),
             'quantity': 1,
             'total': purchase_data.get('amount'),
-            'posted_at': datetime.now(timezone.utc).isoformat(),
+            'posted_at': datetime.now(UTC).isoformat(),
             'voided': False
         }
         await db.folio_charges.insert_one(charge)
@@ -913,15 +912,15 @@ async def get_guest_profile_enhanced(
 @router.post("/guests/{guest_id}/preferences")
 async def update_guest_preferences(
     guest_id: str,
-    pillow_type: Optional[str] = None,
-    room_temperature: Optional[int] = None,
+    pillow_type: str | None = None,
+    room_temperature: int | None = None,
     smoking: bool = False,
-    floor_preference: Optional[str] = None,
-    room_view: Optional[str] = None,
-    newspaper: Optional[str] = None,
-    extra_requests: List[str] = [],
-    dietary_restrictions: List[str] = [],
-    allergies: List[str] = [],
+    floor_preference: str | None = None,
+    room_view: str | None = None,
+    newspaper: str | None = None,
+    extra_requests: list[str] = [],
+    dietary_restrictions: list[str] = [],
+    allergies: list[str] = [],
     current_user: User = Depends(get_current_user)
 ):
     """Update or create guest preferences"""
@@ -935,7 +934,7 @@ async def update_guest_preferences(
         'extra_requests': extra_requests,
         'dietary_restrictions': dietary_restrictions,
         'allergies': allergies,
-        'updated_at': datetime.now(timezone.utc).isoformat()
+        'updated_at': datetime.now(UTC).isoformat()
     }
 
     existing = await db.guest_preferences.find_one({
@@ -969,7 +968,7 @@ async def add_guest_tag(
     guest_id: str,
     tag: str,
     color: str = "blue",
-    notes: Optional[str] = None,
+    notes: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Add a tag to guest (VIP, Honeymoon, Complainer, etc)"""
@@ -1046,7 +1045,7 @@ async def get_loyalty_benefits(
         points_needed = 0
 
     # Points expiration (1 year from last activity)
-    points_expiry = (datetime.now(timezone.utc) + timedelta(days=365)).date().isoformat()
+    points_expiry = (datetime.now(UTC) + timedelta(days=365)).date().isoformat()
 
     # Calculate Lifetime Value
     ltv = total_spend
@@ -1103,7 +1102,7 @@ async def redeem_loyalty_points(
         'points_redeemed': request.points_to_redeem,
         'redemption_type': request.reward_type,
         'processed_by': current_user.name,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     await db.loyalty_redemptions.insert_one(redemption)
@@ -1339,7 +1338,7 @@ async def guest_request_cleaning(
             'notes': request.notes or "",
             'status': 'pending',  # pending, in_progress, completed, cancelled
             'priority': 'urgent' if request.type == 'urgent' else 'normal',
-            'requested_at': datetime.now(timezone.utc).isoformat(),
+            'requested_at': datetime.now(UTC).isoformat(),
             'completed_at': None,
             'assigned_to': None,
             'completed_by': None
@@ -1358,7 +1357,7 @@ async def guest_request_cleaning(
             'priority': cleaning_request['priority'],
             'related_id': cleaning_request_id,
             'read': False,
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         })
 
         return {

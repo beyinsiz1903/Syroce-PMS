@@ -11,7 +11,7 @@ Endpoints:
   POST /api/channel-manager/hotelrunner/webhooks/cancellations
 """
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -42,7 +42,7 @@ class WebhookResponse(BaseModel):
 
 
 async def _persist_webhook(
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     event_type: str,
 ) -> str:
     """Persist a webhook payload as a raw event. Returns event_id."""

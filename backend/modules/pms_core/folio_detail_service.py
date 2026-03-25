@@ -3,7 +3,6 @@ Folio Detail Service - Timeline view, running balance, split folio visibility,
 tax breakdown per line, city ledger history, invoice association, audit trail,
 supervisor override and void reason visibility.
 """
-from typing import Dict, List
 
 from core.database import db
 
@@ -11,7 +10,7 @@ from core.database import db
 class FolioDetailService:
     """Comprehensive folio detail operations for the Folio Detail View."""
 
-    async def get_folio_detail(self, tenant_id: str, folio_id: str) -> Dict:
+    async def get_folio_detail(self, tenant_id: str, folio_id: str) -> dict:
         """Get complete folio detail with timeline, running balance, split view, tax breakdown."""
         folio = await db.folios.find_one({"id": folio_id, "tenant_id": tenant_id}, {"_id": 0})
         if not folio:
@@ -80,7 +79,7 @@ class FolioDetailService:
             "void_details": void_details,
         }
 
-    def _build_timeline(self, charges: List[Dict], payments: List[Dict]) -> List[Dict]:
+    def _build_timeline(self, charges: list[dict], payments: list[dict]) -> list[dict]:
         """Build a chronological timeline of all folio events with running balance."""
         events = []
 
@@ -135,7 +134,7 @@ class FolioDetailService:
 
         return events
 
-    async def _get_split_folio_info(self, tenant_id: str, folio_id: str) -> Dict:
+    async def _get_split_folio_info(self, tenant_id: str, folio_id: str) -> dict:
         """Get split folio operations related to this folio."""
         # Folios split FROM this folio
         split_from = await db.folio_operations.find(
@@ -167,7 +166,7 @@ class FolioDetailService:
             "related_folios": related_folios,
         }
 
-    def _calculate_line_tax_breakdown(self, charges: List[Dict]) -> Dict:
+    def _calculate_line_tax_breakdown(self, charges: list[dict]) -> dict:
         """Calculate line-level tax breakdown."""
         lines = []
         by_rate = {}
@@ -220,7 +219,7 @@ class FolioDetailService:
             },
         }
 
-    async def _get_city_ledger_history(self, tenant_id: str, folio_id: str) -> List[Dict]:
+    async def _get_city_ledger_history(self, tenant_id: str, folio_id: str) -> list[dict]:
         """Get city ledger transfer history for this folio."""
         folio = await db.folios.find_one({"id": folio_id, "tenant_id": tenant_id}, {"_id": 0})
         if not folio:
@@ -232,7 +231,7 @@ class FolioDetailService:
         ).sort("transaction_date", -1).to_list(50)
         return transfers
 
-    async def _get_associated_invoices(self, tenant_id: str, folio_id: str, booking_id: str = None) -> List[Dict]:
+    async def _get_associated_invoices(self, tenant_id: str, folio_id: str, booking_id: str = None) -> list[dict]:
         """Get invoices associated with this folio or booking."""
         query = {"tenant_id": tenant_id, "$or": [{"folio_id": folio_id}]}
         if booking_id:
@@ -241,7 +240,7 @@ class FolioDetailService:
         invoices = await db.invoices.find(query, {"_id": 0}).sort("created_at", -1).to_list(50)
         return invoices
 
-    def _extract_void_details(self, charges: List[Dict], payments: List[Dict]) -> List[Dict]:
+    def _extract_void_details(self, charges: list[dict], payments: list[dict]) -> list[dict]:
         """Extract all void/reversal details with supervisor override visibility."""
         voids = []
 

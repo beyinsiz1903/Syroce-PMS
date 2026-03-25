@@ -6,8 +6,7 @@ import asyncio
 import logging
 import uuid
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import UTC, date, datetime, timedelta
 
 import holidays as holidays_lib
 from dateutil.easter import easter
@@ -30,57 +29,57 @@ class RateUpdateRequest(BaseModel):
     rate_plan_code: str
     start_date: str  # YYYY-MM-DD
     end_date: str    # YYYY-MM-DD
-    rate: Optional[float] = None
-    availability: Optional[int] = None
-    min_stay: Optional[int] = None
-    max_stay: Optional[int] = None
-    stop_sell: Optional[bool] = None
-    cta: Optional[bool] = None  # Close to Arrival
-    ctd: Optional[bool] = None  # Close to Departure
+    rate: float | None = None
+    availability: int | None = None
+    min_stay: int | None = None
+    max_stay: int | None = None
+    stop_sell: bool | None = None
+    cta: bool | None = None  # Close to Arrival
+    ctd: bool | None = None  # Close to Departure
 
 
 class BulkRateUpdateRequest(BaseModel):
-    updates: List[RateUpdateRequest]
+    updates: list[RateUpdateRequest]
 
 
 class RoomTypeSelection(BaseModel):
     """Per-room-type rate plan selection."""
     room_type_code: str
-    rate_plan_codes: List[str]
+    rate_plan_codes: list[str]
 
 
 class RoomTypeValuesItem(BaseModel):
     """Per-room-type values for bulk update."""
     room_type_code: str
-    rate_plan_codes: List[str]
-    rate: Optional[float] = None
-    availability: Optional[int] = None
-    min_stay: Optional[int] = None
-    max_stay: Optional[int] = None
-    stop_sell: Optional[bool] = None
-    cta: Optional[bool] = None
-    ctd: Optional[bool] = None
+    rate_plan_codes: list[str]
+    rate: float | None = None
+    availability: int | None = None
+    min_stay: int | None = None
+    max_stay: int | None = None
+    stop_sell: bool | None = None
+    cta: bool | None = None
+    ctd: bool | None = None
 
 
 class BulkGridUpdateRequest(BaseModel):
     """HotelRunner-style bulk update: apply same values to multiple room types at once."""
-    room_type_codes: Optional[List[str]] = None  # Legacy: cross-product mode
-    rate_plan_codes: Optional[List[str]] = None   # Legacy: cross-product mode
-    selections: Optional[List[RoomTypeSelection]] = None  # Per-room-type selections
-    per_room_values: Optional[List[RoomTypeValuesItem]] = None  # Per-room-type values
+    room_type_codes: list[str] | None = None  # Legacy: cross-product mode
+    rate_plan_codes: list[str] | None = None   # Legacy: cross-product mode
+    selections: list[RoomTypeSelection] | None = None  # Per-room-type selections
+    per_room_values: list[RoomTypeValuesItem] | None = None  # Per-room-type values
     start_date: str                     # YYYY-MM-DD
     end_date: str                       # YYYY-MM-DD
-    selected_days: Optional[List[int]] = None  # 0=Sun..6=Sat, None=all days
+    selected_days: list[int] | None = None  # 0=Sun..6=Sat, None=all days
     # Fields to update (only non-None fields get applied) — used with global values
-    rate: Optional[float] = None
-    availability: Optional[int] = None
-    min_stay: Optional[int] = None
-    max_stay: Optional[int] = None
-    stop_sell: Optional[bool] = None
-    cta: Optional[bool] = None
-    ctd: Optional[bool] = None
+    rate: float | None = None
+    availability: int | None = None
+    min_stay: int | None = None
+    max_stay: int | None = None
+    stop_sell: bool | None = None
+    cta: bool | None = None
+    ctd: bool | None = None
     # Which update fields are enabled
-    update_fields: List[str] = []       # e.g. ["rate", "availability", "min_stay"]
+    update_fields: list[str] = []       # e.g. ["rate", "availability", "min_stay"]
 
 
 class PricingSettingItem(BaseModel):
@@ -89,7 +88,7 @@ class PricingSettingItem(BaseModel):
 
 
 class PricingSettingsRequest(BaseModel):
-    settings: List[PricingSettingItem]
+    settings: list[PricingSettingItem]
 
 
 @router.get("/grid")
@@ -252,7 +251,7 @@ async def update_rates(
 ):
     """Fiyat/müsaitlik/kısıtlama güncelle ve Exely'ye push et."""
     tenant_id = current_user.tenant_id
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     saved = 0
     push_results = []
 
@@ -403,7 +402,7 @@ async def bulk_grid_update(
     Gün filtreleme desteği ile (ör. sadece hafta sonu).
     """
     tenant_id = current_user.tenant_id
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     saved = 0
     _push_results = []
 
@@ -649,7 +648,7 @@ async def update_pricing_settings(
 ):
     """Oda tipi bazında fiyatlandırma tipini günceller."""
     tenant_id = current_user.tenant_id
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     updated = 0
 
     for item in request.settings:
@@ -814,19 +813,19 @@ async def get_holidays(
 
 class StopSaleScheduleCreate(BaseModel):
     name: str
-    holiday_key: Optional[str] = None
+    holiday_key: str | None = None
     start_date: str  # YYYY-MM-DD
     end_date: str    # YYYY-MM-DD
-    room_type_codes: List[str]
+    room_type_codes: list[str]
     auto_apply: bool = True
 
 
 class StopSaleScheduleUpdate(BaseModel):
-    name: Optional[str] = None
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    room_type_codes: Optional[List[str]] = None
-    auto_apply: Optional[bool] = None
+    name: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    room_type_codes: list[str] | None = None
+    auto_apply: bool | None = None
 
 
 @router.get("/stop-sale-schedules")
@@ -848,7 +847,7 @@ async def create_stop_sale_schedule(
 ):
     """Yeni stop sale zamanlayici olusturur."""
     tenant_id = current_user.tenant_id
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     schedule = {
         "id": str(uuid.uuid4()),
@@ -958,7 +957,7 @@ async def update_stop_sale_schedule(
 ):
     """Stop sale zamanlayici gunceller."""
     tenant_id = current_user.tenant_id
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     update_fields = {"updated_at": now}
     if request.name is not None:

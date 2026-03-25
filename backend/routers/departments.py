@@ -6,8 +6,8 @@ Extracted from server.py for modularity.
 """
 import random
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -42,9 +42,9 @@ security = HTTPBearer()
 @cached(ttl=180, key_prefix="front_office_dashboard")  # Cache for 3 minutes
 async def get_front_office_dashboard(current_user: User = Depends(get_current_user)):
     """Front Office Manager Dashboard with overbooking alerts"""
-    today = datetime.now(timezone.utc)
-    today_start = datetime.combine(today.date(), datetime.min.time()).replace(tzinfo=timezone.utc)
-    today_end = datetime.combine(today.date(), datetime.max.time()).replace(tzinfo=timezone.utc)
+    today = datetime.now(UTC)
+    today_start = datetime.combine(today.date(), datetime.min.time()).replace(tzinfo=UTC)
+    today_end = datetime.combine(today.date(), datetime.max.time()).replace(tzinfo=UTC)
 
     # Check-ins today with room ready status
     checkins = []
@@ -175,7 +175,7 @@ async def get_housekeeping_dashboard(current_user: User = Depends(get_current_us
 @cached(ttl=600, key_prefix="revenue_suggestions")  # Cache for 10 min
 async def get_revenue_comprehensive_suggestions(current_user: User = Depends(get_current_user)):
     """Revenue Manager comprehensive suggestions: pricing, min stay, CTA"""
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
 
     suggestions = []
     for days_ahead in range(14):
@@ -257,7 +257,7 @@ async def get_finance_dashboard(current_user: User = Depends(get_current_user)):
     async for invoice in db.invoices.find({
         'tenant_id': current_user.tenant_id,
         'payment_status': {'$in': ['pending', 'partial']},
-        'due_date': {'$lt': datetime.now(timezone.utc).isoformat()}
+        'due_date': {'$lt': datetime.now(UTC).isoformat()}
     }):
         overdue_invoices.append(invoice)
         total_overdue += invoice.get('total', 0) - invoice.get('paid_amount', 0)
@@ -268,9 +268,9 @@ async def get_finance_dashboard(current_user: User = Depends(get_current_user)):
             'overdue_count': len(overdue_invoices),
             'overdue_amount': round(total_overdue, 2),
             'aging': {
-                '0-30_days': sum(1 for inv in overdue_invoices if (datetime.now(timezone.utc) - datetime.fromisoformat(inv['due_date'])).days <= 30),
-                '31-60_days': sum(1 for inv in overdue_invoices if 30 < (datetime.now(timezone.utc) - datetime.fromisoformat(inv['due_date'])).days <= 60),
-                '60+_days': sum(1 for inv in overdue_invoices if (datetime.now(timezone.utc) - datetime.fromisoformat(inv['due_date'])).days > 60)
+                '0-30_days': sum(1 for inv in overdue_invoices if (datetime.now(UTC) - datetime.fromisoformat(inv['due_date'])).days <= 30),
+                '31-60_days': sum(1 for inv in overdue_invoices if 30 < (datetime.now(UTC) - datetime.fromisoformat(inv['due_date'])).days <= 60),
+                '60+_days': sum(1 for inv in overdue_invoices if (datetime.now(UTC) - datetime.fromisoformat(inv['due_date'])).days > 60)
             }
         },
         'integrations': {
@@ -285,7 +285,7 @@ async def get_finance_dashboard(current_user: User = Depends(get_current_user)):
             'status': 'active'
         },
         'data_timing': 'real_time',
-        'last_closing': (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        'last_closing': (datetime.now(UTC) - timedelta(days=1)).isoformat()
     }
 
 @router.get("/department/sales/corporate-accounts")
@@ -443,7 +443,7 @@ async def get_ai_activity_feed(
     current_user: User = Depends(get_current_user)
 ):
     """AI Activity Feed - Real-time AI suggestions and insights"""
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
 
     activities = []
 
@@ -519,8 +519,8 @@ async def get_ai_activity_feed(
 
     # 3. VIP Visitor Insights
     vip_arrivals = []
-    today_start = datetime.combine(today.date(), datetime.min.time()).replace(tzinfo=timezone.utc)
-    today_end = datetime.combine(today.date(), datetime.max.time()).replace(tzinfo=timezone.utc)
+    today_start = datetime.combine(today.date(), datetime.min.time()).replace(tzinfo=UTC)
+    today_end = datetime.combine(today.date(), datetime.max.time()).replace(tzinfo=UTC)
 
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -657,7 +657,7 @@ async def get_ai_dashboard_briefing(
     """Get AI-powered dashboard briefing for the day"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
 
     # Get today's key metrics
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
@@ -753,7 +753,7 @@ async def get_ai_dashboard_briefing(
             'pending_invoices': pending_invoices,
             'monthly_revenue': 0
         },
-        'generated_at': datetime.now(timezone.utc).isoformat()
+        'generated_at': datetime.now(UTC).isoformat()
     }
 
 
@@ -765,12 +765,12 @@ async def get_revenue_by_department(
     current_user: User = Depends(get_current_user)
 ):
     """Revenue breakdown by department (Rooms, F&B, Other)"""
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
 
     if not start_date:
-        start_date = datetime.combine(today.date(), datetime.min.time()).replace(tzinfo=timezone.utc).isoformat()
+        start_date = datetime.combine(today.date(), datetime.min.time()).replace(tzinfo=UTC).isoformat()
     if not end_date:
-        end_date = datetime.combine(today.date(), datetime.max.time()).replace(tzinfo=timezone.utc).isoformat()
+        end_date = datetime.combine(today.date(), datetime.max.time()).replace(tzinfo=UTC).isoformat()
 
     # Get all charges
     charges = await db.folio_charges.find({
@@ -913,7 +913,7 @@ async def assign_room_to_booking(
                 'room_id': room_id,
                 'room_number': room_number,
                 'room_type': room.get('room_type'),
-                'room_assigned_at': datetime.now(timezone.utc).isoformat(),
+                'room_assigned_at': datetime.now(UTC).isoformat(),
                 'room_assigned_by': current_user.email,
                 'room_assignment_notes': notes
             }
@@ -930,7 +930,7 @@ async def assign_room_to_booking(
         'room_number': room_number,
         'performed_by': current_user.email,
         'notes': notes,
-        'timestamp': datetime.now(timezone.utc).isoformat()
+        'timestamp': datetime.now(UTC).isoformat()
     })
 
     return {
@@ -938,7 +938,7 @@ async def assign_room_to_booking(
         'message': f'Room {room_number} assigned successfully',
         'booking_id': booking_id,
         'room_number': room_number,
-        'assigned_at': datetime.now(timezone.utc).isoformat()
+        'assigned_at': datetime.now(UTC).isoformat()
     }
 
 @router.get("/bookings/{booking_id}/available-rooms")
@@ -1033,7 +1033,7 @@ async def start_cleaning_timer(
         'room_number': room.get('room_number'),
         'assigned_to': staff_info.get('staff_name', current_user.name),
         'assigned_id': staff_info.get('staff_id', current_user.id),
-        'started_at': datetime.now(timezone.utc).isoformat(),
+        'started_at': datetime.now(UTC).isoformat(),
         'completed_at': None,
         'status': 'in_progress',
         'duration_minutes': None,
@@ -1080,7 +1080,7 @@ async def complete_cleaning_timer(
 
     # Calculate duration
     started_at = datetime.fromisoformat(task['started_at'])
-    completed_at = datetime.now(timezone.utc)
+    completed_at = datetime.now(UTC)
     duration = (completed_at - started_at).total_seconds() / 60  # minutes
 
     # Update task
@@ -1127,7 +1127,7 @@ async def get_active_cleaning_timers(current_user: User = Depends(get_current_us
         'status': 'in_progress'
     }).to_list(100)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     active_timers = []
 
     for task in tasks:
@@ -1155,7 +1155,7 @@ async def get_housekeeping_performance_stats(
     current_user: User = Depends(get_current_user)
 ):
     """Get housekeeping performance statistics"""
-    since = datetime.now(timezone.utc) - timedelta(days=days)
+    since = datetime.now(UTC) - timedelta(days=days)
 
     completed_tasks = await db.housekeeping_tasks.find({
         'tenant_id': current_user.tenant_id,
@@ -1208,7 +1208,7 @@ async def get_rate_recommendations(
     current_user: User = Depends(get_current_user)
 ):
     """AI-powered rate recommendations based on demand forecast"""
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
 
     # Get current base rates
     room_types = await db.rooms.aggregate([
@@ -1368,7 +1368,7 @@ async def apply_rate_recommendation(
             {
                 '$set': {
                     'price_per_night': adjustment['recommended_rate'],
-                    'last_rate_update': datetime.now(timezone.utc).isoformat(),
+                    'last_rate_update': datetime.now(UTC).isoformat(),
                     'rate_update_reason': f"RMS recommendation for {target_date}"
                 }
             }
@@ -1382,7 +1382,7 @@ async def apply_rate_recommendation(
         'date': target_date,
         'rate_adjustments': rate_adjustments,
         'applied_by': current_user.email,
-        'applied_at': datetime.now(timezone.utc).isoformat(),
+        'applied_at': datetime.now(UTC).isoformat(),
         'source': 'rms_recommendation'
     })
 
@@ -1401,7 +1401,7 @@ async def get_staff_detailed_statistics(
     current_user: User = Depends(get_current_user)
 ):
     """Detailed staff performance by room type, shift, and speed"""
-    since = datetime.now(timezone.utc) - timedelta(days=days)
+    since = datetime.now(UTC) - timedelta(days=days)
 
     # Get all tasks for this staff member
     tasks = await db.housekeeping_tasks.find({
@@ -1508,7 +1508,7 @@ async def get_staff_detailed_statistics(
         'period': {
             'days': days,
             'start_date': since.isoformat(),
-            'end_date': datetime.now(timezone.utc).isoformat()
+            'end_date': datetime.now(UTC).isoformat()
         },
         'overall': {
             'total_rooms_cleaned': len(tasks),
@@ -1675,7 +1675,7 @@ async def export_market_segment_excel(
 @cached(ttl=900, key_prefix="report_company_aging")  # Cache for 15 min
 async def get_company_aging_report(current_user: User = Depends(get_current_user)):
     """Company Accounts Receivable Aging Report"""
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
 
     # Get all company folios with outstanding balance
     folios = await db.folios.find({
@@ -1801,9 +1801,9 @@ async def get_finance_snapshot(current_user: User = Depends(get_current_user)):
     Finance Snapshot for GM Dashboard
     Returns: Total Pending AR, Overdue Invoices (categorized), Today's Collections
     """
-    today = datetime.now(timezone.utc).date()
-    today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
-    today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
+    today = datetime.now(UTC).date()
+    today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
+    today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
 
     # 1. Calculate Total Pending AR from company folios
     company_folios = await db.folios.find({
@@ -1852,7 +1852,7 @@ async def get_finance_snapshot(current_user: User = Depends(get_current_user)):
 
     # 3. Calculate MTD (Month-to-Date) Collections
     month_start = today.replace(day=1)
-    month_start_dt = datetime.combine(month_start, datetime.min.time()).replace(tzinfo=timezone.utc)
+    month_start_dt = datetime.combine(month_start, datetime.min.time()).replace(tzinfo=UTC)
 
     mtd_payments = await db.payments.find({
         'tenant_id': current_user.tenant_id,
@@ -1926,9 +1926,9 @@ async def export_revenue_detail_excel(
     end = datetime.fromisoformat(end_date)
 
     if start.tzinfo is None:
-        start = start.replace(tzinfo=timezone.utc)
+        start = start.replace(tzinfo=UTC)
     if end.tzinfo is None:
-        end = end.replace(tzinfo=timezone.utc)
+        end = end.replace(tzinfo=UTC)
 
     # Fetch bookings in range
     bookings = await db.bookings.find(
@@ -1992,7 +1992,7 @@ async def export_forecast_detail_excel(
         forecast_response = {}
 
     headers = ['Date', 'Expected Occupancy %', 'Expected Revenue']
-    data: List[List[Any]] = []
+    data: list[list[Any]] = []
 
     for item in forecast_response.get('days', []):
         data.append([
@@ -2022,7 +2022,7 @@ async def export_forecast_detail_excel(
         'ADR',
     ]
 
-    data: List[List[Any]] = []
+    data: list[list[Any]] = []
     for key, row in sorted(daily_stats.items(), key=lambda x: (x[1]['date'], x[1]['room_type'])):
         nights = row['nights'] or 1
         adr = row['revenue'] / nights
@@ -2056,10 +2056,10 @@ async def export_operations_daily_summary_excel(
     """Daily operations summary: arrivals, departures, in-house guests."""
     target = datetime.fromisoformat(date)
     if target.tzinfo is None:
-        target = target.replace(tzinfo=timezone.utc)
+        target = target.replace(tzinfo=UTC)
 
-    day_start = datetime.combine(target.date(), datetime.min.time()).replace(tzinfo=timezone.utc)
-    day_end = datetime.combine(target.date(), datetime.max.time()).replace(tzinfo=timezone.utc)
+    day_start = datetime.combine(target.date(), datetime.min.time()).replace(tzinfo=UTC)
+    day_end = datetime.combine(target.date(), datetime.max.time()).replace(tzinfo=UTC)
 
     arrivals = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
@@ -2111,9 +2111,9 @@ async def export_channel_distribution_excel(
     end = datetime.fromisoformat(end_date)
 
     if start.tzinfo is None:
-        start = start.replace(tzinfo=timezone.utc)
+        start = start.replace(tzinfo=UTC)
     if end.tzinfo is None:
-        end = end.replace(tzinfo=timezone.utc)
+        end = end.replace(tzinfo=UTC)
 
     bookings = await db.bookings.find(
         {
@@ -2129,7 +2129,7 @@ async def export_channel_distribution_excel(
         },
     ).to_list(20000)
 
-    channel_stats: Dict[str, Dict[str, Any]] = {}
+    channel_stats: dict[str, dict[str, Any]] = {}
 
     for b in bookings:
         channel = str(b.get('channel') or 'DIRECT')
@@ -2151,7 +2151,7 @@ async def export_channel_distribution_excel(
         'Share %',
     ]
 
-    data: List[List[Any]] = []
+    data: list[list[Any]] = []
     for key, row in sorted(channel_stats.items(), key=lambda x: x[0]):
         share = (row['revenue'] / total_revenue) * 100.0
         data.append([
@@ -2215,7 +2215,7 @@ async def update_pos_auto_post_settings(
             '$set': {
                 'mode': settings_data.get('mode', 'realtime'),
                 'batch_interval': settings_data.get('batch_interval', 15),
-                'updated_at': datetime.now(timezone.utc).isoformat(),
+                'updated_at': datetime.now(UTC).isoformat(),
                 'updated_by': current_user.id
             }
         },
@@ -2254,7 +2254,7 @@ async def manual_pos_sync(current_user: User = Depends(get_current_user)):
                 'tax_amount': charge.get('tax', 0),
                 'voided': False,
                 'line_items': charge.get('items', []),  # Include POS line items
-                'created_at': datetime.now(timezone.utc).isoformat(),
+                'created_at': datetime.now(UTC).isoformat(),
                 'created_by': current_user.id
             }
 
@@ -2263,7 +2263,7 @@ async def manual_pos_sync(current_user: User = Depends(get_current_user)):
             # Mark as posted
             await db.pos_charges.update_one(
                 {'_id': charge['_id']},
-                {'$set': {'posted_to_folio': True, 'posted_at': datetime.now(timezone.utc).isoformat()}}
+                {'$set': {'posted_to_folio': True, 'posted_at': datetime.now(UTC).isoformat()}}
             )
 
             posted_count += 1
@@ -2278,7 +2278,7 @@ async def manual_pos_sync(current_user: User = Depends(get_current_user)):
             'type': 'auto_post'
         },
         {
-            '$set': {'last_sync': datetime.now(timezone.utc).isoformat()}
+            '$set': {'last_sync': datetime.now(UTC).isoformat()}
         },
         upsert=True
     )
@@ -2329,7 +2329,7 @@ async def manual_pos_post(
         'line_items': charge.get('items', []),
         'manual_post': True,
         'post_method': method,
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'created_by': current_user.id
     }
 
@@ -2341,7 +2341,7 @@ async def manual_pos_post(
         {
             '$set': {
                 'posted_to_folio': True,
-                'posted_at': datetime.now(timezone.utc).isoformat(),
+                'posted_at': datetime.now(UTC).isoformat(),
                 'post_method': method
             }
         }
@@ -2351,7 +2351,7 @@ async def manual_pos_post(
         'total': charge['total'],
         'description': charge.get('description'),
         'folio_id': folio_id,
-        'posted_at': datetime.now(timezone.utc).isoformat()
+        'posted_at': datetime.now(UTC).isoformat()
     }
 
 @router.get("/rates/periods")
@@ -2403,7 +2403,7 @@ async def bulk_update_rate_periods(
                 'end_date': period['end_date'],
                 'rate': period['rate'],
                 'currency': period.get('currency', 'USD'),
-                'created_at': datetime.now(timezone.utc).isoformat(),
+                'created_at': datetime.now(UTC).isoformat(),
                 'created_by': current_user.id
             }
             await db.rate_periods.insert_one(period_doc)
@@ -2448,7 +2448,7 @@ async def toggle_stop_sale(
             '$set': {
                 'stop_sale': stop_sale,
                 'active': True,
-                'updated_at': datetime.now(timezone.utc).isoformat(),
+                'updated_at': datetime.now(UTC).isoformat(),
                 'updated_by': current_user.id
             }
         },
@@ -2492,7 +2492,7 @@ async def get_allotment_consumption(
 
         sold = len(bookings)
         remaining = max(allocated - sold, 0)
-        utilization = int((sold / allocated * 100)) if allocated > 0 else 0
+        utilization = int(sold / allocated * 100) if allocated > 0 else 0
 
         # Determine status
         if remaining == 0:
@@ -2524,10 +2524,10 @@ async def get_cost_summary(current_user: User = Depends(get_current_user)):
     Cost Summary Report for GM Dashboard
     Returns: MTD costs by category, top cost categories, per-room cost, cost vs RevPAR
     """
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     month_start = today.replace(day=1)
-    month_start_dt = datetime.combine(month_start, datetime.min.time()).replace(tzinfo=timezone.utc)
-    today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
+    month_start_dt = datetime.combine(month_start, datetime.min.time()).replace(tzinfo=UTC)
+    today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
 
     # 1. Get all Purchase Orders from Marketplace for this month (approved/received status)
     await db.purchase_orders.find({
@@ -2569,7 +2569,7 @@ async def create_walk_in_booking(data: dict, current_user: User = Depends(get_cu
         'name': data['guest_name'],
         'phone': data['guest_phone'],
         'email': data.get('guest_email'),
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     })
 
     # Find available room
@@ -2595,7 +2595,7 @@ async def create_walk_in_booking(data: dict, current_user: User = Depends(get_cu
             'adults': data['adults'],
             'status': 'confirmed',
             'source': 'walk-in',
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         })
     except BookingConflictError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -2730,7 +2730,7 @@ async def move_task(
         {
             '$set': {
                 'status': to_status,
-                'updated_at': datetime.now(timezone.utc).isoformat()
+                'updated_at': datetime.now(UTC).isoformat()
             }
         }
     )
@@ -2756,7 +2756,7 @@ async def update_loyalty_tier_benefits(
             {
                 '$set': {
                     'benefits': tier['benefits'],
-                    'updated_at': datetime.now(timezone.utc).isoformat(),
+                    'updated_at': datetime.now(UTC).isoformat(),
                     'updated_by': current_user.id
                 }
             },

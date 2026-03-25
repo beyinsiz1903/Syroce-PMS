@@ -5,8 +5,8 @@ Provides read access for debugging, gap detection, and search.
 The primary debug entry point: "trace any reservation in seconds."
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 logger = logging.getLogger("controlplane.timeline_reader")
 
@@ -39,11 +39,11 @@ class TimelineReader:
         self,
         entity_type: str,
         entity_id: str,
-        tenant_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        tenant_id: str | None = None,
+    ) -> dict[str, Any]:
         """Full timeline for an entity (e.g., a PMS booking ID)."""
         db = self._get_db()
-        query: Dict[str, Any] = {
+        query: dict[str, Any] = {
             "entity_type": entity_type,
             "entity_id": entity_id,
         }
@@ -77,11 +77,11 @@ class TimelineReader:
         }
 
     async def get_by_correlation(
-        self, correlation_id: str, tenant_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        self, correlation_id: str, tenant_id: str | None = None,
+    ) -> dict[str, Any]:
         """All events sharing a correlation ID."""
         db = self._get_db()
-        query: Dict[str, Any] = {"correlation_id": correlation_id}
+        query: dict[str, Any] = {"correlation_id": correlation_id}
         if tenant_id:
             query["tenant_id"] = tenant_id
 
@@ -90,7 +90,7 @@ class TimelineReader:
         ).sort("timestamp", 1).to_list(500)
 
         # Build entity map
-        entity_map: Dict[str, str] = {}
+        entity_map: dict[str, str] = {}
         for e in events:
             if e.get("entity_id"):
                 entity_map[e["entity_type"]] = e["entity_id"]
@@ -106,11 +106,11 @@ class TimelineReader:
         }
 
     async def get_by_external_id(
-        self, external_id: str, tenant_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        self, external_id: str, tenant_id: str | None = None,
+    ) -> dict[str, Any]:
         """Lookup by OTA reservation ID — the most common debug entry point."""
         db = self._get_db()
-        query: Dict[str, Any] = {"external_id": external_id}
+        query: dict[str, Any] = {"external_id": external_id}
         if tenant_id:
             query["tenant_id"] = tenant_id
 
@@ -147,19 +147,19 @@ class TimelineReader:
     async def search(
         self,
         *,
-        tenant_id: Optional[str] = None,
-        provider: Optional[str] = None,
-        entity_type: Optional[str] = None,
-        stage: Optional[str] = None,
-        status: Optional[str] = None,
-        from_time: Optional[str] = None,
-        to_time: Optional[str] = None,
+        tenant_id: str | None = None,
+        provider: str | None = None,
+        entity_type: str | None = None,
+        stage: str | None = None,
+        status: str | None = None,
+        from_time: str | None = None,
+        to_time: str | None = None,
         limit: int = 50,
         skip: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Search timeline events with filters."""
         db = self._get_db()
-        query: Dict[str, Any] = {}
+        query: dict[str, Any] = {}
         if tenant_id:
             query["tenant_id"] = tenant_id
         if provider:
@@ -171,7 +171,7 @@ class TimelineReader:
         if status:
             query["status"] = status
         if from_time or to_time:
-            ts_query: Dict[str, str] = {}
+            ts_query: dict[str, str] = {}
             if from_time:
                 ts_query["$gte"] = from_time
             if to_time:
@@ -193,18 +193,18 @@ class TimelineReader:
     async def get_stuck_events(
         self,
         *,
-        tenant_id: Optional[str] = None,
+        tenant_id: str | None = None,
         max_age_minutes: int = 30,
         limit: int = 50,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Find events stuck in intermediate stages."""
         db = self._get_db()
         cutoff = (
-            datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)
+            datetime.now(UTC) - timedelta(minutes=max_age_minutes)
         ).isoformat()
 
         # Find the latest event per correlation_id
-        match: Dict[str, Any] = {"timestamp": {"$lte": cutoff}}
+        match: dict[str, Any] = {"timestamp": {"$lte": cutoff}}
         if tenant_id:
             match["tenant_id"] = tenant_id
 
@@ -252,7 +252,7 @@ class TimelineReader:
             "threshold_minutes": max_age_minutes,
         }
 
-    def _compute_total_duration(self, events: List[Dict[str, Any]]) -> Optional[int]:
+    def _compute_total_duration(self, events: list[dict[str, Any]]) -> int | None:
         """Compute total duration from first to last event in ms."""
         if len(events) < 2:
             return None
@@ -264,8 +264,8 @@ class TimelineReader:
             return None
 
     def _detect_gaps(
-        self, events: List[Dict[str, Any]], entity_type: str,
-    ) -> List[str]:
+        self, events: list[dict[str, Any]], entity_type: str,
+    ) -> list[str]:
         """Detect missing stages in a timeline."""
         expected = EXPECTED_SEQUENCES.get(entity_type)
         if not expected:
@@ -284,7 +284,7 @@ class TimelineReader:
 
 
 # ── Singleton ──────────────────────────────────────────────────────
-_reader: Optional[TimelineReader] = None
+_reader: TimelineReader | None = None
 
 
 def get_timeline_reader() -> TimelineReader:

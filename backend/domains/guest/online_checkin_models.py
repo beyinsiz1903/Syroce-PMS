@@ -3,9 +3,8 @@ Online Check-in Models
 Pre-arrival guest services and room preference management
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -54,47 +53,47 @@ class OnlineCheckinRequest(BaseModel):
     booking_id: str
 
     # Guest Information
-    passport_number: Optional[str] = None
-    passport_expiry: Optional[str] = None
-    nationality: Optional[str] = None
+    passport_number: str | None = None
+    passport_expiry: str | None = None
+    nationality: str | None = None
 
     # Arrival Details
-    estimated_arrival_time: Optional[str] = None
-    flight_number: Optional[str] = None
-    coming_from: Optional[str] = None
+    estimated_arrival_time: str | None = None
+    flight_number: str | None = None
+    coming_from: str | None = None
 
     # Room Preferences
     room_view: RoomViewType = RoomViewType.NO_PREFERENCE
     floor_preference: FloorPreference = FloorPreference.NO_PREFERENCE
     bed_type: BedType = BedType.NO_PREFERENCE
     pillow_type: PillowType = PillowType.NO_PREFERENCE
-    room_temperature: Optional[int] = None  # Celsius
+    room_temperature: int | None = None  # Celsius
 
     # Special Requests
-    special_requests: Optional[str] = None
-    dietary_restrictions: Optional[str] = None
-    accessibility_needs: Optional[str] = None
+    special_requests: str | None = None
+    dietary_restrictions: str | None = None
+    accessibility_needs: str | None = None
 
     # Additional Services
-    newspaper_preference: Optional[str] = None
+    newspaper_preference: str | None = None
     smoking_preference: bool = False
     connecting_rooms: bool = False
     quiet_room: bool = False
 
     # Communication
-    mobile_number: Optional[str] = None
-    whatsapp_number: Optional[str] = None
+    mobile_number: str | None = None
+    whatsapp_number: str | None = None
 
 class OnlineCheckinResponse(BaseModel):
     """Online check-in yanıtı"""
     checkin_id: str
     booking_id: str
     status: str  # "pending", "approved", "completed"
-    room_number: Optional[str] = None
-    estimated_ready_time: Optional[str] = None
-    upsell_offers: List[dict] = []
+    room_number: str | None = None
+    estimated_ready_time: str | None = None
+    upsell_offers: list[dict] = []
     check_in_instructions: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class UpsellOffer(BaseModel):
     """Upsell teklifi"""
@@ -107,23 +106,23 @@ class UpsellOffer(BaseModel):
     title: str
     description: str
     original_price: float
-    discounted_price: Optional[float] = None
-    savings: Optional[float] = None
+    discounted_price: float | None = None
+    savings: float | None = None
 
     # Details
-    valid_until: Optional[datetime] = None
-    terms_conditions: Optional[str] = None
+    valid_until: datetime | None = None
+    terms_conditions: str | None = None
 
     # Status
     status: str = "pending"  # pending, accepted, rejected, expired
-    offered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    responded_at: Optional[datetime] = None
+    offered_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    responded_at: datetime | None = None
 
 class UpsellAcceptance(BaseModel):
     """Upsell kabul/red"""
     offer_id: str
     action: str  # "accept" or "reject"
-    notes: Optional[str] = None
+    notes: str | None = None
 
 class PreArrivalCommunication(BaseModel):
     """Pre-arrival iletişim kaydı"""
@@ -135,8 +134,8 @@ class PreArrivalCommunication(BaseModel):
     # Communication details
     communication_type: str  # "welcome_email", "checkin_reminder", "upsell_offer"
     sent_at: datetime
-    opened_at: Optional[datetime] = None
-    clicked_at: Optional[datetime] = None
+    opened_at: datetime | None = None
+    clicked_at: datetime | None = None
 
     # Content
     subject: str
@@ -153,13 +152,13 @@ class RoomPreferenceProfile(BaseModel):
     tenant_id: str
 
     # Room preferences from history
-    preferred_view: Optional[RoomViewType] = None
-    preferred_floor: Optional[FloorPreference] = None
-    preferred_bed: Optional[BedType] = None
-    preferred_pillow: Optional[PillowType] = None
-    preferred_temperature: Optional[int] = None
+    preferred_view: RoomViewType | None = None
+    preferred_floor: FloorPreference | None = None
+    preferred_bed: BedType | None = None
+    preferred_pillow: PillowType | None = None
+    preferred_temperature: int | None = None
 
     # Frequency data
     preference_confidence: float = 0.0  # 0.0 - 1.0
     based_on_stays: int = 0
-    last_updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_updated: datetime = Field(default_factory=lambda: datetime.now(UTC))

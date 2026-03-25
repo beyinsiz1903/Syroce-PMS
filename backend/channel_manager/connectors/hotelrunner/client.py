@@ -11,8 +11,8 @@ Supports both XML/OTA endpoints (inventory, rates) and REST/JSON endpoints (rese
 import logging
 import time
 import uuid as _uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 
@@ -46,7 +46,7 @@ MASK_KEYS = {"token", "password", "secret", "api_key"}
 VALID_ENVIRONMENTS = ("mock", "sandbox", "production")
 
 
-def _mask_params(params: Dict[str, str]) -> Dict[str, str]:
+def _mask_params(params: dict[str, str]) -> dict[str, str]:
     """Mask sensitive query parameters for audit logs."""
     masked = {}
     for k, v in params.items():
@@ -83,8 +83,8 @@ class HotelRunnerClient:
         auth: HotelRunnerAuth,
         sandbox: bool = True,
         environment: str = "sandbox",
-        rate_limiter: Optional[RateLimiter] = None,
-        retry_policy: Optional[RetryPolicy] = None,
+        rate_limiter: RateLimiter | None = None,
+        retry_policy: RetryPolicy | None = None,
     ):
         self._auth = auth
         # Environment-based URL selection
@@ -102,13 +102,13 @@ class HotelRunnerClient:
             follow_redirects=True,
         )
         self._sandbox = sandbox or environment == "sandbox"
-        self._audit_entries: List[Dict[str, Any]] = []
+        self._audit_entries: list[dict[str, Any]] = []
 
     async def close(self):
         await self._client.aclose()
 
     @property
-    def audit_entries(self) -> List[Dict[str, Any]]:
+    def audit_entries(self) -> list[dict[str, Any]]:
         """Return collected audit entries from this session."""
         return list(self._audit_entries)
 
@@ -121,8 +121,8 @@ class HotelRunnerClient:
         self,
         method: str,
         path: str,
-        xml_body: Optional[str] = None,
-        params: Optional[Dict[str, str]] = None,
+        xml_body: str | None = None,
+        params: dict[str, str] | None = None,
     ) -> str:
         """Make an authenticated XML request to HotelRunner API."""
         acquired = await self._rate_limiter.acquire(timeout=120)
@@ -175,9 +175,9 @@ class HotelRunnerClient:
         self,
         method: str,
         path: str,
-        params: Optional[Dict[str, str]] = None,
-        correlation_id: Optional[str] = None,
-    ) -> Tuple[Any, Dict[str, Any]]:
+        params: dict[str, str] | None = None,
+        correlation_id: str | None = None,
+    ) -> tuple[Any, dict[str, Any]]:
         """
         Make an authenticated REST/JSON request to HotelRunner API.
         Returns (parsed_json, audit_entry).
@@ -199,7 +199,7 @@ class HotelRunnerClient:
             "method": method.upper(),
             "url": f"{self._base_url}{path}",
             "params": _mask_params(merged_params),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         start = time.monotonic()
@@ -270,8 +270,8 @@ class HotelRunnerClient:
     # ─── Inventory / Rates (XML) ─────────────────────────────────────
 
     async def push_availability(
-        self, updates: list, correlation_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        self, updates: list, correlation_id: str | None = None,
+    ) -> dict[str, Any]:
         """
         Push inventory availability to HotelRunner.
 
@@ -286,7 +286,7 @@ class HotelRunnerClient:
             "correlation_id": corr_id,
             "operation": "push_availability",
             "environment": self._environment,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "request_payload_len": len(xml_body),
             "update_count": len(updates),
         }
@@ -321,8 +321,8 @@ class HotelRunnerClient:
             raise
 
     async def push_rates(
-        self, updates: list, correlation_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        self, updates: list, correlation_id: str | None = None,
+    ) -> dict[str, Any]:
         """
         Push rate amounts to HotelRunner.
 
@@ -337,7 +337,7 @@ class HotelRunnerClient:
             "correlation_id": corr_id,
             "operation": "push_rates",
             "environment": self._environment,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "request_payload_len": len(xml_body),
             "update_count": len(updates),
         }
@@ -375,13 +375,13 @@ class HotelRunnerClient:
 
     async def pull_reservations(
         self,
-        date_start: Optional[str] = None,
-        date_end: Optional[str] = None,
+        date_start: str | None = None,
+        date_end: str | None = None,
         per_page: int = DEFAULT_PER_PAGE,
         undelivered: bool = True,
         modified_only: bool = False,
         booked_only: bool = False,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Pull reservations from HotelRunner REST/JSON endpoint with pagination.
 
@@ -389,12 +389,12 @@ class HotelRunnerClient:
         Auth: token + hr_id as query params
         Returns: list of raw reservation JSON dicts
         """
-        all_reservations: List[Dict[str, Any]] = []
+        all_reservations: list[dict[str, Any]] = []
         page = 1
         corr_id = str(_uuid.uuid4())
 
-        async def _do_page(pg: int) -> Tuple[List[Dict], int]:
-            params: Dict[str, str] = {
+        async def _do_page(pg: int) -> tuple[list[dict], int]:
+            params: dict[str, str] = {
                 "per_page": str(per_page),
             }
             if undelivered:
@@ -457,8 +457,8 @@ class HotelRunnerClient:
     async def acknowledge_reservation(
         self,
         message_uid: str,
-        pms_number: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        pms_number: str | None = None,
+    ) -> dict[str, Any]:
         """
         Confirm delivery of a single reservation to HotelRunner.
 
@@ -466,7 +466,7 @@ class HotelRunnerClient:
         Params: token, hr_id, message_uid, pms_number (optional)
         Returns: {"status": "ok"} on success
         """
-        params: Dict[str, str] = {"message_uid": message_uid}
+        params: dict[str, str] = {"message_uid": message_uid}
         if pms_number:
             params["pms_number"] = pms_number
 
@@ -489,8 +489,8 @@ class HotelRunnerClient:
 
     async def acknowledge_reservations(
         self,
-        ack_items: List[Dict[str, str]],
-    ) -> Dict[str, Any]:
+        ack_items: list[dict[str, str]],
+    ) -> dict[str, Any]:
         """
         Confirm delivery of multiple reservations.
 
@@ -523,8 +523,8 @@ class HotelRunnerClient:
         self,
         hr_number: str,
         event: str,
-        cancel_reason: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        cancel_reason: str | None = None,
+    ) -> dict[str, Any]:
         """
         Update reservation state (confirm/cancel) on HotelRunner.
         Only valid when requires_response=true.
@@ -532,7 +532,7 @@ class HotelRunnerClient:
         PUT /api/v2/apps/reservations/fire
         Params: hr_number, event (confirm|cancel), cancel_reason
         """
-        params: Dict[str, str] = {
+        params: dict[str, str] = {
             "hr_number": hr_number,
             "event": event,
         }
@@ -558,7 +558,7 @@ class HotelRunnerClient:
 
     # ─── Connection Test ─────────────────────────────────────────────
 
-    async def _test_single_step(self, step_name: str, method: str, path: str, xml_body: Optional[str] = None) -> Dict[str, Any]:
+    async def _test_single_step(self, step_name: str, method: str, path: str, xml_body: str | None = None) -> dict[str, Any]:
         """Execute a single test step and capture the result with latency."""
         start = time.monotonic()
         try:
@@ -598,12 +598,12 @@ class HotelRunnerClient:
             latency = int((time.monotonic() - start) * 1000)
             return {"status": "fail", "latency_ms": latency, "error_code": "UNKNOWN", "message": str(e)}
 
-    async def test_connection_detailed(self) -> Dict[str, Any]:
+    async def test_connection_detailed(self) -> dict[str, Any]:
         """
         Production-grade connection test that validates each integration layer separately.
         Returns a structured result with per-step status, latency, and actionable error messages.
         """
-        tested_at = datetime.now(timezone.utc).isoformat()
+        tested_at = datetime.now(UTC).isoformat()
 
         # Step 1: Authentication validity
         auth_result = await self._test_single_step(
@@ -649,6 +649,6 @@ class HotelRunnerClient:
             "xml_connectivity_status": rest_result,
         }
 
-    async def test_connection(self) -> Dict[str, Any]:
+    async def test_connection(self) -> dict[str, Any]:
         """Legacy simple test - delegates to detailed test."""
         return await self.test_connection_detailed()

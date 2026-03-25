@@ -17,8 +17,8 @@ Features:
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -51,14 +51,14 @@ class WorkerJob:
         self.tenant_id = tenant_id
         self.connector_id = connector_id
         self.status = "pending"
-        self.created_at = datetime.now(timezone.utc).isoformat()
-        self.started_at: Optional[str] = None
-        self.completed_at: Optional[str] = None
+        self.created_at = datetime.now(UTC).isoformat()
+        self.started_at: str | None = None
+        self.completed_at: str | None = None
         self.retry_count = 0
-        self.error: Optional[str] = None
-        self.result: Optional[Dict[str, Any]] = None
+        self.error: str | None = None
+        self.result: dict[str, Any] | None = None
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "job_type": self.job_type,
@@ -77,14 +77,14 @@ class WorkerJob:
 class BackgroundWorkerService:
     """Manages background worker jobs with locking, retry, and audit."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     # ─── Lock Management ──────────────────────────────────────────────
 
     async def acquire_lock(self, lock_key: str, ttl_seconds: int = 600) -> bool:
         """Acquire a distributed lock. Returns True if acquired."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expires = (now + timedelta(seconds=ttl_seconds)).isoformat()
 
         # Try to insert lock (atomic)
@@ -117,8 +117,8 @@ class BackgroundWorkerService:
         job_type: str,
         tenant_id: str,
         connector_id: str = "",
-        actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Run a background job with locking and retry."""
         lock_key = f"worker:{job_type}:{tenant_id}:{connector_id}"
         if not await self.acquire_lock(lock_key):
@@ -130,10 +130,10 @@ class BackgroundWorkerService:
         finally:
             await self.release_lock(lock_key)
 
-    async def _execute_with_retry(self, job: WorkerJob, actor_id: Optional[str] = None) -> Dict[str, Any]:
+    async def _execute_with_retry(self, job: WorkerJob, actor_id: str | None = None) -> dict[str, Any]:
         """Execute job with exponential backoff retry."""
         job.status = "running"
-        job.started_at = datetime.now(timezone.utc).isoformat()
+        job.started_at = datetime.now(UTC).isoformat()
         await self._store_job(job)
         await self._audit_job(job, "started", actor_id)
 
@@ -141,7 +141,7 @@ class BackgroundWorkerService:
             try:
                 result = await self._dispatch_job(job)
                 job.status = "completed"
-                job.completed_at = datetime.now(timezone.utc).isoformat()
+                job.completed_at = datetime.now(UTC).isoformat()
                 job.result = result
                 await self._store_job(job)
                 await self._audit_job(job, "completed", actor_id)
@@ -156,7 +156,7 @@ class BackgroundWorkerService:
                     await asyncio.sleep(min(2 ** job.retry_count, 30))
                 else:
                     job.status = "failed"
-                    job.completed_at = datetime.now(timezone.utc).isoformat()
+                    job.completed_at = datetime.now(UTC).isoformat()
                     await self._store_job(job)
                     await self._audit_job(job, "failed", actor_id, {"error": job.error})
                     await self._alert_on_failure(job)
@@ -164,7 +164,7 @@ class BackgroundWorkerService:
 
         return {"status": "failed", "job": job.to_doc()}
 
-    async def _dispatch_job(self, job: WorkerJob) -> Dict[str, Any]:
+    async def _dispatch_job(self, job: WorkerJob) -> dict[str, Any]:
         """Route job to the appropriate handler."""
         if job.job_type == "reservation_import":
             return await self._run_reservation_import(job)
@@ -179,26 +179,26 @@ class BackgroundWorkerService:
 
     # ─── Job Handlers ─────────────────────────────────────────────────
 
-    async def _run_reservation_import(self, job: WorkerJob) -> Dict[str, Any]:
+    async def _run_reservation_import(self, job: WorkerJob) -> dict[str, Any]:
         from .scheduled_import_service import ScheduledImportService
         svc = ScheduledImportService(repo=self._repo)
         if job.connector_id:
             return await svc.run_scheduled_import(job.tenant_id, job.connector_id)
         return await svc.run_all_connectors(job.tenant_id)
 
-    async def _run_inventory_safety_sync(self, job: WorkerJob) -> Dict[str, Any]:
+    async def _run_inventory_safety_sync(self, job: WorkerJob) -> dict[str, Any]:
         from .scheduled_import_service import ScheduledImportService
         svc = ScheduledImportService(repo=self._repo)
         return await svc.run_safety_net_inventory_sync(job.tenant_id)
 
-    async def _run_connector_health_check(self, job: WorkerJob) -> Dict[str, Any]:
+    async def _run_connector_health_check(self, job: WorkerJob) -> dict[str, Any]:
         from .connector_health_service import ConnectorHealthService
         svc = ConnectorHealthService(repo=self._repo)
         if job.connector_id:
             return await svc.get_connector_health(job.tenant_id, job.connector_id)
         return await svc.get_all_health(job.tenant_id)
 
-    async def _run_metrics_aggregation(self, job: WorkerJob) -> Dict[str, Any]:
+    async def _run_metrics_aggregation(self, job: WorkerJob) -> dict[str, Any]:
         from .historical_metrics_service import HistoricalMetricsService
         svc = HistoricalMetricsService(repo=self._repo)
         connectors = await self._repo.get_connectors_by_tenant(job.tenant_id)
@@ -213,28 +213,28 @@ class BackgroundWorkerService:
 
     # ─── Bulk Operations ──────────────────────────────────────────────
 
-    async def run_all_scheduled(self, tenant_id: str) -> Dict[str, Any]:
+    async def run_all_scheduled(self, tenant_id: str) -> dict[str, Any]:
         """Run all scheduled job types for a tenant."""
         results = {}
         for job_type in DEFAULT_INTERVALS:
             result = await self.run_job(job_type, tenant_id)
             results[job_type] = result
-        return {"results": results, "run_at": datetime.now(timezone.utc).isoformat()}
+        return {"results": results, "run_at": datetime.now(UTC).isoformat()}
 
     # ─── Job History ──────────────────────────────────────────────────
 
     async def get_jobs(
-        self, tenant_id: str, job_type: Optional[str] = None,
-        status: Optional[str] = None, limit: int = 50,
-    ) -> List[Dict[str, Any]]:
-        q: Dict[str, Any] = {"tenant_id": tenant_id}
+        self, tenant_id: str, job_type: str | None = None,
+        status: str | None = None, limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        q: dict[str, Any] = {"tenant_id": tenant_id}
         if job_type:
             q["job_type"] = job_type
         if status:
             q["status"] = status
         return await db[WORKER_JOBS].find(q, _NO_ID).sort("created_at", -1).limit(limit).to_list(limit)
 
-    async def get_job_stats(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_job_stats(self, tenant_id: str) -> dict[str, Any]:
         """Get statistics for worker jobs."""
         pipeline = [
             {"$match": {"tenant_id": tenant_id}},
@@ -260,7 +260,7 @@ class BackgroundWorkerService:
 
     async def _audit_job(
         self, job: WorkerJob, action: str,
-        actor_id: Optional[str] = None, metadata: Optional[Dict] = None,
+        actor_id: str | None = None, metadata: dict | None = None,
     ):
         log = IntegrationAuditLog(
             tenant_id=job.tenant_id,

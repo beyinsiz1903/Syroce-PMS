@@ -15,8 +15,8 @@ import hmac
 import logging
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..infrastructure.repository import ChannelManagerRepository
@@ -28,27 +28,27 @@ RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_REQUESTS = 60
 
 # In-memory rate limiter (per connector)
-_rate_limits: Dict[str, List[float]] = {}
+_rate_limits: dict[str, list[float]] = {}
 
 
 class WebhookService:
     """Processes incoming webhooks from channel providers."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     async def process_webhook(
         self,
         tenant_id: str,
         raw_body: bytes,
-        signature: Optional[str],
-        timestamp: Optional[str],
+        signature: str | None,
+        timestamp: str | None,
         provider: str = "hotelrunner",
-        connector_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        connector_id: str | None = None,
+    ) -> dict[str, Any]:
         """Process an incoming webhook event with full security validation."""
         event_id = str(uuid.uuid4())
-        received_at = datetime.now(timezone.utc).isoformat()
+        received_at = datetime.now(UTC).isoformat()
 
         # Rate limiting
         rate_key = f"{tenant_id}:{provider}"
@@ -144,8 +144,8 @@ class WebhookService:
             try:
                 await svc.handle_event(tenant_id, "room_unblocked", {
                     "property_id": property_id,
-                    "date_start": webhook_data.get("date_start", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
-                    "date_end": webhook_data.get("date_end", (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")),
+                    "date_start": webhook_data.get("date_start", datetime.now(UTC).strftime("%Y-%m-%d")),
+                    "date_end": webhook_data.get("date_end", (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d")),
                 })
                 actions_taken.append({"action": "inventory_sync", "result": "success"})
             except Exception as e:
@@ -168,7 +168,7 @@ class WebhookService:
             "event_id": event_id,
             "event_type": event_type,
             "actions_taken": actions_taken,
-            "processed_at": datetime.now(timezone.utc).isoformat(),
+            "processed_at": datetime.now(UTC).isoformat(),
         }
 
     @staticmethod
@@ -189,7 +189,7 @@ class WebhookService:
         except (ValueError, TypeError):
             try:
                 dt = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-                age = abs((datetime.now(timezone.utc) - dt).total_seconds())
+                age = abs((datetime.now(UTC) - dt).total_seconds())
                 return age <= MAX_TIMESTAMP_DRIFT_SECONDS
             except (ValueError, TypeError):
                 return False
@@ -222,7 +222,7 @@ class WebhookService:
         }
         await self._repo.store_webhook_event(doc)
 
-    async def get_webhook_events(self, tenant_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+    async def get_webhook_events(self, tenant_id: str, limit: int = 50) -> list[dict[str, Any]]:
         return await self._repo.get_webhook_events(tenant_id, limit)
 
     async def _audit(self, tenant_id, property_id, connector_id, action, actor_id=None, metadata=None):

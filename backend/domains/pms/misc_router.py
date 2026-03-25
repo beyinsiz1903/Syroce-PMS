@@ -4,8 +4,7 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -44,7 +43,7 @@ class PingTestRequest(BaseModel):
 
 @router.get("/service/complaints")
 async def get_complaints(
-    status: Optional[str] = None,
+    status: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Şikayetleri listele"""
@@ -99,7 +98,7 @@ async def push_rate_to_gds(rate_data: dict, current_user: User = Depends(get_cur
         'room_type': rate_data['room_type'],
         'rate': rate_data['rate'],
         'availability': rate_data['availability'],
-        'pushed_at': datetime.now(timezone.utc).isoformat(),
+        'pushed_at': datetime.now(UTC).isoformat(),
         'success': True
     }
     await db.gds_rate_updates.insert_one(gds_update)
@@ -128,8 +127,8 @@ async def register_mobile_device(device_data: dict, current_user: User = Depends
         'push_token': device_data.get('push_token'),
         'app_version': device_data.get('app_version', '1.0.0'),
         'os_version': device_data.get('os_version'),
-        'registered_at': datetime.now(timezone.utc).isoformat(),
-        'last_active': datetime.now(timezone.utc).isoformat()
+        'registered_at': datetime.now(UTC).isoformat(),
+        'last_active': datetime.now(UTC).isoformat()
     }
     await db.mobile_devices.insert_one(device)
 
@@ -151,8 +150,8 @@ async def register_mobile_device(device_data: dict, current_user: User = Depends
                     'os_version': device_data.get('os_version'),
                     'subscriptions': DEFAULT_PUSH_CHANNELS,
                     'departments': [current_user.role] if current_user.role else [],
-                    'updated_at': datetime.now(timezone.utc).isoformat(),
-                    'created_at': datetime.now(timezone.utc).isoformat()
+                    'updated_at': datetime.now(UTC).isoformat(),
+                    'created_at': datetime.now(UTC).isoformat()
                 }
             },
             upsert=True
@@ -169,7 +168,7 @@ async def send_push_notification(notification_data: dict, current_user: User = D
         'tenant_id': current_user.tenant_id,
         'title': notification_data['title'],
         'body': notification_data['body'],
-        'sent_at': datetime.now(timezone.utc).isoformat()
+        'sent_at': datetime.now(UTC).isoformat()
     }
     await db.push_notifications.insert_one(notification)
     return {'success': True, 'message': 'Push notification gönderildi (MOCK)'}
@@ -190,7 +189,7 @@ async def add_staff_member(staff_data: dict, current_user: User = Depends(get_cu
         'employment_type': staff_data.get('employment_type', 'full_time'),
         'performance_score': 0.0,
         'active': True,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
     await db.staff_members.insert_one(staff)
     return {'success': True, 'staff_id': staff['id']}
@@ -198,7 +197,7 @@ async def add_staff_member(staff_data: dict, current_user: User = Depends(get_cu
 
 
 @router.get("/hr/staff")
-async def get_staff_list(department: Optional[str] = None, current_user: User = Depends(get_current_user)):
+async def get_staff_list(department: str | None = None, current_user: User = Depends(get_current_user)):
     """Personel listesi"""
     query = {'tenant_id': current_user.tenant_id, 'active': True}
     if department:
@@ -220,7 +219,7 @@ async def create_shift(shift_data: dict, current_user: User = Depends(get_curren
         'start_time': shift_data['start_time'],
         'end_time': shift_data['end_time'],
         'status': 'scheduled',
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
     await db.shift_schedules.insert_one(shift)
     return {'success': True, 'shift_id': shift['id']}
@@ -271,8 +270,8 @@ async def create_company(company_data: CompanyCreate, current_user: User = Depen
 @router.get("/companies")
 @cached(ttl=600, key_prefix="companies_list")  # Cache for 10 minutes
 async def get_companies(
-    search: Optional[str] = None,
-    status: Optional[CompanyStatus] = None,
+    search: str | None = None,
+    status: CompanyStatus | None = None,
     limit: int = 1000,
     offset: int = 0,
     current_user: User = Depends(get_current_user)
@@ -327,7 +326,7 @@ async def update_company(
         raise HTTPException(status_code=404, detail="Company not found")
 
     update_data = company_data.model_dump()
-    update_data['updated_at'] = datetime.now(timezone.utc).isoformat()
+    update_data['updated_at'] = datetime.now(UTC).isoformat()
 
     await db.companies.update_one(
         {'id': company_id, 'tenant_id': current_user.tenant_id},
@@ -369,7 +368,7 @@ async def void_payment(
         {'$set': {
             'voided': True,
             'voided_by': current_user.id,
-            'voided_at': datetime.now(timezone.utc).isoformat(),
+            'voided_at': datetime.now(UTC).isoformat(),
             'void_reason': void_reason
         }}
     )
@@ -419,8 +418,8 @@ async def get_inventory_alerts(current_user: User = Depends(get_current_user)):
 
 @router.get("/inventory/consumption-report")
 async def get_consumption_report(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Get inventory consumption report"""
@@ -511,7 +510,7 @@ async def seed_hotel_amenities(current_user: User = Depends(get_current_user)):
                 'tenant_id': current_user.tenant_id,
                 **amenity,
                 'sku': f"HTL-{amenity['name'][:3].upper()}-{str(uuid.uuid4())[:8]}",
-                'created_at': datetime.now(timezone.utc).isoformat()
+                'created_at': datetime.now(UTC).isoformat()
             }
             await db.inventory_items.insert_one(item)
             created_count += 1
@@ -606,7 +605,7 @@ async def create_property(
         'total_rooms': request.total_rooms,
         'property_type': request.property_type,
         'status': request.status,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     property_copy = property_obj.copy()
@@ -890,7 +889,7 @@ async def switch_property(
             '$set': {
                 'property_id': property_id,
                 'current_property': property_doc.get('name', 'Unknown'),
-                'last_property_switch': datetime.now(timezone.utc).isoformat()
+                'last_property_switch': datetime.now(UTC).isoformat()
             }
         }
     )
@@ -904,7 +903,7 @@ async def switch_property(
         'action': 'property_switch',
         'property_id': property_id,
         'property_name': property_doc.get('name', 'Unknown'),
-        'timestamp': datetime.now(timezone.utc).isoformat()
+        'timestamp': datetime.now(UTC).isoformat()
     }
     await db.activity_logs.insert_one(activity_log)
 
@@ -912,7 +911,7 @@ async def switch_property(
         'message': 'Tesis başarıyla değiştirildi',
         'property_id': property_id,
         'property_name': property_doc.get('name', 'Unknown'),
-        'switched_at': datetime.now(timezone.utc).isoformat()
+        'switched_at': datetime.now(UTC).isoformat()
     }
 
 
@@ -924,7 +923,7 @@ async def get_7day_trend(
     Get 7-day trend for arrivals, departures, revenue, occupancy
     """
     try:
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         trend_data = []
 
         for i in range(6, -1, -1):  # Last 7 days
@@ -988,7 +987,7 @@ async def get_7day_trend(
             'trend': trend_data,
             'changes': changes,
             'period': '7 days',
-            'generated_at': datetime.now(timezone.utc).isoformat()
+            'generated_at': datetime.now(UTC).isoformat()
         }
 
     except Exception as e:
@@ -1103,7 +1102,7 @@ async def get_occupancy_trend(
     """Get occupancy trend for the last N days"""
     current_user = await get_current_user(credentials)
 
-    end_date = datetime.now(timezone.utc)
+    end_date = datetime.now(UTC)
     start_date = end_date - timedelta(days=days)
 
     # Get all bookings in date range
@@ -1162,7 +1161,7 @@ async def get_revenue_trend(
     """Get revenue trend for the last N days"""
     current_user = await get_current_user(credentials)
 
-    end_date = datetime.now(timezone.utc)
+    end_date = datetime.now(UTC)
     start_date = end_date - timedelta(days=days)
 
     # Get all folios in date range
@@ -1214,7 +1213,7 @@ async def get_booking_trends(
     """Get booking trends for the last N days"""
     current_user = await get_current_user(credentials)
 
-    end_date = datetime.now(timezone.utc)
+    end_date = datetime.now(UTC)
     start_date = end_date - timedelta(days=days)
 
     # Get all bookings created in date range

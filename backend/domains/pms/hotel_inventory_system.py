@@ -4,8 +4,7 @@ Automatic stock deduction for room amenities based on guest count
 """
 
 import uuid
-from datetime import datetime, timezone
-from typing import Dict, List
+from datetime import UTC, datetime
 
 # Room amenity consumption rules - per guest
 AMENITY_CONSUMPTION_RULES = {
@@ -57,7 +56,7 @@ CRITICAL_STOCK_LEVELS = {
     "Bornoz": 15,
 }
 
-async def calculate_amenity_consumption(guest_count: int, room_type: str = "standard") -> Dict[str, float]:
+async def calculate_amenity_consumption(guest_count: int, room_type: str = "standard") -> dict[str, float]:
     """
     Calculate amenity consumption based on guest count
 
@@ -157,7 +156,7 @@ async def deduct_room_amenities(db, tenant_id: str, guest_count: int, room_type:
                 'reference': f"Check-in: {booking_id}",
                 'notes': f"Auto deduction for {guest_count} guests",
                 'created_by': user_name,
-                'created_at': datetime.now(timezone.utc).isoformat()
+                'created_at': datetime.now(UTC).isoformat()
             }
             await db.stock_movements.insert_one(movement)
 
@@ -181,7 +180,7 @@ async def deduct_room_amenities(db, tenant_id: str, guest_count: int, room_type:
 
     return results
 
-async def get_suggested_orders(db, tenant_id: str) -> List[Dict]:
+async def get_suggested_orders(db, tenant_id: str) -> list[dict]:
     """
     Get suggested orders for low stock items
 

@@ -20,8 +20,8 @@ import asyncio
 import logging
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from domains.channel_manager.ari import repositories as repo
 from domains.channel_manager.ari.ack_service import process_ack
@@ -51,9 +51,9 @@ class PushLoopMetrics:
         self.verify_success_count: int = 0
         self.verify_fail_count: int = 0
         self.cycle_count: int = 0
-        self.last_cycle_at: Optional[str] = None
+        self.last_cycle_at: str | None = None
         self.last_cycle_duration_ms: int = 0
-        self._provider_latencies: Dict[str, List[int]] = defaultdict(list)
+        self._provider_latencies: dict[str, list[int]] = defaultdict(list)
 
     def record_ack_latency(self, provider: str, latency_ms: int):
         self._provider_latencies[provider].append(latency_ms)
@@ -65,7 +65,7 @@ class PushLoopMetrics:
         samples = self._provider_latencies.get(provider, [])
         return round(sum(samples) / len(samples), 1) if samples else 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         provider_latency = {
             p: self.get_avg_latency(p)
             for p in self._provider_latencies
@@ -103,10 +103,10 @@ class PushLoopWorker:
         self._batch_size = batch_size
         self._running = False
         self._paused = False
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self.metrics = PushLoopMetrics()
-        self._provider_adapters: Dict[str, object] = {}
-        self._started_at: Optional[str] = None
+        self._provider_adapters: dict[str, object] = {}
+        self._started_at: str | None = None
 
     def register_adapter(self, provider: str, adapter):
         self._provider_adapters[provider] = adapter
@@ -124,7 +124,7 @@ class PushLoopWorker:
             return
         self._running = True
         self._paused = False
-        self._started_at = datetime.now(timezone.utc).isoformat()
+        self._started_at = datetime.now(UTC).isoformat()
         self._task = asyncio.create_task(self._loop())
         logger.info("Push loop worker started")
 
@@ -158,7 +158,7 @@ class PushLoopWorker:
                 cycle_ms = int((time.monotonic() - cycle_start) * 1000)
 
                 self.metrics.cycle_count += 1
-                self.metrics.last_cycle_at = datetime.now(timezone.utc).isoformat()
+                self.metrics.last_cycle_at = datetime.now(UTC).isoformat()
                 self.metrics.last_cycle_duration_ms = cycle_ms
 
                 await asyncio.sleep(self._interval)
@@ -279,7 +279,7 @@ class PushLoopWorker:
             error=f"Unknown scope: {scope}",
         )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {
             "status": self.status,
             "started_at": self._started_at,
@@ -291,7 +291,7 @@ class PushLoopWorker:
 
 
 # Singleton worker
-_push_worker: Optional[PushLoopWorker] = None
+_push_worker: PushLoopWorker | None = None
 
 
 def get_push_worker() -> PushLoopWorker:

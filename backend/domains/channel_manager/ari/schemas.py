@@ -2,7 +2,6 @@
 ARI Push Engine — Pydantic schemas for API request/response.
 """
 from datetime import date
-from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -13,16 +12,16 @@ class PublishARIEventRequest(BaseModel):
     source_service: str = "manual"
     event_type: str  # availability | rate | restriction
     room_type_code: str
-    rate_plan_code: Optional[str] = None
+    rate_plan_code: str | None = None
     date_from: date
     date_to: date
     payload: dict
-    actor_id: Optional[str] = None
+    actor_id: str | None = None
 
 
 class PushChangeSetsRequest(BaseModel):
     tenant_id: str
-    provider: Optional[str] = None
+    provider: str | None = None
     limit: int = 50
 
 
@@ -51,5 +50,5 @@ class ARIStatsResponse(BaseModel):
 class EngineStatsResponse(BaseModel):
     buffer: dict = {}
     rate_limiter: dict = {}
-    registered_adapters: List[str] = []
+    registered_adapters: list[str] = []
     active_tenants: dict = {}

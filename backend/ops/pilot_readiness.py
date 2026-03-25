@@ -5,7 +5,7 @@ Pre-pilot validation, feature toggles, onboarding runbook,
 rollback plan, tenant monitoring pack, success metrics.
 """
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -53,7 +53,7 @@ class PilotReadinessService:
         self, ctx: OperationContext
     ) -> ServiceResult:
         """Execute automated readiness checks and return combined checklist."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         results = []
 
         for item in PILOT_CHECKLIST:
@@ -97,7 +97,7 @@ class PilotReadinessService:
     async def _auto_check(self, ctx: OperationContext, check_id: str) -> bool:
         """Run automated checks for known check_ids."""
         tid = ctx.tenant_id
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         if check_id == "cm_connection":
             conn = await self._db.channel_connections.find_one(
@@ -168,7 +168,7 @@ class PilotReadinessService:
         if check_id not in valid_ids:
             return ServiceResult.fail("Unknown check ID", "NOT_FOUND")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         await self._db.pilot_signoffs.update_one(
             {"check_id": check_id, "tenant_id": ctx.tenant_id},
             {
@@ -217,7 +217,7 @@ class PilotReadinessService:
                 "$set": {
                     "enabled": enabled,
                     "updated_by": ctx.actor_id,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
                 }
             },
             upsert=True,

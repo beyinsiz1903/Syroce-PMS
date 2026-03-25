@@ -155,7 +155,7 @@ class RMSModelTrainer:
         self.occupancy_model = joblib.load(os.path.join(self.model_dir, 'rms_occupancy_model.pkl'))
         self.pricing_model = joblib.load(os.path.join(self.model_dir, 'rms_pricing_model.pkl'))
 
-        with open(os.path.join(self.model_dir, 'rms_metrics.json'), 'r') as f:
+        with open(os.path.join(self.model_dir, 'rms_metrics.json')) as f:
             self.metrics = json.load(f)
 
         print("Models loaded successfully")
@@ -275,7 +275,7 @@ class PersonaModelTrainer:
         self.model = joblib.load(os.path.join(self.model_dir, 'persona_model.pkl'))
         self.label_encoder = joblib.load(os.path.join(self.model_dir, 'persona_label_encoder.pkl'))
 
-        with open(os.path.join(self.model_dir, 'persona_metrics.json'), 'r') as f:
+        with open(os.path.join(self.model_dir, 'persona_metrics.json')) as f:
             self.metrics = json.load(f)
 
         print("Models loaded successfully")
@@ -426,7 +426,7 @@ class PredictiveMaintenanceModelTrainer:
         self.label_encoder = joblib.load(os.path.join(self.model_dir, 'maintenance_label_encoder.pkl'))
         self.equipment_encoder = joblib.load(os.path.join(self.model_dir, 'maintenance_equipment_encoder.pkl'))
 
-        with open(os.path.join(self.model_dir, 'maintenance_metrics.json'), 'r') as f:
+        with open(os.path.join(self.model_dir, 'maintenance_metrics.json')) as f:
             self.metrics = json.load(f)
 
         print("Models loaded successfully")
@@ -563,7 +563,7 @@ class HKSchedulerModelTrainer:
         self.staff_model = joblib.load(os.path.join(self.model_dir, 'hk_staff_model.pkl'))
         self.hours_model = joblib.load(os.path.join(self.model_dir, 'hk_hours_model.pkl'))
 
-        with open(os.path.join(self.model_dir, 'hk_scheduler_metrics.json'), 'r') as f:
+        with open(os.path.join(self.model_dir, 'hk_scheduler_metrics.json')) as f:
             self.metrics = json.load(f)
 
         print("Models loaded successfully")

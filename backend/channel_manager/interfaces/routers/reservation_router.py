@@ -1,6 +1,5 @@
 """Reservation import, review queue, batch, ACK, audit-trail endpoints."""
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -17,17 +16,17 @@ router = APIRouter(tags=["CM Reservations"])
 
 class TriggerImportRequest(BaseModel):
     connector_id: str
-    date_start: Optional[str] = None
-    date_end: Optional[str] = None
+    date_start: str | None = None
+    date_end: str | None = None
 
 
 class ApproveReviewRequest(BaseModel):
     reservation_id: str
-    room_type_override: Optional[str] = None
+    room_type_override: str | None = None
 
 
 class ReprocessReviewRequest(BaseModel):
-    room_type_override: Optional[str] = None
+    room_type_override: str | None = None
 
 
 # ─── Reservation Import ──────────────────────────────────────────
@@ -50,8 +49,8 @@ async def trigger_reservation_pull(
 
 @router.get("/reservations/imported")
 async def list_imported_reservations(
-    connector_id: Optional[str] = None,
-    status: Optional[str] = None,
+    connector_id: str | None = None,
+    status: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
@@ -76,7 +75,7 @@ async def get_imported_reservation_detail(
 
 @router.get("/reservations/review-queue")
 async def get_review_queue(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     svc = ReservationImportService()
@@ -132,7 +131,7 @@ async def approve_review(
 
 @router.get("/reservations/batches")
 async def list_import_batches(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     svc = ReservationImportService()
@@ -155,7 +154,7 @@ async def get_import_batch_detail(
 
 @router.get("/reservations/stats")
 async def get_reservation_stats(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     svc = ReservationImportService()
@@ -209,7 +208,7 @@ async def get_reservation_lineage(
 
 @router.get("/reservations/audit-trail")
 async def get_reservation_audit_trail(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):

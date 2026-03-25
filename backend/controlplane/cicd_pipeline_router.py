@@ -12,7 +12,6 @@ Endpoints:
   GET  /api/ops/cicd/tiers              — Available tier configurations
 """
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -34,9 +33,9 @@ router = APIRouter(
 
 class PipelineRunRequest(BaseModel):
     tier: str = Field(..., description="Pipeline tier: pr_gate, staging_gate, nightly")
-    build_id: Optional[str] = Field(default=None, description="CI/CD build ID")
-    commit_sha: Optional[str] = Field(default=None, description="Git commit SHA")
-    deploy_id: Optional[str] = Field(default=None, description="Deploy event ID")
+    build_id: str | None = Field(default=None, description="CI/CD build ID")
+    commit_sha: str | None = Field(default=None, description="Git commit SHA")
+    deploy_id: str | None = Field(default=None, description="Deploy event ID")
     triggered_by: str = Field(default="operator", description="Who triggered this run")
 
 
@@ -87,7 +86,7 @@ async def run_pipeline(
 
 @router.get("/runs")
 async def list_runs(
-    tier: Optional[str] = Query(None),
+    tier: str | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
 ):
@@ -140,7 +139,7 @@ async def get_health_badges(current_user: User = Depends(get_current_user)):
 
 @router.get("/trends")
 async def get_trends(
-    tier: Optional[str] = Query(None),
+    tier: str | None = Query(None),
     limit: int = Query(30, ge=1, le=100),
     current_user: User = Depends(get_current_user),
 ):

@@ -27,8 +27,8 @@ Overlap rule:
 If room_id is None (unassigned OTA import), lock is skipped.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from pymongo.errors import DuplicateKeyError
 
@@ -47,15 +47,15 @@ MAINTENANCE_PREFIX = "MAINT:"
 class BookingConflictError(Exception):
     """Raised when a booking conflicts with an existing reservation."""
 
-    def __init__(self, message: str, conflicting_booking_id: Optional[str] = None,
-                 conflict_type: str = "booking", conflicting_nights: Optional[List[str]] = None):
+    def __init__(self, message: str, conflicting_booking_id: str | None = None,
+                 conflict_type: str = "booking", conflicting_nights: list[str] | None = None):
         super().__init__(message)
         self.conflicting_booking_id = conflicting_booking_id
         self.conflict_type = conflict_type
         self.conflicting_nights = conflicting_nights or []
 
 
-def _night_dates(check_in: str, check_out: str) -> List[str]:
+def _night_dates(check_in: str, check_out: str) -> list[str]:
     """Return list of night dates (YYYY-MM-DD) that a booking occupies."""
     ci = datetime.fromisoformat(check_in.replace("Z", "+00:00"))
     co = datetime.fromisoformat(check_out.replace("Z", "+00:00"))
@@ -71,8 +71,8 @@ def _night_dates(check_in: str, check_out: str) -> List[str]:
 
 async def _timeline_event(tenant_id: str, stage: str, status: str,
                           booking_id: str, room_id: str,
-                          metadata: Optional[Dict[str, Any]] = None,
-                          correlation_id: Optional[str] = None):
+                          metadata: dict[str, Any] | None = None,
+                          correlation_id: str | None = None):
     """Fire-and-forget timeline event for booking lock operations."""
     try:
         from controlplane.timeline_writer import get_timeline_writer
@@ -91,7 +91,7 @@ async def _timeline_event(tenant_id: str, stage: str, status: str,
         logger.debug("Timeline write failed for %s: %s", stage, exc)
 
 
-async def create_booking_atomic(booking_doc: Dict[str, Any]) -> Dict[str, Any]:
+async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
     """
     Atomically create a booking with room-night locking.
 
@@ -130,7 +130,7 @@ async def create_booking_atomic(booking_doc: Dict[str, Any]) -> Dict[str, Any]:
         return booking_doc
 
     # Phase 1: Claim each night (INV-1, INV-2)
-    claimed_nights: List[str] = []
+    claimed_nights: list[str] = []
     try:
         for night in nights:
             lock_doc = {
@@ -139,7 +139,7 @@ async def create_booking_atomic(booking_doc: Dict[str, Any]) -> Dict[str, Any]:
                 "night_date": night,
                 "booking_id": booking_id,
                 "lock_type": "booking",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             }
             try:
                 await db.room_night_locks.insert_one(lock_doc)
@@ -277,7 +277,7 @@ async def create_booking_atomic(booking_doc: Dict[str, Any]) -> Dict[str, Any]:
 
 async def release_booking_nights(tenant_id: str, booking_id: str,
                                  reason: str = "cancelled",
-                                 correlation_id: Optional[str] = None) -> int:
+                                 correlation_id: str | None = None) -> int:
     """Release room-night locks when a booking is cancelled/no-show.
 
     INV-6: Logs the release event to timeline.
@@ -321,7 +321,7 @@ async def release_booking_nights(tenant_id: str, booking_id: str,
 
 async def apply_room_block(tenant_id: str, room_id: str,
                            block_type: str, start_date: str, end_date: str,
-                           reason: str = "", actor: str = "system") -> Dict[str, Any]:
+                           reason: str = "", actor: str = "system") -> dict[str, Any]:
     """Block a room for OOO/OOS/maintenance by inserting night locks.
 
     INV-5: Uses the same room_night_locks collection as bookings.
@@ -345,7 +345,7 @@ async def apply_room_block(tenant_id: str, room_id: str,
 
     blocked = []
     conflicts = []
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     for night in nights:
         lock_doc = {
@@ -398,9 +398,9 @@ async def apply_room_block(tenant_id: str, room_id: str,
 
 
 async def release_room_block(tenant_id: str, room_id: str,
-                              block_type: str, start_date: Optional[str] = None,
-                              end_date: Optional[str] = None,
-                              actor: str = "system") -> Dict[str, Any]:
+                              block_type: str, start_date: str | None = None,
+                              end_date: str | None = None,
+                              actor: str = "system") -> dict[str, Any]:
     """Remove OOO/OOS/maintenance locks for a room.
 
     If start_date/end_date provided, only release those nights.
@@ -448,10 +448,10 @@ async def release_room_block(tenant_id: str, room_id: str,
     }
 
 
-async def get_room_blocks(tenant_id: str, room_id: Optional[str] = None,
-                           block_type: Optional[str] = None) -> List[Dict[str, Any]]:
+async def get_room_blocks(tenant_id: str, room_id: str | None = None,
+                           block_type: str | None = None) -> list[dict[str, Any]]:
     """Get active OOO/OOS/maintenance blocks."""
-    query: Dict[str, Any] = {"tenant_id": tenant_id}
+    query: dict[str, Any] = {"tenant_id": tenant_id}
 
     if room_id:
         query["room_id"] = room_id

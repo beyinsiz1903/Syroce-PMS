@@ -1,7 +1,6 @@
 """
 Event Broadcast / WebSocket Health Router.
 """
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -57,7 +56,7 @@ async def unregister_session(session_id: str, current_user: User = Depends(get_c
 class PublishEventReq(BaseModel):
     event_type: str
     payload: dict = {}
-    property_id: Optional[str] = None
+    property_id: str | None = None
 
 
 @router.post("/publish")
@@ -70,7 +69,7 @@ async def publish_event(req: PublishEventReq, current_user: User = Depends(get_c
 
 @router.get("/replay")
 async def replay_events(
-    since: Optional[str] = None,
+    since: str | None = None,
     limit: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
 ):

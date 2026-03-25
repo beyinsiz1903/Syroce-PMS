@@ -8,8 +8,8 @@ import logging
 import os
 import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any, Callable
 
 from core.database import db
 
@@ -45,9 +45,9 @@ class EventEnvelope:
     """Standard event envelope with ordering and tenant scoping."""
 
     def __init__(self, tenant_id: str, event_type: str, payload: dict,
-                 property_id: Optional[str] = None, source: str = "system",
+                 property_id: str | None = None, source: str = "system",
                  priority: str = EventPriority.NORMAL,
-                 correlation_id: Optional[str] = None):
+                 correlation_id: str | None = None):
         self.id = str(uuid.uuid4())
         self.tenant_id = tenant_id
         self.property_id = property_id
@@ -56,7 +56,7 @@ class EventEnvelope:
         self.source = source
         self.priority = priority
         self.correlation_id = correlation_id or str(uuid.uuid4())
-        self.timestamp = datetime.now(timezone.utc).isoformat()
+        self.timestamp = datetime.now(UTC).isoformat()
         self.sequence = 0
 
     def to_dict(self) -> dict:
@@ -110,7 +110,7 @@ class InMemoryBackend(EventBusBackend):
     """In-memory fallback when Redis is unavailable."""
 
     def __init__(self):
-        self._subscribers: Dict[str, Dict[str, Callable]] = defaultdict(dict)
+        self._subscribers: dict[str, dict[str, Callable]] = defaultdict(dict)
         self._published = 0
         self._delivered = 0
         self._dropped = 0
@@ -168,8 +168,8 @@ class EventBus:
     def __init__(self):
         self._backend: EventBusBackend = InMemoryBackend()
         self._fallback_backend: InMemoryBackend = self._backend
-        self._sequence_counters: Dict[str, int] = defaultdict(int)
-        self._sessions: Dict[str, Dict[str, dict]] = defaultdict(dict)
+        self._sequence_counters: dict[str, int] = defaultdict(int)
+        self._sessions: dict[str, dict[str, dict]] = defaultdict(dict)
         self._metrics = {
             "total_published": 0,
             "total_delivered": 0,
@@ -217,7 +217,7 @@ class EventBus:
     def mode(self) -> str:
         return self._mode
 
-    def _tenant_channel(self, tenant_id: str, property_id: Optional[str] = None) -> str:
+    def _tenant_channel(self, tenant_id: str, property_id: str | None = None) -> str:
         if property_id:
             return f"events:{tenant_id}:{property_id}"
         return f"events:{tenant_id}"
@@ -228,7 +228,7 @@ class EventBus:
             "user_id": user_id,
             "roles": roles,
             "property_ids": property_ids or [],
-            "connected_at": datetime.now(timezone.utc).isoformat(),
+            "connected_at": datetime.now(UTC).isoformat(),
             "last_event_at": None,
             "events_received": 0,
         }
@@ -247,9 +247,9 @@ class EventBus:
         return False
 
     async def publish(self, tenant_id: str, event_type: str, payload: dict,
-                      property_id: Optional[str] = None, source: str = "system",
+                      property_id: str | None = None, source: str = "system",
                       priority: str = EventPriority.NORMAL,
-                      correlation_id: Optional[str] = None) -> dict:
+                      correlation_id: str | None = None) -> dict:
         """Publish an event through the bus with automatic fallback."""
         if not self._initialized:
             await self.initialize()
@@ -324,10 +324,10 @@ class EventBus:
             "used_fallback": used_fallback,
         }
 
-    async def replay(self, tenant_id: str, since: Optional[str] = None,
-                     event_types: Optional[List[str]] = None,
-                     limit: int = 100) -> List[dict]:
-        q: Dict[str, Any] = {"tenant_id": tenant_id}
+    async def replay(self, tenant_id: str, since: str | None = None,
+                     event_types: list[str] | None = None,
+                     limit: int = 100) -> list[dict]:
+        q: dict[str, Any] = {"tenant_id": tenant_id}
         if since:
             q["timestamp"] = {"$gte": since}
         if event_types:
@@ -345,7 +345,7 @@ class EventBus:
             for sid, s in sessions.items()
         ]
 
-    def get_channels(self, tenant_id: Optional[str] = None) -> list:
+    def get_channels(self, tenant_id: str | None = None) -> list:
         channels = []
         tenants = [tenant_id] if tenant_id else list(self._sessions.keys())
         for tid in tenants:
@@ -360,7 +360,7 @@ class EventBus:
 
     async def get_metrics(self) -> dict:
         backend_health = await self._backend.health_check()
-        one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        one_hour_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
         recent_count = await db.event_bus_log.count_documents(
             {"timestamp": {"$gte": one_hour_ago}}
         )

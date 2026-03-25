@@ -2,8 +2,8 @@
 Channel Manager Observability Service - Aggregates health metrics and operational status.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from ..infrastructure.repository import ChannelManagerRepository
 
@@ -13,10 +13,10 @@ logger = logging.getLogger("channel_manager.application.observability_service")
 class ObservabilityService:
     """Aggregates channel manager health and operational metrics."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
-    async def get_connector_health(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def get_connector_health(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         """Get health metrics for a specific connector."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
         if not connector:
@@ -44,7 +44,7 @@ class ObservabilityService:
         if last_sync:
             try:
                 dt = datetime.fromisoformat(last_sync.replace("Z", "+00:00"))
-                hours_ago = (datetime.now(timezone.utc) - dt).total_seconds() / 3600
+                hours_ago = (datetime.now(UTC) - dt).total_seconds() / 3600
                 if hours_ago > 24:
                     health = "red" if hours_ago > 48 else "yellow"
                     reasons.append(f"Last sync {hours_ago:.0f}h ago")
@@ -75,7 +75,7 @@ class ObservabilityService:
             "sync_metrics": metrics,
         }
 
-    async def get_dashboard_overview(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_dashboard_overview(self, tenant_id: str) -> dict[str, Any]:
         """Get overall channel manager dashboard data."""
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
 

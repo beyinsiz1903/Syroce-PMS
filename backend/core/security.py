@@ -6,8 +6,7 @@ import base64
 import io
 import os
 import secrets
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -42,11 +41,11 @@ def verify_password(password: str, hashed: str) -> bool:
         return False
 
 
-def create_token(user_id: str, tenant_id: Optional[str] = None) -> str:
+def create_token(user_id: str, tenant_id: str | None = None) -> str:
     payload = {
         'user_id': user_id,
         'tenant_id': tenant_id,
-        'exp': datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
+        'exp': datetime.now(UTC) + timedelta(hours=JWT_EXPIRATION_HOURS)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -111,7 +110,7 @@ def generate_qr_code(data: str) -> str:
 
 
 def generate_time_based_qr_token(booking_id: str, expiry_hours: int = 72) -> str:
-    expiry = datetime.now(timezone.utc) + timedelta(hours=expiry_hours)
+    expiry = datetime.now(UTC) + timedelta(hours=expiry_hours)
     token = secrets.token_urlsafe(32)
     return jwt.encode({
         'booking_id': booking_id,

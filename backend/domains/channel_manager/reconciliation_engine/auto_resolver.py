@@ -13,8 +13,8 @@ Manual review required (DO NOT auto-resolve):
   - status_conflict
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("reconciliation.auto_resolver")
 
@@ -39,7 +39,7 @@ def can_auto_resolve(case_type: str) -> bool:
     return case_type in SAFE_AUTO_RESOLVE
 
 
-def get_auto_resolution(case_type: str) -> Optional[Tuple[str, str]]:
+def get_auto_resolution(case_type: str) -> tuple[str, str] | None:
     """
     Returns (resolution_action, resolution_note) for auto-resolvable cases.
     Returns None if manual review is required.
@@ -47,7 +47,7 @@ def get_auto_resolution(case_type: str) -> Optional[Tuple[str, str]]:
     return SAFE_AUTO_RESOLVE.get(case_type)
 
 
-def attempt_auto_resolve(case: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def attempt_auto_resolve(case: dict[str, Any]) -> dict[str, Any] | None:
     """
     Attempt auto-resolution for a case.
     Returns update dict if resolvable, None otherwise.
@@ -62,7 +62,7 @@ def attempt_auto_resolve(case: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
     action, note = resolution
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     logger.info(
         f"Auto-resolving case {case.get('id','?')}: "

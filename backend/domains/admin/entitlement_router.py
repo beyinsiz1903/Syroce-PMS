@@ -2,8 +2,7 @@
 Entitlement, Metering & Feature Flags — Admin API
 Super-admin endpoints for viewing/managing entitlements, usage, and feature flags.
 """
-from datetime import datetime, timezone
-from typing import Dict, Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -69,9 +68,9 @@ async def api_entitlements_overview(
     """System-wide entitlements overview: tenant counts by tier, expired subs, quota alerts."""
     tenants = await _raw_db.tenants.find({}, {"_id": 0, "id": 1, "property_name": 1, "subscription_tier": 1, "subscription_status": 1, "subscription_end_date": 1}).to_list(1000)
 
-    tier_counts: Dict[str, int] = {}
+    tier_counts: dict[str, int] = {}
     expired = []
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     for t in tenants:
         tier = (t.get("subscription_tier") or "basic").lower()
@@ -116,7 +115,7 @@ async def api_get_tenant_usage(
 async def api_get_tenant_usage_timeline(
     tenant_id: str,
     days: int = Query(default=30, ge=1, le=365),
-    event_type: Optional[str] = None,
+    event_type: str | None = None,
     current_user: User = Depends(require_super_admin),
 ):
     """Get daily usage timeline for charts."""

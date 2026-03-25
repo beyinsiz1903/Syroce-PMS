@@ -5,7 +5,7 @@ Configurable per-tenant and per-endpoint rate limiting.
 import logging
 import time
 from collections import defaultdict
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +41,8 @@ class TenantRateLimiter:
     }
 
     def __init__(self):
-        self._buckets: Dict[str, TokenBucket] = {}
-        self._stats: Dict[str, Dict[str, int]] = defaultdict(lambda: {"allowed": 0, "rejected": 0})
+        self._buckets: dict[str, TokenBucket] = {}
+        self._stats: dict[str, dict[str, int]] = defaultdict(lambda: {"allowed": 0, "rejected": 0})
 
     def get_bucket(self, tenant_id: str, tier: str = "enterprise") -> TokenBucket:
         key = f"{tenant_id}:{tier}"
@@ -61,7 +61,7 @@ class TenantRateLimiter:
             logger.warning(f"Rate limit hit for tenant {tenant_id} (tier={tier})")
         return allowed
 
-    def get_stats(self, tenant_id: Optional[str] = None) -> Dict[str, Any]:
+    def get_stats(self, tenant_id: str | None = None) -> dict[str, Any]:
         if tenant_id:
             return dict(self._stats.get(tenant_id, {"allowed": 0, "rejected": 0}))
         return {tid: dict(stats) for tid, stats in self._stats.items()}

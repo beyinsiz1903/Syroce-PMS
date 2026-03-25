@@ -11,7 +11,7 @@ Each runbook includes:
 - Retry guidance
 - Severity and category
 """
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class Runbook:
@@ -25,10 +25,10 @@ class Runbook:
         description: str,
         category: str,
         severity: str,
-        possible_causes: List[str],
-        resolution_steps: List[str],
+        possible_causes: list[str],
+        resolution_steps: list[str],
         retry_instructions: str,
-        related_operations: List[str],
+        related_operations: list[str],
         prevention: str = "",
     ):
         self.id = id
@@ -42,7 +42,7 @@ class Runbook:
         self.related_operations = related_operations
         self.prevention = prevention
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "title": self.title,
@@ -59,7 +59,7 @@ class Runbook:
 
 # ── Runbook Registry ──────────────────────────────────────────────
 
-RUNBOOKS: List[Runbook] = [
+RUNBOOKS: list[Runbook] = [
     Runbook(
         id="reservation_import_failed",
         title="Reservation Import Failed",
@@ -404,15 +404,15 @@ RUNBOOKS: List[Runbook] = [
 ]
 
 # Index for fast lookup
-_RUNBOOK_INDEX: Dict[str, Runbook] = {rb.id: rb for rb in RUNBOOKS}
+_RUNBOOK_INDEX: dict[str, Runbook] = {rb.id: rb for rb in RUNBOOKS}
 
 
-def get_runbook(runbook_id: str) -> Optional[Runbook]:
+def get_runbook(runbook_id: str) -> Runbook | None:
     """Get a single runbook by ID."""
     return _RUNBOOK_INDEX.get(runbook_id)
 
 
-def list_runbooks(*, category: Optional[str] = None) -> List[Dict[str, Any]]:
+def list_runbooks(*, category: str | None = None) -> list[dict[str, Any]]:
     """List all runbooks, optionally filtered by category."""
     result = RUNBOOKS
     if category:

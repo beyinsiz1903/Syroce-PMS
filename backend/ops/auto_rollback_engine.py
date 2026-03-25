@@ -5,7 +5,7 @@ Monitors real system health metrics and triggers rollback when thresholds are br
 Works with the canary deployment service for progressive deploy safety.
 """
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from common.result import ServiceResult
 
@@ -75,7 +75,7 @@ class AutoRollbackEngine:
 
     async def evaluate_triggers(self) -> ServiceResult:
         """Evaluate all rollback triggers against real system state."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         results = []
         any_triggered = False
         auto_rollback_needed = False
@@ -121,7 +121,7 @@ class AutoRollbackEngine:
 
     async def execute_rollback(self, reason: str, triggered_by: str) -> ServiceResult:
         """Record a rollback execution event."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         # Get current canary state
         canary_state = await self._db.canary_deployments.find_one(
@@ -231,7 +231,7 @@ class AutoRollbackEngine:
     async def _metric_import_failures(self) -> float:
         """Count failed imports in the last window."""
         try:
-            cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+            cutoff = (datetime.now(UTC) - timedelta(minutes=30)).isoformat()
             failed = await self._db.imported_reservations.count_documents({
                 "import_status": "failed",
                 "updated_at": {"$gte": cutoff},

@@ -5,7 +5,6 @@ Incident lifecycle: create, ack, resolve, list.
 Recovery tools: replay DLQ, recover stuck workers, force recon.
 Service health matrix.
 """
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -23,8 +22,8 @@ class CreateIncidentRequest(BaseModel):
     description: str
     severity: str = "P2"
     affected_service: str = ""
-    affected_tenant_id: Optional[str] = None
-    affected_property_id: Optional[str] = None
+    affected_tenant_id: str | None = None
+    affected_property_id: str | None = None
 
 class AckIncidentRequest(BaseModel):
     incident_id: str
@@ -75,8 +74,8 @@ async def resolve_incident(req: ResolveIncidentRequest, user=Depends(get_current
 
 @router.get("/list")
 async def list_incidents(
-    status: Optional[str] = None,
-    severity: Optional[str] = None,
+    status: str | None = None,
+    severity: str | None = None,
     limit: int = Query(50, le=200),
     user=Depends(get_current_user),
 ):

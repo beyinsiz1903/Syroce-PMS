@@ -7,13 +7,13 @@ Booking.com connectivity API payloads.
 For now, this is a skeleton that **normalizes** the internal data and logs it.
 Real HTTP calls to Booking.com can be added later in a controlled way.
 """
-from typing import Any, Dict, List
+from typing import Any
 
 from _legacy.booking_availability import normalize_availability_response
 
 
 class BookingAdapter:
-    def __init__(self, connection: Dict[str, Any]):
+    def __init__(self, connection: dict[str, Any]):
         """Initialize adapter with channel connection config.
 
         connection example:
@@ -28,7 +28,7 @@ class BookingAdapter:
         """
         self.connection = connection or {}
 
-    def normalize_rate_update(self, rate_update: Dict[str, Any]) -> Dict[str, Any]:
+    def normalize_rate_update(self, rate_update: dict[str, Any]) -> dict[str, Any]:
         """Normalize internal rate_update payload into a Booking-like structure.
 
         This does **not** call the real Booking API yet. It only prepares a
@@ -52,7 +52,7 @@ class BookingAdapter:
 
         # In a real integration, we would map PMS room_type -> Booking room id
         # via room mappings and also handle currency/tax settings.
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "property_id": self.connection.get("property_id"),
             "room_type": room_type,
             "date_from": date_from,
@@ -67,7 +67,7 @@ class BookingAdapter:
         }
         return payload
 
-    async def push_rates(self, rate_update: Dict[str, Any]) -> Dict[str, Any]:
+    async def push_rates(self, rate_update: dict[str, Any]) -> dict[str, Any]:
         """Simulate pushing rates to Booking.com.
 
         For now this only returns a normalized payload. Real HTTP calls
@@ -80,7 +80,7 @@ class BookingAdapter:
             "normalized_payload": normalized,
         }
 
-    async def push_availability(self, availability_update: Dict[str, Any]) -> Dict[str, Any]:
+    async def push_availability(self, availability_update: dict[str, Any]) -> dict[str, Any]:
         """Simulate pushing availability updates to Booking.com.
 
         `availability_update` is expected to contain:
@@ -101,7 +101,7 @@ class BookingAdapter:
             "normalized_payload": normalized,
         }
 
-    async def import_reservations(self, since: str) -> List[Dict[str, Any]]:
+    async def import_reservations(self, since: str) -> list[dict[str, Any]]:
         """Simulate pulling reservations from Booking.com.
 
         This is a placeholder for future work.

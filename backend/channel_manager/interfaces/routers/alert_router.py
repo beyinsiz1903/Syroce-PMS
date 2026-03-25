@@ -1,6 +1,5 @@
 """Alerting system and reliability monitoring endpoints."""
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -23,7 +22,7 @@ class AlertRuleRequest(BaseModel):
     severity: str = "warning"
     description: str = ""
     enabled: bool = True
-    connector_id: Optional[str] = None
+    connector_id: str | None = None
 
 
 class AlertActionRequest(BaseModel):
@@ -35,9 +34,9 @@ class AlertActionRequest(BaseModel):
 
 @router.get("/alerts")
 async def list_alerts(
-    status: Optional[str] = None,
-    severity: Optional[str] = None,
-    connector_id: Optional[str] = None,
+    status: str | None = None,
+    severity: str | None = None,
+    connector_id: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):

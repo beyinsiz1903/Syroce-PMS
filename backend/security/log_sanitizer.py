@@ -4,7 +4,7 @@ Filters sensitive data from logs before output.
 """
 import logging
 import re
-from typing import Any, Dict
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ def sanitize_string(text: str) -> str:
     return text
 
 
-def sanitize_dict(data: Dict[str, Any], *, depth: int = 0) -> Dict[str, Any]:
+def sanitize_dict(data: dict[str, Any], *, depth: int = 0) -> dict[str, Any]:
     """Redact sensitive fields from a dictionary (for structured logging)."""
     if depth > 5:
         return data

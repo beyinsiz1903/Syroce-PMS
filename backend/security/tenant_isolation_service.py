@@ -6,7 +6,7 @@ cross-tenant leak tests, resource fairness metrics.
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -25,7 +25,7 @@ class TenantIsolationService:
         self, ctx: OperationContext
     ) -> ServiceResult:
         """Run comprehensive tenant isolation checks."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         checks = []
 
         # 1. Database query scope check
@@ -100,7 +100,7 @@ class TenantIsolationService:
         self, ctx: OperationContext, window_minutes: int = 60
     ) -> ServiceResult:
         """Detect tenants consuming disproportionate resources."""
-        since = (datetime.now(timezone.utc) - timedelta(minutes=window_minutes)).isoformat()
+        since = (datetime.now(UTC) - timedelta(minutes=window_minutes)).isoformat()
 
         pipeline = [
             {"$match": {"timestamp": {"$gte": since}}},
@@ -148,7 +148,7 @@ class TenantIsolationService:
         self, ctx: OperationContext
     ) -> ServiceResult:
         """Get resource usage fairness metrics across tenants."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         (now - timedelta(hours=1)).isoformat()
 
         # DB storage per tenant

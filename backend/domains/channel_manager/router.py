@@ -7,9 +7,9 @@ import hashlib
 import os
 import secrets
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import jwt
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
@@ -70,25 +70,25 @@ class APIKeyModel(BaseModel):
     key_hash: str
     actor_type: CMActorType = CMActorType.agency
     is_active: bool = True
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    created_by: Optional[str] = None
-    last_used_at: Optional[str] = None
-    scopes: List[str] = ["cm:read", "cm:write"]
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    created_by: str | None = None
+    last_used_at: str | None = None
+    scopes: list[str] = ["cm:read", "cm:write"]
 
 class CMRestrictions(BaseModel):
     stop_sell: bool = False
     min_stay: int = 1
     cta: bool = False
     ctd: bool = False
-    max_stay: Optional[int] = None
+    max_stay: int | None = None
 
 class CMRateInfo(BaseModel):
-    amount: Optional[float] = None
+    amount: float | None = None
     currency: str = "TRY"
     tax_included: bool = True
-    source: Optional[str] = None
-    rate_plan_id: Optional[str] = None
-    board_code: Optional[str] = None
+    source: str | None = None
+    rate_plan_id: str | None = None
+    board_code: str | None = None
 
 class CMARIDay(BaseModel):
     date: str
@@ -100,14 +100,14 @@ class CMARIDay(BaseModel):
 class CMARIRoomType(BaseModel):
     room_type_id: str
     name: str
-    days: List[CMARIDay]
+    days: list[CMARIDay]
 
 class CMARIV2Response(BaseModel):
     hotel_id: str
     currency: str = "TRY"
     date_from: str
     date_to: str
-    room_types: List[CMARIRoomType]
+    room_types: list[CMARIRoomType]
 
 class CMARIResponseDay(BaseModel):
     date: str
@@ -115,15 +115,15 @@ class CMARIResponseDay(BaseModel):
     available: int
     sold: int
     stop_sell: bool = False
-    rate: Optional[float] = None
+    rate: float | None = None
     currency: str = "TRY"
-    rate_source: Optional[str] = None
+    rate_source: str | None = None
 
 class CMARIResponse(BaseModel):
     tenant_id: str
     start_date: str
     end_date: str
-    days: List[CMARIResponseDay]
+    days: list[CMARIResponseDay]
 
 
 # ── CM Helpers ──────────────────────────────────────────────────────
@@ -182,7 +182,7 @@ async def get_cm_actor(
 
     await db.api_keys.update_one(
         {"id": api_key["id"]},
-        {"$set": {"last_used_at": datetime.now(timezone.utc).isoformat()}},
+        {"$set": {"last_used_at": datetime.now(UTC).isoformat()}},
     )
     return {
         "tenant_id": api_key["tenant_id"],
@@ -223,7 +223,7 @@ def _overlaps_day(check_in_s: str, check_out_s: str, day_s: str) -> bool:
     return check_in_s <= day_s < check_out_s
 
 
-def _block_overlaps_day(start_s: str, end_s: Optional[str], day_s: str) -> bool:
+def _block_overlaps_day(start_s: str, end_s: str | None, day_s: str) -> bool:
     if end_s is None:
         return start_s <= day_s
     return start_s <= day_s < end_s
@@ -235,8 +235,8 @@ def _block_overlaps_day(start_s: str, end_s: Optional[str], day_s: str) -> bool:
 async def cm_get_ari(
     start_date: str,
     end_date: str,
-    room_type: Optional[str] = None,
-    operator_id: Optional[str] = None,
+    room_type: str | None = None,
+    operator_id: str | None = None,
     actor: dict = Depends(get_cm_actor),
 ):
     """Channel Manager ARI endpoint (prod MVP)."""
@@ -253,7 +253,7 @@ async def cm_get_ari(
 
     tenant_id = actor["tenant_id"]
 
-    room_query: Dict[str, Any] = {
+    room_query: dict[str, Any] = {
         "tenant_id": tenant_id,
         "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
     }
@@ -309,12 +309,12 @@ async def cm_get_ari(
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
     ).to_list(200)
 
-    rooms_by_type: Dict[str, List[str]] = {}
+    rooms_by_type: dict[str, list[str]] = {}
     for r in rooms:
         rt = r.get("room_type") or "unknown"
         rooms_by_type.setdefault(rt, []).append(r["id"])
 
-    days: List[CMARIResponseDay] = []
+    days: list[CMARIResponseDay] = []
     cur = sd
     while cur <= ed:
         day_s = cur.isoformat()
@@ -389,8 +389,8 @@ async def cm_get_ari(
 async def cm_get_ari_v2(
     start_date: str,
     end_date: str,
-    room_type: Optional[str] = None,
-    operator_id: Optional[str] = None,
+    room_type: str | None = None,
+    operator_id: str | None = None,
     actor: dict = Depends(get_cm_actor),
 ):
     """CM ARI v2 (nested room_type -> days)."""
@@ -408,7 +408,7 @@ async def cm_get_ari_v2(
     tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
     currency = (tenant.get("currency") if tenant else None) or (tenant.get("default_currency") if tenant else None) or "TRY"
 
-    room_query: Dict[str, Any] = {
+    room_query: dict[str, Any] = {
         "tenant_id": tenant_id,
         "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
     }
@@ -419,7 +419,7 @@ async def cm_get_ari_v2(
     if not rooms:
         return CMARIV2Response(hotel_id=tenant_id, currency=currency, date_from=start_date, date_to=end_date, room_types=[])
 
-    rooms_by_type: Dict[str, List[str]] = {}
+    rooms_by_type: dict[str, list[str]] = {}
     for r in rooms:
         rt = r.get("room_type") or "unknown"
         rooms_by_type.setdefault(rt, []).append(r["id"])
@@ -470,7 +470,7 @@ async def cm_get_ari_v2(
     ).to_list(200)
     default_plan = rate_plans[0] if rate_plans else {}
 
-    def _resolve_period(day_s: str) -> Optional[dict]:
+    def _resolve_period(day_s: str) -> dict | None:
         for p in periods:
             ps = p.get("start_date")
             pe = p.get("end_date")
@@ -478,7 +478,7 @@ async def cm_get_ari_v2(
                 return p
         return None
 
-    room_types_out: List[CMARIRoomType] = []
+    room_types_out: list[CMARIRoomType] = []
     cur = sd
     while cur <= ed:
         day_s = cur.isoformat()

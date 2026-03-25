@@ -12,8 +12,7 @@ Endpoints:
   - POST /api/imports/{id}/dismiss        → Dismiss a review item
 """
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -37,8 +36,8 @@ class ImportStatusResponse(BaseModel):
     retry: int
     failed: int
     duplicate: int
-    oldest_pending_seconds: Optional[float]
-    last_imported_at: Optional[str]
+    oldest_pending_seconds: float | None
+    last_imported_at: str | None
     provider_failures: dict
     worker: dict
 
@@ -52,7 +51,7 @@ class ImportActionResponse(BaseModel):
 @import_admin_router.get("/status", response_model=ImportStatusResponse)
 async def import_status():
     """Get import bridge health and metrics."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     coll = db[COLL_IMPORTED]
 
     pending = await coll.count_documents({"import_status": "pending_auto_import"})
@@ -74,7 +73,7 @@ async def import_status():
         try:
             created = datetime.fromisoformat(oldest["created_at"])
             if created.tzinfo is None:
-                created = created.replace(tzinfo=timezone.utc)
+                created = created.replace(tzinfo=UTC)
             oldest_seconds = round((now - created).total_seconds(), 1)
         except Exception:
             pass
@@ -120,8 +119,8 @@ async def import_status():
 
 @import_admin_router.get("/review-queue")
 async def list_review_queue(
-    provider: Optional[str] = Query(None),
-    tenant_id: Optional[str] = Query(None),
+    provider: str | None = Query(None),
+    tenant_id: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -148,9 +147,9 @@ async def list_review_queue(
 
 @import_admin_router.get("/events")
 async def list_import_events(
-    status: Optional[str] = Query(None, description="Filter by import_status"),
-    provider: Optional[str] = Query(None),
-    tenant_id: Optional[str] = Query(None),
+    status: str | None = Query(None, description="Filter by import_status"),
+    provider: str | None = Query(None),
+    tenant_id: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -180,7 +179,7 @@ async def list_import_events(
 @import_admin_router.post("/{import_id}/retry", response_model=ImportActionResponse)
 async def retry_import(import_id: str):
     """Retry a failed or review_required import."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     result = await db[COLL_IMPORTED].find_one_and_update(
         {
@@ -217,7 +216,7 @@ async def retry_import(import_id: str):
 @import_admin_router.post("/{import_id}/approve-and-import", response_model=ImportActionResponse)
 async def approve_and_import(import_id: str):
     """Approve a review_required import and attempt auto-import."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # Reset to pending so the import bridge can process it
     result = await db[COLL_IMPORTED].find_one_and_update(
@@ -257,7 +256,7 @@ async def approve_and_import(import_id: str):
 @import_admin_router.post("/{import_id}/dismiss", response_model=ImportActionResponse)
 async def dismiss_import(import_id: str):
     """Dismiss a review item (won't be imported)."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     result = await db[COLL_IMPORTED].find_one_and_update(
         {

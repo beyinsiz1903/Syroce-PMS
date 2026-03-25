@@ -4,8 +4,7 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -34,7 +33,7 @@ from domains.sales.schemas import (  # noqa: E402
 
 @router.get("/sales/customers")
 async def get_sales_customers(
-    customer_type: Optional[str] = None,  # vip, corporate, returning, new
+    customer_type: str | None = None,  # vip, corporate, returning, new
     limit: int = 50,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -144,7 +143,7 @@ async def get_sales_customers(
 
 @router.get("/sales/ota-pricing")
 async def get_ota_pricing(
-    date: Optional[str] = None,
+    date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
@@ -229,8 +228,8 @@ async def create_lead(
         'expected_checkin': request.expected_checkin,
         'expected_revenue': request.expected_revenue,
         'created_by': current_user.name,
-        'created_at': datetime.now(timezone.utc).isoformat(),
-        'updated_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat(),
+        'updated_at': datetime.now(UTC).isoformat()
     }
 
     await db.leads.insert_one(lead)
@@ -270,7 +269,7 @@ async def update_lead_stage(
             '$set': {
                 'stage': request.stage.value,
                 'notes': request.notes,
-                'updated_at': datetime.now(timezone.utc).isoformat(),
+                'updated_at': datetime.now(UTC).isoformat(),
                 'updated_by': current_user.name
             }
         }
@@ -288,7 +287,7 @@ async def update_lead_stage(
 
 
 @router.post("/leads")
-async def create_public_pms_lite_lead(request: PmsLiteLeadCreateRequest, user_agent: Optional[str] = Header(None), x_forwarded_for: Optional[str] = Header(None)):
+async def create_public_pms_lite_lead(request: PmsLiteLeadCreateRequest, user_agent: str | None = Header(None), x_forwarded_for: str | None = Header(None)):
     """Public endpoint for PMS Lite landing leads (no auth).
 
     Idempotent for same phone within 5 minutes.
@@ -299,7 +298,7 @@ async def create_public_pms_lite_lead(request: PmsLiteLeadCreateRequest, user_ag
     if not phone:
         raise HTTPException(status_code=400, detail="Phone is required")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     five_minutes_ago = now - timedelta(minutes=5)
 
     # Reuse same lead if same phone + property_name + source in last 5 minutes
@@ -360,7 +359,7 @@ async def get_follow_ups(
         'stage': {'$in': ['warm', 'hot']}
     }):
         updated_at = datetime.fromisoformat(lead['updated_at'].replace('Z', '+00:00'))
-        days_since_update = (datetime.now(timezone.utc) - updated_at).days
+        days_since_update = (datetime.now(UTC) - updated_at).days
 
         if days_since_update > 3:  # Needs follow-up if no update in 3 days
             leads.append({
@@ -390,7 +389,7 @@ async def get_follow_ups(
 
 @router.get("/corporate/contracts")
 async def get_corporate_contracts(
-    status: Optional[str] = None,  # active, expiring, expired
+    status: str | None = None,  # active, expiring, expired
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
@@ -610,7 +609,7 @@ async def get_corporate_contract_utilization(
 
 @router.get("/corporate/rates")
 async def get_corporate_rates(
-    company: Optional[str] = None,
+    company: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
@@ -661,7 +660,7 @@ async def get_corporate_rates(
 
 @router.get("/corporate/rate-plans")
 async def get_corporate_rate_plans(
-    company_id: Optional[str] = None,
+    company_id: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Get corporate rate plans - REAL DATA from database"""

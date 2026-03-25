@@ -4,8 +4,7 @@ Provides timeline-friendly audit log queries, entity audit trails,
 and summary endpoints for the upcoming Audit Timeline Panel.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 
@@ -21,14 +20,14 @@ router = APIRouter(prefix="/api/audit", tags=["Audit Timeline"])
 
 @router.get("/timeline")
 async def get_audit_timeline(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    actor_id: Optional[str] = None,
-    action: Optional[str] = None,
-    severity: Optional[str] = None,
-    entity_type: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    actor_id: str | None = None,
+    action: str | None = None,
+    severity: str | None = None,
+    entity_type: str | None = None,
     limit: int = Query(default=50, le=200),
-    cursor: Optional[str] = None,
+    cursor: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """
@@ -146,7 +145,7 @@ async def get_audit_summary(
 
     period_map = {"1h": 1, "6h": 6, "24h": 24, "7d": 168, "30d": 720}
     hours = period_map.get(period, 24)
-    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
 
     pipeline = [
         {"$match": {"tenant_id": ctx.tenant_id, "timestamp": {"$gte": since}}},

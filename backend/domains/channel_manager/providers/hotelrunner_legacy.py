@@ -12,7 +12,7 @@ API Docs: https://developers.hotelrunner.com/custom-apps/rest-api
 import asyncio
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -34,7 +34,7 @@ class HotelRunnerProvider:
         self._daily_count = 0
 
     @property
-    def _auth_params(self) -> Dict[str, str]:
+    def _auth_params(self) -> dict[str, str]:
         return {"token": self.token, "hr_id": self.hr_id}
 
     async def _check_rate_limit(self):
@@ -58,7 +58,7 @@ class HotelRunnerProvider:
             logger.error("HotelRunner daily limit approaching (245/250). Pausing.")
             raise Exception("HotelRunner daily API limit approaching. Aborting to preserve quota.")
 
-    async def _request(self, method: str, url: str, params: Optional[Dict] = None, data: Optional[Dict] = None) -> Dict[str, Any]:
+    async def _request(self, method: str, url: str, params: dict | None = None, data: dict | None = None) -> dict[str, Any]:
         """Execute an HTTP request with rate limiting and error handling."""
         await self._check_rate_limit()
 
@@ -103,7 +103,7 @@ class HotelRunnerProvider:
 
     # ── Connection Test ──────────────────────────────────────────────
 
-    async def test_connection(self) -> Dict[str, Any]:
+    async def test_connection(self) -> dict[str, Any]:
         """Test API connection by fetching channels list."""
         result = await self._request("GET", f"{HR_BASE_URL}/infos/channels")
         if result["success"]:
@@ -120,17 +120,17 @@ class HotelRunnerProvider:
 
     # ── Channels ─────────────────────────────────────────────────────
 
-    async def get_channels(self) -> Dict[str, Any]:
+    async def get_channels(self) -> dict[str, Any]:
         """Get all available HotelRunner channels."""
         return await self._request("GET", f"{HR_V1_BASE_URL}/infos/channels")
 
-    async def get_connected_channels(self) -> Dict[str, Any]:
+    async def get_connected_channels(self) -> dict[str, Any]:
         """Get connected channels with process stats."""
         return await self._request("GET", f"{HR_BASE_URL}/infos/connected_channels")
 
     # ── Inventory (Rooms) ────────────────────────────────────────────
 
-    async def get_rooms(self) -> Dict[str, Any]:
+    async def get_rooms(self) -> dict[str, Any]:
         """Get all rooms/rates of the property."""
         return await self._request("GET", f"{HR_BASE_URL}/rooms")
 
@@ -139,15 +139,15 @@ class HotelRunnerProvider:
         inv_code: str,
         start_date: str,
         end_date: str,
-        availability: Optional[int] = None,
-        price: Optional[float] = None,
-        stop_sale: Optional[int] = None,
-        min_stay: Optional[int] = None,
-        cta: Optional[int] = None,
-        ctd: Optional[int] = None,
-        days: Optional[List[int]] = None,
-        channel_codes: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        availability: int | None = None,
+        price: float | None = None,
+        stop_sale: int | None = None,
+        min_stay: int | None = None,
+        cta: int | None = None,
+        ctd: int | None = None,
+        days: list[int] | None = None,
+        channel_codes: list[str] | None = None,
+    ) -> dict[str, Any]:
         """
         Update room ARI (Availability, Rates, Inventory).
         Only send parameters you want to update.
@@ -181,14 +181,14 @@ class HotelRunnerProvider:
     async def get_reservations(
         self,
         undelivered: bool = True,
-        from_date: Optional[str] = None,
-        from_last_update_date: Optional[str] = None,
+        from_date: str | None = None,
+        from_last_update_date: str | None = None,
         per_page: int = 10,
         page: int = 1,
-        reservation_number: Optional[str] = None,
+        reservation_number: str | None = None,
         modified: bool = False,
         booked: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Retrieve reservations with pagination and filters."""
         params = {
             "undelivered": str(undelivered).lower(),
@@ -208,7 +208,7 @@ class HotelRunnerProvider:
 
         return await self._request("GET", f"{HR_BASE_URL}/reservations", params=params)
 
-    async def confirm_delivery(self, message_uid: str, pms_number: Optional[str] = None) -> Dict[str, Any]:
+    async def confirm_delivery(self, message_uid: str, pms_number: str | None = None) -> dict[str, Any]:
         """Confirm reservation delivery to HotelRunner."""
         params = {"message_uid": message_uid}
         if pms_number:
@@ -217,7 +217,7 @@ class HotelRunnerProvider:
 
     # ── Transaction Details ──────────────────────────────────────────
 
-    async def get_transaction_details(self, transaction_id: str) -> Dict[str, Any]:
+    async def get_transaction_details(self, transaction_id: str) -> dict[str, Any]:
         """Get update status logs for a transaction."""
         return await self._request(
             "GET",
@@ -227,7 +227,7 @@ class HotelRunnerProvider:
 
     # ── Bulk ARI Push ────────────────────────────────────────────────
 
-    async def push_ari_bulk(self, updates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def push_ari_bulk(self, updates: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Push multiple ARI updates sequentially (respecting rate limits).
         Each update dict should have: inv_code, start_date, end_date, and optional fields.
@@ -245,7 +245,7 @@ class HotelRunnerProvider:
 
     # ── Reservation Sync (Pull + Confirm) ────────────────────────────
 
-    async def sync_reservations(self) -> Dict[str, Any]:
+    async def sync_reservations(self) -> dict[str, Any]:
         """
         Pull undelivered reservations and return them for PMS processing.
         Does NOT auto-confirm - PMS should confirm after successful import.
@@ -274,7 +274,7 @@ class HotelRunnerProvider:
 
     # ── Stats ────────────────────────────────────────────────────────
 
-    def get_usage_stats(self) -> Dict[str, Any]:
+    def get_usage_stats(self) -> dict[str, Any]:
         """Get current API usage statistics."""
         return {
             "requests_this_minute": self._request_count,

@@ -125,6 +125,7 @@ class TestConcurrentRoomBlockOperations:
 class TestConcurrentStaffTaskOperations:
     """Staff task CRUD under concurrent load."""
 
+    @pytest.mark.ci_load
     async def test_concurrent_task_creation(
         self, api_url, auth_headers, raw_db, tenant_id, load_test_room_factory
     ):
@@ -219,6 +220,7 @@ class TestConcurrentStaffTaskOperations:
 class TestDashboardUnderLoad:
     """Dashboard endpoint must remain responsive under concurrent read load."""
 
+    @pytest.mark.ci_load
     async def test_concurrent_dashboard_reads(
         self, api_url, auth_headers
     ):
@@ -242,6 +244,7 @@ class TestDashboardUnderLoad:
 
         print(f"\n[DASHBOARD LOAD] 20/20 dashboard reads succeeded")
 
+    @pytest.mark.ci_load
     async def test_concurrent_mixed_read_write_operations(
         self, api_url, auth_headers, raw_db, tenant_id
     ):

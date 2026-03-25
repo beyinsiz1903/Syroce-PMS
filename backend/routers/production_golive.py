@@ -3,7 +3,6 @@ Production Go-Live Router — All endpoints for production readiness validation,
 provider test connections, config activation, pre-launch validation suite,
 live ops alerts, and full dashboard data.
 """
-from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, Query
 
@@ -359,7 +358,7 @@ async def fire_alert(
 @router.get("/alerts/history")
 async def alert_history(
     limit: int = Query(50, ge=1, le=200),
-    severity: Optional[str] = Query(None),
+    severity: str | None = Query(None),
     current_user: User = Depends(get_current_user),
 ):
     """Get alert history with optional severity filter."""

@@ -7,8 +7,8 @@ Every subsystem (outbox, import, sync, secrets) calls this service.
 Multi-tenant aware. Provider-aware. Never leaks plaintext.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from .failure_model import (
     FailureStatus,
@@ -54,13 +54,13 @@ class FailureTracker:
         operation_type: str,
         error_code: str,
         error_message: str,
-        failure_type: Optional[FailureType] = None,
-        severity: Optional[Severity] = None,
-        context: Optional[Dict[str, Any]] = None,
+        failure_type: FailureType | None = None,
+        severity: Severity | None = None,
+        context: dict[str, Any] | None = None,
         retry_count: int = 0,
-        correlation_id: Optional[str] = None,
-        property_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        correlation_id: str | None = None,
+        property_id: str | None = None,
+    ) -> dict[str, Any]:
         """Record a structured failure event.
 
         If failure_type is not provided, it will be auto-classified
@@ -98,17 +98,17 @@ class FailureTracker:
     async def list_failures(
         self,
         *,
-        tenant_id: Optional[str] = None,
-        provider: Optional[str] = None,
-        failure_type: Optional[str] = None,
-        severity: Optional[str] = None,
-        status: Optional[str] = None,
-        operation_type: Optional[str] = None,
+        tenant_id: str | None = None,
+        provider: str | None = None,
+        failure_type: str | None = None,
+        severity: str | None = None,
+        status: str | None = None,
+        operation_type: str | None = None,
         limit: int = 50,
         skip: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """List failures with filters and pagination."""
-        query: Dict[str, Any] = {}
+        query: dict[str, Any] = {}
         if tenant_id:
             query["tenant_id"] = tenant_id
         if provider:
@@ -136,7 +136,7 @@ class FailureTracker:
             "skip": skip,
         }
 
-    async def get_failure(self, failure_id: str) -> Optional[Dict[str, Any]]:
+    async def get_failure(self, failure_id: str) -> dict[str, Any] | None:
         """Get a single failure by ID."""
         db = self._get_db()
         return await db[COLL_FAILURES].find_one(
@@ -151,8 +151,8 @@ class FailureTracker:
             {"$set": {
                 "status": FailureStatus.RESOLVED.value,
                 "resolved_by": resolved_by,
-                "resolved_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "resolved_at": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }},
         )
         return result.modified_count == 1
@@ -165,8 +165,8 @@ class FailureTracker:
             {"$set": {
                 "status": FailureStatus.IGNORED.value,
                 "ignored_by": ignored_by,
-                "ignored_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "ignored_at": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }},
         )
         return result.modified_count == 1
@@ -178,7 +178,7 @@ class FailureTracker:
             {"id": failure_id, "status": FailureStatus.OPEN.value},
             {"$set": {
                 "status": FailureStatus.RETRYING.value,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             },
             "$inc": {"retry_count": 1}},
         )
@@ -186,8 +186,8 @@ class FailureTracker:
 
     async def reopen(self, failure_id: str, *, error_message: str = "") -> bool:
         """Reopen a failure after a retry attempt fails."""
-        now = datetime.now(timezone.utc).isoformat()
-        update: Dict[str, Any] = {
+        now = datetime.now(UTC).isoformat()
+        update: dict[str, Any] = {
             "$set": {
                 "status": FailureStatus.OPEN.value,
                 "last_seen_at": now,
@@ -204,17 +204,17 @@ class FailureTracker:
 
     # ── Aggregation Queries ────────────────────────────────────────
 
-    async def count_open(self, *, tenant_id: Optional[str] = None) -> int:
+    async def count_open(self, *, tenant_id: str | None = None) -> int:
         """Count open (unresolved) failures."""
-        query: Dict[str, Any] = {"status": FailureStatus.OPEN.value}
+        query: dict[str, Any] = {"status": FailureStatus.OPEN.value}
         if tenant_id:
             query["tenant_id"] = tenant_id
         db = self._get_db()
         return await db[COLL_FAILURES].count_documents(query)
 
-    async def count_by_severity(self, *, tenant_id: Optional[str] = None) -> Dict[str, int]:
+    async def count_by_severity(self, *, tenant_id: str | None = None) -> dict[str, int]:
         """Count open failures grouped by severity."""
-        match: Dict[str, Any] = {"status": FailureStatus.OPEN.value}
+        match: dict[str, Any] = {"status": FailureStatus.OPEN.value}
         if tenant_id:
             match["tenant_id"] = tenant_id
 
@@ -228,9 +228,9 @@ class FailureTracker:
             result[doc["_id"]] = doc["count"]
         return result
 
-    async def count_by_type(self, *, tenant_id: Optional[str] = None) -> Dict[str, int]:
+    async def count_by_type(self, *, tenant_id: str | None = None) -> dict[str, int]:
         """Count open failures grouped by failure_type."""
-        match: Dict[str, Any] = {"status": FailureStatus.OPEN.value}
+        match: dict[str, Any] = {"status": FailureStatus.OPEN.value}
         if tenant_id:
             match["tenant_id"] = tenant_id
 
@@ -244,9 +244,9 @@ class FailureTracker:
             result[doc["_id"]] = doc["count"]
         return result
 
-    async def count_by_operation(self, *, tenant_id: Optional[str] = None) -> Dict[str, int]:
+    async def count_by_operation(self, *, tenant_id: str | None = None) -> dict[str, int]:
         """Count open failures grouped by operation_type."""
-        match: Dict[str, Any] = {"status": FailureStatus.OPEN.value}
+        match: dict[str, Any] = {"status": FailureStatus.OPEN.value}
         if tenant_id:
             match["tenant_id"] = tenant_id
 
@@ -261,11 +261,11 @@ class FailureTracker:
         return result
 
     async def recent_failures(
-        self, *, hours: int = 24, tenant_id: Optional[str] = None, limit: int = 20,
-    ) -> List[Dict[str, Any]]:
+        self, *, hours: int = 24, tenant_id: str | None = None, limit: int = 20,
+    ) -> list[dict[str, Any]]:
         """Get recent failures within a time window."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-        query: Dict[str, Any] = {"created_at": {"$gte": cutoff}}
+        cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
+        query: dict[str, Any] = {"created_at": {"$gte": cutoff}}
         if tenant_id:
             query["tenant_id"] = tenant_id
 
@@ -276,7 +276,7 @@ class FailureTracker:
 
 
 # ── Singleton ──────────────────────────────────────────────────────
-_tracker: Optional[FailureTracker] = None
+_tracker: FailureTracker | None = None
 
 
 def get_failure_tracker() -> FailureTracker:

@@ -20,8 +20,8 @@ Classifications:
   - CRITICAL (score < 60)
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -35,10 +35,10 @@ _NO_ID = {"_id": 0}
 class ConnectorHealthService:
     """Computes health dashboard data for all connectors."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
-    async def get_connector_health(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def get_connector_health(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         """Get detailed health metrics for a single connector."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
         if not connector:
@@ -156,10 +156,10 @@ class ConnectorHealthService:
             "import_jobs_total": import_job_total,
             "import_jobs_failed": import_job_failed,
             "rate_push_success_rate": rate_push_success_rate,
-            "calculated_at": datetime.now(timezone.utc).isoformat(),
+            "calculated_at": datetime.now(UTC).isoformat(),
         }
 
-    async def get_all_health(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_all_health(self, tenant_id: str) -> dict[str, Any]:
         """Get health metrics for all connectors of a tenant."""
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
         results = []
@@ -182,7 +182,7 @@ class ConnectorHealthService:
             "average_health_score": avg_score,
         }
 
-    async def get_health_by_property(self, tenant_id: str, property_id: str) -> Dict[str, Any]:
+    async def get_health_by_property(self, tenant_id: str, property_id: str) -> dict[str, Any]:
         """Get health for connectors of a specific property."""
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
         prop_connectors = [c for c in connectors if c.get("property_id") == property_id]
@@ -195,7 +195,7 @@ class ConnectorHealthService:
     # ─── Calculations ─────────────────────────────────────────────────
 
     @staticmethod
-    def _calc_uptime(connector: Dict, jobs: List[Dict]) -> float:
+    def _calc_uptime(connector: dict, jobs: list[dict]) -> float:
         if not jobs:
             return 100.0 if connector.get("status") == "active" else 0.0
         total = len(jobs)

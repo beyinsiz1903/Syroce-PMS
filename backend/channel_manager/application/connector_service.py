@@ -2,8 +2,8 @@
 Connector Service - Manages connector account lifecycle (CRUD, activation, credential validation).
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from ..connectors.hotelrunner.auth import HotelRunnerAuth
 from ..connectors.hotelrunner.client import HotelRunnerClient
@@ -18,7 +18,7 @@ logger = logging.getLogger("channel_manager.application.connector_service")
 class ConnectorService:
     """Manages connector account lifecycle."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     async def create_connector(
@@ -27,10 +27,10 @@ class ConnectorService:
         property_id: str,
         provider: str,
         display_name: str,
-        credentials: Dict[str, Any],
-        actor_id: Optional[str] = None,
-        sync_config: Optional[Dict[str, bool]] = None,
-    ) -> Dict[str, Any]:
+        credentials: dict[str, Any],
+        actor_id: str | None = None,
+        sync_config: dict[str, bool] | None = None,
+    ) -> dict[str, Any]:
         """Create a new connector account in DRAFT status."""
         from pymongo.errors import DuplicateKeyError
 
@@ -61,7 +61,7 @@ class ConnectorService:
         )
         return connector.to_doc()
 
-    async def test_connection(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def test_connection(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         """
         Production-grade connection test.
         Validates auth, property access, room types, rate plans, and XML connectivity.
@@ -70,7 +70,7 @@ class ConnectorService:
 
         doc = await self._repo.get_connector(tenant_id, connector_id)
         if not doc:
-            return {"success": False, "message": "Connector not found", "tested_at": datetime.now(timezone.utc).isoformat()}
+            return {"success": False, "message": "Connector not found", "tested_at": datetime.now(UTC).isoformat()}
 
         connector = ConnectorAccount.from_doc(doc)
 
@@ -84,7 +84,7 @@ class ConnectorService:
             except AuthenticationError:
                 result = {
                     "success": False,
-                    "tested_at": datetime.now(timezone.utc).isoformat(),
+                    "tested_at": datetime.now(UTC).isoformat(),
                     "total_latency_ms": 0,
                     "summary": "Kimlik bilgileri eksik veya geçersiz",
                     "auth_status": {"status": "fail", "latency_ms": 0, "error_code": "CRED_MISSING", "message": "Token veya HR ID eksik"},
@@ -96,7 +96,7 @@ class ConnectorService:
             except Exception as e:
                 result = {
                     "success": False,
-                    "tested_at": datetime.now(timezone.utc).isoformat(),
+                    "tested_at": datetime.now(UTC).isoformat(),
                     "total_latency_ms": 0,
                     "summary": f"Test sırasında beklenmeyen hata: {str(e)[:200]}",
                     "auth_status": {"status": "fail", "latency_ms": 0, "error_code": "UNKNOWN", "message": str(e)[:200]},
@@ -130,12 +130,12 @@ class ConnectorService:
         return {
             "success": False,
             "message": f"Provider {connector.provider} not yet supported",
-            "tested_at": datetime.now(timezone.utc).isoformat(),
+            "tested_at": datetime.now(UTC).isoformat(),
             "connector_id": connector_id,
             "provider": connector.provider.value,
         }
 
-    async def activate_connector(self, tenant_id: str, connector_id: str, actor_id: Optional[str] = None) -> Dict[str, Any]:
+    async def activate_connector(self, tenant_id: str, connector_id: str, actor_id: str | None = None) -> dict[str, Any]:
         """Activate a connector (allows sync operations)."""
         doc = await self._repo.get_connector(tenant_id, connector_id)
         if not doc:
@@ -150,7 +150,7 @@ class ConnectorService:
         )
         return doc
 
-    async def pause_connector(self, tenant_id: str, connector_id: str, actor_id: Optional[str] = None) -> Dict[str, Any]:
+    async def pause_connector(self, tenant_id: str, connector_id: str, actor_id: str | None = None) -> dict[str, Any]:
         """Pause a connector (stops sync operations)."""
         doc = await self._repo.get_connector(tenant_id, connector_id)
         if not doc:
@@ -165,18 +165,18 @@ class ConnectorService:
         )
         return doc
 
-    async def get_connector(self, tenant_id: str, connector_id: str) -> Optional[Dict[str, Any]]:
+    async def get_connector(self, tenant_id: str, connector_id: str) -> dict[str, Any] | None:
         return await self._repo.get_connector(tenant_id, connector_id)
 
-    async def list_connectors(self, tenant_id: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def list_connectors(self, tenant_id: str, status: str | None = None) -> list[dict[str, Any]]:
         return await self._repo.get_connectors_by_tenant(tenant_id, status)
 
     async def update_credentials(
         self,
         tenant_id: str, connector_id: str,
-        credentials: Dict[str, Any],
-        actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        credentials: dict[str, Any],
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
         doc = await self._repo.get_connector(tenant_id, connector_id)
         if not doc:
             raise ValueError("Connector not found")
@@ -189,7 +189,7 @@ class ConnectorService:
         )
         return doc
 
-    async def delete_connector(self, tenant_id: str, connector_id: str, actor_id: Optional[str] = None) -> bool:
+    async def delete_connector(self, tenant_id: str, connector_id: str, actor_id: str | None = None) -> bool:
         doc = await self._repo.get_connector(tenant_id, connector_id)
         if doc:
             await self._audit(

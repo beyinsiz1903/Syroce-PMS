@@ -6,8 +6,8 @@ Metrics: uptime, MTTR, MTBF, sync success rate, ack success rate, retry rate,
 Analysis: failure pattern detection, unstable/degraded classification, outage windows.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -19,10 +19,10 @@ logger = logging.getLogger("channel_manager.application.reliability")
 class ReliabilityService:
     """Calculates reliability metrics for each connector."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
-    async def get_reliability(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def get_reliability(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         """Get comprehensive reliability metrics for a connector."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
         if not connector:
@@ -105,10 +105,10 @@ class ReliabilityService:
             "import_success_rate": import_success_rate,
             "failure_patterns": patterns,
             "classification": classification,
-            "calculated_at": datetime.now(timezone.utc).isoformat(),
+            "calculated_at": datetime.now(UTC).isoformat(),
         }
 
-    async def get_all_reliability(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_all_reliability(self, tenant_id: str) -> dict[str, Any]:
         """Get reliability metrics for all connectors."""
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
         results = []
@@ -133,7 +133,7 @@ class ReliabilityService:
             "classifications": classifications,
         }
 
-    async def get_reliability_by_property(self, tenant_id: str, property_id: str) -> Dict[str, Any]:
+    async def get_reliability_by_property(self, tenant_id: str, property_id: str) -> dict[str, Any]:
         """Get reliability for connectors of a specific property."""
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
         property_connectors = [c for c in connectors if c.get("property_id") == property_id]
@@ -146,7 +146,7 @@ class ReliabilityService:
     # ─── MTBF / MTTR Calculation ───────────────────────────────────────
 
     @staticmethod
-    def _calculate_mtbf_mttr(jobs: List[Dict]) -> tuple:
+    def _calculate_mtbf_mttr(jobs: list[dict]) -> tuple:
         """Calculate Mean Time Between Failures and Mean Time To Recovery."""
         if not jobs:
             return 0.0, 0.0
@@ -197,7 +197,7 @@ class ReliabilityService:
         return mtbf, mttr
 
     @staticmethod
-    def _calculate_uptime(connector: Dict, jobs: List[Dict]) -> float:
+    def _calculate_uptime(connector: dict, jobs: list[dict]) -> float:
         """Calculate uptime percentage based on job history."""
         if not jobs:
             return 100.0 if connector.get("status") == "active" else 0.0
@@ -207,7 +207,7 @@ class ReliabilityService:
         return round((total - failed) / max(total, 1) * 100, 1)
 
     @staticmethod
-    def _detect_failure_patterns(jobs: List[Dict]) -> List[Dict]:
+    def _detect_failure_patterns(jobs: list[dict]) -> list[dict]:
         """Detect recurring failure patterns."""
         patterns = []
         sorted_jobs = sorted(jobs, key=lambda j: j.get("created_at", ""))
@@ -289,7 +289,7 @@ class ReliabilityService:
 
     async def record_validation_event(
         self, tenant_id: str, connector_id: str,
-        success: bool, details: Optional[Dict[str, Any]] = None,
+        success: bool, details: dict[str, Any] | None = None,
     ) -> None:
         """Record a validation result for reliability tracking."""
         await db["cm_validation_events"].insert_one({
@@ -297,5 +297,5 @@ class ReliabilityService:
             "connector_id": connector_id,
             "success": success,
             "details": details or {},
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         })

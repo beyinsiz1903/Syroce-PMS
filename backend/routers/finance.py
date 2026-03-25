@@ -3,9 +3,9 @@ FINANCE Router - Extracted from server.py
 """
 import asyncio
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -120,7 +120,7 @@ async def _log_accounting_sync(tenant_id: str, payload: dict):
         'id': str(uuid.uuid4()),
         'tenant_id': tenant_id,
         **payload,
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
     }
     await db.accounting_sync_logs.insert_one(record)
     return record
@@ -148,7 +148,7 @@ async def sync_with_logo(sync_data: dict = None, current_user: User = Depends(ge
         'provider': 'logo',
         'synced_invoices': len(synced_invoices),
         'synced_payments': len(synced_payments),
-        'synced_at': datetime.now(timezone.utc).isoformat(),
+        'synced_at': datetime.now(UTC).isoformat(),
         'status': 'success'
     })
 
@@ -176,7 +176,7 @@ async def sync_with_netsis(sync_data: dict = None, current_user: User = Depends(
         'provider': 'netsis',
         'synced_invoices': len(synced),
         'synced_payments': 0,
-        'synced_at': datetime.now(timezone.utc).isoformat(),
+        'synced_at': datetime.now(UTC).isoformat(),
         'status': 'success'
     })
 
@@ -224,7 +224,7 @@ async def create_folio(
 
 @router.get("/folio/list")
 async def list_folios(
-    status: Optional[str] = None,
+    status: str | None = None,
     limit: int = 50,
     offset: int = 0,
     current_user: User = Depends(get_current_user)
@@ -282,7 +282,7 @@ async def get_folio_dashboard_stats(
             total_outstanding += folio.get('balance', 0)
 
         # Get recent charges (last 24 hours)
-        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
         recent_charges = await db.folio_charges.count_documents({
             'tenant_id': current_user.tenant_id,
             'date': {'$gte': yesterday},
@@ -344,14 +344,14 @@ async def get_pending_ar(
 
             if total_outstanding > 0 and folios_with_balance:
                 # Find oldest folio
-                oldest_folio = min(folios_with_balance, key=lambda f: f.get('created_at', datetime.now(timezone.utc).isoformat()))
+                oldest_folio = min(folios_with_balance, key=lambda f: f.get('created_at', datetime.now(UTC).isoformat()))
                 oldest_date = datetime.fromisoformat(oldest_folio['created_at'].replace('Z', '+00:00'))
-                days_outstanding = (datetime.now(timezone.utc) - oldest_date).days
+                days_outstanding = (datetime.now(UTC) - oldest_date).days
 
                 # Calculate aging
                 aging = {'0-7': 0, '8-14': 0, '15-30': 0, '30+': 0}
                 for folio in folios_with_balance:
-                    days = (datetime.now(timezone.utc) - datetime.fromisoformat(folio['created_at'].replace('Z', '+00:00'))).days
+                    days = (datetime.now(UTC) - datetime.fromisoformat(folio['created_at'].replace('Z', '+00:00'))).days
                     balance = folio.get('balance', 0)
                     if days <= 7:
                         aging['0-7'] += balance
@@ -389,7 +389,7 @@ async def get_pending_ar(
         return []
 
 
-@router.get("/folio/booking/{booking_id}", response_model=List[Folio])
+@router.get("/folio/booking/{booking_id}", response_model=list[Folio])
 @cached(ttl=180, key_prefix="folio_by_booking")  # Cache for 3 min
 async def get_booking_folios(booking_id: str, current_user: User = Depends(get_current_user)):
     """Get all folios for a booking"""
@@ -405,7 +405,7 @@ async def get_booking_folios(booking_id: str, current_user: User = Depends(get_c
     return folios
 
 
-@router.get("/folio/{folio_id}", response_model=Dict[str, Any])
+@router.get("/folio/{folio_id}", response_model=dict[str, Any])
 @cached(ttl=180, key_prefix="folio_details")  # Cache for 3 min
 async def get_folio_details(
     folio_id: str,
@@ -763,7 +763,7 @@ async def void_charge(
             'voided': True,
             'void_reason': void_reason,
             'voided_by': current_user.id,
-            'voided_at': datetime.now(timezone.utc).isoformat()
+            'voided_at': datetime.now(UTC).isoformat()
         }}
     )
 
@@ -821,7 +821,7 @@ async def close_folio(
         {'$set': {
             'status': 'closed',
             'balance': 0.0,
-            'closed_at': datetime.now(timezone.utc).isoformat()
+            'closed_at': datetime.now(UTC).isoformat()
         }}
     )
 
@@ -926,7 +926,7 @@ async def create_invoice(
     return invoice
 
 
-@router.get("/invoices", response_model=List[Invoice])
+@router.get("/invoices", response_model=list[Invoice])
 @cached(ttl=300, key_prefix="invoices_list")  # Cache for 5 min
 async def get_invoices(
     current_user: User = Depends(get_current_user),
@@ -939,7 +939,7 @@ async def get_invoices(
 @router.put("/invoices/{invoice_id}")
 async def update_invoice(
     invoice_id: str,
-    updates: Dict[str, Any],
+    updates: dict[str, Any],
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("invoices")),
 ):
@@ -983,15 +983,15 @@ class Supplier(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     name: str
-    tax_office: Optional[str] = None
-    tax_number: Optional[str] = None
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    address: Optional[str] = None
+    tax_office: str | None = None
+    tax_number: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    address: str | None = None
     account_balance: float = 0.0
     category: str = "general"
-    notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class BankAccount(BaseModel):
@@ -1001,11 +1001,11 @@ class BankAccount(BaseModel):
     name: str
     bank_name: str
     account_number: str
-    iban: Optional[str] = None
+    iban: str | None = None
     currency: str = "USD"
     balance: float = 0.0
     is_active: bool = True
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class Expense(BaseModel):
@@ -1013,7 +1013,7 @@ class Expense(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     expense_number: str
-    supplier_id: Optional[str] = None
+    supplier_id: str | None = None
     category: ExpenseCategory
     description: str
     amount: float
@@ -1022,11 +1022,11 @@ class Expense(BaseModel):
     total_amount: float
     date: datetime
     payment_status: PaymentStatus = PaymentStatus.PENDING
-    payment_method: Optional[str] = None
-    receipt_url: Optional[str] = None
-    notes: Optional[str] = None
+    payment_method: str | None = None
+    receipt_url: str | None = None
+    notes: str | None = None
     created_by: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class InventoryItem(BaseModel):
@@ -1034,16 +1034,16 @@ class InventoryItem(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     name: str
-    sku: Optional[str] = None
+    sku: str | None = None
     category: str
     unit: str
     quantity: float = 0.0
     unit_cost: float = 0.0
     reorder_level: float = 0.0
-    supplier_id: Optional[str] = None
-    location: Optional[str] = None
-    notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    supplier_id: str | None = None
+    location: str | None = None
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class StockMovement(BaseModel):
@@ -1054,20 +1054,20 @@ class StockMovement(BaseModel):
     movement_type: str  # in, out, adjustment
     quantity: float
     unit_cost: float
-    reference: Optional[str] = None
-    notes: Optional[str] = None
+    reference: str | None = None
+    notes: str | None = None
     created_by: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 @router.post("/accounting/suppliers")
 async def create_supplier(
     name: str,
-    tax_office: Optional[str] = None,
-    tax_number: Optional[str] = None,
-    email: Optional[str] = None,
-    phone: Optional[str] = None,
-    address: Optional[str] = None,
+    tax_office: str | None = None,
+    tax_number: str | None = None,
+    email: str | None = None,
+    phone: str | None = None,
+    address: str | None = None,
     category: str = "general",
     current_user: User = Depends(get_current_user)
 ):
@@ -1097,7 +1097,7 @@ async def get_suppliers(current_user: User = Depends(get_current_user)):
 
 
 @router.put("/accounting/suppliers/{supplier_id}")
-async def update_supplier(supplier_id: str, updates: Dict[str, Any], current_user: User = Depends(get_current_user)):
+async def update_supplier(supplier_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
     await db.suppliers.update_one({'id': supplier_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
     supplier = await db.suppliers.find_one({'id': supplier_id}, {'_id': 0})
     return supplier
@@ -1108,7 +1108,7 @@ async def create_bank_account(
     name: str,
     bank_name: str,
     account_number: str,
-    iban: Optional[str] = None,
+    iban: str | None = None,
     currency: str = "USD",
     balance: float = 0.0,
     current_user: User = Depends(get_current_user)
@@ -1138,7 +1138,7 @@ async def get_bank_accounts(current_user: User = Depends(get_current_user)):
 
 
 @router.put("/accounting/bank-accounts/{account_id}")
-async def update_bank_account(account_id: str, updates: Dict[str, Any], current_user: User = Depends(get_current_user)):
+async def update_bank_account(account_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
     await db.bank_accounts.update_one({'id': account_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
     account = await db.bank_accounts.find_one({'id': account_id}, {'_id': 0})
     return account
@@ -1151,10 +1151,10 @@ async def create_expense(
     amount: float,
     vat_rate: float,
     date: str,
-    supplier_id: Optional[str] = None,
-    payment_method: Optional[str] = None,
-    receipt_url: Optional[str] = None,
-    notes: Optional[str] = None,
+    supplier_id: str | None = None,
+    payment_method: str | None = None,
+    receipt_url: str | None = None,
+    notes: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     # Expense model imported at top
@@ -1218,9 +1218,9 @@ async def create_expense(
 
 @router.get("/accounting/expenses")
 async def get_expenses(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    category: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    category: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     query = {'tenant_id': current_user.tenant_id}
@@ -1235,7 +1235,7 @@ async def get_expenses(
 
 
 @router.put("/accounting/expenses/{expense_id}")
-async def update_expense(expense_id: str, updates: Dict[str, Any], current_user: User = Depends(get_current_user)):
+async def update_expense(expense_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
     await db.expenses.update_one({'id': expense_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
     expense = await db.expenses.find_one({'id': expense_id}, {'_id': 0})
     return expense
@@ -1249,10 +1249,10 @@ async def create_inventory_item(
     quantity: float = 0.0,
     unit_cost: float = 0.0,
     reorder_level: float = 0.0,
-    sku: Optional[str] = None,
-    supplier_id: Optional[str] = None,
-    location: Optional[str] = None,
-    notes: Optional[str] = None,
+    sku: str | None = None,
+    supplier_id: str | None = None,
+    location: str | None = None,
+    notes: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     # InventoryItem model imported at top
@@ -1297,8 +1297,8 @@ async def create_stock_movement(
     movement_type: str,
     quantity: float,
     unit_cost: float,
-    reference: Optional[str] = None,
-    notes: Optional[str] = None,
+    reference: str | None = None,
+    notes: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     # StockMovement model imported at top
@@ -1341,14 +1341,14 @@ async def create_stock_movement(
 class AccountingInvoiceCreateRequest(BaseModel):
     invoice_type: str
     customer_name: str
-    customer_email: Optional[str] = None
-    customer_tax_office: Optional[str] = None
-    customer_tax_number: Optional[str] = None
-    customer_address: Optional[str] = None
-    items: List[Dict[str, Any]] = []
+    customer_email: str | None = None
+    customer_tax_office: str | None = None
+    customer_tax_number: str | None = None
+    customer_address: str | None = None
+    items: list[dict[str, Any]] = []
     due_date: str
-    booking_id: Optional[str] = None
-    notes: Optional[str] = None
+    booking_id: str | None = None
+    notes: str | None = None
 
 
 @router.post("/accounting/invoices")
@@ -1446,7 +1446,7 @@ async def create_accounting_invoice(
         description=f"Invoice {invoice_number}",
         reference_id=invoice.id,
         reference_type='invoice',
-        date=datetime.now(timezone.utc),
+        date=datetime.now(UTC),
         created_by=current_user.name
     )
     cf_dict = cash_flow.model_dump()
@@ -1460,10 +1460,10 @@ async def create_accounting_invoice(
 
 @router.get("/accounting/invoices")
 async def get_accounting_invoices(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    invoice_type: Optional[str] = None,
-    status: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    invoice_type: str | None = None,
+    status: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     query = {'tenant_id': current_user.tenant_id}
@@ -1480,9 +1480,9 @@ async def get_accounting_invoices(
 
 
 @router.put("/accounting/invoices/{invoice_id}")
-async def update_accounting_invoice(invoice_id: str, updates: Dict[str, Any], current_user: User = Depends(get_current_user)):
+async def update_accounting_invoice(invoice_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
     if 'status' in updates and updates['status'] == 'paid' and 'payment_date' not in updates:
-        updates['payment_date'] = datetime.now(timezone.utc).isoformat()
+        updates['payment_date'] = datetime.now(UTC).isoformat()
 
     await db.accounting_invoices.update_one({'id': invoice_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
     invoice = await db.accounting_invoices.find_one({'id': invoice_id}, {'_id': 0})
@@ -1491,9 +1491,9 @@ async def update_accounting_invoice(invoice_id: str, updates: Dict[str, Any], cu
 
 @router.get("/accounting/cash-flow")
 async def get_cash_flow(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    transaction_type: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    transaction_type: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     query = {'tenant_id': current_user.tenant_id}
@@ -1653,7 +1653,7 @@ async def get_accounting_dashboard(
     current_user = await get_current_user(credentials)
 
     # Get current month data
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     month_start = today.replace(day=1, hour=0, minute=0, second=0).isoformat()
     month_end = today.isoformat()
 
@@ -1712,7 +1712,7 @@ async def create_currency_rate(
         'to_currency': request.to_currency,
         'rate': request.rate,
         'effective_date': request.effective_date,
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'created_by': current_user.id
     }
 
@@ -1818,7 +1818,7 @@ async def convert_currency(
         'to_currency': request.to_currency,
         'rate': round(rate, 4),
         'converted_amount': round(converted_amount, 2),
-        'date': request.date or datetime.now(timezone.utc).date().isoformat()
+        'date': request.date or datetime.now(UTC).date().isoformat()
     }
 
 
@@ -1886,10 +1886,10 @@ async def create_multi_currency_invoice(
         'total_try': round(total_try, 2),
         'payment_terms': request.payment_terms,
         'notes': request.notes,
-        'issue_date': datetime.now(timezone.utc).date().isoformat(),
-        'due_date': (datetime.now(timezone.utc) + timedelta(days=30)).date().isoformat(),
+        'issue_date': datetime.now(UTC).date().isoformat(),
+        'due_date': (datetime.now(UTC) + timedelta(days=30)).date().isoformat(),
         'status': 'pending',
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'created_by': current_user.id
     }
 
@@ -1984,11 +1984,11 @@ async def generate_invoice_from_folio(
         'total': round(subtotal + total_vat, 2),
         'total_foreign_currency': round(total_foreign, 2),
         'payment_terms': 'Due on checkout',
-        'issue_date': datetime.now(timezone.utc).date().isoformat(),
-        'due_date': datetime.now(timezone.utc).date().isoformat(),
+        'issue_date': datetime.now(UTC).date().isoformat(),
+        'due_date': datetime.now(UTC).date().isoformat(),
         'status': 'pending',
         'source': 'pms_folio',
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'created_by': current_user.id
     }
 
@@ -2024,7 +2024,7 @@ async def generate_invoice_from_folio(
             'efatura_uuid': str(uuid.uuid4()),
             'xml_content': efatura_xml,
             'status': 'generated',
-            'generated_at': datetime.now(timezone.utc).isoformat()
+            'generated_at': datetime.now(UTC).isoformat()
         }
 
         efatura_copy = efatura_record.copy()
@@ -2144,7 +2144,7 @@ async def generate_efatura_for_invoice(
         'efatura_uuid': str(uuid.uuid4()),
         'xml_content': efatura_xml,
         'status': 'generated',
-        'generated_at': datetime.now(timezone.utc).isoformat()
+        'generated_at': datetime.now(UTC).isoformat()
     }
 
     efatura_copy = efatura_record.copy()
@@ -2198,7 +2198,7 @@ async def send_efatura(
         {'id': invoice_id},
         {'$set': {
             'efatura_status': 'sent',
-            'efatura_sent_at': datetime.now(timezone.utc).isoformat()
+            'efatura_sent_at': datetime.now(UTC).isoformat()
         }}
     )
     return {'message': 'E-Fatura sent successfully'}
@@ -2240,7 +2240,7 @@ async def generate_efatura(
         'efatura_uuid': str(uuid.uuid4()),
         'xml_content': efatura_xml,
         'status': 'generated',
-        'generated_at': datetime.now(timezone.utc).isoformat()
+        'generated_at': datetime.now(UTC).isoformat()
     }
 
     efatura_copy = efatura_record.copy()
@@ -2277,7 +2277,7 @@ async def send_efatura_to_gib(
     gib_response = {
         'status': 'success',
         'gib_id': str(uuid.uuid4()),
-        'timestamp': datetime.now(timezone.utc).isoformat()
+        'timestamp': datetime.now(UTC).isoformat()
     }
 
     # Update E-Fatura status
@@ -2287,14 +2287,14 @@ async def send_efatura_to_gib(
             '$set': {
                 'status': 'sent_to_gib',
                 'gib_response': gib_response,
-                'sent_at': datetime.now(timezone.utc).isoformat()
+                'sent_at': datetime.now(UTC).isoformat()
             }
         }
     )
 
     await db.accounting_invoices.update_one(
         {'id': invoice_id},
-        {'$set': {'efatura_status': 'sent', 'efatura_sent_at': datetime.now(timezone.utc).isoformat()}}
+        {'$set': {'efatura_status': 'sent', 'efatura_sent_at': datetime.now(UTC).isoformat()}}
     )
 
     return {'message': 'E-Fatura sent to GIB successfully', 'gib_response': gib_response}
@@ -2303,7 +2303,7 @@ async def send_efatura_to_gib(
 @router.post("/accounting/send-statement")
 async def send_statement_email(
     company_id: str,
-    email: Optional[str] = None,
+    email: str | None = None,
     include_details: bool = True,
     current_user: User = Depends(get_current_user)
 ):
@@ -2346,7 +2346,7 @@ async def send_statement_email(
     # Create statement document
     statement = {
         'company_name': company.get('name'),
-        'statement_date': datetime.now(timezone.utc).isoformat(),
+        'statement_date': datetime.now(UTC).isoformat(),
         'total_outstanding': round(total_balance, 2),
         'folios': folios,
         'payment_terms': company.get('payment_terms', 'Net 30'),
@@ -2398,7 +2398,7 @@ async def get_smart_ar_alerts(
 
             # Check if overdue (based on payment terms)
             created_at = datetime.fromisoformat(folio.get('created_at'))
-            days_old = (datetime.now(timezone.utc) - created_at).days
+            days_old = (datetime.now(UTC) - created_at).days
 
             # Default: Net 30 payment terms
             payment_terms_days = 30
@@ -2470,12 +2470,12 @@ class RecordPaymentRequest(BaseModel):
     folio_id: str
     amount: float
     payment_method: str
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 @router.get("/finance/mobile/daily-collections")
 async def get_daily_collections_mobile(
-    date: Optional[str] = None,
+    date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get daily collections for finance mobile dashboard"""
@@ -2484,7 +2484,7 @@ async def get_daily_collections_mobile(
     if date:
         target_date = datetime.fromisoformat(date)
     else:
-        target_date = datetime.now(timezone.utc)
+        target_date = datetime.now(UTC)
 
     start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
     end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
@@ -2520,25 +2520,25 @@ async def get_daily_collections_mobile(
 
 @router.get("/finance/mobile/monthly-collections")
 async def get_monthly_collections_mobile(
-    year: Optional[int] = None,
-    month: Optional[int] = None,
+    year: int | None = None,
+    month: int | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get monthly collections for finance mobile dashboard"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     target_year = year or today.year
     target_month = month or today.month
 
     # First day of month
-    start_of_month = datetime(target_year, target_month, 1, tzinfo=timezone.utc)
+    start_of_month = datetime(target_year, target_month, 1, tzinfo=UTC)
 
     # First day of next month
     if target_month == 12:
-        end_of_month = datetime(target_year + 1, 1, 1, tzinfo=timezone.utc)
+        end_of_month = datetime(target_year + 1, 1, 1, tzinfo=UTC)
     else:
-        end_of_month = datetime(target_year, target_month + 1, 1, tzinfo=timezone.utc)
+        end_of_month = datetime(target_year, target_month + 1, 1, tzinfo=UTC)
 
     # Get payments for the month
     total_collected = 0.0
@@ -2566,8 +2566,8 @@ async def get_monthly_collections_mobile(
 
 @router.get("/finance/profit-loss")
 async def get_profit_loss_report_v2(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get Profit & Loss (P&L) report"""
@@ -2575,16 +2575,16 @@ async def get_profit_loss_report_v2(
 
     if not start_date:
         # Default to current month
-        start_date = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0)
+        start_date = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0)
     else:
         start_date = datetime.fromisoformat(start_date)
 
     if not end_date:
         # End of current month
         if start_date.month == 12:
-            end_date = datetime(start_date.year + 1, 1, 1, tzinfo=timezone.utc) - timedelta(days=1)
+            end_date = datetime(start_date.year + 1, 1, 1, tzinfo=UTC) - timedelta(days=1)
         else:
-            end_date = datetime(start_date.year, start_date.month + 1, 1, tzinfo=timezone.utc) - timedelta(days=1)
+            end_date = datetime(start_date.year, start_date.month + 1, 1, tzinfo=UTC) - timedelta(days=1)
     else:
         end_date = datetime.fromisoformat(end_date)
 
@@ -2595,8 +2595,8 @@ async def get_profit_loss_report_v2(
 
 @router.get("/finance/cashier-shift-report")
 async def get_cashier_shift_report(
-    shift_date: Optional[str] = None,
-    cashier_name: Optional[str] = None,
+    shift_date: str | None = None,
+    cashier_name: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get cashier shift report"""
@@ -2605,7 +2605,7 @@ async def get_cashier_shift_report(
     if shift_date:
         target_date = datetime.fromisoformat(shift_date)
     else:
-        target_date = datetime.now(timezone.utc)
+        target_date = datetime.now(UTC)
 
     start_of_day = target_date.replace(hour=0, minute=0, second=0)
     end_of_day = target_date.replace(hour=23, minute=59, second=59)
@@ -2664,7 +2664,7 @@ async def get_cashier_shift_report(
         'variance': variance,
         'transaction_count': transaction_count,
         'average_transaction': total_collected / transaction_count if transaction_count > 0 else 0,
-        'generated_at': datetime.now(timezone.utc).isoformat()
+        'generated_at': datetime.now(UTC).isoformat()
     }
 
     payment_count = 0
@@ -2716,7 +2716,7 @@ async def get_pending_receivables_mobile(
     overdue_amount = 0.0
     receivables = []
 
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
 
     async for folio in db.folios.find({
         'tenant_id': current_user.tenant_id,
@@ -2741,10 +2741,10 @@ async def get_pending_receivables_mobile(
                 try:
                     # Convert string to datetime for comparison
                     if isinstance(checkout, str):
-                        checkout_dt = datetime.fromisoformat(checkout).replace(tzinfo=timezone.utc)
+                        checkout_dt = datetime.fromisoformat(checkout).replace(tzinfo=UTC)
                         checkout_date_str = checkout
                     else:
-                        checkout_dt = checkout if checkout.tzinfo else checkout.replace(tzinfo=timezone.utc)
+                        checkout_dt = checkout if checkout.tzinfo else checkout.replace(tzinfo=UTC)
                         checkout_date_str = checkout.isoformat()
 
                     if checkout_dt < today:
@@ -2777,25 +2777,25 @@ async def get_pending_receivables_mobile(
 
 @router.get("/finance/mobile/monthly-costs")
 async def get_monthly_costs_mobile(
-    year: Optional[int] = None,
-    month: Optional[int] = None,
+    year: int | None = None,
+    month: int | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get monthly costs for finance mobile dashboard"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     target_year = year or today.year
     target_month = month or today.month
 
     # First day of month
-    start_of_month = datetime(target_year, target_month, 1, tzinfo=timezone.utc)
+    start_of_month = datetime(target_year, target_month, 1, tzinfo=UTC)
 
     # First day of next month
     if target_month == 12:
-        end_of_month = datetime(target_year + 1, 1, 1, tzinfo=timezone.utc)
+        end_of_month = datetime(target_year + 1, 1, 1, tzinfo=UTC)
     else:
-        end_of_month = datetime(target_year, target_month + 1, 1, tzinfo=timezone.utc)
+        end_of_month = datetime(target_year, target_month + 1, 1, tzinfo=UTC)
 
     # Get expenses for the month
     total_costs = 0.0
@@ -2855,7 +2855,7 @@ async def record_payment_mobile(
         'payment_method': payment_method,
         'payment_type': 'final',
         'notes': notes,
-        'created_at': datetime.now(timezone.utc),
+        'created_at': datetime.now(UTC),
         'created_by': current_user.username
     }
 
@@ -2875,7 +2875,7 @@ async def record_payment_mobile(
             {
                 '$set': {
                     'status': 'closed',
-                    'closed_at': datetime.now(timezone.utc),
+                    'closed_at': datetime.now(UTC),
                     'closed_by': current_user.username
                 }
             }
@@ -2903,9 +2903,9 @@ async def get_cash_flow_summary_mobile(
     - Bank balance summaries
     """
     current_user = await get_current_user(credentials)
-    today = datetime.now(timezone.utc).date()
-    start_of_day = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
-    end_of_day = datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
+    today = datetime.now(UTC).date()
+    start_of_day = datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
+    end_of_day = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
 
     # Today's cash inflow (payments received)
     today_inflow = 0.0
@@ -3017,7 +3017,7 @@ async def get_overdue_accounts_mobile(
     - Suspicious: 30+ days (Black)
     """
     current_user = await get_current_user(credentials)
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
 
     overdue_accounts = []
 
@@ -3036,9 +3036,9 @@ async def get_overdue_accounts_mobile(
             if checkout:
                 try:
                     if isinstance(checkout, str):
-                        checkout_date = datetime.fromisoformat(checkout).replace(tzinfo=timezone.utc)
+                        checkout_date = datetime.fromisoformat(checkout).replace(tzinfo=UTC)
                     else:
-                        checkout_date = checkout if checkout.tzinfo else checkout.replace(tzinfo=timezone.utc)
+                        checkout_date = checkout if checkout.tzinfo else checkout.replace(tzinfo=UTC)
 
                     days_overdue = (today - checkout_date).days
 
@@ -3187,7 +3187,7 @@ async def get_suspicious_receivables_mobile(
 ):
     """Get suspicious receivables list (30+ days overdue + high amounts)"""
     current_user = await get_current_user(credentials)
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
 
     suspicious_list = []
 
@@ -3206,9 +3206,9 @@ async def get_suspicious_receivables_mobile(
             if checkout:
                 try:
                     if isinstance(checkout, str):
-                        checkout_date = datetime.fromisoformat(checkout).replace(tzinfo=timezone.utc)
+                        checkout_date = datetime.fromisoformat(checkout).replace(tzinfo=UTC)
                     else:
-                        checkout_date = checkout if checkout.tzinfo else checkout.replace(tzinfo=timezone.utc)
+                        checkout_date = checkout if checkout.tzinfo else checkout.replace(tzinfo=UTC)
 
                     days_overdue = (today - checkout_date).days
 
@@ -3359,7 +3359,7 @@ async def get_risk_alerts_mobile(
 
 @router.get("/finance/mobile/daily-expenses")
 async def get_daily_expenses_mobile(
-    date: Optional[str] = None,
+    date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get daily expense/cost summary"""
@@ -3368,10 +3368,10 @@ async def get_daily_expenses_mobile(
     if date:
         target_date = datetime.fromisoformat(date).date()
     else:
-        target_date = datetime.now(timezone.utc).date()
+        target_date = datetime.now(UTC).date()
 
-    start_of_day = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
-    end_of_day = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=timezone.utc)
+    start_of_day = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=UTC)
+    end_of_day = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=UTC)
 
     # Get expenses by category
     expenses_by_category = {}
@@ -3513,10 +3513,10 @@ async def get_folio_full_extract_mobile(
 
 @router.get("/finance/mobile/invoices")
 async def get_invoices_mobile(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     unpaid_only: bool = False,
-    department: Optional[str] = None,
+    department: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get invoices with advanced filtering (date, unpaid, department)"""
@@ -3655,7 +3655,7 @@ async def get_invoice_pdf_mobile(
             'phone': tenant.get('phone') if tenant else '',
             'email': tenant.get('email') if tenant else ''
         },
-        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'generated_at': datetime.now(UTC).isoformat(),
         'pdf_ready': False,  # Flag for frontend to generate PDF
         'download_filename': f"Invoice_{invoice.get('invoice_number')}.pdf"
     }
@@ -3687,8 +3687,8 @@ async def update_bank_balance_mobile(
             '$set': {
                 'current_balance': current_balance,
                 'available_balance': current_balance,  # Simplified for now
-                'last_sync': datetime.now(timezone.utc),
-                'updated_at': datetime.now(timezone.utc)
+                'last_sync': datetime.now(UTC),
+                'updated_at': datetime.now(UTC)
             }
         }
     )
@@ -3744,7 +3744,7 @@ async def get_bank_balances_mobile(
 
 @router.get("/finance/expense-summary")
 async def get_expense_summary(
-    date: Optional[str] = None,  # YYYY-MM-DD
+    date: str | None = None,  # YYYY-MM-DD
     period: str = "today",  # today, week, month
     current_user: User = Depends(get_current_user)
 ):
@@ -3756,7 +3756,7 @@ async def get_expense_summary(
         if date:
             target_date = datetime.fromisoformat(date).date()
         else:
-            target_date = datetime.now(timezone.utc).date()
+            target_date = datetime.now(UTC).date()
 
         # Calculate date range
         if period == "today":
@@ -3859,7 +3859,7 @@ async def get_cash_flow_dashboard(
     Shows: today's cash in/out, weekly plan, bank balances, risk alerts
     """
     try:
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         today_str = today.isoformat()
 
         # Today's cash inflow (collections)
@@ -3948,7 +3948,7 @@ async def get_risk_alerts(
     Financial risk monitoring: overdue accounts, credit limits, suspicious receivables
     """
     try:
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
 
         # Get all folios with outstanding balance
         folios = await db.folios.find({
@@ -4027,7 +4027,7 @@ async def get_risk_alerts(
                     'priority': 'urgent',
                     'related_id': acc['folio_id'],
                     'read': False,
-                    'created_at': datetime.now(timezone.utc).isoformat()
+                    'created_at': datetime.now(UTC).isoformat()
                 })
 
         return {
@@ -4051,11 +4051,11 @@ async def get_risk_alerts(
 @router.get("/finance/folios-filtered")
 @cached(ttl=300, key_prefix="finance_folios_filtered")  # Cache for 5 min
 async def get_folios_filtered(
-    customer_type: Optional[str] = None,  # vip, corporate, individual
-    room_number: Optional[str] = None,
-    status: Optional[str] = None,  # open, closed, cancelled
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
+    customer_type: str | None = None,  # vip, corporate, individual
+    room_number: str | None = None,
+    status: str | None = None,  # open, closed, cancelled
+    date_from: str | None = None,
+    date_to: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -4184,7 +4184,7 @@ async def process_mobile_payment(
             'notes': notes,
             'processed_by': current_user.id,
             'processed_by_name': current_user.name,
-            'processed_at': datetime.now(timezone.utc).isoformat(),
+            'processed_at': datetime.now(UTC).isoformat(),
             'tenant_id': current_user.tenant_id
         }
 
@@ -4195,7 +4195,7 @@ async def process_mobile_payment(
             {
                 '$set': {
                     'paid_amount': new_paid_amount,
-                    'updated_at': datetime.now(timezone.utc).isoformat()
+                    'updated_at': datetime.now(UTC).isoformat()
                 },
                 '$push': {'payments': payment}
             }
@@ -4212,7 +4212,7 @@ async def process_mobile_payment(
             'entity_type': 'folio',
             'entity_id': folio_id,
             'changes': {'amount': amount, 'method': payment_method},
-            'timestamp': datetime.now(timezone.utc).isoformat()
+            'timestamp': datetime.now(UTC).isoformat()
         })
 
         return {
@@ -4283,7 +4283,7 @@ async def get_city_ledger_accounts(
 @router.post("/cashiering/split-payment")
 async def process_split_payment(
     booking_id: str,
-    payments: List[dict],
+    payments: list[dict],
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Process split payment (multiple payment methods for one bill)"""
@@ -4317,7 +4317,7 @@ async def process_split_payment(
             'payment_method': payment['payment_method'],
             'amount': payment['amount'],
             'reference': payment.get('reference'),
-            'processed_at': datetime.now(timezone.utc).isoformat(),
+            'processed_at': datetime.now(UTC).isoformat(),
             'processed_by': current_user.name
         }
         await db.payments.insert_one(payment_record)
@@ -4326,7 +4326,7 @@ async def process_split_payment(
     # Update booking status
     await db.bookings.update_one(
         {'id': booking_id},
-        {'$set': {'payment_status': 'paid', 'paid_at': datetime.now(timezone.utc).isoformat()}}
+        {'$set': {'payment_status': 'paid', 'paid_at': datetime.now(UTC).isoformat()}}
     )
 
     return {
@@ -4345,7 +4345,7 @@ async def get_ar_aging_report(
     """Get Accounts Receivable aging report (30/60/90 days)"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
 
     aging_buckets = {
         'current': [],
@@ -4381,7 +4381,7 @@ async def get_ar_aging_report(
 
             # Ensure timezone-aware
             if transaction_date.tzinfo is None:
-                transaction_date = transaction_date.replace(tzinfo=timezone.utc)
+                transaction_date = transaction_date.replace(tzinfo=UTC)
 
             days_old = (today - transaction_date).days
 
@@ -4554,7 +4554,7 @@ async def post_city_ledger_payment(
     account_id: str,
     amount: float,
     payment_method: str,
-    reference: Optional[str] = None,
+    reference: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Post payment to city ledger account"""

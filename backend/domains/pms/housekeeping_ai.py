@@ -3,7 +3,6 @@ Housekeeping Intelligence - AI-Powered
 Oda dağılımı optimizasyonu, tahminli temizlik süreleri
 """
 import random
-from typing import List
 
 
 class HousekeepingAI:
@@ -12,7 +11,7 @@ class HousekeepingAI:
     def __init__(self, db):
         self.db = db
 
-    async def optimize_room_assignment(self, tenant_id: str, staff_list: List[dict]) -> List[dict]:
+    async def optimize_room_assignment(self, tenant_id: str, staff_list: list[dict]) -> list[dict]:
         """Odaları personele optimal dağıt"""
         dirty_rooms = await self.db.rooms.find({
             'tenant_id': tenant_id,

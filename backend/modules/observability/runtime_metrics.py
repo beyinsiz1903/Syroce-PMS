@@ -3,8 +3,8 @@ Observability — Runtime Metrics Collector
 Aggregates hardening metrics for monitoring and alerting.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -15,9 +15,9 @@ class RuntimeMetricsCollector:
     """Collects and aggregates runtime observability metrics."""
 
     @staticmethod
-    async def collect_all(tenant_id: str) -> Dict[str, Any]:
+    async def collect_all(tenant_id: str) -> dict[str, Any]:
         """Collect all runtime metrics for a tenant."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         last_hour = (now - timedelta(hours=1)).isoformat()
         last_24h = (now - timedelta(hours=24)).isoformat()
 
@@ -39,10 +39,10 @@ class RuntimeMetricsCollector:
         return metrics
 
     @staticmethod
-    async def get_alerts(tenant_id: str) -> List[Dict[str, Any]]:
+    async def get_alerts(tenant_id: str) -> list[dict[str, Any]]:
         """Generate alerts based on current metrics thresholds."""
         alerts = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         last_hour = (now - timedelta(hours=1)).isoformat()
         last_24h = (now - timedelta(hours=24)).isoformat()
 
@@ -126,7 +126,7 @@ class RuntimeMetricsCollector:
         return alerts
 
 
-async def _sync_metrics(tenant_id: str, since: str) -> Dict[str, Any]:
+async def _sync_metrics(tenant_id: str, since: str) -> dict[str, Any]:
     total = await db.channel_sync_logs.count_documents({
         "tenant_id": tenant_id, "timestamp": {"$gte": since},
     })
@@ -141,7 +141,7 @@ async def _sync_metrics(tenant_id: str, since: str) -> Dict[str, Any]:
     }
 
 
-async def _drift_metrics(tenant_id: str, since: str) -> Dict[str, Any]:
+async def _drift_metrics(tenant_id: str, since: str) -> dict[str, Any]:
     scans = await db.drift_scan_results.find(
         {"tenant_id": tenant_id, "timestamp": {"$gte": since}},
         {"_id": 0, "drifts_found": 1, "critical_drifts": 1},
@@ -154,7 +154,7 @@ async def _drift_metrics(tenant_id: str, since: str) -> Dict[str, Any]:
     }
 
 
-async def _recon_metrics(tenant_id: str, since: str) -> Dict[str, Any]:
+async def _recon_metrics(tenant_id: str, since: str) -> dict[str, Any]:
     results = await db.reconciliation_results.find(
         {"tenant_id": tenant_id, "timestamp": {"$gte": since}},
         {"_id": 0, "auto_fixed": 1, "manual_review": 1, "status": 1},
@@ -170,7 +170,7 @@ async def _recon_metrics(tenant_id: str, since: str) -> Dict[str, Any]:
     }
 
 
-async def _queue_metrics(since: str) -> Dict[str, Any]:
+async def _queue_metrics(since: str) -> dict[str, Any]:
     pending = await db.task_queue.count_documents({"status": "pending"})
     processing = await db.task_queue.count_documents({"status": "processing"})
     failed_24h = await db.task_queue.count_documents({
@@ -185,7 +185,7 @@ async def _queue_metrics(since: str) -> Dict[str, Any]:
     }
 
 
-async def _security_metrics(tenant_id: str, since: str) -> Dict[str, Any]:
+async def _security_metrics(tenant_id: str, since: str) -> dict[str, Any]:
     audit_entries = await db.audit_logs.count_documents({
         "tenant_id": tenant_id, "timestamp": {"$gte": since},
     })

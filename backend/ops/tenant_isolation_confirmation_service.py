@@ -7,8 +7,7 @@ websocket room isolation, noisy tenant simulation.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Dict
+from datetime import UTC, datetime
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -36,7 +35,7 @@ class TenantIsolationConfirmationService:
 
     async def run_full_validation(self, ctx: OperationContext) -> ServiceResult:
         """Run all isolation tests."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         results = []
 
         for test in ISOLATION_TESTS:
@@ -66,7 +65,7 @@ class TenantIsolationConfirmationService:
         del validation_result["_id"]
         return ServiceResult.success(validation_result)
 
-    async def _run_test(self, ctx: OperationContext, test: Dict) -> Dict:
+    async def _run_test(self, ctx: OperationContext, test: dict) -> dict:
         """Run a single isolation test."""
         test_id = test["id"]
         base = {

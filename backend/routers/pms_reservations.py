@@ -17,9 +17,8 @@ Models:
   ExtraChargeCreate, MultiRoomReservationCreate
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -55,8 +54,8 @@ class ExtraCharge(BaseModel):
     tenant_id: str
     charge_name: str
     charge_amount: float
-    charge_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    notes: Optional[str] = None
+    charge_date: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    notes: str | None = None
 
 
 class MultiRoomBooking(BaseModel):
@@ -65,21 +64,21 @@ class MultiRoomBooking(BaseModel):
     tenant_id: str
     group_name: str
     primary_booking_id: str
-    related_booking_ids: List[str] = []
+    related_booking_ids: list[str] = []
     total_rooms: int
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class ExtraChargeCreate(BaseModel):
     charge_name: str
     charge_amount: float
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class MultiRoomReservationCreate(BaseModel):
     group_name: str
     primary_booking_id: str
-    related_booking_ids: List[str]
+    related_booking_ids: list[str]
 
 
 # ── Read paths ───────────────────────────────────────────────────────
@@ -145,7 +144,7 @@ async def get_reservation_details_enhanced(
 
 @router.get("/reservations/double-booking-check")
 async def check_double_booking_conflicts(
-    date: Optional[str] = None,
+    date: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -205,7 +204,7 @@ async def check_double_booking_conflicts(
 async def get_adr_and_rate_visibility(
     start_date: str,
     end_date: str,
-    room_type: Optional[str] = None,
+    room_type: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -268,7 +267,7 @@ async def create_rate_override_with_panel(
     booking_id: str,
     new_rate: float,
     override_reason: str,
-    authorized_by: Optional[str] = None,
+    authorized_by: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -298,7 +297,7 @@ async def create_rate_override_with_panel(
         'new_rate': new_rate,
         'override_reason': override_reason,
         'authorized_by': authorized_by or current_user.name,
-        'timestamp': datetime.now(timezone.utc).isoformat()
+        'timestamp': datetime.now(UTC).isoformat()
     }
 
     await db.rate_override_logs.insert_one(override_log)

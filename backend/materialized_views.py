@@ -4,7 +4,7 @@ Pre-computed dashboard metrics for ultra-fast loading
 """
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pymongo import ASCENDING, DESCENDING
 
@@ -29,7 +29,7 @@ class MaterializedViewsManager:
         except Exception as e:
             logger.error(f"Failed to create materialized view indexes: {e}")
 
-    async def refresh_dashboard_metrics(self) -> Dict[str, Any]:
+    async def refresh_dashboard_metrics(self) -> dict[str, Any]:
         """Refresh all dashboard metrics"""
         try:
             start_time = datetime.utcnow()
@@ -219,7 +219,7 @@ class MaterializedViewsManager:
                 "error": str(e)
             }
 
-    async def get_view(self, view_name: str, max_age_seconds: int = 300) -> Optional[Dict[str, Any]]:
+    async def get_view(self, view_name: str, max_age_seconds: int = 300) -> dict[str, Any] | None:
         """
         Get materialized view with freshness check
 
@@ -250,7 +250,7 @@ class MaterializedViewsManager:
             logger.error(f"Failed to get view {view_name}: {e}")
             return None
 
-    async def refresh_all_views(self) -> Dict[str, Any]:
+    async def refresh_all_views(self) -> dict[str, Any]:
         """Refresh all materialized views"""
         results = {
             "dashboard_metrics": await self.refresh_dashboard_metrics()
@@ -262,7 +262,7 @@ class MaterializedViewsManager:
             "total_duration_ms": sum(r.get("refresh_duration_ms", 0) for r in results.values())
         }
 
-    async def get_view_stats(self) -> Dict[str, Any]:
+    async def get_view_stats(self) -> dict[str, Any]:
         """Get statistics about all views"""
         try:
             views = await self.views.find({}).to_list(None)

@@ -5,7 +5,7 @@ with proper error isolation so one broken module cannot crash the app.
 """
 import importlib
 import traceback
-from typing import Callable, List, Optional, Tuple
+from typing import Callable
 
 from fastapi import Depends, FastAPI
 
@@ -24,7 +24,7 @@ def _safe_import(module_path: str, attr: str):
 
 # ── Router manifest ─────────────────────────────────────────────────
 # (module_path, attribute_name, tags, prefix_override, dependencies)
-_EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list]]] = [
+_EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = [
     # Core extracted routers
     ("routers.auth", "router", ["auth"], None, None),
     ("routers.housekeeping", "router", ["housekeeping"], None, None),
@@ -177,7 +177,7 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
 
 # Optional routers with special import paths
 # Legacy routers (moved to _legacy/) removed — active modules live in domains/ and routers/
-_OPTIONAL_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[str]]] = [
+_OPTIONAL_ROUTERS: list[tuple[str, str, list[str], str | None, str | None]] = [
     ("channel_manager.interfaces.router_registry", "router", ["Channel Manager v2"], None, None),
 ]
 

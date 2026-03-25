@@ -5,15 +5,15 @@ Called after each successful pull.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
 logger = logging.getLogger(__name__)
 
 
-async def auto_import_reservation(tenant_id: str, channel_res: Dict[str, Any]) -> Dict[str, Any]:
+async def auto_import_reservation(tenant_id: str, channel_res: dict[str, Any]) -> dict[str, Any]:
     """
     Convert a single exely_reservation into a PMS booking, or update an existing one.
     Returns {"success": True/False, "pms_booking_id": ...}
@@ -77,7 +77,7 @@ async def auto_import_reservation(tenant_id: str, channel_res: Dict[str, Any]) -
             "loyalty_tier": "none",
             "total_stays": 0,
             "notes": f"Exely kanal rezervasyonu ({external_id})",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db.guests.insert_one({**guest})
         guest.pop("_id", None)
@@ -92,7 +92,7 @@ async def auto_import_reservation(tenant_id: str, channel_res: Dict[str, Any]) -
     base_rate = total_amount / nights if nights > 0 else total_amount
 
     booking_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     booking = {
         "id": booking_id,
@@ -181,14 +181,14 @@ async def auto_import_reservation(tenant_id: str, channel_res: Dict[str, Any]) -
     }
 
 
-async def _update_existing_booking(tenant_id: str, channel_res: Dict[str, Any]) -> Dict[str, Any]:
+async def _update_existing_booking(tenant_id: str, channel_res: dict[str, Any]) -> dict[str, Any]:
     """
     Update an existing PMS booking when the Exely reservation has been modified
     (guest name change, date change, room type change, etc.).
     """
     external_id = channel_res.get("external_id", "")
     pms_booking_id = channel_res.get("pms_booking_id")
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # Get existing PMS booking
     existing_booking = await db.bookings.find_one(
@@ -318,7 +318,7 @@ async def _update_existing_booking(tenant_id: str, channel_res: Dict[str, Any]) 
     }
 
 
-async def auto_import_pending(tenant_id: str, provider=None) -> Dict[str, Any]:
+async def auto_import_pending(tenant_id: str, provider=None) -> dict[str, Any]:
     """Import all pending exely_reservations for a tenant.
     If provider is given, also confirm delivery to Exely after each successful import."""
     pending = await db.exely_reservations.find(
@@ -353,7 +353,7 @@ async def auto_import_pending(tenant_id: str, provider=None) -> Dict[str, Any]:
                     if confirm_result.success:
                         await db.exely_reservations.update_one(
                             {"tenant_id": tenant_id, "external_id": external_id},
-                            {"$set": {"delivery_confirmed": True, "delivery_confirmed_at": datetime.now(timezone.utc).isoformat()}},
+                            {"$set": {"delivery_confirmed": True, "delivery_confirmed_at": datetime.now(UTC).isoformat()}},
                         )
                         logger.info(f"[EXELY-IMPORT] Delivery confirmed for {external_id} -> PMS {pms_booking_id}")
                     else:
@@ -381,7 +381,7 @@ async def process_pending_cancellations(tenant_id: str) -> int:
     ).to_list(100)
 
     count = 0
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     for res in pending_cancels:
         pms_booking_id = res.get("pms_booking_id")

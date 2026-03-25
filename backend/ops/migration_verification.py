@@ -5,8 +5,8 @@ Checks that MongoDB collections have the expected indexes and structure.
 Used as a hard gate in the deploy pipeline.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 from common.result import ServiceResult
 
@@ -52,9 +52,9 @@ class MigrationVerifier:
 
     async def verify_all(self) -> ServiceResult:
         """Run full migration verification suite."""
-        now = datetime.now(timezone.utc).isoformat()
-        drift_issues: List[Dict[str, Any]] = []
-        missing_indexes: List[Dict[str, Any]] = []
+        now = datetime.now(UTC).isoformat()
+        drift_issues: list[dict[str, Any]] = []
+        missing_indexes: list[dict[str, Any]] = []
         collections_checked = 0
 
         try:

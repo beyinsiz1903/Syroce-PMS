@@ -4,8 +4,8 @@ Prediction Service - Serves predictions from deployed models with confidence mon
 import logging
 import random
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 from modules.data_pipeline.model_registry import model_registry
@@ -23,10 +23,10 @@ class PredictionService:
     """Serves predictions from deployed models and monitors confidence."""
 
     async def predict(self, tenant_id: str, model_type: str,
-                      input_data: Dict[str, Any]) -> Dict[str, Any]:
+                      input_data: dict[str, Any]) -> dict[str, Any]:
         """Generate a prediction using the deployed model."""
         prediction_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         deployed = await model_registry.get_deployed_model(tenant_id, model_type)
         model_id = deployed["id"] if deployed else None
@@ -92,16 +92,16 @@ class PredictionService:
             }
         return {"raw_output": "unknown_model", "confidence": 0.3}
 
-    async def get_predictions(self, tenant_id: str, model_type: Optional[str] = None,
-                              limit: int = 20) -> List[dict]:
-        q: Dict[str, Any] = {"tenant_id": tenant_id}
+    async def get_predictions(self, tenant_id: str, model_type: str | None = None,
+                              limit: int = 20) -> list[dict]:
+        q: dict[str, Any] = {"tenant_id": tenant_id}
         if model_type:
             q["model_type"] = model_type
         return await db.ml_predictions.find(
             q, {"_id": 0}
         ).sort("created_at", -1).to_list(limit)
 
-    async def get_confidence_summary(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_confidence_summary(self, tenant_id: str) -> dict[str, Any]:
         """Get prediction confidence summary by model type."""
         pipeline = [
             {"$match": {"tenant_id": tenant_id}},
@@ -130,9 +130,9 @@ class PredictionService:
             ],
         }
 
-    async def get_stale_predictions(self, tenant_id: str, stale_hours: int = 12) -> List[dict]:
+    async def get_stale_predictions(self, tenant_id: str, stale_hours: int = 12) -> list[dict]:
         """Find model types with no recent predictions."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=stale_hours)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(hours=stale_hours)).isoformat()
         stale = []
         for mt in ["revenue_ml", "operational_ai", "guest_intelligence"]:
             latest = await db.ml_predictions.find_one(

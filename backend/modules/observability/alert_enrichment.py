@@ -7,9 +7,9 @@ runbook hints, blast radius assessment, and route compatibility
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -40,7 +40,7 @@ class AlertCategory(str, Enum):
 
 # ── Alert Rule Definitions ───────────────────────────────────────────
 
-ALERT_RULES: List[Dict[str, Any]] = [
+ALERT_RULES: list[dict[str, Any]] = [
     # Night Audit
     {
         "rule_id": "night_audit_duration_breach",
@@ -254,14 +254,14 @@ class AlertEnrichmentEngine:
     def __init__(self):
         from core.database import db
         self._db = db
-        self._cooldown_cache: Dict[str, datetime] = {}
+        self._cooldown_cache: dict[str, datetime] = {}
 
     async def evaluate_all_rules(
-        self, ctx: OperationContext, metrics: Dict[str, Any]
+        self, ctx: OperationContext, metrics: dict[str, Any]
     ) -> ServiceResult:
         """Evaluate all rules against provided metrics snapshot."""
         fired_alerts = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         for rule in ALERT_RULES:
             rule_id = rule["rule_id"]
@@ -301,8 +301,8 @@ class AlertEnrichmentEngine:
         })
 
     def _build_alert(
-        self, rule: Dict, metric_value: Any, ctx: OperationContext, now: datetime
-    ) -> Dict[str, Any]:
+        self, rule: dict, metric_value: Any, ctx: OperationContext, now: datetime
+    ) -> dict[str, Any]:
         return {
             "id": str(uuid.uuid4()),
             "rule_id": rule["rule_id"],
@@ -327,16 +327,16 @@ class AlertEnrichmentEngine:
             "recommended_action": rule["runbook"],
         }
 
-    async def _persist_alert(self, alert: Dict):
+    async def _persist_alert(self, alert: dict):
         try:
             await self._db.alert_events.insert_one(alert.copy())
         except Exception as e:
             logger.warning("Failed to persist alert: %s", e)
 
     async def get_active_alerts(
-        self, ctx: OperationContext, severity: Optional[str] = None, limit: int = 50
+        self, ctx: OperationContext, severity: str | None = None, limit: int = 50
     ) -> ServiceResult:
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id, "resolved": False}
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id, "resolved": False}
         if severity:
             query["severity"] = severity
         alerts = await self._db.alert_events.find(
@@ -351,7 +351,7 @@ class AlertEnrichmentEngine:
     async def acknowledge_alert(
         self, ctx: OperationContext, alert_id: str
     ) -> ServiceResult:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = await self._db.alert_events.update_one(
             {"id": alert_id, "tenant_id": ctx.tenant_id},
             {
@@ -379,7 +379,7 @@ class AlertEnrichmentEngine:
     async def resolve_alert(
         self, ctx: OperationContext, alert_id: str, resolution_note: str = ""
     ) -> ServiceResult:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = await self._db.alert_events.update_one(
             {"id": alert_id, "tenant_id": ctx.tenant_id},
             {
@@ -409,7 +409,7 @@ class AlertEnrichmentEngine:
     async def get_alert_summary(
         self, ctx: OperationContext, hours: int = 24
     ) -> ServiceResult:
-        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
         pipeline = [
             {"$match": {"tenant_id": ctx.tenant_id, "fired_at": {"$gte": since}}},
             {
@@ -442,7 +442,7 @@ class AlertEnrichmentEngine:
             "rules_count": len(ALERT_RULES),
         })
 
-    def get_rules(self) -> List[Dict[str, Any]]:
+    def get_rules(self) -> list[dict[str, Any]]:
         return [
             {
                 "rule_id": r["rule_id"],

@@ -2,7 +2,6 @@
 PMS Guests Router — Extracted from routers/pms.py (Stage 1 decomposition)
 Guest CRUD and search.
 """
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -35,7 +34,7 @@ async def create_guest(
     return guest
 
 
-@router.get("/pms/guests", response_model=List[Guest])
+@router.get("/pms/guests", response_model=list[Guest])
 @cached(ttl=300, key_prefix="pms_guests")  # Cache for 5 minutes
 async def get_guests(
     limit: int = 1000,

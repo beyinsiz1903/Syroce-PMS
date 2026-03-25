@@ -4,7 +4,6 @@ Defines 3-tier subscription system: Basic, Professional, Enterprise
 """
 
 from enum import Enum
-from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -74,9 +73,9 @@ class SubscriptionPlan(BaseModel):
     description_tr: str
     price_monthly: float
     price_yearly: float
-    max_rooms: Optional[int] = None
-    max_users: Optional[int] = None
-    features: List[FeatureFlag]
+    max_rooms: int | None = None
+    max_users: int | None = None
+    features: list[FeatureFlag]
     support_level: str
     support_level_tr: str
 
@@ -85,7 +84,7 @@ class SubscriptionPlan(BaseModel):
 # PLAN → MODULE DEFAULTS (admin'in otel oluştururken set edeceği)
 # ──────────────────────────────────────────────────────────────
 
-PLAN_MODULE_DEFAULTS: Dict[str, Dict[str, bool]] = {
+PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
     "basic": {
         # CORE - Açık
         "pms": True,
@@ -222,7 +221,7 @@ PLAN_MODULE_DEFAULTS: Dict[str, Dict[str, bool]] = {
 
 
 # Define subscription plans
-SUBSCRIPTION_PLANS: Dict[SubscriptionTier, SubscriptionPlan] = {
+SUBSCRIPTION_PLANS: dict[SubscriptionTier, SubscriptionPlan] = {
     SubscriptionTier.BASIC: SubscriptionPlan(
         tier=SubscriptionTier.BASIC,
         name="Basic",
@@ -319,13 +318,13 @@ def has_feature_access(tier: SubscriptionTier, feature: FeatureFlag) -> bool:
     return feature in plan.features
 
 
-def get_plan_default_modules(tier: str) -> Dict[str, bool]:
+def get_plan_default_modules(tier: str) -> dict[str, bool]:
     """Get default modules for a subscription tier"""
     tier_lower = tier.lower() if tier else "basic"
     return PLAN_MODULE_DEFAULTS.get(tier_lower, PLAN_MODULE_DEFAULTS["basic"]).copy()
 
 
-def get_feature_comparison() -> Dict[str, Dict[str, bool]]:
+def get_feature_comparison() -> dict[str, dict[str, bool]]:
     """Get feature comparison across all tiers"""
     comparison = {}
     for feature in FeatureFlag:
@@ -336,7 +335,7 @@ def get_feature_comparison() -> Dict[str, Dict[str, bool]]:
     return comparison
 
 
-def get_all_module_keys() -> List[str]:
+def get_all_module_keys() -> list[str]:
     """Get all module keys across all plans"""
     keys = set()
     for plan_modules in PLAN_MODULE_DEFAULTS.values():

@@ -12,7 +12,6 @@ Checks:
 """
 import logging
 import os
-from typing import Dict, List
 
 logger = logging.getLogger("controlplane.startup_validator")
 
@@ -22,7 +21,7 @@ class StartupValidationError(RuntimeError):
     pass
 
 
-async def validate_startup(*, strict: bool = False) -> Dict[str, any]:
+async def validate_startup(*, strict: bool = False) -> dict[str, any]:
     """Run all startup validations.
 
     Args:
@@ -38,7 +37,7 @@ async def validate_startup(*, strict: bool = False) -> Dict[str, any]:
         "indexes": {"status": "unknown", "details": {}},
         "env": {"status": "unknown", "details": {}},
     }
-    failures: List[str] = []
+    failures: list[str] = []
 
     # ── 1. Crypto Keys ────────────────────────────────────────────
     try:

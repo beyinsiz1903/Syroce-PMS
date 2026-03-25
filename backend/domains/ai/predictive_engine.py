@@ -4,7 +4,6 @@ Geleceği tahmin et: No-show, demand, complaints, inventory
 """
 import random
 from datetime import date, timedelta
-from typing import Dict, List
 
 
 class PredictiveEngine:
@@ -13,7 +12,7 @@ class PredictiveEngine:
     def __init__(self, db):
         self.db = db
 
-    async def predict_no_shows(self, tenant_id: str, target_date: str) -> List[Dict]:
+    async def predict_no_shows(self, tenant_id: str, target_date: str) -> list[dict]:
         """No-show risk prediction"""
         # Get bookings for target date
         bookings = await self.db.bookings.find({
@@ -68,7 +67,7 @@ class PredictiveEngine:
 
         return predictions
 
-    def _get_risk_factors(self, booking: dict) -> List[str]:
+    def _get_risk_factors(self, booking: dict) -> list[str]:
         """Risk faktörlerini listele"""
         factors = []
         if not booking.get('payment_method'):
@@ -79,7 +78,7 @@ class PredictiveEngine:
             factors.append('No pre-arrival contact')
         return factors
 
-    async def predict_demand(self, tenant_id: str, days_ahead: int = 30) -> List[Dict]:
+    async def predict_demand(self, tenant_id: str, days_ahead: int = 30) -> list[dict]:
         """Talep tahmini (30 gün)"""
         today = date.today()
         predictions = []

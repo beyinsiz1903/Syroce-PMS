@@ -6,8 +6,8 @@ All long-running and periodic tasks
 import asyncio
 import logging
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -30,11 +30,11 @@ def get_db():
 # ============= BOOKING.COM INTEGRATION TASKS =============
 
 @celery_app.task(name='celery_tasks.booking_push_task')
-def booking_push_task(tenant_id: str, payload: Dict[str, Any]):
+def booking_push_task(tenant_id: str, payload: dict[str, Any]):
     """Push ARI updates to Booking.com"""
     return asyncio.run(_booking_push_async(tenant_id, payload))
 
-async def _booking_push_async(tenant_id: str, payload: Dict[str, Any]):
+async def _booking_push_async(tenant_id: str, payload: dict[str, Any]):
     db, client = get_db()
     try:
         credentials = await BookingCredentialManager.get_credentials(tenant_id)
@@ -100,7 +100,7 @@ async def _booking_pull_async(tenant_id: str):
                 {'tenant_id': tenant_id, 'channel_type': ChannelType.BOOKING_COM.value, 'channel_booking_id': ota_record['channel_booking_id']},
                 {'$set': {
                     **ota_record,
-                    'last_synced_at': datetime.now(timezone.utc).isoformat()
+                    'last_synced_at': datetime.now(UTC).isoformat()
                 }},
                 upsert=True
             )
@@ -123,7 +123,7 @@ async def _booking_pull_async(tenant_id: str):
                     {'$set': {
                         'status': 'imported',
                         'pms_booking_id': booking_payload['id'],
-                        'processed_at': datetime.now(timezone.utc).isoformat()
+                        'processed_at': datetime.now(UTC).isoformat()
                     }}
                 )
 
@@ -149,7 +149,7 @@ async def _booking_pull_async(tenant_id: str):
         await client.close()
 
 
-async def ensure_guest_record(db, mapper: BookingReservationMapper, reservation: Dict[str, Any]) -> Optional[str]:
+async def ensure_guest_record(db, mapper: BookingReservationMapper, reservation: dict[str, Any]) -> str | None:
     query = {
         'tenant_id': mapper.tenant_id,
         'email': reservation.get('guest_email')
@@ -163,7 +163,7 @@ async def ensure_guest_record(db, mapper: BookingReservationMapper, reservation:
     return payload['id']
 
 
-async def find_room_for_reservation(db, tenant_id: str, room_type: Optional[str]) -> Optional[str]:
+async def find_room_for_reservation(db, tenant_id: str, room_type: str | None) -> str | None:
     if not room_type:
         return None
     room = await db.rooms.find_one({
@@ -212,7 +212,7 @@ async def _night_audit_async():
                     if folio:
                         # Post room charge
                         charge = {
-                            'charge_id': f"CHG-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{charges_posted}",
+                            'charge_id': f"CHG-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-{charges_posted}",
                             'tenant_id': tenant_id,
                             'folio_id': folio['folio_id'],
                             'charge_category': 'room',
@@ -224,7 +224,7 @@ async def _night_audit_async():
                             'tax_amount': room_rate * 0.10,
                             'total': room_rate * 1.10,
                             'voided': False,
-                            'created_at': datetime.now(timezone.utc)
+                            'created_at': datetime.now(UTC)
                         }
 
                         await db.folio_charges.insert_one(charge)
@@ -247,7 +247,7 @@ async def _night_audit_async():
 
         return {
             'success': True,
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
             'results': results
         }
 
@@ -274,7 +274,7 @@ async def _archive_old_data_async():
 
     try:
         # Archive cutoff date: 6 months ago
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=180)
+        cutoff_date = datetime.now(UTC) - timedelta(days=180)
 
         results = {
             'cutoff_date': cutoff_date.isoformat(),
@@ -299,7 +299,7 @@ async def _archive_old_data_async():
             logger.info(f"Archived {len(old_bookings)} old bookings")
 
         # Archive old audit logs (> 1 year)
-        audit_cutoff = datetime.now(timezone.utc) - timedelta(days=365)
+        audit_cutoff = datetime.now(UTC) - timedelta(days=365)
         old_logs = await db.audit_logs.find({
             'timestamp': {'$lt': audit_cutoff}
         }).to_list(50000)
@@ -351,7 +351,7 @@ async def _clean_old_notifications_async():
     db, client = get_db()
 
     try:
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=90)
+        cutoff_date = datetime.now(UTC) - timedelta(days=90)
 
         result = await db.notifications.delete_many({
             'created_at': {'$lt': cutoff_date}
@@ -392,7 +392,7 @@ async def _generate_daily_reports_async():
         results = []
         for tenant_id in tenants:
             try:
-                yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+                yesterday = (datetime.now(UTC) - timedelta(days=1)).date()
 
                 # Calculate daily metrics
                 bookings_yesterday = await db.bookings.count_documents({
@@ -426,7 +426,7 @@ async def _generate_daily_reports_async():
                     'report_date': yesterday.isoformat(),
                     'bookings_count': bookings_yesterday,
                     'revenue': revenue_yesterday[0]['total'] if revenue_yesterday else 0,
-                    'generated_at': datetime.now(timezone.utc)
+                    'generated_at': datetime.now(UTC)
                 }
 
                 await db.daily_reports.insert_one(report)
@@ -438,7 +438,7 @@ async def _generate_daily_reports_async():
         return {
             'success': True,
             'reports_generated': len(results),
-            'timestamp': datetime.now(timezone.utc).isoformat()
+            'timestamp': datetime.now(UTC).isoformat()
         }
 
     except Exception as e:
@@ -650,7 +650,7 @@ async def _generate_daily_report_async():
     db, client = get_db()
 
     try:
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         yesterday = today - timedelta(days=1)
 
         # Collect metrics
@@ -686,7 +686,7 @@ async def _generate_daily_report_async():
             'date': yesterday.isoformat(),
             'bookings_count': bookings_count,
             'revenue': revenue,
-            'generated_at': datetime.now(timezone.utc)
+            'generated_at': datetime.now(UTC)
         }
 
         # Store report
@@ -731,7 +731,7 @@ async def _check_maintenance_sla_async():
         }
 
         violations = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         for priority, hours in sla_thresholds.items():
             threshold = now - timedelta(hours=hours)
@@ -811,7 +811,7 @@ async def _update_occupancy_forecast_async():
         results = []
         for tenant_id in tenants:
             # Get next 30 days bookings
-            today = datetime.now(timezone.utc).date()
+            today = datetime.now(UTC).date()
             forecasts = []
 
             for days_ahead in range(30):
@@ -844,7 +844,7 @@ async def _update_occupancy_forecast_async():
                     '$set': {
                         'tenant_id': tenant_id,
                         'forecasts': forecasts,
-                        'updated_at': datetime.now(timezone.utc)
+                        'updated_at': datetime.now(UTC)
                     }
                 },
                 upsert=True
@@ -858,7 +858,7 @@ async def _update_occupancy_forecast_async():
         return {
             'success': True,
             'tenants_updated': len(results),
-            'timestamp': datetime.now(timezone.utc).isoformat()
+            'timestamp': datetime.now(UTC).isoformat()
         }
 
     except Exception as e:
@@ -901,7 +901,7 @@ async def _process_pending_efaturas_async():
                         '$set': {
                             'efatura_status': 'generated',
                             'efatura_uuid': efatura_uuid,
-                            'efatura_generated_at': datetime.now(timezone.utc)
+                            'efatura_generated_at': datetime.now(UTC)
                         }
                     }
                 )
@@ -914,7 +914,7 @@ async def _process_pending_efaturas_async():
         return {
             'success': True,
             'processed': processed,
-            'timestamp': datetime.now(timezone.utc).isoformat()
+            'timestamp': datetime.now(UTC).isoformat()
         }
 
     except Exception as e:
@@ -952,7 +952,7 @@ async def _warm_cache_async():
         return {
             'success': True,
             'tenants_warmed': len(tenants),
-            'timestamp': datetime.now(timezone.utc).isoformat()
+            'timestamp': datetime.now(UTC).isoformat()
         }
 
     except Exception as e:
@@ -988,7 +988,7 @@ async def _database_health_check_async():
         health_status = {
             'status': 'healthy',
             'collections': collections_info,
-            'timestamp': datetime.now(timezone.utc).isoformat()
+            'timestamp': datetime.now(UTC).isoformat()
         }
 
         # Store health check result
@@ -1003,5 +1003,5 @@ async def _database_health_check_async():
         return {
             'status': 'unhealthy',
             'error': str(e),
-            'timestamp': datetime.now(timezone.utc).isoformat()
+            'timestamp': datetime.now(UTC).isoformat()
         }

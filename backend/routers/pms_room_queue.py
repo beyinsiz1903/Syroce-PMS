@@ -9,7 +9,7 @@ Routes:
   POST   /rooms/queue/notify-guest
   DELETE /rooms/queue/{queue_id}
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -170,7 +170,7 @@ async def notify_guest_room_ready(
                 'status': 'assigned',
                 'notified': True,
                 'assigned_room': room_number,
-                'notified_at': datetime.now(timezone.utc).isoformat()
+                'notified_at': datetime.now(UTC).isoformat()
             }
         }
     )

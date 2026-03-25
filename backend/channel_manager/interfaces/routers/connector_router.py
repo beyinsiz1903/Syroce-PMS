@@ -1,6 +1,5 @@
 """Connector CRUD, connection test, credential management endpoints."""
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -23,7 +22,7 @@ class CreateConnectorRequest(BaseModel):
     display_name: str
     property_id: str = ""
     credentials: dict = Field(default_factory=dict)
-    sync_config: Optional[dict] = None
+    sync_config: dict | None = None
 
 
 class UpdateCredentialsRequest(BaseModel):
@@ -37,7 +36,7 @@ class RotateCredentialsRequest(BaseModel):
 class ConnectionTestStepResult(BaseModel):
     status: str
     latency_ms: int = 0
-    error_code: Optional[str] = None
+    error_code: str | None = None
     message: str = ""
 
 
@@ -49,19 +48,19 @@ class ConnectionTestResponse(BaseModel):
     tested_at: str = ""
     total_latency_ms: int = 0
     summary: str = ""
-    auth_status: Optional[ConnectionTestStepResult] = None
-    property_access_status: Optional[ConnectionTestStepResult] = None
-    inventory_read_status: Optional[ConnectionTestStepResult] = None
-    rate_read_status: Optional[ConnectionTestStepResult] = None
-    xml_connectivity_status: Optional[ConnectionTestStepResult] = None
-    message: Optional[str] = None
+    auth_status: ConnectionTestStepResult | None = None
+    property_access_status: ConnectionTestStepResult | None = None
+    inventory_read_status: ConnectionTestStepResult | None = None
+    rate_read_status: ConnectionTestStepResult | None = None
+    xml_connectivity_status: ConnectionTestStepResult | None = None
+    message: str | None = None
 
 
 # ─── Connector CRUD ──────────────────────────────────────────────
 
 @router.get("/connectors")
 async def list_connectors(
-    status: Optional[str] = None,
+    status: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     svc = ConnectorService()

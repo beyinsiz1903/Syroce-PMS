@@ -4,8 +4,8 @@ ARI Push Engine — MongoDB repositories.
 import hashlib
 import json
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -19,7 +19,7 @@ from .models import (
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def compute_delta_hash(payload: dict) -> str:
@@ -80,9 +80,9 @@ async def insert_ari_event(event: dict) -> str:
 async def get_ari_events(
     tenant_id: str, property_id: str,
     limit: int = 50, skip: int = 0,
-    event_type: Optional[str] = None,
-) -> List[dict]:
-    query: Dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
+    event_type: str | None = None,
+) -> list[dict]:
+    query: dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
     if event_type:
         query["event_type"] = event_type
     cursor = db[COLL_ARI_EVENTS].find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit)
@@ -141,9 +141,9 @@ async def upsert_change_set(cs: dict) -> str:
 
 
 async def get_pending_change_sets(
-    tenant_id: str, provider: Optional[str] = None, limit: int = 50,
-) -> List[dict]:
-    query: Dict[str, Any] = {"tenant_id": tenant_id, "status": {"$in": ["pending", "failed_retryable"]}}
+    tenant_id: str, provider: str | None = None, limit: int = 50,
+) -> list[dict]:
+    query: dict[str, Any] = {"tenant_id": tenant_id, "status": {"$in": ["pending", "failed_retryable"]}}
     if provider:
         query["provider"] = provider
     cursor = db[COLL_ARI_CHANGE_SETS].find(query, {"_id": 0}).sort("created_at", 1).limit(limit)
@@ -152,10 +152,10 @@ async def get_pending_change_sets(
 
 async def get_change_sets(
     tenant_id: str, property_id: str,
-    status: Optional[str] = None, provider: Optional[str] = None,
+    status: str | None = None, provider: str | None = None,
     limit: int = 50, skip: int = 0,
-) -> List[dict]:
-    query: Dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
+) -> list[dict]:
+    query: dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
     if status:
         query["status"] = status
     if provider:
@@ -166,10 +166,10 @@ async def get_change_sets(
 
 async def update_change_set_status(
     cs_id: str, status: str,
-    error: Optional[str] = None,
+    error: str | None = None,
     inc_attempt: bool = False,
 ) -> None:
-    update: Dict[str, Any] = {"$set": {"status": status, "updated_at": _now_iso()}}
+    update: dict[str, Any] = {"$set": {"status": status, "updated_at": _now_iso()}}
     if status == "pushed":
         update["$set"]["last_pushed_at"] = _now_iso()
     if status == "acked":
@@ -184,7 +184,7 @@ async def update_change_set_status(
 async def check_outbound_idempotency(provider: str, property_id: str, delta_hash: str) -> bool:
     """Return True if this exact delta was already pushed recently (within last hour)."""
     from datetime import timedelta
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     existing = await db[COLL_ARI_CHANGE_SETS].find_one({
         "provider": provider,
         "property_id": property_id,
@@ -220,10 +220,10 @@ async def insert_outbound_log(log: dict) -> str:
 
 async def get_outbound_logs(
     tenant_id: str, property_id: str,
-    provider: Optional[str] = None,
+    provider: str | None = None,
     limit: int = 50, skip: int = 0,
-) -> List[dict]:
-    query: Dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
+) -> list[dict]:
+    query: dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
     if provider:
         query["provider"] = provider
     cursor = db[COLL_ARI_OUTBOUND_LOGS].find(query, {"_id": 0}).sort("pushed_at", -1).skip(skip).limit(limit)
@@ -256,11 +256,11 @@ async def upsert_drift_state(ds: dict) -> None:
 
 async def get_drift_states(
     tenant_id: str, property_id: str,
-    provider: Optional[str] = None,
+    provider: str | None = None,
     drift_only: bool = False,
     limit: int = 50,
-) -> List[dict]:
-    query: Dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
+) -> list[dict]:
+    query: dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
     if provider:
         query["provider"] = provider
     if drift_only:

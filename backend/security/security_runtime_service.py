@@ -4,7 +4,7 @@ Production-grade: aggregates real tenant guard violations, credential scan resul
 audit completeness, rate limit metrics, log sanitization coverage, and security event history.
 """
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -165,7 +165,7 @@ class SecurityRuntimeService:
     async def get_comprehensive_status(self, ctx: OperationContext) -> ServiceResult:
         """Aggregated security health for dashboard consumption."""
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Tenant guard violations
             tg = await self._tenant_guard.get_status(ctx.tenant_id)
@@ -221,7 +221,7 @@ class SecurityRuntimeService:
             return ServiceResult.success({
                 "severity": "warning",
                 "error": str(e)[:100],
-                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "checked_at": datetime.now(UTC).isoformat(),
             })
 
 

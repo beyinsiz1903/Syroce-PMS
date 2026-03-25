@@ -9,8 +9,8 @@ import os
 import threading
 import time
 from collections import defaultdict, deque
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class APMMetricsStore:
         # Request-level metrics (circular buffer)
         self.requests: deque = deque(maxlen=max_requests)
         # Aggregated endpoint stats
-        self.endpoint_stats: Dict[str, Dict] = defaultdict(lambda: {
+        self.endpoint_stats: dict[str, dict] = defaultdict(lambda: {
             'count': 0,
             'total_duration_ms': 0.0,
             'min_duration_ms': float('inf'),
@@ -36,9 +36,9 @@ class APMMetricsStore:
         self.errors: deque = deque(maxlen=500)
         # Rate limit tracking
         self.rate_limit_hits: int = 0
-        self.rate_limit_by_endpoint: Dict[str, int] = defaultdict(int)
+        self.rate_limit_by_endpoint: dict[str, int] = defaultdict(int)
         # Startup time
-        self.started_at = datetime.now(timezone.utc)
+        self.started_at = datetime.now(UTC)
         # Slow query threshold (ms)
         self.slow_threshold_ms = 500.0
 
@@ -52,7 +52,7 @@ class APMMetricsStore:
         tenant_id: str = "",
     ):
         """Record a single request metric"""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         entry = {
             'method': method,
             'path': path,
@@ -89,9 +89,9 @@ class APMMetricsStore:
             self.rate_limit_hits += 1
             self.rate_limit_by_endpoint[path] += 1
 
-    def get_summary(self, minutes: int = 10) -> Dict[str, Any]:
+    def get_summary(self, minutes: int = 10) -> dict[str, Any]:
         """Get aggregated APM summary for the last N minutes"""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cutoff = now - timedelta(minutes=minutes)
         cutoff_iso = cutoff.isoformat()
 
@@ -232,12 +232,12 @@ class APMMetricsStore:
             'uptime_seconds': round((now - self.started_at).total_seconds()),
         }
 
-    def get_recent_errors(self, limit: int = 50) -> List[Dict]:
+    def get_recent_errors(self, limit: int = 50) -> list[dict]:
         """Get recent error entries"""
         with self._lock:
             return list(self.errors)[-limit:]
 
-    def get_endpoint_details(self, endpoint: str) -> Optional[Dict]:
+    def get_endpoint_details(self, endpoint: str) -> dict | None:
         """Get detailed stats for a specific endpoint"""
         with self._lock:
             if endpoint in self.endpoint_stats:
@@ -329,7 +329,7 @@ class EnhancedRateLimitMiddleware:
     def __init__(self, app):
         self.app = app
         self._lock = threading.Lock()
-        self._windows: Dict[str, deque] = defaultdict(lambda: deque())
+        self._windows: dict[str, deque] = defaultdict(lambda: deque())
 
         # Rate limit tiers: (max_requests, window_seconds)
         # In test/CI/dev environments, use higher limits to avoid test failures
@@ -527,7 +527,7 @@ class EnhancedRateLimitMiddleware:
         if apm_store.requests and len(apm_store.requests) % 100 == 0:
             self._cleanup_old_windows()
 
-    def get_rate_limit_stats(self) -> Dict[str, Any]:
+    def get_rate_limit_stats(self) -> dict[str, Any]:
         """Get current rate limiting statistics"""
         now = time.time()
         active_windows = 0
@@ -549,14 +549,14 @@ class EnhancedRateLimitMiddleware:
 
 
 # Global rate limiter instance (for stats access)
-_global_rate_limiter_state: Dict[str, Any] = {
+_global_rate_limiter_state: dict[str, Any] = {
     'windows': None,
     'limits': None,
     'lock': None,
 }
 
 
-def get_rate_limit_stats() -> Dict[str, Any]:
+def get_rate_limit_stats() -> dict[str, Any]:
     """Get rate limit stats from the global state"""
     state = _global_rate_limiter_state
     if state['windows'] is None or state['lock'] is None:

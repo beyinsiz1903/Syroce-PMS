@@ -1,6 +1,5 @@
 """Alert Delivery Router — Channel configuration, delivery, and logs."""
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -16,7 +15,7 @@ router = APIRouter(tags=["CM Alert Delivery"])
 
 
 class DeliveryChannelRequest(BaseModel):
-    id: Optional[str] = None
+    id: str | None = None
     connector_id: str = "*"
     channel_type: str  # email, webhook, slack, teams
     name: str = ""
@@ -28,7 +27,7 @@ class DeliveryChannelRequest(BaseModel):
 
 @router.get("/delivery/channels")
 async def list_delivery_channels(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """List configured delivery channels."""
@@ -88,7 +87,7 @@ async def test_delivery_channel(
 
 @router.get("/delivery/log")
 async def get_delivery_log(
-    alert_id: Optional[str] = None,
+    alert_id: str | None = None,
     limit: int = Query(50, le=200),
     current_user: User = Depends(get_current_user),
 ):

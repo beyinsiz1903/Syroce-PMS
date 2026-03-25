@@ -6,8 +6,8 @@ Single API call returns everything needed for the control plane dashboard.
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 logger = logging.getLogger("controlplane.dashboard_aggregator")
 
@@ -24,7 +24,7 @@ def _grade(score: float) -> str:
     return "F"
 
 
-def compute_health_score(metrics: Dict[str, Any]) -> float:
+def compute_health_score(metrics: dict[str, Any]) -> float:
     """Score 0-100. Weighted by business impact."""
     score = 100.0
 
@@ -76,11 +76,11 @@ class DashboardAggregator:
         return self._db
 
     async def compute_dashboard(
-        self, tenant_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        self, tenant_id: str | None = None,
+    ) -> dict[str, Any]:
         """Compute full dashboard payload. Target: < 500ms p95."""
         db = self._get_db()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cutoff_24h = (now - timedelta(hours=24)).isoformat()
         cutoff_30m = (now - timedelta(minutes=30)).isoformat()
 
@@ -129,8 +129,8 @@ class DashboardAggregator:
         }
 
     async def _failure_metrics(
-        self, db, tenant_id: Optional[str],
-    ) -> Dict[str, Any]:
+        self, db, tenant_id: str | None,
+    ) -> dict[str, Any]:
         from controlplane.failure_tracker import get_failure_tracker
         tracker = get_failure_tracker()
         open_count = await tracker.count_open(tenant_id=tenant_id)
@@ -138,7 +138,7 @@ class DashboardAggregator:
         by_type = await tracker.count_by_type(tenant_id=tenant_id)
         by_op = await tracker.count_by_operation(tenant_id=tenant_id)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cutoff_1h = (now - timedelta(hours=1)).isoformat()
         cutoff_24h = (now - timedelta(hours=24)).isoformat()
         failures_1h = await db.cp_failures.count_documents(
@@ -158,9 +158,9 @@ class DashboardAggregator:
         }
 
     async def _outbox_metrics(
-        self, db, tenant_id: Optional[str], cutoff_30m: str, cutoff_24h: str,
-    ) -> Dict[str, Any]:
-        base: Dict[str, Any] = {}
+        self, db, tenant_id: str | None, cutoff_30m: str, cutoff_24h: str,
+    ) -> dict[str, Any]:
+        base: dict[str, Any] = {}
         if tenant_id:
             base["tenant_id"] = tenant_id
 
@@ -185,9 +185,9 @@ class DashboardAggregator:
         }
 
     async def _import_metrics(
-        self, db, tenant_id: Optional[str], cutoff_24h: str,
-    ) -> Dict[str, Any]:
-        base: Dict[str, Any] = {}
+        self, db, tenant_id: str | None, cutoff_24h: str,
+    ) -> dict[str, Any]:
+        base: dict[str, Any] = {}
         if tenant_id:
             base["tenant_id"] = tenant_id
         coll = db.imported_reservations
@@ -212,9 +212,9 @@ class DashboardAggregator:
         }
 
     async def _sync_metrics(
-        self, db, tenant_id: Optional[str], cutoff_24h: str,
-    ) -> Dict[str, Any]:
-        base: Dict[str, Any] = {"started_at": {"$gte": cutoff_24h}}
+        self, db, tenant_id: str | None, cutoff_24h: str,
+    ) -> dict[str, Any]:
+        base: dict[str, Any] = {"started_at": {"$gte": cutoff_24h}}
         if tenant_id:
             base["tenant_id"] = tenant_id
         coll = db.cp_sync_jobs
@@ -240,15 +240,15 @@ class DashboardAggregator:
         }
 
     async def _connector_status(
-        self, db, tenant_id: Optional[str],
-    ) -> List[Dict[str, Any]]:
+        self, db, tenant_id: str | None,
+    ) -> list[dict[str, Any]]:
         connectors = []
         for coll_name, provider in [
             ("exely_connections", "exely"),
             ("hotelrunner_connections", "hotelrunner"),
         ]:
             try:
-                query: Dict[str, Any] = {"is_active": True}
+                query: dict[str, Any] = {"is_active": True}
                 if tenant_id:
                     query["tenant_id"] = tenant_id
                 async for conn in db[coll_name].find(query, {"_id": 0}):
@@ -265,9 +265,9 @@ class DashboardAggregator:
         return connectors
 
     async def _security_metrics(
-        self, db, tenant_id: Optional[str], cutoff_24h: str,
-    ) -> Dict[str, Any]:
-        query: Dict[str, Any] = {
+        self, db, tenant_id: str | None, cutoff_24h: str,
+    ) -> dict[str, Any]:
+        query: dict[str, Any] = {
             "result": {"$in": ["failure", "denied", "not_found"]},
             "timestamp": {"$gte": cutoff_24h},
         }
@@ -278,17 +278,17 @@ class DashboardAggregator:
         return {"secret_anomalies_24h": anomalies}
 
     async def _recent_failures(
-        self, db, tenant_id: Optional[str],
-    ) -> List[Dict[str, Any]]:
+        self, db, tenant_id: str | None,
+    ) -> list[dict[str, Any]]:
         from controlplane.failure_tracker import get_failure_tracker
         tracker = get_failure_tracker()
         return await tracker.recent_failures(hours=24, tenant_id=tenant_id, limit=5)
 
     async def _pipeline_depth(
-        self, db, tenant_id: Optional[str],
-    ) -> Dict[str, Any]:
+        self, db, tenant_id: str | None,
+    ) -> dict[str, Any]:
         """End-to-end reservation pipeline depth."""
-        base: Dict[str, Any] = {}
+        base: dict[str, Any] = {}
         if tenant_id:
             base["tenant_id"] = tenant_id
 
@@ -378,15 +378,15 @@ class DashboardSnapshotWorker:
                 try:
                     await asyncio.wait_for(self._stop.wait(), timeout=self.interval)
                     break
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
         except asyncio.CancelledError:
             pass
 
 
 # ── Singletons ─────────────────────────────────────────────────────
-_aggregator: Optional[DashboardAggregator] = None
-_snapshot_worker: Optional[DashboardSnapshotWorker] = None
+_aggregator: DashboardAggregator | None = None
+_snapshot_worker: DashboardSnapshotWorker | None = None
 
 
 def get_dashboard_aggregator() -> DashboardAggregator:

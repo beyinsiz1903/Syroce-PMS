@@ -5,8 +5,7 @@ Guest CRM, upsell AI, messaging, feedback/reviews, guest mobile app.
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -99,8 +98,8 @@ async def get_guest_360(
             'last_seen_date': bookings[0]['check_in'] if bookings else None,
             'tags': guest.get('tags', []),
             'notes': guest.get('notes', []),
-            'created_at': datetime.now(timezone.utc).isoformat(),
-            'updated_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat(),
+            'updated_at': datetime.now(UTC).isoformat()
         }
         await db.guest_profiles.insert_one(profile)
 
@@ -159,7 +158,7 @@ async def add_guest_note(
     note_obj = {
         'text': note,
         'created_by': current_user.name,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     result = await db.guests.update_one(
@@ -257,14 +256,14 @@ async def generate_upsell_offers(
                 'price': round(total_upgrade_cost, 2),
                 'confidence': round(confidence, 2),
                 'reason': f"{loyalty_tier.upper()} guest, {better_room['room_type']} available, strong demand",
-                'valid_until': (datetime.now(timezone.utc) + timedelta(days=3)).isoformat(),
+                'valid_until': (datetime.now(UTC) + timedelta(days=3)).isoformat(),
                 'status': 'pending',
-                'created_at': datetime.now(timezone.utc).isoformat()
+                'created_at': datetime.now(UTC).isoformat()
             })
 
     # 2. Early Check-in (if arrival is tomorrow or later)
     arrival_date = datetime.fromisoformat(check_in).date()
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
 
     if arrival_date > today:
         offers.append({
@@ -280,7 +279,7 @@ async def generate_upsell_offers(
             'reason': 'High-value amenity, low cost to hotel',
             'valid_until': (datetime.fromisoformat(check_in) - timedelta(days=1)).isoformat(),
             'status': 'pending',
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         })
 
     # 3. Late Checkout
@@ -297,7 +296,7 @@ async def generate_upsell_offers(
         'reason': 'Popular add-on, high guest satisfaction',
         'valid_until': (datetime.fromisoformat(check_out) - timedelta(days=1)).isoformat(),
         'status': 'pending',
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     })
 
     # 4. Airport Transfer
@@ -314,7 +313,7 @@ async def generate_upsell_offers(
         'reason': 'Convenience add-on, good margin',
         'valid_until': (datetime.fromisoformat(check_in) - timedelta(days=1)).isoformat(),
         'status': 'pending',
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     })
 
     # Sort by confidence
@@ -336,7 +335,7 @@ async def generate_upsell_offers(
 
 async def check_rate_limit(tenant_id: str, channel: str, limit_per_hour: int = 100) -> bool:
     """Check if rate limit is exceeded for messaging"""
-    one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    one_hour_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
 
     count = await db.messages.count_documents({
         'tenant_id': tenant_id,
@@ -351,8 +350,8 @@ async def send_email(
     recipient: str,
     subject: str,
     body: str,
-    guest_id: Optional[str] = None,
-    template_id: Optional[str] = None,
+    guest_id: str | None = None,
+    template_id: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Send email message with rate limiting"""
@@ -380,7 +379,7 @@ async def send_email(
         'subject': subject,
         'body': body,
         'template_id': template_id,
-        'sent_at': datetime.now(timezone.utc).isoformat(),
+        'sent_at': datetime.now(UTC).isoformat(),
         'sent_by': current_user.id,
         'status': 'sent'
     }
@@ -397,7 +396,7 @@ async def send_email(
             'remaining': 100 - await db.messages.count_documents({
                 'tenant_id': current_user.tenant_id,
                 'channel': 'email',
-                'sent_at': {'$gte': (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()}
+                'sent_at': {'$gte': (datetime.now(UTC) - timedelta(hours=1)).isoformat()}
             })
         }
     }
@@ -406,7 +405,7 @@ async def send_email(
 async def send_sms(
     recipient: str,
     body: str,
-    guest_id: Optional[str] = None,
+    guest_id: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Send SMS message with stricter rate limiting (50 per hour)"""
@@ -438,7 +437,7 @@ async def send_sms(
         'channel': 'sms',
         'recipient': recipient,
         'body': body,
-        'sent_at': datetime.now(timezone.utc).isoformat(),
+        'sent_at': datetime.now(UTC).isoformat(),
         'sent_by': current_user.id,
         'status': 'sent',
         'character_count': len(body),
@@ -459,7 +458,7 @@ async def send_sms(
             'remaining': 50 - await db.messages.count_documents({
                 'tenant_id': current_user.tenant_id,
                 'channel': 'sms',
-                'sent_at': {'$gte': (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()}
+                'sent_at': {'$gte': (datetime.now(UTC) - timedelta(hours=1)).isoformat()}
             })
         }
     }
@@ -473,7 +472,7 @@ async def send_sms(
 async def send_whatsapp(
     recipient: str,
     body: str,
-    guest_id: Optional[str] = None,
+    guest_id: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Send WhatsApp message with rate limiting (80 per hour)"""
@@ -499,7 +498,7 @@ async def send_whatsapp(
         'channel': 'whatsapp',
         'recipient': recipient,
         'body': body,
-        'sent_at': datetime.now(timezone.utc).isoformat(),
+        'sent_at': datetime.now(UTC).isoformat(),
         'sent_by': current_user.id,
         'status': 'sent',
         'character_count': len(body)
@@ -518,14 +517,14 @@ async def send_whatsapp(
             'remaining': 80 - await db.messages.count_documents({
                 'tenant_id': current_user.tenant_id,
                 'channel': 'whatsapp',
-                'sent_at': {'$gte': (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()}
+                'sent_at': {'$gte': (datetime.now(UTC) - timedelta(hours=1)).isoformat()}
             })
         }
     }
 
 @router.get("/messages/templates")
 async def get_message_templates(
-    channel: Optional[str] = None,
+    channel: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Get message templates"""
@@ -540,7 +539,7 @@ async def get_message_templates(
 async def generate_rms_suggestions(
     start_date: str,
     end_date: str,
-    room_type: Optional[str] = None,
+    room_type: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Generate RMS rate suggestions based on occupancy and demand"""
@@ -637,9 +636,9 @@ async def generate_rms_suggestions(
 
 @router.get("/rms/suggestions")
 async def get_rms_suggestions(
-    status: Optional[str] = None,
-    date: Optional[str] = None,
-    room_type: Optional[str] = None,
+    status: str | None = None,
+    date: str | None = None,
+    room_type: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Get RMS suggestions with filters"""
@@ -727,7 +726,7 @@ async def respond_to_review(
         {'id': review_id, 'tenant_id': current_user.tenant_id},
         {'$set': {
             'response': response_data.get('response'),
-            'responded_at': datetime.now(timezone.utc).isoformat(),
+            'responded_at': datetime.now(UTC).isoformat(),
             'responded_by': current_user.id
         }}
     )
@@ -754,7 +753,7 @@ async def receive_external_review(
         'booking_reference': request.booking_reference,
         'status': 'new',
         'sentiment': 'positive' if request.rating >= 4.0 else ('neutral' if request.rating >= 3.0 else 'negative'),
-        'received_at': datetime.now(timezone.utc).isoformat()
+        'received_at': datetime.now(UTC).isoformat()
     }
 
     review_copy = review.copy()
@@ -871,7 +870,7 @@ async def respond_to_external_review(
         {
             '$set': {
                 'response': response_text,
-                'responded_at': datetime.now(timezone.utc).isoformat(),
+                'responded_at': datetime.now(UTC).isoformat(),
                 'responded_by': current_user.id,
                 'status': 'responded'
             }
@@ -915,7 +914,7 @@ async def create_survey(
         'questions': request.questions,
         'trigger': request.trigger,
         'status': 'active',
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'created_by': current_user.id
     }
 
@@ -952,7 +951,7 @@ async def submit_survey_response(
         'guest_email': request.guest_email,
         'responses': request.responses,
         'overall_rating': round(avg_rating, 2) if avg_rating else None,
-        'submitted_at': datetime.now(timezone.utc).isoformat()
+        'submitted_at': datetime.now(UTC).isoformat()
     }
 
     response_copy = response.copy()
@@ -1038,7 +1037,7 @@ async def submit_department_feedback(
         'comment': request.comment,
         'staff_member': request.staff_member,
         'sentiment': 'positive' if request.rating >= 4 else ('neutral' if request.rating == 3 else 'negative'),
-        'submitted_at': datetime.now(timezone.utc).isoformat()
+        'submitted_at': datetime.now(UTC).isoformat()
     }
 
     feedback_copy = feedback.copy()
@@ -1204,13 +1203,13 @@ async def get_guest_bookings(
             try:
                 dt = datetime.fromisoformat(dt_str)
                 if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
+                    dt = dt.replace(tzinfo=UTC)
                 return dt
             except Exception:
                 return None
 
         check_in_dt = make_aware(booking.get('check_in'))
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
 
         booking_data = {
             'id': booking.get('id'),
@@ -1244,7 +1243,7 @@ async def get_guest_bookings(
         all_bookings.append(booking_data)
 
     # Separate active and past
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     active_bookings = []
     past_bookings = []
 
@@ -1253,7 +1252,7 @@ async def get_guest_bookings(
             # Parse checkout date and make it timezone aware if needed
             checkout_dt = datetime.fromisoformat(b['check_out'])
             if checkout_dt.tzinfo is None:
-                checkout_dt = checkout_dt.replace(tzinfo=timezone.utc)
+                checkout_dt = checkout_dt.replace(tzinfo=UTC)
 
             # Categorize booking
             if b['status'] in ['confirmed', 'checked_in', 'guaranteed'] and checkout_dt >= now:
@@ -1440,7 +1439,7 @@ async def register_device_token(
                 'user_id': current_user.id,
                 'device_token': device_token,
                 'platform': platform,
-                'updated_at': datetime.now(timezone.utc).isoformat()
+                'updated_at': datetime.now(UTC).isoformat()
             }
         },
         upsert=True
@@ -1511,8 +1510,8 @@ async def get_room_service_menu(
 @router.post("/guest/room-service-order")
 async def create_room_service_order(
     booking_id: str,
-    items: List[dict],
-    special_instructions: Optional[str] = None,
+    items: list[dict],
+    special_instructions: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Create room service order"""
@@ -1539,8 +1538,8 @@ async def create_room_service_order(
         'total_amount': total_amount,
         'special_instructions': special_instructions,
         'status': 'pending',  # pending, confirmed, preparing, delivered, cancelled
-        'ordered_at': datetime.now(timezone.utc).isoformat(),
-        'estimated_delivery': (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
+        'ordered_at': datetime.now(UTC).isoformat(),
+        'estimated_delivery': (datetime.now(UTC) + timedelta(minutes=30)).isoformat()
     }
 
     await db.room_service_orders.insert_one(order)
@@ -1558,7 +1557,7 @@ async def create_room_service_order(
             'tenant_id': current_user.tenant_id,
             'folio_id': folio['id'],
             'booking_id': booking_id,
-            'date': datetime.now(timezone.utc).date().isoformat(),
+            'date': datetime.now(UTC).date().isoformat(),
             'charge_category': 'food',
             'description': 'Room Service',
             'unit_price': total_amount,
@@ -1625,7 +1624,7 @@ async def create_guest_request(
         'description': description,
         'priority': priority,
         'status': 'pending',  # pending, in_progress, completed, cancelled
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'resolved_at': None
     }
 
@@ -1649,7 +1648,7 @@ async def create_guest_request(
         'status': 'pending',
         'room_id': booking.get('room_id'),
         'related_request_id': request['id'],
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     await db.staff_tasks.insert_one(task)
@@ -1732,7 +1731,7 @@ async def update_guest_profile(
             'nationality': profile_data.get('nationality', ''),
             'date_of_birth': profile_data.get('date_of_birth', ''),
             'preferences': profile_data.get('preferences', {}),
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         }
         await db.guests.insert_one(guest_data)
         return {'success': True, 'message': 'Profile created'}
@@ -1744,7 +1743,7 @@ async def update_guest_profile(
         'nationality': profile_data.get('nationality', guest.get('nationality')),
         'date_of_birth': profile_data.get('date_of_birth', guest.get('date_of_birth')),
         'preferences': profile_data.get('preferences', guest.get('preferences', {})),
-        'updated_at': datetime.now(timezone.utc).isoformat()
+        'updated_at': datetime.now(UTC).isoformat()
     }
 
     await db.guests.update_one(
@@ -1772,7 +1771,7 @@ async def web_checkin(
 
     # Check if check-in date is today or past
     check_in_date = datetime.fromisoformat(booking['check_in'])
-    if check_in_date.date() > datetime.now(timezone.utc).date():
+    if check_in_date.date() > datetime.now(UTC).date():
         raise HTTPException(status_code=400, detail="Cannot check in before check-in date")
 
     # Update booking status to web_checked_in
@@ -1780,7 +1779,7 @@ async def web_checkin(
         {'id': booking_id},
         {'$set': {
             'status': 'web_checked_in',
-            'web_checkin_at': datetime.now(timezone.utc).isoformat()
+            'web_checkin_at': datetime.now(UTC).isoformat()
         }}
     )
 
@@ -1788,7 +1787,7 @@ async def web_checkin(
     digital_key = {
         'booking_id': booking_id,
         'room_id': booking.get('room_id'),
-        'valid_from': datetime.now(timezone.utc).isoformat(),
+        'valid_from': datetime.now(UTC).isoformat(),
         'valid_until': booking['check_out'],
         'key_code': str(uuid.uuid4())[:8].upper()
     }
@@ -1805,12 +1804,12 @@ async def web_checkin(
 
 @router.get("/logs/alerts-history")
 async def get_alert_history(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    alert_type: Optional[str] = None,
-    severity: Optional[str] = None,
-    status: Optional[str] = None,
-    source_module: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    alert_type: str | None = None,
+    severity: str | None = None,
+    status: str | None = None,
+    source_module: str | None = None,
     limit: int = 100,
     skip: int = 0,
     current_user: User = Depends(get_current_user)
@@ -1897,7 +1896,7 @@ async def acknowledge_alert(
         {
             '$set': {
                 'status': 'acknowledged',
-                'acknowledged_at': datetime.now(timezone.utc).isoformat(),
+                'acknowledged_at': datetime.now(UTC).isoformat(),
                 'acknowledged_by': current_user.id
             }
         }
@@ -1909,7 +1908,7 @@ async def acknowledge_alert(
         {
             '$set': {
                 'status': 'acknowledged',
-                'acknowledged_at': datetime.now(timezone.utc).isoformat(),
+                'acknowledged_at': datetime.now(UTC).isoformat(),
                 'acknowledged_by': current_user.id
             }
         }
@@ -1927,7 +1926,7 @@ async def acknowledge_alert(
 @router.post("/logs/alerts/{alert_id}/resolve")
 async def resolve_alert(
     alert_id: str,
-    resolution_notes: Optional[str] = None,
+    resolution_notes: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Resolve an alert"""
@@ -1939,7 +1938,7 @@ async def resolve_alert(
         {
             '$set': {
                 'status': 'resolved',
-                'resolved_at': datetime.now(timezone.utc).isoformat(),
+                'resolved_at': datetime.now(UTC).isoformat(),
                 'resolved_by': current_user.id,
                 'resolution_notes': resolution_notes
             }
@@ -1952,7 +1951,7 @@ async def resolve_alert(
         {
             '$set': {
                 'status': 'resolved',
-                'resolved_at': datetime.now(timezone.utc).isoformat(),
+                'resolved_at': datetime.now(UTC).isoformat(),
                 'resolved_by': current_user.id,
                 'resolution_notes': resolution_notes
             }
@@ -1988,7 +1987,7 @@ async def get_logs_dashboard(
 
     # Recent critical errors (last 24 hours)
     from datetime import timedelta
-    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
 
     recent_critical_errors = []
     async for error in db.error_logs.find({

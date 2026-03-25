@@ -15,8 +15,8 @@ Available Actions:
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 from domains.channel_manager.ari.hard_fail_gate import release_quarantine
@@ -39,7 +39,7 @@ COLL_ACTION_LOG = "operator_action_log"
 RETRYABLE_STATUSES = {"failed", "provider_error", "timeout"}
 
 
-async def retry_safe(tenant_id: str, operator_id: str = "system") -> Dict[str, Any]:
+async def retry_safe(tenant_id: str, operator_id: str = "system") -> dict[str, Any]:
     """
     Retry failed push change sets that have retryable errors.
 
@@ -49,7 +49,7 @@ async def retry_safe(tenant_id: str, operator_id: str = "system") -> Dict[str, A
       - Post-check: returns count of actually retried items
     """
     action_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # Pre-check: find retryable change sets
     retryable = await db[COLL_ARI_CHANGE_SETS].find(
@@ -97,10 +97,10 @@ async def retry_safe(tenant_id: str, operator_id: str = "system") -> Dict[str, A
 async def safe_release_quarantine(
     tenant_id: str,
     room_type_code: str,
-    rate_plan_code: Optional[str] = None,
-    provider: Optional[str] = None,
+    rate_plan_code: str | None = None,
+    provider: str | None = None,
     operator_id: str = "system",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Safe quarantine release with full guard chain.
 
@@ -142,9 +142,9 @@ async def safe_release_quarantine(
 
 async def revalidate_mapping(
     tenant_id: str,
-    provider: Optional[str] = None,
+    provider: str | None = None,
     operator_id: str = "system",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Full mapping revalidation with diff output.
 
@@ -213,10 +213,10 @@ async def revalidate_mapping(
 
 async def suppress_noise(
     tenant_id: str,
-    event_type: Optional[str] = None,
+    event_type: str | None = None,
     duration_minutes: int = 30,
     operator_id: str = "system",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Suppress noisy notifications by setting manual cooldown.
 
@@ -225,7 +225,7 @@ async def suppress_noise(
       - Limited duration: max 120 minutes
     """
     action_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     duration_minutes = min(duration_minutes, 120)
     expires_at = (now + timedelta(minutes=duration_minutes)).isoformat()
 
@@ -258,8 +258,8 @@ async def suppress_noise(
 def _result(
     action_id: str, action_type: str, status: str, message: str,
     affected: int, tenant_id: str, operator_id: str,
-    pre_check: Dict = None, post_verify: Dict = None,
-) -> Dict[str, Any]:
+    pre_check: dict = None, post_verify: dict = None,
+) -> dict[str, Any]:
     return {
         "action_id": action_id,
         "action_type": action_type,
@@ -270,13 +270,13 @@ def _result(
         "operator_id": operator_id,
         "pre_check": pre_check,
         "post_verify": post_verify,
-        "executed_at": datetime.now(timezone.utc).isoformat(),
+        "executed_at": datetime.now(UTC).isoformat(),
     }
 
 
 async def _log_action(
     action_id: str, action_type: str, tenant_id: str,
-    operator_id: str, affected: int, details: Dict,
+    operator_id: str, affected: int, details: dict,
 ) -> None:
     await db[COLL_ACTION_LOG].insert_one({
         "id": action_id,
@@ -285,5 +285,5 @@ async def _log_action(
         "operator_id": operator_id,
         "affected_count": affected,
         "details": details,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     })

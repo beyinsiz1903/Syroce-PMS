@@ -21,7 +21,7 @@ import asyncio
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # Add backend to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -76,7 +76,7 @@ async def migrate_provider_secrets(sm, db, tenant_filter: str, dry_run: bool) ->
                 {"id": rec["id"]},
                 {"$set": {
                     "migrated_to_secrets_manager": True,
-                    "migrated_at": datetime.now(timezone.utc).isoformat(),
+                    "migrated_at": datetime.now(UTC).isoformat(),
                 }},
             )
             stats["migrated"] += 1
@@ -133,7 +133,7 @@ async def migrate_hotelrunner_connections(sm, db, tenant_filter: str, dry_run: b
                 {
                     "$set": {
                         "credentials_ref": f"secrets_manager::hotelrunner::{hr_id}",
-                        "migrated_at": datetime.now(timezone.utc).isoformat(),
+                        "migrated_at": datetime.now(UTC).isoformat(),
                     },
                     "$unset": {"token": ""},
                 },

@@ -21,8 +21,7 @@ Dependencies:
 """
 import asyncio
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -61,10 +60,10 @@ availability_read_service = AvailabilityReadService()
 
 @router.get("/pms/room-blocks")
 async def get_room_blocks(
-    room_id: Optional[str] = None,
-    status: Optional[str] = None,
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
+    room_id: str | None = None,
+    status: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Get room blocks with optional filters"""
@@ -87,7 +86,7 @@ async def get_room_blocks(
     blocks = await db.room_blocks.find(query, {'_id': 0}).to_list(1000)
 
     # Filter expired blocks
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now(UTC).date().isoformat()
     for block in blocks:
         if block.get('end_date') and block['end_date'] < today and block['status'] == 'active':
             # Auto-expire
@@ -150,7 +149,7 @@ async def update_room_block(
             'entity_type': 'room_block',
             'entity_id': block_id,
             'user': current_user.name,
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
             'details': update_data
         })
 
@@ -162,7 +161,7 @@ async def update_room_block(
 async def cancel_room_block(
     block_id: str,
     request: Request,
-    reason: Optional[str] = None,
+    reason: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Release a room block through the semantic inventory service."""
@@ -179,7 +178,7 @@ async def check_room_availability(
     check_in: str,
     check_out: str,
     request: Request,
-    room_type: Optional[str] = None,
+    room_type: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Check room availability including blocks"""
@@ -213,7 +212,7 @@ async def _legacy_check_room_availability(
     tenant_id: str,
     check_in: str,
     check_out: str,
-    room_type: Optional[str] = None,
+    room_type: str | None = None,
 ):
     query = {'tenant_id': tenant_id}
 

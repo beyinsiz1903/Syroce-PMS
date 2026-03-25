@@ -15,7 +15,6 @@ GET  /api/channel-manager/ari/stats
 GET  /api/channel-manager/ari/engine-stats
 """
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -60,7 +59,7 @@ async def publish_event(req: PublishARIEventRequest):
 async def list_events(
     tenant_id: str,
     property_id: str,
-    event_type: Optional[str] = None,
+    event_type: str | None = None,
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
 ):
@@ -73,8 +72,8 @@ async def list_events(
 async def list_change_sets(
     tenant_id: str,
     property_id: str,
-    status: Optional[str] = None,
-    provider: Optional[str] = None,
+    status: str | None = None,
+    provider: str | None = None,
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
 ):
@@ -112,7 +111,7 @@ async def resync(req: ResyncRequest):
 async def list_outbound_logs(
     tenant_id: str,
     property_id: str,
-    provider: Optional[str] = None,
+    provider: str | None = None,
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
 ):
@@ -125,7 +124,7 @@ async def list_outbound_logs(
 async def list_drift_states(
     tenant_id: str,
     property_id: str,
-    provider: Optional[str] = None,
+    provider: str | None = None,
     drift_only: bool = False,
     limit: int = Query(50, le=200),
 ):
@@ -196,7 +195,7 @@ async def get_provider_checklist(provider: str):
 
 
 @router.post("/test-harness/run/{provider}")
-async def run_provider_test(provider: str, step: Optional[str] = None):
+async def run_provider_test(provider: str, step: str | None = None):
     """
     Run provider validation test(s).
     If step is provided, runs only that step; otherwise runs all steps.

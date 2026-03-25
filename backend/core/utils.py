@@ -5,8 +5,8 @@ Used across multiple routers. Extracted from server.py to avoid circular imports
 import base64
 import io
 import secrets
-from datetime import datetime, timedelta, timezone
-from typing import Any, List
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -14,7 +14,7 @@ from core.database import db
 
 async def generate_folio_number(tenant_id: str) -> str:
     """Generate unique folio number"""
-    year = datetime.now(timezone.utc).year
+    year = datetime.now(UTC).year
     count = await db.folios.count_documents({'tenant_id': tenant_id}) + 1
     return f"F-{year}-{count:05d}"
 
@@ -46,7 +46,7 @@ async def calculate_folio_balance(folio_id: str, tenant_id: str) -> float:
 
 # ── Excel Helpers ──
 
-def create_excel_workbook(title: str, headers: List[str], data: List[List[Any]], sheet_name: str = "Report"):
+def create_excel_workbook(title: str, headers: list[str], data: list[list[Any]], sheet_name: str = "Report"):
     """Create a formatted Excel workbook with data"""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -158,7 +158,7 @@ def generate_time_based_qr_token(booking_id: str, expiry_hours: int = 72) -> str
 
     JWT_SECRET = os.environ.get('JWT_SECRET', 'fallback-secret')
     JWT_ALGORITHM = 'HS256'
-    expiry = datetime.now(timezone.utc) + timedelta(hours=expiry_hours)
+    expiry = datetime.now(UTC) + timedelta(hours=expiry_hours)
     token = secrets.token_urlsafe(32)
     return pyjwt.encode({
         'booking_id': booking_id,

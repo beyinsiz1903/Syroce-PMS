@@ -5,8 +5,7 @@ Extracted from legacy_routes.py — VIP protocols, blacklist, celebrations,
 enhanced preferences, complete profile, VIP list.
 """
 import uuid
-from datetime import date, datetime, timezone
-from typing import Optional
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -37,7 +36,7 @@ async def create_vip_protocol(
     if existing:
         await db.vip_protocols.update_one(
             {"guest_id": guest_id, "tenant_id": current_user.tenant_id},
-            {"$set": {**protocol_data, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {**protocol_data, "updated_at": datetime.now(UTC).isoformat()}},
         )
         message = "VIP protokol guncellendi"
     else:
@@ -47,9 +46,9 @@ async def create_vip_protocol(
             "tenant_id": current_user.tenant_id,
             **protocol_data,
             "approved_by": current_user.id,
-            "approved_at": datetime.now(timezone.utc).isoformat(),
+            "approved_at": datetime.now(UTC).isoformat(),
             "active": True,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db.vip_protocols.insert_one(protocol)
         message = "VIP protokol olusturuldu"
@@ -97,14 +96,14 @@ async def add_to_blacklist(
         "tenant_id": current_user.tenant_id,
         "reason": entry_data.get("reason"),
         "severity": entry_data.get("severity", "medium"),
-        "incident_date": entry_data.get("incident_date", datetime.now(timezone.utc).isoformat()),
+        "incident_date": entry_data.get("incident_date", datetime.now(UTC).isoformat()),
         "detailed_notes": entry_data.get("detailed_notes", ""),
         "reported_by": current_user.id,
         "approved_by": entry_data.get("approved_by"),
         "action_taken": entry_data.get("action_taken", "warning"),
         "active": True,
         "permanent": entry_data.get("permanent", False),
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.blacklist_entries.insert_one(entry)
 
@@ -160,15 +159,15 @@ async def update_celebration_tracking(
     if existing:
         await db.celebration_tracking.update_one(
             {"guest_id": guest_id, "tenant_id": current_user.tenant_id},
-            {"$set": {**celebration_data, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {**celebration_data, "updated_at": datetime.now(UTC).isoformat()}},
         )
     else:
         celebration = {
             "guest_id": guest_id,
             "tenant_id": current_user.tenant_id,
             **celebration_data,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }
         await db.celebration_tracking.insert_one(celebration)
 
@@ -231,15 +230,15 @@ async def update_enhanced_preferences(
     if existing:
         await db.enhanced_guest_preferences.update_one(
             {"guest_id": guest_id, "tenant_id": current_user.tenant_id},
-            {"$set": {**preferences, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {**preferences, "updated_at": datetime.now(UTC).isoformat()}},
         )
     else:
         pref_doc = {
             "guest_id": guest_id,
             "tenant_id": current_user.tenant_id,
             **preferences,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }
         await db.enhanced_guest_preferences.insert_one(pref_doc)
 
@@ -310,7 +309,7 @@ async def get_complete_guest_profile(
 
 @router.get("/vip/list")
 async def get_vip_guests(
-    tier: Optional[str] = None,
+    tier: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """VIP misafirleri listele"""

@@ -4,8 +4,8 @@ All request/response models used across the application.
 Extracted from server.py for modularity.
 """
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -57,21 +57,21 @@ class Tenant(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     property_name: str
-    property_type: Optional[str] = "hotel"
-    contact_email: Optional[str] = None
-    contact_phone: Optional[str] = None
-    address: Optional[str] = None
-    total_rooms: Optional[int] = 50
+    property_type: str | None = "hotel"
+    contact_email: str | None = None
+    contact_phone: str | None = None
+    address: str | None = None
+    total_rooms: int | None = 50
     subscription_status: str = "active"
-    subscription_start_date: Optional[str] = None
-    subscription_end_date: Optional[str] = None
-    subscription_tier: Optional[str] = "basic"
+    subscription_start_date: str | None = None
+    subscription_end_date: str | None = None
+    subscription_tier: str | None = "basic"
     plan: str = "core_small_hotel"
-    subscription_plan: Optional[str] = None
-    location: Optional[str] = None
-    amenities: List[str] = []
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    modules: Dict[str, bool] = Field(
+    subscription_plan: str | None = None
+    location: str | None = None
+    amenities: list[str] = []
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    modules: dict[str, bool] = Field(
         default_factory=lambda: {
             "pms": True,
             "reports": True,
@@ -79,22 +79,22 @@ class Tenant(BaseModel):
             "ai": True,
         }
     )
-    features: Optional[Dict[str, bool]] = None
+    features: dict[str, bool] | None = None
 
 class User(BaseModel):
     model_config = ConfigDict(extra="allow")  # Changed from "ignore" to "allow" to fix tenant_id loading
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    tenant_id: Optional[str] = None  # Hotel ID
-    agency_id: Optional[str] = None  # Agency ID (new for agency users)
+    tenant_id: str | None = None  # Hotel ID
+    agency_id: str | None = None  # Agency ID (new for agency users)
     email: EmailStr
     name: str
     role: UserRole
-    phone: Optional[str] = None
+    phone: str | None = None
     is_active: bool = True
     email_verified: bool = False
-    email_verified_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    password: Optional[str] = Field(None, exclude=True)  # Exclude password from responses
+    email_verified_at: datetime | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    password: str | None = Field(None, exclude=True)  # Exclude password from responses
 
 # Helper function (defined after User class)
 def _ensure_hotel_context(user: User):
@@ -109,11 +109,11 @@ class TenantRegister(BaseModel):
     name: str
     phone: str
     address: str
-    location: Optional[str] = None
-    description: Optional[str] = None
-    subscription_days: Optional[int] = None  # Duration in days (30, 60, 90, 180, 365, None=unlimited)
-    subscription_plan: Optional[str] = None  # e.g. core_small_hotel, pms_lite
-    subscription_tier: Optional[str] = "basic"  # basic, professional, enterprise
+    location: str | None = None
+    description: str | None = None
+    subscription_days: int | None = None  # Duration in days (30, 60, 90, 180, 365, None=unlimited)
+    subscription_plan: str | None = None  # e.g. core_small_hotel, pms_lite
+    subscription_tier: str | None = "basic"  # basic, professional, enterprise
 
 class GuestRegister(BaseModel):
     email: EmailStr
@@ -129,7 +129,7 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: User
-    tenant: Optional[Tenant] = None
+    tenant: Tenant | None = None
 
 class NotificationPreferences(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -148,11 +148,11 @@ class RoomCreate(BaseModel):
     floor: int
     capacity: int
     base_price: float
-    amenities: List[str] = []
+    amenities: list[str] = []
 
     # Extended fields
-    view: Optional[str] = None  # e.g. sea, city, garden, mountain
-    bed_type: Optional[str] = None
+    view: str | None = None  # e.g. sea, city, garden, mountain
+    bed_type: str | None = None
 
 class Room(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -162,24 +162,24 @@ class Room(BaseModel):
     room_type: str
     floor: int
     capacity: int
-    base_price: Optional[float] = None
-    price_per_night: Optional[float] = None
+    base_price: float | None = None
+    price_per_night: float | None = None
     status: RoomStatus = RoomStatus.AVAILABLE
-    amenities: List[str] = []
+    amenities: list[str] = []
 
     # Extended fields
-    view: Optional[str] = None
-    bed_type: Optional[str] = None
-    images: List[str] = []  # stored paths/urls
+    view: str | None = None
+    bed_type: str | None = None
+    images: list[str] = []  # stored paths/urls
 
     # Soft delete
     is_active: bool = True
-    deleted_at: Optional[str] = None
+    deleted_at: str | None = None
 
-    current_booking_id: Optional[str] = None
-    last_cleaned: Optional[datetime] = None
-    notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    current_booking_id: str | None = None
+    last_cleaned: datetime | None = None
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class HousekeepingTask(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -187,103 +187,103 @@ class HousekeepingTask(BaseModel):
     tenant_id: str
     room_id: str
     task_type: str  # cleaning, inspection, maintenance
-    assigned_to: Optional[str] = None
+    assigned_to: str | None = None
     status: str = "pending"  # pending, in_progress, completed
     priority: str = "normal"  # low, normal, high, urgent
-    notes: Optional[str] = None
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    notes: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class MaintenanceWorkOrder(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    tenant_id: Optional[str] = None
-    room_id: Optional[str] = None
-    room_number: Optional[str] = None
+    tenant_id: str | None = None
+    room_id: str | None = None
+    room_number: str | None = None
     issue_type: str  # plumbing, hvac, electrical, furniture, housekeeping_damage, other
     priority: str = "normal"  # low, normal, high, urgent
     status: str = "open"  # open, in_progress, completed, cancelled
     source: str = "housekeeping"  # housekeeping, frontdesk, sensor, gm, other
-    description: Optional[str] = None
-    reported_by_user_id: Optional[str] = None
-    asset_id: Optional[str] = None
-    plan_id: Optional[str] = None
+    description: str | None = None
+    reported_by_user_id: str | None = None
+    asset_id: str | None = None
+    plan_id: str | None = None
 
-    reported_by_role: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    reported_by_role: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class SensorAlert(BaseModel):
     """IoT sensör uyarısı modeli - sensörden gelen ham veriyi ve bağlamı temsil eder"""
-    id: Optional[str] = None
-    tenant_id: Optional[str] = None
+    id: str | None = None
+    tenant_id: str | None = None
     sensor_id: str
-    room_id: Optional[str] = None
-    room_number: Optional[str] = None
+    room_id: str | None = None
+    room_number: str | None = None
     metric: str  # e.g. temperature, humidity, water_leak, door_open
     value: float
-    threshold: Optional[float] = None
-    threshold_breached: Optional[bool] = None
+    threshold: float | None = None
+    threshold_breached: bool | None = None
     severity: str = "info"  # info, warning, high, critical
 
 
 class MaintenanceAsset(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    tenant_id: Optional[str] = None
+    tenant_id: str | None = None
     name: str
     asset_type: str  # hvac, plumbing, electrical, elevator, room_fixture, other
-    room_id: Optional[str] = None
-    room_number: Optional[str] = None
-    location: Optional[str] = None
-    manufacturer: Optional[str] = None
-    model: Optional[str] = None
-    serial_number: Optional[str] = None
-    installed_at: Optional[datetime] = None
-    warranty_until: Optional[datetime] = None
+    room_id: str | None = None
+    room_number: str | None = None
+    location: str | None = None
+    manufacturer: str | None = None
+    model: str | None = None
+    serial_number: str | None = None
+    installed_at: datetime | None = None
+    warranty_until: datetime | None = None
     status: str = "active"  # active, retired, out_of_service
 
 
 class PreventiveMaintenancePlan(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    tenant_id: Optional[str] = None
-    asset_id: Optional[str] = None
-    asset_type: Optional[str] = None
+    tenant_id: str | None = None
+    asset_id: str | None = None
+    asset_type: str | None = None
     frequency_type: str  # days, weeks, months
     frequency_value: int
     next_due_date: datetime
-    last_completed_date: Optional[datetime] = None
-    description: Optional[str] = None
+    last_completed_date: datetime | None = None
+    description: str | None = None
     default_issue_type: str = "other"
     default_priority: str = "normal"
     is_active: bool = True
 
-    message: Optional[str] = None
-    metadata: Optional[dict] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    message: str | None = None
+    metadata: dict | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
 
 
 # Company Models
 class CompanyCreate(BaseModel):
     name: str
-    corporate_code: Optional[str] = None
-    tax_number: Optional[str] = None
-    billing_address: Optional[str] = None
-    contact_person: Optional[str] = None
-    contact_email: Optional[EmailStr] = None
-    contact_phone: Optional[str] = None
-    contracted_rate: Optional[ContractedRateType] = None
-    default_rate_type: Optional[RateType] = None
-    default_market_segment: Optional[MarketSegment] = None
-    default_cancellation_policy: Optional[CancellationPolicyType] = None
-    room_nights_commitment: Optional[int] = None
+    corporate_code: str | None = None
+    tax_number: str | None = None
+    billing_address: str | None = None
+    contact_person: str | None = None
+    contact_email: EmailStr | None = None
+    contact_phone: str | None = None
+    contracted_rate: ContractedRateType | None = None
+    default_rate_type: RateType | None = None
+    default_market_segment: MarketSegment | None = None
+    default_cancellation_policy: CancellationPolicyType | None = None
+    room_nights_commitment: int | None = None
 
-    payment_terms: Optional[str] = None
+    payment_terms: str | None = None
     status: CompanyStatus = CompanyStatus.PENDING
 
 class Company(BaseModel):
@@ -291,20 +291,20 @@ class Company(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     name: str
-    corporate_code: Optional[str] = None
-    tax_number: Optional[str] = None
-    billing_address: Optional[str] = None
-    contact_person: Optional[str] = None
-    contact_email: Optional[EmailStr] = None
-    contact_phone: Optional[str] = None
-    contracted_rate: Optional[ContractedRateType] = None
-    default_rate_type: Optional[RateType] = None
-    default_market_segment: Optional[MarketSegment] = None
-    default_cancellation_policy: Optional[CancellationPolicyType] = None
-    payment_terms: Optional[str] = None
+    corporate_code: str | None = None
+    tax_number: str | None = None
+    billing_address: str | None = None
+    contact_person: str | None = None
+    contact_email: EmailStr | None = None
+    contact_phone: str | None = None
+    contracted_rate: ContractedRateType | None = None
+    default_rate_type: RateType | None = None
+    default_market_segment: MarketSegment | None = None
+    default_cancellation_policy: CancellationPolicyType | None = None
+    payment_terms: str | None = None
     status: CompanyStatus = CompanyStatus.ACTIVE
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 # Finance Mobile Models - Bank Accounts & Credit Limits
@@ -321,26 +321,26 @@ class BankAccount(BaseModel):
     account_type: str = "checking"  # checking, savings, etc.
     is_active: bool = True
     api_enabled: bool = False  # Future: Open Banking API integration
-    api_credentials: Optional[Dict[str, Any]] = None  # API keys/tokens
-    last_sync: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    api_credentials: dict[str, Any] | None = None  # API keys/tokens
+    last_sync: datetime | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class CreditLimit(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     company_id: str  # Link to Company model
-    company_name: Optional[str] = None
+    company_name: str | None = None
     credit_limit: float = 0.0
-    monthly_limit: Optional[float] = None
+    monthly_limit: float | None = None
     current_debt: float = 0.0
     available_credit: float = 0.0
     payment_terms_days: int = 30  # Net 30, Net 60, etc.
     risk_level: RiskLevel = RiskLevel.NORMAL
-    notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class Expense(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -351,14 +351,14 @@ class Expense(BaseModel):
     amount: float
     category: str  # Personnel, Utilities, Maintenance, etc.
     department: DepartmentType
-    vendor: Optional[str] = None
+    vendor: str | None = None
     description: str
     payment_method: PaymentMethod
     paid: bool = False
-    approved_by: Optional[str] = None
-    notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    approved_by: str | None = None
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class CashFlow(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -369,11 +369,11 @@ class CashFlow(BaseModel):
     currency: str = "TRY"
     date: datetime
     category: str
-    reference_id: Optional[str] = None  # Link to payment, expense, etc.
-    reference_type: Optional[str] = None  # payment, expense, invoice, etc.
-    bank_account_id: Optional[str] = None
+    reference_id: str | None = None  # Link to payment, expense, etc.
+    reference_type: str | None = None  # payment, expense, invoice, etc.
+    bank_account_id: str | None = None
     description: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class CityLedgerTransaction(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -383,10 +383,10 @@ class CityLedgerTransaction(BaseModel):
     transaction_type: str  # charge, payment
     amount: float
     description: str
-    reference_number: Optional[str] = None
+    reference_number: str | None = None
     posted_by: str
-    transaction_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    transaction_date: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 # Maintenance & Technical Service Models
@@ -398,8 +398,8 @@ class SLAConfiguration(BaseModel):
     response_time_minutes: int  # Yanıt süresi (dakika)
     resolution_time_minutes: int  # Çözüm süresi (dakika)
     is_active: bool = True
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class SparePart(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -407,18 +407,18 @@ class SparePart(BaseModel):
     tenant_id: str
     part_number: str
     part_name: str
-    description: Optional[str] = None
+    description: str | None = None
     category: str  # Plumbing, Electrical, HVAC, etc.
     warehouse_location: WarehouseLocation
     current_stock: int = 0
     minimum_stock: int = 0
     unit_price: float = 0.0
-    supplier: Optional[str] = None
-    qr_code: Optional[str] = None
-    last_restocked: Optional[datetime] = None
-    notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    supplier: str | None = None
+    qr_code: str | None = None
+    last_restocked: datetime | None = None
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class SparePartUsage(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -431,8 +431,8 @@ class SparePartUsage(BaseModel):
     unit_price: float
     total_cost: float
     used_by: str  # User who used the part
-    used_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    notes: Optional[str] = None
+    used_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    notes: str | None = None
 
 class TaskPhoto(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -441,9 +441,9 @@ class TaskPhoto(BaseModel):
     task_id: str
     photo_url: str  # URL or base64 data
     photo_type: str  # before, during, after
-    description: Optional[str] = None
+    description: str | None = None
     uploaded_by: str
-    uploaded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    uploaded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class AssetMaintenanceHistory(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -459,9 +459,9 @@ class AssetMaintenanceHistory(BaseModel):
     total_cost: float = 0.0
     technician: str
     completed_at: datetime
-    downtime_minutes: Optional[int] = None
-    notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    downtime_minutes: int | None = None
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class PlannedMaintenance(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -471,14 +471,14 @@ class PlannedMaintenance(BaseModel):
     asset_name: str
     maintenance_type: MaintenanceType
     frequency_days: int  # Periyot (gün)
-    last_maintenance: Optional[datetime] = None
+    last_maintenance: datetime | None = None
     next_maintenance: datetime
     estimated_duration_minutes: int
-    assigned_to: Optional[str] = None
+    assigned_to: str | None = None
     is_active: bool = True
-    notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc()))
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC()))
 
 class MaintenanceTaskExtended(BaseModel):
     """Extended maintenance task with all new fields"""
@@ -491,24 +491,24 @@ class MaintenanceTaskExtended(BaseModel):
     priority: MaintenancePriority
     status: MaintenanceTaskStatus
     maintenance_type: MaintenanceType
-    asset_id: Optional[str] = None
-    asset_name: Optional[str] = None
-    room_id: Optional[str] = None
-    room_number: Optional[str] = None
+    asset_id: str | None = None
+    asset_name: str | None = None
+    room_id: str | None = None
+    room_number: str | None = None
     reported_by: str
-    assigned_to: Optional[str] = None
-    estimated_duration_minutes: Optional[int] = None
-    actual_duration_minutes: Optional[int] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    on_hold_at: Optional[datetime] = None
-    on_hold_reason: Optional[str] = None
+    assigned_to: str | None = None
+    estimated_duration_minutes: int | None = None
+    actual_duration_minutes: int | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    on_hold_at: datetime | None = None
+    on_hold_reason: str | None = None
     parts_waiting: bool = False
-    parts_list: List[str] = []
-    photos: List[str] = []  # Photo IDs
-    notes: Optional[str] = None
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    parts_list: list[str] = []
+    photos: list[str] = []  # Photo IDs
+    notes: str | None = None
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 
@@ -523,12 +523,12 @@ class Outlet(BaseModel):
     location: str
     capacity: int
     is_active: bool = True
-    opening_time: Optional[str] = None
-    closing_time: Optional[str] = None
-    contact_phone: Optional[str] = None
-    manager: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    opening_time: str | None = None
+    closing_time: str | None = None
+    contact_phone: str | None = None
+    manager: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class Ingredient(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -540,12 +540,12 @@ class Ingredient(BaseModel):
     current_stock: float = 0.0
     minimum_stock: float = 0.0
     unit_cost: float = 0.0
-    supplier: Optional[str] = None
-    last_restocked: Optional[datetime] = None
-    expiry_date: Optional[datetime] = None
+    supplier: str | None = None
+    last_restocked: datetime | None = None
+    expiry_date: datetime | None = None
     storage_location: str = "main_kitchen"
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class RecipeIngredient(BaseModel):
     ingredient_id: str
@@ -560,16 +560,16 @@ class Recipe(BaseModel):
     tenant_id: str
     menu_item_id: str
     menu_item_name: str
-    ingredients: List[RecipeIngredient] = []
+    ingredients: list[RecipeIngredient] = []
     preparation_time_minutes: int
     serving_size: int = 1
     total_cost: float = 0.0
     selling_price: float = 0.0
     profit_margin: float = 0.0
-    notes: Optional[str] = None
+    notes: str | None = None
     created_by: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class POSOrder(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -578,22 +578,22 @@ class POSOrder(BaseModel):
     order_number: str
     outlet_id: str
     outlet_name: str
-    table_number: Optional[str] = None
-    room_number: Optional[str] = None
+    table_number: str | None = None
+    room_number: str | None = None
     order_type: str  # dine_in, room_service, takeaway
-    items: List[Dict[str, Any]] = []
+    items: list[dict[str, Any]] = []
     subtotal: float = 0.0
     tax: float = 0.0
     service_charge: float = 0.0
     total: float = 0.0
     status: OrderStatus = OrderStatus.PENDING
-    waiter: Optional[str] = None
-    chef: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    started_at: Optional[datetime] = None
-    ready_at: Optional[datetime] = None
-    served_at: Optional[datetime] = None
-    notes: Optional[str] = None
+    waiter: str | None = None
+    chef: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    started_at: datetime | None = None
+    ready_at: datetime | None = None
+    served_at: datetime | None = None
+    notes: str | None = None
 
 class StockConsumption(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -609,20 +609,20 @@ class GuestRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
-    booking_id: Optional[str] = None
-    guest_id: Optional[str] = None
-    room_number: Optional[str] = None
+    booking_id: str | None = None
+    guest_id: str | None = None
+    room_number: str | None = None
     request_type: GuestRequestType
     status: GuestRequestStatus = GuestRequestStatus.PENDING
     priority: str = "normal"  # low, normal, high, urgent
     description: str
-    assigned_to: Optional[str] = None
-    requested_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    assigned_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    notes: Optional[str] = None
+    assigned_to: str | None = None
+    requested_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    assigned_at: datetime | None = None
+    completed_at: datetime | None = None
+    notes: str | None = None
     created_by: str
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class IDScanResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -633,11 +633,11 @@ class IDScanResult(BaseModel):
     last_name: str
     nationality: str
     id_number: str
-    date_of_birth: Optional[str] = None
-    issue_date: Optional[str] = None
-    expiry_date: Optional[str] = None
-    scan_image: Optional[str] = None  # Base64 image
-    scanned_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    date_of_birth: str | None = None
+    issue_date: str | None = None
+    expiry_date: str | None = None
+    scan_image: str | None = None  # Base64 image
+    scanned_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     scanned_by: str
 
 class MobileCheckIn(BaseModel):
@@ -649,16 +649,16 @@ class MobileCheckIn(BaseModel):
     room_id: str
     room_number: str
     check_in_status: CheckInStatus
-    id_scan_id: Optional[str] = None
-    signature: Optional[str] = None  # Base64 signature image
+    id_scan_id: str | None = None
+    signature: str | None = None  # Base64 signature image
     registration_card_signed: bool = False
     keys_issued: bool = False
     welcome_package_given: bool = False
-    check_in_time: Optional[datetime] = None
+    check_in_time: datetime | None = None
     checked_in_by: str
-    notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 # Housekeeping Enhanced Models
@@ -666,7 +666,7 @@ class InspectionChecklistItem(BaseModel):
     area: str  # bathroom, bedroom, minibar, amenities, etc.
     item: str  # towels, soap, remote, etc.
     status: str  # ok, missing, damaged, dirty
-    notes: Optional[str] = None
+    notes: str | None = None
 
 class RoomInspection(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -677,17 +677,17 @@ class RoomInspection(BaseModel):
     inspection_type: str  # checkout, maintenance, quality, routine
     inspector: str
     inspection_status: InspectionStatus = InspectionStatus.PENDING
-    checklist: List[InspectionChecklistItem] = []
-    photos: List[str] = []  # Photo URLs or base64
-    notes: Optional[str] = None
-    issues_found: List[str] = []
+    checklist: list[InspectionChecklistItem] = []
+    photos: list[str] = []  # Photo URLs or base64
+    notes: str | None = None
+    issues_found: list[str] = []
     maintenance_required: bool = False
-    maintenance_task_id: Optional[str] = None
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    duration_minutes: Optional[int] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    maintenance_task_id: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    duration_minutes: int | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class LostFoundItem(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -698,39 +698,39 @@ class LostFoundItem(BaseModel):
     category: str  # Electronics, Jewelry, Clothing, Documents, etc.
     room_number: str
     found_location: str  # bed, bathroom, closet, etc.
-    found_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    found_date: datetime = Field(default_factory=lambda: datetime.now(UTC))
     found_by: str
-    photos: List[str] = []
+    photos: list[str] = []
     storage_location: str  # Storage room, Safe, etc.
-    storage_number: Optional[str] = None
+    storage_number: str | None = None
     status: LostFoundStatus = LostFoundStatus.FOUND
-    guest_id: Optional[str] = None
-    guest_name: Optional[str] = None
-    claimed_by: Optional[str] = None
-    claimed_date: Optional[datetime] = None
-    delivered_to: Optional[str] = None
-    delivered_date: Optional[datetime] = None
-    delivery_notes: Optional[str] = None
-    disposal_date: Optional[datetime] = None
-    disposal_reason: Optional[str] = None
-    notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    guest_id: str | None = None
+    guest_name: str | None = None
+    claimed_by: str | None = None
+    claimed_date: datetime | None = None
+    delivered_to: str | None = None
+    delivered_date: datetime | None = None
+    delivery_notes: str | None = None
+    disposal_date: datetime | None = None
+    disposal_reason: str | None = None
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class HKTaskAssignment(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
-    assignment_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    assignment_date: datetime = Field(default_factory=lambda: datetime.now(UTC))
     staff_id: str
     staff_name: str
-    assigned_rooms: List[str] = []  # Room IDs
+    assigned_rooms: list[str] = []  # Room IDs
     room_count: int = 0
     status: str = "assigned"  # assigned, in_progress, completed
     assigned_by: str
-    notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class CleaningTimer(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -741,11 +741,11 @@ class CleaningTimer(BaseModel):
     staff_id: str
     staff_name: str
     task_type: str  # checkout, stayover, deep_clean, turndown
-    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    completed_at: Optional[datetime] = None
-    duration_minutes: Optional[int] = None
+    started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    completed_at: datetime | None = None
+    duration_minutes: int | None = None
     status: str = "in_progress"  # in_progress, completed, paused
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 
@@ -761,7 +761,7 @@ class RateOverride(BaseModel):
     reason: str
     approved_by: str
     created_by: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class RevenueForecast(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -775,7 +775,7 @@ class RevenueForecast(BaseModel):
     projected_revenue: float
     confidence_level: float = 0.0
     created_by: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class DemandData(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -786,15 +786,15 @@ class DemandData(BaseModel):
     booking_count: int
     search_count: int = 0
     competitor_rate_avg: float = 0.0
-    notes: Optional[str] = None
+    notes: str | None = None
 
     unit: MeasurementUnit
-    order_id: Optional[str] = None
-    recipe_id: Optional[str] = None
+    order_id: str | None = None
+    recipe_id: str | None = None
     outlet_id: str
     outlet_name: str
     cost: float
-    consumed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    consumed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     recorded_by: str
 
 
@@ -804,8 +804,8 @@ class GuestCreate(BaseModel):
     email: str = ""
     phone: str
     id_number: str
-    nationality: Optional[str] = None
-    address: Optional[str] = None
+    nationality: str | None = None
+    address: str | None = None
     vip_status: bool = False
 
 class Guest(BaseModel):
@@ -816,14 +816,14 @@ class Guest(BaseModel):
     email: str = ""
     phone: str
     id_number: str
-    nationality: Optional[str] = None
-    address: Optional[str] = None
+    nationality: str | None = None
+    address: str | None = None
     vip_status: bool = False
     loyalty_points: int = 0
     total_stays: int = 0
     total_spend: float = 0.0
-    notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class BookingCreate(BaseModel):
     guest_id: str
@@ -834,37 +834,37 @@ class BookingCreate(BaseModel):
     children: int = 0
 
     # CM / integration semantics (optional; defaults applied in Booking model)
-    source_channel: Optional[str] = None
-    origin: Optional[str] = None
-    hold_status: Optional[str] = None
-    allocation_source: Optional[str] = None
-    children_ages: List[int] = []
+    source_channel: str | None = None
+    origin: str | None = None
+    hold_status: str | None = None
+    allocation_source: str | None = None
+    children_ages: list[int] = []
     guests_count: int  # Total: adults + children
     total_amount: float
-    base_rate: Optional[float] = None  # For override tracking
+    base_rate: float | None = None  # For override tracking
     channel: ChannelType = ChannelType.DIRECT
-    special_requests: Optional[str] = None
-    rate_plan: Optional[str] = None
+    special_requests: str | None = None
+    rate_plan: str | None = None
     # New fields for corporate/contracted bookings
-    company_id: Optional[str] = None
-    contracted_rate: Optional[ContractedRateType] = None
-    rate_type: Optional[RateType] = None
-    market_segment: Optional[MarketSegment] = None
-    cancellation_policy: Optional[CancellationPolicyType] = None
-    billing_address: Optional[str] = None
-    billing_tax_number: Optional[str] = None
-    billing_contact_person: Optional[str] = None
+    company_id: str | None = None
+    contracted_rate: ContractedRateType | None = None
+    rate_type: RateType | None = None
+    market_segment: MarketSegment | None = None
+    cancellation_policy: CancellationPolicyType | None = None
+    billing_address: str | None = None
+    billing_tax_number: str | None = None
+    billing_contact_person: str | None = None
     # Override tracking
-    override_reason: Optional[str] = None
+    override_reason: str | None = None
     # OTA Channel fields
-    ota_channel: Optional[OTAChannel] = None
-    ota_confirmation: Optional[str] = None
-    ota_reference_id: Optional[str] = None
-    commission_pct: Optional[float] = None
-    payment_model: Optional[OTAPaymentModel] = None
+    ota_channel: OTAChannel | None = None
+    ota_confirmation: str | None = None
+    ota_reference_id: str | None = None
+    commission_pct: float | None = None
+    payment_model: OTAPaymentModel | None = None
     virtual_card_provided: bool = False
-    virtual_card_number: Optional[str] = None
-    virtual_card_expiry: Optional[str] = None
+    virtual_card_number: str | None = None
+    virtual_card_expiry: str | None = None
 
 class Booking(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -883,54 +883,54 @@ class BookingExtended(BaseModel):
     hold_status: str = "none"  # none|tentative|hold|released|expired
     allocation_source: str = "manual"  # manual|channel|allotment
     # Enriched fields for calendar display
-    guest_name: Optional[str] = None
-    room_number: Optional[str] = None
+    guest_name: str | None = None
+    room_number: str | None = None
     check_in: datetime
     check_out: datetime
     adults: int = 1
     children: int = 0
-    children_ages: List[int] = []
-    guests_count: Optional[int] = None
+    children_ages: list[int] = []
+    guests_count: int | None = None
     total_amount: float
-    base_rate: Optional[float] = None
+    base_rate: float | None = None
     paid_amount: float = 0.0
     status: BookingStatus = BookingStatus.PENDING
-    group_booking_id: Optional[str] = None
+    group_booking_id: str | None = None
     channel: ChannelType = ChannelType.DIRECT
-    rate_plan: Optional[str] = "Standard"
-    special_requests: Optional[str] = None
+    rate_plan: str | None = "Standard"
+    special_requests: str | None = None
     # Corporate/contracted booking fields
-    company_id: Optional[str] = None
-    contracted_rate: Optional[ContractedRateType] = None
-    rate_type: Optional[RateType] = None
-    market_segment: Optional[MarketSegment] = None
-    cancellation_policy: Optional[CancellationPolicyType] = None
-    billing_address: Optional[str] = None
-    billing_tax_number: Optional[str] = None
-    billing_contact_person: Optional[str] = None
+    company_id: str | None = None
+    contracted_rate: ContractedRateType | None = None
+    rate_type: RateType | None = None
+    market_segment: MarketSegment | None = None
+    cancellation_policy: CancellationPolicyType | None = None
+    billing_address: str | None = None
+    billing_tax_number: str | None = None
+    billing_contact_person: str | None = None
     # OTA Channel fields
-    ota_channel: Optional[OTAChannel] = None
-    ota_confirmation: Optional[str] = None
-    ota_reference_id: Optional[str] = None
-    commission_pct: Optional[float] = None
-    payment_model: Optional[OTAPaymentModel] = None
+    ota_channel: OTAChannel | None = None
+    ota_confirmation: str | None = None
+    ota_reference_id: str | None = None
+    commission_pct: float | None = None
+    payment_model: OTAPaymentModel | None = None
     virtual_card_provided: bool = False
-    virtual_card_number: Optional[str] = None
-    virtual_card_expiry: Optional[str] = None
+    virtual_card_number: str | None = None
+    virtual_card_expiry: str | None = None
     # System fields
-    qr_code: Optional[str] = None
-    qr_code_data: Optional[str] = None
-    checked_in_at: Optional[datetime] = None
-    checked_out_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    qr_code: str | None = None
+    qr_code_data: str | None = None
+    checked_in_at: datetime | None = None
+    checked_out_at: datetime | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 # Folio & Payment Models
 class FolioCreate(BaseModel):
     booking_id: str
     folio_type: FolioType
-    guest_id: Optional[str] = None
-    company_id: Optional[str] = None
-    notes: Optional[str] = None
+    guest_id: str | None = None
+    company_id: str | None = None
+    notes: str | None = None
 
 class Folio(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -940,12 +940,12 @@ class Folio(BaseModel):
     folio_number: str  # e.g., "F-2024-0001"
     folio_type: FolioType
     status: FolioStatus = FolioStatus.OPEN
-    guest_id: Optional[str] = None
-    company_id: Optional[str] = None
+    guest_id: str | None = None
+    company_id: str | None = None
     balance: float = 0.0  # Total charges - Total payments
-    notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    closed_at: Optional[datetime] = None
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    closed_at: datetime | None = None
 
 class ChargeCreate(BaseModel):
     charge_category: ChargeCategory
@@ -967,19 +967,19 @@ class FolioCharge(BaseModel):
     amount: float  # unit_price * quantity
     tax_amount: float = 0.0
     total: float  # amount + tax_amount
-    date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    posted_by: Optional[str] = None
+    date: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    posted_by: str | None = None
     voided: bool = False
-    void_reason: Optional[str] = None
-    voided_by: Optional[str] = None
-    voided_at: Optional[datetime] = None
+    void_reason: str | None = None
+    voided_by: str | None = None
+    voided_at: datetime | None = None
 
 class PaymentCreate(BaseModel):
     amount: float
     method: PaymentMethod
     payment_type: PaymentType
-    reference: Optional[str] = None
-    notes: Optional[str] = None
+    reference: str | None = None
+    notes: str | None = None
 
 class Payment(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -992,20 +992,20 @@ class Payment(BaseModel):
     payment_type: PaymentType
     status: PaymentStatus = PaymentStatus.PAID
     voided: bool = False
-    voided_by: Optional[str] = None
-    voided_at: Optional[datetime] = None
-    void_reason: Optional[str] = None
-    reference: Optional[str] = None
-    notes: Optional[str] = None
-    processed_by: Optional[str] = None
-    processed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    voided_by: str | None = None
+    voided_at: datetime | None = None
+    void_reason: str | None = None
+    reference: str | None = None
+    notes: str | None = None
+    processed_by: str | None = None
+    processed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class FolioOperationCreate(BaseModel):
     operation_type: FolioOperationType
     from_folio_id: str
-    to_folio_id: Optional[str] = None
-    charge_ids: List[str] = []  # For transfer operations
-    amount: Optional[float] = None
+    to_folio_id: str | None = None
+    charge_ids: list[str] = []  # For transfer operations
+    amount: float | None = None
     reason: str
 
 class Package(BaseModel):
@@ -1013,11 +1013,11 @@ class Package(BaseModel):
     tenant_id: str
     name: str
     code: str
-    description: Optional[str] = None
-    included_services: List[str] = []
+    description: str | None = None
+    included_services: list[str] = []
     price_type: str = "per_room"  # per_room, per_person, per_stay
     additional_amount: float = 0.0
-    linked_rate_plan_ids: List[str] = []
+    linked_rate_plan_ids: list[str] = []
     is_active: bool = True
 
 
@@ -1027,12 +1027,12 @@ class FolioOperation(BaseModel):
     tenant_id: str
     operation_type: FolioOperationType
     from_folio_id: str
-    to_folio_id: Optional[str] = None
-    charge_ids: List[str] = []
-    amount: Optional[float] = None
+    to_folio_id: str | None = None
+    charge_ids: list[str] = []
+    amount: float | None = None
     reason: str
     performed_by: str
-    performed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    performed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class CityTaxRule(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1040,13 +1040,13 @@ class CityTaxRule(BaseModel):
     tenant_id: str
     name: str
     tax_percentage: float
-    flat_amount: Optional[float] = None  # If not percentage-based
+    flat_amount: float | None = None  # If not percentage-based
     per_night: bool = True
-    exempt_market_segments: List[MarketSegment] = []
-    min_nights: Optional[int] = None
-    max_nights: Optional[int] = None
+    exempt_market_segments: list[MarketSegment] = []
+    min_nights: int | None = None
+    max_nights: int | None = None
     active: bool = True
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 # Audit Log Model
 class AuditLog(BaseModel):
@@ -1059,9 +1059,9 @@ class AuditLog(BaseModel):
     action: str  # e.g., "CREATE_BOOKING", "POST_CHARGE", "OVERRIDE_RATE"
     entity_type: str  # e.g., "booking", "folio", "charge", "payment"
     entity_id: str
-    changes: Optional[dict] = None  # Old and new values
-    ip_address: Optional[str] = None
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    changes: dict | None = None  # Old and new values
+    ip_address: str | None = None
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 # Rate Override Log Model
 class RateOverrideLog(BaseModel):
@@ -1070,13 +1070,13 @@ class RateOverrideLog(BaseModel):
     tenant_id: str
     booking_id: str
     user_id: str
-    user_name: Optional[str] = None
+    user_name: str | None = None
     base_rate: float
     new_rate: float
     override_reason: str
-    ip_address: Optional[str] = None
-    terminal: Optional[str] = None
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    ip_address: str | None = None
+    terminal: str | None = None
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 # Room Move History Model
 class RoomMoveHistory(BaseModel):
@@ -1090,7 +1090,7 @@ class RoomMoveHistory(BaseModel):
     new_check_in: str
     reason: str
     moved_by: str  # User name
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 # Channel Manager Models
 class ChannelConnection(BaseModel):
@@ -1100,22 +1100,22 @@ class ChannelConnection(BaseModel):
     channel_type: ChannelType
     channel_name: str
     status: ChannelStatus = ChannelStatus.INACTIVE
-    api_endpoint: Optional[str] = None
-    api_key: Optional[str] = None
-    api_secret: Optional[str] = None
-    property_id: Optional[str] = None  # Channel's property ID
-    last_sync: Optional[datetime] = None
+    api_endpoint: str | None = None
+    api_key: str | None = None
+    api_secret: str | None = None
+    property_id: str | None = None  # Channel's property ID
+    last_sync: datetime | None = None
     sync_rate_availability: bool = True
     sync_reservations: bool = True
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class ChannelConnectionCreate(BaseModel):
     channel_type: ChannelType
     channel_name: str
-    property_id: Optional[str] = None
-    api_endpoint: Optional[str] = None
-    api_key: Optional[str] = None
-    api_secret: Optional[str] = None
+    property_id: str | None = None
+    api_endpoint: str | None = None
+    api_key: str | None = None
+    api_secret: str | None = None
     sync_rate_availability: bool = True
     sync_reservations: bool = True
 
@@ -1126,17 +1126,17 @@ class RoomMapping(BaseModel):
     channel_id: str
     pms_room_type: str  # PMS room type
     channel_room_type: str  # Channel's room type name
-    channel_room_id: Optional[str] = None
+    channel_room_id: str | None = None
     status: MappingStatus = MappingStatus.MAPPED
-    notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class RoomMappingCreate(BaseModel):
     channel_id: str
     pms_room_type: str
     channel_room_type: str
-    channel_room_id: Optional[str] = None
-    notes: Optional[str] = None
+    channel_room_id: str | None = None
+    notes: str | None = None
 
 class RatePlan(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1144,16 +1144,16 @@ class RatePlan(BaseModel):
     tenant_id: str
     name: str
     code: str
-    description: Optional[str] = None
+    description: str | None = None
     room_type: str
     base_rate: float
-    base_price: Optional[float] = None  # For compatibility
+    base_price: float | None = None  # For compatibility
     pricing_strategy: PricingStrategy = PricingStrategy.STATIC
-    min_rate: Optional[float] = None
-    max_rate: Optional[float] = None
-    active_channels: List[ChannelType] = []
+    min_rate: float | None = None
+    max_rate: float | None = None
+    active_channels: list[ChannelType] = []
     is_active: bool = True
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class RateUpdate(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1164,11 +1164,11 @@ class RateUpdate(BaseModel):
     rate: float
     availability: int
     min_stay: int = 1
-    max_stay: Optional[int] = None
+    max_stay: int | None = None
     stop_sell: bool = False
-    pushed_to_channels: List[ChannelType] = []
+    pushed_to_channels: list[ChannelType] = []
     push_status: dict = {}  # {channel: status}
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class OTAReservation(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1176,22 +1176,22 @@ class OTAReservation(BaseModel):
     tenant_id: str
     channel_type: ChannelType
     channel_booking_id: str  # OTA's booking ID
-    pms_booking_id: Optional[str] = None  # Created PMS booking ID
+    pms_booking_id: str | None = None  # Created PMS booking ID
     guest_name: str
-    guest_email: Optional[str] = None
-    guest_phone: Optional[str] = None
+    guest_email: str | None = None
+    guest_phone: str | None = None
     room_type: str
     check_in: str
     check_out: str
     adults: int
     children: int = 0
     total_amount: float
-    commission_amount: Optional[float] = None
+    commission_amount: float | None = None
     status: str = "pending"  # pending, imported, error
-    error_message: Optional[str] = None
-    raw_data: Optional[dict] = None
-    received_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    processed_at: Optional[datetime] = None
+    error_message: str | None = None
+    raw_data: dict | None = None
+    received_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    processed_at: datetime | None = None
 
 class ExceptionQueue(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1199,13 +1199,13 @@ class ExceptionQueue(BaseModel):
     tenant_id: str
     exception_type: str  # "mapping_error", "rate_push_failed", "reservation_import_failed"
     channel_type: ChannelType
-    entity_id: Optional[str] = None
+    entity_id: str | None = None
     error_message: str
-    details: Optional[dict] = None
+    details: dict | None = None
     status: str = "pending"  # pending, resolved, ignored
-    resolved_by: Optional[str] = None
-    resolved_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    resolved_by: str | None = None
+    resolved_at: datetime | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class RMSSuggestion(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1219,14 +1219,14 @@ class RMSSuggestion(BaseModel):
     confidence_score: float  # 0-100
     based_on: dict  # {occupancy, pickup_pace, competitor_rates, etc.}
     status: str = "pending"  # pending, applied, rejected
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 # Room Service Models
 class RoomServiceCreate(BaseModel):
     booking_id: str
     service_type: str
     description: str
-    notes: Optional[str] = None
+    notes: str | None = None
 
 class RoomService(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1236,10 +1236,10 @@ class RoomService(BaseModel):
     guest_id: str
     service_type: str
     description: str
-    notes: Optional[str] = None
+    notes: str | None = None
     status: RoomServiceStatus = RoomServiceStatus.PENDING
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    completed_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    completed_at: datetime | None = None
 
 # Invoice Models
 class InvoiceItem(BaseModel):
@@ -1249,32 +1249,32 @@ class InvoiceItem(BaseModel):
     total: float
 
 class InvoiceCreate(BaseModel):
-    booking_id: Optional[str] = None
+    booking_id: str | None = None
     customer_name: str
     customer_email: str
-    items: List[InvoiceItem]
+    items: list[InvoiceItem]
     subtotal: float
     tax: float
     total: float
     due_date: str
-    notes: Optional[str] = None
+    notes: str | None = None
 
 class Invoice(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     invoice_number: str
-    booking_id: Optional[str] = None
+    booking_id: str | None = None
     customer_name: str
     customer_email: str
-    items: List[InvoiceItem]
+    items: list[InvoiceItem]
     subtotal: float
     tax: float
     total: float
     status: InvoiceStatus = InvoiceStatus.DRAFT
-    issue_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    issue_date: datetime = Field(default_factory=lambda: datetime.now(UTC))
     due_date: datetime
-    notes: Optional[str] = None
+    notes: str | None = None
 
 # Loyalty Models
 class LoyaltyProgramCreate(BaseModel):
@@ -1291,7 +1291,7 @@ class LoyaltyProgram(BaseModel):
     tier: LoyaltyTier = LoyaltyTier.BRONZE
     points: int = 0
     lifetime_points: int = 0
-    last_activity: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_activity: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class LoyaltyTransactionCreate(BaseModel):
     guest_id: str
@@ -1307,7 +1307,7 @@ class LoyaltyTransaction(BaseModel):
     points: int
     transaction_type: str
     description: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 # Marketplace Models
 class Product(BaseModel):
@@ -1319,12 +1319,12 @@ class Product(BaseModel):
     price: float
     unit: str
     supplier: str
-    image_url: Optional[str] = None
+    image_url: str | None = None
     in_stock: bool = True
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class OrderCreate(BaseModel):
-    items: List[Dict[str, Any]]
+    items: list[dict[str, Any]]
     total_amount: float
     delivery_address: str
 
@@ -1332,11 +1332,11 @@ class Order(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
-    items: List[Dict[str, Any]]
+    items: list[dict[str, Any]]
     total_amount: float
     status: str = "pending"
     delivery_address: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 # RMS Models
 class PriceAnalysis(BaseModel):
@@ -1349,8 +1349,8 @@ class PriceAnalysis(BaseModel):
     suggested_price: float
     occupancy_rate: float
     demand_score: float
-    competitor_avg: Optional[float] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    competitor_avg: float | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 # ============= NEW FEATURES PYDANTIC MODELS =============
 
@@ -1358,32 +1358,32 @@ class PriceAnalysis(BaseModel):
 class SendWhatsAppRequest(BaseModel):
     to: str
     message: str
-    booking_id: Optional[str] = None
+    booking_id: str | None = None
 
 class SendEmailRequest(BaseModel):
     to: str
     subject: str
     message: str
-    booking_id: Optional[str] = None
+    booking_id: str | None = None
 
 class SendSMSRequest(BaseModel):
     to: str
     message: str
-    booking_id: Optional[str] = None
+    booking_id: str | None = None
 
 class CreateMessageTemplateRequest(BaseModel):
     name: str
     channel: str
-    subject: Optional[str] = None
+    subject: str | None = None
     content: str = ""
-    variables: List[str] = []
+    variables: list[str] = []
 
 # RMS Models
 class AddCompetitorRequest(BaseModel):
     name: str
     location: str
     star_rating: float
-    url: Optional[str] = None
+    url: str | None = None
 
 class ScrapePricesRequest(BaseModel):
     date: str
@@ -1391,7 +1391,7 @@ class ScrapePricesRequest(BaseModel):
 class AutoPricingRequest(BaseModel):
     start_date: str
     end_date: str
-    room_type: Optional[str] = None
+    room_type: str | None = None
 
 class DemandForecastRequest(BaseModel):
     start_date: str
@@ -1403,7 +1403,7 @@ class ReportIssueRequest(BaseModel):
     issue_type: str
     description: str
     priority: str = 'normal'
-    photos: List[str] = []
+    photos: list[str] = []
 
 class UploadPhotoRequest(BaseModel):
     task_id: str
@@ -1413,7 +1413,7 @@ class UploadPhotoRequest(BaseModel):
 class CreatePOSTransactionRequest(BaseModel):
     amount: float
     payment_method: str
-    folio_id: Optional[str] = None
+    folio_id: str | None = None
 
 # Group Reservations Models
 class CreateGroupReservationRequest(BaseModel):
@@ -1426,10 +1426,10 @@ class CreateGroupReservationRequest(BaseModel):
     check_out_date: str
     total_rooms: int
     adults_per_room: int = 2
-    special_requests: Optional[str] = None
+    special_requests: str | None = None
 
 class AssignGroupRoomsRequest(BaseModel):
-    room_assignments: List[Dict[str, Any]]
+    room_assignments: list[dict[str, Any]]
 
 class CreateBlockReservationRequest(BaseModel):
     block_name: str
@@ -1438,7 +1438,7 @@ class CreateBlockReservationRequest(BaseModel):
     end_date: str
     total_rooms: int
     block_type: str = 'tentative'
-    release_date: Optional[str] = None
+    release_date: str | None = None
 
 class UseBlockRoomRequest(BaseModel):
     guest_name: str
@@ -1455,7 +1455,7 @@ class CreatePropertyRequest(BaseModel):
 
 class TransferReservationRequest(BaseModel):
     target_property_id: str
-    reason: Optional[str] = None
+    reason: str | None = None
 
 # Marketplace Models
 class CreateMarketplaceProductRequest(BaseModel):
@@ -1474,18 +1474,18 @@ class AdjustInventoryRequest(BaseModel):
 
 class CreatePurchaseOrderRequest(BaseModel):
     supplier: str
-    items: List[Dict[str, Any]]
+    items: list[dict[str, Any]]
     delivery_location: str
-    expected_delivery_date: Optional[str] = None
+    expected_delivery_date: str | None = None
 
 class ReceivePurchaseOrderRequest(BaseModel):
-    received_items: List[Dict[str, Any]]
+    received_items: list[dict[str, Any]]
 
 class CreateDeliveryRequest(BaseModel):
     po_id: str
-    tracking_number: Optional[str] = None
-    carrier: Optional[str] = None
-    estimated_delivery: Optional[str] = None
+    tracking_number: str | None = None
+    carrier: str | None = None
+    estimated_delivery: str | None = None
 
 # Marketplace Extended Models
 class CreateSupplierRequest(BaseModel):
@@ -1502,15 +1502,15 @@ class UpdateSupplierCreditRequest(BaseModel):
     payment_terms: str
 
 class ApprovePurchaseOrderRequest(BaseModel):
-    approval_notes: Optional[str] = None
+    approval_notes: str | None = None
 
 class RejectPurchaseOrderRequest(BaseModel):
     rejection_reason: str
 
 class UpdateDeliveryStatusRequest(BaseModel):
     status: str  # in_transit, delivered, failed
-    location: Optional[str] = None
-    notes: Optional[str] = None
+    location: str | None = None
+    notes: str | None = None
 
 class CreateWarehouseRequest(BaseModel):
     warehouse_name: str
@@ -1529,11 +1529,11 @@ class CreateMultiCurrencyInvoiceRequest(BaseModel):
     customer_name: str
     customer_email: str
     customer_address: str
-    items: List[Dict[str, Any]]
+    items: list[dict[str, Any]]
     currency: str = "TRY"  # Invoice currency
-    exchange_rate: Optional[float] = None  # If different from TRY
+    exchange_rate: float | None = None  # If different from TRY
     payment_terms: str = "Net 30"
-    notes: Optional[str] = None
+    notes: str | None = None
 
 class GenerateInvoiceFromFolioRequest(BaseModel):
     folio_id: str
@@ -1544,7 +1544,7 @@ class ConvertCurrencyRequest(BaseModel):
     amount: float
     from_currency: str
     to_currency: str
-    date: Optional[str] = None  # Use specific date rate, or latest if None
+    date: str | None = None  # Use specific date rate, or latest if None
 
 # Rate Code & Calendar Models
 class CreateRateCodeRequest(BaseModel):
@@ -1560,50 +1560,50 @@ class CreateRateCodeRequest(BaseModel):
 
 class GetCalendarTooltipRequest(BaseModel):
     date: str
-    room_type: Optional[str] = None
+    room_type: str | None = None
 
 # POS & F&B Models
 class CreateOutletRequest(BaseModel):
     outlet_name: str
     outlet_type: str  # restaurant, bar, room_service, cafe
     location: str
-    capacity: Optional[int] = None
-    opening_hours: Optional[str] = None
+    capacity: int | None = None
+    opening_hours: str | None = None
 
 class CreateMenuItemRequest(BaseModel):
     outlet_id: str
     item_name: str
     category: str  # appetizer, main, dessert, beverage
     price: float
-    cost: Optional[float] = None
-    description: Optional[str] = None
+    cost: float | None = None
+    description: str | None = None
 
 class CreatePOSTransactionWithMenuRequest(BaseModel):
     outlet_id: str
-    items: List[Dict[str, Any]]  # [{menu_item_id, quantity, price}]
+    items: list[dict[str, Any]]  # [{menu_item_id, quantity, price}]
     payment_method: str
-    folio_id: Optional[str] = None
-    table_number: Optional[str] = None
-    server_name: Optional[str] = None
+    folio_id: str | None = None
+    table_number: str | None = None
+    server_name: str | None = None
 
 class GenerateZReportRequest(BaseModel):
-    outlet_id: Optional[str] = None
-    date: Optional[str] = None  # Default to today
+    outlet_id: str | None = None
+    date: str | None = None  # Default to today
 
 # Feedback & Reviews Models
 class CreateSurveyRequest(BaseModel):
     survey_name: str
     description: str
-    target_department: Optional[str] = None  # housekeeping, front_desk, fnb, spa, all
-    questions: List[Dict[str, Any]]  # [{question, type, options}]
+    target_department: str | None = None  # housekeeping, front_desk, fnb, spa, all
+    questions: list[dict[str, Any]]  # [{question, type, options}]
     trigger: str = "checkout"  # checkout, checkin, stay, manual
 
 class SubmitSurveyResponseRequest(BaseModel):
     survey_id: str
-    booking_id: Optional[str] = None
-    guest_name: Optional[str] = None
-    guest_email: Optional[str] = None
-    responses: List[Dict[str, Any]]  # [{question_id, answer, rating}]
+    booking_id: str | None = None
+    guest_name: str | None = None
+    guest_email: str | None = None
+    responses: list[dict[str, Any]]  # [{question_id, answer, rating}]
 
 class ExternalReviewWebhookRequest(BaseModel):
     platform: str  # booking, google, tripadvisor
@@ -1612,15 +1612,15 @@ class ExternalReviewWebhookRequest(BaseModel):
     reviewer_name: str
     review_text: str
     review_date: str
-    booking_reference: Optional[str] = None
+    booking_reference: str | None = None
 
 class CreateDepartmentFeedbackRequest(BaseModel):
     department: str  # housekeeping, front_desk, fnb, spa
-    booking_id: Optional[str] = None
+    booking_id: str | None = None
     guest_name: str
     rating: int  # 1-5
-    comment: Optional[str] = None
-    staff_member: Optional[str] = None
+    comment: str | None = None
+    staff_member: str | None = None
 
 # Task Management Models
 class CreateTaskRequest(BaseModel):
@@ -1629,28 +1629,28 @@ class CreateTaskRequest(BaseModel):
     title: str
     description: str
     priority: str = "normal"  # low, normal, high, urgent
-    location: Optional[str] = None  # room number or area
-    room_id: Optional[str] = None
-    assigned_to: Optional[str] = None
-    due_date: Optional[str] = None
-    recurring: Optional[bool] = False
-    recurrence_pattern: Optional[str] = None  # daily, weekly, monthly
+    location: str | None = None  # room number or area
+    room_id: str | None = None
+    assigned_to: str | None = None
+    due_date: str | None = None
+    recurring: bool | None = False
+    recurrence_pattern: str | None = None  # daily, weekly, monthly
 
 class UpdateTaskStatusRequest(BaseModel):
     status: str  # assigned, in_progress, completed, verified, cancelled
-    notes: Optional[str] = None
-    completion_photos: Optional[List[str]] = []
+    notes: str | None = None
+    completion_photos: list[str] | None = []
 
 class AssignTaskRequest(BaseModel):
     assigned_to: str
-    notes: Optional[str] = None
+    notes: str | None = None
 
 # Enterprise Features Models
 class CreateRoleRequest(BaseModel):
     role_name: str
     description: str
-    permissions: List[str]  # ['view_bookings', 'edit_rates', 'delete_bookings', etc.]
-    department: Optional[str] = None
+    permissions: list[str]  # ['view_bookings', 'edit_rates', 'delete_bookings', etc.]
+    department: str | None = None
 
 class AssignRoleRequest(BaseModel):
     user_id: str
@@ -1662,5 +1662,5 @@ class UpdateUserRoleRequest(BaseModel):
 
 class CreateBackupRequest(BaseModel):
     backup_type: str = "full"  # full, incremental
-    include_collections: Optional[List[str]] = None
+    include_collections: list[str] | None = None
 

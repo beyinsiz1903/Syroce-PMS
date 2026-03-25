@@ -1,22 +1,21 @@
-from typing import Optional
 
 from fastapi import HTTPException, Request, status
 
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 
 
-def normalize_idempotency_key(key: Optional[str]) -> Optional[str]:
+def normalize_idempotency_key(key: str | None) -> str | None:
     if not key:
         return None
     normalized = key.strip()
     return normalized or None
 
 
-def get_idempotency_key(request: Request) -> Optional[str]:
+def get_idempotency_key(request: Request) -> str | None:
     return normalize_idempotency_key(request.headers.get(IDEMPOTENCY_HEADER))
 
 
-def ensure_idempotent_request(request: Request, required: bool = True) -> Optional[str]:
+def ensure_idempotent_request(request: Request, required: bool = True) -> str | None:
     key = get_idempotency_key(request)
     if required and not key:
         raise HTTPException(

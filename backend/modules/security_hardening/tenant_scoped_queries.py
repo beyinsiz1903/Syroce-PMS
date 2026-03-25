@@ -3,8 +3,8 @@ Tenant-Scoped Queries - Query guards to enforce tenant data isolation.
 Every database query must pass through tenant context validation.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -23,7 +23,7 @@ class TenantQueryGuard:
     """Validates and enforces tenant-scoped database queries."""
 
     def __init__(self):
-        self._violations: List[dict] = []
+        self._violations: list[dict] = []
         self._checks_performed = 0
         self._violations_blocked = 0
 
@@ -50,7 +50,7 @@ class TenantQueryGuard:
                     "collection": collection,
                     "operation": operation,
                     "expected_tenant": tenant_id,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 })
             elif query.get("tenant_id") != tenant_id:
                 result["valid"] = False
@@ -67,7 +67,7 @@ class TenantQueryGuard:
             query["tenant_id"] = tenant_id
         return query
 
-    async def check_isolation(self, tenant_id: str) -> Dict[str, Any]:
+    async def check_isolation(self, tenant_id: str) -> dict[str, Any]:
         """Run isolation checks for a tenant."""
         results = []
         for coll_name in TENANT_SCOPED_COLLECTIONS:
@@ -85,7 +85,7 @@ class TenantQueryGuard:
         clean_count = sum(1 for r in results if r["isolation_status"] == "clean")
         return {
             "tenant_id": tenant_id,
-            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "checked_at": datetime.now(UTC).isoformat(),
             "collections_checked": len(results),
             "clean_collections": clean_count,
             "isolation_score": round(clean_count / max(len(results), 1), 4),
@@ -94,7 +94,7 @@ class TenantQueryGuard:
             "total_violations_blocked": self._violations_blocked,
         }
 
-    def get_violations(self, limit: int = 50) -> List[dict]:
+    def get_violations(self, limit: int = 50) -> list[dict]:
         return self._violations[-limit:]
 
 

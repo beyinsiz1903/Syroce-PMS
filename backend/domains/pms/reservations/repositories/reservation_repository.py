@@ -2,8 +2,8 @@
 PMS Domain — Reservation Repository
 Data access layer for bookings/reservations. No FastAPI dependencies.
 """
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.tenant_db import LazyCollection
 
@@ -15,13 +15,13 @@ class ReservationRepository:
 
     @classmethod
     async def find_by_tenant(
-        cls, tenant_id: str, *, status: Optional[str] = None,
-        check_in_from: Optional[str] = None, check_in_to: Optional[str] = None,
-        guest_id: Optional[str] = None, room_id: Optional[str] = None,
+        cls, tenant_id: str, *, status: str | None = None,
+        check_in_from: str | None = None, check_in_to: str | None = None,
+        guest_id: str | None = None, room_id: str | None = None,
         limit: int = 50, offset: int = 0, sort_field: str = "check_in",
         sort_order: int = -1,
-    ) -> List[Dict[str, Any]]:
-        query: Dict[str, Any] = {"tenant_id": tenant_id}
+    ) -> list[dict[str, Any]]:
+        query: dict[str, Any] = {"tenant_id": tenant_id}
         if status:
             query["status"] = status
         if guest_id:
@@ -42,25 +42,25 @@ class ReservationRepository:
         return await cursor.to_list(limit)
 
     @classmethod
-    async def find_one(cls, tenant_id: str, booking_id: str) -> Optional[Dict[str, Any]]:
+    async def find_one(cls, tenant_id: str, booking_id: str) -> dict[str, Any] | None:
         return await cls.collection.find_one(
             {"tenant_id": tenant_id, "id": booking_id}, {"_id": 0}
         )
 
     @classmethod
-    async def count(cls, tenant_id: str, query_filter: Optional[Dict] = None) -> int:
-        query: Dict[str, Any] = {"tenant_id": tenant_id}
+    async def count(cls, tenant_id: str, query_filter: dict | None = None) -> int:
+        query: dict[str, Any] = {"tenant_id": tenant_id}
         if query_filter:
             query.update(query_filter)
         return await cls.collection.count_documents(query)
 
     @classmethod
-    async def insert(cls, booking_dict: Dict[str, Any]) -> None:
+    async def insert(cls, booking_dict: dict[str, Any]) -> None:
         from core.atomic_booking import create_booking_atomic
         await create_booking_atomic(booking_dict)
 
     @classmethod
-    async def update(cls, tenant_id: str, booking_id: str, update_data: Dict[str, Any]) -> bool:
+    async def update(cls, tenant_id: str, booking_id: str, update_data: dict[str, Any]) -> bool:
         result = await cls.collection.update_one(
             {"tenant_id": tenant_id, "id": booking_id},
             {"$set": update_data},
@@ -71,25 +71,25 @@ class ReservationRepository:
     async def update_status(cls, tenant_id: str, booking_id: str, new_status: str) -> bool:
         return await cls.update(tenant_id, booking_id, {
             "status": new_status,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         })
 
     @classmethod
-    async def get_arrivals(cls, tenant_id: str, target_date: str) -> List[Dict[str, Any]]:
+    async def get_arrivals(cls, tenant_id: str, target_date: str) -> list[dict[str, Any]]:
         return await cls.collection.find(
             {"tenant_id": tenant_id, "check_in": target_date, "status": {"$in": ["confirmed", "guaranteed"]}},
             {"_id": 0},
         ).to_list(500)
 
     @classmethod
-    async def get_departures(cls, tenant_id: str, target_date: str) -> List[Dict[str, Any]]:
+    async def get_departures(cls, tenant_id: str, target_date: str) -> list[dict[str, Any]]:
         return await cls.collection.find(
             {"tenant_id": tenant_id, "check_out": target_date, "status": "checked_in"},
             {"_id": 0},
         ).to_list(500)
 
     @classmethod
-    async def get_inhouse(cls, tenant_id: str) -> List[Dict[str, Any]]:
+    async def get_inhouse(cls, tenant_id: str) -> list[dict[str, Any]]:
         return await cls.collection.find(
             {"tenant_id": tenant_id, "status": "checked_in"},
             {"_id": 0},

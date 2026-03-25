@@ -2,8 +2,7 @@
 PMS Hardening Router - Production-grade API endpoints for all PMS core operations.
 Covers: Reservation lifecycle, Front desk, Folio/Billing, Housekeeping, Night Audit, Dashboard.
 """
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -42,7 +41,7 @@ auto_hk_svc = AutoHousekeepingService()
 
 class CheckInRequest(BaseModel):
     booking_id: str
-    override_reason: Optional[str] = None
+    override_reason: str | None = None
 
 class CheckoutRequest(BaseModel):
     booking_id: str
@@ -93,7 +92,7 @@ class ChargePostRequest(BaseModel):
     amount: float
     quantity: float = 1.0
     tax_rate: float = 0.0
-    department: Optional[str] = None
+    department: str | None = None
 
 class PaymentPostRequest(BaseModel):
     folio_id: str
@@ -101,8 +100,8 @@ class PaymentPostRequest(BaseModel):
     amount: float
     method: str = "cash"
     payment_type: str = "final"
-    reference: Optional[str] = None
-    notes: Optional[str] = None
+    reference: str | None = None
+    notes: str | None = None
 
 class RefundRequest(BaseModel):
     folio_id: str
@@ -112,13 +111,13 @@ class RefundRequest(BaseModel):
     method: str = "cash"
 
 class VoidRequest(BaseModel):
-    charge_id: Optional[str] = None
-    payment_id: Optional[str] = None
+    charge_id: str | None = None
+    payment_id: str | None = None
     reason: str
 
 class SplitFolioRequest(BaseModel):
     source_folio_id: str
-    charge_ids: List[str]
+    charge_ids: list[str]
     target_folio_type: str = "guest"
     reason: str
 
@@ -130,7 +129,7 @@ class CityLedgerTransferRequest(BaseModel):
 class RoomStatusUpdateRequest(BaseModel):
     room_id: str
     new_status: str
-    notes: Optional[str] = None
+    notes: str | None = None
     force: bool = False
 
 class InspectionApprovalRequest(BaseModel):
@@ -138,7 +137,7 @@ class InspectionApprovalRequest(BaseModel):
     approved: bool
 
 class NightAuditRequest(BaseModel):
-    business_date: Optional[str] = None
+    business_date: str | None = None
 
 class ExceptionResolveRequest(BaseModel):
     exception_id: str
@@ -197,7 +196,7 @@ async def api_walk_in(req: WalkInRequest, current_user: User = Depends(get_curre
     guest_data = {
         "name": req.guest_name,
         "phone": req.guest_phone,
-        "email": req.guest_email or f"walkin-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}@hotel.local",
+        "email": req.guest_email or f"walkin-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}@hotel.local",
         "id_number": req.guest_id_number,
         "adults": req.adults,
     }
@@ -252,7 +251,7 @@ async def api_reservation_audit(booking_id: str, current_user: User = Depends(ge
     return await rsm.get_audit_trail(current_user.tenant_id, booking_id)
 
 @router.get("/overbooking-check", tags=["reservation"])
-async def api_overbooking_check(room_id: str, check_in: str, check_out: str, exclude_booking_id: Optional[str] = None, current_user: User = Depends(get_current_user)):
+async def api_overbooking_check(room_id: str, check_in: str, check_out: str, exclude_booking_id: str | None = None, current_user: User = Depends(get_current_user)):
     """Check for overbooking on a specific room and date range."""
     has_conflict, conflicts = await rsm.check_overbooking(current_user.tenant_id, room_id, check_in, check_out, exclude_booking_id)
     return {"has_conflict": has_conflict, "conflicts": conflicts}
@@ -440,7 +439,7 @@ async def api_my_permissions(current_user: User = Depends(get_current_user)):
     }
 
 @router.get("/audit-trail", tags=["audit"])
-async def api_get_audit_trail(entity_type: Optional[str] = None, entity_id: Optional[str] = None, limit: int = 50, current_user: User = Depends(get_current_user)):
+async def api_get_audit_trail(entity_type: str | None = None, entity_id: str | None = None, limit: int = 50, current_user: User = Depends(get_current_user)):
     """Get PMS audit trail with optional filters."""
     query = {"tenant_id": current_user.tenant_id}
     if entity_type:

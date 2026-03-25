@@ -4,8 +4,7 @@ Production-grade: aggregates real queue health, stuck task management,
 failure archive stats, retry pressure, worker heartbeat, and dead-letter trends.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional
+from datetime import UTC, datetime, timedelta
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -38,7 +37,7 @@ class WorkerRuntimeService:
                 processing = await db.task_queue.count_documents({"task_type": qt, "status": "processing"})
                 failed_24h = await db.task_queue.count_documents({
                     "task_type": qt, "status": "failed",
-                    "started_at": {"$gte": (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()}
+                    "started_at": {"$gte": (datetime.now(UTC) - timedelta(hours=24)).isoformat()}
                 })
                 q_health = "healthy"
                 if pending > 100 or failed_24h > 10:
@@ -56,7 +55,7 @@ class WorkerRuntimeService:
             # Dead-letter trend (last 7 days)
             dl_total = await db.dead_letter_tasks.count_documents({})
             dl_today = await db.dead_letter_tasks.count_documents({
-                "archived_at": {"$gte": datetime.now(timezone.utc).replace(hour=0, minute=0, second=0).isoformat()}
+                "archived_at": {"$gte": datetime.now(UTC).replace(hour=0, minute=0, second=0).isoformat()}
             })
 
             # Replay candidates
@@ -65,14 +64,14 @@ class WorkerRuntimeService:
             # Worker heartbeat (simulated from task processing activity)
             recent_completions = await db.task_queue.count_documents({
                 "status": "completed",
-                "started_at": {"$gte": (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()}
+                "started_at": {"$gte": (datetime.now(UTC) - timedelta(minutes=5)).isoformat()}
             })
             workers_responding = recent_completions > 0
 
             # Retry pressure
             retry_count_24h = await db.task_queue.count_documents({
                 "retry_count": {"$gt": 0},
-                "started_at": {"$gte": (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()}
+                "started_at": {"$gte": (datetime.now(UTC) - timedelta(hours=24)).isoformat()}
             })
 
             # Severity calculation
@@ -126,14 +125,14 @@ class WorkerRuntimeService:
                 "health": "unknown",
                 "severity": "warning",
                 "error": str(e)[:100],
-                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "checked_at": datetime.now(UTC).isoformat(),
             })
 
     async def get_stuck_tasks(self, ctx: OperationContext) -> ServiceResult:
         """Get stuck tasks with grouping by task type."""
         stuck = await self._task_status.get_stuck_tasks()
         # Group by task_type
-        groups: Dict[str, int] = {}
+        groups: dict[str, int] = {}
         for t in stuck:
             tt = t.get("task_type", "unknown")
             groups[tt] = groups.get(tt, 0) + 1
@@ -158,7 +157,7 @@ class WorkerRuntimeService:
         return ServiceResult.success({"status": "unstuck", "task_id": task_id})
 
     async def get_failure_summary(
-        self, ctx: OperationContext, tenant_id: Optional[str] = None, limit: int = 50,
+        self, ctx: OperationContext, tenant_id: str | None = None, limit: int = 50,
     ) -> ServiceResult:
         tid = tenant_id or ctx.tenant_id
         data = await self._task_status.get_failure_summary(tenant_id=tid, limit=limit)

@@ -5,8 +5,8 @@ Produces a complete simulation report with per-provider result tables.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -31,21 +31,21 @@ SANDBOX_MAPPINGS = "cm_mappings"
 class SandboxSimulationEngine:
     """Orchestrates all sandbox simulation scenarios."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     async def run_full_simulation(
         self, tenant_id: str, property_id: str,
-        providers: Optional[List[str]] = None,
-        actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        providers: list[str] | None = None,
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """
         Run all scenarios for all specified providers.
         Returns a complete simulation report.
         """
         run_id = f"sim-{uuid.uuid4().hex[:12]}"
         providers = providers or list(PROVIDER_PROFILES.keys())
-        started_at = datetime.now(timezone.utc).isoformat()
+        started_at = datetime.now(UTC).isoformat()
 
         logger.info("Starting sandbox simulation %s for providers: %s", run_id, providers)
 
@@ -57,7 +57,7 @@ class SandboxSimulationEngine:
             )
 
         # Run all scenarios per provider
-        all_results: Dict[str, List[Dict[str, Any]]] = {}
+        all_results: dict[str, list[dict[str, Any]]] = {}
         for provider in providers:
             fix = fixtures[provider]
             connector_id = fix["connector_id"]
@@ -140,7 +140,7 @@ class SandboxSimulationEngine:
             all_results[provider] = provider_results
 
         # Build report
-        completed_at = datetime.now(timezone.utc).isoformat()
+        completed_at = datetime.now(UTC).isoformat()
         report = self._build_report(run_id, tenant_id, providers, all_results, started_at, completed_at, actor_id)
 
         # Persist report
@@ -151,7 +151,7 @@ class SandboxSimulationEngine:
 
     async def get_simulation_results(
         self, tenant_id: str, limit: int = 10,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get recent simulation results."""
         cursor = db[SANDBOX_RESULTS].find(
             {"tenant_id": tenant_id}, {"_id": 0, "_persist": 0},
@@ -160,7 +160,7 @@ class SandboxSimulationEngine:
 
     async def get_simulation_result(
         self, tenant_id: str, run_id: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get a specific simulation result."""
         return await db[SANDBOX_RESULTS].find_one(
             {"tenant_id": tenant_id, "run_id": run_id},
@@ -169,7 +169,7 @@ class SandboxSimulationEngine:
 
     async def get_simulation_timeline(
         self, tenant_id: str, run_id: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get the event timeline for a specific simulation run."""
         cursor = db[SANDBOX_TIMELINE].find(
             {"tenant_id": tenant_id, "run_id": run_id},
@@ -181,7 +181,7 @@ class SandboxSimulationEngine:
 
     async def _setup_provider_fixtures(
         self, tenant_id: str, property_id: str, provider: str, run_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create sandbox connector and mappings for a provider."""
         profile = PROVIDER_PROFILES[provider]
         connector_id = f"sandbox-{provider}-{run_id}"
@@ -198,7 +198,7 @@ class SandboxSimulationEngine:
             "environment": "sandbox",
             "display_name": f"Sandbox {profile['display_name']}",
             "credentials": {},
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "sandbox_run_id": run_id,
         }
         await self._repo.upsert_connector(connector_doc)
@@ -216,7 +216,7 @@ class SandboxSimulationEngine:
             "external_name": "Standard Room",
             "pms_name": "Standard",
             "status": "active",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db[SANDBOX_MAPPINGS].insert_one(room_mapping)
 
@@ -233,7 +233,7 @@ class SandboxSimulationEngine:
             "external_name": "Best Available Rate",
             "pms_name": "BAR",
             "status": "active",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db[SANDBOX_MAPPINGS].insert_one(rate_mapping)
 
@@ -245,11 +245,11 @@ class SandboxSimulationEngine:
         }
 
     def _build_report(
-        self, run_id: str, tenant_id: str, providers: List[str],
-        all_results: Dict[str, List[Dict[str, Any]]],
+        self, run_id: str, tenant_id: str, providers: list[str],
+        all_results: dict[str, list[dict[str, Any]]],
         started_at: str, completed_at: str,
-        actor_id: Optional[str],
-    ) -> Dict[str, Any]:
+        actor_id: str | None,
+    ) -> dict[str, Any]:
         """Build the final simulation report with per-provider tables."""
         provider_tables = {}
         total_passed = 0

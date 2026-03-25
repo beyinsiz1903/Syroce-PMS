@@ -1,10 +1,10 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from modules.inventory.repository import InventoryRepository
 
 
 class AvailabilityReadService:
-    def __init__(self, repository: Optional[InventoryRepository] = None):
+    def __init__(self, repository: InventoryRepository | None = None):
         self.repository = repository or InventoryRepository()
 
     async def get_availability(
@@ -12,13 +12,13 @@ class AvailabilityReadService:
         tenant_id: str,
         check_in: str,
         check_out: str,
-        room_type: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        room_type: str | None = None,
+    ) -> list[dict[str, Any]]:
         rooms = await self.repository.list_rooms(tenant_id, room_type)
         bookings = await self.repository.list_overlapping_bookings(tenant_id, check_in, check_out)
         blocks = await self.repository.list_overlapping_blocks(tenant_id, check_in, check_out)
 
-        availability: List[Dict[str, Any]] = []
+        availability: list[dict[str, Any]] = []
         for room in rooms:
             is_booked = any(b.get("room_id") == room.get("id") for b in bookings)
             room_blocks = [block for block in blocks if block.get("room_id") == room.get("id")]

@@ -19,8 +19,8 @@ import asyncio
 import hashlib
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 
@@ -43,18 +43,18 @@ MAX_DELIVERY_RETRIES = 3
 class AlertDeliveryService:
     """Delivers alert notifications through configured channels."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     # ─── Channel Configuration ─────────────────────────────────────────
 
-    async def get_channels(self, tenant_id: str, connector_id: Optional[str] = None) -> List[Dict]:
-        q: Dict[str, Any] = {"tenant_id": tenant_id}
+    async def get_channels(self, tenant_id: str, connector_id: str | None = None) -> list[dict]:
+        q: dict[str, Any] = {"tenant_id": tenant_id}
         if connector_id:
             q["connector_id"] = connector_id
         return await db[DELIVERY_CHANNELS].find(q, _NO_ID).to_list(50)
 
-    async def upsert_channel(self, tenant_id: str, channel_data: Dict[str, Any]) -> Dict:
+    async def upsert_channel(self, tenant_id: str, channel_data: dict[str, Any]) -> dict:
         channel = {
             "id": channel_data.get("id") or str(uuid.uuid4()),
             "tenant_id": tenant_id,
@@ -65,7 +65,7 @@ class AlertDeliveryService:
             "min_severity": channel_data.get("min_severity", "warning"),
             "config": channel_data.get("config", {}),
             "throttle_seconds": channel_data.get("throttle_seconds", DEFAULT_THROTTLE_SECONDS),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }
         await db[DELIVERY_CHANNELS].replace_one(
             {"tenant_id": tenant_id, "id": channel["id"]},
@@ -80,7 +80,7 @@ class AlertDeliveryService:
 
     # ─── Delivery Orchestration ────────────────────────────────────────
 
-    async def deliver_alert(self, tenant_id: str, alert: Dict[str, Any]) -> Dict[str, Any]:
+    async def deliver_alert(self, tenant_id: str, alert: dict[str, Any]) -> dict[str, Any]:
         """Deliver an alert to all matching channels with filtering, dedup, throttle."""
         connector_id = alert.get("connector_id", "")
         severity = alert.get("severity", "info")
@@ -143,7 +143,7 @@ class AlertDeliveryService:
             "results": results,
         }
 
-    async def _get_applicable_channels(self, tenant_id: str, connector_id: str) -> List[Dict]:
+    async def _get_applicable_channels(self, tenant_id: str, connector_id: str) -> list[dict]:
         """Get channels that apply to this tenant/connector."""
         all_channels = await db[DELIVERY_CHANNELS].find(
             {"tenant_id": tenant_id}, _NO_ID,
@@ -157,7 +157,7 @@ class AlertDeliveryService:
 
     # ─── Channel Dispatchers ───────────────────────────────────────────
 
-    async def _deliver_with_retry(self, channel: Dict, alert: Dict) -> bool:
+    async def _deliver_with_retry(self, channel: dict, alert: dict) -> bool:
         """Attempt delivery with exponential backoff retry."""
         ch_type = channel.get("channel_type", "")
         for attempt in range(MAX_DELIVERY_RETRIES):
@@ -182,7 +182,7 @@ class AlertDeliveryService:
                     await asyncio.sleep(min(2 ** attempt, 10))
         return False
 
-    async def _deliver_email(self, channel: Dict, alert: Dict) -> bool:
+    async def _deliver_email(self, channel: dict, alert: dict) -> bool:
         """Deliver alert via email (SMTP or API)."""
         config = channel.get("config", {})
         to_email = config.get("to_email", "")
@@ -205,7 +205,7 @@ class AlertDeliveryService:
         logger.warning("Email channel %s: no smtp_host or api_key configured", channel.get("id"))
         return False
 
-    async def _send_email_api(self, config: Dict, to: str, subject: str, body: str) -> bool:
+    async def _send_email_api(self, config: dict, to: str, subject: str, body: str) -> bool:
         """Send email via generic API (SendGrid-compatible)."""
         api_key = config.get("api_key", "")
         from_email = config.get("from_email", "alerts@syroce.com")
@@ -225,7 +225,7 @@ class AlertDeliveryService:
             )
             return resp.status_code in (200, 201, 202)
 
-    async def _send_email_smtp(self, config: Dict, to: str, subject: str, body: str) -> bool:
+    async def _send_email_smtp(self, config: dict, to: str, subject: str, body: str) -> bool:
         """Send email via SMTP (asyncio-compatible)."""
         import smtplib
         from email.mime.multipart import MIMEMultipart
@@ -257,7 +257,7 @@ class AlertDeliveryService:
             logger.error("SMTP send failed: %s", e)
             return False
 
-    async def _deliver_webhook(self, channel: Dict, alert: Dict) -> bool:
+    async def _deliver_webhook(self, channel: dict, alert: dict) -> bool:
         """Deliver alert via generic webhook (HTTP POST)."""
         config = channel.get("config", {})
         url = config.get("url", "")
@@ -288,7 +288,7 @@ class AlertDeliveryService:
             resp = await client.post(url, json=payload, headers=headers)
             return 200 <= resp.status_code < 300
 
-    async def _deliver_slack(self, channel: Dict, alert: Dict) -> bool:
+    async def _deliver_slack(self, channel: dict, alert: dict) -> bool:
         """Deliver alert via Slack incoming webhook."""
         config = channel.get("config", {})
         webhook_url = config.get("webhook_url", "")
@@ -323,7 +323,7 @@ class AlertDeliveryService:
             resp = await client.post(webhook_url, json=payload)
             return resp.status_code == 200
 
-    async def _deliver_teams(self, channel: Dict, alert: Dict) -> bool:
+    async def _deliver_teams(self, channel: dict, alert: dict) -> bool:
         """Deliver alert via Microsoft Teams incoming webhook."""
         config = channel.get("config", {})
         webhook_url = config.get("webhook_url", "")
@@ -362,12 +362,12 @@ class AlertDeliveryService:
 
     async def _is_duplicate(self, fingerprint: str) -> bool:
         existing = await db[DELIVERY_FINGERPRINTS].find_one(
-            {"fingerprint": fingerprint, "expires_at": {"$gt": datetime.now(timezone.utc).isoformat()}},
+            {"fingerprint": fingerprint, "expires_at": {"$gt": datetime.now(UTC).isoformat()}},
         )
         return existing is not None
 
     async def _store_fingerprint(self, fingerprint: str, ttl_seconds: int):
-        expires = (datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)).isoformat()
+        expires = (datetime.now(UTC) + timedelta(seconds=ttl_seconds)).isoformat()
         await db[DELIVERY_FINGERPRINTS].replace_one(
             {"fingerprint": fingerprint},
             {"fingerprint": fingerprint, "expires_at": expires},
@@ -375,7 +375,7 @@ class AlertDeliveryService:
         )
 
     async def _is_throttled(self, tenant_id: str, channel_id: str, trigger: str, throttle_secs: int) -> bool:
-        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=throttle_secs)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(seconds=throttle_secs)).isoformat()
         recent = await db[DELIVERY_LOG].find_one({
             "tenant_id": tenant_id,
             "channel_id": channel_id,
@@ -387,7 +387,7 @@ class AlertDeliveryService:
 
     # ─── Audit & Logging ──────────────────────────────────────────────
 
-    async def _log_delivery(self, tenant_id: str, alert_id: str, channel: Dict, success: bool):
+    async def _log_delivery(self, tenant_id: str, alert_id: str, channel: dict, success: bool):
         doc = {
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
@@ -396,14 +396,14 @@ class AlertDeliveryService:
             "channel_type": channel.get("channel_type", ""),
             "trigger": "",
             "success": success,
-            "delivered_at": datetime.now(timezone.utc).isoformat(),
+            "delivered_at": datetime.now(UTC).isoformat(),
         }
         await db[DELIVERY_LOG].insert_one(doc)
 
     async def get_delivery_log(
-        self, tenant_id: str, alert_id: Optional[str] = None, limit: int = 50,
-    ) -> List[Dict]:
-        q: Dict[str, Any] = {"tenant_id": tenant_id}
+        self, tenant_id: str, alert_id: str | None = None, limit: int = 50,
+    ) -> list[dict]:
+        q: dict[str, Any] = {"tenant_id": tenant_id}
         if alert_id:
             q["alert_id"] = alert_id
         return await db[DELIVERY_LOG].find(q, _NO_ID).sort("delivered_at", -1).to_list(limit)
@@ -411,7 +411,7 @@ class AlertDeliveryService:
     # ─── Helpers ──────────────────────────────────────────────────────
 
     @staticmethod
-    def _format_email_body(alert: Dict) -> str:
+    def _format_email_body(alert: dict) -> str:
         severity = alert.get("severity", "info").upper()
         trigger = alert.get("trigger", "Alert").replace("_", " ").title()
         return f"""

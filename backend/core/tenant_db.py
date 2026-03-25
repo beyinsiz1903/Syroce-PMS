@@ -32,18 +32,18 @@ import logging
 import os
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Dict, Optional, Set
+from typing import Any
 
 logger = logging.getLogger("core.tenant_db")
 
 # ── Tenant Context (per-request, per-task) ──────────────────────
-_tenant_ctx: ContextVar[Optional[str]] = ContextVar("tenant_id", default=None)
+_tenant_ctx: ContextVar[str | None] = ContextVar("tenant_id", default=None)
 
 # ── Configuration ───────────────────────────────────────────────
 STRICT_TENANT_MODE = os.environ.get("STRICT_TENANT_MODE", "false").lower() == "true"
 
 # ── Collections where tenant_id filter is MANDATORY ─────────────
-TENANT_SCOPED_COLLECTIONS: Set[str] = {
+TENANT_SCOPED_COLLECTIONS: set[str] = {
     "rooms", "bookings", "guests", "folios", "tasks", "users",
     "audit_logs", "reports", "rate_plans", "invoices", "payments",
     "housekeeping_tasks", "maintenance_orders", "inventory_items",
@@ -76,7 +76,7 @@ TENANT_SCOPED_COLLECTIONS: Set[str] = {
 }
 
 # ── Collections that are global (no tenant_id) ──────────────────
-GLOBAL_COLLECTIONS: Set[str] = {
+GLOBAL_COLLECTIONS: set[str] = {
     "tenants", "hotel_chains", "system_config", "system_logs",
     "subscription_plans", "marketplace_extensions",
 }
@@ -98,7 +98,7 @@ def clear_tenant_context() -> None:
     _tenant_ctx.set(None)
 
 
-def get_current_tenant_id() -> Optional[str]:
+def get_current_tenant_id() -> str | None:
     """Get the current tenant_id from context, or None."""
     return _tenant_ctx.get()
 
@@ -128,7 +128,7 @@ class TenantScopedCollection:
         self._tenant_id = tenant_id
         self._name = collection_name
 
-    def _inject_filter(self, filter_dict: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _inject_filter(self, filter_dict: dict[str, Any] | None = None) -> dict[str, Any]:
         if filter_dict is None:
             filter_dict = {}
         existing = filter_dict.get("tenant_id")
@@ -145,7 +145,7 @@ class TenantScopedCollection:
             )
         return filter_dict
 
-    def _inject_doc(self, doc: Dict[str, Any]) -> Dict[str, Any]:
+    def _inject_doc(self, doc: dict[str, Any]) -> dict[str, Any]:
         if "tenant_id" in doc and doc["tenant_id"] != self._tenant_id:
             logger.critical(
                 "TENANT WRITE VIOLATION: collection=%s expected=%s got=%s",

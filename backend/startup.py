@@ -6,6 +6,7 @@ Called by server.py during bootstrap orchestration.
 """
 import logging
 import os
+from datetime import UTC
 
 from core.database import _raw_db, client, db
 
@@ -127,7 +128,7 @@ async def on_startup(app):
         if not existing:
             tenant = await _raw_db.tenants.find_one({}, {"_id": 0, "id": 1})
             tid = tenant["id"] if tenant else "demo"
-            from datetime import datetime, timezone
+            from datetime import datetime
             await _raw_db.exely_connections.insert_one({
                 "id": str(__import__("uuid").uuid4()),
                 "tenant_id": tid,
@@ -142,7 +143,7 @@ async def on_startup(app):
                 "is_active": True,
                 "room_types": [],
                 "rate_plans": [],
-                "connected_at": datetime.now(timezone.utc).isoformat(),
+                "connected_at": datetime.now(UTC).isoformat(),
                 "last_sync_at": None,
                 "created_by": "startup_ensure",
             })

@@ -5,8 +5,8 @@ import logging
 import os
 import socket
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
@@ -20,7 +20,7 @@ OUTBOX_WORKER_LOCK_ID = "outbox-lifecycle-worker"
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def iso_now() -> str:
@@ -58,7 +58,7 @@ class OutboxLifecycleWorker:
         self.processing_timeout_seconds = processing_timeout_seconds
         self.drain_pause_seconds = drain_pause_seconds
         self.owner_id = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
 
     async def ensure_indexes(self) -> None:
@@ -188,7 +188,7 @@ class OutboxLifecycleWorker:
                 recovered += 1
         return recovered
 
-    async def process_batch(self, *, limit: Optional[int] = None) -> int:
+    async def process_batch(self, *, limit: int | None = None) -> int:
         processed_count = 0
         target = limit or self.batch_size
         for _ in range(target):
@@ -201,7 +201,7 @@ class OutboxLifecycleWorker:
                 await asyncio.sleep(self.drain_pause_seconds)
         return processed_count
 
-    async def claim_next_event(self) -> Optional[Dict[str, Any]]:
+    async def claim_next_event(self) -> dict[str, Any] | None:
         now_iso = iso_now()
         event = await get_system_db().outbox_events.find_one_and_update(
             {
@@ -237,7 +237,7 @@ class OutboxLifecycleWorker:
         )
         return event
 
-    async def process_event(self, event: Dict[str, Any]) -> None:
+    async def process_event(self, event: dict[str, Any]) -> None:
         try:
             await self.handle_event(event)
             await self.mark_processed(event)
@@ -250,7 +250,7 @@ class OutboxLifecycleWorker:
             )
             await self.mark_failed_or_parked(event, exc)
 
-    async def handle_event(self, event: Dict[str, Any]) -> None:
+    async def handle_event(self, event: dict[str, Any]) -> None:
         payload = event.get("payload") or {}
         delay_ms = min(max(int(payload.get("simulate_delay_ms") or 25), 0), 250)
         if delay_ms:
@@ -259,7 +259,7 @@ class OutboxLifecycleWorker:
         if payload.get("force_fail"):
             raise RuntimeError(str(payload.get("force_fail_message") or "forced outbox delivery failure"))
 
-    async def mark_processed(self, event: Dict[str, Any]) -> bool:
+    async def mark_processed(self, event: dict[str, Any]) -> bool:
         now_iso = iso_now()
         update_result = await get_system_db().outbox_events.update_one(
             {
@@ -285,7 +285,7 @@ class OutboxLifecycleWorker:
 
     async def mark_failed_or_parked(
         self,
-        event: Dict[str, Any],
+        event: dict[str, Any],
         error: Exception,
         *,
         previous_status: str = "processing",

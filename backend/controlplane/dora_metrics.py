@@ -12,8 +12,8 @@ Correlation Layer:
   "deploy artti → drift azaldi mi?" etc.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -22,12 +22,12 @@ logger = logging.getLogger("controlplane.dora_metrics")
 
 async def compute_dora_metrics(
     days: int = 30,
-    environment: Optional[str] = None,
-) -> Dict[str, Any]:
+    environment: str | None = None,
+) -> dict[str, Any]:
     """Compute raw DORA metrics from deploy_events collection."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
-    query: Dict[str, Any] = {"started_at": {"$gte": cutoff}}
+    query: dict[str, Any] = {"started_at": {"$gte": cutoff}}
     if environment:
         query["environment"] = environment
 
@@ -45,7 +45,7 @@ async def compute_dora_metrics(
 
     # 1. Deployment Frequency
     first_deploy = deploys[0].get("started_at", cutoff)
-    last_deploy = deploys[-1].get("started_at", datetime.now(timezone.utc).isoformat())
+    last_deploy = deploys[-1].get("started_at", datetime.now(UTC).isoformat())
     try:
         span_days = max(1, (
             datetime.fromisoformat(last_deploy) - datetime.fromisoformat(first_deploy)
@@ -59,7 +59,7 @@ async def compute_dora_metrics(
     change_failure_rate = round((len(failures) / total) * 100, 1) if total > 0 else 0
 
     # 3. MTTR — time between failure and next success
-    mttr_values: List[float] = []
+    mttr_values: list[float] = []
     sorted_deploys = sorted(deploys, key=lambda d: d.get("started_at", ""))
     last_failure_time = None
     for d in sorted_deploys:
@@ -79,7 +79,7 @@ async def compute_dora_metrics(
     mttr_avg_minutes = round(sum(mttr_values) / len(mttr_values), 1) if mttr_values else 0
 
     # 4. Lead Time (approximate: duration_seconds from deploy events)
-    lead_times: List[float] = []
+    lead_times: list[float] = []
     for d in successes:
         dur = d.get("duration_seconds")
         if dur and isinstance(dur, (int, float)) and dur > 0:
@@ -88,7 +88,7 @@ async def compute_dora_metrics(
     lead_time_avg_minutes = round(sum(lead_times) / len(lead_times), 1) if lead_times else 0
 
     # Daily breakdown for trend
-    daily: Dict[str, Dict[str, int]] = {}
+    daily: dict[str, dict[str, int]] = {}
     for d in deploys:
         day = d.get("started_at", "")[:10]
         if day not in daily:
@@ -135,14 +135,14 @@ async def compute_dora_metrics(
             },
         },
         "trend": trend,
-        "computed_at": datetime.now(timezone.utc).isoformat(),
+        "computed_at": datetime.now(UTC).isoformat(),
     }
 
 
 async def compute_dora_channel_correlation(
     days: int = 30,
-    tenant_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
     """Correlation layer: cross-reference DORA with channel health.
 
     Answers:
@@ -161,7 +161,7 @@ async def compute_dora_channel_correlation(
 
     # Split period into two halves for comparison
     mid_days = days // 2
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     mid_point = (now - timedelta(days=mid_days)).isoformat()
     start_point = (now - timedelta(days=days)).isoformat()
     now_iso = now.isoformat()
@@ -248,7 +248,7 @@ async def compute_dora_channel_correlation(
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
-async def _count_deploys(start: str, end: str) -> Dict[str, int]:
+async def _count_deploys(start: str, end: str) -> dict[str, int]:
     pipeline = [
         {"$match": {"started_at": {"$gte": start, "$lte": end}}},
         {"$group": {
@@ -265,9 +265,9 @@ async def _count_deploys(start: str, end: str) -> Dict[str, int]:
 
 
 async def _count_timeline_events(
-    tenant_id: Optional[str], entity_type: str, start: str, end: str,
+    tenant_id: str | None, entity_type: str, start: str, end: str,
 ) -> int:
-    query: Dict[str, Any] = {
+    query: dict[str, Any] = {
         "entity_type": entity_type,
         "timestamp": {"$gte": start, "$lte": end},
     }
@@ -277,9 +277,9 @@ async def _count_timeline_events(
 
 
 async def _count_sync_results(
-    tenant_id: Optional[str], start: str, end: str,
-) -> Dict[str, int]:
-    query: Dict[str, Any] = {"created_at": {"$gte": start, "$lte": end}}
+    tenant_id: str | None, start: str, end: str,
+) -> dict[str, int]:
+    query: dict[str, Any] = {"created_at": {"$gte": start, "$lte": end}}
     if tenant_id:
         query["tenant_id"] = tenant_id
 
@@ -298,9 +298,9 @@ async def _count_sync_results(
 
 
 async def _count_import_failures(
-    tenant_id: Optional[str], start: str, end: str,
+    tenant_id: str | None, start: str, end: str,
 ) -> int:
-    query: Dict[str, Any] = {
+    query: dict[str, Any] = {
         "status": {"$in": ["failed", "error"]},
         "created_at": {"$gte": start, "$lte": end},
     }
@@ -366,7 +366,7 @@ def _infer_correlation(metric_a_delta: float, metric_b_delta: float) -> str:
     return "no_correlation"
 
 
-def _empty_dora(days: int, environment: Optional[str]) -> Dict[str, Any]:
+def _empty_dora(days: int, environment: str | None) -> dict[str, Any]:
     return {
         "period_days": days,
         "environment": environment or "all",
@@ -381,5 +381,5 @@ def _empty_dora(days: int, environment: Optional[str]) -> Dict[str, Any]:
             "lead_time": {"value": 0, "unit": "minutes", "samples": 0, "rating": "no_data"},
         },
         "trend": [],
-        "computed_at": datetime.now(timezone.utc).isoformat(),
+        "computed_at": datetime.now(UTC).isoformat(),
     }

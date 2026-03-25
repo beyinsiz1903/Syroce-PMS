@@ -18,8 +18,7 @@ Endpoints:
   GET  /api/ops/runbooks/{runbook_id}  — Single runbook
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -66,11 +65,11 @@ class RetryRequest(BaseModel):
 
 @router.get("/overview", response_model=OverviewResponse)
 async def ops_overview(
-    tenant_id: Optional[str] = Query(None, description="Filter by tenant"),
+    tenant_id: str | None = Query(None, description="Filter by tenant"),
 ):
     """System health overview — the single pane of glass for operations."""
     tracker = get_failure_tracker()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cutoff_24h = (now - timedelta(hours=24)).isoformat()
     cutoff_30m = (now - timedelta(minutes=30)).isoformat()
 
@@ -135,12 +134,12 @@ async def ops_overview(
 
 @router.get("/failures")
 async def list_failures(
-    tenant_id: Optional[str] = Query(None),
-    provider: Optional[str] = Query(None),
-    failure_type: Optional[str] = Query(None),
-    severity: Optional[str] = Query(None),
-    status: Optional[str] = Query(None),
-    operation_type: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
+    provider: str | None = Query(None),
+    failure_type: str | None = Query(None),
+    severity: str | None = Query(None),
+    status: str | None = Query(None),
+    operation_type: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     skip: int = Query(0, ge=0),
 ):
@@ -167,7 +166,7 @@ async def get_failure(failure_id: str):
 # ── 3. Retry / Resolve / Ignore ───────────────────────────────────
 
 @router.post("/failures/{failure_id}/retry")
-async def retry_failure(failure_id: str, body: Optional[RetryRequest] = None):
+async def retry_failure(failure_id: str, body: RetryRequest | None = None):
     """Retry a failed operation. Idempotent and duplicate-safe."""
     engine = get_retry_engine()
     dry_run = body.dry_run if body else False
@@ -202,11 +201,11 @@ async def ignore_failure(failure_id: str):
 
 @router.get("/outbox")
 async def outbox_monitor(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
 ):
     """Outbox event monitor — pending, stuck, and failed events."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cutoff_30m = (now - timedelta(minutes=30)).isoformat()
 
     base_query = {}
@@ -243,11 +242,11 @@ async def outbox_monitor(
 
 @router.get("/imports")
 async def imports_monitor(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
 ):
     """Import pipeline monitor — pending, failed, and delayed imports."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cutoff_24h = (now - timedelta(hours=24)).isoformat()
     coll = db.imported_reservations
 
@@ -285,11 +284,11 @@ async def imports_monitor(
 
 @router.get("/sync")
 async def sync_monitor(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
 ):
     """Sync jobs monitor — recent jobs, success/failure rate, latency."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cutoff_24h = (now - timedelta(hours=24)).isoformat()
 
     base_query = {"started_at": {"$gte": cutoff_24h}}
@@ -328,9 +327,9 @@ async def sync_monitor(
 
 @router.get("/secrets/audit")
 async def secret_audit(
-    tenant_id: Optional[str] = Query(None),
-    provider: Optional[str] = Query(None),
-    result_filter: Optional[str] = Query(None, alias="result"),
+    tenant_id: str | None = Query(None),
+    provider: str | None = Query(None),
+    result_filter: str | None = Query(None, alias="result"),
     limit: int = Query(50, ge=1, le=200),
     skip: int = Query(0, ge=0),
 ):
@@ -350,7 +349,7 @@ async def secret_audit(
     ).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
 
     # Anomaly count (failures in last 24h)
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
     anomaly_count = await coll.count_documents(
         {"result": {"$in": ["failure", "denied", "not_found"]}, "timestamp": {"$gte": cutoff}}
     )
@@ -368,7 +367,7 @@ async def secret_audit(
 
 @router.get("/runbooks")
 async def get_runbooks(
-    category: Optional[str] = Query(None, description="Filter by category: import, outbox, ari, provider, security, operations, sync"),
+    category: str | None = Query(None, description="Filter by category: import, outbox, ari, provider, security, operations, sync"),
 ):
     """List all operational runbooks."""
     return {"runbooks": list_runbooks(category=category)}
@@ -387,7 +386,7 @@ async def get_single_runbook(runbook_id: str):
 
 @router.get("/alerts")
 async def list_alerts(
-    severity: Optional[str] = Query(None),
+    severity: str | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
 ):
     """Get recent operational alerts."""
@@ -408,7 +407,7 @@ async def run_alert_checks():
 
 @router.get("/secrets/anomalies")
 async def secret_anomalies(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
     hours: int = Query(24, ge=1, le=168),
 ):
     """Get secret access anomalies (failures, denials)."""
@@ -421,7 +420,7 @@ async def secret_anomalies(
 @router.get("/alerts/kpi-correlation")
 async def alert_kpi_correlation(
     hours: int = Query(24, ge=1, le=168),
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
 ):
     """Correlate alerts with business KPIs.
 
@@ -431,7 +430,7 @@ async def alert_kpi_correlation(
     - Secret anomalies → security exposure → compliance risk
     - Crypto failures → data protection risk
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cutoff = (now - timedelta(hours=hours)).isoformat()
 
     query = {"fired_at": {"$gte": cutoff}}

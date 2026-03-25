@@ -4,8 +4,7 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -57,8 +56,8 @@ async def create_group_block(
         'status': 'tentative',
         'special_requirements': block_data.get('special_requirements'),
         'created_by': current_user.id,
-        'created_at': datetime.now(timezone.utc).isoformat(),
-        'updated_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat(),
+        'updated_at': datetime.now(UTC).isoformat()
     }
 
     await db.group_blocks.insert_one(block)
@@ -76,7 +75,7 @@ async def create_group_block(
             'status': 'open',
             'master_charges': ['room', 'breakfast', 'meeting_room'],
             'individual_charges': ['minibar', 'spa', 'telephone'],
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         }
         await db.folios.insert_one(master_folio)
 
@@ -98,10 +97,10 @@ async def create_group_block(
 
 @router.get("/groups/blocks")
 async def get_group_blocks(
-    status: Optional[str] = None,
-    date_range: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    status: str | None = None,
+    date_range: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Grup bloklarını listele"""
@@ -111,7 +110,7 @@ async def get_group_blocks(
 
     # Date range filtering based on check_in (stored as YYYY-MM-DD string)
     if date_range:
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         range_start = None
         range_end = None
 
@@ -201,7 +200,7 @@ async def get_group_block_details(
 @router.post("/groups/rooming-list/{block_id}")
 async def upload_rooming_list(
     block_id: str,
-    rooming_list: List[dict],
+    rooming_list: list[dict],
     current_user: User = Depends(get_current_user)
 ):
     """Rooming list upload (Excel'den gelen data)"""
@@ -238,7 +237,7 @@ async def upload_rooming_list(
                     'email': entry.email,
                     'phone': entry.phone,
                     'passport_number': entry.passport_number,
-                    'created_at': datetime.now(timezone.utc).isoformat()
+                    'created_at': datetime.now(UTC).isoformat()
                 }
                 await db.guests.insert_one(guest)
 
@@ -269,7 +268,7 @@ async def upload_rooming_list(
                 'rate_type': 'group',
                 'market_segment': 'group',
                 'special_requests': entry.special_requests,
-                'created_at': datetime.now(timezone.utc).isoformat(),
+                'created_at': datetime.now(UTC).isoformat(),
                 'created_by': current_user.id
             }
 
@@ -406,8 +405,8 @@ async def release_group_block(
         {
             '$set': {
                 'total_rooms': new_total,
-                'release_date': datetime.now(timezone.utc).isoformat(),
-                'updated_at': datetime.now(timezone.utc).isoformat()
+                'release_date': datetime.now(UTC).isoformat(),
+                'updated_at': datetime.now(UTC).isoformat()
             }
         }
     )
@@ -455,7 +454,7 @@ async def create_group_reservation(
         'special_requests': request.special_requests,
         'status': 'pending',
         'rooms_assigned': 0,
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'created_by': current_user.id
     }
 
@@ -525,7 +524,7 @@ async def assign_group_rooms(
             'children': assignment.get('children', 0),
             'status': 'confirmed',
             'booking_source': 'group',
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         }
 
         from core.atomic_booking import BookingConflictError, create_booking_atomic
@@ -584,7 +583,7 @@ async def create_block_reservation(
         'block_type': request.block_type,
         'release_date': request.release_date,
         'status': 'active',
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'created_by': current_user.id
     }
 
@@ -625,7 +624,7 @@ async def use_block_room(
         'room_type': block['room_type'],
         'status': 'confirmed',
         'booking_source': 'block',
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     from core.atomic_booking import BookingConflictError, create_booking_atomic
@@ -664,7 +663,7 @@ async def release_block_reservation(
         {
             '$set': {
                 'status': 'released',
-                'released_at': datetime.now(timezone.utc).isoformat(),
+                'released_at': datetime.now(UTC).isoformat(),
                 'released_by': current_user.id
             }
         }

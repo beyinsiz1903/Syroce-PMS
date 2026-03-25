@@ -4,8 +4,7 @@ Domain Router: Enterprise Features
 Critical features, task management, RBAC, enterprise audit logging.
 """
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -31,7 +30,7 @@ router = APIRouter(prefix="/api", tags=["enterprise-features"])
 # 1. OTA Messaging
 @router.get("/ota/conversations")
 async def get_ota_conversations(
-    ota: Optional[str] = None,
+    ota: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     query = {'tenant_id': current_user.tenant_id}
@@ -65,7 +64,7 @@ async def send_ota_message(
         'message': message_data.get('message'),
         'sender': 'hotel',
         'channel': message_data.get('channel'),
-        'sent_at': datetime.now(timezone.utc).isoformat()
+        'sent_at': datetime.now(UTC).isoformat()
     }
     await db.ota_messages.insert_one(message)
 
@@ -96,7 +95,7 @@ async def save_booking_credentials(data: dict, current_user: User = Depends(get_
         'property_id': data.get('property_id', ''),
         'username': data.get('username', ''),
         'settings': data.get('settings', {'base_url': 'https://distribution.booking.com'}),
-        'updated_at': datetime.now(timezone.utc).isoformat()
+        'updated_at': datetime.now(UTC).isoformat()
     }
     if data.get('password'):
         creds['password'] = data['password']
@@ -125,7 +124,7 @@ async def push_ari_to_booking(data: dict, current_user: User = Depends(get_curre
         'action': 'ari_push',
         'status': 'queued',
         'details': f'ARI push for {len(rooms)} room(s)',
-        'timestamp': datetime.now(timezone.utc).isoformat()
+        'timestamp': datetime.now(UTC).isoformat()
     }
     await db.ota_booking_logs.insert_one(log_entry)
     return {'message': 'ARI push queued', 'log_id': log_entry['id']}
@@ -139,7 +138,7 @@ async def pull_reservations_from_booking(current_user: User = Depends(get_curren
         'action': 'reservation_pull',
         'status': 'queued',
         'details': 'Reservation pull from Booking.com',
-        'timestamp': datetime.now(timezone.utc).isoformat()
+        'timestamp': datetime.now(UTC).isoformat()
     }
     await db.ota_booking_logs.insert_one(log_entry)
     return {'message': 'Reservation pull queued', 'log_id': log_entry['id']}
@@ -174,7 +173,7 @@ async def get_demand_forecast(
 ):
     # Generate forecast data
     forecast = []
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     for i in range(days):
         date = today + timedelta(days=i)
         forecast.append({
@@ -228,7 +227,7 @@ async def start_room_cleaning(
 ):
     await db.rooms.update_one(
         {'id': room_id},
-        {'$set': {'hk_status': 'cleaning', 'cleaning_started_at': datetime.now(timezone.utc).isoformat()}}
+        {'$set': {'hk_status': 'cleaning', 'cleaning_started_at': datetime.now(UTC).isoformat()}}
     )
     return {'message': 'Cleaning started'}
 
@@ -242,7 +241,7 @@ async def complete_room_cleaning(
         {'id': room_id},
         {'$set': {
             'hk_status': 'clean',
-            'last_cleaned_at': datetime.now(timezone.utc).isoformat(),
+            'last_cleaned_at': datetime.now(UTC).isoformat(),
             'cleaned_by': completion_data.get('cleaned_by')
         }}
     )
@@ -257,7 +256,7 @@ async def get_properties(current_user: User = Depends(get_current_user)):
 
 @router.get("/multi-property/dashboard")
 async def get_multi_property_dashboard(
-    property_id: Optional[str] = None,
+    property_id: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     # Aggregate data across properties
@@ -285,7 +284,7 @@ async def add_inventory_product(
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
         **product_data,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
     await db.marketplace_inventory.insert_one(product)
     return product
@@ -305,7 +304,7 @@ async def create_purchase_order(
         'tenant_id': current_user.tenant_id,
         **order_data,
         'status': 'pending',
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
     await db.purchase_orders.insert_one(order.copy())
     return order
@@ -327,7 +326,7 @@ async def get_pos_closures(current_user: User = Depends(get_current_user)):
 @router.post("/pos/daily-closure")
 async def create_pos_closure(current_user: User = Depends(get_current_user)):
     # Calculate today's sales
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now(UTC).date().isoformat()
 
     closure = {
         'id': str(uuid.uuid4()),
@@ -337,7 +336,7 @@ async def create_pos_closure(current_user: User = Depends(get_current_user)):
         'cash_sales': 1200.00,
         'card_sales': 4220.50,
         'transaction_count': 45,
-        'closed_at': datetime.now(timezone.utc).isoformat(),
+        'closed_at': datetime.now(UTC).isoformat(),
         'closed_by': current_user.id
     }
 
@@ -404,9 +403,9 @@ async def create_task(
         'recurring': request.recurring,
         'recurrence_pattern': request.recurrence_pattern,
         'status': 'new' if not request.assigned_to else 'assigned',
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'created_by': current_user.id,
-        'updated_at': datetime.now(timezone.utc).isoformat()
+        'updated_at': datetime.now(UTC).isoformat()
     }
 
     task_copy = task.copy()
@@ -422,7 +421,7 @@ async def create_task(
             'message': f"New {request.priority} priority task assigned: {request.title}",
             'task_id': task['id'],
             'read': False,
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         }
         notif_copy = notification.copy()
         await db.notifications.insert_one(notif_copy)
@@ -469,11 +468,11 @@ async def get_tasks_dashboard(current_user: User = Depends(get_current_user)):
             'in_progress': sum(1 for t in dept_tasks if t.get('status') == 'in_progress'),
             'completed': sum(1 for t in dept_tasks if t.get('status') == 'completed'),
             'urgent': sum(1 for t in dept_tasks if t.get('priority') == 'urgent'),
-            'overdue': sum(1 for t in dept_tasks if t.get('due_date') and t.get('due_date') < datetime.now(timezone.utc).date().isoformat() and t.get('status') not in ['completed', 'verified'])
+            'overdue': sum(1 for t in dept_tasks if t.get('due_date') and t.get('due_date') < datetime.now(UTC).date().isoformat() and t.get('status') not in ['completed', 'verified'])
         }
 
     # Overall stats
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now(UTC).date().isoformat()
 
     return {
         'summary': {
@@ -500,7 +499,7 @@ async def get_delayed_tasks(
     current_user = await get_current_user(credentials)
 
     try:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Get SLA configs
         sla_configs = await db.sla_configs.find({
@@ -620,9 +619,9 @@ async def assign_task(
             '$set': {
                 'assigned_to': request.assigned_to,
                 'status': 'assigned',
-                'assigned_at': datetime.now(timezone.utc).isoformat(),
+                'assigned_at': datetime.now(UTC).isoformat(),
                 'assigned_by': current_user.id,
-                'updated_at': datetime.now(timezone.utc).isoformat()
+                'updated_at': datetime.now(UTC).isoformat()
             }
         }
     )
@@ -636,7 +635,7 @@ async def assign_task(
         'performed_by': current_user.id,
         'details': f"Assigned to {request.assigned_to}",
         'notes': request.notes,
-        'timestamp': datetime.now(timezone.utc).isoformat()
+        'timestamp': datetime.now(UTC).isoformat()
     }
     history_copy = history_entry.copy()
     await db.task_history.insert_one(history_copy)
@@ -650,7 +649,7 @@ async def assign_task(
         'message': f"Task assigned: {task.get('title')}",
         'task_id': task_id,
         'read': False,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
     notif_copy = notification.copy()
     await db.notifications.insert_one(notif_copy)
@@ -674,11 +673,11 @@ async def update_task_status(
 
     update_data = {
         'status': request.status,
-        'updated_at': datetime.now(timezone.utc).isoformat()
+        'updated_at': datetime.now(UTC).isoformat()
     }
 
     if request.status == 'completed':
-        update_data['completed_at'] = datetime.now(timezone.utc).isoformat()
+        update_data['completed_at'] = datetime.now(UTC).isoformat()
         update_data['completed_by'] = current_user.id
         if request.completion_photos:
             update_data['completion_photos'] = request.completion_photos
@@ -697,7 +696,7 @@ async def update_task_status(
         'performed_by': current_user.id,
         'details': f"Status changed to {request.status}",
         'notes': request.notes,
-        'timestamp': datetime.now(timezone.utc).isoformat()
+        'timestamp': datetime.now(UTC).isoformat()
     }
     history_copy = history_entry.copy()
     await db.task_history.insert_one(history_copy)
@@ -727,7 +726,7 @@ async def get_department_tasks(
     by_priority = {}
     overdue = 0
 
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now(UTC).date().isoformat()
 
     for task in tasks:
         status = task.get('status', 'new')
@@ -853,7 +852,7 @@ async def get_roles(current_user: User = Depends(get_current_user)):
                     'export_reports', 'system_settings'
                 ],
                 'department': 'management',
-                'created_at': datetime.now(timezone.utc).isoformat()
+                'created_at': datetime.now(UTC).isoformat()
             },
             {
                 'id': str(uuid.uuid4()),
@@ -866,7 +865,7 @@ async def get_roles(current_user: User = Depends(get_current_user)):
                     'post_charges', 'process_payments'
                 ],
                 'department': 'front_desk',
-                'created_at': datetime.now(timezone.utc).isoformat()
+                'created_at': datetime.now(UTC).isoformat()
             },
             {
                 'id': str(uuid.uuid4()),
@@ -878,7 +877,7 @@ async def get_roles(current_user: User = Depends(get_current_user)):
                     'view_housekeeping_reports'
                 ],
                 'department': 'housekeeping',
-                'created_at': datetime.now(timezone.utc).isoformat()
+                'created_at': datetime.now(UTC).isoformat()
             },
             {
                 'id': str(uuid.uuid4()),
@@ -890,7 +889,7 @@ async def get_roles(current_user: User = Depends(get_current_user)):
                     'void_charge', 'export_reports', 'view_ar_aging'
                 ],
                 'department': 'accounting',
-                'created_at': datetime.now(timezone.utc).isoformat()
+                'created_at': datetime.now(UTC).isoformat()
             },
             {
                 'id': str(uuid.uuid4()),
@@ -902,7 +901,7 @@ async def get_roles(current_user: User = Depends(get_current_user)):
                     'apply_pricing', 'view_comp_set', 'export_reports'
                 ],
                 'department': 'revenue',
-                'created_at': datetime.now(timezone.utc).isoformat()
+                'created_at': datetime.now(UTC).isoformat()
             },
             {
                 'id': str(uuid.uuid4()),
@@ -914,7 +913,7 @@ async def get_roles(current_user: User = Depends(get_current_user)):
                     'edit_menu', 'view_fnb_reports', 'generate_z_report'
                 ],
                 'department': 'fnb',
-                'created_at': datetime.now(timezone.utc).isoformat()
+                'created_at': datetime.now(UTC).isoformat()
             }
         ]
         roles = default_roles
@@ -934,7 +933,7 @@ async def create_role(
         'description': request.description,
         'permissions': request.permissions,
         'department': request.department,
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'created_by': current_user.id
     }
 
@@ -978,7 +977,7 @@ async def assign_role_to_user(
                 'role_id': request.role_id,
                 'role_name': role['role_name'],
                 'permissions': role['permissions'],
-                'updated_at': datetime.now(timezone.utc).isoformat()
+                'updated_at': datetime.now(UTC).isoformat()
             }
         }
     )
@@ -1056,7 +1055,7 @@ async def log_audit_event(tenant_id: str, user_id: str, action: str, entity_type
         'after_value': after_value,
         'ip_address': None,  # Can be captured from request
         'user_agent': None,  # Can be captured from request
-        'timestamp': datetime.now(timezone.utc).isoformat()
+        'timestamp': datetime.now(UTC).isoformat()
     }
 
     audit_copy = audit_log.copy()
@@ -1104,7 +1103,7 @@ async def get_critical_audit_logs(
         'delete_user', 'change_role'
     ]
 
-    start_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    start_date = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
     logs = await db.audit_logs.find({
         'tenant_id': current_user.tenant_id,
@@ -1151,7 +1150,7 @@ async def change_rate_with_audit(
     # Update rate
     await db.room_types.update_one(
         {'tenant_id': current_user.tenant_id, 'name': room_type},
-        {'$set': {'base_rate': new_rate, 'updated_at': datetime.now(timezone.utc).isoformat()}}
+        {'$set': {'base_rate': new_rate, 'updated_at': datetime.now(UTC).isoformat()}}
     )
 
     # Log audit event
@@ -1193,7 +1192,7 @@ async def create_backup(
         'status': 'in_progress',
         'size_mb': 0,
         'collections_included': request.include_collections or ['all'],
-        'started_at': datetime.now(timezone.utc).isoformat(),
+        'started_at': datetime.now(UTC).isoformat(),
         'created_by': current_user.id
     }
 
@@ -1218,7 +1217,7 @@ async def create_backup(
             '$set': {
                 'status': 'completed',
                 'size_mb': 145.7,  # Mock size
-                'completed_at': datetime.now(timezone.utc).isoformat()
+                'completed_at': datetime.now(UTC).isoformat()
             }
         }
     )
@@ -1280,7 +1279,7 @@ async def restore_backup(
         'tenant_id': current_user.tenant_id,
         'backup_id': backup_id,
         'status': 'in_progress',
-        'started_at': datetime.now(timezone.utc).isoformat(),
+        'started_at': datetime.now(UTC).isoformat(),
         'initiated_by': current_user.id
     }
 
@@ -1314,7 +1313,7 @@ async def get_system_health(current_user: User = Depends(get_current_user)):
     # Calculate RPO (Recovery Point Objective)
     if latest_backup:
         last_backup_time = datetime.fromisoformat(latest_backup['completed_at'])
-        hours_since_backup = (datetime.now(timezone.utc) - last_backup_time).total_seconds() / 3600
+        hours_since_backup = (datetime.now(UTC) - last_backup_time).total_seconds() / 3600
         rpo_status = 'good' if hours_since_backup < 24 else 'warning' if hours_since_backup < 48 else 'critical'
     else:
         hours_since_backup = None
@@ -1323,7 +1322,7 @@ async def get_system_health(current_user: User = Depends(get_current_user)):
     # Get audit log count (last 24h)
     audit_count = await db.audit_logs.count_documents({
         'tenant_id': current_user.tenant_id,
-        'timestamp': {'$gte': (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()}
+        'timestamp': {'$gte': (datetime.now(UTC) - timedelta(days=1)).isoformat()}
     })
 
     return {
@@ -1339,6 +1338,6 @@ async def get_system_health(current_user: User = Depends(get_current_user)):
             'rto_target': '15 minutes',
             'audit_events_24h': audit_count
         },
-        'timestamp': datetime.now(timezone.utc).isoformat()
+        'timestamp': datetime.now(UTC).isoformat()
     }
 

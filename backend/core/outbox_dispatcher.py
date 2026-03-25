@@ -7,7 +7,7 @@ or fans out to all active connectors via EventSyncService.
 Error classification determines retry vs. permanent failure.
 """
 import logging
-from typing import Any, Dict, Tuple
+from typing import Any
 
 logger = logging.getLogger("core.outbox_dispatcher")
 
@@ -29,7 +29,7 @@ EVENT_TYPE_TO_CM_EVENT = {
 }
 
 
-async def dispatch_outbox_event(event: Dict[str, Any]) -> Tuple[bool, str]:
+async def dispatch_outbox_event(event: dict[str, Any]) -> tuple[bool, str]:
     """
     Dispatch an outbox event to the appropriate provider(s).
 
@@ -103,7 +103,7 @@ async def dispatch_outbox_event(event: Dict[str, Any]) -> Tuple[bool, str]:
         return False, f"permanent: {error_msg[:500]}"
 
 
-async def _fallback_dispatch(event: Dict[str, Any], cm_event_name: str) -> Tuple[bool, str]:
+async def _fallback_dispatch(event: dict[str, Any], cm_event_name: str) -> tuple[bool, str]:
     """
     Fallback dispatch when EventSyncService is unavailable.
     Attempts direct webhook push similar to old cm_push_event.
@@ -142,7 +142,7 @@ async def _fallback_dispatch(event: Dict[str, Any], cm_event_name: str) -> Tuple
         return False, f"permanent: fallback dispatch failed: {error_msg[:300]}"
 
 
-def _build_cm_payload(event: Dict[str, Any], cm_event_name: str) -> Dict[str, Any]:
+def _build_cm_payload(event: dict[str, Any], cm_event_name: str) -> dict[str, Any]:
     """Build the payload expected by EventSyncService from an outbox event."""
     payload = dict(event.get("payload", {}))
 

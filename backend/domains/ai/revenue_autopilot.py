@@ -3,8 +3,7 @@ Revenue Autopilot - Tam Otomatik Fiyat Yönetimi
 Otomatik rakip takip, fiyat optimizasyonu, OTA push
 """
 import random
-from datetime import datetime, timezone
-from typing import Dict, List
+from datetime import UTC, datetime
 
 
 class RevenueAutopilot:
@@ -14,10 +13,10 @@ class RevenueAutopilot:
         self.db = db
         self.mode = 'supervised'  # full_auto, supervised, advisory
 
-    async def daily_optimization_cycle(self, tenant_id: str) -> Dict:
+    async def daily_optimization_cycle(self, tenant_id: str) -> dict:
         """Günlük optimizasyon döngüsü"""
         report = {
-            'cycle_date': datetime.now(timezone.utc).isoformat(),
+            'cycle_date': datetime.now(UTC).isoformat(),
             'mode': self.mode,
             'actions': []
         }
@@ -64,7 +63,7 @@ class RevenueAutopilot:
 
         return report
 
-    async def scrape_competitor_rates(self) -> List[Dict]:
+    async def scrape_competitor_rates(self) -> list[dict]:
         """Rakip fiyatlarını topla"""
         # Simulated (gerçekte: Booking.com scraping)
         competitors = [
@@ -74,7 +73,7 @@ class RevenueAutopilot:
         ]
         return competitors
 
-    async def update_demand_forecast(self, tenant_id: str) -> Dict:
+    async def update_demand_forecast(self, tenant_id: str) -> dict:
         """Talep tahminini güncelle"""
         # Simplified
         return {
@@ -82,7 +81,7 @@ class RevenueAutopilot:
             'trend': 'increasing'
         }
 
-    async def calculate_optimal_prices(self, tenant_id: str, competitor_data: List, demand_data: Dict) -> List[Dict]:
+    async def calculate_optimal_prices(self, tenant_id: str, competitor_data: list, demand_data: dict) -> list[dict]:
         """Optimal fiyatları hesapla"""
         # Get current prices
         # Calculate optimal based on competition + demand
@@ -99,7 +98,7 @@ class RevenueAutopilot:
             'change_pct': round(((optimal_price - 100) / 100) * 100, 1)
         }]
 
-    async def push_rates_to_channels(self, tenant_id: str, optimal_prices: List[Dict]) -> Dict:
+    async def push_rates_to_channels(self, tenant_id: str, optimal_prices: list[dict]) -> dict:
         """Fiyatları tüm kanallara gönder"""
         # Simulated (gerçekte: OTA API calls)
         channels = ['booking_com', 'expedia', 'hotel_website', 'gds']

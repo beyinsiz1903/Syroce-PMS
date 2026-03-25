@@ -6,8 +6,8 @@ Used as the final gate in the deploy pipeline and after canary promotion.
 """
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 
@@ -101,8 +101,8 @@ class SmokeTestRunner:
 
     async def run_all(self) -> ServiceResult:
         """Run all smoke tests sequentially."""
-        now = datetime.now(timezone.utc).isoformat()
-        results: List[Dict[str, Any]] = []
+        now = datetime.now(UTC).isoformat()
+        results: list[dict[str, Any]] = []
         token = None
         total_passed = 0
 

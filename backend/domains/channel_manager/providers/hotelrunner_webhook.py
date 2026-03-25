@@ -11,8 +11,8 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
@@ -63,7 +63,7 @@ async def _store_raw_payload(
             "raw_payload": raw_str,
             "payload_size_bytes": len(raw_str.encode("utf-8")),
             "source_ip": source_ip,
-            "received_at": datetime.now(timezone.utc).isoformat(),
+            "received_at": datetime.now(UTC).isoformat(),
         })
     except Exception as e:
         logger.warning("Raw payload storage failed (non-blocking): %s", e)
@@ -80,7 +80,7 @@ router = APIRouter(
 # ── Webhook Raw Event Persistence ─────────────────────────────────────
 
 async def _persist_and_process(
-    tenant_id: str, property_id: str, payload: Dict[str, Any], event_type: str,
+    tenant_id: str, property_id: str, payload: dict[str, Any], event_type: str,
     source_ip: str = "system",
 ):
     """Persist raw event and process through the unified ingest pipeline.
@@ -89,7 +89,7 @@ async def _persist_and_process(
       1. webhook_received — raw payload stored
       2. (normalized, deduplicated, validated — written by pipeline.process_event)
     """
-    t_start = datetime.now(timezone.utc)
+    t_start = datetime.now(UTC)
     correlation_id = str(uuid.uuid4())
     identity = extract_hotelrunner_identity(payload)
     hr_number = identity.get("external_reservation_id", "")
@@ -108,7 +108,7 @@ async def _persist_and_process(
     )
 
     # ── Timeline: webhook_received ────────────────────────────────
-    t_received = datetime.now(timezone.utc)
+    t_received = datetime.now(UTC)
     recv_duration_ms = int((t_received - t_start).total_seconds() * 1000)
     await _timeline_append(
         tenant_id=tenant_id,
@@ -168,7 +168,7 @@ async def _process_webhook_batch(
             logger.error(f"[WEBHOOK] Error processing {event_type}: {e}")
 
 
-def _resolve_property_id(body: Dict[str, Any]) -> str:
+def _resolve_property_id(body: dict[str, Any]) -> str:
     """Extract property_id from payload."""
     return body.get("property_id", "prop-001")
 
@@ -263,7 +263,7 @@ async def webhook_cancellations(request: Request, background_tasks: BackgroundTa
 @router.get("/logs/events")
 async def get_raw_events(
     limit: int = 50,
-    status: Optional[str] = None,
+    status: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Get raw ingest events for debugging and audit."""
@@ -385,7 +385,7 @@ class ReservationPullScheduler:
         token: str,
         hr_id: str,
         safety_window_minutes: int = 5,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Pull reservations for a specific tenant."""
         from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
 
@@ -401,10 +401,10 @@ class ReservationPullScheduler:
             last_pull = datetime.fromisoformat(cursor_doc["last_pull_at"])
             fetch_from = last_pull - timedelta(minutes=safety_window_minutes)
         else:
-            fetch_from = datetime.now(timezone.utc) - timedelta(days=7)
+            fetch_from = datetime.now(UTC) - timedelta(days=7)
 
         from_date = fetch_from.strftime("%Y-%m-%d")
-        pull_start = datetime.now(timezone.utc)
+        pull_start = datetime.now(UTC)
 
         # Fetch from HotelRunner
         result = await provider.get_reservations(
@@ -456,7 +456,7 @@ class ReservationPullScheduler:
             upsert=True,
         )
 
-        duration_ms = int((datetime.now(timezone.utc) - pull_start).total_seconds() * 1000)
+        duration_ms = int((datetime.now(UTC) - pull_start).total_seconds() * 1000)
         await _log_pull(tenant_id, "success", processed, duration_ms=duration_ms)
 
         logger.info(f"[PULL] Tenant {tenant_id}: fetched {len(all_reservations)}, processed {processed}")
@@ -469,11 +469,11 @@ class ReservationPullScheduler:
         }
 
 
-async def _log_pull(tenant_id: str, status: str, records: int, error: Optional[str] = None, duration_ms: int = 0):
+async def _log_pull(tenant_id: str, status: str, records: int, error: str | None = None, duration_ms: int = 0):
     await db.hotelrunner_sync_logs.insert_one({
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "sync_type": "scheduled_pull",
         "status": status,
         "duration_ms": duration_ms,

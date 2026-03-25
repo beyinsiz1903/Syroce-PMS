@@ -3,8 +3,8 @@ PMS Bookings Router — Extracted from routers/pms.py (Stage 2 decomposition)
 Booking CRUD, approval/rejection, multi-room bookings, room move history.
 """
 import uuid
-from datetime import datetime, timezone
-from typing import List, Literal, Optional
+from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -63,7 +63,7 @@ RejectReasonCode = Literal[
 
 class RejectRequest(BaseModel):
     reason_code: RejectReasonCode
-    reason_note: Optional[str] = Field(default=None, max_length=500)
+    reason_note: str | None = Field(default=None, max_length=500)
 
 
 class QuickBookingCreate(BaseModel):
@@ -72,25 +72,25 @@ class QuickBookingCreate(BaseModel):
     check_in: str
     check_out: str
     total_amount: float
-    guest_id: Optional[str] = None
+    guest_id: str | None = None
 
 
 class MultiRoomBookingCreate(BaseModel):
-    guest_id: Optional[str] = None
-    guest: Optional[GuestCreate] = None
+    guest_id: str | None = None
+    guest: GuestCreate | None = None
     arrival_date: str
     departure_date: str
-    rooms: List[dict]
-    company_id: Optional[str] = None
+    rooms: list[dict]
+    company_id: str | None = None
     channel: ChannelType = ChannelType.DIRECT
-    special_requests: Optional[str] = None
-    contracted_rate: Optional[ContractedRateType] = None
-    rate_type: Optional[RateType] = None
-    market_segment: Optional[MarketSegment] = None
-    cancellation_policy: Optional[CancellationPolicyType] = None
-    billing_address: Optional[str] = None
-    billing_tax_number: Optional[str] = None
-    billing_contact_person: Optional[str] = None
+    special_requests: str | None = None
+    contracted_rate: ContractedRateType | None = None
+    rate_type: RateType | None = None
+    market_segment: MarketSegment | None = None
+    cancellation_policy: CancellationPolicyType | None = None
+    billing_address: str | None = None
+    billing_tax_number: str | None = None
+    billing_contact_person: str | None = None
 
 
 # ── Routes ──
@@ -142,7 +142,7 @@ async def create_quick_booking(
         guest_id = data.guest_id
     else:
         guest_id = str(uuid.uuid4())
-        now_ts = datetime.now(timezone.utc)
+        now_ts = datetime.now(UTC)
         guest_doc = {
             "id": guest_id,
             "tenant_id": tenant_id,
@@ -182,10 +182,10 @@ async def create_quick_booking(
 async def get_bookings(
     limit: int = 30,  # Further reduced for instant response
     offset: int = 0,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    status: Optional[str] = None,
-    search: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     _: None = Depends(require_module("pms")),
 ):
@@ -260,7 +260,7 @@ async def get_bookings(
     )
 
 
-@router.get("/bookings/{booking_id}/override-logs", response_model=List[RateOverrideLog])
+@router.get("/bookings/{booking_id}/override-logs", response_model=list[RateOverrideLog])
 @cached(ttl=600, key_prefix="booking_override_logs")  # Cache for 10 min
 async def get_booking_override_logs(booking_id: str, current_user: User = Depends(get_current_user)):
     """Get all rate override logs for a specific booking."""
@@ -304,7 +304,7 @@ async def approve_booking(
             detail=f"Booking not in pending state: {booking.get('status')}",
         )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Atomic-ish: update only if still pending
     res = await db.bookings.update_one(
@@ -377,7 +377,7 @@ async def reject_booking(
             detail=f"Booking not in pending state: {booking.get('status')}",
         )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     rejection_fields = {
         "status": REJECTED_STATUS,
@@ -457,7 +457,7 @@ async def create_room_move_history(
         "to_room_id": move_data.get("to_room_id"),
         "reason": move_data.get("reason", ""),
         "moved_by": move_data.get("moved_by", current_user.name),
-        "moved_at": move_data.get("timestamp", datetime.now(timezone.utc).isoformat()),
+        "moved_at": move_data.get("timestamp", datetime.now(UTC).isoformat()),
     }
 
     await db.room_move_history.insert_one({**record})
@@ -465,7 +465,7 @@ async def create_room_move_history(
     return {"message": "Room move logged successfully", "history": record}
 
 
-@router.post("/pms/bookings/multi-room", response_model=List[Booking])
+@router.post("/pms/bookings/multi-room", response_model=list[Booking])
 async def create_multi_room_booking(
     payload: MultiRoomBookingCreate,
     current_user: User = Depends(get_current_user)
@@ -495,7 +495,7 @@ async def create_multi_room_booking(
     check_out_dt = datetime.fromisoformat(payload.departure_date.replace("Z", "+00:00"))
 
     group_id = str(uuid.uuid4())
-    created_bookings: List[Booking] = []
+    created_bookings: list[Booking] = []
 
     for room_data in payload.rooms:
         room_id = room_data.get("room_id")

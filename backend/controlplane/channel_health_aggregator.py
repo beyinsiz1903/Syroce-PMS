@@ -15,8 +15,8 @@ Metrics:
 import asyncio
 import logging
 import math
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -34,10 +34,10 @@ SLA_RETRY_SUCCESS_RATE = 80.0
 
 
 async def compute_channel_health(
-    tenant_id: Optional[str] = None, hours: int = 24,
-) -> Dict[str, Any]:
+    tenant_id: str | None = None, hours: int = 24,
+) -> dict[str, Any]:
     """Top-level aggregation for the Channel Health tab."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cutoff = (now - timedelta(hours=hours)).isoformat()
 
     results = await asyncio.gather(
@@ -76,12 +76,12 @@ async def compute_channel_health(
 # ─── Historical Trends ───────────────────────────────────────────
 
 async def compute_channel_health_trends(
-    tenant_id: Optional[str] = None,
+    tenant_id: str | None = None,
     hours: int = 168,
     bucket_hours: int = 0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Time-bucketed historical trends for channel health metrics."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cutoff = (now - timedelta(hours=hours)).isoformat()
 
     if bucket_hours <= 0:
@@ -102,7 +102,7 @@ async def compute_channel_health_trends(
     drift_buckets = results[3] if not isinstance(results[3], Exception) else []
     retry_buckets = results[4] if not isinstance(results[4], Exception) else []
 
-    ts_map: Dict[str, Dict[str, Any]] = {}
+    ts_map: dict[str, dict[str, Any]] = {}
     for b in latency_buckets:
         ts_map.setdefault(b["t"], {})["push_latency"] = {"p50": b["p50"], "p95": b["p95"], "p99": b["p99"], "count": b["count"]}
     for b in sync_buckets:
@@ -133,8 +133,8 @@ async def compute_channel_health_trends(
     }
 
 
-async def _trend_push_latency(tenant_id: Optional[str], cutoff: str, bucket_hours: int) -> List[Dict]:
-    match: Dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "success": True}
+async def _trend_push_latency(tenant_id: str | None, cutoff: str, bucket_hours: int) -> list[dict]:
+    match: dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "success": True}
     if tenant_id:
         match["tenant_id"] = tenant_id
     pipeline = [
@@ -169,8 +169,8 @@ async def _trend_push_latency(tenant_id: Optional[str], cutoff: str, bucket_hour
     return result
 
 
-async def _trend_sync_success(tenant_id: Optional[str], cutoff: str, bucket_hours: int) -> List[Dict]:
-    match: Dict[str, Any] = {"started_at": {"$gte": cutoff}}
+async def _trend_sync_success(tenant_id: str | None, cutoff: str, bucket_hours: int) -> list[dict]:
+    match: dict[str, Any] = {"started_at": {"$gte": cutoff}}
     if tenant_id:
         match["tenant_id"] = tenant_id
     pipeline = [
@@ -205,8 +205,8 @@ async def _trend_sync_success(tenant_id: Optional[str], cutoff: str, bucket_hour
     return result
 
 
-async def _trend_failures(tenant_id: Optional[str], cutoff: str, bucket_hours: int) -> List[Dict]:
-    match: Dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "success": False}
+async def _trend_failures(tenant_id: str | None, cutoff: str, bucket_hours: int) -> list[dict]:
+    match: dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "success": False}
     if tenant_id:
         match["tenant_id"] = tenant_id
     pipeline = [
@@ -230,8 +230,8 @@ async def _trend_failures(tenant_id: Optional[str], cutoff: str, bucket_hours: i
     return result
 
 
-async def _trend_drift_created(tenant_id: Optional[str], cutoff: str, bucket_hours: int) -> List[Dict]:
-    match: Dict[str, Any] = {"detected_at": {"$gte": cutoff}}
+async def _trend_drift_created(tenant_id: str | None, cutoff: str, bucket_hours: int) -> list[dict]:
+    match: dict[str, Any] = {"detected_at": {"$gte": cutoff}}
     if tenant_id:
         match["tenant_id"] = tenant_id
     pipeline = [
@@ -255,8 +255,8 @@ async def _trend_drift_created(tenant_id: Optional[str], cutoff: str, bucket_hou
     return result
 
 
-async def _trend_retry_success(tenant_id: Optional[str], cutoff: str, bucket_hours: int) -> List[Dict]:
-    match: Dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "retry_count": {"$gt": 0}}
+async def _trend_retry_success(tenant_id: str | None, cutoff: str, bucket_hours: int) -> list[dict]:
+    match: dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "retry_count": {"$gt": 0}}
     if tenant_id:
         match["tenant_id"] = tenant_id
     pipeline = [
@@ -293,11 +293,11 @@ async def _trend_retry_success(tenant_id: Optional[str], cutoff: str, bucket_hou
 # ─── Field KPIs ──────────────────────────────────────────────────
 
 async def compute_field_kpis(
-    tenant_id: Optional[str] = None,
+    tenant_id: str | None = None,
     period_hours: int = 24,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Operational field KPIs with period-over-period comparison."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     current_cutoff = (now - timedelta(hours=period_hours)).isoformat()
     prev_cutoff = (now - timedelta(hours=period_hours * 2)).isoformat()
 
@@ -327,7 +327,7 @@ async def compute_field_kpis(
     }
 
 
-def _empty_kpi() -> Dict[str, Any]:
+def _empty_kpi() -> dict[str, Any]:
     return {"current": 0, "previous": 0, "delta": 0, "trend": "flat"}
 
 
@@ -339,9 +339,9 @@ def _kpi_trend(current: float, previous: float) -> str:
     return "flat"
 
 
-async def _kpi_sync_success(tenant_id, current_cutoff, prev_cutoff, current_start) -> Dict[str, Any]:
+async def _kpi_sync_success(tenant_id, current_cutoff, prev_cutoff, current_start) -> dict[str, Any]:
     async def _rate(cutoff_from, cutoff_to):
-        match: Dict[str, Any] = {"started_at": {"$gte": cutoff_from, "$lt": cutoff_to}}
+        match: dict[str, Any] = {"started_at": {"$gte": cutoff_from, "$lt": cutoff_to}}
         if tenant_id:
             match["tenant_id"] = tenant_id
         pipeline = [{"$match": match}, {"$group": {
@@ -356,15 +356,15 @@ async def _kpi_sync_success(tenant_id, current_cutoff, prev_cutoff, current_star
             pass
         return 0.0
 
-    current = await _rate(current_cutoff, datetime.now(timezone.utc).isoformat())
+    current = await _rate(current_cutoff, datetime.now(UTC).isoformat())
     previous = await _rate(prev_cutoff, current_start)
     delta = round(current - previous, 1)
     return {"current": current, "previous": previous, "delta": delta, "trend": _kpi_trend(current, previous), "unit": "%"}
 
 
-async def _kpi_drift(tenant_id, current_cutoff, prev_cutoff, current_start) -> Dict[str, Any]:
+async def _kpi_drift(tenant_id, current_cutoff, prev_cutoff, current_start) -> dict[str, Any]:
     async def _count(cutoff_from, cutoff_to):
-        match: Dict[str, Any] = {"detected_at": {"$gte": cutoff_from, "$lt": cutoff_to}}
+        match: dict[str, Any] = {"detected_at": {"$gte": cutoff_from, "$lt": cutoff_to}}
         if tenant_id:
             match["tenant_id"] = tenant_id
         try:
@@ -372,15 +372,15 @@ async def _kpi_drift(tenant_id, current_cutoff, prev_cutoff, current_start) -> D
         except Exception:
             return 0
 
-    current = await _count(current_cutoff, datetime.now(timezone.utc).isoformat())
+    current = await _count(current_cutoff, datetime.now(UTC).isoformat())
     previous = await _count(prev_cutoff, current_start)
     delta = current - previous
     return {"current": current, "previous": previous, "delta": delta, "trend": _kpi_trend(current, previous), "unit": "issues"}
 
 
-async def _kpi_mttr(tenant_id, current_cutoff, prev_cutoff, current_start) -> Dict[str, Any]:
+async def _kpi_mttr(tenant_id, current_cutoff, prev_cutoff, current_start) -> dict[str, Any]:
     async def _avg_resolve_hours(cutoff_from, cutoff_to):
-        match: Dict[str, Any] = {
+        match: dict[str, Any] = {
             "resolved_at": {"$gte": cutoff_from, "$lt": cutoff_to},
             "status": "resolved",
         }
@@ -403,15 +403,15 @@ async def _kpi_mttr(tenant_id, current_cutoff, prev_cutoff, current_start) -> Di
             pass
         return 0.0
 
-    current = await _avg_resolve_hours(current_cutoff, datetime.now(timezone.utc).isoformat())
+    current = await _avg_resolve_hours(current_cutoff, datetime.now(UTC).isoformat())
     previous = await _avg_resolve_hours(prev_cutoff, current_start)
     delta = round(current - previous, 1)
     return {"current": current, "previous": previous, "delta": delta, "trend": _kpi_trend(current, previous), "unit": "saat"}
 
 
-async def _kpi_operator_interventions(tenant_id, current_cutoff, prev_cutoff, current_start) -> Dict[str, Any]:
+async def _kpi_operator_interventions(tenant_id, current_cutoff, prev_cutoff, current_start) -> dict[str, Any]:
     async def _count(cutoff_from, cutoff_to):
-        match: Dict[str, Any] = {
+        match: dict[str, Any] = {
             "resolved_at": {"$gte": cutoff_from, "$lt": cutoff_to},
             "resolution_type": "manual",
         }
@@ -422,15 +422,15 @@ async def _kpi_operator_interventions(tenant_id, current_cutoff, prev_cutoff, cu
         except Exception:
             return 0
 
-    current = await _count(current_cutoff, datetime.now(timezone.utc).isoformat())
+    current = await _count(current_cutoff, datetime.now(UTC).isoformat())
     previous = await _count(prev_cutoff, current_start)
     delta = current - previous
     return {"current": current, "previous": previous, "delta": delta, "trend": _kpi_trend(current, previous), "unit": "mudahale"}
 
 
-async def _kpi_push_sla(tenant_id, current_cutoff, prev_cutoff, current_start) -> Dict[str, Any]:
+async def _kpi_push_sla(tenant_id, current_cutoff, prev_cutoff, current_start) -> dict[str, Any]:
     async def _compliance_pct(cutoff_from, cutoff_to):
-        match: Dict[str, Any] = {"recorded_at": {"$gte": cutoff_from, "$lt": cutoff_to}, "success": True}
+        match: dict[str, Any] = {"recorded_at": {"$gte": cutoff_from, "$lt": cutoff_to}, "success": True}
         if tenant_id:
             match["tenant_id"] = tenant_id
         pipeline = [
@@ -448,17 +448,17 @@ async def _kpi_push_sla(tenant_id, current_cutoff, prev_cutoff, current_start) -
             pass
         return 0.0
 
-    current = await _compliance_pct(current_cutoff, datetime.now(timezone.utc).isoformat())
+    current = await _compliance_pct(current_cutoff, datetime.now(UTC).isoformat())
     previous = await _compliance_pct(prev_cutoff, current_start)
     delta = round(current - previous, 1)
     return {"current": current, "previous": previous, "delta": delta, "trend": _kpi_trend(current, previous), "unit": "%"}
 
 
 async def _push_latency_percentiles(
-    tenant_id: Optional[str], cutoff: str,
-) -> Dict[str, Any]:
+    tenant_id: str | None, cutoff: str,
+) -> dict[str, Any]:
     """Compute p50/p95/p99 push latency per provider and overall."""
-    match: Dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "success": True}
+    match: dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "success": True}
     if tenant_id:
         match["tenant_id"] = tenant_id
 
@@ -485,8 +485,8 @@ async def _push_latency_percentiles(
         }},
     ]
 
-    results: Dict[str, Any] = {"overall": {}, "by_provider": {}}
-    all_latencies: List[int] = []
+    results: dict[str, Any] = {"overall": {}, "by_provider": {}}
+    all_latencies: list[int] = []
 
     try:
         async for doc in db[RATE_PUSH_METRICS].aggregate(pipeline):
@@ -521,10 +521,10 @@ async def _push_latency_percentiles(
 
 
 async def _sync_metrics_by_provider(
-    tenant_id: Optional[str], cutoff: str,
-) -> Dict[str, Any]:
+    tenant_id: str | None, cutoff: str,
+) -> dict[str, Any]:
     """Sync success rate per provider."""
-    match: Dict[str, Any] = {"started_at": {"$gte": cutoff}}
+    match: dict[str, Any] = {"started_at": {"$gte": cutoff}}
     if tenant_id:
         match["tenant_id"] = tenant_id
 
@@ -552,7 +552,7 @@ async def _sync_metrics_by_provider(
         }},
     ]
 
-    results: Dict[str, Any] = {"by_provider": {}, "overall": {}}
+    results: dict[str, Any] = {"by_provider": {}, "overall": {}}
     total_all = 0
     completed_all = 0
 
@@ -584,10 +584,10 @@ async def _sync_metrics_by_provider(
 
 
 async def _failure_breakdown(
-    tenant_id: Optional[str], cutoff: str,
-) -> Dict[str, Any]:
+    tenant_id: str | None, cutoff: str,
+) -> dict[str, Any]:
     """Failure breakdown by classification (timeout/validation/mapping etc.)."""
-    match: Dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "success": False}
+    match: dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "success": False}
     if tenant_id:
         match["tenant_id"] = tenant_id
 
@@ -612,8 +612,8 @@ async def _failure_breakdown(
         }},
     ]
 
-    results: Dict[str, Any] = {"by_provider": {}, "overall": {}}
-    overall_counts: Dict[str, int] = {}
+    results: dict[str, Any] = {"by_provider": {}, "overall": {}}
+    overall_counts: dict[str, int] = {}
 
     try:
         async for doc in db[RATE_PUSH_METRICS].aggregate(pipeline):
@@ -635,10 +635,10 @@ async def _failure_breakdown(
 
 
 async def _reconciliation_drift(
-    tenant_id: Optional[str],
-) -> Dict[str, Any]:
+    tenant_id: str | None,
+) -> dict[str, Any]:
     """Open reconciliation issues (drift) per provider."""
-    match: Dict[str, Any] = {"status": {"$in": ["open", "investigating", "retrying"]}}
+    match: dict[str, Any] = {"status": {"$in": ["open", "investigating", "retrying"]}}
     if tenant_id:
         match["tenant_id"] = tenant_id
 
@@ -663,7 +663,7 @@ async def _reconciliation_drift(
         }},
     ]
 
-    results: Dict[str, Any] = {"by_provider": {}, "total_open": 0}
+    results: dict[str, Any] = {"by_provider": {}, "total_open": 0}
 
     try:
         async for doc in db[RECONCILIATION_ISSUES].aggregate(pipeline):
@@ -683,10 +683,10 @@ async def _reconciliation_drift(
 
 
 async def _retry_metrics(
-    tenant_id: Optional[str], cutoff: str,
-) -> Dict[str, Any]:
+    tenant_id: str | None, cutoff: str,
+) -> dict[str, Any]:
     """Retry success rate — pushes with retry_count > 0 that eventually succeeded."""
-    match: Dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "retry_count": {"$gt": 0}}
+    match: dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "retry_count": {"$gt": 0}}
     if tenant_id:
         match["tenant_id"] = tenant_id
 
@@ -713,7 +713,7 @@ async def _retry_metrics(
         }},
     ]
 
-    results: Dict[str, Any] = {"by_provider": {}, "overall": {}}
+    results: dict[str, Any] = {"by_provider": {}, "overall": {}}
     total_retried = 0
     total_retried_success = 0
 
@@ -743,10 +743,10 @@ async def _retry_metrics(
 
 
 async def _provider_summary(
-    tenant_id: Optional[str],
-) -> Dict[str, Any]:
+    tenant_id: str | None,
+) -> dict[str, Any]:
     """Quick summary of active connectors per provider."""
-    match: Dict[str, Any] = {}
+    match: dict[str, Any] = {}
     if tenant_id:
         match["tenant_id"] = tenant_id
 
@@ -760,7 +760,7 @@ async def _provider_summary(
         }},
     ]
 
-    results: Dict[str, Any] = {}
+    results: dict[str, Any] = {}
     try:
         async for doc in db[CONNECTORS].aggregate(pipeline):
             provider = doc["_id"] or "unknown"
@@ -776,17 +776,17 @@ async def _provider_summary(
 
 
 def _compute_sla(
-    latency: Dict[str, Any],
-    sync_m: Dict[str, Any],
-    retries: Dict[str, Any],
-) -> Dict[str, Any]:
+    latency: dict[str, Any],
+    sync_m: dict[str, Any],
+    retries: dict[str, Any],
+) -> dict[str, Any]:
     """Compute SLA compliance per provider."""
     providers = set()
     providers.update(latency.get("by_provider", {}).keys())
     providers.update(sync_m.get("by_provider", {}).keys())
     providers.update(retries.get("by_provider", {}).keys())
 
-    sla: Dict[str, Any] = {}
+    sla: dict[str, Any] = {}
     for prov in providers:
         lat = latency.get("by_provider", {}).get(prov, {})
         syn = sync_m.get("by_provider", {}).get(prov, {})
@@ -819,7 +819,7 @@ def _compute_sla(
     return sla
 
 
-def _percentile(sorted_values: List[int], pct: int) -> int:
+def _percentile(sorted_values: list[int], pct: int) -> int:
     """Compute percentile from a pre-sorted list."""
     if not sorted_values:
         return 0
@@ -836,11 +836,11 @@ def _percentile(sorted_values: List[int], pct: int) -> int:
 # ─── Weekly Proof — Week-over-week improvement ──────────────────
 
 async def compute_weekly_proof(
-    tenant_id: Optional[str] = None,
+    tenant_id: str | None = None,
     weeks: int = 8,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Week-over-week summary for drift, MTTR, SLA compliance, sync success."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     weekly_data = []
 
     for w in range(weeks - 1, -1, -1):
@@ -896,8 +896,8 @@ async def compute_weekly_proof(
     }
 
 
-async def _weekly_sync_rate(tenant_id: Optional[str], start: str, end: str) -> float:
-    match: Dict[str, Any] = {"started_at": {"$gte": start, "$lt": end}}
+async def _weekly_sync_rate(tenant_id: str | None, start: str, end: str) -> float:
+    match: dict[str, Any] = {"started_at": {"$gte": start, "$lt": end}}
     if tenant_id:
         match["tenant_id"] = tenant_id
     pipeline = [{"$match": match}, {"$group": {
@@ -912,8 +912,8 @@ async def _weekly_sync_rate(tenant_id: Optional[str], start: str, end: str) -> f
     return 0.0
 
 
-async def _weekly_drift_count(tenant_id: Optional[str], start: str, end: str) -> int:
-    match: Dict[str, Any] = {"detected_at": {"$gte": start, "$lt": end}}
+async def _weekly_drift_count(tenant_id: str | None, start: str, end: str) -> int:
+    match: dict[str, Any] = {"detected_at": {"$gte": start, "$lt": end}}
     if tenant_id:
         match["tenant_id"] = tenant_id
     try:
@@ -922,8 +922,8 @@ async def _weekly_drift_count(tenant_id: Optional[str], start: str, end: str) ->
         return 0
 
 
-async def _weekly_mttr(tenant_id: Optional[str], start: str, end: str) -> float:
-    match: Dict[str, Any] = {
+async def _weekly_mttr(tenant_id: str | None, start: str, end: str) -> float:
+    match: dict[str, Any] = {
         "resolved_at": {"$gte": start, "$lt": end},
         "status": "resolved",
     }
@@ -947,8 +947,8 @@ async def _weekly_mttr(tenant_id: Optional[str], start: str, end: str) -> float:
     return 0.0
 
 
-async def _weekly_sla_compliance(tenant_id: Optional[str], start: str, end: str) -> float:
-    match: Dict[str, Any] = {"recorded_at": {"$gte": start, "$lt": end}, "success": True}
+async def _weekly_sla_compliance(tenant_id: str | None, start: str, end: str) -> float:
+    match: dict[str, Any] = {"recorded_at": {"$gte": start, "$lt": end}, "success": True}
     if tenant_id:
         match["tenant_id"] = tenant_id
     pipeline = [
@@ -967,8 +967,8 @@ async def _weekly_sla_compliance(tenant_id: Optional[str], start: str, end: str)
     return 0.0
 
 
-async def _weekly_push_p95(tenant_id: Optional[str], start: str, end: str) -> int:
-    match: Dict[str, Any] = {"recorded_at": {"$gte": start, "$lt": end}, "success": True}
+async def _weekly_push_p95(tenant_id: str | None, start: str, end: str) -> int:
+    match: dict[str, Any] = {"recorded_at": {"$gte": start, "$lt": end}, "success": True}
     if tenant_id:
         match["tenant_id"] = tenant_id
     pipeline = [

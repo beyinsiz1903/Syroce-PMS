@@ -4,8 +4,8 @@ Uses existing guest journey, reservations, messaging, and review data.
 """
 import logging
 import uuid
-from datetime import date, datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, date, datetime
+from typing import Any
 
 from core.database import db
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class GuestLifetimeValueModel:
     """Calculate guest lifetime value based on stay history and spending."""
 
-    async def calculate(self, tenant_id: str, guest_id: str) -> Dict[str, Any]:
+    async def calculate(self, tenant_id: str, guest_id: str) -> dict[str, Any]:
         # Get all bookings for guest
         bookings = await db.bookings.find(
             {"tenant_id": tenant_id, "guest_id": guest_id},
@@ -82,7 +82,7 @@ class GuestLifetimeValueModel:
 class GuestSegmentationModel:
     """Segment guests based on behavior patterns."""
 
-    async def segment_guest(self, tenant_id: str, guest_id: str) -> Dict[str, Any]:
+    async def segment_guest(self, tenant_id: str, guest_id: str) -> dict[str, Any]:
         bookings = await db.bookings.find(
             {"tenant_id": tenant_id, "guest_id": guest_id},
             {"_id": 0, "total_amount": 1, "status": 1, "source": 1,
@@ -136,7 +136,7 @@ class GuestSegmentationModel:
         }
 
     def _assign_segment(self, stays: int, spend: float, biz: int,
-                        leisure: int, room_type: str) -> Dict[str, Any]:
+                        leisure: int, room_type: str) -> dict[str, Any]:
         if stays >= 5 and spend > 10000:
             return {"name": "loyal_high_value", "description": "Sadik yuksek degerli misafir",
                     "tags": ["loyal", "high_spender", "priority"]}
@@ -159,7 +159,7 @@ class GuestSegmentationModel:
 class ChurnPredictionModel:
     """Predict guest churn risk."""
 
-    async def predict(self, tenant_id: str, guest_id: str) -> Dict[str, Any]:
+    async def predict(self, tenant_id: str, guest_id: str) -> dict[str, Any]:
         bookings = await db.bookings.find(
             {"tenant_id": tenant_id, "guest_id": guest_id},
             {"_id": 0, "status": 1, "check_in": 1, "check_out": 1, "created_at": 1},
@@ -254,7 +254,7 @@ class ChurnPredictionModel:
             "next_best_action": self._next_action(risk_score, factors),
         }
 
-    def _next_action(self, score: float, factors: List) -> str:
+    def _next_action(self, score: float, factors: list) -> str:
         if score > 0.5:
             return "Kisisel teklif gonderin - ozel indirim veya sadakat odulu"
         elif score > 0.25:
@@ -266,7 +266,7 @@ class UpsellRecommendationModel:
     """Generate upsell recommendations based on guest profile."""
 
     async def recommend(self, tenant_id: str, guest_id: str,
-                        booking_id: Optional[str] = None) -> Dict[str, Any]:
+                        booking_id: str | None = None) -> dict[str, Any]:
         # Guest profile
         guest = await db.guests.find_one(
             {"id": guest_id, "tenant_id": tenant_id}, {"_id": 0}
@@ -378,7 +378,7 @@ class GuestIntelligenceDashboard:
         self.churn = ChurnPredictionModel()
         self.upsell = UpsellRecommendationModel()
 
-    async def get_guest_summary(self, tenant_id: str, guest_id: str) -> Dict[str, Any]:
+    async def get_guest_summary(self, tenant_id: str, guest_id: str) -> dict[str, Any]:
         """Get complete intelligence for a single guest."""
         ltv_data = await self.ltv.calculate(tenant_id, guest_id)
         segment = await self.segmentation.segment_guest(tenant_id, guest_id)
@@ -422,9 +422,9 @@ class GuestIntelligenceDashboard:
             },
         }
 
-    async def get_dashboard(self, tenant_id: str, limit: int = 50) -> Dict[str, Any]:
+    async def get_dashboard(self, tenant_id: str, limit: int = 50) -> dict[str, Any]:
         """Get aggregate guest intelligence dashboard."""
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
 
         # Get recent active guests
         guests = await db.guests.find(
@@ -516,8 +516,8 @@ class GuestIntelligenceDashboard:
             "status": "success",
             "output_count": len(guests),
             "started_at": started_at.isoformat(),
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-            "duration_ms": int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000),
+            "completed_at": datetime.now(UTC).isoformat(),
+            "duration_ms": int((datetime.now(UTC) - started_at).total_seconds() * 1000),
         })
 
         return {

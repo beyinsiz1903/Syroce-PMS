@@ -4,7 +4,6 @@ Arrivals, departures, occupancy, housekeeping readiness, folio issues,
 night audit exceptions, blocked check-ins trends.
 """
 from datetime import date, timedelta
-from typing import Dict, List
 
 from core.database import db
 
@@ -12,7 +11,7 @@ from core.database import db
 class DashboardTrendsService:
     """Provides trend data for operational dashboard graphs."""
 
-    async def get_trends(self, tenant_id: str, start_date: str, end_date: str) -> Dict:
+    async def get_trends(self, tenant_id: str, start_date: str, end_date: str) -> dict:
         """Get all trend data for a date range."""
         sd = date.fromisoformat(start_date)
         ed = date.fromisoformat(end_date)
@@ -42,7 +41,7 @@ class DashboardTrendsService:
             },
         }
 
-    async def _arrivals_trend(self, tenant_id: str, date_range: List[str]) -> List[Dict]:
+    async def _arrivals_trend(self, tenant_id: str, date_range: list[str]) -> list[dict]:
         """Count arrivals per day."""
         result = []
         for d in date_range:
@@ -54,7 +53,7 @@ class DashboardTrendsService:
             result.append({"date": d, "count": count})
         return result
 
-    async def _departures_trend(self, tenant_id: str, date_range: List[str]) -> List[Dict]:
+    async def _departures_trend(self, tenant_id: str, date_range: list[str]) -> list[dict]:
         """Count departures per day."""
         result = []
         for d in date_range:
@@ -66,7 +65,7 @@ class DashboardTrendsService:
             result.append({"date": d, "count": count})
         return result
 
-    async def _occupancy_trend(self, tenant_id: str, date_range: List[str]) -> List[Dict]:
+    async def _occupancy_trend(self, tenant_id: str, date_range: list[str]) -> list[dict]:
         """Calculate occupancy rate per day from daily snapshots or live data."""
         total_rooms = await db.rooms.count_documents({
             "tenant_id": tenant_id,
@@ -100,7 +99,7 @@ class DashboardTrendsService:
                 result.append({"date": d, "rate": rate, "occupied": occupied, "total": total_rooms})
         return result
 
-    async def _housekeeping_readiness_trend(self, tenant_id: str, date_range: List[str]) -> List[Dict]:
+    async def _housekeeping_readiness_trend(self, tenant_id: str, date_range: list[str]) -> list[dict]:
         """Housekeeping readiness: percentage of rooms in available/inspected state."""
         total_rooms = await db.rooms.count_documents({
             "tenant_id": tenant_id,
@@ -128,7 +127,7 @@ class DashboardTrendsService:
             result.append({"date": d, "rate": rate, "ready": ready, "total": total_rooms})
         return result
 
-    async def _folio_issue_trend(self, tenant_id: str, date_range: List[str]) -> List[Dict]:
+    async def _folio_issue_trend(self, tenant_id: str, date_range: list[str]) -> list[dict]:
         """Count folio-related audit events per day."""
         result = []
         for d in date_range:
@@ -141,7 +140,7 @@ class DashboardTrendsService:
             result.append({"date": d, "count": count})
         return result
 
-    async def _audit_exception_trend(self, tenant_id: str, date_range: List[str]) -> List[Dict]:
+    async def _audit_exception_trend(self, tenant_id: str, date_range: list[str]) -> list[dict]:
         """Count night audit exceptions per day."""
         result = []
         for d in date_range:
@@ -152,7 +151,7 @@ class DashboardTrendsService:
             result.append({"date": d, "count": count})
         return result
 
-    async def _blocked_checkin_trend(self, tenant_id: str, date_range: List[str]) -> List[Dict]:
+    async def _blocked_checkin_trend(self, tenant_id: str, date_range: list[str]) -> list[dict]:
         """Count blocked check-ins per day (arrivals with unready rooms)."""
         result = []
         for d in date_range:

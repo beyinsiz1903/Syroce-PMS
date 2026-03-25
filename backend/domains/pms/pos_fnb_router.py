@@ -4,8 +4,7 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -73,24 +72,24 @@ class POSOrderItemRequest(BaseModel):
 
 
 class POSOrderCreateRequest(BaseModel):
-    booking_id: Optional[str] = None
-    folio_id: Optional[str] = None
-    order_items: List[POSOrderItemRequest]
+    booking_id: str | None = None
+    folio_id: str | None = None
+    order_items: list[POSOrderItemRequest]
 
 
 class POSOrder(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
-    booking_id: Optional[str] = None
-    guest_id: Optional[str] = None
-    folio_id: Optional[str] = None
-    order_items: List[POSOrderItem]
+    booking_id: str | None = None
+    guest_id: str | None = None
+    folio_id: str | None = None
+    order_items: list[POSOrderItem]
     subtotal: float
     tax_amount: float
     total_amount: float
     status: str = "pending"  # pending, completed, cancelled
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class StockAdjustRequest(BaseModel):
@@ -98,12 +97,12 @@ class StockAdjustRequest(BaseModel):
     adjustment_type: str  # in, out, adjustment
     quantity: int
     reason: str
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class UpdateOrderStatusRequest(BaseModel):
     status: str  # pending, preparing, ready, served
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class TableLayout(BaseModel):
@@ -120,8 +119,8 @@ class TableLayout(BaseModel):
     width: float = 100
     height: float = 100
     status: str = "available"  # available, occupied, reserved, dirty
-    current_transaction_id: Optional[str] = None
-    server_assigned: Optional[str] = None
+    current_transaction_id: str | None = None
+    server_assigned: str | None = None
 
 
 class KitchenOrderItem(BaseModel):
@@ -133,13 +132,13 @@ class KitchenOrderItem(BaseModel):
     table_number: str
     item_name: str
     quantity: int
-    special_instructions: Optional[str] = None
+    special_instructions: str | None = None
     station: str  # hot_kitchen, cold_kitchen, bar, pastry
     status: str = "pending"  # pending, preparing, ready, served
     priority: str = "normal"  # urgent, high, normal
-    ordered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    ready_at: Optional[datetime] = None
-    served_at: Optional[datetime] = None
+    ordered_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    ready_at: datetime | None = None
+    served_at: datetime | None = None
 
 
 class Alert(BaseModel):
@@ -152,19 +151,19 @@ class Alert(BaseModel):
     title: str
     description: str
     source_module: str
-    source_id: Optional[str] = None
-    assigned_to: Optional[str] = None
+    source_id: str | None = None
+    assigned_to: str | None = None
     status: str = "unread"  # unread, read, acknowledged, resolved
-    action_url: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    read_at: Optional[datetime] = None
+    action_url: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    read_at: datetime | None = None
 
 
 @router.post("/fnb/kitchen-order/{order_id}/complete")
 async def complete_kitchen_order(order_id: str, current_user: User = Depends(get_current_user)):
     await db.kitchen_orders.update_one(
         {'id': order_id},
-        {'$set': {'status': 'ready', 'ready_at': datetime.now(timezone.utc).isoformat()}}
+        {'$set': {'status': 'ready', 'ready_at': datetime.now(UTC).isoformat()}}
     )
     await _broadcast_kitchen_queue(current_user.tenant_id)
     return {'success': True, 'message': 'Sipariş hazır olarak işaretlendi'}
@@ -183,7 +182,7 @@ async def create_order(order_data: OrderCreate, current_user: User = Depends(get
 
 
 
-@router.get("/marketplace/orders", response_model=List[Order], dependencies=[Depends(require_feature("hidden_marketplace"))])
+@router.get("/marketplace/orders", response_model=list[Order], dependencies=[Depends(require_feature("hidden_marketplace"))])
 @cached(ttl=300, key_prefix="marketplace_orders")  # Cache for 5 min
 async def get_orders(current_user: User = Depends(get_current_user)):
     orders = await db.orders.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
@@ -202,14 +201,14 @@ async def create_pos_transaction(
     transaction = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
-        'transaction_date': datetime.now(timezone.utc).date().isoformat(),
-        'transaction_time': datetime.now(timezone.utc).time().isoformat(),
+        'transaction_date': datetime.now(UTC).date().isoformat(),
+        'transaction_time': datetime.now(UTC).time().isoformat(),
         'amount': request.amount,
         'payment_method': request.payment_method,
         'folio_id': request.folio_id,
         'status': 'completed',
         'processed_by': current_user.id,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     transaction_copy = transaction.copy()
@@ -222,8 +221,8 @@ async def create_pos_transaction(
 async def split_check(
     transaction_id: str,
     split_type: str,  # equal, by_item, custom
-    split_count: Optional[int] = 2,
-    split_details: Optional[Dict] = None,
+    split_count: int | None = 2,
+    split_details: dict | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -309,7 +308,7 @@ async def transfer_table(
     to_table: str,
     outlet_id: str,
     transfer_all: bool = True,
-    items_to_transfer: Optional[List[int]] = None,
+    items_to_transfer: list[int] | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Transfer items from one table to another"""
@@ -351,7 +350,7 @@ async def apply_happy_hour_discount(
     discount_pct: float,
     start_time: str,  # HH:MM
     end_time: str,
-    applicable_categories: List[str] = [],
+    applicable_categories: list[str] = [],
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -368,7 +367,7 @@ async def apply_happy_hour_discount(
         'end_time': end_time,
         'applicable_categories': applicable_categories,
         'active': True,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     await db.happy_hour_rules.insert_one(happy_hour)
@@ -460,10 +459,10 @@ async def get_table_layout(
 @router.post("/pos/table-layout/update")
 async def update_table_layout(
     table_id: str,
-    position_x: Optional[float] = None,
-    position_y: Optional[float] = None,
-    seats: Optional[int] = None,
-    server_assigned: Optional[str] = None,
+    position_x: float | None = None,
+    position_y: float | None = None,
+    seats: int | None = None,
+    server_assigned: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Update table layout - drag & drop positioning"""
@@ -540,8 +539,8 @@ async def get_split_bill_ui_data(
 
 @router.get("/pos/kds/kitchen-display")
 async def get_kitchen_display_orders(
-    station: Optional[str] = None,  # hot_kitchen, cold_kitchen, bar, pastry
-    status: Optional[str] = None,
+    station: str | None = None,  # hot_kitchen, cold_kitchen, bar, pastry
+    status: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -564,7 +563,7 @@ async def get_kitchen_display_orders(
     async for order in db.kitchen_orders.find(match_criteria).sort('ordered_at', 1):
         # Calculate wait time
         ordered_at = datetime.fromisoformat(order.get('ordered_at'))
-        wait_minutes = (datetime.now(timezone.utc) - ordered_at).total_seconds() / 60
+        wait_minutes = (datetime.now(UTC) - ordered_at).total_seconds() / 60
 
         # Determine priority color
         if wait_minutes > 15:
@@ -613,9 +612,9 @@ async def update_kitchen_order_status(
     updates = {'status': new_status}
 
     if new_status == 'ready':
-        updates['ready_at'] = datetime.now(timezone.utc).isoformat()
+        updates['ready_at'] = datetime.now(UTC).isoformat()
     elif new_status == 'served':
-        updates['served_at'] = datetime.now(timezone.utc).isoformat()
+        updates['served_at'] = datetime.now(UTC).isoformat()
 
     await db.kitchen_orders.update_one(
         {'id': order_id, 'tenant_id': current_user.tenant_id},
@@ -629,10 +628,10 @@ async def update_kitchen_order_status(
 
 @router.post("/pos/room-charge-restrictions")
 async def set_room_charge_restrictions(
-    max_daily_charge: Optional[float] = None,
+    max_daily_charge: float | None = None,
     require_supervisor_approval: bool = False,
-    allowed_categories: Optional[List[str]] = None,
-    restricted_hours: Optional[Dict[str, str]] = None,  # {"start": "02:00", "end": "06:00"}
+    allowed_categories: list[str] | None = None,
+    restricted_hours: dict[str, str] | None = None,  # {"start": "02:00", "end": "06:00"}
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -649,7 +648,7 @@ async def set_room_charge_restrictions(
         'require_supervisor_approval': require_supervisor_approval,
         'allowed_categories': allowed_categories or ['food', 'beverage', 'minibar'],
         'restricted_hours': restricted_hours,
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'created_by': current_user.name
     }
 
@@ -746,7 +745,7 @@ async def validate_room_charge(
 
 @router.get("/fnb/dashboard")
 async def get_fnb_dashboard(
-    date: Optional[str] = None,
+    date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get F&B dashboard overview"""
@@ -754,7 +753,7 @@ async def get_fnb_dashboard(
 
     # Default to today
     if not date:
-        date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        date = datetime.now(UTC).strftime('%Y-%m-%d')
 
     target_date = datetime.fromisoformat(date)
     start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -824,8 +823,8 @@ async def get_fnb_dashboard(
 
 @router.get("/fnb/sales-report")
 async def get_fnb_sales_report(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get F&B sales report"""
@@ -836,7 +835,7 @@ async def get_fnb_sales_report(
         start = datetime.fromisoformat(start_date)
         end = datetime.fromisoformat(end_date)
     else:
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
         start = end - timedelta(days=30)
 
     # Get charges
@@ -893,8 +892,8 @@ async def get_fnb_sales_report(
 
 @router.get("/fnb/menu-performance")
 async def get_fnb_menu_performance(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get menu item performance analysis"""
@@ -905,7 +904,7 @@ async def get_fnb_menu_performance(
         start = datetime.fromisoformat(start_date)
         end = datetime.fromisoformat(end_date)
     else:
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
         start = end - timedelta(days=30)
 
     # Get POS orders with item details
@@ -980,7 +979,7 @@ async def get_fnb_revenue_chart(
 
     # Calculate date range
     days = int(period.replace('days', ''))
-    end = datetime.now(timezone.utc)
+    end = datetime.now(UTC)
     start = end - timedelta(days=days)
 
     # Get charges
@@ -1137,9 +1136,9 @@ async def create_pos_order(
 
 @router.get("/pos/orders")
 async def get_pos_orders(
-    booking_id: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    booking_id: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get POS orders with filtering"""
@@ -1180,8 +1179,8 @@ async def get_pos_orders(
 
 @router.get("/pos/mobile/active-orders")
 async def get_active_orders(
-    status: Optional[str] = None,  # pending, preparing, ready, served
-    outlet_id: Optional[str] = None,
+    status: str | None = None,  # pending, preparing, ready, served
+    outlet_id: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
@@ -1210,7 +1209,7 @@ async def get_active_orders(
         if isinstance(created_at, str):
             created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
 
-        time_elapsed = (datetime.now(timezone.utc) - created_at).total_seconds() / 60  # minutes
+        time_elapsed = (datetime.now(UTC) - created_at).total_seconds() / 60  # minutes
 
         # Determine if delayed (more than 30 minutes in pending/preparing)
         is_delayed = False
@@ -1272,7 +1271,7 @@ async def get_order_details(
     if isinstance(created_at, str):
         created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
 
-    time_elapsed = (datetime.now(timezone.utc) - created_at).total_seconds() / 60
+    time_elapsed = (datetime.now(UTC) - created_at).total_seconds() / 60
 
     # Get order items with details
     order_items = []
@@ -1350,7 +1349,7 @@ async def update_order_status(
         'changed_by': current_user.username,
         'changed_by_role': current_user.role,
         'notes': request.notes,
-        'timestamp': datetime.now(timezone.utc).isoformat()
+        'timestamp': datetime.now(UTC).isoformat()
     })
 
     # Update order
@@ -1360,7 +1359,7 @@ async def update_order_status(
             '$set': {
                 'status': request.status,
                 'status_history': status_history,
-                'updated_at': datetime.now(timezone.utc).isoformat(),
+                'updated_at': datetime.now(UTC).isoformat(),
                 'updated_by': current_user.username
             }
         }
@@ -1370,7 +1369,7 @@ async def update_order_status(
         'message': 'Order status updated successfully',
         'order_id': order_id,
         'new_status': request.status,
-        'updated_at': datetime.now(timezone.utc).isoformat()
+        'updated_at': datetime.now(UTC).isoformat()
     }
 
 
@@ -1379,11 +1378,11 @@ async def update_order_status(
 
 @router.get("/pos/mobile/order-history")
 async def get_order_history(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    outlet_id: Optional[str] = None,
-    server_name: Optional[str] = None,
-    status: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    outlet_id: str | None = None,
+    server_name: str | None = None,
+    status: str | None = None,
     limit: int = 50,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -1455,10 +1454,10 @@ async def get_order_history(
 
 @router.get("/pos/mobile/inventory-movements")
 async def get_inventory_movements(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    product_id: Optional[str] = None,
-    movement_type: Optional[str] = None,  # in, out, adjustment
+    start_date: str | None = None,
+    end_date: str | None = None,
+    product_id: str | None = None,
+    movement_type: str | None = None,  # in, out, adjustment
     limit: int = 100,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -1500,7 +1499,7 @@ async def get_inventory_movements(
             'reason': movement.get('reason', ''),
             'notes': movement.get('notes', ''),
             'performed_by': movement.get('performed_by', ''),
-            'timestamp': movement.get('timestamp', datetime.now(timezone.utc).isoformat())
+            'timestamp': movement.get('timestamp', datetime.now(UTC).isoformat())
         })
 
     # If no movements exist, create sample data
@@ -1513,7 +1512,7 @@ async def get_inventory_movements(
                 'quantity': 50,
                 'unit_of_measure': 'pcs',
                 'reason': 'Tedarikçi teslimatı',
-                'timestamp': (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+                'timestamp': (datetime.now(UTC) - timedelta(hours=2)).isoformat()
             },
             {
                 'id': str(uuid.uuid4()),
@@ -1522,7 +1521,7 @@ async def get_inventory_movements(
                 'quantity': 30,
                 'unit_of_measure': 'pcs',
                 'reason': 'Tedarikçi teslimatı',
-                'timestamp': (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+                'timestamp': (datetime.now(UTC) - timedelta(hours=2)).isoformat()
             },
             {
                 'id': str(uuid.uuid4()),
@@ -1531,7 +1530,7 @@ async def get_inventory_movements(
                 'quantity': -12,
                 'unit_of_measure': 'pcs',
                 'reason': 'F&B satışı',
-                'timestamp': (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+                'timestamp': (datetime.now(UTC) - timedelta(minutes=30)).isoformat()
             },
             {
                 'id': str(uuid.uuid4()),
@@ -1540,7 +1539,7 @@ async def get_inventory_movements(
                 'quantity': -5,
                 'unit_of_measure': 'pcs',
                 'reason': 'F&B satışı',
-                'timestamp': (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
+                'timestamp': (datetime.now(UTC) - timedelta(minutes=15)).isoformat()
             }
         ]
         movements = sample_movements
@@ -1556,7 +1555,7 @@ async def get_inventory_movements(
 
 @router.get("/pos/mobile/stock-levels")
 async def get_stock_levels(
-    category: Optional[str] = None,
+    category: str | None = None,
     low_stock_only: bool = False,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -1604,7 +1603,7 @@ async def get_stock_levels(
             'is_low_stock': is_low_stock,
             'stock_status': stock_status,
             'status_color': status_color,
-            'last_updated': item.get('last_updated', datetime.now(timezone.utc).isoformat())
+            'last_updated': item.get('last_updated', datetime.now(UTC).isoformat())
         }
 
         if not low_stock_only or is_low_stock:
@@ -1839,7 +1838,7 @@ async def adjust_stock(
         {
             '$set': {
                 'quantity': new_qty,
-                'last_updated': datetime.now(timezone.utc).isoformat(),
+                'last_updated': datetime.now(UTC).isoformat(),
                 'last_updated_by': current_user.username
             }
         }
@@ -1860,7 +1859,7 @@ async def adjust_stock(
         'notes': request.notes,
         'performed_by': current_user.username,
         'performed_by_role': current_user.role,
-        'timestamp': datetime.now(timezone.utc).isoformat()
+        'timestamp': datetime.now(UTC).isoformat()
     }
 
     await db.inventory_movements.insert_one(movement)

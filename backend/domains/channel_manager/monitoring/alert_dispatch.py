@@ -14,8 +14,8 @@ Dispatch architecture:
                     └── Email (future)
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 
@@ -41,7 +41,7 @@ DEFAULT_SLACK_SEVERITIES = ["critical", "high"]
 
 # ── Configuration CRUD ────────────────────────────────────────────────
 
-async def get_dispatch_config(tenant_id: str = "system") -> Dict[str, Any]:
+async def get_dispatch_config(tenant_id: str = "system") -> dict[str, Any]:
     """Get alert dispatch configuration."""
     config = await db[COLL_ALERT_CONFIG].find_one(
         {"tenant_id": tenant_id}, _NO_ID,
@@ -66,11 +66,11 @@ async def get_dispatch_config(tenant_id: str = "system") -> Dict[str, Any]:
 
 async def update_dispatch_config(
     tenant_id: str,
-    config: Dict[str, Any],
-) -> Dict[str, Any]:
+    config: dict[str, Any],
+) -> dict[str, Any]:
     """Update alert dispatch configuration."""
     config["tenant_id"] = tenant_id
-    config["updated_at"] = datetime.now(timezone.utc).isoformat()
+    config["updated_at"] = datetime.now(UTC).isoformat()
 
     await db[COLL_ALERT_CONFIG].replace_one(
         {"tenant_id": tenant_id},
@@ -80,7 +80,7 @@ async def update_dispatch_config(
     return config
 
 
-async def test_slack_webhook(webhook_url: str) -> Dict[str, Any]:
+async def test_slack_webhook(webhook_url: str) -> dict[str, Any]:
     """Send a test message to the Slack webhook."""
     payload = {
         "text": ":white_check_mark: *Syroce PMS — Slack Alert Test*\nThis is a test message from the Channel Manager monitoring system.",
@@ -92,7 +92,7 @@ async def test_slack_webhook(webhook_url: str) -> Dict[str, Any]:
                     "text": (
                         ":white_check_mark: *Slack Alert Test Successful*\n"
                         "*System:* Syroce PMS Channel Manager\n"
-                        "*Time:* " + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC") + "\n"
+                        "*Time:* " + datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC") + "\n"
                         "Alert notifications are now configured."
                     ),
                 },
@@ -112,7 +112,7 @@ async def test_slack_webhook(webhook_url: str) -> Dict[str, Any]:
 
 # ── Alert Dispatch ────────────────────────────────────────────────────
 
-async def dispatch_alert(alert: Dict[str, Any], tenant_id: str = "system") -> Dict[str, Any]:
+async def dispatch_alert(alert: dict[str, Any], tenant_id: str = "system") -> dict[str, Any]:
     """
     Dispatch an alert to all configured channels.
     Called by the alert engine when a new alert is created.
@@ -134,7 +134,7 @@ async def dispatch_alert(alert: Dict[str, Any], tenant_id: str = "system") -> Di
     return result
 
 
-async def _send_slack_alert(webhook_url: str, alert: Dict[str, Any]) -> bool:
+async def _send_slack_alert(webhook_url: str, alert: dict[str, Any]) -> bool:
     """Send formatted alert to Slack via incoming webhook."""
     if not webhook_url:
         return False
@@ -166,7 +166,7 @@ async def _send_slack_alert(webhook_url: str, alert: Dict[str, Any]) -> bool:
                         "elements": [
                             {
                                 "type": "mrkdwn",
-                                "text": f"Syroce PMS | {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
+                                "text": f"Syroce PMS | {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}",
                             },
                         ],
                     },

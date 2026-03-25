@@ -5,8 +5,7 @@ Extracted from legacy_routes.py — leads, funnel, activities,
 campaigns, segments, complaints, spa, events.
 """
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
 
@@ -40,8 +39,8 @@ async def create_lead(
         "assigned_to": lead_data.get("assigned_to", current_user.id),
         "lead_score": 50,
         "notes": lead_data.get("notes"),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
     await db.sales_leads.insert_one(lead)
     return {"success": True, "message": "Lead basariyla olusturuldu", "lead_id": lead["id"]}
@@ -49,7 +48,7 @@ async def create_lead(
 
 @router.get("/sales/leads")
 async def get_leads(
-    status: Optional[str] = None,
+    status: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Lead'leri listele"""
@@ -91,12 +90,12 @@ async def log_sales_activity(
         "subject": activity_data["subject"],
         "description": activity_data.get("description"),
         "created_by": current_user.id,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.sales_activities.insert_one(activity)
     await db.sales_leads.update_one(
         {"id": activity_data["lead_id"]},
-        {"$set": {"last_contacted_at": datetime.now(timezone.utc).isoformat()}},
+        {"$set": {"last_contacted_at": datetime.now(UTC).isoformat()}},
     )
     return {"success": True, "message": "Aktivite kaydedildi"}
 
@@ -118,7 +117,7 @@ async def create_campaign(
         "status": "draft",
         "sent_count": 0,
         "created_by": current_user.id,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.marketing_campaigns.insert_one(campaign)
     return {"success": True, "message": "Kampanya olusturuldu", "campaign_id": campaign["id"]}
@@ -144,7 +143,7 @@ async def create_complaint(
         "tenant_id": current_user.tenant_id,
         **complaint_data,
         "status": "open",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.service_complaints.insert_one(complaint)
     return {"success": True, "message": "Sikayet kaydedildi", "complaint_id": complaint["id"]}
@@ -161,7 +160,7 @@ async def create_spa_appointment(
         "tenant_id": current_user.tenant_id,
         **appointment_data,
         "status": "confirmed",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.spa_appointments.insert_one(appointment)
     return {"success": True, "appointment_id": appointment["id"]}
@@ -186,7 +185,7 @@ async def create_event_booking(
         "tenant_id": current_user.tenant_id,
         **event_data,
         "status": "confirmed",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.event_bookings.insert_one(event)
     return {"success": True, "event_id": event["id"]}

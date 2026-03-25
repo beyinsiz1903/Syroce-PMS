@@ -2,8 +2,8 @@
 Property-Scoped Permissions - RBAC enforcement at the property level.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -26,7 +26,7 @@ class PropertyPermissionService:
     """Enforces property-level RBAC for multi-property tenants."""
 
     async def check_permission(self, tenant_id: str, user_id: str, role: str,
-                               property_id: str, action: str) -> Dict[str, Any]:
+                               property_id: str, action: str) -> dict[str, Any]:
         """Check if a user has permission for an action on a property."""
         allowed_actions = PROPERTY_PERMISSIONS.get(role, [])
         has_permission = "*" in allowed_actions or action in allowed_actions
@@ -52,7 +52,7 @@ class PropertyPermissionService:
             "action": action,
             "permitted": has_permission,
             "property_assigned": property_assigned,
-            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "checked_at": datetime.now(UTC).isoformat(),
         }
 
         if not has_permission:
@@ -64,12 +64,12 @@ class PropertyPermissionService:
         return result
 
     async def get_property_permissions(self, tenant_id: str,
-                                       property_id: Optional[str] = None) -> Dict[str, Any]:
+                                       property_id: str | None = None) -> dict[str, Any]:
         """Get permission summary for properties."""
-        q: Dict[str, Any] = {"tenant_id": tenant_id}
+        q: dict[str, Any] = {"tenant_id": tenant_id}
         users = await db.users.find(q, {"_id": 0}).to_list(500)
 
-        property_users: Dict[str, list] = {}
+        property_users: dict[str, list] = {}
         for u in users:
             role = u.get("role", "")
             if hasattr(role, "value"):
@@ -100,7 +100,7 @@ class PropertyPermissionService:
             "available_roles": list(PROPERTY_PERMISSIONS.keys()),
         }
 
-    def get_role_permissions(self) -> Dict[str, List[str]]:
+    def get_role_permissions(self) -> dict[str, list[str]]:
         return dict(PROPERTY_PERMISSIONS)
 
 

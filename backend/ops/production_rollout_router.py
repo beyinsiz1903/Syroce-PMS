@@ -11,7 +11,7 @@ Unified API for:
 - Post-launch monitoring
 - Final platform maturity score
 """
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -41,7 +41,7 @@ class RollbackRequest(BaseModel):
 
 class OnboardingRequest(BaseModel):
     hotel_name: str
-    config: Optional[Dict[str, Any]] = None
+    config: dict[str, Any] | None = None
 
 class CompleteStepRequest(BaseModel):
     step_id: str
@@ -53,7 +53,7 @@ class RunScenarioRequest(BaseModel):
 class RecordDrillRequest(BaseModel):
     schedule_id: str
     result: str
-    details: Optional[Dict[str, Any]] = None
+    details: dict[str, Any] | None = None
 
 
 # ═══════════════════════════════════════════════════════════════════════

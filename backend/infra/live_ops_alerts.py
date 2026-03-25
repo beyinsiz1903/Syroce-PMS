@@ -7,8 +7,8 @@ import logging
 import os
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.live_ops_alerts")
 
@@ -84,13 +84,13 @@ class LiveOpsAlertManager:
     """Manages production alerts with dedup, cooldown, and webhook delivery."""
 
     def __init__(self):
-        self._alert_history: List[Dict[str, Any]] = []
+        self._alert_history: list[dict[str, Any]] = []
         self._max_history = 500
-        self._last_fired: Dict[str, float] = {}  # alert_type -> last_fired_timestamp
-        self._suppressed_count: Dict[str, int] = defaultdict(int)
-        self._delivery_log: List[Dict[str, Any]] = []
+        self._last_fired: dict[str, float] = {}  # alert_type -> last_fired_timestamp
+        self._suppressed_count: dict[str, int] = defaultdict(int)
+        self._delivery_log: list[dict[str, Any]] = []
 
-    def _dedup_key(self, alert_type: str, context: Dict[str, Any]) -> str:
+    def _dedup_key(self, alert_type: str, context: dict[str, Any]) -> str:
         """Generate dedup key for an alert."""
         ctx_str = str(sorted(context.items())) if context else ""
         return hashlib.md5(f"{alert_type}:{ctx_str}".encode()).hexdigest()
@@ -102,8 +102,8 @@ class LiveOpsAlertManager:
         last = self._last_fired.get(alert_type, 0)
         return (time.time() - last) < cooldown
 
-    async def fire_alert(self, alert_type: str, context: Optional[Dict[str, Any]] = None,
-                         user_id: str = "system") -> Dict[str, Any]:
+    async def fire_alert(self, alert_type: str, context: dict[str, Any] | None = None,
+                         user_id: str = "system") -> dict[str, Any]:
         """Fire a production alert with dedup and cooldown."""
         context = context or {}
         defn = ALERT_DEFINITIONS.get(alert_type, {
@@ -124,13 +124,13 @@ class LiveOpsAlertManager:
             }
 
         alert = {
-            "alert_id": f"alert_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{alert_type}",
+            "alert_id": f"alert_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}_{alert_type}",
             "alert_type": alert_type,
             "severity": defn["severity"],
             "description": defn["description"],
             "runbook": defn.get("runbook", ""),
             "context": context,
-            "fired_at": datetime.now(timezone.utc).isoformat(),
+            "fired_at": datetime.now(UTC).isoformat(),
             "fired_by": user_id,
             "delivered_to": [],
         }
@@ -147,7 +147,7 @@ class LiveOpsAlertManager:
 
         return {"status": "fired", "alert": alert}
 
-    async def _deliver_webhook(self, alert: Dict[str, Any]) -> List[Dict[str, Any]]:
+    async def _deliver_webhook(self, alert: dict[str, Any]) -> list[dict[str, Any]]:
         """Deliver alert to configured webhook targets."""
         results = []
         for target_name, url in WEBHOOK_TARGETS.items():
@@ -201,17 +201,17 @@ class LiveOpsAlertManager:
 
             results.append(delivery)
             self._delivery_log.append({**delivery, "alert_id": alert["alert_id"],
-                                        "timestamp": datetime.now(timezone.utc).isoformat()})
+                                        "timestamp": datetime.now(UTC).isoformat()})
 
         return results
 
-    def get_alert_history(self, limit: int = 50, severity: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_alert_history(self, limit: int = 50, severity: str | None = None) -> list[dict[str, Any]]:
         alerts = self._alert_history
         if severity:
             alerts = [a for a in alerts if a.get("severity") == severity]
         return alerts[-limit:]
 
-    def get_alert_summary(self) -> Dict[str, Any]:
+    def get_alert_summary(self) -> dict[str, Any]:
         by_severity = defaultdict(int)
         by_type = defaultdict(int)
         for a in self._alert_history:
@@ -227,10 +227,10 @@ class LiveOpsAlertManager:
             "last_alert": self._alert_history[-1] if self._alert_history else None,
         }
 
-    def get_delivery_log(self, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_delivery_log(self, limit: int = 50) -> list[dict[str, Any]]:
         return self._delivery_log[-limit:]
 
-    def get_definitions(self) -> Dict[str, Any]:
+    def get_definitions(self) -> dict[str, Any]:
         return {k: {**v, "type": k} for k, v in ALERT_DEFINITIONS.items()}
 
 

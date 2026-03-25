@@ -8,8 +8,8 @@ Normalize into canonical structure for comparison.
 Uses real provider API clients with graceful error handling.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from domains.channel_manager.ingest.normalizer import (
     normalize_hotelrunner,
@@ -19,9 +19,9 @@ logger = logging.getLogger("reconciliation.snapshot_collectors")
 
 
 async def collect_hotelrunner_snapshot(
-    connection: Dict[str, Any],
+    connection: dict[str, Any],
     since_hours: int = 24,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Fetch HotelRunner reservations updated in the last N hours.
     Returns list of canonical reservation dicts.
@@ -41,14 +41,14 @@ async def collect_hotelrunner_snapshot(
         return []
 
     provider = HotelRunnerProvider(token=token, hr_id=hr_id)
-    since = (datetime.now(timezone.utc) - timedelta(hours=since_hours)).strftime("%Y-%m-%d")
+    since = (datetime.now(UTC) - timedelta(hours=since_hours)).strftime("%Y-%m-%d")
 
     logger.info(
         f"HotelRunner snapshot: property={property_id}, "
         f"window={since_hours}h, since={since}"
     )
 
-    all_reservations: List[Dict[str, Any]] = []
+    all_reservations: list[dict[str, Any]] = []
     page = 1
     max_pages = 20
 
@@ -94,9 +94,9 @@ async def collect_hotelrunner_snapshot(
 
 
 async def collect_exely_snapshot(
-    connection: Dict[str, Any],
+    connection: dict[str, Any],
     since_hours: int = 24,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Fetch Exely reservations via OTA_ReadRQ updated in the last N hours.
     Returns list of canonical reservation dicts.
@@ -122,9 +122,9 @@ async def collect_exely_snapshot(
         provider_kwargs["endpoint_url"] = endpoint_url
     provider = ExelyProvider(**provider_kwargs)
 
-    since = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+    since = datetime.now(UTC) - timedelta(hours=since_hours)
     from_date = since.strftime("%Y-%m-%d")
-    to_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    to_date = datetime.now(UTC).strftime("%Y-%m-%d")
 
     logger.info(
         f"Exely snapshot: property={property_id}, "
@@ -142,7 +142,7 @@ async def collect_exely_snapshot(
         return []
 
     raw_reservations = result.get("reservations", [])
-    canonical_list: List[Dict[str, Any]] = []
+    canonical_list: list[dict[str, Any]] = []
 
     for raw in raw_reservations:
         try:
@@ -159,7 +159,7 @@ async def collect_exely_snapshot(
     return canonical_list
 
 
-def _exely_parsed_to_canonical(parsed: Dict[str, Any]) -> Dict[str, Any]:
+def _exely_parsed_to_canonical(parsed: dict[str, Any]) -> dict[str, Any]:
     """
     Convert Exely response_parser output to the canonical format
     expected by the comparison engine.
@@ -215,9 +215,9 @@ SNAPSHOT_COLLECTORS = {
 
 async def collect_provider_snapshot(
     provider: str,
-    connection: Dict[str, Any],
+    connection: dict[str, Any],
     since_hours: int = 24,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Dispatch to the appropriate provider snapshot collector."""
     collector = SNAPSHOT_COLLECTORS.get(provider)
     if not collector:

@@ -10,8 +10,7 @@ Endpoints:
   - POST /api/outbox/replay          → Replay all failed events for a provider
 """
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -42,8 +41,8 @@ class OutboxStatusResponse(BaseModel):
     processed_24h: int
     retry: int
     failed: int
-    oldest_pending_seconds: Optional[float]
-    last_processed_at: Optional[str]
+    oldest_pending_seconds: float | None
+    last_processed_at: str | None
     provider_failures: dict
     worker: dict
 
@@ -51,7 +50,7 @@ class OutboxStatusResponse(BaseModel):
 @outbox_admin_router.get("/status", response_model=OutboxStatusResponse)
 async def outbox_status():
     """Get outbox queue health and metrics."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     pending = await db.outbox_events.count_documents({"status": "pending"})
     processing = await db.outbox_events.count_documents({"status": "processing"})
@@ -75,7 +74,7 @@ async def outbox_status():
         try:
             created = datetime.fromisoformat(oldest_pending["created_at"])
             if created.tzinfo is None:
-                created = created.replace(tzinfo=timezone.utc)
+                created = created.replace(tzinfo=UTC)
             oldest_seconds = round((now - created).total_seconds(), 1)
         except Exception:
             pass
@@ -120,8 +119,8 @@ async def outbox_status():
 
 @outbox_admin_router.get("/events")
 async def list_outbox_events(
-    status: Optional[str] = Query(None, description="Filter by status"),
-    provider: Optional[str] = Query(None, description="Filter by provider"),
+    status: str | None = Query(None, description="Filter by status"),
+    provider: str | None = Query(None, description="Filter by provider"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -149,7 +148,7 @@ async def list_outbox_events(
 @outbox_admin_router.post("/{event_id}/requeue", response_model=RequeueResponse)
 async def requeue_event(event_id: str):
     """Requeue a single failed event for retry."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     result = await db.outbox_events.find_one_and_update(
         {
@@ -185,11 +184,11 @@ async def requeue_event(event_id: str):
 
 @outbox_admin_router.post("/replay", response_model=ReplayResponse)
 async def replay_failed_events(
-    provider: Optional[str] = Query(None, description="Filter by provider"),
-    tenant_id: Optional[str] = Query(None, description="Filter by tenant"),
+    provider: str | None = Query(None, description="Filter by provider"),
+    tenant_id: str | None = Query(None, description="Filter by tenant"),
 ):
     """Replay all failed events, optionally filtered by provider/tenant."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     query = {"status": STATUS_FAILED}
     if provider:

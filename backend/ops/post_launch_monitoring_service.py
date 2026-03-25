@@ -6,8 +6,7 @@ and long-term health tracking after production launch.
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Dict
+from datetime import UTC, datetime, timedelta
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -39,7 +38,7 @@ class PostLaunchMonitoringService:
 
     async def get_monitoring_status(self, ctx: OperationContext) -> ServiceResult:
         """Get overall post-launch monitoring status."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Check scheduled drill status
         drill_status = []
@@ -84,9 +83,9 @@ class PostLaunchMonitoringService:
         })
 
     async def record_drill_execution(
-        self, ctx: OperationContext, schedule_id: str, result: str, details: Dict = None
+        self, ctx: OperationContext, schedule_id: str, result: str, details: dict = None
     ) -> ServiceResult:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         entry = {
             "id": str(uuid.uuid4()),
             "tenant_id": ctx.tenant_id,
@@ -102,7 +101,7 @@ class PostLaunchMonitoringService:
 
     async def get_platform_maturity_report(self, ctx: OperationContext) -> ServiceResult:
         """Generate a comprehensive platform maturity report."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Latest go-live score
         latest_score = await self._db.golive_scores.find_one(
@@ -143,8 +142,8 @@ class PostLaunchMonitoringService:
             "generated_at": now.isoformat(),
         })
 
-    def _compute_next_due(self, frequency: str, last_run: Dict = None) -> datetime:
-        now = datetime.now(timezone.utc)
+    def _compute_next_due(self, frequency: str, last_run: dict = None) -> datetime:
+        now = datetime.now(UTC)
         if not last_run:
             return now - timedelta(days=1)  # Overdue if never run
 

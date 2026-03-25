@@ -5,8 +5,8 @@ Supports sandbox/test/live modes with credential vault integration.
 """
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from .models import ProviderType
 
@@ -24,12 +24,12 @@ class BaseProvider:
 
     provider_type: str = "base"
 
-    async def send(self, recipient: str, body: str, subject: Optional[str] = None,
-                   credentials: dict = None, mode: str = ProviderMode.LIVE) -> Dict[str, Any]:
+    async def send(self, recipient: str, body: str, subject: str | None = None,
+                   credentials: dict = None, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         raise NotImplementedError
 
-    async def check_health(self, credentials: dict, mode: str = ProviderMode.LIVE) -> Dict[str, Any]:
-        return {"status": "unknown", "checked_at": datetime.now(timezone.utc).isoformat()}
+    async def check_health(self, credentials: dict, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
+        return {"status": "unknown", "checked_at": datetime.now(UTC).isoformat()}
 
     def classify_error(self, error_msg: str) -> str:
         """Classify provider errors for alerting."""
@@ -52,8 +52,8 @@ class TwilioSMSProvider(BaseProvider):
 
     provider_type = ProviderType.TWILIO_SMS.value
 
-    async def send(self, recipient: str, body: str, subject: Optional[str] = None,
-                   credentials: dict = None, mode: str = ProviderMode.LIVE) -> Dict[str, Any]:
+    async def send(self, recipient: str, body: str, subject: str | None = None,
+                   credentials: dict = None, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         creds = credentials or {}
         account_sid = creds.get("account_sid", "")
         auth_token = creds.get("auth_token", "")
@@ -94,14 +94,14 @@ class TwilioSMSProvider(BaseProvider):
                     "error_class": self.classify_error(err_str),
                     "latency_ms": round((time.time() - start) * 1000, 2)}
 
-    async def check_health(self, credentials: dict, mode: str = ProviderMode.LIVE) -> Dict[str, Any]:
+    async def check_health(self, credentials: dict, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         if mode == ProviderMode.TEST:
-            return {"status": "healthy", "mode": "test", "checked_at": datetime.now(timezone.utc).isoformat()}
+            return {"status": "healthy", "mode": "test", "checked_at": datetime.now(UTC).isoformat()}
         account_sid = credentials.get("account_sid", "")
         auth_token = credentials.get("auth_token", "")
         if not account_sid or not auth_token:
             return {"status": "unhealthy", "error": "Missing credentials",
-                    "checked_at": datetime.now(timezone.utc).isoformat()}
+                    "checked_at": datetime.now(UTC).isoformat()}
         try:
             import httpx
             url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}.json"
@@ -109,10 +109,10 @@ class TwilioSMSProvider(BaseProvider):
                 resp = await client.get(url, auth=(account_sid, auth_token))
             healthy = resp.status_code == 200
             return {"status": "healthy" if healthy else "unhealthy",
-                    "checked_at": datetime.now(timezone.utc).isoformat()}
+                    "checked_at": datetime.now(UTC).isoformat()}
         except Exception as e:
             return {"status": "unhealthy", "error": str(e)[:200],
-                    "checked_at": datetime.now(timezone.utc).isoformat()}
+                    "checked_at": datetime.now(UTC).isoformat()}
 
 
 class SendGridEmailProvider(BaseProvider):
@@ -120,8 +120,8 @@ class SendGridEmailProvider(BaseProvider):
 
     provider_type = ProviderType.SENDGRID_EMAIL.value
 
-    async def send(self, recipient: str, body: str, subject: Optional[str] = None,
-                   credentials: dict = None, mode: str = ProviderMode.LIVE) -> Dict[str, Any]:
+    async def send(self, recipient: str, body: str, subject: str | None = None,
+                   credentials: dict = None, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         creds = credentials or {}
         api_key = creds.get("api_key", "")
         from_email = creds.get("from_email", "noreply@hotel.com")
@@ -168,13 +168,13 @@ class SendGridEmailProvider(BaseProvider):
                     "error_class": self.classify_error(err_str),
                     "latency_ms": round((time.time() - start) * 1000, 2)}
 
-    async def check_health(self, credentials: dict, mode: str = ProviderMode.LIVE) -> Dict[str, Any]:
+    async def check_health(self, credentials: dict, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         if mode == ProviderMode.TEST:
-            return {"status": "healthy", "mode": "test", "checked_at": datetime.now(timezone.utc).isoformat()}
+            return {"status": "healthy", "mode": "test", "checked_at": datetime.now(UTC).isoformat()}
         api_key = credentials.get("api_key", "")
         if not api_key:
             return {"status": "unhealthy", "error": "Missing API key",
-                    "checked_at": datetime.now(timezone.utc).isoformat()}
+                    "checked_at": datetime.now(UTC).isoformat()}
         try:
             import httpx
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -184,10 +184,10 @@ class SendGridEmailProvider(BaseProvider):
                 )
             healthy = resp.status_code == 200
             return {"status": "healthy" if healthy else "unhealthy",
-                    "checked_at": datetime.now(timezone.utc).isoformat()}
+                    "checked_at": datetime.now(UTC).isoformat()}
         except Exception as e:
             return {"status": "unhealthy", "error": str(e)[:200],
-                    "checked_at": datetime.now(timezone.utc).isoformat()}
+                    "checked_at": datetime.now(UTC).isoformat()}
 
 
 class WhatsAppProvider(BaseProvider):
@@ -195,8 +195,8 @@ class WhatsAppProvider(BaseProvider):
 
     provider_type = ProviderType.WHATSAPP.value
 
-    async def send(self, recipient: str, body: str, subject: Optional[str] = None,
-                   credentials: dict = None, mode: str = ProviderMode.LIVE) -> Dict[str, Any]:
+    async def send(self, recipient: str, body: str, subject: str | None = None,
+                   credentials: dict = None, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         creds = credentials or {}
         access_token = creds.get("access_token", "")
         phone_number_id = creds.get("phone_number_id", "")
@@ -242,14 +242,14 @@ class WhatsAppProvider(BaseProvider):
                     "error_class": self.classify_error(err_str),
                     "latency_ms": round((time.time() - start) * 1000, 2)}
 
-    async def check_health(self, credentials: dict, mode: str = ProviderMode.LIVE) -> Dict[str, Any]:
+    async def check_health(self, credentials: dict, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         if mode == ProviderMode.TEST:
-            return {"status": "healthy", "mode": "test", "checked_at": datetime.now(timezone.utc).isoformat()}
+            return {"status": "healthy", "mode": "test", "checked_at": datetime.now(UTC).isoformat()}
         access_token = credentials.get("access_token", "")
         if not access_token:
             return {"status": "unhealthy", "error": "Missing access token",
-                    "checked_at": datetime.now(timezone.utc).isoformat()}
-        return {"status": "healthy", "checked_at": datetime.now(timezone.utc).isoformat()}
+                    "checked_at": datetime.now(UTC).isoformat()}
+        return {"status": "healthy", "checked_at": datetime.now(UTC).isoformat()}
 
 
 # ── Provider registry ──

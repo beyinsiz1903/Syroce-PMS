@@ -10,8 +10,8 @@ Actions: acknowledge, resolve, mute, snooze, dismiss
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -43,19 +43,19 @@ DEFAULT_RULES = [
 class AlertingService:
     """Proactive alerting system for channel manager operations."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     # ─── Alert Rule Management ─────────────────────────────────────────
 
-    async def get_rules(self, tenant_id: str) -> List[Dict]:
+    async def get_rules(self, tenant_id: str) -> list[dict]:
         rules = await db[ALERT_RULES].find({"tenant_id": tenant_id}, _NO_ID).to_list(100)
         if not rules:
             await self._seed_default_rules(tenant_id)
             rules = await db[ALERT_RULES].find({"tenant_id": tenant_id}, _NO_ID).to_list(100)
         return rules
 
-    async def create_rule(self, tenant_id: str, rule_data: Dict, actor_id: Optional[str] = None) -> Dict:
+    async def create_rule(self, tenant_id: str, rule_data: dict, actor_id: str | None = None) -> dict:
         rule = {
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
@@ -65,15 +65,15 @@ class AlertingService:
             "description": rule_data.get("description", ""),
             "enabled": rule_data.get("enabled", True),
             "connector_id": rule_data.get("connector_id"),
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "created_by": actor_id,
         }
         await db[ALERT_RULES].insert_one(rule)
         rule.pop("_id", None)
         return rule
 
-    async def update_rule(self, tenant_id: str, rule_id: str, updates: Dict, actor_id: Optional[str] = None) -> Dict:
-        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    async def update_rule(self, tenant_id: str, rule_id: str, updates: dict, actor_id: str | None = None) -> dict:
+        updates["updated_at"] = datetime.now(UTC).isoformat()
         updates["updated_by"] = actor_id
         await db[ALERT_RULES].update_one(
             {"tenant_id": tenant_id, "id": rule_id}, {"$set": updates}
@@ -92,7 +92,7 @@ class AlertingService:
                 "tenant_id": tenant_id,
                 **r,
                 "connector_id": None,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
                 "created_by": "system",
             })
         if docs:
@@ -100,7 +100,7 @@ class AlertingService:
 
     # ─── Alert Evaluation ──────────────────────────────────────────────
 
-    async def evaluate_alerts(self, tenant_id: str) -> Dict[str, Any]:
+    async def evaluate_alerts(self, tenant_id: str) -> dict[str, Any]:
         """Evaluate all active rules against current connector states."""
         rules = await self.get_rules(tenant_id)
         enabled_rules = [r for r in rules if r.get("enabled")]
@@ -124,7 +124,7 @@ class AlertingService:
 
         return {"evaluated_rules": len(enabled_rules), "connectors_checked": len(connectors), "alerts_created": alerts_created}
 
-    async def _check_rule(self, tenant_id: str, connector: Dict, rule: Dict) -> bool:
+    async def _check_rule(self, tenant_id: str, connector: dict, rule: dict) -> bool:
         cid = connector.get("id", "")
         trigger = rule.get("trigger", "")
         threshold = rule.get("threshold", 0)
@@ -150,7 +150,7 @@ class AlertingService:
                 return True
             try:
                 dt = datetime.fromisoformat(last_sync.replace("Z", "+00:00"))
-                hours_ago = (datetime.now(timezone.utc) - dt).total_seconds() / 3600
+                hours_ago = (datetime.now(UTC) - dt).total_seconds() / 3600
                 return hours_ago >= threshold
             except (ValueError, TypeError):
                 return True
@@ -182,7 +182,7 @@ class AlertingService:
 
         return False
 
-    async def _create_alert(self, tenant_id: str, connector: Dict, rule: Dict) -> Dict:
+    async def _create_alert(self, tenant_id: str, connector: dict, rule: dict) -> dict:
         cid = connector.get("id", "")
         from ..application.reconciliation_service import ReconciliationService
         recon = ReconciliationService(self._repo)
@@ -203,7 +203,7 @@ class AlertingService:
             "health_score_snapshot": health.get("health_score", 0),
             "threshold": rule.get("threshold"),
             "recommended_action": self._get_recommended_action(rule["trigger"]),
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "acknowledged_at": None,
             "resolved_at": None,
             "muted_until": None,
@@ -253,11 +253,11 @@ class AlertingService:
     # ─── Alert CRUD & Actions ──────────────────────────────────────────
 
     async def get_alerts(
-        self, tenant_id: str, status: Optional[str] = None,
-        severity: Optional[str] = None, connector_id: Optional[str] = None,
+        self, tenant_id: str, status: str | None = None,
+        severity: str | None = None, connector_id: str | None = None,
         limit: int = 100,
-    ) -> List[Dict]:
-        q: Dict[str, Any] = {"tenant_id": tenant_id}
+    ) -> list[dict]:
+        q: dict[str, Any] = {"tenant_id": tenant_id}
         if status:
             q["status"] = status
         if severity:
@@ -266,7 +266,7 @@ class AlertingService:
             q["connector_id"] = connector_id
         return await db[ALERTS].find(q, _NO_ID).sort("created_at", -1).to_list(limit)
 
-    async def get_alert_summary(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_alert_summary(self, tenant_id: str) -> dict[str, Any]:
         active = await db[ALERTS].count_documents({"tenant_id": tenant_id, "status": "active"})
         acknowledged = await db[ALERTS].count_documents({"tenant_id": tenant_id, "status": "acknowledged"})
         resolved = await db[ALERTS].count_documents({"tenant_id": tenant_id, "status": "resolved"})
@@ -287,8 +287,8 @@ class AlertingService:
             "by_severity": by_severity,
         }
 
-    async def acknowledge_alert(self, tenant_id: str, alert_id: str, actor_id: Optional[str] = None) -> Dict:
-        now = datetime.now(timezone.utc).isoformat()
+    async def acknowledge_alert(self, tenant_id: str, alert_id: str, actor_id: str | None = None) -> dict:
+        now = datetime.now(UTC).isoformat()
         await db[ALERTS].update_one(
             {"tenant_id": tenant_id, "id": alert_id},
             {"$set": {"status": "acknowledged", "acknowledged_at": now, "acknowledged_by": actor_id}},
@@ -300,8 +300,8 @@ class AlertingService:
         await self._repo.create_audit_log(log.to_doc())
         return {"success": True, "alert_id": alert_id, "action": "acknowledged"}
 
-    async def resolve_alert(self, tenant_id: str, alert_id: str, actor_id: Optional[str] = None, reason: str = "") -> Dict:
-        now = datetime.now(timezone.utc).isoformat()
+    async def resolve_alert(self, tenant_id: str, alert_id: str, actor_id: str | None = None, reason: str = "") -> dict:
+        now = datetime.now(UTC).isoformat()
         await db[ALERTS].update_one(
             {"tenant_id": tenant_id, "id": alert_id},
             {"$set": {"status": "resolved", "resolved_at": now, "resolved_by": actor_id, "resolve_reason": reason}},
@@ -313,8 +313,8 @@ class AlertingService:
         await self._repo.create_audit_log(log.to_doc())
         return {"success": True, "alert_id": alert_id, "action": "resolved"}
 
-    async def mute_alert(self, tenant_id: str, alert_id: str, hours: int = 24, actor_id: Optional[str] = None) -> Dict:
-        muted_until = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
+    async def mute_alert(self, tenant_id: str, alert_id: str, hours: int = 24, actor_id: str | None = None) -> dict:
+        muted_until = (datetime.now(UTC) + timedelta(hours=hours)).isoformat()
         await db[ALERTS].update_one(
             {"tenant_id": tenant_id, "id": alert_id},
             {"$set": {"status": "muted", "muted_until": muted_until, "muted_by": actor_id}},
@@ -326,8 +326,8 @@ class AlertingService:
         await self._repo.create_audit_log(log.to_doc())
         return {"success": True, "alert_id": alert_id, "action": "muted", "muted_until": muted_until}
 
-    async def dismiss_alert(self, tenant_id: str, alert_id: str, actor_id: Optional[str] = None, reason: str = "") -> Dict:
-        now = datetime.now(timezone.utc).isoformat()
+    async def dismiss_alert(self, tenant_id: str, alert_id: str, actor_id: str | None = None, reason: str = "") -> dict:
+        now = datetime.now(UTC).isoformat()
         await db[ALERTS].update_one(
             {"tenant_id": tenant_id, "id": alert_id},
             {"$set": {"status": "dismissed", "dismissed_at": now, "dismissed_by": actor_id, "dismiss_reason": reason}},
@@ -337,9 +337,9 @@ class AlertingService:
 
     async def check_and_fire_alert(
         self, tenant_id: str, trigger: str,
-        connector_id: Optional[str] = None,
-        metadata: Optional[Dict] = None,
-    ) -> Optional[Dict]:
+        connector_id: str | None = None,
+        metadata: dict | None = None,
+    ) -> dict | None:
         """
         Programmatic alert creation for automated triggers
         (e.g., reservation import failure spike, sandbox validation failures).
@@ -355,7 +355,7 @@ class AlertingService:
         if existing:
             return None
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         alert = {
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,

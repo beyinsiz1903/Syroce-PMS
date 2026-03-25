@@ -13,8 +13,7 @@ for deploy history, success rates, rollback events, and smoke
 test results.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from core.database import _raw_db as db
 
@@ -54,7 +53,7 @@ async def record_deploy_event(event: dict) -> dict:
       smoke_test (optional), rollback (bool), rollback_reason,
       images (dict), duration_seconds
     """
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     doc = {
         "sha": event.get("sha", "unknown"),
         "short_sha": event.get("sha", "unknown")[:8],
@@ -83,7 +82,7 @@ async def record_deploy_event(event: dict) -> dict:
 
 
 async def get_deploy_history(
-    environment: Optional[str] = None,
+    environment: str | None = None,
     limit: int = 20,
 ) -> list:
     """Get recent deploy events, newest first."""
@@ -170,7 +169,7 @@ async def get_deploy_trend(days: int = 14) -> list:
     """Daily deploy counts for the last N days — feeds the trend chart."""
     from datetime import timedelta
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
     pipeline = [
         {"$match": {"recorded_at": {"$gte": cutoff}}},
         {

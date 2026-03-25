@@ -4,8 +4,7 @@ API endpoints for HotelRunner connection management, testing, and operations.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -30,7 +29,7 @@ class HRCredentials(BaseModel):
 class HRConnectionSetup(BaseModel):
     token: str
     hr_id: str
-    property_name: Optional[str] = None
+    property_name: str | None = None
     auto_sync_reservations: bool = True
     auto_confirm_delivery: bool = False
     sync_interval_minutes: int = 15
@@ -40,19 +39,19 @@ class HRARIUpdate(BaseModel):
     inv_code: str
     start_date: str
     end_date: str
-    availability: Optional[int] = None
-    price: Optional[float] = None
-    stop_sale: Optional[int] = None
-    min_stay: Optional[int] = None
-    cta: Optional[int] = None
-    ctd: Optional[int] = None
-    days: Optional[List[int]] = None
-    channel_codes: Optional[List[str]] = None
+    availability: int | None = None
+    price: float | None = None
+    stop_sale: int | None = None
+    min_stay: int | None = None
+    cta: int | None = None
+    ctd: int | None = None
+    days: list[int] | None = None
+    channel_codes: list[str] | None = None
 
 
 class HRReservationFilter(BaseModel):
     undelivered: bool = True
-    from_date: Optional[str] = None
+    from_date: str | None = None
     per_page: int = 10
     page: int = 1
     modified: bool = False
@@ -96,12 +95,12 @@ async def _get_provider(tenant_id: str):
 
 
 async def _log_sync(tenant_id: str, sync_type: str, status: str, duration_ms: int = 0,
-                     records: int = 0, error: Optional[str] = None, user_name: str = "system"):
+                     records: int = 0, error: str | None = None, user_name: str = "system"):
     """Log a sync event."""
     await db.hotelrunner_sync_logs.insert_one({
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "sync_type": sync_type,
         "status": status,
         "duration_ms": duration_ms,
@@ -150,7 +149,7 @@ async def setup_connection(
         "sync_interval_minutes": payload.sync_interval_minutes,
         "is_active": True,
         "channels": result_data.get("channels", []),
-        "connected_at": datetime.now(timezone.utc).isoformat(),
+        "connected_at": datetime.now(UTC).isoformat(),
         "last_sync_at": None,
         "created_by": current_user.name,
     }
@@ -204,7 +203,7 @@ async def disconnect(current_user: User = Depends(get_current_user)):
     """Disconnect HotelRunner integration."""
     result = await db.hotelrunner_connections.update_one(
         {"tenant_id": current_user.tenant_id},
-        {"$set": {"is_active": False, "disconnected_at": datetime.now(timezone.utc).isoformat()}},
+        {"$set": {"is_active": False, "disconnected_at": datetime.now(UTC).isoformat()}},
     )
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Aktif baglanti bulunamadi")
@@ -227,7 +226,7 @@ async def get_rooms(current_user: User = Depends(get_current_user)):
 
     await db.hotelrunner_connections.update_one(
         {"tenant_id": current_user.tenant_id},
-        {"$set": {"cached_rooms": rooms, "rooms_fetched_at": datetime.now(timezone.utc).isoformat()}},
+        {"$set": {"cached_rooms": rooms, "rooms_fetched_at": datetime.now(UTC).isoformat()}},
     )
 
     return {"rooms": rooms, "count": len(rooms)}
@@ -261,7 +260,7 @@ async def update_room_ari(
 
 @router.post("/rooms/bulk-update")
 async def bulk_update_ari(
-    updates: List[HRARIUpdate],
+    updates: list[HRARIUpdate],
     current_user: User = Depends(get_current_user),
 ):
     """Push multiple ARI updates to HotelRunner."""
@@ -289,7 +288,7 @@ async def bulk_update_ari(
 @router.get("/reservations")
 async def get_reservations(
     undelivered: bool = True,
-    from_date: Optional[str] = None,
+    from_date: str | None = None,
     per_page: int = 10,
     page: int = 1,
     current_user: User = Depends(get_current_user),
@@ -359,7 +358,7 @@ async def sync_reservations(current_user: User = Depends(get_current_user)):
             "raw_data": res,
             "pms_status": "pending",
             "pms_booking_id": None,
-            "synced_at": datetime.now(timezone.utc).isoformat(),
+            "synced_at": datetime.now(UTC).isoformat(),
         }
 
         if existing:
@@ -369,13 +368,13 @@ async def sync_reservations(current_user: User = Depends(get_current_user)):
             )
         else:
             reservation_doc["id"] = str(uuid.uuid4())
-            reservation_doc["created_at"] = datetime.now(timezone.utc).isoformat()
+            reservation_doc["created_at"] = datetime.now(UTC).isoformat()
             await db.hotelrunner_reservations.insert_one(reservation_doc)
             imported += 1
 
     await db.hotelrunner_connections.update_one(
         {"tenant_id": current_user.tenant_id},
-        {"$set": {"last_sync_at": datetime.now(timezone.utc).isoformat()}},
+        {"$set": {"last_sync_at": datetime.now(UTC).isoformat()}},
     )
 
     await _log_sync(current_user.tenant_id, "reservation_sync", "success",
@@ -417,7 +416,7 @@ async def confirm_reservation_delivery(
 
     await db.hotelrunner_reservations.update_one(
         {"tenant_id": current_user.tenant_id, "hr_number": hr_number},
-        {"$set": {"delivery_confirmed": True, "confirmed_at": datetime.now(timezone.utc).isoformat()}},
+        {"$set": {"delivery_confirmed": True, "confirmed_at": datetime.now(UTC).isoformat()}},
     )
 
     return {"message": "Rezervasyon teslimati onaylandi", "hr_number": hr_number}
@@ -425,7 +424,7 @@ async def confirm_reservation_delivery(
 
 @router.get("/reservations/local")
 async def get_local_reservations(
-    pms_status: Optional[str] = None,
+    pms_status: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Get locally stored HotelRunner reservations."""
@@ -505,7 +504,7 @@ async def create_room_mapping(
         "sync_availability": payload.sync_availability,
         "sync_price": payload.sync_price,
         "sync_restrictions": payload.sync_restrictions,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "created_by": current_user.name,
     }
 

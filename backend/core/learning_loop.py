@@ -7,8 +7,8 @@ RCA tracking, and never-again rule enforcement.
 import hashlib
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -46,7 +46,7 @@ def _compute_pattern_signature(category: str, subcategory: str, affected_service
 class IncidentClassifier:
     """Auto-classifies and tags incidents based on keyword matching."""
 
-    def classify(self, title: str, description: str) -> Dict[str, Any]:
+    def classify(self, title: str, description: str) -> dict[str, Any]:
         text = f"{title} {description}".lower()
         best_match = None
         best_score = 0
@@ -76,7 +76,7 @@ class IncidentClassifier:
             "auto_tagged": True,
         }
 
-    def _extract_tags(self, text: str) -> List[str]:
+    def _extract_tags(self, text: str) -> list[str]:
         tag_candidates = [
             "exely", "hotelrunner", "timeout", "reservation", "booking",
             "channel", "sync", "import", "outbox", "night_audit",
@@ -94,13 +94,13 @@ class RCAEngine:
         tenant_id: str,
         incident_id: str,
         summary: str,
-        contributing_factors: List[str],
-        five_whys: Optional[List[str]] = None,
+        contributing_factors: list[str],
+        five_whys: list[str] | None = None,
         root_cause_type: str = "internal_bug",
         actor_id: str = "system",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         rca_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         rca = {
             "id": rca_id,
@@ -143,8 +143,8 @@ class RCAEngine:
         incident_id: str,
         fix_applied: str,
         actor_id: str = "system",
-    ) -> Dict[str, Any]:
-        now = datetime.now(timezone.utc).isoformat()
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC).isoformat()
         result = await db.incidents.update_one(
             {"id": incident_id, "tenant_id": tenant_id},
             {
@@ -180,10 +180,10 @@ class RCAEngine:
         verification_type: str = "test_exists",
         verification_detail: str = "",
         assigned_to: str = "backend_team",
-        due_date: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        due_date: str | None = None,
+    ) -> dict[str, Any]:
         rule_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         rule = {
             "id": rule_id,
@@ -216,7 +216,7 @@ class RCAEngine:
         self,
         tenant_id: str,
         incident_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         incident = await db.incidents.find_one(
             {"id": incident_id, "tenant_id": tenant_id},
             {"_id": 0, "never_again_rules": 1},
@@ -244,7 +244,7 @@ class RecurrenceDetector:
         category: str,
         subcategory: str,
         affected_service: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         signature = _compute_pattern_signature(category, subcategory, affected_service)
 
         # Store signature on incident
@@ -301,7 +301,7 @@ class RecurrenceDetector:
 class LearningDashboard:
     """Aggregate learning metrics."""
 
-    async def get_metrics(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_metrics(self, tenant_id: str) -> dict[str, Any]:
         total = await db.incidents.count_documents({"tenant_id": tenant_id})
         resolved = await db.incidents.count_documents(
             {"tenant_id": tenant_id, "status": {"$in": ["resolved", "closed"]}}

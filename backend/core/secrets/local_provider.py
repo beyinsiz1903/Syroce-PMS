@@ -9,8 +9,8 @@ Explicitly gated: only usable when APP_ENV != production/staging.
 import json
 import logging
 import os
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.crypto import AADContext, get_crypto_service
 
@@ -53,13 +53,13 @@ class LocalDevSecretsProvider(SecretsProviderBase):
             context_type="secret",
         )
 
-    def _encrypt_payload(self, data: Dict[str, str], path: str) -> str:
+    def _encrypt_payload(self, data: dict[str, str], path: str) -> str:
         """Encrypt the entire payload as a single JSON blob."""
         plaintext = json.dumps(data)
         aad = self._build_aad(path)
         return self._svc.encrypt(plaintext, aad=aad)
 
-    def _decrypt_payload(self, encrypted: str, path: str) -> Dict[str, str]:
+    def _decrypt_payload(self, encrypted: str, path: str) -> dict[str, str]:
         """Decrypt a JSON blob back to dict."""
         aad = self._build_aad(path)
         plaintext = self._svc.decrypt(encrypted, aad=aad)
@@ -68,15 +68,15 @@ class LocalDevSecretsProvider(SecretsProviderBase):
     async def create_secret(
         self,
         path: str,
-        payload: Dict[str, str],
-        tags: Optional[Dict[str, str]] = None,
+        payload: dict[str, str],
+        tags: dict[str, str] | None = None,
     ) -> SecretMetadata:
         db = self._get_db()
         existing = await db[COLL_DEV_SECRETS].find_one({"path": path}, _NO_ID)
         if existing:
             raise ValueError(f"Secret already exists: {path}")
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         doc = {
             "path": path,
             "encrypted_payload": self._encrypt_payload(payload, path),
@@ -103,7 +103,7 @@ class LocalDevSecretsProvider(SecretsProviderBase):
             tags=tags or {},
         )
 
-    async def get_secret(self, path: str) -> Optional[SecretPayload]:
+    async def get_secret(self, path: str) -> SecretPayload | None:
         db = self._get_db()
         doc = await db[COLL_DEV_SECRETS].find_one({"path": path}, _NO_ID)
         if not doc:
@@ -121,14 +121,14 @@ class LocalDevSecretsProvider(SecretsProviderBase):
     async def update_secret(
         self,
         path: str,
-        payload: Dict[str, str],
+        payload: dict[str, str],
     ) -> SecretMetadata:
         db = self._get_db()
         doc = await db[COLL_DEV_SECRETS].find_one({"path": path}, _NO_ID)
         if not doc:
             raise ValueError(f"Secret not found for update: {path}")
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         await db[COLL_DEV_SECRETS].update_one(
             {"path": path},
             {"$set": {
@@ -162,14 +162,14 @@ class LocalDevSecretsProvider(SecretsProviderBase):
     async def rotate_secret(
         self,
         path: str,
-        new_payload: Dict[str, str],
+        new_payload: dict[str, str],
     ) -> SecretMetadata:
         db = self._get_db()
         doc = await db[COLL_DEV_SECRETS].find_one({"path": path}, _NO_ID)
         if not doc:
             raise ValueError(f"Secret not found for rotation: {path}")
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         new_count = doc.get("rotation_count", 0) + 1
         new_version = str(int(doc.get("version", "1")) + 1)
 
@@ -197,7 +197,7 @@ class LocalDevSecretsProvider(SecretsProviderBase):
             tags=doc.get("tags", {}),
         )
 
-    async def get_secret_metadata(self, path: str) -> Optional[SecretMetadata]:
+    async def get_secret_metadata(self, path: str) -> SecretMetadata | None:
         db = self._get_db()
         doc = await db[COLL_DEV_SECRETS].find_one(
             {"path": path},
@@ -217,7 +217,7 @@ class LocalDevSecretsProvider(SecretsProviderBase):
             tags=doc.get("tags", {}),
         )
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         try:
             db = self._get_db()
             await db[COLL_DEV_SECRETS].find_one({}, {"_id": 1})

@@ -3,7 +3,6 @@ PMS / POS & F&B — Production Router v2
 Routes for enhanced POS operations:
 create_order, close_order, void_order, stock_adjust, table_reserve.
 """
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -19,29 +18,29 @@ router = APIRouter(prefix="/api/pos/v2", tags=["POS & F&B v2"])
 # ── Schemas ──────────────────────────────────────────────────────────
 
 class OrderItemSchema(BaseModel):
-    item_id: Optional[str] = None
+    item_id: str | None = None
     name: str
     quantity: int = 1
     price: float
     station: str = "main"
-    special_instructions: Optional[str] = None
+    special_instructions: str | None = None
 
 class CreateOrderRequest(BaseModel):
     outlet_id: str
-    table_number: Optional[str] = None
-    items: List[OrderItemSchema]
-    guest_name: Optional[str] = None
-    booking_id: Optional[str] = None
+    table_number: str | None = None
+    items: list[OrderItemSchema]
+    guest_name: str | None = None
+    booking_id: str | None = None
     order_type: str = "dine_in"
-    idempotency_key: Optional[str] = None
+    idempotency_key: str | None = None
 
 class CloseOrderRequest(BaseModel):
     order_id: str
     payment_method: str = "cash"
     post_to_folio: bool = False
-    booking_id: Optional[str] = None
+    booking_id: str | None = None
     tip_amount: float = 0.0
-    idempotency_key: Optional[str] = None
+    idempotency_key: str | None = None
 
 class VoidOrderRequest(BaseModel):
     order_id: str
@@ -52,7 +51,7 @@ class StockAdjustRequest(BaseModel):
     adjustment_type: str  # in, out, set
     quantity: int
     reason: str
-    idempotency_key: Optional[str] = None
+    idempotency_key: str | None = None
 
 class TableReserveRequest(BaseModel):
     outlet_id: str

@@ -18,8 +18,8 @@ Cooldown / Deduplication:
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -118,10 +118,10 @@ EVENT_CONFIG = {
 async def emit_event(
     tenant_id: str,
     event_type: str,
-    details: Optional[Dict[str, Any]] = None,
+    details: dict[str, Any] | None = None,
     provider: str = "",
     property_id: str = "",
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Emit a notification event with deduplication and cooldown.
     Returns the event dict if emitted, None if suppressed.
@@ -131,7 +131,7 @@ async def emit_event(
         logger.warning(f"Unknown event type: {event_type}")
         return None
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     now_iso = now.isoformat()
 
     # Cooldown check (non state-change events)
@@ -180,7 +180,7 @@ async def emit_event(
     return {k: v for k, v in event.items() if k != "_id"}
 
 
-async def _get_last_state(tenant_id: str, event_type: str, provider: str) -> Optional[str]:
+async def _get_last_state(tenant_id: str, event_type: str, provider: str) -> str | None:
     """Get the last known state for state-change deduplication."""
     doc = await db[COLL_NOTIFICATION_STATE].find_one(
         {"tenant_id": tenant_id, "state_key": event_type, "provider": provider},
@@ -195,13 +195,13 @@ async def _set_state(tenant_id: str, event_type: str, provider: str) -> None:
         {"tenant_id": tenant_id, "state_key": event_type, "provider": provider},
         {"$set": {
             "last_event_type": event_type,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }},
         upsert=True,
     )
 
 
-async def _dispatch_to_slack(tenant_id: str, event: Dict[str, Any]) -> None:
+async def _dispatch_to_slack(tenant_id: str, event: dict[str, Any]) -> None:
     """Forward high-severity events to Slack via existing dispatch."""
     try:
         from domains.channel_manager.monitoring.alert_dispatch import dispatch_alert
@@ -216,7 +216,7 @@ async def _dispatch_to_slack(tenant_id: str, event: Dict[str, Any]) -> None:
         logger.warning(f"Slack dispatch failed for event {event['event_type']}: {e}")
 
 
-async def evaluate_tenant_readiness(tenant_id: str, property_id: str = "default") -> Dict[str, Any]:
+async def evaluate_tenant_readiness(tenant_id: str, property_id: str = "default") -> dict[str, Any]:
     """
     Evaluate tenant readiness and emit appropriate events.
     This is the main evaluation function called periodically or on demand.
@@ -340,13 +340,13 @@ async def evaluate_tenant_readiness(tenant_id: str, property_id: str = "default"
 
 async def get_event_history(
     tenant_id: str,
-    severity: Optional[str] = None,
-    event_type: Optional[str] = None,
+    severity: str | None = None,
+    event_type: str | None = None,
     limit: int = 50,
     skip: int = 0,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Get notification event history with filters."""
-    query: Dict[str, Any] = {"tenant_id": tenant_id}
+    query: dict[str, Any] = {"tenant_id": tenant_id}
     if severity:
         query["severity"] = severity
     if event_type:
@@ -357,7 +357,7 @@ async def get_event_history(
     ).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
 
 
-async def get_event_summary(tenant_id: str) -> Dict[str, Any]:
+async def get_event_summary(tenant_id: str) -> dict[str, Any]:
     """Summary of notification events for dashboard."""
     pipeline = [
         {"$match": {"tenant_id": tenant_id}},
@@ -367,8 +367,8 @@ async def get_event_summary(tenant_id: str) -> Dict[str, Any]:
             "last_at": {"$max": "$timestamp"},
         }},
     ]
-    by_severity: Dict[str, int] = {}
-    by_type: Dict[str, int] = {}
+    by_severity: dict[str, int] = {}
+    by_type: dict[str, int] = {}
     total = 0
 
     async for doc in db[COLL_NOTIFICATION_EVENTS].aggregate(pipeline):
@@ -380,7 +380,7 @@ async def get_event_summary(tenant_id: str) -> Dict[str, Any]:
         by_type[event_type] = by_type.get(event_type, 0) + count
 
     # Last 24h count
-    since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    since = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
     recent = await db[COLL_NOTIFICATION_EVENTS].count_documents({
         "tenant_id": tenant_id,
         "timestamp": {"$gte": since},
@@ -394,7 +394,7 @@ async def get_event_summary(tenant_id: str) -> Dict[str, Any]:
     }
 
 
-def get_event_config() -> Dict[str, Any]:
+def get_event_config() -> dict[str, Any]:
     """Return the event configuration (types, severities, cooldowns)."""
     return {
         event_type: {

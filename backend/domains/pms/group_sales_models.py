@@ -3,9 +3,8 @@ Group Sales Management Models
 Group bookings, blocks, rooming lists, master folios
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -43,34 +42,34 @@ class GroupBlock(BaseModel):
     rooms_picked_up: int = 0
 
     # Room breakdown
-    room_breakdown: Optional[dict] = None  # {"Standard": 10, "Deluxe": 5}
+    room_breakdown: dict | None = None  # {"Standard": 10, "Deluxe": 5}
 
     # Rates
     group_rate: float
     room_type: str
-    rate_code: Optional[str] = None
+    rate_code: str | None = None
 
     # Important dates
     cutoff_date: datetime
-    release_date: Optional[datetime] = None
+    release_date: datetime | None = None
 
     # Billing
     billing_type: BillingType
-    master_folio_id: Optional[str] = None
-    payment_terms: Optional[str] = None
+    master_folio_id: str | None = None
+    payment_terms: str | None = None
 
     # Status
     status: GroupBlockStatus
 
     # Notes
-    special_requirements: Optional[str] = None
-    catering_notes: Optional[str] = None
-    meeting_room_needs: Optional[str] = None
+    special_requirements: str | None = None
+    catering_notes: str | None = None
+    meeting_room_needs: str | None = None
 
     # Tracking
     created_by: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class GroupBlockCreate(BaseModel):
     """Grup bloğu oluşturma"""
@@ -82,12 +81,12 @@ class GroupBlockCreate(BaseModel):
     check_in: str
     check_out: str
     total_rooms: int
-    room_breakdown: Optional[dict] = None
+    room_breakdown: dict | None = None
     group_rate: float
     room_type: str
     cutoff_date: str
     billing_type: BillingType
-    special_requirements: Optional[str] = None
+    special_requirements: str | None = None
 
 class RoomingListEntry(BaseModel):
     """Rooming list girdisi"""
@@ -95,10 +94,10 @@ class RoomingListEntry(BaseModel):
     room_type: str
     check_in: str
     check_out: str
-    special_requests: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    passport_number: Optional[str] = None
+    special_requests: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    passport_number: str | None = None
 
 class GroupMasterFolio(BaseModel):
     """Grup master folio"""
@@ -112,11 +111,11 @@ class GroupMasterFolio(BaseModel):
     balance: float = 0.0
 
     # Billing rules
-    master_charges: List[str] = []  # Charge categories on master (e.g., ["room", "breakfast"])
-    individual_charges: List[str] = []  # Individual charges (e.g., ["minibar", "spa"])
+    master_charges: list[str] = []  # Charge categories on master (e.g., ["room", "breakfast"])
+    individual_charges: list[str] = []  # Individual charges (e.g., ["minibar", "spa"])
 
     # Status
     status: str = "open"  # open, closed
-    closed_at: Optional[datetime] = None
+    closed_at: datetime | None = None
 
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

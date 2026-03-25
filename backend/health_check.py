@@ -3,8 +3,8 @@ Comprehensive Health Check System
 Kubernetes/Docker ready health endpoints
 """
 import logging
-from datetime import datetime
-from typing import Any, Dict
+from datetime import UTC, datetime
+from typing import Any
 
 import psutil
 import redis
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 health_router = APIRouter(prefix="/health", tags=["health"])
 
-async def check_mongodb(db) -> Dict[str, Any]:
+async def check_mongodb(db) -> dict[str, Any]:
     """Check MongoDB connectivity and performance"""
     try:
         start_time = datetime.utcnow()
@@ -40,7 +40,7 @@ async def check_mongodb(db) -> Dict[str, Any]:
             "error": str(e)
         }
 
-async def check_redis(redis_client: redis.Redis) -> Dict[str, Any]:
+async def check_redis(redis_client: redis.Redis) -> dict[str, Any]:
     """Check Redis connectivity and performance"""
     try:
         start_time = datetime.utcnow()
@@ -67,7 +67,7 @@ async def check_redis(redis_client: redis.Redis) -> Dict[str, Any]:
             "error": str(e)
         }
 
-def check_system_resources() -> Dict[str, Any]:
+def check_system_resources() -> dict[str, Any]:
     """Check system resources"""
     try:
         cpu_percent = psutil.cpu_percent(interval=0)  # Instant reading, no wait
@@ -340,11 +340,10 @@ async def deep_health_check(request: Request):
         oldest_seconds = None
         if oldest_pending and oldest_pending.get("created_at"):
             try:
-                from datetime import timezone as _tz
                 created = datetime.fromisoformat(oldest_pending["created_at"])
                 if created.tzinfo is None:
-                    created = created.replace(tzinfo=_tz.utc)
-                oldest_seconds = round((datetime.now(_tz.utc) - created).total_seconds(), 1)
+                    created = created.replace(tzinfo=UTC)
+                oldest_seconds = round((datetime.now(UTC) - created).total_seconds(), 1)
             except Exception:
                 pass
 
@@ -417,11 +416,10 @@ async def deep_health_check(request: Request):
         imp_oldest_seconds = None
         if imp_oldest and imp_oldest.get("created_at"):
             try:
-                from datetime import timezone as _tz2
                 cr = datetime.fromisoformat(imp_oldest["created_at"])
                 if cr.tzinfo is None:
-                    cr = cr.replace(tzinfo=_tz2.utc)
-                imp_oldest_seconds = round((datetime.now(_tz2.utc) - cr).total_seconds(), 1)
+                    cr = cr.replace(tzinfo=UTC)
+                imp_oldest_seconds = round((datetime.now(UTC) - cr).total_seconds(), 1)
             except Exception:
                 pass
 

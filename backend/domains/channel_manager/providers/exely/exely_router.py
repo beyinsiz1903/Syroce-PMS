@@ -4,8 +4,7 @@ API endpoints for Exely connection management, room discovery, mapping, ARI push
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -33,8 +32,8 @@ class ExelyConnectionSetup(BaseModel):
     username: str
     password: str
     hotel_code: str
-    endpoint_url: Optional[str] = None
-    property_name: Optional[str] = None
+    endpoint_url: str | None = None
+    property_name: str | None = None
     currency: str = "TRY"
     auto_sync_reservations: bool = True
     sync_interval_minutes: int = 15
@@ -55,11 +54,11 @@ class ExelyARIUpdate(BaseModel):
     rate_plan_code: str
     start_date: str
     end_date: str
-    availability: Optional[int] = None
-    rate_amount: Optional[float] = None
+    availability: int | None = None
+    rate_amount: float | None = None
     currency: str = "TRY"
-    stop_sell: Optional[bool] = None
-    min_stay: Optional[int] = None
+    stop_sell: bool | None = None
+    min_stay: int | None = None
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -156,7 +155,7 @@ async def setup_connection(
         "is_active": True,
         "room_types": test_result.get("room_types", []),
         "rate_plans": test_result.get("rate_plans", []),
-        "connected_at": datetime.now(timezone.utc).isoformat(),
+        "connected_at": datetime.now(UTC).isoformat(),
         "last_sync_at": None,
         "created_by": current_user.name,
     }
@@ -201,7 +200,7 @@ async def test_connection(current_user: User = Depends(get_current_user)):
 async def disconnect(current_user: User = Depends(get_current_user)):
     result = await db.exely_connections.update_one(
         {"tenant_id": current_user.tenant_id},
-        {"$set": {"is_active": False, "disconnected_at": datetime.now(timezone.utc).isoformat()}},
+        {"$set": {"is_active": False, "disconnected_at": datetime.now(UTC).isoformat()}},
     )
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Aktif baglanti bulunamadi")
@@ -235,8 +234,8 @@ async def update_currency(
 
 @router.get("/rooms/discover")
 async def discover_rooms(
-    checkin: Optional[str] = None,
-    checkout: Optional[str] = None,
+    checkin: str | None = None,
+    checkout: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Discover room types and rate plans from Exely via OTA_HotelAvailRQ."""
@@ -254,7 +253,7 @@ async def discover_rooms(
         {"$set": {
             "room_types": result["room_types"],
             "rate_plans": result["rate_plans"],
-            "rooms_fetched_at": datetime.now(timezone.utc).isoformat(),
+            "rooms_fetched_at": datetime.now(UTC).isoformat(),
         }},
     )
 
@@ -281,7 +280,7 @@ async def create_room_mapping(
         "sync_availability": payload.sync_availability,
         "sync_price": payload.sync_price,
         "sync_restrictions": payload.sync_restrictions,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "created_by": current_user.name,
     }
     await db.exely_room_mappings.insert_one(mapping)
@@ -344,7 +343,7 @@ async def push_ari(
 
 @router.post("/ari/bulk-push")
 async def bulk_push_ari(
-    updates: List[ExelyARIUpdate],
+    updates: list[ExelyARIUpdate],
     current_user: User = Depends(get_current_user),
 ):
     """Push multiple ARI updates."""
@@ -593,7 +592,7 @@ async def _check_individual_modifications(
 
 @router.get("/reservations/local")
 async def get_local_reservations(
-    pms_status: Optional[str] = None,
+    pms_status: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     query = {"tenant_id": current_user.tenant_id}
@@ -628,7 +627,7 @@ async def confirm_reservation(
 
     await db.exely_reservations.update_one(
         {"tenant_id": current_user.tenant_id, "external_id": reservation_id},
-        {"$set": {"delivery_confirmed": True, "confirmed_at": datetime.now(timezone.utc).isoformat()}},
+        {"$set": {"delivery_confirmed": True, "confirmed_at": datetime.now(UTC).isoformat()}},
     )
 
     return {"message": "Rezervasyon teslimati onaylandi", "reservation_id": reservation_id}
@@ -666,7 +665,7 @@ async def confirm_all_imported_deliveries(
             if result.get("success"):
                 await db.exely_reservations.update_one(
                     {"tenant_id": tenant_id, "external_id": res["external_id"]},
-                    {"$set": {"delivery_confirmed": True, "confirmed_at": datetime.now(timezone.utc).isoformat()}},
+                    {"$set": {"delivery_confirmed": True, "confirmed_at": datetime.now(UTC).isoformat()}},
                 )
                 confirmed += 1
                 logger.info(f"[EXELY] Bulk confirm: {res['external_id']} -> OK")
@@ -734,8 +733,8 @@ async def import_reservation_to_pms(
 # ── Test Booking Verification ────────────────────────────────────────
 
 class TestBookingVerifyRequest(BaseModel):
-    reservation_id: Optional[str] = None
-    guest_name: Optional[str] = None
+    reservation_id: str | None = None
+    guest_name: str | None = None
 
 
 @router.post("/test-booking/verify")
@@ -935,7 +934,7 @@ async def get_sync_logs(
 @router.get("/logs/events")
 async def get_raw_events(
     limit: int = 50,
-    status: Optional[str] = None,
+    status: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     query = {"tenant_id": current_user.tenant_id}

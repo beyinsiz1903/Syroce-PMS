@@ -5,8 +5,8 @@ inventory management, and yield analysis. No FastAPI dependencies.
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
@@ -30,14 +30,14 @@ class RmsService:
             **data,
             "status": "tentative",
             "created_by": ctx.actor_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await self._db.group_bookings.insert_one(group)
         group.pop("_id", None)
         return ServiceResult.success(group)
 
-    async def list_group_bookings(self, ctx: OperationContext, status: Optional[str] = None) -> ServiceResult:
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id}
+    async def list_group_bookings(self, ctx: OperationContext, status: str | None = None) -> ServiceResult:
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if status:
             query["status"] = status
         groups = await self._db.group_bookings.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
@@ -51,14 +51,14 @@ class RmsService:
             **data,
             "status": "active",
             "created_by": ctx.actor_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await self._db.corporate_contracts.insert_one(contract)
         contract.pop("_id", None)
         return ServiceResult.success(contract)
 
-    async def list_corporate_contracts(self, ctx: OperationContext, status: Optional[str] = None) -> ServiceResult:
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id}
+    async def list_corporate_contracts(self, ctx: OperationContext, status: str | None = None) -> ServiceResult:
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if status:
             query["status"] = status
         contracts = await self._db.corporate_contracts.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
@@ -72,14 +72,14 @@ class RmsService:
             **data,
             "status": "active",
             "created_by": ctx.actor_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await self._db.ota_promotions.insert_one(promo)
         promo.pop("_id", None)
         return ServiceResult.success(promo)
 
-    async def list_ota_promotions(self, ctx: OperationContext, channel: Optional[str] = None) -> ServiceResult:
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id}
+    async def list_ota_promotions(self, ctx: OperationContext, channel: str | None = None) -> ServiceResult:
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if channel:
             query["channel"] = channel
         promos = await self._db.ota_promotions.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
@@ -91,7 +91,7 @@ class RmsService:
             "tenant_id": ctx.tenant_id,
             **data,
             "status": "active",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await self._db.inventory.insert_one(item)
         item.pop("_id", None)
@@ -111,7 +111,7 @@ class RmsService:
 
         await self._db.inventory.update_one(
             {"id": data["item_id"]},
-            {"$set": {"quantity": new_qty, "last_updated": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {"quantity": new_qty, "last_updated": datetime.now(UTC).isoformat()}},
         )
         usage_record = {
             "id": str(uuid.uuid4()),
@@ -120,14 +120,14 @@ class RmsService:
             "previous_quantity": current,
             "new_quantity": new_qty,
             "recorded_by": ctx.actor_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
         await self._db.inventory_usage.insert_one(usage_record)
         usage_record.pop("_id", None)
         return ServiceResult.success(usage_record)
 
-    async def get_yield_analysis(self, ctx: OperationContext, start_date: Optional[str] = None, end_date: Optional[str] = None) -> ServiceResult:
-        today = datetime.now(timezone.utc)
+    async def get_yield_analysis(self, ctx: OperationContext, start_date: str | None = None, end_date: str | None = None) -> ServiceResult:
+        today = datetime.now(UTC)
         if not start_date:
             start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
         if not end_date:

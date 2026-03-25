@@ -5,7 +5,7 @@ Checks every 60 seconds if any tenant's scheduled audit time has arrived.
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ async def _scheduler_loop():
 
     while _scheduler_running:
         try:
-            now_utc = datetime.now(timezone.utc)
+            now_utc = datetime.now(UTC)
 
             schedules = await db.night_audit_schedules.find(
                 {"enabled": True}, {"_id": 0}
@@ -65,7 +65,7 @@ async def _safe_run_audit(tenant_id: str, db):
         settings = await db.tenant_settings.find_one(
             {"tenant_id": tenant_id}, {"_id": 0, "business_date": 1}
         )
-        bd = (settings or {}).get("business_date", datetime.now(timezone.utc).date().isoformat())
+        bd = (settings or {}).get("business_date", datetime.now(UTC).date().isoformat())
 
         result = await start_night_audit(
             tenant_id=tenant_id,
@@ -83,7 +83,7 @@ async def _safe_run_audit(tenant_id: str, db):
             run_id = result["run_id"]
 
         # Update schedule log
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         await db.night_audit_schedule_logs.insert_one({
             "id": str(__import__("uuid").uuid4()),
             "tenant_id": tenant_id,

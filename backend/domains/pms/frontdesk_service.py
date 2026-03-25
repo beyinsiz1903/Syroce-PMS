@@ -5,8 +5,8 @@ keycard management, and unified arrivals/departures. No FastAPI dependencies.
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
@@ -26,9 +26,9 @@ class FrontdeskService:
     # Arrivals
     # ------------------------------------------------------------------
     async def get_todays_arrivals(self, ctx: OperationContext) -> ServiceResult:
-        today = datetime.now(timezone.utc).date()
-        today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
-        today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
+        today = datetime.now(UTC).date()
+        today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
+        today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
 
         arrivals = await self._db.bookings.find({
             "tenant_id": ctx.tenant_id,
@@ -110,11 +110,11 @@ class FrontdeskService:
                     "guest_id": booking["guest_id"],
                     "status": "open",
                     "balance": 0.0,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                 }
                 await self._db.folios.insert_one(folio_doc)
 
-        checked_in_time = datetime.now(timezone.utc)
+        checked_in_time = datetime.now(UTC)
         await self._db.bookings.update_one(
             {"id": booking_id},
             {"$set": {"status": "checked_in", "checked_in_at": checked_in_time.isoformat()}},
@@ -178,10 +178,10 @@ class FrontdeskService:
             for folio in folios:
                 await self._db.folios.update_one(
                     {"id": folio["id"]},
-                    {"$set": {"status": "closed", "balance": 0.0, "closed_at": datetime.now(timezone.utc).isoformat()}},
+                    {"$set": {"status": "closed", "balance": 0.0, "closed_at": datetime.now(UTC).isoformat()}},
                 )
 
-        checked_out_time = datetime.now(timezone.utc)
+        checked_out_time = datetime.now(UTC)
         await self._db.bookings.update_one(
             {"id": booking_id},
             {"$set": {"status": "checked_out", "checked_out_at": checked_out_time.isoformat()}},
@@ -199,7 +199,7 @@ class FrontdeskService:
             "priority": "high",
             "status": "new",
             "notes": "Guest checked out - departure clean required",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await self._db.housekeeping_tasks.insert_one(hk_task)
 
@@ -223,7 +223,7 @@ class FrontdeskService:
             return ServiceResult.fail("QR code gecersiz", "INVALID_QR")
         await self._db.bookings.update_one(
             {"id": booking["id"]},
-            {"$set": {"status": "checked_in", "checked_in_at": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {"status": "checked_in", "checked_in_at": datetime.now(UTC).isoformat()}},
         )
         return ServiceResult.success({"success": True, "message": "Express check-in tamamlandi", "booking": booking})
 
@@ -231,9 +231,9 @@ class FrontdeskService:
     # Audit Checklist
     # ------------------------------------------------------------------
     async def get_audit_checklist(self, ctx: OperationContext) -> ServiceResult:
-        today = datetime.now(timezone.utc).date()
-        today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
-        today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
+        today = datetime.now(UTC).date()
+        today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
+        today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
 
         unchecked = []
         async for b in self._db.bookings.find({
@@ -285,7 +285,7 @@ class FrontdeskService:
                 days_open = None
                 if created_at:
                     dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-                    days_open = (datetime.now(timezone.utc) - dt).days
+                    days_open = (datetime.now(UTC) - dt).days
             except Exception:
                 days_open = None
             if days_open and days_open > 2 and balance > 0:
@@ -316,7 +316,7 @@ class FrontdeskService:
         if not guest:
             return ServiceResult.fail("Guest not found", "NOT_FOUND")
 
-        alerts: List[Dict[str, Any]] = []
+        alerts: list[dict[str, Any]] = []
         if guest.get("vip_status"):
             alerts.append({"type": "vip", "priority": "high", "title": "VIP Guest", "description": f"{guest.get('name')} is a VIP guest.", "color": "gold"})
 
@@ -352,7 +352,7 @@ class FrontdeskService:
     # Unified Arrivals / Departures / In-House
     # ------------------------------------------------------------------
     async def get_unified_arrivals(self, ctx: OperationContext) -> ServiceResult:
-        today = datetime.now(timezone.utc).date().isoformat()
+        today = datetime.now(UTC).date().isoformat()
         bookings = await self._db.bookings.find({
             "check_in": today, "status": {"$in": ["confirmed", "guaranteed"]}, "tenant_id": ctx.tenant_id,
         }, {"_id": 0}).to_list(100)
@@ -360,7 +360,7 @@ class FrontdeskService:
         return ServiceResult.success({"arrivals": enriched, "count": len(enriched), "date": today})
 
     async def get_unified_departures(self, ctx: OperationContext) -> ServiceResult:
-        today = datetime.now(timezone.utc).date().isoformat()
+        today = datetime.now(UTC).date().isoformat()
         bookings = await self._db.bookings.find({
             "check_out": today, "status": "checked_in", "tenant_id": ctx.tenant_id,
         }, {"_id": 0}).to_list(100)
@@ -388,8 +388,8 @@ class FrontdeskService:
             "balance": total_charges - total_paid,
         })
 
-    async def get_arrivals(self, ctx: OperationContext, date_str: Optional[str] = None) -> ServiceResult:
-        target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(timezone.utc).date()
+    async def get_arrivals(self, ctx: OperationContext, date_str: str | None = None) -> ServiceResult:
+        target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(UTC).date()
         start = datetime.combine(target_date, datetime.min.time())
         end = datetime.combine(target_date, datetime.max.time())
         bookings = await self._db.bookings.find({
@@ -404,8 +404,8 @@ class FrontdeskService:
             enriched.append({**b, "guest": guest, "room": room})
         return ServiceResult.success(enriched)
 
-    async def get_departures(self, ctx: OperationContext, date_str: Optional[str] = None) -> ServiceResult:
-        target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(timezone.utc).date()
+    async def get_departures(self, ctx: OperationContext, date_str: str | None = None) -> ServiceResult:
+        target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(UTC).date()
         start = datetime.combine(target_date, datetime.min.time())
         end = datetime.combine(target_date, datetime.max.time())
         bookings = await self._db.bookings.find({
@@ -447,7 +447,7 @@ class FrontdeskService:
             return ServiceResult.fail("Room not assigned", "NO_ROOM")
 
         keycard_id = str(uuid.uuid4())
-        issue_time = datetime.now(timezone.utc)
+        issue_time = datetime.now(UTC)
         expiry_time = issue_time + timedelta(hours=validity_hours)
 
         keycard_data = {
@@ -490,7 +490,7 @@ class FrontdeskService:
             return ServiceResult.fail("Keycard not found", "NOT_FOUND")
         await self._db.keycards.update_one(
             {"id": keycard_id},
-            {"$set": {"status": "deactivated", "deactivated_at": datetime.now(timezone.utc).isoformat(), "deactivated_by": ctx.actor_id, "deactivation_reason": reason}},
+            {"$set": {"status": "deactivated", "deactivated_at": datetime.now(UTC).isoformat(), "deactivated_by": ctx.actor_id, "deactivation_reason": reason}},
         )
         return ServiceResult.success({"message": "Keycard deactivated", "keycard_id": keycard_id, "reason": reason})
 

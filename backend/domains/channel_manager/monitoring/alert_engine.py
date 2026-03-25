@@ -7,8 +7,8 @@ Creates alert events when thresholds are breached.
 Auto-resolves alerts when metrics return to normal.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -49,12 +49,12 @@ THRESHOLDS = {
 }
 
 
-async def evaluate_alerts(metrics: Dict[str, Any]) -> List[Dict[str, Any]]:
+async def evaluate_alerts(metrics: dict[str, Any]) -> list[dict[str, Any]]:
     """
     Evaluate all collected metrics against thresholds.
     Returns list of alerts to create/resolve.
     """
-    new_alerts: List[Dict[str, Any]] = []
+    new_alerts: list[dict[str, Any]] = []
 
     # 1. Provider Health Alerts
     provider_health = metrics.get("provider_health", {})
@@ -195,7 +195,7 @@ async def evaluate_alerts(metrics: Dict[str, Any]) -> List[Dict[str, Any]]:
     return new_alerts
 
 
-async def process_alerts(new_alerts: List[Dict[str, Any]]) -> Dict[str, Any]:
+async def process_alerts(new_alerts: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Process alert list: create new alerts, auto-resolve stale ones.
     Prevents duplicate active alerts for the same alert_type + provider.
@@ -248,7 +248,7 @@ async def process_alerts(new_alerts: List[Dict[str, Any]]) -> Dict[str, Any]:
                 {"id": alert["id"]},
                 {"$set": {
                     "status": AlertStatus.RESOLVED.value,
-                    "resolved_at": datetime.now(timezone.utc).isoformat(),
+                    "resolved_at": datetime.now(UTC).isoformat(),
                 }},
             )
             resolved += 1
@@ -265,7 +265,7 @@ def _build_alert(
     property_id: str = "",
     metric_value: float = 0,
     threshold: float = 0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     severity = ALERT_SEVERITY_MAP.get(alert_type, AlertSeverity.MEDIUM)
     return {
         "alert_type": alert_type.value,

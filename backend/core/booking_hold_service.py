@@ -22,8 +22,8 @@ INV-6: Every hold creation and expiry is logged to event_timeline.
 import asyncio
 import logging
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -39,7 +39,7 @@ def _get_hold_ttl_minutes() -> int:
 
 async def _timeline_event(tenant_id: str, stage: str, status: str,
                           booking_id: str, room_id: str,
-                          metadata: Optional[Dict[str, Any]] = None):
+                          metadata: dict[str, Any] | None = None):
     """Fire-and-forget timeline event for hold operations."""
     try:
         from controlplane.timeline_writer import get_timeline_writer
@@ -64,8 +64,8 @@ async def create_booking_hold(
     room_id: str,
     check_in: str,
     check_out: str,
-    ttl_minutes: Optional[int] = None,
-) -> Dict[str, Any]:
+    ttl_minutes: int | None = None,
+) -> dict[str, Any]:
     """
     Create a booking hold by claiming room-night locks with an expiry.
 
@@ -79,7 +79,7 @@ async def create_booking_hold(
     from core.atomic_booking import _night_dates
 
     ttl = ttl_minutes or _get_hold_ttl_minutes()
-    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=ttl)).isoformat()
+    expires_at = (datetime.now(UTC) + timedelta(minutes=ttl)).isoformat()
     nights = _night_dates(check_in, check_out)
 
     if not nights:
@@ -88,7 +88,7 @@ async def create_booking_hold(
     from pymongo.errors import DuplicateKeyError
 
     claimed = []
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     for night in nights:
         lock_doc = {
@@ -147,7 +147,7 @@ async def create_booking_hold(
     }
 
 
-async def confirm_hold(tenant_id: str, booking_id: str) -> Dict[str, Any]:
+async def confirm_hold(tenant_id: str, booking_id: str) -> dict[str, Any]:
     """
     Convert a hold into a confirmed booking lock by removing the expiry.
 
@@ -184,7 +184,7 @@ async def confirm_hold(tenant_id: str, booking_id: str) -> Dict[str, Any]:
     }
 
 
-async def release_hold(tenant_id: str, booking_id: str, reason: str = "manual") -> Dict[str, Any]:
+async def release_hold(tenant_id: str, booking_id: str, reason: str = "manual") -> dict[str, Any]:
     """Manually release a hold (e.g., user cancelled before payment)."""
     locks = await db.room_night_locks.find(
         {"tenant_id": tenant_id, "booking_id": booking_id, "lock_type": "hold"},
@@ -220,7 +220,7 @@ async def release_hold(tenant_id: str, booking_id: str, reason: str = "manual") 
     }
 
 
-async def sweep_expired_holds() -> Dict[str, Any]:
+async def sweep_expired_holds() -> dict[str, Any]:
     """
     Find and release all expired holds across all tenants.
 
@@ -229,7 +229,7 @@ async def sweep_expired_holds() -> Dict[str, Any]:
 
     Returns summary of what was cleaned up.
     """
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # Find all expired hold locks
     expired_locks = await db.room_night_locks.find(
@@ -244,7 +244,7 @@ async def sweep_expired_holds() -> Dict[str, Any]:
         return {"expired_count": 0, "bookings_affected": 0}
 
     # Group by booking_id for batch processing
-    bookings_map: Dict[str, list] = {}
+    bookings_map: dict[str, list] = {}
     for lock in expired_locks:
         bid = lock["booking_id"]
         if bid not in bookings_map:
@@ -306,7 +306,7 @@ async def sweep_expired_holds() -> Dict[str, Any]:
 
 # ── Background Sweeper Task ─────────────────────────────────────────
 
-_sweeper_task: Optional[asyncio.Task] = None
+_sweeper_task: asyncio.Task | None = None
 
 
 async def _sweeper_loop():

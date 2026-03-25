@@ -3,15 +3,14 @@ Reservation State Machine - Enforces valid state transitions for the reservation
 Hospitality-standard states: pending, confirmed, guaranteed, checked_in, checked_out, no_show, cancelled
 """
 import logging
-from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from datetime import UTC, datetime
 
 from core.database import db
 
 logger = logging.getLogger("pms_core.reservation_state_machine")
 
 # Valid state transitions
-VALID_TRANSITIONS: Dict[str, List[str]] = {
+VALID_TRANSITIONS: dict[str, list[str]] = {
     "pending": ["confirmed", "guaranteed", "cancelled"],
     "confirmed": ["checked_in", "cancelled", "no_show", "guaranteed"],
     "guaranteed": ["checked_in", "cancelled", "no_show"],
@@ -31,7 +30,7 @@ ACTIVE_BOOKING_STATES = {"pending", "confirmed", "guaranteed", "checked_in"}
 class ReservationStateMachine:
     """Enforces reservation lifecycle transitions with business rules."""
 
-    def validate_transition(self, current_status: str, new_status: str) -> Tuple[bool, str]:
+    def validate_transition(self, current_status: str, new_status: str) -> tuple[bool, str]:
         """Check if a state transition is valid. Returns (is_valid, reason)."""
         if current_status == new_status:
             return True, "no_change"
@@ -41,7 +40,7 @@ class ReservationStateMachine:
             return False, f"Transition from '{current_status}' to '{new_status}' is not allowed. Valid targets: {allowed}"
         return True, "ok"
 
-    async def check_overbooking(self, tenant_id: str, room_id: str, check_in: str, check_out: str, exclude_booking_id: str = None) -> Tuple[bool, List[Dict]]:
+    async def check_overbooking(self, tenant_id: str, room_id: str, check_in: str, check_out: str, exclude_booking_id: str = None) -> tuple[bool, list[dict]]:
         """Check if the room has overlapping active bookings. Returns (has_conflict, conflicting_bookings)."""
         query = {
             "tenant_id": tenant_id,
@@ -56,7 +55,7 @@ class ReservationStateMachine:
         conflicts = await db.bookings.find(query, {"_id": 0, "id": 1, "check_in": 1, "check_out": 1, "status": 1, "guest_id": 1}).to_list(10)
         return len(conflicts) > 0, conflicts
 
-    async def check_duplicate_reservation(self, tenant_id: str, guest_id: str, room_id: str, check_in: str, check_out: str) -> Optional[Dict]:
+    async def check_duplicate_reservation(self, tenant_id: str, guest_id: str, room_id: str, check_in: str, check_out: str) -> dict | None:
         """Detect duplicate reservation: same guest, same room, same dates."""
         existing = await db.bookings.find_one({
             "tenant_id": tenant_id,
@@ -68,13 +67,13 @@ class ReservationStateMachine:
         }, {"_id": 0, "id": 1, "status": 1})
         return existing
 
-    async def handle_cancellation(self, tenant_id: str, booking: Dict, cancelled_by: str, reason: str = None) -> Dict:
+    async def handle_cancellation(self, tenant_id: str, booking: dict, cancelled_by: str, reason: str = None) -> dict:
         """Cancel a reservation with inventory release, notification, and audit trail."""
         current_status = booking.get("status")
         if current_status in NON_CANCELLABLE_STATES:
             return {"success": False, "error": f"Cannot cancel reservation in '{current_status}' state"}
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         update_fields = {
             "status": "cancelled",
             "cancelled_at": now.isoformat(),
@@ -201,14 +200,14 @@ class ReservationStateMachine:
 
         return {"success": True, "booking_id": booking["id"], "previous_status": current_status}
 
-    async def handle_no_show(self, tenant_id: str, booking: Dict, marked_by: str) -> Dict:
+    async def handle_no_show(self, tenant_id: str, booking: dict, marked_by: str) -> dict:
         """Mark a reservation as no-show. Only confirmed/guaranteed bookings can be no-showed."""
         current_status = booking.get("status")
         valid, msg = self.validate_transition(current_status, "no_show")
         if not valid:
             return {"success": False, "error": msg}
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         await db.bookings.update_one(
             {"id": booking["id"], "tenant_id": tenant_id},
             {"$set": {
@@ -250,7 +249,7 @@ class ReservationStateMachine:
                         {"$set": {"status": "dirty", "current_booking_id": None}}
                     )
 
-    async def get_audit_trail(self, tenant_id: str, booking_id: str) -> List[Dict]:
+    async def get_audit_trail(self, tenant_id: str, booking_id: str) -> list[dict]:
         """Get full audit trail for a reservation."""
         trail = await db.pms_audit_trail.find(
             {"tenant_id": tenant_id, "entity_id": booking_id, "entity_type": "reservation"},

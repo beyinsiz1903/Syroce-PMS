@@ -4,7 +4,7 @@ Provides live dashboard metrics, booking updates, and notifications
 """
 import logging
 from datetime import datetime
-from typing import Any, Dict, Set
+from typing import Any
 
 import socketio
 
@@ -19,7 +19,7 @@ sio = socketio.AsyncServer(
 )
 
 # Track connected clients by room
-connected_clients: Dict[str, Set[str]] = {
+connected_clients: dict[str, set[str]] = {
     'dashboard': set(),
     'pms': set(),
     'notifications': set(),
@@ -74,7 +74,7 @@ async def leave_room(sid, data):
     logger.info(f"Client {sid} left room: {room}")
 
 # Broadcast functions
-async def broadcast_dashboard_update(metrics: Dict[str, Any]):
+async def broadcast_dashboard_update(metrics: dict[str, Any]):
     """Broadcast dashboard metrics update to all dashboard subscribers"""
     try:
         await sio.emit('dashboard_update', {
@@ -85,7 +85,7 @@ async def broadcast_dashboard_update(metrics: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Failed to broadcast dashboard update: {e}")
 
-async def broadcast_booking_update(booking_data: Dict[str, Any], event_type: str = 'update'):
+async def broadcast_booking_update(booking_data: dict[str, Any], event_type: str = 'update'):
     """
     Broadcast booking update
 
@@ -103,7 +103,7 @@ async def broadcast_booking_update(booking_data: Dict[str, Any], event_type: str
     except Exception as e:
         logger.error(f"Failed to broadcast booking update: {e}")
 
-async def broadcast_notification(user_id: str, notification: Dict[str, Any]):
+async def broadcast_notification(user_id: str, notification: dict[str, Any]):
     """Send notification to specific user"""
     try:
         # In a production setup, you'd maintain a mapping of user_id to sid
@@ -140,7 +140,7 @@ async def broadcast_kitchen_orders(tenant_id: str, orders: Any):
     except Exception as e:
         logger.error(f"Failed to broadcast kitchen orders: {e}")
 
-async def get_connected_clients_count() -> Dict[str, int]:
+async def get_connected_clients_count() -> dict[str, int]:
     """Get count of connected clients per room"""
     return {
         room: len(clients)
@@ -150,7 +150,7 @@ async def get_connected_clients_count() -> Dict[str, int]:
 
 # ── System Health Live Events ──
 
-async def broadcast_system_health_event(event_type: str, payload: Dict[str, Any], tenant_id: str = None, severity: str = "info"):
+async def broadcast_system_health_event(event_type: str, payload: dict[str, Any], tenant_id: str = None, severity: str = "info"):
     """
     Broadcast system health events to system-health room subscribers.
     Events: drift_detected, reconciliation_completed, queue_saturation,
@@ -170,7 +170,7 @@ async def broadcast_system_health_event(event_type: str, payload: Dict[str, Any]
         logger.error(f"Failed to broadcast system health event: {e}")
 
 
-async def broadcast_health_metric_update(metric_type: str, data: Dict[str, Any], tenant_id: str = None):
+async def broadcast_health_metric_update(metric_type: str, data: dict[str, Any], tenant_id: str = None):
     """
     Broadcast incremental metric updates (counters, gauges) without full page reload.
     metric_type: queue_depth, drift_count, alert_count, worker_status, security_score, etc.
@@ -195,10 +195,10 @@ async def ping(sid):
 
 
 # ── Cockpit Snapshot Streaming ──
-_cockpit_last_snapshot: Dict[str, Any] = {}
+_cockpit_last_snapshot: dict[str, Any] = {}
 
 
-async def broadcast_cockpit_snapshot(snapshot: Dict[str, Any], tenant_id: str = None):
+async def broadcast_cockpit_snapshot(snapshot: dict[str, Any], tenant_id: str = None):
     """
     Broadcast cockpit state snapshot to cockpit room subscribers.
     Uses diff-based approach: only sends if changed from last snapshot.

@@ -1,6 +1,5 @@
 """Background Worker Router — Job execution, history, and stats."""
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 
@@ -37,8 +36,8 @@ async def run_all_worker_jobs(
 
 @router.get("/worker/jobs")
 async def list_worker_jobs(
-    job_type: Optional[str] = None,
-    status: Optional[str] = None,
+    job_type: str | None = None,
+    status: str | None = None,
     limit: int = Query(50, le=200),
     current_user: User = Depends(get_current_user),
 ):

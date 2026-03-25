@@ -7,8 +7,8 @@ All queries enforce tenant isolation. All responses exclude _id.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -27,23 +27,23 @@ _NO_ID = {"_id": 0}
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # ══════════════════════════════════════════════════════════════════════
 # 1. PROVIDER CONNECTIONS
 # ══════════════════════════════════════════════════════════════════════
 
-async def get_connection(tenant_id: str, connection_id: str) -> Optional[Dict]:
+async def get_connection(tenant_id: str, connection_id: str) -> dict | None:
     return await db[COLL_PROVIDER_CONNECTIONS].find_one(
         {"tenant_id": tenant_id, "id": connection_id}, _NO_ID,
     )
 
 
 async def get_connections_by_tenant(
-    tenant_id: str, status: Optional[str] = None,
-) -> List[Dict]:
-    q: Dict[str, Any] = {"tenant_id": tenant_id}
+    tenant_id: str, status: str | None = None,
+) -> list[dict]:
+    q: dict[str, Any] = {"tenant_id": tenant_id}
     if status:
         q["status"] = status
     return await db[COLL_PROVIDER_CONNECTIONS].find(q, _NO_ID).to_list(100)
@@ -51,14 +51,14 @@ async def get_connections_by_tenant(
 
 async def get_active_connections(
     tenant_id: str, property_id: str,
-) -> List[Dict]:
+) -> list[dict]:
     return await db[COLL_PROVIDER_CONNECTIONS].find(
         {"tenant_id": tenant_id, "property_id": property_id, "status": "active"},
         _NO_ID,
     ).to_list(10)
 
 
-async def upsert_connection(doc: Dict) -> None:
+async def upsert_connection(doc: dict) -> None:
     doc["updated_at"] = _now()
     await db[COLL_PROVIDER_CONNECTIONS].replace_one(
         {"tenant_id": doc["tenant_id"], "id": doc["id"]},
@@ -75,7 +75,7 @@ async def delete_connection(tenant_id: str, connection_id: str) -> bool:
 
 async def get_connection_by_provider(
     tenant_id: str, property_id: str, provider: str,
-) -> Optional[Dict]:
+) -> dict | None:
     return await db[COLL_PROVIDER_CONNECTIONS].find_one(
         {"tenant_id": tenant_id, "property_id": property_id, "provider": provider},
         _NO_ID,
@@ -87,21 +87,21 @@ async def get_connection_by_provider(
 # ══════════════════════════════════════════════════════════════════════
 
 async def get_room_mappings(
-    tenant_id: str, property_id: str, provider: Optional[str] = None,
-) -> List[Dict]:
-    q: Dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
+    tenant_id: str, property_id: str, provider: str | None = None,
+) -> list[dict]:
+    q: dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
     if provider:
         q["provider"] = provider
     return await db[COLL_ROOM_MAPPINGS].find(q, _NO_ID).to_list(500)
 
 
-async def get_room_mapping(tenant_id: str, mapping_id: str) -> Optional[Dict]:
+async def get_room_mapping(tenant_id: str, mapping_id: str) -> dict | None:
     return await db[COLL_ROOM_MAPPINGS].find_one(
         {"tenant_id": tenant_id, "id": mapping_id}, _NO_ID,
     )
 
 
-async def upsert_room_mapping(doc: Dict) -> None:
+async def upsert_room_mapping(doc: dict) -> None:
     doc["updated_at"] = _now()
     await db[COLL_ROOM_MAPPINGS].replace_one(
         {"tenant_id": doc["tenant_id"], "id": doc["id"]},
@@ -118,7 +118,7 @@ async def delete_room_mapping(tenant_id: str, mapping_id: str) -> bool:
 
 async def find_room_mapping_by_pms(
     tenant_id: str, property_id: str, provider: str, pms_room_type_id: str,
-) -> Optional[Dict]:
+) -> dict | None:
     return await db[COLL_ROOM_MAPPINGS].find_one(
         {
             "tenant_id": tenant_id,
@@ -133,7 +133,7 @@ async def find_room_mapping_by_pms(
 
 async def find_room_mapping_by_provider(
     tenant_id: str, property_id: str, provider: str, provider_room_code: str,
-) -> Optional[Dict]:
+) -> dict | None:
     return await db[COLL_ROOM_MAPPINGS].find_one(
         {
             "tenant_id": tenant_id,
@@ -151,21 +151,21 @@ async def find_room_mapping_by_provider(
 # ══════════════════════════════════════════════════════════════════════
 
 async def get_rate_plan_mappings(
-    tenant_id: str, property_id: str, provider: Optional[str] = None,
-) -> List[Dict]:
-    q: Dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
+    tenant_id: str, property_id: str, provider: str | None = None,
+) -> list[dict]:
+    q: dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
     if provider:
         q["provider"] = provider
     return await db[COLL_RATE_PLAN_MAPPINGS].find(q, _NO_ID).to_list(500)
 
 
-async def get_rate_plan_mapping(tenant_id: str, mapping_id: str) -> Optional[Dict]:
+async def get_rate_plan_mapping(tenant_id: str, mapping_id: str) -> dict | None:
     return await db[COLL_RATE_PLAN_MAPPINGS].find_one(
         {"tenant_id": tenant_id, "id": mapping_id}, _NO_ID,
     )
 
 
-async def upsert_rate_plan_mapping(doc: Dict) -> None:
+async def upsert_rate_plan_mapping(doc: dict) -> None:
     doc["updated_at"] = _now()
     await db[COLL_RATE_PLAN_MAPPINGS].replace_one(
         {"tenant_id": doc["tenant_id"], "id": doc["id"]},
@@ -182,7 +182,7 @@ async def delete_rate_plan_mapping(tenant_id: str, mapping_id: str) -> bool:
 
 async def find_rate_plan_mapping_by_pms(
     tenant_id: str, property_id: str, provider: str, pms_rate_plan_id: str,
-) -> Optional[Dict]:
+) -> dict | None:
     return await db[COLL_RATE_PLAN_MAPPINGS].find_one(
         {
             "tenant_id": tenant_id,
@@ -197,7 +197,7 @@ async def find_rate_plan_mapping_by_pms(
 
 async def find_rate_plan_mapping_by_provider(
     tenant_id: str, property_id: str, provider: str, provider_rate_code: str,
-) -> Optional[Dict]:
+) -> dict | None:
     return await db[COLL_RATE_PLAN_MAPPINGS].find_one(
         {
             "tenant_id": tenant_id,
@@ -214,7 +214,7 @@ async def find_rate_plan_mapping_by_provider(
 # 4. RAW CHANNEL EVENTS (Ingest Pipeline)
 # ══════════════════════════════════════════════════════════════════════
 
-async def insert_raw_event(doc: Dict) -> str:
+async def insert_raw_event(doc: dict) -> str:
     event_id = doc.get("id", str(uuid.uuid4()))
     doc["id"] = event_id
     await db[COLL_RAW_CHANNEL_EVENTS].insert_one(doc)
@@ -223,11 +223,11 @@ async def insert_raw_event(doc: Dict) -> str:
 
 async def get_raw_events(
     tenant_id: str, property_id: str,
-    provider: Optional[str] = None,
-    status: Optional[str] = None,
+    provider: str | None = None,
+    status: str | None = None,
     limit: int = 50,
-) -> List[Dict]:
-    q: Dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
+) -> list[dict]:
+    q: dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
     if provider:
         q["provider"] = provider
     if status:
@@ -237,7 +237,7 @@ async def get_raw_events(
     ).sort("received_at", -1).limit(limit).to_list(limit)
 
 
-async def get_pending_raw_events(limit: int = 100) -> List[Dict]:
+async def get_pending_raw_events(limit: int = 100) -> list[dict]:
     """Get all pending events across all tenants for the ingest processor."""
     return await db[COLL_RAW_CHANNEL_EVENTS].find(
         {"processing_status": "pending"},
@@ -246,9 +246,9 @@ async def get_pending_raw_events(limit: int = 100) -> List[Dict]:
 
 
 async def update_raw_event_status(
-    event_id: str, status: str, error: Optional[str] = None,
+    event_id: str, status: str, error: str | None = None,
 ) -> None:
-    update: Dict[str, Any] = {
+    update: dict[str, Any] = {
         "processing_status": status,
         "processed_at": _now(),
     }
@@ -290,9 +290,9 @@ async def check_payload_hash_exists(
     return existing is not None
 
 
-async def get_failed_events(tenant_id: Optional[str] = None, limit: int = 50) -> List[Dict]:
+async def get_failed_events(tenant_id: str | None = None, limit: int = 50) -> list[dict]:
     """Get failed events for replay."""
-    q: Dict[str, Any] = {"processing_status": "failed"}
+    q: dict[str, Any] = {"processing_status": "failed"}
     if tenant_id:
         q["tenant_id"] = tenant_id
     return await db[COLL_RAW_CHANNEL_EVENTS].find(
@@ -300,13 +300,13 @@ async def get_failed_events(tenant_id: Optional[str] = None, limit: int = 50) ->
     ).sort("received_at", 1).limit(limit).to_list(limit)
 
 
-async def get_raw_event_stats(tenant_id: str, property_id: str) -> Dict[str, Any]:
+async def get_raw_event_stats(tenant_id: str, property_id: str) -> dict[str, Any]:
     """Get event processing statistics."""
     pipeline = [
         {"$match": {"tenant_id": tenant_id, "property_id": property_id}},
         {"$group": {"_id": "$processing_status", "count": {"$sum": 1}}},
     ]
-    stats: Dict[str, int] = {}
+    stats: dict[str, int] = {}
     async for doc in db[COLL_RAW_CHANNEL_EVENTS].aggregate(pipeline):
         stats[doc["_id"]] = doc["count"]
     return {
@@ -323,7 +323,7 @@ async def get_raw_event_stats(tenant_id: str, property_id: str) -> Dict[str, Any
 # 5. RESERVATION LINEAGE
 # ══════════════════════════════════════════════════════════════════════
 
-async def upsert_reservation_lineage(doc: Dict) -> str:
+async def upsert_reservation_lineage(doc: dict) -> str:
     doc["updated_at"] = _now()
     existing = await db[COLL_RESERVATION_LINEAGE].find_one(
         {
@@ -349,7 +349,7 @@ async def upsert_reservation_lineage(doc: Dict) -> str:
 
 async def get_reservation_lineage(
     tenant_id: str, lineage_id: str,
-) -> Optional[Dict]:
+) -> dict | None:
     return await db[COLL_RESERVATION_LINEAGE].find_one(
         {"tenant_id": tenant_id, "id": lineage_id}, _NO_ID,
     )
@@ -357,7 +357,7 @@ async def get_reservation_lineage(
 
 async def get_lineage_by_external_id(
     tenant_id: str, provider: str, external_reservation_id: str,
-) -> Optional[Dict]:
+) -> dict | None:
     return await db[COLL_RESERVATION_LINEAGE].find_one(
         {
             "tenant_id": tenant_id,
@@ -370,11 +370,11 @@ async def get_lineage_by_external_id(
 
 async def get_reservation_lineages(
     tenant_id: str, property_id: str,
-    provider: Optional[str] = None,
-    status: Optional[str] = None,
+    provider: str | None = None,
+    status: str | None = None,
     limit: int = 100,
-) -> List[Dict]:
-    q: Dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
+) -> list[dict]:
+    q: dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
     if provider:
         q["provider"] = provider
     if status:
@@ -385,9 +385,9 @@ async def get_reservation_lineages(
 
 
 async def get_unreconciled_lineages(
-    tenant_id: str, property_id: str, provider: Optional[str] = None,
-) -> List[Dict]:
-    q: Dict[str, Any] = {
+    tenant_id: str, property_id: str, provider: str | None = None,
+) -> list[dict]:
+    q: dict[str, Any] = {
         "tenant_id": tenant_id,
         "property_id": property_id,
         "reconciled": False,
@@ -400,16 +400,16 @@ async def get_unreconciled_lineages(
 
 
 async def get_lineage_stats(
-    tenant_id: str, property_id: str, provider: Optional[str] = None,
-) -> Dict[str, Any]:
-    q: Dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
+    tenant_id: str, property_id: str, provider: str | None = None,
+) -> dict[str, Any]:
+    q: dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
     if provider:
         q["provider"] = provider
     pipeline = [
         {"$match": q},
         {"$group": {"_id": "$status", "count": {"$sum": 1}}},
     ]
-    stats: Dict[str, int] = {}
+    stats: dict[str, int] = {}
     async for doc in db[COLL_RESERVATION_LINEAGE].aggregate(pipeline):
         stats[doc["_id"]] = doc["count"]
     total = sum(stats.values())
@@ -420,7 +420,7 @@ async def get_lineage_stats(
 # 9. CHANNEL RECONCILIATION CASES
 # ══════════════════════════════════════════════════════════════════════
 
-async def create_reconciliation_case(doc: Dict) -> str:
+async def create_reconciliation_case(doc: dict) -> str:
     case_id = doc.get("id", str(uuid.uuid4()))
     doc["id"] = case_id
     await db[COLL_RECONCILIATION_CASES].insert_one(doc)
@@ -428,12 +428,12 @@ async def create_reconciliation_case(doc: Dict) -> str:
 
 
 async def get_reconciliation_cases(
-    tenant_id: str, property_id: Optional[str] = None,
-    provider: Optional[str] = None,
-    status: Optional[str] = "open",
+    tenant_id: str, property_id: str | None = None,
+    provider: str | None = None,
+    status: str | None = "open",
     limit: int = 100,
-) -> List[Dict]:
-    q: Dict[str, Any] = {"tenant_id": tenant_id}
+) -> list[dict]:
+    q: dict[str, Any] = {"tenant_id": tenant_id}
     if property_id:
         q["property_id"] = property_id
     if provider:
@@ -447,13 +447,13 @@ async def get_reconciliation_cases(
 
 async def get_reconciliation_case(
     tenant_id: str, case_id: str,
-) -> Optional[Dict]:
+) -> dict | None:
     return await db[COLL_RECONCILIATION_CASES].find_one(
         {"tenant_id": tenant_id, "id": case_id}, _NO_ID,
     )
 
 
-async def update_reconciliation_case(case_id: str, updates: Dict) -> None:
+async def update_reconciliation_case(case_id: str, updates: dict) -> None:
     updates["updated_at"] = _now()
     await db[COLL_RECONCILIATION_CASES].update_one(
         {"id": case_id}, {"$set": updates},
@@ -461,9 +461,9 @@ async def update_reconciliation_case(case_id: str, updates: Dict) -> None:
 
 
 async def get_reconciliation_summary(
-    tenant_id: str, provider: Optional[str] = None,
-) -> Dict[str, Any]:
-    q: Dict[str, Any] = {
+    tenant_id: str, provider: str | None = None,
+) -> dict[str, Any]:
+    q: dict[str, Any] = {
         "tenant_id": tenant_id,
         "status": {"$in": ["open", "investigating"]},
     }
@@ -476,8 +476,8 @@ async def get_reconciliation_summary(
             "count": {"$sum": 1},
         }},
     ]
-    by_type: Dict[str, int] = {}
-    by_severity: Dict[str, int] = {}
+    by_type: dict[str, int] = {}
+    by_severity: dict[str, int] = {}
     total = 0
     async for doc in db[COLL_RECONCILIATION_CASES].aggregate(pipeline):
         ct = doc["_id"]["case_type"]

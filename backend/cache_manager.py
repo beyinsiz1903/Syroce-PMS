@@ -9,7 +9,7 @@ import logging
 import os
 from datetime import date, datetime
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import redis
 
@@ -70,7 +70,7 @@ class CacheManager:
             self.enabled = False
             self.client = None
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """Get value from cache"""
         if not self.enabled:
             return None

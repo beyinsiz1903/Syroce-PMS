@@ -6,7 +6,7 @@ Feature flags, rollback triggers, canary monitoring.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -104,7 +104,7 @@ class CanaryDeploymentService:
         if not stage:
             return ServiceResult.fail(f"Unknown stage: {target_stage_id}", "INVALID_STAGE")
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         # Check prerequisites for advancing
         current = await self._db.canary_deployments.find_one(
@@ -140,7 +140,7 @@ class CanaryDeploymentService:
         return ServiceResult.success(entry)
 
     async def rollback(self, ctx: OperationContext, reason: str) -> ServiceResult:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         current = await self._db.canary_deployments.find_one(
             {"tenant_id": ctx.tenant_id, "status": "active"}, {"_id": 0},
             sort=[("updated_at", -1)],

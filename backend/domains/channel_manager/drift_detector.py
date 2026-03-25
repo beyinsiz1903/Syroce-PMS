@@ -3,8 +3,8 @@ Channel Manager — Drift Detector
 Compares PMS inventory with OTA-reported availability to detect discrepancies.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -15,9 +15,9 @@ class DriftDetector:
     """Detects inventory/rate drift between PMS and OTA channels."""
 
     @staticmethod
-    async def scan_drift(tenant_id: str) -> Dict[str, Any]:
+    async def scan_drift(tenant_id: str) -> dict[str, Any]:
         """Full drift scan: compare PMS state with last-known OTA state."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Get PMS availability
         rooms = await db.rooms.find(
@@ -43,7 +43,7 @@ class DriftDetector:
         ).sort("timestamp", -1).to_list(50)
 
         # Group by channel
-        channel_snapshots: Dict[str, Dict] = {}
+        channel_snapshots: dict[str, dict] = {}
         for snap in ota_snapshots:
             ch = snap.get("channel")
             if ch and ch not in channel_snapshots:
@@ -116,7 +116,7 @@ class DriftDetector:
     @staticmethod
     async def get_drift_history(
         tenant_id: str, *, limit: int = 20,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get recent drift scan results."""
         return await db.drift_scan_results.find(
             {"tenant_id": tenant_id},

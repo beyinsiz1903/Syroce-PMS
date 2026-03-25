@@ -17,8 +17,8 @@ import os
 import socket
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from pymongo import ReturnDocument
 
@@ -40,7 +40,7 @@ def _nullcontext():
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _iso(dt: datetime) -> str:
@@ -65,16 +65,16 @@ class ImportRetryWorker:
         self.processing_timeout = processing_timeout
         self.drain_pause = drain_pause
         self.worker_id = f"import-{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
         # Metrics
         self._processed_count = 0
         self._failed_count = 0
         self._retry_count = 0
-        self._last_processed_at: Optional[str] = None
+        self._last_processed_at: str | None = None
 
     @property
-    def metrics(self) -> Dict[str, Any]:
+    def metrics(self) -> dict[str, Any]:
         return {
             "worker_id": self.worker_id,
             "imported_total": self._processed_count,
@@ -155,7 +155,7 @@ class ImportRetryWorker:
                 await asyncio.sleep(self.drain_pause)
         return processed
 
-    async def _claim_record(self) -> Optional[Dict[str, Any]]:
+    async def _claim_record(self) -> dict[str, Any] | None:
         """Atomically claim the next eligible import record."""
         now = _iso(_utc_now())
         sysdb = get_system_db()
@@ -180,7 +180,7 @@ class ImportRetryWorker:
         )
         return record
 
-    async def _process_record(self, record: Dict[str, Any]) -> None:
+    async def _process_record(self, record: dict[str, Any]) -> None:
         """Process a single import record within tenant context."""
         record_id = record.get("id", "unknown")
         tenant_id = record.get("tenant_id", "")

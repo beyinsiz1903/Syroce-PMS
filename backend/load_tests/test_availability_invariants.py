@@ -26,6 +26,7 @@ FUTURE_CHECK_OUT = (date.today() + timedelta(days=92)).isoformat()
 class TestAvailabilityConsistencyUnderLoad:
     """Concurrent availability queries must return consistent room counts."""
 
+    @pytest.mark.ci_load
     async def test_concurrent_availability_reads_are_consistent(
         self, api_url, auth_headers
     ):
@@ -56,6 +57,7 @@ class TestAvailabilityConsistencyUnderLoad:
                 f"Inconsistent availability counts under concurrent reads: {set(counts)}"
             )
 
+    @pytest.mark.ci_load
     async def test_availability_decreases_after_booking(
         self, api_url, auth_headers, raw_db, tenant_id, load_test_room_factory, load_test_booking_factory
     ):

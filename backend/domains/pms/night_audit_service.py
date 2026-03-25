@@ -4,8 +4,8 @@ Orchestrates audit logs, error logs, night audit reports,
 OTA sync logs, and maintenance prediction logs. No FastAPI dependencies.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -25,15 +25,15 @@ class NightAuditService:
     # ------------------------------------------------------------------
     async def get_audit_logs(
         self, ctx: OperationContext,
-        entity_type: Optional[str] = None, entity_id: Optional[str] = None,
-        user_id: Optional[str] = None, action: Optional[str] = None,
-        start_date: Optional[str] = None, end_date: Optional[str] = None,
+        entity_type: str | None = None, entity_id: str | None = None,
+        user_id: str | None = None, action: str | None = None,
+        start_date: str | None = None, end_date: str | None = None,
         limit: int = 100,
     ) -> ServiceResult:
         if ctx.actor_role not in ("super_admin", "admin"):
             return ServiceResult.fail("Insufficient permissions", "FORBIDDEN")
 
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id}
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if entity_type:
             query["entity_type"] = entity_type
         if entity_id:
@@ -60,13 +60,13 @@ class NightAuditService:
     # ------------------------------------------------------------------
     async def get_error_logs(
         self, ctx: OperationContext,
-        start_date: Optional[str] = None, end_date: Optional[str] = None,
-        severity: Optional[str] = None, endpoint: Optional[str] = None,
-        resolved: Optional[bool] = None, limit: int = 100, skip: int = 0,
+        start_date: str | None = None, end_date: str | None = None,
+        severity: str | None = None, endpoint: str | None = None,
+        resolved: bool | None = None, limit: int = 100, skip: int = 0,
     ) -> ServiceResult:
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id}
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if start_date or end_date:
-            date_filter: Dict[str, str] = {}
+            date_filter: dict[str, str] = {}
             if start_date:
                 date_filter["$gte"] = start_date
             if end_date:
@@ -85,7 +85,7 @@ class NightAuditService:
             logs.append(log)
 
         total_count = await self._db.error_logs.count_documents(query)
-        severity_stats: Dict[str, int] = {}
+        severity_stats: dict[str, int] = {}
         async for doc in self._db.error_logs.aggregate([
             {"$match": {"tenant_id": ctx.tenant_id}},
             {"$group": {"_id": "$severity", "count": {"$sum": 1}}},
@@ -98,10 +98,10 @@ class NightAuditService:
             "severity_stats": severity_stats,
         })
 
-    async def resolve_error_log(self, ctx: OperationContext, error_id: str, notes: Optional[str] = None) -> ServiceResult:
+    async def resolve_error_log(self, ctx: OperationContext, error_id: str, notes: str | None = None) -> ServiceResult:
         result = await self._db.error_logs.update_one(
             {"id": error_id, "tenant_id": ctx.tenant_id},
-            {"$set": {"resolved": True, "resolved_at": datetime.now(timezone.utc).isoformat(), "resolved_by": ctx.actor_id, "resolution_notes": notes}},
+            {"$set": {"resolved": True, "resolved_at": datetime.now(UTC).isoformat(), "resolved_by": ctx.actor_id, "resolution_notes": notes}},
         )
         if result.modified_count == 0:
             return ServiceResult.fail("Error log not found", "NOT_FOUND")
@@ -112,12 +112,12 @@ class NightAuditService:
     # ------------------------------------------------------------------
     async def get_night_audit_logs(
         self, ctx: OperationContext,
-        start_date: Optional[str] = None, end_date: Optional[str] = None,
-        status: Optional[str] = None, limit: int = 100, skip: int = 0,
+        start_date: str | None = None, end_date: str | None = None,
+        status: str | None = None, limit: int = 100, skip: int = 0,
     ) -> ServiceResult:
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id}
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if start_date or end_date:
-            date_filter: Dict[str, str] = {}
+            date_filter: dict[str, str] = {}
             if start_date:
                 date_filter["$gte"] = start_date
             if end_date:
@@ -153,13 +153,13 @@ class NightAuditService:
     # ------------------------------------------------------------------
     async def get_ota_sync_logs(
         self, ctx: OperationContext,
-        start_date: Optional[str] = None, end_date: Optional[str] = None,
-        channel: Optional[str] = None, sync_type: Optional[str] = None,
-        status: Optional[str] = None, limit: int = 100, skip: int = 0,
+        start_date: str | None = None, end_date: str | None = None,
+        channel: str | None = None, sync_type: str | None = None,
+        status: str | None = None, limit: int = 100, skip: int = 0,
     ) -> ServiceResult:
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id}
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if start_date or end_date:
-            df: Dict[str, str] = {}
+            df: dict[str, str] = {}
             if start_date:
                 df["$gte"] = start_date
             if end_date:
@@ -178,7 +178,7 @@ class NightAuditService:
             logs.append(log)
 
         total_count = await self._db.ota_sync_logs.count_documents(query)
-        channel_stats: Dict[str, Any] = {}
+        channel_stats: dict[str, Any] = {}
         async for doc in self._db.ota_sync_logs.aggregate([
             {"$match": {"tenant_id": ctx.tenant_id}},
             {"$group": {
@@ -209,13 +209,13 @@ class NightAuditService:
     # ------------------------------------------------------------------
     async def get_rms_publish_logs(
         self, ctx: OperationContext,
-        start_date: Optional[str] = None, end_date: Optional[str] = None,
-        publish_type: Optional[str] = None, auto_published: Optional[bool] = None,
-        status: Optional[str] = None, limit: int = 100, skip: int = 0,
+        start_date: str | None = None, end_date: str | None = None,
+        publish_type: str | None = None, auto_published: bool | None = None,
+        status: str | None = None, limit: int = 100, skip: int = 0,
     ) -> ServiceResult:
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id}
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if start_date or end_date:
-            df: Dict[str, str] = {}
+            df: dict[str, str] = {}
             if start_date:
                 df["$gte"] = start_date
             if end_date:
@@ -244,13 +244,13 @@ class NightAuditService:
     # ------------------------------------------------------------------
     async def get_maintenance_prediction_logs(
         self, ctx: OperationContext,
-        start_date: Optional[str] = None, end_date: Optional[str] = None,
-        equipment_type: Optional[str] = None, prediction_result: Optional[str] = None,
-        room_number: Optional[str] = None, limit: int = 100, skip: int = 0,
+        start_date: str | None = None, end_date: str | None = None,
+        equipment_type: str | None = None, prediction_result: str | None = None,
+        room_number: str | None = None, limit: int = 100, skip: int = 0,
     ) -> ServiceResult:
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id}
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if start_date or end_date:
-            df: Dict[str, str] = {}
+            df: dict[str, str] = {}
             if start_date:
                 df["$gte"] = start_date
             if end_date:
@@ -269,7 +269,7 @@ class NightAuditService:
             logs.append(log)
 
         total_count = await self._db.maintenance_prediction_logs.count_documents(query)
-        risk_stats: Dict[str, Any] = {}
+        risk_stats: dict[str, Any] = {}
         async for doc in self._db.maintenance_prediction_logs.aggregate([
             {"$match": {"tenant_id": ctx.tenant_id}},
             {"$group": {

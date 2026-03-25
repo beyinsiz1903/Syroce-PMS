@@ -9,8 +9,7 @@ Replaces the over-abstracted v2 connector/mapping/reconciliation endpoints
 with a simpler, 2-provider-optimized API surface.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -49,9 +48,9 @@ class CreateConnectionRequest(BaseModel):
 
 
 class UpdateConnectionRequest(BaseModel):
-    display_name: Optional[str] = None
-    credentials: Optional[dict] = None
-    status: Optional[str] = None
+    display_name: str | None = None
+    credentials: dict | None = None
+    status: str | None = None
 
 
 class CreateRoomMappingRequest(BaseModel):
@@ -78,8 +77,8 @@ class CreateReconciliationCaseRequest(BaseModel):
     case_type: str
     severity: str
     description: str = ""
-    external_reservation_id: Optional[str] = None
-    reservation_id: Optional[str] = None
+    external_reservation_id: str | None = None
+    reservation_id: str | None = None
 
 
 class ResolveCaseRequest(BaseModel):
@@ -94,7 +93,7 @@ class DismissCaseRequest(BaseModel):
 
 @router.get("/connections")
 async def list_connections(
-    status: Optional[str] = None,
+    status: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     connections = await repo.get_connections_by_tenant(
@@ -217,7 +216,7 @@ async def pause_connection(
 @router.get("/room-mappings")
 async def list_room_mappings(
     property_id: str,
-    provider: Optional[str] = None,
+    provider: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     mappings = await repo.get_room_mappings(
@@ -265,7 +264,7 @@ async def delete_room_mapping(
 @router.get("/rate-plan-mappings")
 async def list_rate_plan_mappings(
     property_id: str,
-    provider: Optional[str] = None,
+    provider: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     mappings = await repo.get_rate_plan_mappings(
@@ -313,8 +312,8 @@ async def delete_rate_plan_mapping(
 @router.get("/raw-events")
 async def list_raw_events(
     property_id: str,
-    provider: Optional[str] = None,
-    processed: Optional[bool] = None,
+    provider: str | None = None,
+    processed: bool | None = None,
     limit: int = Query(50, le=200),
     current_user: User = Depends(get_current_user),
 ):
@@ -329,8 +328,8 @@ async def list_raw_events(
 @router.get("/lineage")
 async def list_reservation_lineages(
     property_id: str,
-    provider: Optional[str] = None,
-    status: Optional[str] = None,
+    provider: str | None = None,
+    status: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
@@ -354,7 +353,7 @@ async def get_reservation_lineage_detail(
 @router.get("/lineage/stats")
 async def get_lineage_stats(
     property_id: str,
-    provider: Optional[str] = None,
+    provider: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     stats = await repo.get_lineage_stats(
@@ -367,8 +366,8 @@ async def get_lineage_stats(
 
 @router.get("/reconciliation/cases")
 async def list_reconciliation_cases(
-    property_id: Optional[str] = None,
-    provider: Optional[str] = None,
+    property_id: str | None = None,
+    provider: str | None = None,
     status: str = Query("open"),
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
@@ -429,7 +428,7 @@ async def resolve_case(
         "status": CaseStatus.RESOLVED.value,
         "resolution": req.resolution,
         "resolved_by": current_user.id,
-        "resolved_at": datetime.now(timezone.utc).isoformat(),
+        "resolved_at": datetime.now(UTC).isoformat(),
     })
     return {"message": "Case resolved"}
 
@@ -447,14 +446,14 @@ async def dismiss_case(
         "status": CaseStatus.DISMISSED.value,
         "dismiss_reason": req.reason,
         "resolved_by": current_user.id,
-        "resolved_at": datetime.now(timezone.utc).isoformat(),
+        "resolved_at": datetime.now(UTC).isoformat(),
     })
     return {"message": "Case dismissed"}
 
 
 @router.get("/reconciliation/summary")
 async def get_summary(
-    provider: Optional[str] = None,
+    provider: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     summary = await repo.get_reconciliation_summary(

@@ -20,8 +20,8 @@ No Slack-specific code — when you provide a Slack webhook URL, it works.
 import asyncio
 import logging
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 logger = logging.getLogger("controlplane.alerting")
 
@@ -66,7 +66,7 @@ class AlertingEngine:
     def __init__(self):
         self._db = None
         self._webhook_url = os.environ.get("ALERT_WEBHOOK_URL", "")
-        self._last_fired: Dict[str, datetime] = {}
+        self._last_fired: dict[str, datetime] = {}
 
     def _get_db(self):
         if self._db is None:
@@ -81,19 +81,19 @@ class AlertingEngine:
         severity: str,
         title: str,
         message: str,
-        context: Optional[Dict[str, Any]] = None,
-        tenant_id: Optional[str] = None,
-        property_id: Optional[str] = None,
-        provider: Optional[str] = None,
-        runbook_link: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+        context: dict[str, Any] | None = None,
+        tenant_id: str | None = None,
+        property_id: str | None = None,
+        provider: str | None = None,
+        runbook_link: str | None = None,
+    ) -> dict[str, Any] | None:
         """Fire an alert if not in cooldown.
 
         Returns the alert record if fired, None if suppressed by cooldown.
         """
         # Cooldown check
         last = self._last_fired.get(trigger)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if last and (now - last).total_seconds() < ALERT_COOLDOWN_MINUTES * 60:
             logger.debug("Alert suppressed by cooldown: %s", trigger)
             return None
@@ -139,7 +139,7 @@ class AlertingEngine:
 
         return alert
 
-    async def _send_webhook(self, alert: Dict[str, Any]) -> None:
+    async def _send_webhook(self, alert: dict[str, Any]) -> None:
         """Send alert via HTTP webhook. Slack-compatible payload."""
         try:
             import aiohttp
@@ -196,11 +196,11 @@ class AlertingEngine:
         except Exception:
             logger.exception("Webhook delivery error")
 
-    async def check_and_alert(self) -> List[Dict[str, Any]]:
+    async def check_and_alert(self) -> list[dict[str, Any]]:
         """Run all alert checks. Returns list of fired alerts."""
         fired = []
         db = self._get_db()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # 1. Import failure spike
         try:
@@ -291,11 +291,11 @@ class AlertingEngine:
         return fired
 
     async def get_recent_alerts(
-        self, *, limit: int = 20, severity: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        self, *, limit: int = 20, severity: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Get recent alerts."""
         db = self._get_db()
-        query: Dict[str, Any] = {}
+        query: dict[str, Any] = {}
         if severity:
             query["severity"] = severity
         return await db[COLL_ALERTS].find(
@@ -304,7 +304,7 @@ class AlertingEngine:
 
 
 # ── Singleton ──────────────────────────────────────────────────────
-_engine: Optional[AlertingEngine] = None
+_engine: AlertingEngine | None = None
 
 
 def get_alerting_engine() -> AlertingEngine:

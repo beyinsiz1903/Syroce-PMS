@@ -14,9 +14,9 @@ Indexes:
   - (tenant_id, severity, created_at)
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -68,39 +68,39 @@ class ReconciliationIssue(BaseModel):
     # Entity context
     entity_type: str = ""
     entity_id: str = ""
-    date_key: Optional[str] = None
+    date_key: str | None = None
 
     # Related entity references
-    related_sync_job_ids: List[str] = Field(default_factory=list)
-    related_mapping_ids: List[str] = Field(default_factory=list)
-    related_reservation_ids: List[str] = Field(default_factory=list)
+    related_sync_job_ids: list[str] = Field(default_factory=list)
+    related_mapping_ids: list[str] = Field(default_factory=list)
+    related_reservation_ids: list[str] = Field(default_factory=list)
 
     # Evidence
-    pms_value: Optional[Dict[str, Any]] = None
-    external_value: Optional[Dict[str, Any]] = None
-    evidence_payload: Optional[Dict[str, Any]] = None
+    pms_value: dict[str, Any] | None = None
+    external_value: dict[str, Any] | None = None
+    evidence_payload: dict[str, Any] | None = None
     description: str = ""
 
     # Suggested actions
-    suggested_actions: List[str] = Field(default_factory=list)
+    suggested_actions: list[str] = Field(default_factory=list)
 
     # Resolution
-    resolution: Optional[str] = None
-    resolved_by: Optional[str] = None
-    resolved_at: Optional[str] = None
+    resolution: str | None = None
+    resolved_by: str | None = None
+    resolved_at: str | None = None
     auto_fix_attempted: bool = False
-    auto_fix_result: Optional[str] = None
-    dismiss_reason: Optional[str] = None
+    auto_fix_result: str | None = None
+    dismiss_reason: str | None = None
 
     # Audit
-    detected_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    updated_at: Optional[str] = None
+    detected_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at: str | None = None
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         return self.model_dump()
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "ReconciliationIssue":
+    def from_doc(cls, doc: dict[str, Any]) -> "ReconciliationIssue":
         doc.pop("_id", None)
         return cls(**doc)

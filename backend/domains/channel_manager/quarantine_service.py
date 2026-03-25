@@ -8,8 +8,8 @@ Enhanced quarantine analytics for the Runtime Cockpit:
   - Safe release guard (validates mapping is fixed before allowing release)
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 from domains.channel_manager.ari.models import COLL_ARI_CHANGE_SETS
@@ -27,7 +27,7 @@ logger = logging.getLogger("ari.quarantine")
 _NO_ID = {"_id": 0}
 
 
-async def get_quarantine_overview(tenant_id: str) -> Dict[str, Any]:
+async def get_quarantine_overview(tenant_id: str) -> dict[str, Any]:
     """
     Full quarantine visibility: count, classification, age buckets.
     """
@@ -46,11 +46,11 @@ async def get_quarantine_overview(tenant_id: str) -> Dict[str, Any]:
             "items": [],
         }
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Classification breakdown
-    by_classification: Dict[str, int] = {}
-    by_provider: Dict[str, int] = {}
+    by_classification: dict[str, int] = {}
+    by_provider: dict[str, int] = {}
     by_age = {"lt_5min": 0, "5_30min": 0, "30_120min": 0, "gt_2h": 0}
     items = []
 
@@ -112,7 +112,7 @@ def _compute_age_minutes(iso_str: str, now: datetime) -> int:
     try:
         ts = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
         if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
+            ts = ts.replace(tzinfo=UTC)
         return int((now - ts).total_seconds() / 60)
     except (ValueError, TypeError):
         return 0
@@ -121,9 +121,9 @@ def _compute_age_minutes(iso_str: str, now: datetime) -> int:
 async def check_safe_release(
     tenant_id: str,
     room_type_code: str,
-    rate_plan_code: Optional[str] = None,
-    provider: Optional[str] = None,
-) -> Dict[str, Any]:
+    rate_plan_code: str | None = None,
+    provider: str | None = None,
+) -> dict[str, Any]:
     """
     Safe release guard: verify mapping is fixed before allowing quarantine release.
 
@@ -175,7 +175,7 @@ async def check_safe_release(
                 checks["rate_mapping_valid"] = True
 
     # Check staleness (quarantined items > 24h)
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
     stale_count = await db[COLL_ARI_CHANGE_SETS].count_documents({
         "tenant_id": tenant_id,
         "status": "hard_fail",

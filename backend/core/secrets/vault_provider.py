@@ -8,7 +8,7 @@ with hvac client calls.
 Do NOT overbuild this. Wait until Vault is actually needed.
 """
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from .provider import SecretMetadata, SecretPayload, SecretsProviderBase
 
@@ -33,7 +33,7 @@ class VaultSecretsProvider(SecretsProviderBase):
     async def create_secret(self, path, payload, tags=None) -> SecretMetadata:
         raise NotImplementedError("Vault backend not yet implemented. Use aws_secrets_manager or local_dev.")
 
-    async def get_secret(self, path) -> Optional[SecretPayload]:
+    async def get_secret(self, path) -> SecretPayload | None:
         raise NotImplementedError("Vault backend not yet implemented.")
 
     async def update_secret(self, path, payload) -> SecretMetadata:
@@ -45,10 +45,10 @@ class VaultSecretsProvider(SecretsProviderBase):
     async def rotate_secret(self, path, new_payload) -> SecretMetadata:
         raise NotImplementedError("Vault backend not yet implemented.")
 
-    async def get_secret_metadata(self, path) -> Optional[SecretMetadata]:
+    async def get_secret_metadata(self, path) -> SecretMetadata | None:
         raise NotImplementedError("Vault backend not yet implemented.")
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         return {
             "provider": "vault",
             "status": "not_implemented",

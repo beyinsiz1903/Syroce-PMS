@@ -4,8 +4,7 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -45,18 +44,18 @@ class ApprovalStatus(str, Enum):
 
 class CreateApprovalRequest(BaseModel):
     approval_type: ApprovalType
-    reference_id: Optional[str] = None  # booking_id, folio_id, etc.
+    reference_id: str | None = None  # booking_id, folio_id, etc.
     amount: float
-    original_value: Optional[float] = None
-    new_value: Optional[float] = None
+    original_value: float | None = None
+    new_value: float | None = None
     reason: str
-    notes: Optional[str] = None
+    notes: str | None = None
     priority: str = "normal"  # low, normal, high, urgent
 
 
 class ApprovalActionRequest(BaseModel):
-    notes: Optional[str] = None
-    rejection_reason: Optional[str] = None
+    notes: str | None = None
+    rejection_reason: str | None = None
 
 
 class BudgetMonth(BaseModel):
@@ -69,7 +68,7 @@ class BudgetMonth(BaseModel):
 class BudgetConfig(BaseModel):
     year: int
     currency: str = "TRY"
-    months: List[BudgetMonth]
+    months: list[BudgetMonth]
 
 
 @router.post("/approvals/create")
@@ -98,11 +97,11 @@ async def create_approval_request(
         'requested_by': current_user.name,
         'requested_by_id': current_user.id,
         'requested_by_role': current_user.role,
-        'request_date': datetime.now(timezone.utc).isoformat(),
+        'request_date': datetime.now(UTC).isoformat(),
         'approved_by': None,
         'approval_date': None,
         'rejection_reason': None,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     await db.approvals.insert_one(approval)
@@ -161,7 +160,7 @@ async def approve_request(
                 'approved_by': current_user.name,
                 'approved_by_id': current_user.id,
                 'approved_by_role': current_user.role,
-                'approval_date': datetime.now(timezone.utc).isoformat(),
+                'approval_date': datetime.now(UTC).isoformat(),
                 'approval_notes': request.notes
             }
         }
@@ -177,7 +176,7 @@ async def approve_request(
         'message': f"{approval['approval_type']} türünde onay isteğiniz onaylandı",
         'priority': 'normal',
         'read': False,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
     await db.notifications.insert_one(notification)
 
@@ -185,7 +184,7 @@ async def approve_request(
         'message': 'Onay isteği onaylandı',
         'approval_id': approval_id,
         'approved_by': current_user.name,
-        'approval_date': datetime.now(timezone.utc).isoformat()
+        'approval_date': datetime.now(UTC).isoformat()
     }
 
 
@@ -234,7 +233,7 @@ async def approve_request_v2(
                 'approved_by': current_user.name,
                 'approved_by_id': current_user.id,
                 'approved_by_role': current_user.role,
-                'approval_date': datetime.now(timezone.utc).isoformat(),
+                'approval_date': datetime.now(UTC).isoformat(),
                 'approval_notes': request.notes
             }
         }
@@ -250,7 +249,7 @@ async def approve_request_v2(
         'message': f"{approval['approval_type']} türünde onay isteğiniz onaylandı",
         'priority': 'normal',
         'read': False,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
     await db.notifications.insert_one(notification)
 
@@ -258,7 +257,7 @@ async def approve_request_v2(
         'message': 'Onay isteği onaylandı',
         'approval_id': approval_id,
         'approved_by': current_user.name,
-        'approval_date': datetime.now(timezone.utc).isoformat()
+        'approval_date': datetime.now(UTC).isoformat()
     }
 
 
@@ -306,7 +305,7 @@ async def approve_request_v3(
                 'approved_by': current_user.name,
                 'approved_by_id': current_user.id,
                 'approved_by_role': current_user.role,
-                'approval_date': datetime.now(timezone.utc).isoformat(),
+                'approval_date': datetime.now(UTC).isoformat(),
                 'approval_notes': request.notes
             }
         }
@@ -322,7 +321,7 @@ async def approve_request_v3(
         'message': f"{approval['approval_type']} türünde onay isteğiniz onaylandı",
         'priority': 'normal',
         'read': False,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
     await db.notifications.insert_one(notification)
 
@@ -330,7 +329,7 @@ async def approve_request_v3(
         'message': 'Onay isteği onaylandı',
         'approval_id': approval_id,
         'approved_by': current_user.name,
-        'approval_date': datetime.now(timezone.utc).isoformat()
+        'approval_date': datetime.now(UTC).isoformat()
     }
 
 
@@ -381,7 +380,7 @@ async def reject_request(
                 'approved_by': current_user.name,
                 'approved_by_id': current_user.id,
                 'approved_by_role': current_user.role,
-                'approval_date': datetime.now(timezone.utc).isoformat(),
+                'approval_date': datetime.now(UTC).isoformat(),
                 'rejection_reason': request.rejection_reason,
                 'approval_notes': request.notes
             }
@@ -398,7 +397,7 @@ async def reject_request(
         'message': f"{approval['approval_type']} türünde onay isteğiniz reddedildi: {request.rejection_reason}",
         'priority': 'high',
         'read': False,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
     await db.notifications.insert_one(notification)
 
@@ -415,8 +414,8 @@ async def reject_request(
 
 @router.get("/approvals/history")
 async def get_approval_history(
-    status: Optional[str] = None,
-    approval_type: Optional[str] = None,
+    status: str | None = None,
+    approval_type: str | None = None,
     limit: int = 50,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):

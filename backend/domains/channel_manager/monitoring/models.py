@@ -6,9 +6,9 @@ Alert model and monitoring constants.
 Collection: monitoring_alerts
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -79,18 +79,18 @@ class MonitoringAlert(BaseModel):
     title: str
     details: str = ""
 
-    metric_value: Optional[float] = None
-    threshold: Optional[float] = None
+    metric_value: float | None = None
+    threshold: float | None = None
 
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    resolved_at: Optional[str] = None
-    acknowledged_at: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    resolved_at: str | None = None
+    acknowledged_at: str | None = None
     status: str = AlertStatus.ACTIVE.value
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         return self.model_dump()
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "MonitoringAlert":
+    def from_doc(cls, doc: dict[str, Any]) -> "MonitoringAlert":
         doc.pop("_id", None)
         return cls(**doc)

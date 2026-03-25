@@ -12,8 +12,8 @@ Features:
   - Frontend-ready structured responses
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -33,7 +33,7 @@ logger = logging.getLogger("channel_manager.application.mapping_service")
 class MappingService:
     """Manages PMS entity <-> external provider entity mappings with full validation."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     # ------------------------------------------------------------------ #
@@ -50,9 +50,9 @@ class MappingService:
         pms_entity_name: str,
         external_entity_id: str,
         external_entity_name: str,
-        actor_id: Optional[str] = None,
-        extras: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        actor_id: str | None = None,
+        extras: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Create a new mapping rule with duplicate check."""
 
         # Duplicate detection
@@ -103,7 +103,7 @@ class MappingService:
             rule.validation_status = ValidationStatus.VALID
             rule.invalid_reason = None
             rule.validation_errors = []
-        rule.last_validated_at = datetime.now(timezone.utc).isoformat()
+        rule.last_validated_at = datetime.now(UTC).isoformat()
 
         await self._repo.upsert_mapping(rule.to_doc())
 
@@ -120,14 +120,14 @@ class MappingService:
         return rule.to_doc()
 
     async def list_mappings(
-        self, tenant_id: str, connector_id: str, entity_type: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        self, tenant_id: str, connector_id: str, entity_type: str | None = None,
+    ) -> list[dict[str, Any]]:
         return await self._repo.get_mappings(tenant_id, connector_id, entity_type)
 
-    async def get_mapping(self, tenant_id: str, mapping_id: str) -> Optional[Dict[str, Any]]:
+    async def get_mapping(self, tenant_id: str, mapping_id: str) -> dict[str, Any] | None:
         return await self._repo.get_mapping(tenant_id, mapping_id)
 
-    async def delete_mapping(self, tenant_id: str, mapping_id: str, actor_id: Optional[str] = None) -> bool:
+    async def delete_mapping(self, tenant_id: str, mapping_id: str, actor_id: str | None = None) -> bool:
         mapping = await self._repo.get_mapping(tenant_id, mapping_id)
         if not mapping:
             return False
@@ -150,14 +150,14 @@ class MappingService:
 
     async def get_mapping_lookup(
         self, tenant_id: str, connector_id: str, entity_type: str,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """Get PMS->External mapping lookup dict for a specific entity type."""
         mappings = await self._repo.get_active_mappings(tenant_id, connector_id, entity_type)
         return {m["pms_entity_id"]: m["external_entity_id"] for m in mappings}
 
     async def get_reverse_lookup(
         self, tenant_id: str, connector_id: str, entity_type: str,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """Get External->PMS mapping lookup dict."""
         mappings = await self._repo.get_active_mappings(tenant_id, connector_id, entity_type)
         return {m["external_entity_id"]: m["pms_entity_id"] for m in mappings}
@@ -166,15 +166,15 @@ class MappingService:
     #  Validation                                                          #
     # ------------------------------------------------------------------ #
 
-    async def validate_mappings(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def validate_mappings(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         """Validate all mappings for a connector. Returns detailed report."""
         mappings = await self._repo.get_mappings(tenant_id, connector_id)
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         valid = 0
         invalid = 0
-        missing_list: List[Dict[str, Any]] = []
-        invalid_list: List[Dict[str, Any]] = []
+        missing_list: list[dict[str, Any]] = []
+        invalid_list: list[dict[str, Any]] = []
 
         for m in mappings:
             errs = await self._validate_single_mapping(m)
@@ -222,14 +222,14 @@ class MappingService:
             "validated_at": now,
         }
 
-    async def validate_single(self, tenant_id: str, mapping_id: str) -> Dict[str, Any]:
+    async def validate_single(self, tenant_id: str, mapping_id: str) -> dict[str, Any]:
         """Validate a single mapping and persist status."""
         m = await self._repo.get_mapping(tenant_id, mapping_id)
         if not m:
             raise ValueError("Mapping not found")
 
         errs = await self._validate_single_mapping(m)
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         if errs:
             m["validation_status"] = ValidationStatus.INVALID.value
             m["invalid_reason"] = errs[0]
@@ -252,7 +252,7 @@ class MappingService:
     #  Sync Readiness & Blocked Reasons                                    #
     # ------------------------------------------------------------------ #
 
-    async def check_sync_readiness(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def check_sync_readiness(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         """Compute sync readiness score (0-100) and blocked reasons."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
         if not connector:
@@ -262,8 +262,8 @@ class MappingService:
         all_mappings = await self._repo.get_mappings(tenant_id, connector_id)
 
         # Classify by type & status
-        type_counts: Dict[str, Dict[str, int]] = {}
-        invalid_by_type: Dict[str, int] = {}
+        type_counts: dict[str, dict[str, int]] = {}
+        invalid_by_type: dict[str, int] = {}
         for m in all_mappings:
             et = m.get("entity_type", "unknown")
             st = m.get("status", "draft")
@@ -299,7 +299,7 @@ class MappingService:
         missing = await self._detect_missing_mappings(tenant_id, connector_id, property_id)
 
         # Blocked reasons
-        blocked_reasons: List[str] = []
+        blocked_reasons: list[str] = []
         if not room_mappings:
             blocked_reasons.append("Oda tipi mapping'i yapilmamis")
         if not rate_mappings:
@@ -361,13 +361,13 @@ class MappingService:
     #  Frontend Readiness Report (structured for Mapping Screen)           #
     # ------------------------------------------------------------------ #
 
-    async def get_readiness_report(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def get_readiness_report(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         """Comprehensive report for the Mapping screen on frontend."""
         readiness = await self.check_sync_readiness(tenant_id, connector_id)
         all_mappings = await self._repo.get_mappings(tenant_id, connector_id)
 
         # Group mappings by entity_type
-        by_type: Dict[str, List[Dict]] = {}
+        by_type: dict[str, list[dict]] = {}
         for m in all_mappings:
             et = m.get("entity_type", "unknown")
             by_type.setdefault(et, []).append(m)
@@ -407,7 +407,7 @@ class MappingService:
     #  Internal: Validation per entity type                                #
     # ------------------------------------------------------------------ #
 
-    async def _validate_single_mapping(self, mapping: Dict) -> List[str]:
+    async def _validate_single_mapping(self, mapping: dict) -> list[str]:
         """Validate a single mapping rule against PMS and external data."""
         errors = []
         entity_type = mapping.get("entity_type", "")
@@ -501,9 +501,9 @@ class MappingService:
 
     async def _detect_missing_mappings(
         self, tenant_id: str, connector_id: str, property_id: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Detect PMS entities that have no active mapping."""
-        missing: List[Dict[str, Any]] = []
+        missing: list[dict[str, Any]] = []
 
         # Room types
         pms_room_types = await self._get_pms_room_types(tenant_id, property_id)
@@ -577,20 +577,20 @@ class MappingService:
     #  Internal: PMS data helpers                                          #
     # ------------------------------------------------------------------ #
 
-    async def _get_pms_room_types(self, tenant_id: str, property_id: str) -> List[str]:
+    async def _get_pms_room_types(self, tenant_id: str, property_id: str) -> list[str]:
         rooms = await db.rooms.find(
             {"tenant_id": tenant_id, "property_id": property_id, "status": {"$ne": "out_of_service"}},
             {"_id": 0, "room_type": 1},
         ).to_list(500)
         return list({r.get("room_type", "") for r in rooms if r.get("room_type")})
 
-    async def _get_pms_rate_plans(self, tenant_id: str, property_id: str) -> List[str]:
+    async def _get_pms_rate_plans(self, tenant_id: str, property_id: str) -> list[str]:
         # Rate plans may come from rooms or a separate collection
         # For now, derive from room types as implicit rate plans
         room_types = await self._get_pms_room_types(tenant_id, property_id)
         return room_types  # PMS may use room_type as rate plan key
 
-    async def _get_pms_rate_plan_details(self, tenant_id: str, property_id: str) -> List[Dict]:
+    async def _get_pms_rate_plan_details(self, tenant_id: str, property_id: str) -> list[dict]:
         room_types = await self._get_pms_room_types(tenant_id, property_id)
         return [{"id": rt, "name": rt} for rt in room_types]
 
@@ -640,7 +640,7 @@ class MappingService:
                     revalidated_ids.append(res["id"])
 
             if revalidated_ids:
-                now_ts = datetime.now(timezone.utc).isoformat()
+                now_ts = datetime.now(UTC).isoformat()
                 for rid in revalidated_ids:
                     await db.cm_imported_reservations.update_one(
                         {"tenant_id": tenant_id, "id": rid},

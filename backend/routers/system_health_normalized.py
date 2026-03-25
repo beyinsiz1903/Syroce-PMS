@@ -3,7 +3,7 @@ System Health — Normalized API Contract (Enriched)
 Real runtime data from services; standard response envelope with data freshness,
 evidence summary, degraded reason, critical blockers, and trend delta.
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
 
@@ -31,7 +31,7 @@ def _health_response(
         "severity": severity,
         "scope_type": scope_type,
         "scope_id": scope_id,
-        "last_updated_at": datetime.now(timezone.utc).isoformat(),
+        "last_updated_at": datetime.now(UTC).isoformat(),
         "action_available": action_available,
         "suggested_action": suggested_action,
         "live_capable": True,
@@ -279,7 +279,7 @@ async def normalized_overview(current_user: User = Depends(get_current_user)):
     return {
         "overall_status": overall_status,
         "overall_severity": overall_severity,
-        "last_updated_at": datetime.now(timezone.utc).isoformat(),
+        "last_updated_at": datetime.now(UTC).isoformat(),
         "live_capable": True,
         "data_freshness": "real-time",
         "subsystems": {

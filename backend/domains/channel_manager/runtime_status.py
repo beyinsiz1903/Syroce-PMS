@@ -3,8 +3,8 @@ Channel Manager — Runtime Status
 Aggregates health and operational status across all CM subsystems.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 from domains.channel_manager.provider_failover import provider_failover
@@ -16,9 +16,9 @@ class CMRuntimeStatus:
     """Aggregates channel manager runtime health across all subsystems."""
 
     @staticmethod
-    async def get_status(tenant_id: str) -> Dict[str, Any]:
+    async def get_status(tenant_id: str) -> dict[str, Any]:
         """Full runtime status for the channel manager."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Active connections
         connections = await db.channel_connections.find(
@@ -91,7 +91,7 @@ class CMRuntimeStatus:
         }
 
     @staticmethod
-    async def get_provider_health(tenant_id: str) -> List[Dict[str, Any]]:
+    async def get_provider_health(tenant_id: str) -> list[dict[str, Any]]:
         """Get health status per OTA provider."""
         connections = await db.channel_connections.find(
             {"tenant_id": tenant_id}, {"_id": 0}

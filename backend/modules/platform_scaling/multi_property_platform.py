@@ -3,8 +3,8 @@ Multi-Property Platform - Central reservation service, central revenue managemen
 multi-property dashboard, and global alert system.
 """
 import uuid
-from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -12,7 +12,7 @@ from core.database import db
 class CentralReservationService:
     """Central reservation management across multiple properties."""
 
-    async def get_portfolio_overview(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_portfolio_overview(self, tenant_id: str) -> dict[str, Any]:
         """Get portfolio-wide reservation overview across all properties."""
         properties = await db.tenants.find(
             {"$or": [{"id": tenant_id}, {"parent_tenant_id": tenant_id}]},
@@ -81,8 +81,8 @@ class CentralReservationService:
 
     async def search_availability_cross_property(self, tenant_id: str,
                                                    check_in: str, check_out: str,
-                                                   room_type: Optional[str] = None,
-                                                   guests: int = 2) -> Dict[str, Any]:
+                                                   room_type: str | None = None,
+                                                   guests: int = 2) -> dict[str, Any]:
         """Search availability across all properties in the portfolio."""
         properties = await db.tenants.find(
             {"$or": [{"id": tenant_id}, {"parent_tenant_id": tenant_id}]},
@@ -140,7 +140,7 @@ class CentralReservationService:
 
     async def transfer_reservation(self, tenant_id: str, booking_id: str,
                                     target_property_id: str, user_id: str,
-                                    reason: Optional[str] = None) -> Dict[str, Any]:
+                                    reason: str | None = None) -> dict[str, Any]:
         """Transfer a reservation between properties."""
         booking = await db.bookings.find_one(
             {"id": booking_id, "tenant_id": tenant_id}, {"_id": 0}
@@ -155,7 +155,7 @@ class CentralReservationService:
             "target_property": target_property_id,
             "reason": reason,
             "transferred_by": user_id,
-            "transferred_at": datetime.now(timezone.utc).isoformat(),
+            "transferred_at": datetime.now(UTC).isoformat(),
             "original_booking": {k: v for k, v in booking.items() if k != "_id"},
         }
         await db.reservation_transfers.insert_one(transfer_record)
@@ -167,7 +167,7 @@ class CentralReservationService:
                 "tenant_id": target_property_id,
                 "transferred_from": tenant_id,
                 "transfer_id": transfer_record["id"],
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }},
         )
 
@@ -178,7 +178,7 @@ class CentralReservationService:
 class CentralRevenueManagement:
     """Central revenue management across the portfolio."""
 
-    async def get_portfolio_revenue(self, tenant_id: str, days: int = 30) -> Dict[str, Any]:
+    async def get_portfolio_revenue(self, tenant_id: str, days: int = 30) -> dict[str, Any]:
         """Get portfolio-wide revenue metrics."""
         properties = await db.tenants.find(
             {"$or": [{"id": tenant_id}, {"parent_tenant_id": tenant_id}]},
@@ -239,8 +239,8 @@ class CentralRevenueManagement:
         }
 
     async def apply_global_rate_adjustment(self, tenant_id: str, adjustment_pct: float,
-                                            room_type: Optional[str] = None,
-                                            user_id: str = "") -> Dict[str, Any]:
+                                            room_type: str | None = None,
+                                            user_id: str = "") -> dict[str, Any]:
         """Apply a rate adjustment across all properties."""
         properties = await db.tenants.find(
             {"$or": [{"id": tenant_id}, {"parent_tenant_id": tenant_id}]},
@@ -280,7 +280,7 @@ class CentralRevenueManagement:
             "adjustment_pct": adjustment_pct,
             "room_type": room_type,
             "applied_by": user_id,
-            "applied_at": datetime.now(timezone.utc).isoformat(),
+            "applied_at": datetime.now(UTC).isoformat(),
             "rooms_affected": len(adjustments),
         })
 
@@ -291,7 +291,7 @@ class CentralRevenueManagement:
 class GlobalAlertSystem:
     """Global alert system across all properties."""
 
-    async def get_global_alerts(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_global_alerts(self, tenant_id: str) -> dict[str, Any]:
         """Get global alerts across all properties."""
         properties = await db.tenants.find(
             {"$or": [{"id": tenant_id}, {"parent_tenant_id": tenant_id}]},
@@ -369,7 +369,7 @@ class GlobalAlertSystem:
         alerts.sort(key=lambda x: {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(x["priority"], 4))
         return {"tenant_id": tenant_id, "count": len(alerts), "alerts": alerts}
 
-    async def get_multi_property_dashboard(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_multi_property_dashboard(self, tenant_id: str) -> dict[str, Any]:
         """Comprehensive multi-property dashboard."""
         crs = CentralReservationService()
         crm = CentralRevenueManagement()
@@ -382,5 +382,5 @@ class GlobalAlertSystem:
             "portfolio": portfolio,
             "revenue": revenue,
             "alerts": alerts,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
         }

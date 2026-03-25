@@ -4,8 +4,8 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -215,7 +215,7 @@ async def create_tenant(
         raise HTTPException(status_code=400, detail="Bu email adresi zaten bir kullanıcı tarafından kullanılıyor")
 
     # Calculate subscription dates
-    start_date = datetime.now(timezone.utc)
+    start_date = datetime.now(UTC)
     end_date = None
 
     if payload.subscription_days:
@@ -284,9 +284,9 @@ async def create_tenant(
 
 @router.get("/admin/users")
 async def list_all_users(
-    email_filter: Optional[str] = None,
-    role_filter: Optional[str] = None,
-    tenant_id_filter: Optional[str] = None,
+    email_filter: str | None = None,
+    role_filter: str | None = None,
+    tenant_id_filter: str | None = None,
     current_user: User = Depends(require_super_admin)
 ):
     """List all users in the system (SUPER ADMIN only)"""
@@ -425,7 +425,7 @@ async def update_tenant_subscription(
     Supports both duration-based updates and manual start/end date updates.
     """
 
-    def _parse_date_input(value: Optional[str]) -> Optional[datetime]:
+    def _parse_date_input(value: str | None) -> datetime | None:
         if value is None:
             return None
         value = value.strip()
@@ -436,12 +436,12 @@ async def update_tenant_subscription(
         try:
             if len(value) == 10 and value[4] == '-' and value[7] == '-':
                 dt = datetime.fromisoformat(value)
-                return dt.replace(tzinfo=timezone.utc)
+                return dt.replace(tzinfo=UTC)
 
             dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt.astimezone(timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
+            return dt.astimezone(UTC)
         except Exception:
             raise HTTPException(
                 status_code=400,
@@ -457,10 +457,10 @@ async def update_tenant_subscription(
     manual_mode = bool(payload.subscription_start_date) or bool(payload.subscription_end_date)
 
     if manual_mode:
-        start_date = _parse_date_input(payload.subscription_start_date) or datetime.now(timezone.utc)
+        start_date = _parse_date_input(payload.subscription_start_date) or datetime.now(UTC)
         end_date = _parse_date_input(payload.subscription_end_date)
     else:
-        start_date = datetime.now(timezone.utc)
+        start_date = datetime.now(UTC)
         end_date = None
         if payload.subscription_days:
             end_date = start_date + timedelta(days=payload.subscription_days)
@@ -473,7 +473,7 @@ async def update_tenant_subscription(
         "subscription_start_date": start_date.isoformat(),
         "subscription_end_date": end_date.isoformat() if end_date else None,
         "subscription_status": "active",
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
 
     result = await db.tenants.update_one(
@@ -546,7 +546,7 @@ async def update_tenant_tier(
 
     update_data = {
         "subscription_tier": new_tier,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
 
     if reset_modules:
@@ -593,7 +593,7 @@ async def admin_update_tenant_info(
     if not update_data:
         raise HTTPException(status_code=400, detail="Güncellenecek alan bulunamadı")
 
-    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    update_data["updated_at"] = datetime.now(UTC).isoformat()
     await db.tenants.update_one({"id": tenant_id}, {"$set": update_data})
 
     updated = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
@@ -656,7 +656,7 @@ async def admin_add_tenant_team_member(
         "role": payload.role,
         "is_active": True,
         "hashed_password": hashed,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.users.insert_one(new_user)
 
@@ -733,7 +733,7 @@ async def admin_get_tenant_stats(
     guests = await db.guests.count_documents({"tenant_id": tenant_id})
     bookings = await db.bookings.count_documents({"tenant_id": tenant_id})
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
     bookings_this_month = await db.bookings.count_documents({
         "tenant_id": tenant_id,
@@ -840,8 +840,8 @@ async def upgrade_subscription(
             'subscription_status': 'active',
             'billing_cycle': billing_cycle,
             'modules': new_modules,
-            'subscription_valid_until': (datetime.now(timezone.utc) + timedelta(days=365 if billing_cycle == 'yearly' else 30)).isoformat(),
-            'last_billing_date': datetime.now(timezone.utc).isoformat()
+            'subscription_valid_until': (datetime.now(UTC) + timedelta(days=365 if billing_cycle == 'yearly' else 30)).isoformat(),
+            'last_billing_date': datetime.now(UTC).isoformat()
         }}
     )
 
@@ -913,7 +913,7 @@ async def change_subscription_plan(
 
     amount = plan.price_yearly if payload.billing_cycle == 'yearly' else plan.price_monthly
     new_modules = get_plan_default_modules(new_tier)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     valid_days = 365 if payload.billing_cycle == 'yearly' else 30
 
     # Update tenant
@@ -1025,7 +1025,7 @@ async def update_hotel_info(
     if not update_data:
         raise HTTPException(status_code=400, detail="Güncellenecek alan bulunamadı")
 
-    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    update_data["updated_at"] = datetime.now(UTC).isoformat()
     await db.tenants.update_one({"id": current_user.tenant_id}, {"$set": update_data})
 
     updated = await db.tenants.find_one({"id": current_user.tenant_id}, {"_id": 0})
@@ -1149,7 +1149,7 @@ async def add_team_member(
         "role": payload.role,
         "is_active": True,
         "hashed_password": hashed,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.users.insert_one(new_user)
 
@@ -1317,8 +1317,8 @@ async def get_demo_status(
 
 @router.get("/admin/leads")
 async def admin_list_pms_lite_leads(
-    status: Optional[PmsLiteLeadStatus] = None,
-    q: Optional[str] = None,
+    status: PmsLiteLeadStatus | None = None,
+    q: str | None = None,
     limit: int = 50,
     offset: int = 0,
     current_user: User = Depends(get_current_user),
@@ -1327,7 +1327,7 @@ async def admin_list_pms_lite_leads(
     if current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Only super_admin can access leads")
 
-    query: Dict[str, Any] = {"source": "pms_lite_landing"}
+    query: dict[str, Any] = {"source": "pms_lite_landing"}
     if status:
         query["status"] = status.value
 
@@ -1350,7 +1350,7 @@ async def admin_list_pms_lite_leads(
         .limit(max(limit, 1))
     )
 
-    leads: List[Dict[str, Any]] = []
+    leads: list[dict[str, Any]] = []
     async for lead in cursor:
         leads.append(
             {
@@ -1372,9 +1372,9 @@ async def admin_list_pms_lite_leads(
 
 @router.get("/admin/leads/export.csv")
 async def admin_export_pms_lite_leads_csv(
-    status: Optional[PmsLiteLeadStatus] = None,
-    q: Optional[str] = None,
-    follow_up: Optional[bool] = False,
+    status: PmsLiteLeadStatus | None = None,
+    q: str | None = None,
+    follow_up: bool | None = False,
     current_user: User = Depends(get_current_user),
 ):
     """Export PMS Lite marketing leads as CSV for super admin."""
@@ -1384,7 +1384,7 @@ async def admin_export_pms_lite_leads_csv(
     import csv
     from io import StringIO
 
-    query: Dict[str, Any] = {"source": "pms_lite_landing"}
+    query: dict[str, Any] = {"source": "pms_lite_landing"}
     if status:
         query["status"] = status.value
 
@@ -1398,14 +1398,14 @@ async def admin_export_pms_lite_leads_csv(
             {"hotel.location": regex},
         ]
 
-    docs: List[Dict[str, Any]] = []
+    docs: list[dict[str, Any]] = []
     async for lead in db.leads.find(query):
         docs.append(lead)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if follow_up:
-        filtered: List[Dict[str, Any]] = []
+        filtered: list[dict[str, Any]] = []
         for lead in docs:
             s = lead.get("status", "new")
             created = _parse_iso_dt(lead.get("created_at"))
@@ -1492,7 +1492,7 @@ async def admin_update_pms_lite_lead(
     if current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Only super_admin can update leads")
 
-    update: Dict[str, Any] = {}
+    update: dict[str, Any] = {}
     if payload.status is not None:
         update["status"] = payload.status.value
     if payload.note is not None:
@@ -1543,7 +1543,7 @@ async def create_sla_config(
                     '$set': {
                         'response_time_minutes': config.response_time_minutes,
                         'resolution_time_minutes': config.resolution_time_minutes,
-                        'updated_at': datetime.now(timezone.utc).isoformat(),
+                        'updated_at': datetime.now(UTC).isoformat(),
                         'updated_by': current_user.name
                     }
                 }
@@ -1558,7 +1558,7 @@ async def create_sla_config(
                 'priority': config.priority,
                 'response_time_minutes': config.response_time_minutes,
                 'resolution_time_minutes': config.resolution_time_minutes,
-                'created_at': datetime.now(timezone.utc).isoformat(),
+                'created_at': datetime.now(UTC).isoformat(),
                 'created_by': current_user.name
             })
 
@@ -1744,7 +1744,7 @@ async def get_system_performance(
             'timeline': apm_summary.get('timeline', []),
             'health_status': 'healthy' if cpu_percent < 80 and memory.percent < 80 else 'degraded',
             'uptime_seconds': apm_summary.get('uptime_seconds', 0),
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
         }
 
     except Exception as e:
@@ -1785,14 +1785,14 @@ async def get_rate_limit_status(
             'enabled': True,
             'mode': 'in-memory',
             'stats': rl_stats,
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
         }
     except Exception as e:
         return {
             'enabled': False,
             'mode': 'disabled',
             'error': str(e),
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
         }
 
 
@@ -1839,7 +1839,7 @@ async def get_database_stats(
                 'max_idle_time_ms': 45000,
             },
             'uptime_seconds': server_status.get('uptime', 0),
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get DB stats: {str(e)}")
@@ -1859,7 +1859,7 @@ async def get_recent_errors(
         return {
             'errors': errors,
             'total': len(errors),
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
         }
     except Exception as e:
         return {'errors': [], 'total': 0, 'error': str(e)}
@@ -1870,8 +1870,8 @@ async def get_recent_errors(
 
 @router.get("/system/logs")
 async def get_system_logs(
-    level: Optional[str] = None,  # ERROR, WARN, INFO, DEBUG
-    search: Optional[str] = None,
+    level: str | None = None,  # ERROR, WARN, INFO, DEBUG
+    search: str | None = None,
     limit: int = 100,
     current_user: User = Depends(get_current_user)
 ):
@@ -1920,7 +1920,7 @@ async def get_system_logs(
             {
                 'id': str(uuid.uuid4()),
                 'level': 'INFO',
-                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'timestamp': datetime.now(UTC).isoformat(),
                 'message': 'System performance check completed',
                 'user': 'System',
                 'action': 'SYSTEM_CHECK',
@@ -1929,7 +1929,7 @@ async def get_system_logs(
             {
                 'id': str(uuid.uuid4()),
                 'level': 'INFO',
-                'timestamp': (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(),
+                'timestamp': (datetime.now(UTC) - timedelta(minutes=5)).isoformat(),
                 'message': 'Database connection verified',
                 'user': 'System',
                 'action': 'DB_CHECK',
@@ -1982,7 +1982,7 @@ async def create_demo_request(request: DemoRequest):
             'hotel_name': request.hotel_name,
             'room_count': request.room_count,
             'status': 'pending',
-            'created_at': datetime.now(timezone.utc).isoformat(),
+            'created_at': datetime.now(UTC).isoformat(),
             'contacted': False
         }
 
@@ -2070,7 +2070,7 @@ async def system_health_check(
             'total_checks': len(health_checks),
             'healthy_count': len([h for h in health_checks if h['status'] == 'healthy']),
             'unhealthy_count': unhealthy_count,
-            'timestamp': datetime.now(timezone.utc).isoformat()
+            'timestamp': datetime.now(UTC).isoformat()
         }
 
     except Exception as e:
@@ -2096,12 +2096,12 @@ async def system_health_check(
 @router.get("/security/audit-logs")
 async def get_security_audit_logs(
     days: int = 7,
-    action: Optional[str] = None,
-    user_id: Optional[str] = None,
+    action: str | None = None,
+    user_id: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Get security audit logs"""
-    start_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    start_date = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
     query = {
         'tenant_id': current_user.tenant_id,
@@ -2126,7 +2126,7 @@ async def get_security_audit_logs(
 
 @router.get("/gdpr/data-requests")
 async def get_gdpr_data_requests(
-    status: Optional[str] = None,
+    status: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Get GDPR data access/deletion requests - REAL DATA from database"""

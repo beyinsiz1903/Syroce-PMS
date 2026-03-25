@@ -4,8 +4,8 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
 import uuid
-from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -37,9 +37,9 @@ router = APIRouter(prefix="/api", tags=["Revenue / Pricing"])
 # ── Inline Models ──
 
 class RatePlanFilter(BaseModel):
-    channel: Optional[ChannelType] = None
-    company_id: Optional[str] = None
-    date: Optional[date] = None
+    channel: ChannelType | None = None
+    company_id: str | None = None
+    date: date | None = None
 
 
 class RatePlanCreate(BaseModel):
@@ -49,31 +49,31 @@ class RatePlanCreate(BaseModel):
     currency: str = "EUR"
     base_price: float
     room_type: str = "Standard"  # Default room type
-    market_segment: Optional[MarketSegment] = None
-    channel_restrictions: List[ChannelType] = []
-    company_ids: List[str] = []
-    valid_from: Optional[date] = None
-    valid_to: Optional[date] = None
-    days_of_week: List[int] = []
-    min_stay: Optional[int] = None
-    max_stay: Optional[int] = None
-    cancellation_policy: Optional[CancellationPolicyType] = None
+    market_segment: MarketSegment | None = None
+    channel_restrictions: list[ChannelType] = []
+    company_ids: list[str] = []
+    valid_from: date | None = None
+    valid_to: date | None = None
+    days_of_week: list[int] = []
+    min_stay: int | None = None
+    max_stay: int | None = None
+    cancellation_policy: CancellationPolicyType | None = None
 
 
 class PackageCreate(BaseModel):
     name: str
     code: str
-    description: Optional[str] = None
-    included_services: List[str] = []
+    description: str | None = None
+    included_services: list[str] = []
     price_type: str = "per_room"
     additional_amount: float = 0.0
-    linked_rate_plan_ids: List[str] = []
+    linked_rate_plan_ids: list[str] = []
 
 
 class DynamicRestrictionsRequest(BaseModel):
     date: str
     room_type: str
-    min_los: Optional[int] = None  # Minimum Length of Stay
+    min_los: int | None = None  # Minimum Length of Stay
     cta: bool = False  # Closed to Arrival
     ctd: bool = False  # Closed to Departure
     stop_sell: bool = False
@@ -85,12 +85,12 @@ class DemandForecast(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     date: str
-    room_type: Optional[str] = None
+    room_type: str | None = None
     forecasted_occupancy: float
     confidence: float
-    factors: Dict[str, Any] = {}  # events, seasonality, historical
+    factors: dict[str, Any] = {}  # events, seasonality, historical
     model_version: str = "ml-v1"
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class CompetitorRate(BaseModel):
@@ -103,7 +103,7 @@ class CompetitorRate(BaseModel):
     room_type: str
     rate: float
     source: str  # google_hotels, booking_com, expedia
-    scraped_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    scraped_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class RateOverrideRequest(BaseModel):
@@ -125,15 +125,15 @@ async def update_room_rate(rate_data: dict, current_user: User = Depends(get_cur
 
 
 
-@router.get("/rates/rate-plans", response_model=List[RatePlan])
+@router.get("/rates/rate-plans", response_model=list[RatePlan])
 async def list_rate_plans(
-    channel: Optional[ChannelType] = None,
-    company_id: Optional[str] = None,
-    stay_date: Optional[str] = None,
+    channel: ChannelType | None = None,
+    company_id: str | None = None,
+    stay_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     current_user = await get_current_user(credentials)
-    query: Dict[str, Any] = {"tenant_id": current_user.tenant_id, "is_active": True}
+    query: dict[str, Any] = {"tenant_id": current_user.tenant_id, "is_active": True}
 
     if channel:
         query["$or"] = [
@@ -162,7 +162,7 @@ async def list_rate_plans(
             pass
 
     cursor = db.rate_plans.find(query).sort("name", 1)
-    results: List[RatePlan] = []
+    results: list[RatePlan] = []
     async for doc in cursor:
         # Normalize date strings to actual date
         if "valid_from" in doc and isinstance(doc["valid_from"], str):
@@ -202,11 +202,11 @@ async def create_rate_plan(
 
 
 
-@router.get("/rates/packages", response_model=List[Package])
+@router.get("/rates/packages", response_model=list[Package])
 async def list_packages(credentials: HTTPAuthorizationCredentials = Depends(security)):
     current_user = await get_current_user(credentials)
     cursor = db.packages.find({"tenant_id": current_user.tenant_id, "is_active": True}).sort("name", 1)
-    results: List[Package] = []
+    results: list[Package] = []
     async for doc in cursor:
         results.append(Package(**doc))
     return results
@@ -237,7 +237,7 @@ async def create_price_analysis(analysis: PriceAnalysis, current_user: User = De
 
 
 
-@router.get("/rms/analysis", response_model=List[PriceAnalysis])
+@router.get("/rms/analysis", response_model=list[PriceAnalysis])
 @cached(ttl=600, key_prefix="rms_analysis")  # Cache for 10 min
 async def get_price_analysis(current_user: User = Depends(get_current_user)):
     analyses = await db.price_analysis.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
@@ -269,7 +269,7 @@ async def set_dynamic_restrictions(
         'ctd': request.ctd,
         'stop_sell': request.stop_sell,
         'created_by': current_user.name,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     # Check if restriction exists
@@ -298,7 +298,7 @@ async def set_dynamic_restrictions(
 
 @router.get("/rms/market-compression")
 async def get_market_compression(
-    date: Optional[str] = None,
+    date: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -356,8 +356,8 @@ async def get_market_compression(
 
 @router.get("/contracted-rates")
 async def get_contracted_rates(
-    company_id: Optional[str] = None,
-    status: Optional[str] = None,
+    company_id: str | None = None,
+    status: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -410,7 +410,7 @@ async def get_contracted_rates(
 
 @router.get("/contracted-rates/allotment-utilization")
 async def get_allotment_utilization(
-    company_id: Optional[str] = None,
+    company_id: str | None = None,
     date_range_days: int = 30,
     current_user: User = Depends(get_current_user)
 ):
@@ -420,7 +420,7 @@ async def get_allotment_utilization(
     - Pickup rate
     - Alert when 90% utilized
     """
-    end_dt = datetime.now(timezone.utc)
+    end_dt = datetime.now(UTC)
     start_dt = end_dt - timedelta(days=date_range_days)
 
     match_criteria = {
@@ -531,7 +531,7 @@ async def get_pickup_vs_allocation_alerts(
         # Calculate expected pickup (time-based)
         if start_date and end_date:
             total_days = (datetime.fromisoformat(end_date) - datetime.fromisoformat(start_date)).days
-            days_passed = (datetime.now(timezone.utc) - datetime.fromisoformat(start_date)).days
+            days_passed = (datetime.now(UTC) - datetime.fromisoformat(start_date)).days
             expected_pickup_pct = (days_passed / total_days * 100) if total_days > 0 else 0
 
             if pickup_pct < expected_pickup_pct - 20:  # 20% behind pace
@@ -570,7 +570,7 @@ async def train_demand_forecast_model(
     """
     # In production: Use scikit-learn, XGBoost, or TensorFlow
     # Collect historical data
-    end_dt = datetime.now(timezone.utc)
+    end_dt = datetime.now(UTC)
     start_dt = end_dt - timedelta(days=historical_days)
 
     # Get historical bookings
@@ -607,8 +607,8 @@ async def train_demand_forecast_model(
 @router.post("/rms/ai-pricing/competitor-scrape")
 async def scrape_competitor_rates(
     date: str,
-    competitors: List[str],
-    room_types: List[str],
+    competitors: list[str],
+    room_types: list[str],
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -674,7 +674,7 @@ async def calculate_price_elasticity(
     - Revenue optimization
     """
     # Get historical bookings with different prices
-    end_dt = datetime.now(timezone.utc)
+    end_dt = datetime.now(UTC)
     start_dt = end_dt - timedelta(days=analysis_days)
 
     # Collect price-demand pairs
@@ -877,7 +877,7 @@ async def get_pickup_graph_data(
 async def get_realization_report(
     start_date: str,
     end_date: str,
-    company_id: Optional[str] = None,
+    company_id: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -973,9 +973,9 @@ async def get_realization_report(
 async def set_free_sale_control(
     company_id: str,
     enable_free_sale: bool,
-    min_lead_time_days: Optional[int] = None,
-    release_period_days: Optional[int] = None,
-    max_free_sale_rooms: Optional[int] = None,
+    min_lead_time_days: int | None = None,
+    release_period_days: int | None = None,
+    max_free_sale_rooms: int | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -993,7 +993,7 @@ async def set_free_sale_control(
         'min_lead_time_days': min_lead_time_days or 7,
         'release_period_days': release_period_days or 14,
         'max_free_sale_rooms': max_free_sale_rooms or 10,
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'created_by': current_user.name
     }
 
@@ -1109,7 +1109,7 @@ async def get_price_recommendation_with_range(
         try:
             check_in = datetime.strptime(check_in_date, '%Y-%m-%d')
         except Exception:
-            check_in = datetime.now(timezone.utc)
+            check_in = datetime.now(UTC)
 
     # Calculate occupancy for same date last year
     last_year_date = check_in - timedelta(days=365)
@@ -1181,8 +1181,8 @@ async def get_price_recommendation_with_range(
 
 @router.get("/rms/demand-heatmap")
 async def get_demand_heatmap(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get historical demand heatmap for visualization"""
@@ -1193,7 +1193,7 @@ async def get_demand_heatmap(
         start = datetime.fromisoformat(start_date)
         end = datetime.fromisoformat(end_date)
     else:
-        start = datetime.now(timezone.utc)
+        start = datetime.now(UTC)
         end = start + timedelta(days=90)
 
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
@@ -1323,8 +1323,8 @@ async def get_compset_analysis(
 
 @router.get("/revenue-mobile/adr")
 async def get_adr_mobile(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get ADR (Average Daily Rate) for mobile app"""
@@ -1335,7 +1335,7 @@ async def get_adr_mobile(
         start = datetime.fromisoformat(start_date)
         end = datetime.fromisoformat(end_date)
     else:
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
         start = end - timedelta(days=30)
 
     # Get completed bookings in date range
@@ -1420,8 +1420,8 @@ async def get_adr_mobile(
 
 @router.get("/revenue-mobile/revpar")
 async def get_revpar_mobile(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get RevPAR (Revenue Per Available Room) for mobile app"""
@@ -1432,7 +1432,7 @@ async def get_revpar_mobile(
         start = datetime.fromisoformat(start_date)
         end = datetime.fromisoformat(end_date)
     else:
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
         start = end - timedelta(days=30)
 
     # Get total rooms
@@ -1516,8 +1516,8 @@ async def get_revpar_mobile(
 
 @router.get("/revenue-mobile/total-revenue")
 async def get_total_revenue_mobile(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get total revenue breakdown for mobile app"""
@@ -1528,7 +1528,7 @@ async def get_total_revenue_mobile(
         start = datetime.fromisoformat(start_date)
         end = datetime.fromisoformat(end_date)
     else:
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
         start = end - timedelta(days=30)
 
     # Get all charges in date range
@@ -1604,8 +1604,8 @@ async def get_total_revenue_mobile(
 
 @router.get("/revenue-mobile/segment-distribution")
 async def get_segment_distribution_mobile(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get revenue distribution by market segment for mobile app"""
@@ -1616,7 +1616,7 @@ async def get_segment_distribution_mobile(
         start = datetime.fromisoformat(start_date)
         end = datetime.fromisoformat(end_date)
     else:
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
         start = end - timedelta(days=30)
 
     # Get bookings in date range
@@ -1693,7 +1693,7 @@ async def get_segment_distribution_mobile(
 
 @router.get("/revenue-mobile/pickup-graph")
 async def get_pickup_graph_mobile(
-    target_date: Optional[str] = None,
+    target_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get pickup graph showing booking pace for mobile app"""
@@ -1703,7 +1703,7 @@ async def get_pickup_graph_mobile(
     if target_date:
         target = datetime.fromisoformat(target_date)
     else:
-        target = datetime.now(timezone.utc) + timedelta(days=30)
+        target = datetime.now(UTC) + timedelta(days=30)
 
     # Get all bookings for target date
     bookings = await db.bookings.find({
@@ -1738,7 +1738,7 @@ async def get_pickup_graph_mobile(
         })
 
     # Calculate pickup velocity (last 7 days)
-    recent_bookings = [b for b in bookings if datetime.fromisoformat(b.get('created_at', b.get('check_in'))) >= (datetime.now(timezone.utc) - timedelta(days=7))]
+    recent_bookings = [b for b in bookings if datetime.fromisoformat(b.get('created_at', b.get('check_in'))) >= (datetime.now(UTC) - timedelta(days=7))]
     pickup_velocity = len(recent_bookings)
 
     # Compare with same date last year
@@ -1783,7 +1783,7 @@ async def get_revenue_forecast_mobile(
     current_user = await get_current_user(credentials)
 
     # Get confirmed bookings for forecast period
-    start = datetime.now(timezone.utc)
+    start = datetime.now(UTC)
     end = start + timedelta(days=days_ahead)
 
     bookings = await db.bookings.find({
@@ -1883,8 +1883,8 @@ async def get_revenue_forecast_mobile(
 
 @router.get("/revenue-mobile/channel-distribution")
 async def get_channel_distribution_mobile(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get revenue distribution by booking channel for mobile app"""
@@ -1895,7 +1895,7 @@ async def get_channel_distribution_mobile(
         start = datetime.fromisoformat(start_date)
         end = datetime.fromisoformat(end_date)
     else:
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
         start = end - timedelta(days=30)
 
     # Get bookings in date range
@@ -1992,8 +1992,8 @@ async def get_channel_distribution_mobile(
 
 @router.get("/revenue-mobile/cancellation-report")
 async def get_cancellation_report_mobile(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get cancellation and no-show report for mobile app"""
@@ -2004,7 +2004,7 @@ async def get_cancellation_report_mobile(
         start = datetime.fromisoformat(start_date)
         end = datetime.fromisoformat(end_date)
     else:
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
         start = end - timedelta(days=30)
 
     # Get all bookings in date range
@@ -2188,10 +2188,10 @@ async def create_rate_override_mobile(
         'reason': reason,
         'created_by': current_user.id,
         'created_by_name': current_user.name,
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'status': 'pending' if needs_approval else 'approved',
         'approved_by': None if needs_approval else current_user.id,
-        'approved_at': None if needs_approval else datetime.now(timezone.utc).isoformat()
+        'approved_at': None if needs_approval else datetime.now(UTC).isoformat()
     }
 
     # Save to database
@@ -2216,7 +2216,7 @@ async def create_rate_override_mobile(
                 'reason': reason,
                 'override_id': override_id
             },
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         }
         await db.approval_requests.insert_one(approval_request)
 
@@ -2250,7 +2250,7 @@ async def get_pickup_analysis(
     """
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
 
     # Historical data (last 30 days)
     historical = []
@@ -2331,7 +2331,7 @@ async def get_pace_report(
     """
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
 
     # Next 30 days
     pace_data = []
@@ -2381,7 +2381,7 @@ async def get_rate_recommendations(
     """
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
 
     recommendations = []
     for i in range(7):
@@ -2450,7 +2450,7 @@ async def get_historical_comparison(
     """
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     month_start = today.replace(day=1)
 
     # This month data
@@ -2510,7 +2510,7 @@ async def detect_anomalies(
     anomalies = []
 
     # Get recent data for comparison
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     yesterday = today - timedelta(days=1)
     week_ago = today - timedelta(days=7)
 
@@ -2541,7 +2541,7 @@ async def detect_anomalies(
                 'current_value': round(today_occ_pct, 1),
                 'previous_value': round(yesterday_occ_pct, 1),
                 'variance': round(today_occ_pct - yesterday_occ_pct, 1),
-                'detected_at': datetime.now(timezone.utc).isoformat()
+                'detected_at': datetime.now(UTC).isoformat()
             })
 
     # 2. Cancellation Spike Detection
@@ -2568,7 +2568,7 @@ async def detect_anomalies(
             'current_value': today_cancellations,
             'previous_value': round(week_avg_cancellations, 1),
             'variance': round(today_cancellations - week_avg_cancellations, 1),
-            'detected_at': datetime.now(timezone.utc).isoformat()
+            'detected_at': datetime.now(UTC).isoformat()
         })
 
     # 3. Revenue Deviation Detection
@@ -2601,7 +2601,7 @@ async def detect_anomalies(
             'current_value': round(today_revenue, 2),
             'previous_value': round(avg_daily_revenue, 2),
             'variance': round(today_revenue - avg_daily_revenue, 2),
-            'detected_at': datetime.now(timezone.utc).isoformat()
+            'detected_at': datetime.now(UTC).isoformat()
         })
 
     # 4. Maintenance Spike Detection
@@ -2623,14 +2623,14 @@ async def detect_anomalies(
             'current_value': urgent_maintenance,
             'previous_value': 2,
             'variance': urgent_maintenance - 2,
-            'detected_at': datetime.now(timezone.utc).isoformat()
+            'detected_at': datetime.now(UTC).isoformat()
         })
 
     return {
         'anomalies': anomalies,
         'count': len(anomalies),
         'high_severity_count': len([a for a in anomalies if a['severity'] == 'high']),
-        'detected_at': datetime.now(timezone.utc).isoformat()
+        'detected_at': datetime.now(UTC).isoformat()
     }
 
 
@@ -2639,7 +2639,7 @@ async def detect_anomalies(
 
 @router.get("/anomaly/alerts")
 async def get_anomaly_alerts(
-    severity: Optional[str] = None,
+    severity: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
@@ -2682,7 +2682,7 @@ async def get_anomaly_alerts(
 
 @router.get("/rates/campaigns")
 async def get_active_campaigns(
-    status: Optional[str] = None,  # active, upcoming, expired
+    status: str | None = None,  # active, upcoming, expired
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
@@ -2815,7 +2815,7 @@ async def create_rate_override(
         'new_rate': request.new_rate,
         'reason': request.reason,
         'created_by': current_user.name,
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'status': 'pending_approval' if request.requires_approval else 'applied'
     }
 
@@ -2830,7 +2830,7 @@ async def create_rate_override(
             'reason': request.reason,
             'status': 'pending',
             'requested_by': current_user.name,
-            'request_date': datetime.now(timezone.utc).isoformat()
+            'request_date': datetime.now(UTC).isoformat()
         }
         await db.approvals.insert_one(approval)
 
@@ -2927,7 +2927,7 @@ async def get_compset_real_time_prices(
                 'strategy': 'No competitor data available',
                 'confidence': 0
             },
-            'last_updated': datetime.now(timezone.utc).isoformat()
+            'last_updated': datetime.now(UTC).isoformat()
         }
 
     avg_price = sum(c['price'] for c in competitors) / len(competitors)
@@ -2942,7 +2942,7 @@ async def get_compset_real_time_prices(
             'strategy': 'Price competitively to maximize occupancy',
             'confidence': 85
         },
-        'last_updated': datetime.now(timezone.utc).isoformat()
+        'last_updated': datetime.now(UTC).isoformat()
     }
 
 

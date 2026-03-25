@@ -8,8 +8,8 @@ provides a masked inspection endpoint for debugging without exposing secrets.
 import logging
 import os
 import re
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.production_config")
 
@@ -74,13 +74,13 @@ class ProductionConfigValidator:
 
     def __init__(self):
         self._validated = False
-        self._validation_result: Optional[Dict] = None
-        self._startup_time = datetime.now(timezone.utc).isoformat()
+        self._validation_result: dict | None = None
+        self._startup_time = datetime.now(UTC).isoformat()
 
-    def validate_all(self) -> Dict[str, Any]:
+    def validate_all(self) -> dict[str, Any]:
         """Run full environment validation. Returns structured result."""
         results = {
-            "validated_at": datetime.now(timezone.utc).isoformat(),
+            "validated_at": datetime.now(UTC).isoformat(),
             "categories": {},
             "missing_critical": [],
             "missing_optional": [],
@@ -134,7 +134,7 @@ class ProductionConfigValidator:
         self._validation_result = results
         return results
 
-    def get_masked_config(self) -> Dict[str, Any]:
+    def get_masked_config(self) -> dict[str, Any]:
         """Return all configured variables with masked values."""
         config = {}
         for var_name in PRODUCTION_VARIABLES:
@@ -145,11 +145,11 @@ class ProductionConfigValidator:
                 "category": PRODUCTION_VARIABLES[var_name]["category"],
             }
         return {
-            "inspected_at": datetime.now(timezone.utc).isoformat(),
+            "inspected_at": datetime.now(UTC).isoformat(),
             "config": config,
         }
 
-    def startup_check(self) -> Dict[str, Any]:
+    def startup_check(self) -> dict[str, Any]:
         """Lightweight startup validation — fails fast on missing critical vars."""
         missing = []
         for var_name, meta in PRODUCTION_VARIABLES.items():
@@ -165,11 +165,11 @@ class ProductionConfigValidator:
         return {
             "status": status,
             "missing_critical": missing,
-            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "checked_at": datetime.now(UTC).isoformat(),
             "startup_time": self._startup_time,
         }
 
-    def detect_leaked_secrets(self) -> Dict[str, Any]:
+    def detect_leaked_secrets(self) -> dict[str, Any]:
         """Scan for potential secret leakage in non-secret environment variables."""
         suspicious = []
         safe_secret_vars = set(PRODUCTION_VARIABLES.keys())
@@ -187,7 +187,7 @@ class ProductionConfigValidator:
                 })
 
         return {
-            "scanned_at": datetime.now(timezone.utc).isoformat(),
+            "scanned_at": datetime.now(UTC).isoformat(),
             "suspicious_count": len(suspicious),
             "suspicious_variables": suspicious,
             "status": "clean" if not suspicious else "review_needed",

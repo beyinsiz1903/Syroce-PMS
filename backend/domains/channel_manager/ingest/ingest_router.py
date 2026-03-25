@@ -8,7 +8,7 @@ and injecting test events.
 Prefix: /api/channel-manager/ingest/
 """
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -45,7 +45,7 @@ class InjectEventRequest(BaseModel):
     provider: str  # hotelrunner | exely
     property_id: str
     event_type: str = "reservation_create"
-    payload: Dict[str, Any] = Field(default_factory=dict)
+    payload: dict[str, Any] = Field(default_factory=dict)
     received_via: str = "manual"  # webhook | pull | replay | manual
 
 
@@ -227,8 +227,8 @@ async def get_workers_status(
 @router.get("/events")
 async def list_ingest_events(
     property_id: str = Query("prop-001"),
-    provider: Optional[str] = None,
-    status: Optional[str] = None,
+    provider: str | None = None,
+    status: str | None = None,
     limit: int = Query(50, le=200),
     current_user: User = Depends(get_current_user),
 ):

@@ -3,8 +3,7 @@ Housekeeping Router - Room status, tasks, assignments, reports
 Extracted from server.py for modularity.
 """
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer
@@ -38,7 +37,7 @@ release_room_block_service = ReleaseRoomBlockService()
 
 @router.get("/housekeeping/tasks")
 @cached(ttl=120, key_prefix="housekeeping_tasks")  # Cache for 2 minutes
-async def get_housekeeping_tasks(status: Optional[str] = None, current_user: User = Depends(get_current_user)):
+async def get_housekeeping_tasks(status: str | None = None, current_user: User = Depends(get_current_user)):
     query = {'tenant_id': current_user.tenant_id}
     if status:
         query['status'] = status
@@ -50,7 +49,7 @@ async def get_housekeeping_tasks(status: Optional[str] = None, current_user: Use
     return enriched
 
 @router.post("/housekeeping/tasks")
-async def create_housekeeping_task(room_id: str, task_type: str, priority: str = "normal", notes: Optional[str] = None, current_user: User = Depends(get_current_user)):
+async def create_housekeeping_task(room_id: str, task_type: str, priority: str = "normal", notes: str | None = None, current_user: User = Depends(get_current_user)):
     task = HousekeepingTask(tenant_id=current_user.tenant_id, room_id=room_id, task_type=task_type, priority=priority, notes=notes)
     task_dict = task.model_dump()
     task_dict['created_at'] = task_dict['created_at'].isoformat()
@@ -58,17 +57,17 @@ async def create_housekeeping_task(room_id: str, task_type: str, priority: str =
     return task
 
 @router.put("/housekeeping/tasks/{task_id}")
-async def update_housekeeping_task(task_id: str, status: Optional[str] = None, assigned_to: Optional[str] = None, current_user: User = Depends(get_current_user)):
+async def update_housekeeping_task(task_id: str, status: str | None = None, assigned_to: str | None = None, current_user: User = Depends(get_current_user)):
     updates = {}
     if status:
         updates['status'] = status
         if status == 'in_progress':
-            updates['started_at'] = datetime.now(timezone.utc).isoformat()
+            updates['started_at'] = datetime.now(UTC).isoformat()
         elif status == 'completed':
-            updates['completed_at'] = datetime.now(timezone.utc).isoformat()
+            updates['completed_at'] = datetime.now(UTC).isoformat()
             task = await db.housekeeping_tasks.find_one({'id': task_id}, {'_id': 0})
             if task and task['task_type'] == 'cleaning':
-                await db.rooms.update_one({'id': task['room_id']}, {'$set': {'status': 'inspected', 'last_cleaned': datetime.now(timezone.utc).isoformat()}})
+                await db.rooms.update_one({'id': task['room_id']}, {'$set': {'status': 'inspected', 'last_cleaned': datetime.now(UTC).isoformat()}})
     if assigned_to:
         updates['assigned_to'] = assigned_to
     await db.housekeeping_tasks.update_one({'id': task_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
@@ -89,7 +88,7 @@ async def get_room_status_board(current_user: User = Depends(get_current_user)):
 @cached(ttl=120, key_prefix="hk_due_out")  # Cache for 2 min
 async def get_due_out_rooms(current_user: User = Depends(get_current_user)):
     """Get rooms with guests checking out today"""
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     tomorrow = today + timedelta(days=1)
 
     # Find bookings checking out today
@@ -135,7 +134,7 @@ async def get_due_out_rooms(current_user: User = Depends(get_current_user)):
 @cached(ttl=120, key_prefix="hk_stayovers")  # Cache for 2 min
 async def get_stayover_rooms(current_user: User = Depends(get_current_user)):
     """Get rooms with guests staying beyond today"""
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
 
     # Find checked-in bookings not checking out today
     bookings = await db.bookings.find({
@@ -219,10 +218,10 @@ async def get_room_status_report(current_user: User = Depends(get_current_user))
 
         # Check for DND flag
         if booking.get('dnd_status') or room.get('dnd_status'):
-            dnd_since = booking.get('dnd_since') or room.get('dnd_since', datetime.now(timezone.utc).isoformat())
+            dnd_since = booking.get('dnd_since') or room.get('dnd_since', datetime.now(UTC).isoformat())
             try:
                 dnd_time = datetime.fromisoformat(dnd_since.replace('Z', '+00:00'))
-                duration_hours = int((datetime.now(timezone.utc) - dnd_time).total_seconds() / 3600)
+                duration_hours = int((datetime.now(UTC) - dnd_time).total_seconds() / 3600)
             except Exception:
                 duration_hours = 0
 
@@ -238,7 +237,7 @@ async def get_room_status_report(current_user: User = Depends(get_current_user))
         if last_activity:
             try:
                 activity_time = datetime.fromisoformat(last_activity.replace('Z', '+00:00'))
-                hours_since = (datetime.now(timezone.utc) - activity_time).total_seconds() / 3600
+                hours_since = (datetime.now(UTC) - activity_time).total_seconds() / 3600
                 if hours_since > 24:
                     sleep_out_rooms.append({
                         'room': room_number,
@@ -273,7 +272,7 @@ async def get_staff_performance_detailed(current_user: User = Depends(get_curren
     """Detailed staff performance metrics"""
 
     # Get completed tasks from last 30 days
-    start_date = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    start_date = (datetime.now(UTC) - timedelta(days=30)).isoformat()
 
     tasks = await db.housekeeping_tasks.find({
         'tenant_id': current_user.tenant_id,
@@ -344,7 +343,7 @@ async def get_staff_performance_detailed(current_user: User = Depends(get_curren
 @cached(ttl=120, key_prefix="hk_arrivals")  # Cache for 2 min
 async def get_arrival_rooms(current_user: User = Depends(get_current_user)):
     """Get rooms with guests arriving today"""
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
 
     # Find bookings checking in today
     bookings = await db.bookings.find({
@@ -392,7 +391,7 @@ async def get_arrival_rooms(current_user: User = Depends(get_current_user)):
 async def update_room_status_hk(
     room_id: str,
     new_status: str,
-    notes: Optional[str] = None,
+    notes: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Quick room status update from housekeeping"""
@@ -411,7 +410,7 @@ async def update_room_status_hk(
 
     update_data = {
         'status': new_status,
-        'updated_at': datetime.now(timezone.utc).isoformat()
+        'updated_at': datetime.now(UTC).isoformat()
     }
 
     if notes:
@@ -434,7 +433,7 @@ async def assign_housekeeping_task(
     assigned_to: str,
     task_type: str = 'cleaning',
     priority: str = 'normal',
-    notes: Optional[str] = None,
+    notes: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Assign housekeeping task to staff"""
@@ -469,10 +468,10 @@ async def assign_housekeeping_task(
 @router.get("/pms/room-blocks")
 @cached(ttl=300, key_prefix="pms_room_blocks")  # Cache for 5 min
 async def get_room_blocks(
-    room_id: Optional[str] = None,
-    status: Optional[str] = None,
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
+    room_id: str | None = None,
+    status: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Get room blocks with optional filters"""
@@ -582,7 +581,7 @@ async def update_room_block(
         'entity_type': 'room_block',
         'entity_id': block_id,
         'changes': changes,
-        'timestamp': datetime.now(timezone.utc).isoformat()
+        'timestamp': datetime.now(UTC).isoformat()
     })
 
     # Get updated block
@@ -600,7 +599,7 @@ async def update_room_block(
 async def cancel_room_block(
     block_id: str,
     request: Request,
-    reason: Optional[str] = None,
+    reason: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Release a room block through the semantic inventory service."""

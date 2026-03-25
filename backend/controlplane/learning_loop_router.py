@@ -4,7 +4,8 @@ Learning Loop API Router
 Incident auto-classification, recurrence detection, RCA tracking,
 never-again rules, and learning dashboard.
 """
-from typing import List, Optional
+
+from datetime import UTC
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -35,8 +36,8 @@ class CreateIncidentRequest(BaseModel):
 
 class RCARequest(BaseModel):
     summary: str
-    contributing_factors: List[str]
-    five_whys: Optional[List[str]] = None
+    contributing_factors: list[str]
+    five_whys: list[str] | None = None
     root_cause_type: str = "internal_bug"
 
 
@@ -51,14 +52,14 @@ class NeverAgainRuleRequest(BaseModel):
     verification_type: str = "test_exists"
     verification_detail: str = ""
     assigned_to: str = "backend_team"
-    due_date: Optional[str] = None
+    due_date: str | None = None
 
 
 @router.post("/incidents")
 async def create_incident(body: CreateIncidentRequest, current_user: User = Depends(get_current_user)):
     """Create incident with auto-classification."""
     import uuid
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from core.database import db
 
@@ -67,7 +68,7 @@ async def create_incident(body: CreateIncidentRequest, current_user: User = Depe
 
     classification = classifier.classify(body.title, body.description)
     incident_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     incident = {
         "id": incident_id,

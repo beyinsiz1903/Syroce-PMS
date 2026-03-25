@@ -1,7 +1,6 @@
 """
 ML Scheduler Router - Schedule policies, execution triggers, status monitoring.
 """
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -37,8 +36,8 @@ async def get_schedule_policies(current_user: User = Depends(get_current_user)):
 
 
 class UpdateScheduleReq(BaseModel):
-    interval_hours: Optional[int] = None
-    enabled: Optional[bool] = None
+    interval_hours: int | None = None
+    enabled: bool | None = None
 
 
 @router.put("/policies/{model_type}")
@@ -50,7 +49,7 @@ async def update_schedule(model_type: str, req: UpdateScheduleReq,
 
 class TriggerReq(BaseModel):
     model_type: str
-    property_id: Optional[str] = None
+    property_id: str | None = None
 
 
 @router.post("/trigger")
@@ -63,7 +62,7 @@ async def trigger_execution(req: TriggerReq, current_user: User = Depends(get_cu
 
 @router.get("/history")
 async def get_execution_history(
-    model_type: Optional[str] = None,
+    model_type: str | None = None,
     limit: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
 ):

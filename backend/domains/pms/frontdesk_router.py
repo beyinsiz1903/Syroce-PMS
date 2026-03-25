@@ -5,8 +5,8 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 import io
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -133,7 +133,7 @@ async def get_folio(booking_id: str, current_user: User = Depends(get_current_us
 
 @router.get("/frontdesk/arrivals")
 @cached(ttl=120, key_prefix="frontdesk_arrivals")
-async def get_arrivals(date: Optional[str] = None, current_user: User = Depends(get_current_user)):
+async def get_arrivals(date: str | None = None, current_user: User = Depends(get_current_user)):
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.get_arrivals(ctx, date)
     return result.data
@@ -141,7 +141,7 @@ async def get_arrivals(date: Optional[str] = None, current_user: User = Depends(
 
 @router.get("/frontdesk/departures")
 @cached(ttl=120, key_prefix="frontdesk_departures")
-async def get_departures(date: Optional[str] = None, current_user: User = Depends(get_current_user)):
+async def get_departures(date: str | None = None, current_user: User = Depends(get_current_user)):
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.get_departures(ctx, date)
     return result.data
@@ -211,7 +211,7 @@ async def scan_passport(
                         {'$set': {
                             'id_number': extracted_data.passport_number,
                             'nationality': extracted_data.nationality,
-                            'updated_at': datetime.now(timezone.utc).isoformat()
+                            'updated_at': datetime.now(UTC).isoformat()
                         }}
                     )
 
@@ -284,7 +284,7 @@ async def create_walk_in_booking(
             guest_id = new_guest.id
 
         # 3. Calculate dates and amount
-        check_in = datetime.now(timezone.utc).replace(hour=14, minute=0, second=0, microsecond=0)
+        check_in = datetime.now(UTC).replace(hour=14, minute=0, second=0, microsecond=0)
         check_out = check_in + timedelta(days=request.nights)
 
         rate = request.rate_per_night or room.get('base_price', 100.0)
@@ -369,13 +369,13 @@ async def create_guest_alert(
     title: str,
     description: str,
     priority: str = "normal",
-    expires_days: Optional[int] = None,
+    expires_days: int | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Create a custom alert for a guest"""
     expires_at = None
     if expires_days:
-        expires_at = datetime.now(timezone.utc) + timedelta(days=expires_days)
+        expires_at = datetime.now(UTC) + timedelta(days=expires_days)
 
     alert = GuestAlert(
         tenant_id=current_user.tenant_id,
@@ -428,7 +428,7 @@ async def generate_door_qr_code(
         'valid_from': booking.get('check_in'),
         'valid_until': booking.get('check_out'),
         'access_token': str(uuid.uuid4()),
-        'generated_at': datetime.now(timezone.utc).isoformat()
+        'generated_at': datetime.now(UTC).isoformat()
     }
 
     # Generate QR code image
@@ -460,7 +460,7 @@ async def generate_door_qr_code(
 async def capture_digital_signature(
     booking_id: str,
     signature_base64: str,
-    registration_card_data: Dict[str, Any]
+    registration_card_data: dict[str, Any]
 ):
     """
     Capture digital signature
@@ -479,7 +479,7 @@ async def capture_digital_signature(
         'booking_id': booking_id,
         'signature_base64': signature_base64,
         'registration_card_data': registration_card_data,
-        'signed_at': datetime.now(timezone.utc).isoformat(),
+        'signed_at': datetime.now(UTC).isoformat(),
         'ip_address': None,  # From request in production
         'device_type': 'kiosk'
     }
@@ -533,7 +533,7 @@ async def auto_police_notification(
         'check_in': booking.get('check_in'),
         'check_out': booking.get('check_out'),
         'room_number': None,  # Get from room
-        'submitted_at': datetime.now(timezone.utc).isoformat(),
+        'submitted_at': datetime.now(UTC).isoformat(),
         'status': 'submitted',
         'reference_number': f"POL-{uuid.uuid4().hex[:8].upper()}"
     }

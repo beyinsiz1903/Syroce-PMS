@@ -4,7 +4,7 @@ Archives old bookings (>1 year) to separate collection for performance
 """
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict
+from typing import Any
 
 from pymongo import ASCENDING, DESCENDING
 
@@ -34,7 +34,7 @@ class DataArchivalManager:
         except Exception as e:
             logger.error(f"Failed to create archive indexes: {e}")
 
-    async def archive_old_bookings(self, dry_run: bool = True) -> Dict[str, Any]:
+    async def archive_old_bookings(self, dry_run: bool = True) -> dict[str, Any]:
         """
         Archive bookings older than threshold
 
@@ -102,7 +102,7 @@ class DataArchivalManager:
 
     async def query_with_archive(
         self,
-        query: Dict[str, Any],
+        query: dict[str, Any],
         limit: int = 100,
         skip: int = 0,
         include_archived: bool = False
@@ -136,7 +136,7 @@ class DataArchivalManager:
 
         return results
 
-    async def get_archive_stats(self) -> Dict[str, Any]:
+    async def get_archive_stats(self) -> dict[str, Any]:
         """Get archival statistics"""
         try:
             active_count = await self.bookings.count_documents({})

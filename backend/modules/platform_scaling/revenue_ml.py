@@ -3,8 +3,8 @@ Revenue ML - Machine learning models for demand forecasting, rate elasticity,
 booking probability, and cancellation prediction.
 Uses statistical models (no external ML dependencies needed).
 """
-from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -12,7 +12,7 @@ from core.database import db
 class DemandForecastingModel:
     """Demand forecasting using historical booking patterns and seasonality."""
 
-    async def forecast_demand(self, tenant_id: str, forecast_days: int = 30) -> Dict[str, Any]:
+    async def forecast_demand(self, tenant_id: str, forecast_days: int = 30) -> dict[str, Any]:
         """Generate demand forecast using weighted historical analysis."""
         total_rooms = await db.rooms.count_documents({
             "tenant_id": tenant_id,
@@ -23,7 +23,7 @@ class DemandForecastingModel:
 
         today = date.today()
         # Historical data: last 90 days by day-of-week
-        dow_history: Dict[int, List[float]] = {i: [] for i in range(7)}
+        dow_history: dict[int, list[float]] = {i: [] for i in range(7)}
         for i in range(1, 91):
             hist_date = (today - timedelta(days=i))
             hist_s = hist_date.isoformat()
@@ -99,7 +99,7 @@ class DemandForecastingModel:
 class RateElasticityModel:
     """Rate elasticity model measuring price sensitivity of demand."""
 
-    async def analyze_elasticity(self, tenant_id: str, room_type: Optional[str] = None) -> Dict[str, Any]:
+    async def analyze_elasticity(self, tenant_id: str, room_type: str | None = None) -> dict[str, Any]:
         """Analyze rate elasticity using historical booking and rate data."""
         # Get recent bookings with rates
         cutoff = (date.today() - timedelta(days=90)).isoformat()
@@ -175,7 +175,7 @@ class RateElasticityModel:
             "price_distribution": {k: v["count"] for k, v in price_buckets.items()},
         }
 
-    async def get_optimal_price_points(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_optimal_price_points(self, tenant_id: str) -> dict[str, Any]:
         """Calculate optimal price points per room type."""
         room_types = await db.rooms.distinct("room_type", {"tenant_id": tenant_id})
         if not room_types:
@@ -217,7 +217,7 @@ class BookingProbabilityModel:
 
     async def predict_conversion(self, tenant_id: str, check_in: str, check_out: str,
                                   source: str = "direct", room_type: str = "Standard",
-                                  rate: float = 0) -> Dict[str, Any]:
+                                  rate: float = 0) -> dict[str, Any]:
         """Predict probability of a booking converting (not cancelling)."""
         today = date.today()
         try:
@@ -278,7 +278,7 @@ class BookingProbabilityModel:
             return "Orta risk - Onay e-postasi gonderip teyit alin"
         return "Dusuk risk - Standart prosedur"
 
-    async def get_portfolio_conversion_rates(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_portfolio_conversion_rates(self, tenant_id: str) -> dict[str, Any]:
         """Get conversion rates by source and lead time."""
         cutoff = (date.today() - timedelta(days=90)).isoformat()
         bookings = await db.bookings.find(
@@ -315,7 +315,7 @@ class BookingProbabilityModel:
 class CancellationPredictionModel:
     """Predict cancellation likelihood for existing bookings."""
 
-    async def predict_cancellation_risk(self, tenant_id: str, booking_id: str) -> Dict[str, Any]:
+    async def predict_cancellation_risk(self, tenant_id: str, booking_id: str) -> dict[str, Any]:
         """Predict cancellation risk for a specific booking."""
         booking = await db.bookings.find_one(
             {"id": booking_id, "tenant_id": tenant_id}, {"_id": 0}
@@ -398,7 +398,7 @@ class CancellationPredictionModel:
             return "Orta risk - Onay e-postasi gonderip konaklami teyit edin"
         return "Dusuk risk - Standart prosedurle devam edin"
 
-    async def get_at_risk_bookings(self, tenant_id: str, min_risk: float = 0.3) -> Dict[str, Any]:
+    async def get_at_risk_bookings(self, tenant_id: str, min_risk: float = 0.3) -> dict[str, Any]:
         """Get all bookings with high cancellation risk."""
         today = date.today().isoformat()
         upcoming = await db.bookings.find(
@@ -440,7 +440,7 @@ class RevenueMLDashboard:
         self.booking_prob = BookingProbabilityModel()
         self.cancellation = CancellationPredictionModel()
 
-    async def get_ml_dashboard(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_ml_dashboard(self, tenant_id: str) -> dict[str, Any]:
         """Get comprehensive ML insights dashboard."""
         demand_forecast = await self.demand.forecast_demand(tenant_id, 14)
         price_points = await self.elasticity.get_optimal_price_points(tenant_id)
@@ -464,5 +464,5 @@ class RevenueMLDashboard:
             "price_optimization": price_points,
             "conversion_rates": conversion_rates,
             "cancellation_risk": at_risk,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
         }

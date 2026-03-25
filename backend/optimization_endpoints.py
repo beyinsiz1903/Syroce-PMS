@@ -4,7 +4,6 @@ Enterprise-level optimizations for 550+ room properties
 """
 import logging
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -21,14 +20,14 @@ optimization_router = APIRouter(prefix="/optimization", tags=["optimization"])
 # Models
 class ArchivalRequest(BaseModel):
     dry_run: bool = True
-    threshold_days: Optional[int] = None
+    threshold_days: int | None = None
 
 class CacheInvalidation(BaseModel):
     pattern: str
-    layer: Optional[str] = None
+    layer: str | None = None
 
 class RefreshViewRequest(BaseModel):
-    view_name: Optional[str] = None  # If None, refresh all
+    view_name: str | None = None  # If None, refresh all
 
 # Initialize managers (will be set on app startup)
 archival_manager = None

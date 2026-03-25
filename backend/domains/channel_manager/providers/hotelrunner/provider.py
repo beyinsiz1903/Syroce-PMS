@@ -17,7 +17,7 @@ Public methods:
 """
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 from . import endpoints as ep
 from . import observability as obs
@@ -63,7 +63,7 @@ class HotelRunnerProvider:
         token: str = "",
         hr_id: str = "",
         *,
-        credentials: Optional[Dict[str, str]] = None,
+        credentials: dict[str, str] | None = None,
         connection_id: str = "",
         base_url: str = ep.BASE_URL,
         max_retries: int = 3,
@@ -235,10 +235,10 @@ class HotelRunnerProvider:
         self,
         *,
         undelivered: bool = True,
-        from_date: Optional[str] = None,
-        from_last_update_date: Optional[str] = None,
+        from_date: str | None = None,
+        from_last_update_date: str | None = None,
         per_page: int = 50,
-        page: Optional[int] = None,
+        page: int | None = None,
         modified: bool = False,
         booked: bool = False,
     ) -> ProviderResult:
@@ -318,7 +318,7 @@ class HotelRunnerProvider:
         self, *, from_date, from_last_update_date,
         per_page, modified, booked, start_time,
     ) -> ProviderResult:
-        async def _fetch_page(page_num: int) -> Dict[str, Any]:
+        async def _fetch_page(page_num: int) -> dict[str, Any]:
             params = self._build_reservation_params(
                 undelivered=False, from_date=from_date,
                 from_last_update_date=from_last_update_date,
@@ -358,8 +358,8 @@ class HotelRunnerProvider:
     def _build_reservation_params(
         *, undelivered, from_date, from_last_update_date,
         per_page, page, modified, booked,
-    ) -> Dict[str, str]:
-        params: Dict[str, str] = {
+    ) -> dict[str, str]:
+        params: dict[str, str] = {
             "undelivered": str(undelivered).lower(),
             "per_page": str(per_page),
             "page": str(page),
@@ -378,8 +378,8 @@ class HotelRunnerProvider:
 
     async def push_daily_inventory(
         self,
-        payload: Dict[str, Any],
-        room_mapping: Optional[Dict[str, Any]] = None,
+        payload: dict[str, Any],
+        room_mapping: dict[str, Any] | None = None,
     ) -> ProviderResult:
         """Push daily inventory update via PUT /rooms/daily."""
         start = time.time()
@@ -414,8 +414,8 @@ class HotelRunnerProvider:
 
     async def push_date_range_inventory(
         self,
-        payload: Dict[str, Any],
-        room_mapping: Optional[Dict[str, Any]] = None,
+        payload: dict[str, Any],
+        room_mapping: dict[str, Any] | None = None,
     ) -> ProviderResult:
         """Push date range inventory update via PUT /rooms/~."""
         start = time.time()
@@ -453,12 +453,12 @@ class HotelRunnerProvider:
     async def confirm_delivery(
         self,
         message_uid: str,
-        pms_number: Optional[str] = None,
+        pms_number: str | None = None,
     ) -> ProviderResult:
         """Confirm reservation delivery to HotelRunner."""
         start = time.time()
         try:
-            params: Dict[str, str] = {"message_uid": message_uid}
+            params: dict[str, str] = {"message_uid": message_uid}
             if pms_number:
                 params["pms_number"] = pms_number
 
@@ -485,7 +485,7 @@ class HotelRunnerProvider:
 
     # ── Canonical helpers (for snapshot collectors & ingest) ───────────
 
-    def map_reservation_to_canonical_format(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+    def map_reservation_to_canonical_format(self, raw: dict[str, Any]) -> dict[str, Any]:
         """Map a raw HR reservation to canonical format."""
         return map_raw_payload_to_canonical(raw)
 
@@ -493,21 +493,21 @@ class HotelRunnerProvider:
     # These match the old HotelRunnerProvider interface so existing callers
     # can migrate without breaking.
 
-    async def get_rooms(self) -> Dict[str, Any]:
+    async def get_rooms(self) -> dict[str, Any]:
         """Legacy: returns dict like the old provider."""
         result = await self.fetch_rooms()
         if result.success:
             return {"success": True, "data": {"rooms": [r.get("raw", r) for r in result.data.get("rooms", [])]}}
         return {"success": False, "error": result.error}
 
-    async def get_channels(self) -> Dict[str, Any]:
+    async def get_channels(self) -> dict[str, Any]:
         """Legacy: returns dict like the old provider."""
         result = await self.fetch_channels()
         if result.success:
             return {"success": True, "data": result.data}
         return {"success": False, "error": result.error}
 
-    async def get_connected_channels(self) -> Dict[str, Any]:
+    async def get_connected_channels(self) -> dict[str, Any]:
         """Legacy: returns dict like the old provider."""
         result = await self.fetch_connected_channels()
         if result.success:
@@ -517,14 +517,14 @@ class HotelRunnerProvider:
     async def get_reservations(
         self,
         undelivered: bool = True,
-        from_date: Optional[str] = None,
-        from_last_update_date: Optional[str] = None,
+        from_date: str | None = None,
+        from_last_update_date: str | None = None,
         per_page: int = 10,
         page: int = 1,
-        reservation_number: Optional[str] = None,
+        reservation_number: str | None = None,
         modified: bool = False,
         booked: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Legacy: returns dict like the old provider."""
         result = await self.fetch_reservations(
             undelivered=undelivered,
@@ -546,7 +546,7 @@ class HotelRunnerProvider:
             }
         return {"success": False, "error": result.error, "duration_ms": result.duration_ms}
 
-    async def sync_reservations(self) -> Dict[str, Any]:
+    async def sync_reservations(self) -> dict[str, Any]:
         """Legacy: Pull all undelivered reservations."""
         all_reservations: list = []
         page = 1
@@ -562,7 +562,7 @@ class HotelRunnerProvider:
             page += 1
         return {"success": True, "count": len(all_reservations), "reservations": all_reservations}
 
-    async def update_room(self, **kwargs) -> Dict[str, Any]:
+    async def update_room(self, **kwargs) -> dict[str, Any]:
         """Legacy: ARI push via PUT /rooms/~."""
         form_data = {}
         for key in ("inv_code", "start_date", "end_date"):
@@ -581,7 +581,7 @@ class HotelRunnerProvider:
             return {"success": True, "data": result.data, "duration_ms": result.duration_ms}
         return {"success": False, "error": result.error, "duration_ms": result.duration_ms}
 
-    def get_usage_stats(self) -> Dict[str, Any]:
+    def get_usage_stats(self) -> dict[str, Any]:
         """Legacy: Get API usage statistics."""
         health = obs.get_provider_health()
         return {

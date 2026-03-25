@@ -5,8 +5,7 @@ room changes, and active order management. No FastAPI dependencies.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
@@ -29,7 +28,7 @@ class MobileOpsService:
             return ServiceResult.fail("Booking not found", "NOT_FOUND")
         await self._db.bookings.update_one(
             {"id": booking_id},
-            {"$set": {"status": "no_show", "no_show_at": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {"status": "no_show", "no_show_at": datetime.now(UTC).isoformat()}},
         )
         if booking.get("room_id"):
             await self._db.rooms.update_one(
@@ -39,7 +38,7 @@ class MobileOpsService:
         return ServiceResult.success({"message": "Booking marked as no-show", "booking_id": booking_id})
 
     @audited("mobile.change_room", "booking", severity=SEVERITY_WARNING, capture_before=True)
-    async def change_room(self, ctx: OperationContext, booking_id: str, new_room_id: str, reason: Optional[str] = None) -> ServiceResult:
+    async def change_room(self, ctx: OperationContext, booking_id: str, new_room_id: str, reason: str | None = None) -> ServiceResult:
         booking = await self._db.bookings.find_one({"id": booking_id, "tenant_id": ctx.tenant_id})
         if not booking:
             return ServiceResult.fail("Booking not found", "NOT_FOUND")
@@ -75,7 +74,7 @@ class MobileOpsService:
             "notes": data.get("notes"),
             "status": "new",
             "created_by": ctx.actor_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await self._db.housekeeping_tasks.insert_one(task)
         return ServiceResult.success(task)
@@ -91,13 +90,13 @@ class MobileOpsService:
             "priority": data.get("priority", "normal"),
             "status": "open",
             "reported_by": ctx.actor_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await self._db.maintenance_issues.insert_one(issue)
         return ServiceResult.success(issue)
 
     async def get_mobile_dashboard(self, ctx: OperationContext) -> ServiceResult:
-        today = datetime.now(timezone.utc).date().isoformat()
+        today = datetime.now(UTC).date().isoformat()
         arrivals = await self._db.bookings.count_documents({"tenant_id": ctx.tenant_id, "check_in": today, "status": {"$in": ["confirmed", "guaranteed"]}})
         departures = await self._db.bookings.count_documents({"tenant_id": ctx.tenant_id, "check_out": today, "status": "checked_in"})
         in_house = await self._db.bookings.count_documents({"tenant_id": ctx.tenant_id, "status": "checked_in"})

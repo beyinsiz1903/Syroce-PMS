@@ -3,8 +3,8 @@ Model Registry - Model version tracking, training metrics, and lifecycle managem
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -25,12 +25,12 @@ class ModelRegistry:
     MODEL_TYPES = ["revenue_ml", "operational_ai", "guest_intelligence"]
 
     async def register_model(self, tenant_id: str, model_type: str,
-                             dataset_id: str, training_metrics: Dict[str, Any],
-                             description: str = "") -> Dict[str, Any]:
+                             dataset_id: str, training_metrics: dict[str, Any],
+                             description: str = "") -> dict[str, Any]:
         """Register a new model version after training."""
         model_id = str(uuid.uuid4())
         version = await self._next_version(tenant_id, model_type)
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         model = {
             "id": model_id,
@@ -60,7 +60,7 @@ class ModelRegistry:
         logger.info(f"Model registered: {model_id} {model_type} v{version}")
         return {k: v for k, v in model.items() if k != "_id"}
 
-    async def deploy_model(self, model_id: str) -> Dict[str, Any]:
+    async def deploy_model(self, model_id: str) -> dict[str, Any]:
         """Mark a model as deployed (active for predictions)."""
         model = await db.model_registry.find_one({"id": model_id}, {"_id": 0})
         if not model:
@@ -74,10 +74,10 @@ class ModelRegistry:
                 "status": ModelStatus.DEPLOYED,
                 "id": {"$ne": model_id},
             },
-            {"$set": {"status": ModelStatus.DEPRECATED, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {"status": ModelStatus.DEPRECATED, "updated_at": datetime.now(UTC).isoformat()}},
         )
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         await db.model_registry.update_one(
             {"id": model_id},
             {"$set": {
@@ -88,16 +88,16 @@ class ModelRegistry:
         )
         return {"model_id": model_id, "status": "deployed", "deployed_at": now}
 
-    async def get_deployed_model(self, tenant_id: str, model_type: str) -> Optional[dict]:
+    async def get_deployed_model(self, tenant_id: str, model_type: str) -> dict | None:
         """Get the currently deployed model for a type."""
         return await db.model_registry.find_one(
             {"tenant_id": tenant_id, "model_type": model_type, "status": ModelStatus.DEPLOYED},
             {"_id": 0},
         )
 
-    async def list_models(self, tenant_id: str, model_type: Optional[str] = None,
-                          limit: int = 20) -> List[dict]:
-        q: Dict[str, Any] = {"tenant_id": tenant_id}
+    async def list_models(self, tenant_id: str, model_type: str | None = None,
+                          limit: int = 20) -> list[dict]:
+        q: dict[str, Any] = {"tenant_id": tenant_id}
         if model_type:
             q["model_type"] = model_type
         return await db.model_registry.find(
@@ -113,7 +113,7 @@ class ModelRegistry:
         count = dep.get("predictions_made", 0) + 1
         avg_conf = dep.get("avg_confidence", 0.0)
         new_avg = round(((avg_conf * (count - 1)) + confidence) / count, 4)
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         await db.model_registry.update_one(
             {"id": model_id},
             {"$set": {
@@ -124,9 +124,9 @@ class ModelRegistry:
             }},
         )
 
-    async def get_stale_models(self, tenant_id: str, stale_hours: int = 24) -> List[dict]:
+    async def get_stale_models(self, tenant_id: str, stale_hours: int = 24) -> list[dict]:
         """Find models whose last prediction is older than threshold."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=stale_hours)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(hours=stale_hours)).isoformat()
         return await db.model_registry.find(
             {
                 "tenant_id": tenant_id,
@@ -139,7 +139,7 @@ class ModelRegistry:
             {"_id": 0},
         ).to_list(20)
 
-    async def get_summary(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_summary(self, tenant_id: str) -> dict[str, Any]:
         """Get model registry summary."""
         pipeline = [
             {"$match": {"tenant_id": tenant_id}},
@@ -151,7 +151,7 @@ class ModelRegistry:
         ]
         results = await db.model_registry.aggregate(pipeline).to_list(50)
 
-        by_type: Dict[str, dict] = {}
+        by_type: dict[str, dict] = {}
         for r in results:
             mt = r["_id"]["type"]
             st = r["_id"]["status"]

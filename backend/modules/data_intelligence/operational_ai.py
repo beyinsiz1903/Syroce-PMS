@@ -6,8 +6,8 @@ Integrates with existing housekeeping, front desk, maintenance, and event system
 import logging
 import math
 import uuid
-from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class CheckInLoadPredictor:
     """Predict check-in volume by hour to optimize front desk staffing."""
 
-    async def predict(self, tenant_id: str, target_date: Optional[str] = None) -> Dict[str, Any]:
+    async def predict(self, tenant_id: str, target_date: str | None = None) -> dict[str, Any]:
         target = date.fromisoformat(target_date) if target_date else date.today()
         target_s = target.isoformat()
 
@@ -95,7 +95,7 @@ class CheckInLoadPredictor:
             "staffing_recommendation": self._staffing_rec(total_arrivals, pressure_score),
         }
 
-    def _staffing_rec(self, arrivals: int, pressure: int) -> Dict[str, Any]:
+    def _staffing_rec(self, arrivals: int, pressure: int) -> dict[str, Any]:
         if arrivals <= 5:
             agents = 1
             note = "Dusuk yogunluk - minimum personel yeterli"
@@ -114,7 +114,7 @@ class CheckInLoadPredictor:
 class HousekeepingWorkloadPredictor:
     """Predict housekeeping workload for staffing and scheduling."""
 
-    async def predict(self, tenant_id: str, target_date: Optional[str] = None) -> Dict[str, Any]:
+    async def predict(self, tenant_id: str, target_date: str | None = None) -> dict[str, Any]:
         target = date.fromisoformat(target_date) if target_date else date.today()
         target_s = target.isoformat()
         (target + timedelta(days=1)).isoformat()
@@ -218,8 +218,8 @@ class HousekeepingWorkloadPredictor:
 class RoomReadinessPredictor:
     """Predict when rooms will be ready based on housekeeping status."""
 
-    async def predict(self, tenant_id: str) -> Dict[str, Any]:
-        now = datetime.now(timezone.utc)
+    async def predict(self, tenant_id: str) -> dict[str, Any]:
+        now = datetime.now(UTC)
         today_s = date.today().isoformat()
 
         # Rooms needing cleaning
@@ -295,7 +295,7 @@ class RoomReadinessPredictor:
 class MaintenanceFailureRiskPredictor:
     """Predict equipment/room maintenance failure risk."""
 
-    async def predict(self, tenant_id: str) -> Dict[str, Any]:
+    async def predict(self, tenant_id: str) -> dict[str, Any]:
         # Get maintenance history
         cutoff = (date.today() - timedelta(days=180)).isoformat()
         work_orders = await db.maintenance_work_orders.find(
@@ -305,7 +305,7 @@ class MaintenanceFailureRiskPredictor:
         ).to_list(2000)
 
         # Count issues per room
-        room_issues: Dict[str, List] = {}
+        room_issues: dict[str, list] = {}
         for wo in work_orders:
             rid = wo.get("room_id", "unknown")
             if rid not in room_issues:
@@ -390,8 +390,8 @@ class OperationalAIDashboard:
         self.maintenance = MaintenanceFailureRiskPredictor()
 
     async def get_dashboard(self, tenant_id: str,
-                            target_date: Optional[str] = None) -> Dict[str, Any]:
-        started_at = datetime.now(timezone.utc)
+                            target_date: str | None = None) -> dict[str, Any]:
+        started_at = datetime.now(UTC)
 
         checkin_data = await self.checkin.predict(tenant_id, target_date)
         hk_data = await self.housekeeping.predict(tenant_id, target_date)
@@ -425,8 +425,8 @@ class OperationalAIDashboard:
             "status": "success",
             "output_count": 4,
             "started_at": started_at.isoformat(),
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-            "duration_ms": int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000),
+            "completed_at": datetime.now(UTC).isoformat(),
+            "duration_ms": int((datetime.now(UTC) - started_at).total_seconds() * 1000),
         })
 
         return {
@@ -439,7 +439,7 @@ class OperationalAIDashboard:
         }
 
     async def get_staffing_recommendations(self, tenant_id: str,
-                                            target_date: Optional[str] = None) -> Dict[str, Any]:
+                                            target_date: str | None = None) -> dict[str, Any]:
         checkin = await self.checkin.predict(tenant_id, target_date)
         hk = await self.housekeeping.predict(tenant_id, target_date)
 
@@ -453,7 +453,7 @@ class OperationalAIDashboard:
         }
 
     async def get_workload_heatmap(self, tenant_id: str,
-                                    target_date: Optional[str] = None) -> Dict[str, Any]:
+                                    target_date: str | None = None) -> dict[str, Any]:
         hk = await self.housekeeping.predict(tenant_id, target_date)
         checkin = await self.checkin.predict(tenant_id, target_date)
 

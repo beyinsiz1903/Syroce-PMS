@@ -17,8 +17,8 @@ Endpoints:
   GET  /api/channel-manager/reconciliation/worker/status — Worker status
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -65,23 +65,23 @@ class AcknowledgeCaseRequest(BaseModel):
 class RunWithSnapshotsRequest(BaseModel):
     provider: str
     property_id: str = "prop-001"
-    snapshots: List[Dict[str, Any]] = Field(default_factory=list)
+    snapshots: list[dict[str, Any]] = Field(default_factory=list)
 
 
 # ── List Cases ────────────────────────────────────────────────────────
 
 @router.get("/cases")
 async def list_reconciliation_cases(
-    property_id: Optional[str] = None,
-    provider: Optional[str] = None,
-    status: Optional[str] = Query(None),
-    case_type: Optional[str] = None,
-    severity: Optional[str] = None,
+    property_id: str | None = None,
+    provider: str | None = None,
+    status: str | None = Query(None),
+    case_type: str | None = None,
+    severity: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
     """List reconciliation cases with filters."""
-    q: Dict[str, Any] = {"tenant_id": current_user.tenant_id}
+    q: dict[str, Any] = {"tenant_id": current_user.tenant_id}
     if property_id:
         q["property_id"] = property_id
     if provider:
@@ -133,7 +133,7 @@ async def resolve_case(
         "status": CaseStatus.RESOLVED.value,
         "resolution": req.resolution,
         "resolved_by": current_user.id,
-        "resolved_at": datetime.now(timezone.utc).isoformat(),
+        "resolved_at": datetime.now(UTC).isoformat(),
     })
     return {"message": "Case resolved", "case_id": case_id}
 
@@ -157,7 +157,7 @@ async def ignore_case(
         "status": CaseStatus.IGNORED.value,
         "dismiss_reason": req.reason,
         "resolved_by": current_user.id,
-        "resolved_at": datetime.now(timezone.utc).isoformat(),
+        "resolved_at": datetime.now(UTC).isoformat(),
     })
     return {"message": "Case ignored", "case_id": case_id}
 
@@ -180,7 +180,7 @@ async def acknowledge_case(
         "details": {
             **(case.get("details") or {}),
             "acknowledged_by": current_user.id,
-            "acknowledged_at": datetime.now(timezone.utc).isoformat(),
+            "acknowledged_at": datetime.now(UTC).isoformat(),
             "acknowledge_note": req.note,
         },
     })
@@ -222,14 +222,14 @@ async def run_with_snapshots(
 
 @router.get("/dashboard")
 async def get_dashboard_data(
-    provider: Optional[str] = None,
+    provider: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Get comprehensive dashboard data for reconciliation."""
     tenant_id = current_user.tenant_id
 
     # Open cases count
-    open_q: Dict[str, Any] = {
+    open_q: dict[str, Any] = {
         "tenant_id": tenant_id,
         "status": {"$in": ["open", "acknowledged"]},
     }
@@ -241,7 +241,7 @@ async def get_dashboard_data(
         {"$match": open_q},
         {"$group": {"_id": "$severity", "count": {"$sum": 1}}},
     ]
-    severity_counts: Dict[str, int] = {}
+    severity_counts: dict[str, int] = {}
     async for doc in db[COLL_RECONCILIATION_CASES].aggregate(severity_pipeline):
         severity_counts[doc["_id"]] = doc["count"]
 
@@ -250,7 +250,7 @@ async def get_dashboard_data(
         {"$match": open_q},
         {"$group": {"_id": "$provider", "count": {"$sum": 1}}},
     ]
-    provider_breakdown: Dict[str, int] = {}
+    provider_breakdown: dict[str, int] = {}
     async for doc in db[COLL_RECONCILIATION_CASES].aggregate(provider_pipeline):
         provider_breakdown[doc["_id"]] = doc["count"]
 
@@ -259,7 +259,7 @@ async def get_dashboard_data(
         {"$match": open_q},
         {"$group": {"_id": "$case_type", "count": {"$sum": 1}}},
     ]
-    type_breakdown: Dict[str, int] = {}
+    type_breakdown: dict[str, int] = {}
     async for doc in db[COLL_RECONCILIATION_CASES].aggregate(type_pipeline):
         type_breakdown[doc["_id"]] = doc["count"]
 
@@ -295,7 +295,7 @@ async def get_reconciliation_metrics(
         {"$match": {"tenant_id": tenant_id}},
         {"$group": {"_id": "$status", "count": {"$sum": 1}}},
     ]
-    by_status: Dict[str, int] = {}
+    by_status: dict[str, int] = {}
     async for doc in db[COLL_RECONCILIATION_CASES].aggregate(status_pipeline):
         by_status[doc["_id"]] = doc["count"]
 
@@ -304,7 +304,7 @@ async def get_reconciliation_metrics(
         {"$match": {"tenant_id": tenant_id, "status": {"$in": ["open", "acknowledged"]}}},
         {"$group": {"_id": "$case_type", "count": {"$sum": 1}}},
     ]
-    mismatch_counts: Dict[str, int] = {}
+    mismatch_counts: dict[str, int] = {}
     async for doc in db[COLL_RECONCILIATION_CASES].aggregate(mismatch_pipeline):
         mismatch_counts[doc["_id"]] = doc["count"]
 

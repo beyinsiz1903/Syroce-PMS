@@ -13,8 +13,8 @@ Endpoints:
   POST /api/channel-manager/monitoring/alerts/{id}/resolve — Resolve alert
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -99,14 +99,14 @@ async def get_monitoring_overview(
 
 @router.get("/alerts")
 async def list_alerts(
-    status: Optional[str] = Query(None),
-    severity: Optional[str] = None,
-    provider: Optional[str] = None,
+    status: str | None = Query(None),
+    severity: str | None = None,
+    provider: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
     """List monitoring alerts with filters."""
-    q: Dict[str, Any] = {}
+    q: dict[str, Any] = {}
     if status:
         q["status"] = status
     if severity:
@@ -145,7 +145,7 @@ async def get_provider_health(
     """Detailed provider health breakdown."""
     health = await collect_provider_health()
 
-    provider_alerts: Dict[str, list] = {}
+    provider_alerts: dict[str, list] = {}
     for pname in health.get("providers", {}):
         alerts = await db[COLL_MONITORING_ALERTS].find(
             {"provider": pname, "status": {"$in": ["active", "acknowledged"]}},
@@ -180,7 +180,7 @@ async def acknowledge_alert(
         {"id": alert_id},
         {"$set": {
             "status": AlertStatus.ACKNOWLEDGED.value,
-            "acknowledged_at": datetime.now(timezone.utc).isoformat(),
+            "acknowledged_at": datetime.now(UTC).isoformat(),
         }},
     )
     return {"message": "Alert acknowledged", "alert_id": alert_id}
@@ -207,7 +207,7 @@ async def resolve_alert(
         {"id": alert_id},
         {"$set": {
             "status": AlertStatus.RESOLVED.value,
-            "resolved_at": datetime.now(timezone.utc).isoformat(),
+            "resolved_at": datetime.now(UTC).isoformat(),
         }},
     )
     return {"message": "Alert resolved", "alert_id": alert_id}
@@ -286,7 +286,7 @@ async def get_metrics_trends(
 
     from .monitoring_worker import COLL_METRICS_HISTORY
 
-    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
 
     cursor = db[COLL_METRICS_HISTORY].find(
         {"ts": {"$gte": since}},

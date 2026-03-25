@@ -10,8 +10,8 @@ Runs per-property and performs:
 Rule: Full refresh is NOT default. Incremental requeue only.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -29,13 +29,13 @@ SNAPSHOT_STALENESS_HOURS = 48
 class SchedulerService:
     """Scheduled inventory sync safety net with audit and metrics."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     async def run_scheduled_check(
         self, tenant_id: str, connector_id: str,
-        actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Run scheduled safety net check for a single connector."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
         if not connector:
@@ -44,7 +44,7 @@ class SchedulerService:
             return {"connector_id": connector_id, "skipped": True, "reason": "Connector not active"}
 
         property_id = connector.get("property_id", "")
-        actions_taken: List[Dict[str, Any]] = []
+        actions_taken: list[dict[str, Any]] = []
 
         # Check 1: Stale pending jobs
         stale_pending = await self._check_stale_pending_jobs(tenant_id, connector_id)
@@ -83,10 +83,10 @@ class SchedulerService:
                 "missing_snapshots": sum(1 for a in actions_taken if a["type"] == "missing_snapshot"),
                 "drift_detected": any(a["type"] == "drift_detected" for a in actions_taken),
             },
-            "run_at": datetime.now(timezone.utc).isoformat(),
+            "run_at": datetime.now(UTC).isoformat(),
         }
 
-    async def run_all_connectors(self, tenant_id: str) -> Dict[str, Any]:
+    async def run_all_connectors(self, tenant_id: str) -> dict[str, Any]:
         """Run scheduled check for all active connectors of a tenant."""
         connectors = await self._repo.get_connectors_by_tenant(tenant_id, status="active")
         results = []
@@ -102,7 +102,7 @@ class SchedulerService:
         return {
             "connectors_checked": len(results),
             "results": results,
-            "run_at": datetime.now(timezone.utc).isoformat(),
+            "run_at": datetime.now(UTC).isoformat(),
         }
 
     # ------------------------------------------------------------------ #
@@ -111,9 +111,9 @@ class SchedulerService:
 
     async def _check_stale_pending_jobs(
         self, tenant_id: str, connector_id: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Find pending/dispatched jobs older than threshold and mark failed."""
-        threshold = (datetime.now(timezone.utc) - timedelta(hours=STALE_JOB_HOURS)).isoformat()
+        threshold = (datetime.now(UTC) - timedelta(hours=STALE_JOB_HOURS)).isoformat()
         actions = []
 
         jobs = await self._repo.get_sync_jobs(tenant_id, connector_id, limit=200)
@@ -124,7 +124,7 @@ class SchedulerService:
                 await self._repo.update_sync_job(j["id"], {
                     "status": SyncJobStatus.FAILED.value,
                     "last_error": f"Stale: {status} for >{STALE_JOB_HOURS}h, marked failed by scheduler",
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "completed_at": datetime.now(UTC).isoformat(),
                 })
                 actions.append({
                     "type": "stale_job_failed",
@@ -140,7 +140,7 @@ class SchedulerService:
 
     async def _check_retryable_failed_jobs(
         self, tenant_id: str, connector_id: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Requeue failed jobs that haven't exhausted retries."""
         actions = []
         jobs = await self._repo.get_sync_jobs(tenant_id, connector_id, limit=200)
@@ -156,7 +156,7 @@ class SchedulerService:
                 continue
             try:
                 completed_dt = datetime.fromisoformat(completed.replace("Z", "+00:00"))
-                age = (datetime.now(timezone.utc) - completed_dt).total_seconds() / 3600
+                age = (datetime.now(UTC) - completed_dt).total_seconds() / 3600
                 if age > 24:
                     continue
             except (ValueError, TypeError):
@@ -188,14 +188,14 @@ class SchedulerService:
 
     async def _check_missing_snapshots(
         self, tenant_id: str, connector_id: str, property_id: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Find room types with no sync snapshot for today."""
         actions = []
         from ..application.mapping_service import MappingService
         mapping_svc = MappingService(self._repo)
         room_lookup = await mapping_svc.get_mapping_lookup(tenant_id, connector_id, "room_type")
 
-        today = datetime.now(timezone.utc).date().isoformat()
+        today = datetime.now(UTC).date().isoformat()
         for pms_rt in room_lookup:
             snapshot = await self._repo.get_sync_snapshot(tenant_id, connector_id, pms_rt, today)
             if not snapshot:
@@ -212,7 +212,7 @@ class SchedulerService:
 
     async def _check_drift(
         self, tenant_id: str, connector_id: str, property_id: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Lightweight drift detection for today."""
         actions = []
         from ..application.mapping_service import MappingService
@@ -221,12 +221,12 @@ class SchedulerService:
         if not room_lookup:
             return actions
 
-        today = datetime.now(timezone.utc).date().isoformat()
+        today = datetime.now(UTC).date().isoformat()
         rooms = await db.rooms.find(
             {"tenant_id": tenant_id, "property_id": property_id, "status": {"$ne": "out_of_service"}},
             {"_id": 0, "room_type": 1},
         ).to_list(1000)
-        rt_counts: Dict[str, int] = {}
+        rt_counts: dict[str, int] = {}
         for r in rooms:
             rt = r.get("room_type", "")
             if rt and rt in room_lookup:

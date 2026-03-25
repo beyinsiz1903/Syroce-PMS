@@ -10,7 +10,6 @@ Endpoints:
   GET /api/room-blocks         — List active blocks
 """
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -54,8 +53,8 @@ async def apply_room_block(req: RoomBlockRequest, current_user=Depends(get_curre
 async def release_room_block(
     room_id: str,
     block_type: str,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user=Depends(get_current_user),
 ):
     """Release an OOO/OOS/Maintenance block."""
@@ -76,8 +75,8 @@ async def release_room_block(
 
 @router.get("")
 async def list_room_blocks(
-    room_id: Optional[str] = None,
-    block_type: Optional[str] = None,
+    room_id: str | None = None,
+    block_type: str | None = None,
     current_user=Depends(get_current_user),
 ):
     """List active room blocks."""

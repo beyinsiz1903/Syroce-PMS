@@ -5,8 +5,8 @@ connecting different hotel system modules.
 """
 import logging
 import uuid
-from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -28,7 +28,7 @@ class CrossModuleIntegrationBus:
     10. reservation_risk_signals → front_desk_warning_badges
     """
 
-    async def run_all_integrations(self, tenant_id: str) -> Dict[str, Any]:
+    async def run_all_integrations(self, tenant_id: str) -> dict[str, Any]:
         """Execute all cross-module integrations and return results."""
         results = {}
         integrations = [
@@ -54,19 +54,19 @@ class CrossModuleIntegrationBus:
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
             "results": {k: v.get("status", "unknown") for k, v in results.items()},
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
 
         return {
             "tenant_id": tenant_id,
             "integrations_run": len(results),
             "results": results,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
     # ── 1. Cancellation Prediction → Overbooking Strategy ──
 
-    async def cancellation_to_overbooking(self, tenant_id: str) -> Dict[str, Any]:
+    async def cancellation_to_overbooking(self, tenant_id: str) -> dict[str, Any]:
         """Use cancellation risk predictions to adjust overbooking strategy."""
         today = date.today().isoformat()
         at_risk = await db.bookings.find(
@@ -103,7 +103,7 @@ class CrossModuleIntegrationBus:
             "expected_cancellations": round(expected_cancellations, 1),
             "safe_overbook_rooms": safe_overbook,
             "at_risk_count": len(risk_bookings),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
         await db.cross_module_signals.insert_one(signal)
 
@@ -113,7 +113,7 @@ class CrossModuleIntegrationBus:
 
     # ── 2. Booking Probability → Revenue Recommendation Confidence ──
 
-    async def booking_prob_to_revenue_confidence(self, tenant_id: str) -> Dict[str, Any]:
+    async def booking_prob_to_revenue_confidence(self, tenant_id: str) -> dict[str, Any]:
         """Adjust revenue recommendation confidence based on booking conversion rates."""
         cutoff = (date.today() - timedelta(days=30)).isoformat()
         bookings = await db.bookings.find(
@@ -143,7 +143,7 @@ class CrossModuleIntegrationBus:
             "conversion_rate": round(conversion_rate, 3),
             "confidence_boost": confidence_boost,
             "note": note,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
         await db.cross_module_signals.insert_one(signal)
 
@@ -152,7 +152,7 @@ class CrossModuleIntegrationBus:
 
     # ── 3. Comp Set Price Gap → ADR Recommendation ──
 
-    async def compset_gap_to_adr(self, tenant_id: str) -> Dict[str, Any]:
+    async def compset_gap_to_adr(self, tenant_id: str) -> dict[str, Any]:
         """Generate ADR adjustment signals from competitive price gaps."""
         room_types = await db.rooms.distinct("room_type", {"tenant_id": tenant_id})
         if not room_types:
@@ -201,16 +201,16 @@ class CrossModuleIntegrationBus:
                 "tenant_id": tenant_id,
                 "signal_type": "compset_adr_adjustment",
                 "adjustments": adjustments,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             })
 
         return {"status": "ok", "adjustments": adjustments}
 
     # ── 4. Guest Request Volume → Housekeeping Priority ──
 
-    async def guest_requests_to_hk_priority(self, tenant_id: str) -> Dict[str, Any]:
+    async def guest_requests_to_hk_priority(self, tenant_id: str) -> dict[str, Any]:
         """Boost housekeeping priority for rooms with high guest request volume."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
         requests = await db.guest_requests.find(
             {"tenant_id": tenant_id, "created_at": {"$gte": cutoff},
              "status": {"$in": ["open", "assigned"]}},
@@ -218,7 +218,7 @@ class CrossModuleIntegrationBus:
         ).to_list(500)
 
         # Count requests per room
-        room_counts: Dict[str, int] = {}
+        room_counts: dict[str, int] = {}
         for r in requests:
             rid = r.get("room_id", "")
             if rid:
@@ -244,7 +244,7 @@ class CrossModuleIntegrationBus:
 
     # ── 5. VIP Arrival → Room Readiness Priority ──
 
-    async def vip_to_room_readiness(self, tenant_id: str) -> Dict[str, Any]:
+    async def vip_to_room_readiness(self, tenant_id: str) -> dict[str, Any]:
         """Prioritize room readiness for VIP arrivals."""
         today = date.today().isoformat()
         vip_bookings = await db.bookings.find(
@@ -272,9 +272,9 @@ class CrossModuleIntegrationBus:
 
     # ── 6. Night Audit Exception → Escalation Queue ──
 
-    async def audit_exception_to_escalation(self, tenant_id: str) -> Dict[str, Any]:
+    async def audit_exception_to_escalation(self, tenant_id: str) -> dict[str, Any]:
         """Route unresolved night audit exceptions to escalation queue."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
         exceptions = await db.platform_events.find(
             {"tenant_id": tenant_id, "event_type": "audit_exception",
              "acknowledged": False, "created_at": {"$gte": cutoff}},
@@ -291,7 +291,7 @@ class CrossModuleIntegrationBus:
                 "description": exc.get("payload", {}).get("description", "Audit exception"),
                 "priority": "high",
                 "status": "open",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             })
             escalated += 1
 
@@ -300,9 +300,9 @@ class CrossModuleIntegrationBus:
 
     # ── 7. Failed Messaging → Guest Journey Fallback ──
 
-    async def failed_messaging_to_fallback(self, tenant_id: str) -> Dict[str, Any]:
+    async def failed_messaging_to_fallback(self, tenant_id: str) -> dict[str, Any]:
         """Create fallback tasks for failed guest messages."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
         failed = await db.message_deliveries.find(
             {"tenant_id": tenant_id, "status": "failed",
              "created_at": {"$gte": cutoff}},
@@ -326,7 +326,7 @@ class CrossModuleIntegrationBus:
                 "original_channel": msg.get("channel"),
                 "fallback_action": "manual_contact",
                 "status": "pending",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             })
             fallbacks_created += 1
 
@@ -335,9 +335,9 @@ class CrossModuleIntegrationBus:
 
     # ── 8. Sync Failure → Operations Alert ──
 
-    async def sync_failure_to_ops_alert(self, tenant_id: str) -> Dict[str, Any]:
+    async def sync_failure_to_ops_alert(self, tenant_id: str) -> dict[str, Any]:
         """Generate operations alerts from channel sync failures."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(hours=6)).isoformat()
         sync_errors = await db.sync_errors.find(
             {"tenant_id": tenant_id, "created_at": {"$gte": cutoff}},
             {"_id": 0, "id": 1, "channel": 1, "error": 1, "created_at": 1},
@@ -355,7 +355,7 @@ class CrossModuleIntegrationBus:
                     "description": f"Son 6 saatte {len(sync_errors)} senkronizasyon hatasi",
                 },
                 "priority": "high" if len(sync_errors) >= 5 else "medium",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
                 "acknowledged": False,
             })
             alerts_created = 1
@@ -365,9 +365,9 @@ class CrossModuleIntegrationBus:
 
     # ── 9. Revenue Auto-Apply Result → Dashboard Metrics ──
 
-    async def autopricing_to_dashboard_metrics(self, tenant_id: str) -> Dict[str, Any]:
+    async def autopricing_to_dashboard_metrics(self, tenant_id: str) -> dict[str, Any]:
         """Aggregate auto-pricing results into dashboard metrics."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(days=7)).isoformat()
         recs = await db.pricing_recommendations.find(
             {"tenant_id": tenant_id, "created_at": {"$gte": cutoff}},
             {"_id": 0, "status": 1, "current_rate": 1, "suggested_rate": 1,
@@ -399,14 +399,14 @@ class CrossModuleIntegrationBus:
             "tenant_id": tenant_id,
             "signal_type": "autopricing_metrics",
             "metrics": metrics,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
 
         return {"status": "ok", "metrics": metrics}
 
     # ── 10. Reservation Risk Signals → Front Desk Warning Badges ──
 
-    async def reservation_risk_to_frontdesk_badges(self, tenant_id: str) -> Dict[str, Any]:
+    async def reservation_risk_to_frontdesk_badges(self, tenant_id: str) -> dict[str, Any]:
         """Generate front desk warning badges for risky reservations."""
         today = date.today().isoformat()
         tomorrow = (date.today() + timedelta(days=1)).isoformat()
@@ -447,7 +447,7 @@ class CrossModuleIntegrationBus:
                     "id": str(uuid.uuid4()),
                     "tenant_id": tenant_id,
                     **badge,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                 })
 
         return {"status": "ok", "arrivals_checked": len(arrivals),

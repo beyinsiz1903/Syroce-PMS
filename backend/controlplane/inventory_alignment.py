@@ -11,8 +11,8 @@ Output: alignment_status, drift_count, drift_nights, provider breakdown.
 Drift events are written to timeline for auditability.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -22,9 +22,9 @@ STALE_THRESHOLD_MINUTES = 15
 
 
 async def compute_inventory_alignment(
-    tenant_id: Optional[str] = None,
+    tenant_id: str | None = None,
     days_ahead: int = 14,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Compute inventory alignment across all connectors.
 
     Returns:
@@ -46,7 +46,7 @@ async def compute_inventory_alignment(
     if not tenant_id:
         return _empty_response("no_data", "No tenant found")
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     start_date = today.isoformat()
     end_date = (today + timedelta(days=days_ahead)).isoformat()
 
@@ -66,7 +66,7 @@ async def compute_inventory_alignment(
         return _empty_response("no_data", "No inventory data in materialized view", freshness)
 
     # Build lookup: (room_type, date) → sellable
-    inv_lookup: Dict[str, int] = {}
+    inv_lookup: dict[str, int] = {}
     for doc in inventory_docs:
         key = f"{doc.get('room_type')}_{doc.get('date')}"
         inv_lookup[key] = doc.get("sellable", 0)
@@ -87,14 +87,14 @@ async def compute_inventory_alignment(
             "inventory_room_type_nights": len(inv_lookup),
             "connectors_checked": 0,
             "date_range": {"start": start_date, "end": end_date},
-            "computed_at": datetime.now(timezone.utc).isoformat(),
+            "computed_at": datetime.now(UTC).isoformat(),
             "message": "No active connectors — inventory view is healthy but no channel sync to compare",
         }
 
     # Step 4: Compare against each connector's sync snapshots
     total_drift_count = 0
     total_drift_nights = 0
-    provider_breakdown: List[Dict[str, Any]] = []
+    provider_breakdown: list[dict[str, Any]] = []
 
     for conn in connectors:
         conn_id = conn.get("id", "")
@@ -110,7 +110,7 @@ async def compute_inventory_alignment(
             {"_id": 0},
         ).to_list(5000)
 
-        conn_drifts: List[Dict[str, Any]] = []
+        conn_drifts: list[dict[str, Any]] = []
         checked = 0
 
         for snap in snapshots:
@@ -171,7 +171,7 @@ async def compute_inventory_alignment(
         "inventory_room_type_nights": len(inv_lookup),
         "connectors_checked": len(connectors),
         "date_range": {"start": start_date, "end": end_date},
-        "computed_at": datetime.now(timezone.utc).isoformat(),
+        "computed_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -187,7 +187,7 @@ async def _check_view_freshness(tenant_id: str, date: str) -> str:
 
     try:
         last_dt = datetime.fromisoformat(latest["last_computed_at"])
-        age_minutes = (datetime.now(timezone.utc) - last_dt).total_seconds() / 60
+        age_minutes = (datetime.now(UTC) - last_dt).total_seconds() / 60
         if age_minutes < 5:
             return "fresh"
         elif age_minutes < STALE_THRESHOLD_MINUTES:
@@ -202,7 +202,7 @@ async def _write_drift_timeline_event(
     tenant_id: str,
     status: str,
     drift_count: int,
-    provider_breakdown: List[Dict],
+    provider_breakdown: list[dict],
 ) -> None:
     """Write drift detection event to timeline for auditability."""
     try:
@@ -210,7 +210,7 @@ async def _write_drift_timeline_event(
         writer = get_timeline_writer()
         await writer.append(
             tenant_id=tenant_id,
-            correlation_id=f"alignment-{datetime.now(timezone.utc).isoformat()}",
+            correlation_id=f"alignment-{datetime.now(UTC).isoformat()}",
             entity_type="inventory_alignment",
             entity_id="ledger_alignment",
             stage="drift_detected",
@@ -229,7 +229,7 @@ async def _write_drift_timeline_event(
         logger.debug("Timeline drift event write failed: %s", e)
 
 
-def _empty_response(status: str, message: str, freshness: str = "empty") -> Dict[str, Any]:
+def _empty_response(status: str, message: str, freshness: str = "empty") -> dict[str, Any]:
     return {
         "alignment_status": status,
         "freshness": freshness,
@@ -239,6 +239,6 @@ def _empty_response(status: str, message: str, freshness: str = "empty") -> Dict
         "inventory_room_type_nights": 0,
         "connectors_checked": 0,
         "date_range": {"start": "", "end": ""},
-        "computed_at": datetime.now(timezone.utc).isoformat(),
+        "computed_at": datetime.now(UTC).isoformat(),
         "message": message,
     }

@@ -10,7 +10,7 @@ Provides a unified view of:
 Supports: retry, send_to_review, dismiss, escalate, bulk operations.
 """
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..infrastructure.repository import ChannelManagerRepository
@@ -21,16 +21,16 @@ logger = logging.getLogger("channel_manager.application.error_queue_service")
 class ErrorQueueService:
     """Unified error queue for all failed channel manager operations."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     async def get_error_queue(
         self,
         tenant_id: str,
-        connector_id: Optional[str] = None,
-        error_type: Optional[str] = None,
+        connector_id: str | None = None,
+        error_type: str | None = None,
         limit: int = 100,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         items = await self._repo.get_error_queue(tenant_id, connector_id, error_type, limit)
         summary = await self._repo.get_error_queue_summary(tenant_id, connector_id)
         return {
@@ -41,8 +41,8 @@ class ErrorQueueService:
 
     async def retry_item(
         self, tenant_id: str, item_id: str, error_type: str,
-        actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Retry a single error queue item."""
         if error_type == "sync_failed":
             await self._repo.update_sync_job(item_id, {
@@ -68,8 +68,8 @@ class ErrorQueueService:
 
     async def dismiss_item(
         self, tenant_id: str, item_id: str, error_type: str,
-        reason: str = "", actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        reason: str = "", actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Dismiss a single error queue item."""
         if error_type == "sync_failed":
             await self._repo.update_sync_job(item_id, {
@@ -88,8 +88,8 @@ class ErrorQueueService:
 
     async def escalate_item(
         self, tenant_id: str, item_id: str, error_type: str,
-        actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Escalate an error item by creating a reconciliation issue."""
         from ..application.reconciliation_service import ReconciliationService
         recon = ReconciliationService(self._repo)
@@ -127,9 +127,9 @@ class ErrorQueueService:
         return {"success": True, "item_id": item_id, "action": "escalated"}
 
     async def bulk_retry(
-        self, tenant_id: str, item_ids: List[str], error_type: str,
-        actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        self, tenant_id: str, item_ids: list[str], error_type: str,
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Bulk retry multiple error queue items."""
         if error_type == "sync_failed":
             count = await self._repo.bulk_retry_sync_jobs(tenant_id, item_ids)
@@ -145,9 +145,9 @@ class ErrorQueueService:
         return {"success": True, "retried_count": count, "requested": len(item_ids)}
 
     async def bulk_dismiss(
-        self, tenant_id: str, item_ids: List[str], error_type: str,
-        reason: str = "", actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        self, tenant_id: str, item_ids: list[str], error_type: str,
+        reason: str = "", actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Bulk dismiss multiple error queue items."""
         count = 0
         for item_id in item_ids:

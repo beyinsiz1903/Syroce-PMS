@@ -6,7 +6,7 @@ Convert HotelRunner / Exely payloads into canonical reservation format.
 """
 import hashlib
 import json
-from typing import Any, Dict
+from typing import Any
 
 
 def _safe_str(v: Any) -> str:
@@ -17,7 +17,7 @@ def _safe_str(v: Any) -> str:
 # Canonical Reservation Schema
 # ══════════════════════════════════════════════════════════════════════
 
-def empty_canonical() -> Dict[str, Any]:
+def empty_canonical() -> dict[str, Any]:
     return {
         "external_reservation_id": "",
         "provider": "",
@@ -43,7 +43,7 @@ def empty_canonical() -> Dict[str, Any]:
 # HotelRunner Normalizer
 # ══════════════════════════════════════════════════════════════════════
 
-def normalize_hotelrunner(payload: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
     """
     HotelRunner reservation payload → canonical format.
 
@@ -100,7 +100,7 @@ def normalize_hotelrunner(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def extract_hotelrunner_identity(payload: Dict[str, Any]) -> Dict[str, str]:
+def extract_hotelrunner_identity(payload: dict[str, Any]) -> dict[str, str]:
     """Extract HotelRunner identity fields for raw event."""
     hr_number = _safe_str(payload.get("hr_number", ""))
     event_type = _safe_str(payload.get("event_type", "reservation_create"))
@@ -117,7 +117,7 @@ def extract_hotelrunner_identity(payload: Dict[str, Any]) -> Dict[str, str]:
 # Exely Normalizer
 # ══════════════════════════════════════════════════════════════════════
 
-def normalize_exely(payload: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_exely(payload: dict[str, Any]) -> dict[str, Any]:
     """
     Exely (OTA_ReadRQ) reservation payload → canonical format.
 
@@ -177,7 +177,7 @@ def normalize_exely(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def extract_exely_identity(payload: Dict[str, Any]) -> Dict[str, str]:
+def extract_exely_identity(payload: dict[str, Any]) -> dict[str, str]:
     """Extract Exely identity fields for raw event."""
     unique_id = _safe_str(payload.get("UniqueID", ""))
     res_status = _safe_str(payload.get("ResStatus", ""))
@@ -205,21 +205,21 @@ IDENTITY_EXTRACTORS = {
 }
 
 
-def normalize(provider: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+def normalize(provider: str, payload: dict[str, Any]) -> dict[str, Any]:
     fn = NORMALIZERS.get(provider)
     if not fn:
         raise ValueError(f"No normalizer for provider: {provider}")
     return fn(payload)
 
 
-def extract_identity(provider: str, payload: Dict[str, Any]) -> Dict[str, str]:
+def extract_identity(provider: str, payload: dict[str, Any]) -> dict[str, str]:
     fn = IDENTITY_EXTRACTORS.get(provider)
     if not fn:
         raise ValueError(f"No identity extractor for provider: {provider}")
     return fn(payload)
 
 
-def compute_canonical_hash(canonical: Dict[str, Any]) -> str:
+def compute_canonical_hash(canonical: dict[str, Any]) -> str:
     """Hash of canonical reservation data for change detection."""
     key_fields = {
         "check_in": canonical.get("check_in", ""),

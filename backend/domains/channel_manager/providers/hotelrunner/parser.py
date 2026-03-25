@@ -6,7 +6,7 @@ Safe response parsing with validation.
 Each parser takes raw API data and returns typed schemas.
 """
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from .errors import HotelRunnerParseError
 from .schemas import (
@@ -20,7 +20,7 @@ from .schemas import (
 logger = logging.getLogger("hotelrunner.parser")
 
 
-def parse_rooms_response(data: Dict[str, Any]) -> List[HotelRunnerRoom]:
+def parse_rooms_response(data: dict[str, Any]) -> list[HotelRunnerRoom]:
     """Parse GET /rooms response into typed room list."""
     rooms_raw = data.get("rooms", [])
     if not isinstance(rooms_raw, list):
@@ -43,7 +43,7 @@ def parse_rooms_response(data: Dict[str, Any]) -> List[HotelRunnerRoom]:
     return rooms
 
 
-def parse_channels_response(data: Dict[str, Any]) -> List[HotelRunnerChannel]:
+def parse_channels_response(data: dict[str, Any]) -> list[HotelRunnerChannel]:
     """Parse GET /infos/channels response."""
     channels_raw = data.get("channels", [])
     if not isinstance(channels_raw, list):
@@ -61,7 +61,7 @@ def parse_channels_response(data: Dict[str, Any]) -> List[HotelRunnerChannel]:
     return channels
 
 
-def parse_connected_channels_response(data: Dict[str, Any]) -> List[HotelRunnerConnectedChannel]:
+def parse_connected_channels_response(data: dict[str, Any]) -> list[HotelRunnerConnectedChannel]:
     """Parse GET /infos/connected_channels response."""
     items = data.get("connected_channels", data.get("channels", []))
     if not isinstance(items, list):
@@ -80,7 +80,7 @@ def parse_connected_channels_response(data: Dict[str, Any]) -> List[HotelRunnerC
     return result
 
 
-def parse_reservations_response(data: Dict[str, Any]) -> HotelRunnerReservationPage:
+def parse_reservations_response(data: dict[str, Any]) -> HotelRunnerReservationPage:
     """Parse GET /reservations response into typed page."""
     reservations_raw = data.get("reservations", [])
     if not isinstance(reservations_raw, list):

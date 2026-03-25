@@ -4,10 +4,10 @@ Converts Exely-specific reservation format to the canonical PMS format
 used by the common ingest pipeline.
 """
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 
-def normalize_reservation(raw: Dict[str, Any], source: str = "pull") -> Dict[str, Any]:
+def normalize_reservation(raw: dict[str, Any], source: str = "pull") -> dict[str, Any]:
     """
     Convert Exely reservation payload (from response_parser) to canonical PMS format.
     """
@@ -85,7 +85,7 @@ def normalize_reservation(raw: Dict[str, Any], source: str = "pull") -> Dict[str
     }
 
 
-def _calc_nights(checkin: Optional[str], checkout: Optional[str]) -> int:
+def _calc_nights(checkin: str | None, checkout: str | None) -> int:
     if not checkin or not checkout:
         return 0
     try:

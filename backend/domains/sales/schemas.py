@@ -3,7 +3,6 @@ Sales Domain — Schemas
 Request/response models extracted from sales routers.
 """
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, EmailStr, conint
 
@@ -18,19 +17,19 @@ class LeadStage(str, Enum):
 
 class CreateLeadRequest(BaseModel):
     guest_name: str
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    company: Optional[str] = None
+    email: str | None = None
+    phone: str | None = None
+    company: str | None = None
     stage: LeadStage = LeadStage.COLD
     source: str
-    notes: Optional[str] = None
-    expected_checkin: Optional[str] = None
+    notes: str | None = None
+    expected_checkin: str | None = None
     expected_revenue: float = 0
 
 
 class UpdateLeadStageRequest(BaseModel):
     stage: LeadStage
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class PmsLiteLeadStatus(str, Enum):
@@ -44,29 +43,29 @@ class PmsLiteLeadStatus(str, Enum):
 class PmsLiteLeadContact(BaseModel):
     full_name: str
     phone: str
-    email: Optional[EmailStr] = None
+    email: EmailStr | None = None
 
 
 class PmsLiteLeadHotel(BaseModel):
     property_name: str
-    location: Optional[str] = None
+    location: str | None = None
     rooms_count: conint(ge=1, le=200)
 
 
 class PmsLiteLeadMetadata(BaseModel):
-    utm_source: Optional[str] = None
-    utm_medium: Optional[str] = None
-    utm_campaign: Optional[str] = None
-    user_agent: Optional[str] = None
-    ip: Optional[str] = None
+    utm_source: str | None = None
+    utm_medium: str | None = None
+    utm_campaign: str | None = None
+    user_agent: str | None = None
+    ip: str | None = None
 
 
 class PmsLiteLeadCreateRequest(BaseModel):
     contact: PmsLiteLeadContact
     hotel: PmsLiteLeadHotel
-    metadata: Optional[PmsLiteLeadMetadata] = None
+    metadata: PmsLiteLeadMetadata | None = None
 
 
 class PmsLiteLeadAdminUpdateRequest(BaseModel):
-    status: Optional[PmsLiteLeadStatus] = None
-    note: Optional[str] = None
+    status: PmsLiteLeadStatus | None = None
+    note: str | None = None

@@ -8,7 +8,7 @@ Inbound:  HotelRunner reservation → canonical reservation dict
 Outbound: PMS ARI delta → HotelRunner inventory payload
 """
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from .schemas import HotelRunnerReservation
 
@@ -26,7 +26,7 @@ _STATUS_MAP = {
 }
 
 
-def map_reservation_to_canonical(res: HotelRunnerReservation) -> Dict[str, Any]:
+def map_reservation_to_canonical(res: HotelRunnerReservation) -> dict[str, Any]:
     """
     Convert a parsed HotelRunnerReservation into the canonical format
     used by the reconciliation engine and ingest pipeline.
@@ -57,7 +57,7 @@ def map_reservation_to_canonical(res: HotelRunnerReservation) -> Dict[str, Any]:
     }
 
 
-def map_raw_payload_to_canonical(raw: Dict[str, Any]) -> Dict[str, Any]:
+def map_raw_payload_to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
     """
     Convert a raw HotelRunner reservation dict (directly from API)
     into the canonical format. Used when we have raw dicts rather than
@@ -100,15 +100,15 @@ def map_raw_payload_to_canonical(raw: Dict[str, Any]) -> Dict[str, Any]:
 # ── Outbound Mapping: ARI Push ────────────────────────────────────────
 
 def map_ari_delta_to_daily_payload(
-    delta: Dict[str, Any],
-    room_mapping: Dict[str, Any],
-) -> Dict[str, str]:
+    delta: dict[str, Any],
+    room_mapping: dict[str, Any],
+) -> dict[str, str]:
     """
     Convert a PMS ARI delta to HotelRunner daily inventory form data.
     Returns a dict suitable for PUT /rooms/daily form-encoded payload.
     """
     inv_code = room_mapping.get("external_code", "")
-    data: Dict[str, str] = {
+    data: dict[str, str] = {
         "inv_code": inv_code,
         "date": str(delta.get("date", "")),
     }
@@ -128,15 +128,15 @@ def map_ari_delta_to_daily_payload(
 
 
 def map_ari_delta_to_daterange_payload(
-    delta: Dict[str, Any],
-    room_mapping: Dict[str, Any],
-) -> Dict[str, Any]:
+    delta: dict[str, Any],
+    room_mapping: dict[str, Any],
+) -> dict[str, Any]:
     """
     Convert a PMS ARI delta to HotelRunner date range inventory form data.
     Returns a dict suitable for PUT /rooms/~ form-encoded payload.
     """
     inv_code = room_mapping.get("external_code", "")
-    data: Dict[str, Any] = {
+    data: dict[str, Any] = {
         "inv_code": inv_code,
         "start_date": str(delta.get("start_date", delta.get("date_from", ""))),
         "end_date": str(delta.get("end_date", delta.get("date_to", ""))),

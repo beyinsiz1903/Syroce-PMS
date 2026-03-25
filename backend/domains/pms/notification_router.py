@@ -4,8 +4,7 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -30,7 +29,7 @@ router = APIRouter(prefix="/api", tags=["PMS / Notifications"])
 class NotificationPreferenceRequest(BaseModel):
     notification_type: str
     enabled: bool
-    channels: List[str] = ['in_app']  # in_app, email, sms, push
+    channels: list[str] = ['in_app']  # in_app, email, sms, push
 
 
 class SystemAlertRequest(BaseModel):
@@ -38,7 +37,7 @@ class SystemAlertRequest(BaseModel):
     title: str
     message: str
     priority: str = "normal"
-    target_roles: Optional[List[str]] = None
+    target_roles: list[str] | None = None
 
 
 @router.post("/notifications/send-push")
@@ -61,7 +60,7 @@ async def send_push_notification(notif_data: dict, current_user: User = Depends(
         'channels': channels,
         'user_ids': target_user_ids,
         'departments': target_departments,
-        'sent_at': datetime.now(timezone.utc).isoformat(),
+        'sent_at': datetime.now(UTC).isoformat(),
         'created_by': current_user.id
     }
 
@@ -74,7 +73,7 @@ async def send_push_notification(notif_data: dict, current_user: User = Depends(
         }
         await db.notifications.insert_one(in_app_notification)
 
-    deliveries: List[dict] = []
+    deliveries: list[dict] = []
     if 'push' in channels:
         devices = await _collect_push_devices(
             tenant_id=current_user.tenant_id,
@@ -123,8 +122,8 @@ async def register_push_device(device_payload: dict, current_user: User = Depend
         'subscriptions': subscriptions,
         'departments': departments,
         'capabilities': device_payload.get('capabilities', {}),
-        'updated_at': datetime.now(timezone.utc).isoformat(),
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'updated_at': datetime.now(UTC).isoformat(),
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     await db.push_device_tokens.update_one(
@@ -158,7 +157,7 @@ async def update_push_subscriptions(subscription_payload: dict, current_user: Us
         {
             '$set': {
                 'channels': channels,
-                'updated_at': datetime.now(timezone.utc).isoformat()
+                'updated_at': datetime.now(UTC).isoformat()
             }
         },
         upsert=True
@@ -244,9 +243,9 @@ async def get_my_notifications(current_user: User = Depends(get_current_user)):
 
 @router.get("/inbox/alerts")
 async def get_inbox_alerts(
-    status: Optional[str] = None,
-    alert_type: Optional[str] = None,
-    priority: Optional[str] = None,
+    status: str | None = None,
+    alert_type: str | None = None,
+    priority: str | None = None,
     limit: int = 50,
     current_user: User = Depends(get_current_user)
 ):
@@ -309,9 +308,9 @@ async def create_alert(
     title: str,
     description: str,
     source_module: str,
-    source_id: Optional[str] = None,
-    assigned_to: Optional[str] = None,
-    action_url: Optional[str] = None,
+    source_id: str | None = None,
+    assigned_to: str | None = None,
+    action_url: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Create a new alert"""
@@ -350,7 +349,7 @@ async def mark_alert_read(
         {'id': alert_id, 'tenant_id': current_user.tenant_id},
         {'$set': {
             'status': 'read',
-            'read_at': datetime.now(timezone.utc).isoformat()
+            'read_at': datetime.now(UTC).isoformat()
         }}
     )
 
@@ -542,7 +541,7 @@ async def mark_notification_read(
                 {'tenant_id': current_user.tenant_id}
             ]
         },
-        {'$set': {'read': True, 'read_at': datetime.now(timezone.utc).isoformat()}}
+        {'$set': {'read': True, 'read_at': datetime.now(UTC).isoformat()}}
     )
 
     if result.modified_count == 0:
@@ -590,7 +589,7 @@ async def send_system_alert(
             'message': request.message,
             'priority': request.priority,
             'read': False,
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         }
         await db.notifications.insert_one(notification)
         notifications_created += 1

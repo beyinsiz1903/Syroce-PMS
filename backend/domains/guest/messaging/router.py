@@ -4,9 +4,8 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import Enum
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -45,7 +44,7 @@ class SendMessageRequest(BaseModel):
     message_type: MessageType
     recipient: str
     message_content: str
-    booking_id: Optional[str] = None
+    booking_id: str | None = None
 
     @field_validator('message_type', mode='before')
     @classmethod
@@ -61,12 +60,12 @@ class SentMessage(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     guest_id: str
-    booking_id: Optional[str] = None
+    booking_id: str | None = None
     message_type: MessageType
     recipient: str  # phone or email
     message_content: str
     status: str = "sent"  # sent, delivered, failed
-    sent_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    sent_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class MessageTemplate(BaseModel):
@@ -78,7 +77,7 @@ class MessageTemplate(BaseModel):
     trigger: AutoMessageTrigger
     message_content: str
     active: bool = True
-    variables: List[str] = []  # e.g., ['{guest_name}', '{room_number}', '{check_in_date}']
+    variables: list[str] = []  # e.g., ['{guest_name}', '{room_number}', '{check_in_date}']
 
 
 class InternalMessage(BaseModel):
@@ -89,17 +88,17 @@ class InternalMessage(BaseModel):
     from_user_id: str
     from_user_name: str
     from_department: str
-    to_user_id: Optional[str] = None  # None = broadcast to department
-    to_user_name: Optional[str] = None
-    to_department: Optional[str] = None  # None = all departments
+    to_user_id: str | None = None  # None = broadcast to department
+    to_user_name: str | None = None
+    to_department: str | None = None  # None = all departments
     message: str
     priority: str = "normal"  # low, normal, high, urgent
     message_type: str = "text"  # text, task, alert, announcement
-    attachments: List[str] = []
+    attachments: list[str] = []
     read: bool = False
-    read_at: Optional[datetime] = None
-    replied_to: Optional[str] = None  # Original message ID if this is a reply
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    read_at: datetime | None = None
+    replied_to: str | None = None  # Original message ID if this is a reply
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 @router.post("/whatsapp/send-confirmation")
@@ -160,7 +159,7 @@ async def send_whatsapp_message(
         'message': request.message,
         'booking_id': request.booking_id,
         'status': 'sent',
-        'sent_at': datetime.now(timezone.utc).isoformat(),
+        'sent_at': datetime.now(UTC).isoformat(),
         'sent_by': current_user.id
     }
 
@@ -185,7 +184,7 @@ async def send_email_message(
         'message': request.message,
         'booking_id': request.booking_id,
         'status': 'sent',
-        'sent_at': datetime.now(timezone.utc).isoformat(),
+        'sent_at': datetime.now(UTC).isoformat(),
         'sent_by': current_user.id
     }
 
@@ -209,7 +208,7 @@ async def send_sms_message(
         'message': request.message,
         'booking_id': request.booking_id,
         'status': 'sent',
-        'sent_at': datetime.now(timezone.utc).isoformat(),
+        'sent_at': datetime.now(UTC).isoformat(),
         'sent_by': current_user.id
     }
 
@@ -262,8 +261,8 @@ async def get_ota_integrations(current_user: User = Depends(get_current_user)):
 @router.post("/messaging/internal/send")
 async def send_internal_message(
     message: str,
-    to_department: Optional[str] = None,
-    to_user_id: Optional[str] = None,
+    to_department: str | None = None,
+    to_user_id: str | None = None,
     priority: str = "normal",
     message_type: str = "text",
     current_user: User = Depends(get_current_user)
@@ -321,7 +320,7 @@ async def send_internal_message(
             'source_id': message_obj.id,
             'assigned_to': to_user_name,
             'status': 'unread',
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         })
 
     return {
@@ -335,7 +334,7 @@ async def send_internal_message(
 
 @router.get("/messaging/internal/inbox")
 async def get_internal_messages_inbox(
-    department: Optional[str] = None,
+    department: str | None = None,
     unread_only: bool = False,
     limit: int = 50,
     current_user: User = Depends(get_current_user)
@@ -413,7 +412,7 @@ async def mark_internal_message_read(
         {'id': message_id, 'tenant_id': current_user.tenant_id},
         {'$set': {
             'read': True,
-            'read_at': datetime.now(timezone.utc).isoformat()
+            'read_at': datetime.now(UTC).isoformat()
         }}
     )
 
@@ -505,7 +504,7 @@ async def trigger_auto_messages(
 
     if trigger_type == AutoMessageTrigger.PRE_ARRIVAL:
         # Find bookings with check-in tomorrow
-        tomorrow = datetime.now(timezone.utc) + timedelta(days=1)
+        tomorrow = datetime.now(UTC) + timedelta(days=1)
         tomorrow_start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
         tomorrow_end = tomorrow.replace(hour=23, minute=59, second=59, microsecond=999999)
 

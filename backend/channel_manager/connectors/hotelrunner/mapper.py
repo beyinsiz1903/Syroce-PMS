@@ -6,7 +6,7 @@ Supports:
   - REST/JSON reservation payloads → CanonicalReservation
   - Canonical inventory/rates → HotelRunner push format
 """
-from typing import Any, Dict, List
+from typing import Any
 
 from ...domain.models.canonical import (
     CanonicalGuest,
@@ -56,7 +56,7 @@ _STATE_MAP = {
 class HotelRunnerMapper:
     """Maps HotelRunner-specific data to/from canonical domain models."""
 
-    def reservation_to_canonical(self, raw: Dict[str, Any]) -> CanonicalReservation:
+    def reservation_to_canonical(self, raw: dict[str, Any]) -> CanonicalReservation:
         """
         Convert HotelRunner REST/JSON reservation dict to CanonicalReservation.
 
@@ -208,7 +208,7 @@ class HotelRunnerMapper:
             raw_provider_data=raw,
         )
 
-    def extract_room_references(self, raw: Dict[str, Any]) -> List[Dict[str, str]]:
+    def extract_room_references(self, raw: dict[str, Any]) -> list[dict[str, str]]:
         """
         Extract external room/rate/inventory references from HotelRunner rooms.
 
@@ -234,9 +234,9 @@ class HotelRunnerMapper:
 
     def inventory_to_push_updates(
         self,
-        slices: List[InventorySlice],
-        mapping_lookup: Dict[str, str],
-    ) -> List[Dict[str, Any]]:
+        slices: list[InventorySlice],
+        mapping_lookup: dict[str, str],
+    ) -> list[dict[str, Any]]:
         """Convert canonical inventory slices to HotelRunner push format."""
         updates = []
         for sl in slices:
@@ -253,10 +253,10 @@ class HotelRunnerMapper:
 
     def rates_to_push_updates(
         self,
-        rates: List[Dict[str, Any]],
-        room_mapping: Dict[str, str],
-        rate_mapping: Dict[str, str],
-    ) -> List[Dict[str, Any]]:
+        rates: list[dict[str, Any]],
+        room_mapping: dict[str, str],
+        rate_mapping: dict[str, str],
+    ) -> list[dict[str, Any]]:
         """Convert canonical rate data to HotelRunner push format."""
         updates = []
         for r in rates:
@@ -276,10 +276,10 @@ class HotelRunnerMapper:
 
     def restrictions_to_push_updates(
         self,
-        restrictions: List[RestrictionSet],
-        room_mapping: Dict[str, str],
-        rate_mapping: Dict[str, str],
-    ) -> List[Dict[str, Any]]:
+        restrictions: list[RestrictionSet],
+        room_mapping: dict[str, str],
+        rate_mapping: dict[str, str],
+    ) -> list[dict[str, Any]]:
         """Convert canonical restrictions to HotelRunner push format."""
         updates = []
         for r in restrictions:

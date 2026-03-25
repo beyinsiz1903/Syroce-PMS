@@ -3,7 +3,7 @@ AI Dynamic Pricing Engine
 Competitor rate tracking, ML-powered pricing recommendations
 """
 import random
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 class DynamicPricingEngine:
@@ -41,7 +41,7 @@ class DynamicPricingEngine:
         if 'T' in target_date:
             target = datetime.fromisoformat(target_date.replace('Z', '+00:00'))
         else:
-            target = datetime.fromisoformat(target_date).replace(tzinfo=timezone.utc)
+            target = datetime.fromisoformat(target_date).replace(tzinfo=UTC)
 
         # Day of week factor
         day_of_week = target.weekday()
@@ -60,7 +60,7 @@ class DynamicPricingEngine:
         demand_factor = 1.4 if occupancy > 0.85 else 1.2 if occupancy > 0.7 else 1.0 if occupancy > 0.5 else 0.9
 
         # Days until arrival
-        days_until = (target - datetime.now(timezone.utc)).days
+        days_until = (target - datetime.now(UTC)).days
         urgency_factor = 1.3 if days_until <= 3 else 1.1 if days_until <= 7 else 1.0
 
         # Event factor (simulated)

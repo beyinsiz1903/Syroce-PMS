@@ -1,6 +1,6 @@
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -17,8 +17,8 @@ class BookingCredentialManager:
         property_id: str,
         username: str,
         password: str,
-        settings: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+        settings: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         record = {
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
@@ -27,7 +27,7 @@ class BookingCredentialManager:
             "username": username,
             "password": password,
             "settings": settings or {},
-            "updated_at": datetime.now(timezone.utc).isoformat()
+            "updated_at": datetime.now(UTC).isoformat()
         }
 
         await db.ota_credentials.update_one(
@@ -39,7 +39,7 @@ class BookingCredentialManager:
         return record
 
     @staticmethod
-    async def get_credentials(tenant_id: str) -> Optional[Dict[str, Any]]:
+    async def get_credentials(tenant_id: str) -> dict[str, Any] | None:
         doc = await db.ota_credentials.find_one(
             {"tenant_id": tenant_id, "provider": "booking"},
             {"_id": 0}
@@ -48,11 +48,11 @@ class BookingCredentialManager:
 
 
 class BookingPayloadBuilder:
-    def __init__(self, tenant_id: str, credentials: Dict[str, Any]):
+    def __init__(self, tenant_id: str, credentials: dict[str, Any]):
         self.tenant_id = tenant_id
         self.credentials = credentials
 
-    def build_rate_payload(self, rooms: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def build_rate_payload(self, rooms: list[dict[str, Any]]) -> dict[str, Any]:
         return {
             "property_id": self.credentials.get("property_id"),
             "rooms": [
@@ -72,7 +72,7 @@ class BookingPayloadBuilder:
 
 class BookingIntegrationLogger:
     @staticmethod
-    async def log_event(tenant_id: str, event_type: str, payload: Dict[str, Any], status: str, message: Optional[str] = None):
+    async def log_event(tenant_id: str, event_type: str, payload: dict[str, Any], status: str, message: str | None = None):
         record = {
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
@@ -81,13 +81,13 @@ class BookingIntegrationLogger:
             "payload": payload,
             "status": status,
             "message": message,
-            "created_at": datetime.now(timezone.utc).isoformat()
+            "created_at": datetime.now(UTC).isoformat()
         }
         await db.booking_integration_logs.insert_one(record)
 
 
 class BookingAPIClient:
-    def __init__(self, credentials: Dict[str, Any]):
+    def __init__(self, credentials: dict[str, Any]):
         self.credentials = credentials
         settings = credentials.get("settings", {}) or {}
         self.base_url = settings.get("base_url", "https://distribution.booking.com")
@@ -95,7 +95,7 @@ class BookingAPIClient:
         self.username = credentials.get("username")
         self.password = credentials.get("password")
 
-    async def push_ari(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def push_ari(self, payload: dict[str, Any]) -> dict[str, Any]:
         endpoint = f"{self.base_url}/json/bookings"
         async with httpx.AsyncClient(timeout=self.timeout, auth=(self.username, self.password)) as client:
             response = await client.post(endpoint, json={"roomRates": payload.get("rooms", [])})
@@ -107,7 +107,7 @@ class BookingAPIClient:
                 "raw": result
             }
 
-    async def fetch_reservations(self, modified_since: Optional[str] = None) -> Dict[str, Any]:
+    async def fetch_reservations(self, modified_since: str | None = None) -> dict[str, Any]:
         endpoint = f"{self.base_url}/json/reservations"
         params = {}
         if modified_since:
@@ -149,7 +149,7 @@ class BookingReservationMapper:
     def __init__(self, tenant_id: str):
         self.tenant_id = tenant_id
 
-    def to_ota_record(self, reservation: Dict[str, Any]) -> Dict[str, Any]:
+    def to_ota_record(self, reservation: dict[str, Any]) -> dict[str, Any]:
         adults = reservation.get("adults", 2)
         children = reservation.get("children", 0)
         ota_res = OTAReservation(
@@ -176,7 +176,7 @@ class BookingReservationMapper:
             data['processed_at'] = data['processed_at'].isoformat()
         return data
 
-    def to_booking_payload(self, reservation: Dict[str, Any], guest_id: str, room_id: str) -> Dict[str, Any]:
+    def to_booking_payload(self, reservation: dict[str, Any], guest_id: str, room_id: str) -> dict[str, Any]:
         booking_create = BookingCreate(
             guest_id=guest_id,
             room_id=room_id,
@@ -200,7 +200,7 @@ class BookingReservationMapper:
         data['created_at'] = data['created_at'].isoformat()
         return data
 
-    def to_guest_payload(self, reservation: Dict[str, Any]) -> Dict[str, Any]:
+    def to_guest_payload(self, reservation: dict[str, Any]) -> dict[str, Any]:
         guest_create = GuestCreate(
             name=reservation.get("guest_name") or "Booking Guest",
             email=reservation.get("guest_email") or f"{reservation.get('id')}@booking.com",
@@ -228,12 +228,12 @@ class RoomRate(BaseModel):
 
 
 class BookingPushRequest(BaseModel):
-    rooms: List[RoomRate]
+    rooms: list[RoomRate]
 
 
 @booking_router.post("/credentials")
 async def upsert_booking_credentials(
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     current_user: User = Depends(get_current_user)
 ):
     required = ['property_id', 'username', 'password']

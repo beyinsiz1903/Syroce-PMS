@@ -18,7 +18,7 @@ Mutation Detection:
   guest_detail_change, partial_modification, cancellation, reinstatement
 """
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from domains.channel_manager.data_model import (
     MutationType,
@@ -43,12 +43,12 @@ class IngestDecision:
 
 
 def decide(
-    canonical: Dict[str, Any],
-    existing_lineage: Optional[Dict[str, Any]],
-    room_mapping: Optional[Dict[str, Any]],
-    rate_mapping: Optional[Dict[str, Any]],
+    canonical: dict[str, Any],
+    existing_lineage: dict[str, Any] | None,
+    room_mapping: dict[str, Any] | None,
+    rate_mapping: dict[str, Any] | None,
     payload_hash: str,
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     """
     Returns (decision, reason) tuple.
 
@@ -120,8 +120,8 @@ def decide(
 
 
 def detect_mutation_type(
-    canonical: Dict[str, Any],
-    existing_lineage: Optional[Dict[str, Any]],
+    canonical: dict[str, Any],
+    existing_lineage: dict[str, Any] | None,
 ) -> str:
     """
     Compare incoming canonical data with existing lineage to determine
@@ -194,9 +194,9 @@ def _map_to_canonical_state(provider_status: str) -> str:
 
 
 def _check_anomalies(
-    canonical: Dict[str, Any],
-    existing: Dict[str, Any],
-) -> Optional[str]:
+    canonical: dict[str, Any],
+    existing: dict[str, Any],
+) -> str | None:
     """Check for anomalies that require manual review."""
     # Currency mismatch
     if (existing.get("currency") and canonical.get("currency") and

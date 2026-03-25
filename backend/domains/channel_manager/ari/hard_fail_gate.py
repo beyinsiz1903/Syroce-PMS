@@ -16,8 +16,8 @@ This is the runtime enforcement layer. Tests prove the logic;
 this module ensures it ACTUALLY blocks bad pushes in production.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 from domains.channel_manager.ari.models import COLL_ARI_CHANGE_SETS
@@ -51,7 +51,7 @@ class HardFailVerdict:
 
     def __init__(self, passed: bool):
         self.passed = passed
-        self.failures: List[Dict[str, Any]] = []
+        self.failures: list[dict[str, Any]] = []
 
     def add_failure(
         self, entity_type: str, code: str,
@@ -82,7 +82,7 @@ async def check_mapping_gate(
     property_id: str,
     provider: str,
     room_type_code: str,
-    rate_plan_code: Optional[str] = None,
+    rate_plan_code: str | None = None,
 ) -> HardFailVerdict:
     """
     Pre-push mapping gate. Returns verdict with detailed failure info.
@@ -163,7 +163,7 @@ async def check_provider_gate(
     return verdict
 
 
-async def enforce_hard_fail_gate(change_set: Dict[str, Any]) -> HardFailVerdict:
+async def enforce_hard_fail_gate(change_set: dict[str, Any]) -> HardFailVerdict:
     """
     Full pre-push gate for a single change set.
 
@@ -197,10 +197,10 @@ async def enforce_hard_fail_gate(change_set: Dict[str, Any]) -> HardFailVerdict:
 
 
 async def _quarantine_change_set(
-    cs: Dict[str, Any], verdict: HardFailVerdict,
+    cs: dict[str, Any], verdict: HardFailVerdict,
 ) -> None:
     """Move change set to hard_fail status."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     await db[COLL_ARI_CHANGE_SETS].update_one(
         {"id": cs["id"]},
         {"$set": {
@@ -214,11 +214,11 @@ async def _quarantine_change_set(
 
 
 async def _create_hard_fail_incident(
-    cs: Dict[str, Any], verdict: HardFailVerdict,
+    cs: dict[str, Any], verdict: HardFailVerdict,
 ) -> str:
     """Create a reconciliation case for the hard fail."""
     import uuid
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # Determine the primary failure type for the case
     primary = verdict.failures[0] if verdict.failures else {}
@@ -265,11 +265,11 @@ async def _create_hard_fail_incident(
 
 
 async def _log_hard_fail(
-    cs: Dict[str, Any], verdict: HardFailVerdict,
+    cs: dict[str, Any], verdict: HardFailVerdict,
 ) -> None:
     """Log hard fail for audit and metrics."""
     import uuid
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     await db[COLL_HARD_FAIL_LOG].insert_one({
         "id": str(uuid.uuid4()),
         "tenant_id": cs["tenant_id"],
@@ -284,7 +284,7 @@ async def _log_hard_fail(
     })
 
 
-async def get_hard_fail_stats(tenant_id: str) -> Dict[str, Any]:
+async def get_hard_fail_stats(tenant_id: str) -> dict[str, Any]:
     """Get hard fail statistics for the dashboard."""
     # Active hard-fail change sets
     hard_fail_count = await db[COLL_ARI_CHANGE_SETS].count_documents(
@@ -300,7 +300,7 @@ async def get_hard_fail_stats(tenant_id: str) -> Dict[str, Any]:
 
     # Recent hard fail log entries (last 24h)
     from datetime import timedelta
-    since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    since = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
     recent_hf = await db[COLL_HARD_FAIL_LOG].count_documents({
         "tenant_id": tenant_id,
         "timestamp": {"$gte": since},
@@ -331,14 +331,14 @@ async def get_hard_fail_stats(tenant_id: str) -> Dict[str, Any]:
 
 async def release_quarantine(
     tenant_id: str, room_type_code: str,
-    rate_plan_code: Optional[str] = None,
-    provider: Optional[str] = None,
+    rate_plan_code: str | None = None,
+    provider: str | None = None,
 ) -> int:
     """
     Release quarantined change sets after mapping fix.
     Moves them back to 'pending' so the push loop picks them up.
     """
-    query: Dict[str, Any] = {
+    query: dict[str, Any] = {
         "tenant_id": tenant_id,
         "status": "hard_fail",
         "room_type_code": room_type_code,
@@ -348,7 +348,7 @@ async def release_quarantine(
     if provider:
         query["provider"] = provider
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     result = await db[COLL_ARI_CHANGE_SETS].update_many(
         query,
         {"$set": {

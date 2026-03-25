@@ -13,7 +13,6 @@ Environment variables:
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Optional
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -55,7 +54,7 @@ class KeyRing:
     """
     current_kid: str
     _current_key: bytes = field(repr=False)
-    _previous_key: Optional[bytes] = field(default=None, repr=False)
+    _previous_key: bytes | None = field(default=None, repr=False)
 
     def encryption_key(self) -> tuple:
         """Returns (kid, derived_key) for encrypting new data."""
@@ -78,8 +77,8 @@ class KeyRing:
         cls,
         current_key: bytes,
         kid: str = "test-v1",
-        previous_key: Optional[bytes] = None,
-        previous_kid: Optional[str] = None,
+        previous_key: bytes | None = None,
+        previous_kid: str | None = None,
     ) -> "KeyRing":
         """Create a KeyRing with raw key bytes for testing. NOT for production use."""
         return cls(

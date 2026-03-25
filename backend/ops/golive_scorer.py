@@ -8,8 +8,7 @@ Produces final go-live score with breakdown.
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Dict
+from datetime import UTC, datetime, timedelta
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -45,7 +44,7 @@ class GoLiveReadinessScorer:
 
     async def compute_score(self, ctx: OperationContext) -> ServiceResult:
         """Compute comprehensive go-live readiness score."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         categories = {}
 
         # 1. Runtime Validation
@@ -122,14 +121,14 @@ class GoLiveReadinessScorer:
 
         return ServiceResult.success(result)
 
-    def _get_maturity_level(self, score: float) -> Dict:
+    def _get_maturity_level(self, score: float) -> dict:
         for (low, high), level in MATURITY_LEVELS.items():
             if low <= score < high:
                 return level
         return {"level": 0, "name": "Unknown", "color": "gray"}
 
-    async def _score_runtime_validation(self, ctx: OperationContext) -> Dict:
-        since = (datetime.now(timezone.utc) - timedelta(hours=72)).isoformat()
+    async def _score_runtime_validation(self, ctx: OperationContext) -> dict:
+        since = (datetime.now(UTC) - timedelta(hours=72)).isoformat()
         runs = await self._db.validation_runs.find(
             {"tenant_id": ctx.tenant_id, "started_at": {"$gte": since}},
             {"_id": 0, "status": 1},
@@ -142,7 +141,7 @@ class GoLiveReadinessScorer:
         issues = [] if score >= 80 else [f"Pass rate: {score}% ({passed}/{total})"]
         return {"score": min(score, 100), "issues": issues}
 
-    async def _score_provider_validation(self, ctx: OperationContext) -> Dict:
+    async def _score_provider_validation(self, ctx: OperationContext) -> dict:
         latest = await self._db.provider_validations.find_one(
             {"tenant_id": ctx.tenant_id},
             sort=[("validated_at", -1)],
@@ -155,7 +154,7 @@ class GoLiveReadinessScorer:
         issues = [] if latest.get("overall_passed") else ["Provider validation has failing checks"]
         return {"score": score, "issues": issues}
 
-    async def _score_incident_response(self, ctx: OperationContext) -> Dict:
+    async def _score_incident_response(self, ctx: OperationContext) -> dict:
         drills = await self._db.incident_drills.find(
             {"tenant_id": ctx.tenant_id}, {"_id": 0}
         ).to_list(20)
@@ -166,7 +165,7 @@ class GoLiveReadinessScorer:
         issues = [] if score >= 80 else [f"Drill detection within threshold: {score}%"]
         return {"score": max(score, 50), "issues": issues}
 
-    async def _score_tenant_isolation(self, ctx: OperationContext) -> Dict:
+    async def _score_tenant_isolation(self, ctx: OperationContext) -> dict:
         latest = await self._db.tenant_isolation_validations.find_one(
             {"tenant_id": ctx.tenant_id},
             sort=[("validated_at", -1)],
@@ -177,7 +176,7 @@ class GoLiveReadinessScorer:
         issues = [] if score >= 90 else ["Isolation checks have failures"]
         return {"score": score, "issues": issues}
 
-    async def _score_observability(self, ctx: OperationContext) -> Dict:
+    async def _score_observability(self, ctx: OperationContext) -> dict:
         from modules.observability.alert_enrichment import ALERT_RULES
         checks = 0
         passed = 0
@@ -205,7 +204,7 @@ class GoLiveReadinessScorer:
         issues = [] if score >= 80 else [f"Observability coverage: {score}%"]
         return {"score": score, "issues": issues}
 
-    async def _score_audit_timeline(self, ctx: OperationContext) -> Dict:
+    async def _score_audit_timeline(self, ctx: OperationContext) -> dict:
         # Check if audit timeline has data
         audit_count = await self._db.audit_logs.count_documents({"tenant_id": ctx.tenant_id})
         has_snapshots = await self._db.audit_logs.count_documents(
@@ -221,7 +220,7 @@ class GoLiveReadinessScorer:
             issues.append("No before/after snapshots captured yet")
         return {"score": min(score, 100), "issues": issues}
 
-    async def _score_pilot_checklist(self, ctx: OperationContext) -> Dict:
+    async def _score_pilot_checklist(self, ctx: OperationContext) -> dict:
         from ops.pilot_readiness import PilotReadinessService
         svc = PilotReadinessService()
         result = await svc.run_readiness_check(ctx)

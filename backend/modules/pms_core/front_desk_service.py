@@ -3,8 +3,7 @@ Front Desk Workflow Service - Production-grade check-in, checkout, room move, wa
 Enforces room readiness, folio dependencies, and audit trail.
 """
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List
+from datetime import UTC, datetime, timedelta
 
 from core.database import db
 from modules.pms_core.reservation_state_machine import ReservationStateMachine
@@ -17,7 +16,7 @@ class FrontDeskService:
 
     # ── CHECK-IN ──
 
-    async def check_in(self, tenant_id: str, booking_id: str, user_id: str, user_name: str, override_reason: str = None) -> Dict:
+    async def check_in(self, tenant_id: str, booking_id: str, user_id: str, user_name: str, override_reason: str = None) -> dict:
         """Full check-in flow — delegates to atomic transaction."""
         from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
         try:
@@ -38,7 +37,7 @@ class FrontDeskService:
 
     # ── CHECKOUT ──
 
-    async def checkout(self, tenant_id: str, booking_id: str, user_id: str, user_name: str, force: bool = False) -> Dict:
+    async def checkout(self, tenant_id: str, booking_id: str, user_id: str, user_name: str, force: bool = False) -> dict:
         """Full checkout flow — delegates to atomic transaction."""
         from core.atomic_checkin_checkout import CheckOutError, check_out_booking_atomic
         try:
@@ -57,7 +56,7 @@ class FrontDeskService:
                 resp["blockers"] = [{"type": "unpaid_balance", "message": error_msg}]
             return resp
 
-    async def get_checkout_blockers(self, tenant_id: str, booking_id: str) -> List[Dict]:
+    async def get_checkout_blockers(self, tenant_id: str, booking_id: str) -> list[dict]:
         """Check for conditions that block checkout."""
         blockers = []
 
@@ -82,7 +81,7 @@ class FrontDeskService:
 
         return blockers
 
-    async def get_checkout_preview(self, tenant_id: str, booking_id: str) -> Dict:
+    async def get_checkout_preview(self, tenant_id: str, booking_id: str) -> dict:
         """Generate checkout preview with folio summary."""
         booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
         if not booking:
@@ -132,7 +131,7 @@ class FrontDeskService:
 
     # ── ROOM MOVE ──
 
-    async def room_move(self, tenant_id: str, booking_id: str, new_room_id: str, reason: str, user_id: str, user_name: str) -> Dict:
+    async def room_move(self, tenant_id: str, booking_id: str, new_room_id: str, reason: str, user_id: str, user_name: str) -> dict:
         """Move a checked-in guest to a different room."""
         booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
         if not booking:
@@ -158,7 +157,7 @@ class FrontDeskService:
         if has_conflict:
             return {"success": False, "error": "New room has conflicting bookings"}
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Update booking
         await db.bookings.update_one(
@@ -201,7 +200,7 @@ class FrontDeskService:
 
     # ── WALK-IN ──
 
-    async def walk_in(self, tenant_id: str, guest_data: Dict, room_id: str, nights: int, rate: float, user_id: str, user_name: str) -> Dict:
+    async def walk_in(self, tenant_id: str, guest_data: dict, room_id: str, nights: int, rate: float, user_id: str, user_name: str) -> dict:
         """Create a walk-in reservation with immediate check-in (atomic)."""
         room = await db.rooms.find_one({"id": room_id, "tenant_id": tenant_id}, {"_id": 0})
         if not room:
@@ -210,7 +209,7 @@ class FrontDeskService:
         if room["status"] not in {"available", "inspected"}:
             return {"success": False, "error": f"Room not available (status: {room['status']})"}
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         check_in = now.isoformat()
         check_out = (now + timedelta(days=nights)).isoformat()
 
@@ -285,7 +284,7 @@ class FrontDeskService:
 
     # ── EARLY CHECK-IN / LATE CHECKOUT ──
 
-    async def request_early_checkin(self, tenant_id: str, booking_id: str, requested_time: str, user_id: str) -> Dict:
+    async def request_early_checkin(self, tenant_id: str, booking_id: str, requested_time: str, user_id: str) -> dict:
         """Request early check-in - checks room availability."""
         booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
         if not booking:
@@ -301,7 +300,7 @@ class FrontDeskService:
 
         return {"success": True, "room_ready": room_ready, "room_status": room["status"] if room else "unknown"}
 
-    async def request_late_checkout(self, tenant_id: str, booking_id: str, requested_time: str, charge: float, user_id: str) -> Dict:
+    async def request_late_checkout(self, tenant_id: str, booking_id: str, requested_time: str, charge: float, user_id: str) -> dict:
         """Request late checkout with optional charge."""
         booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
         if not booking:
@@ -310,7 +309,7 @@ class FrontDeskService:
         if booking["status"] != "checked_in":
             return {"success": False, "error": "Late checkout only for checked-in reservations"}
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         await db.bookings.update_one(
             {"id": booking_id, "tenant_id": tenant_id},
             {"$set": {
@@ -349,7 +348,7 @@ class FrontDeskService:
 
     # ── ROOM UPGRADE ──
 
-    async def room_upgrade(self, tenant_id: str, booking_id: str, new_room_id: str, reason: str, rate_adjustment: float, user_id: str, user_name: str) -> Dict:
+    async def room_upgrade(self, tenant_id: str, booking_id: str, new_room_id: str, reason: str, rate_adjustment: float, user_id: str, user_name: str) -> dict:
         """Upgrade room (can be before or after check-in)."""
         booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
         if not booking:
@@ -367,7 +366,7 @@ class FrontDeskService:
                     return {"success": False, "error": "New room not found"}
                 await db.bookings.update_one(
                     {"id": booking_id, "tenant_id": tenant_id},
-                    {"$set": {"room_id": new_room_id, "updated_at": datetime.now(timezone.utc).isoformat()}}
+                    {"$set": {"room_id": new_room_id, "updated_at": datetime.now(UTC).isoformat()}}
                 )
                 result = {"success": True, "booking_id": booking_id, "new_room": new_room["room_number"]}
             else:
@@ -388,7 +387,7 @@ class FrontDeskService:
 
     # ── HELPERS ──
 
-    async def _log_audit(self, tenant_id: str, entity_type: str, entity_id: str, action: str, user_id: str, metadata: Dict = None):
+    async def _log_audit(self, tenant_id: str, entity_type: str, entity_id: str, action: str, user_id: str, metadata: dict = None):
         await db.pms_audit_trail.insert_one({
             "tenant_id": tenant_id,
             "entity_type": entity_type,
@@ -396,5 +395,5 @@ class FrontDeskService:
             "action": action,
             "performed_by": user_id,
             "metadata": metadata or {},
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })

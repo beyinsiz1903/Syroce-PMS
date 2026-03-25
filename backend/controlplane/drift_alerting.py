@@ -19,8 +19,8 @@ Notification routing (config-driven, no-op if URLs absent):
 """
 import logging
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 from core.database import db
@@ -50,13 +50,13 @@ RUNBOOK_LINK = "/api/ops/runbooks/inventory_drift_detected"
 
 
 async def evaluate_drift_alerts(
-    tenant_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
     """Evaluate current inventory state and fire drift alerts if thresholds are breached.
 
     Returns: evaluation result with any fired alerts.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     window_start = (now - timedelta(minutes=EVALUATION_WINDOW_MINUTES)).isoformat()
 
     # Auto-detect tenant if not provided
@@ -76,7 +76,7 @@ async def evaluate_drift_alerts(
     alignment_state = await _get_current_alignment(tenant_id)
     recon_state = await _get_last_reconciliation(tenant_id)
 
-    fired_alerts: List[Dict[str, Any]] = []
+    fired_alerts: list[dict[str, Any]] = []
 
     # Check SEVERE first: drift persists after reconciliation
     if drift_evidence["post_recon_drift"]:
@@ -157,13 +157,13 @@ async def evaluate_drift_alerts(
 
 
 async def get_drift_alerts(
-    tenant_id: Optional[str] = None,
-    severity: Optional[str] = None,
-    acknowledged: Optional[bool] = None,
+    tenant_id: str | None = None,
+    severity: str | None = None,
+    acknowledged: bool | None = None,
     limit: int = 50,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Get drift alerts with optional filters."""
-    query: Dict[str, Any] = {}
+    query: dict[str, Any] = {}
     if tenant_id:
         query["tenant_id"] = tenant_id
     if severity:
@@ -183,7 +183,7 @@ async def acknowledge_drift_alert(alert_id: str, acknowledged_by: str = "operato
         {
             "$set": {
                 "acknowledged": True,
-                "acknowledged_at": datetime.now(timezone.utc).isoformat(),
+                "acknowledged_at": datetime.now(UTC).isoformat(),
                 "acknowledged_by": acknowledged_by,
             }
         },
@@ -191,9 +191,9 @@ async def acknowledge_drift_alert(alert_id: str, acknowledged_by: str = "operato
     return result.modified_count > 0
 
 
-async def get_drift_alert_summary(tenant_id: Optional[str] = None) -> Dict[str, Any]:
+async def get_drift_alert_summary(tenant_id: str | None = None) -> dict[str, Any]:
     """Get a quick summary of active drift alerts for the ops dashboard."""
-    query: Dict[str, Any] = {"acknowledged": False}
+    query: dict[str, Any] = {"acknowledged": False}
     if tenant_id:
         query["tenant_id"] = tenant_id
 
@@ -227,7 +227,7 @@ async def get_drift_alert_summary(tenant_id: Optional[str] = None) -> Dict[str, 
 
 async def _collect_drift_evidence(
     tenant_id: str, window_start: str, now: datetime
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Collect drift evidence from timeline events and alignment data."""
     # Look for drift events in the event timeline
     drift_events = await db.event_timeline.find(
@@ -242,7 +242,7 @@ async def _collect_drift_evidence(
 
     total_drift_records = len(drift_events)
     total_drift_nights = 0
-    providers_with_drift: List[str] = []
+    providers_with_drift: list[str] = []
 
     for ev in drift_events:
         meta = ev.get("metadata", {})
@@ -311,7 +311,7 @@ async def _check_post_recon_drift(tenant_id: str, window_start: str) -> bool:
     return post_recon_drifts > 0
 
 
-async def _get_current_alignment(tenant_id: str) -> Dict[str, Any]:
+async def _get_current_alignment(tenant_id: str) -> dict[str, Any]:
     """Get current alignment status without full computation."""
     from .inventory_alignment import compute_inventory_alignment
     try:
@@ -321,7 +321,7 @@ async def _get_current_alignment(tenant_id: str) -> Dict[str, Any]:
         return {"alignment_status": "unknown", "freshness": "unknown"}
 
 
-async def _get_last_reconciliation(tenant_id: str) -> Dict[str, Any]:
+async def _get_last_reconciliation(tenant_id: str) -> dict[str, Any]:
     """Get last reconciliation result."""
     last_recon = await db.event_timeline.find_one(
         {
@@ -345,12 +345,12 @@ async def _get_last_reconciliation(tenant_id: str) -> Dict[str, Any]:
 async def _fire_drift_alert(
     severity: str,
     tenant_id: str,
-    evidence: Dict[str, Any],
-    alignment: Dict[str, Any],
-    recon: Dict[str, Any],
+    evidence: dict[str, Any],
+    alignment: dict[str, Any],
+    recon: dict[str, Any],
     reason: str,
     now: datetime,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Fire a drift alert with severity-based routing."""
     # Check cooldown: same tenant + severity within last COOLDOWN_MINUTES
     cooldown_cutoff = (now - timedelta(minutes=COOLDOWN_MINUTES)).isoformat()
@@ -470,7 +470,7 @@ async def _fire_drift_alert(
     return alert
 
 
-async def _send_webhook_notification(alert: Dict[str, Any], url_env_key: str) -> None:
+async def _send_webhook_notification(alert: dict[str, Any], url_env_key: str) -> None:
     """Send alert via webhook. Config-driven: no-op if URL not set."""
     webhook_url = os.environ.get(url_env_key, "")
     if not webhook_url:

@@ -5,7 +5,7 @@ Extracted from legacy_routes.py — online check-in submission,
 upsell acceptance, pre-arrival communications.
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -58,7 +58,7 @@ async def submit_online_checkin(
         "mobile_number": request.mobile_number,
         "whatsapp_number": request.whatsapp_number,
         "status": "pending",
-        "submitted_at": datetime.now(timezone.utc).isoformat(),
+        "submitted_at": datetime.now(UTC).isoformat(),
         "processed": False,
     }
     await db.online_checkins.insert_one(checkin_record)
@@ -68,7 +68,7 @@ async def submit_online_checkin(
         {
             "$set": {
                 "online_checkin_completed": True,
-                "online_checkin_at": datetime.now(timezone.utc).isoformat(),
+                "online_checkin_at": datetime.now(UTC).isoformat(),
                 "special_requests": request.special_requests,
                 "estimated_arrival_time": request.estimated_arrival_time,
             }
@@ -111,7 +111,7 @@ async def submit_online_checkin(
             "tenant_id": current_user.tenant_id,
             "guest_id": booking["guest_id"],
             "status": "pending",
-            "offered_at": datetime.now(timezone.utc).isoformat(),
+            "offered_at": datetime.now(UTC).isoformat(),
         }
         await db.upsell_offers.insert_one(offer_doc)
 
@@ -156,7 +156,7 @@ async def accept_upsell_offer(
 
     await db.upsell_offers.update_one(
         {"id": offer_id},
-        {"$set": {"status": "accepted" if action == "accept" else "rejected", "responded_at": datetime.now(timezone.utc).isoformat()}},
+        {"$set": {"status": "accepted" if action == "accept" else "rejected", "responded_at": datetime.now(UTC).isoformat()}},
     )
 
     if action == "accept":
@@ -168,7 +168,7 @@ async def accept_upsell_offer(
             "charge_category": "upsell",
             "description": offer.get("title"),
             "amount": offer.get("discounted_price") or offer.get("original_price"),
-            "posted_at": datetime.now(timezone.utc).isoformat(),
+            "posted_at": datetime.now(UTC).isoformat(),
             "voided": False,
         }
 

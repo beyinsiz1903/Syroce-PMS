@@ -2,8 +2,7 @@
 Reputation Management System
 Review aggregation, sentiment analysis, auto-response
 """
-from datetime import datetime, timedelta, timezone
-from typing import List
+from datetime import UTC, datetime, timedelta
 
 
 class ReputationManager:
@@ -35,7 +34,7 @@ class ReputationManager:
             'platforms': platforms,
             'overall_rating': round(weighted_rating, 2),
             'total_reviews': total_reviews,
-            'last_updated': datetime.now(timezone.utc).isoformat()
+            'last_updated': datetime.now(UTC).isoformat()
         }
 
     async def analyze_sentiment(self, review_text: str) -> dict:
@@ -86,9 +85,9 @@ Durumu detaylı inceleyip, gerekli aksiyonları alacağız. Sizi memnun etmek i�
 Saygılarımızla,
 Syroce Yönetim Ekibi"""
 
-    async def detect_negative_reviews(self, tenant_id: str) -> List[dict]:
+    async def detect_negative_reviews(self, tenant_id: str) -> list[dict]:
         """Son 24 saatteki negatif review'ları bul"""
-        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
 
         reviews = await self.db.reviews.find({
             'tenant_id': tenant_id,
@@ -100,7 +99,7 @@ Syroce Yönetim Ekibi"""
 
     async def get_reputation_trends(self, tenant_id: str, days: int = 30) -> dict:
         """Reputation trend analizi"""
-        start_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        start_date = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
         reviews = await self.db.reviews.find({
             'tenant_id': tenant_id,

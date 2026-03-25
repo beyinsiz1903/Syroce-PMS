@@ -4,7 +4,7 @@ Real production-grade logic: aggregates drift, reconciliation, sync scheduler,
 provider health, circuit breaker states, and credential status from live data sources.
 """
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -67,7 +67,7 @@ class CMRuntimeService:
     async def get_runtime_status(self, ctx: OperationContext) -> ServiceResult:
         """Aggregate real runtime data across all CM subsystems."""
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tid = ctx.tenant_id
 
             # Provider health aggregation
@@ -203,7 +203,7 @@ class CMRuntimeService:
                 "health": "unknown",
                 "severity": "warning",
                 "issues": [f"Status collection error: {str(e)[:100]}"],
-                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "checked_at": datetime.now(UTC).isoformat(),
             })
 
     async def trigger_drift_scan(self, ctx: OperationContext) -> ServiceResult:
@@ -306,7 +306,7 @@ class CMRuntimeService:
             {"$set": {
                 f"encrypted_credentials.{credential_key}": encrypted,
                 "credentials_encrypted": True,
-                "credentials_updated_at": datetime.now(timezone.utc).isoformat(),
+                "credentials_updated_at": datetime.now(UTC).isoformat(),
                 "credentials_updated_by": ctx.actor_id,
             }},
         )

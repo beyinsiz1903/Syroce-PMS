@@ -8,8 +8,7 @@ Endpoints for managing operational incidents:
 - Audit trail per incident
 """
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -39,17 +38,17 @@ COLL_INCIDENT_AUDIT = "incident_audit_trail"
 
 class IncidentActionRequest(BaseModel):
     action: str  # retry | review | resolve | suppress
-    note: Optional[str] = None
+    note: str | None = None
 
 
 # ── 1. LIST INCIDENTS ─────────────────────────────────────────
 
 @router.get("/list")
 async def list_incidents(
-    status: Optional[str] = Query(default=None, description="open|investigating|resolved|suppressed"),
-    severity: Optional[str] = Query(default=None, description="critical|high|medium|low"),
-    provider: Optional[str] = Query(default=None),
-    issue_type: Optional[str] = Query(default=None),
+    status: str | None = Query(default=None, description="open|investigating|resolved|suppressed"),
+    severity: str | None = Query(default=None, description="critical|high|medium|low"),
+    provider: str | None = Query(default=None),
+    issue_type: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     skip: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_user),
@@ -183,7 +182,7 @@ async def incident_action(
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     actor = getattr(current_user, "email", "system")
 
     # Map action to new status

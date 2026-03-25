@@ -15,8 +15,8 @@ Guardrails:
   - Failed auto-action generates a new alert
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 from core.database import db
@@ -32,14 +32,14 @@ async def execute_auto_action(
     tenant_id: str,
     alert_id: str,
     reason: str,
-    providers: Optional[List[str]] = None,
+    providers: list[str] | None = None,
     dry_run: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Execute an automated action with full guardrails.
 
     Returns action result with status, details, and audit trail.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     action_id = str(uuid4())
 
     # Guardrail 1: Eligibility check
@@ -108,11 +108,11 @@ async def execute_auto_action(
 
 
 async def get_auto_action_history(
-    tenant_id: Optional[str] = None,
+    tenant_id: str | None = None,
     limit: int = 20,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Get recent auto-action history."""
-    query: Dict[str, Any] = {}
+    query: dict[str, Any] = {}
     if tenant_id:
         query["tenant_id"] = tenant_id
     return await db[COLL_AUTO_ACTIONS].find(
@@ -127,9 +127,9 @@ async def _execute_reconciliation(
     tenant_id: str,
     alert_id: str,
     reason: str,
-    providers: List[str],
+    providers: list[str],
     now: datetime,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Trigger reconciliation via existing ReconciliationEngine."""
     try:
         from domains.channel_manager.reconciliation_engine.drift_reconciliation import reconciliation_engine
@@ -210,7 +210,7 @@ async def _check_eligibility(
 
 # ── Logging & Timeline ──────────────────────────────────────────────
 
-async def _log_action(result: Dict[str, Any]) -> None:
+async def _log_action(result: dict[str, Any]) -> None:
     """Persist auto-action to history collection."""
     try:
         await db[COLL_AUTO_ACTIONS].insert_one({**result})
@@ -218,7 +218,7 @@ async def _log_action(result: Dict[str, Any]) -> None:
         logger.exception("Failed to log auto-action: %s", e)
 
 
-async def _write_timeline(result: Dict[str, Any]) -> None:
+async def _write_timeline(result: dict[str, Any]) -> None:
     """Write auto-action to event timeline for auditability."""
     try:
         from controlplane.timeline_writer import get_timeline_writer
@@ -243,7 +243,7 @@ async def _write_timeline(result: Dict[str, Any]) -> None:
         logger.debug("Timeline write for auto-action failed: %s", e)
 
 
-async def _fire_action_failure_alert(result: Dict[str, Any]) -> None:
+async def _fire_action_failure_alert(result: dict[str, Any]) -> None:
     """Fire a new alert when an auto-action fails."""
     try:
         from .alerting import AlertSeverity, get_alerting_engine

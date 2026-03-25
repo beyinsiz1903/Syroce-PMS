@@ -3,8 +3,7 @@ Service Health Monitor — checks all critical services and dependencies.
 """
 import logging
 import time
-from datetime import datetime, timedelta, timezone
-from typing import List
+from datetime import UTC, datetime, timedelta
 
 logger = logging.getLogger("observability.health")
 
@@ -13,7 +12,7 @@ class ServiceHealthMonitor:
     """Monitors health of all platform dependencies."""
 
     def __init__(self):
-        self._history: List[dict] = []
+        self._history: list[dict] = []
         self._max_history = 100
 
     async def check_all_services(self) -> dict:
@@ -46,7 +45,7 @@ class ServiceHealthMonitor:
         snapshot = {
             "overall_status": overall,
             "services": results,
-            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "checked_at": datetime.now(UTC).isoformat(),
         }
 
         # Persist
@@ -86,7 +85,7 @@ class ServiceHealthMonitor:
     async def _check_messaging(self) -> dict:
         try:
             from core.database import db
-            one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+            one_hour_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
             failures = await db.messaging_delivery_logs.count_documents({
                 "status": "failed",
                 "created_at": {"$gte": one_hour_ago},
@@ -116,10 +115,10 @@ class ServiceHealthMonitor:
         except Exception:
             return {"status": "unknown"}
 
-    async def get_health_history(self, hours: int = 24, limit: int = 50) -> List[dict]:
+    async def get_health_history(self, hours: int = 24, limit: int = 50) -> list[dict]:
         try:
             from core.database import db
-            cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+            cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
             return await db.health_check_history.find(
                 {"checked_at": {"$gte": cutoff}}, {"_id": 0}
             ).sort("checked_at", -1).to_list(limit)

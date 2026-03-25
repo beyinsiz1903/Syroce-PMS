@@ -3,8 +3,8 @@ Revenue Management Engine - Demand Analysis, Rate Optimization, Yield Rules, Cha
 Enterprise-grade dynamic pricing and revenue optimization for hospitality.
 """
 import uuid
-from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -14,7 +14,7 @@ class RevenueManagementEngine:
 
     # ── DEMAND ANALYSIS ──
 
-    async def get_booking_pace(self, tenant_id: str, target_date: str, lookback_days: int = 30) -> Dict[str, Any]:
+    async def get_booking_pace(self, tenant_id: str, target_date: str, lookback_days: int = 30) -> dict[str, Any]:
         """Analyze booking pace for a target date comparing to historical average."""
         target = date.fromisoformat(target_date)
         today = date.today()
@@ -52,7 +52,7 @@ class RevenueManagementEngine:
             "pace_status": "ahead" if pace_index > 110 else ("behind" if pace_index < 90 else "on_track"),
         }
 
-    async def get_pickup_trends(self, tenant_id: str, start_date: str, end_date: str) -> Dict[str, Any]:
+    async def get_pickup_trends(self, tenant_id: str, start_date: str, end_date: str) -> dict[str, Any]:
         """Analyze reservation pickup trends over a date range."""
         sd = date.fromisoformat(start_date)
         ed = date.fromisoformat(end_date)
@@ -89,7 +89,7 @@ class RevenueManagementEngine:
 
         return {"tenant_id": tenant_id, "start_date": start_date, "end_date": end_date, "trends": trends}
 
-    async def get_occupancy_forecast(self, tenant_id: str, forecast_days: int = 14) -> Dict[str, Any]:
+    async def get_occupancy_forecast(self, tenant_id: str, forecast_days: int = 14) -> dict[str, Any]:
         """Generate occupancy forecast for upcoming days."""
         total_rooms = await db.rooms.count_documents({
             "tenant_id": tenant_id,
@@ -131,7 +131,7 @@ class RevenueManagementEngine:
 
         return {"tenant_id": tenant_id, "total_rooms": total_rooms, "forecast": forecast}
 
-    async def get_lead_time_analysis(self, tenant_id: str, days_back: int = 30) -> Dict[str, Any]:
+    async def get_lead_time_analysis(self, tenant_id: str, days_back: int = 30) -> dict[str, Any]:
         """Analyze booking lead time distribution."""
         cutoff = (date.today() - timedelta(days=days_back)).isoformat()
         bookings = await db.bookings.find(
@@ -181,7 +181,7 @@ class RevenueManagementEngine:
 
     # ── RATE OPTIMIZATION ──
 
-    async def calculate_ideal_adr(self, tenant_id: str, target_date: str) -> Dict[str, Any]:
+    async def calculate_ideal_adr(self, tenant_id: str, target_date: str) -> dict[str, Any]:
         """Calculate ideal ADR based on demand and historical data."""
         forecast = await self.get_occupancy_forecast(tenant_id, 1)
         day_data = forecast["forecast"][0] if forecast["forecast"] else {}
@@ -228,7 +228,7 @@ class RevenueManagementEngine:
             "recommendation": "increase" if multiplier > 1 else ("decrease" if multiplier < 1 else "maintain"),
         }
 
-    async def get_rate_suggestions(self, tenant_id: str, days: int = 7) -> Dict[str, Any]:
+    async def get_rate_suggestions(self, tenant_id: str, days: int = 7) -> dict[str, Any]:
         """Generate rate suggestions for upcoming days."""
         suggestions = []
         today = date.today()
@@ -248,7 +248,7 @@ class RevenueManagementEngine:
 
     # ── YIELD RULES ──
 
-    async def get_yield_recommendations(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_yield_recommendations(self, tenant_id: str) -> dict[str, Any]:
         """Generate yield management recommendations: min stay, stop sell, CTA/CTD."""
         forecast = await self.get_occupancy_forecast(tenant_id, 14)
         recommendations = []
@@ -286,7 +286,7 @@ class RevenueManagementEngine:
 
     # ── CHANNEL STRATEGY ──
 
-    async def get_channel_performance(self, tenant_id: str, days_back: int = 30) -> Dict[str, Any]:
+    async def get_channel_performance(self, tenant_id: str, days_back: int = 30) -> dict[str, Any]:
         """Analyze channel mix and rate parity."""
         cutoff = (date.today() - timedelta(days=days_back)).isoformat()
         bookings = await db.bookings.find(
@@ -331,7 +331,7 @@ class RevenueManagementEngine:
 
     # ── REVENUE DASHBOARD DATA ──
 
-    async def get_revenue_dashboard(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_revenue_dashboard(self, tenant_id: str) -> dict[str, Any]:
         """Comprehensive revenue dashboard with ADR, RevPAR, trends."""
         today = date.today()
         start_30 = (today - timedelta(days=30)).isoformat()
@@ -431,7 +431,7 @@ class RevenueManagementEngine:
 
     # ── AUTO-APPLY RATES ──
 
-    async def apply_rate_suggestion(self, tenant_id: str, target_date: str, new_rate: float, user_id: str) -> Dict[str, Any]:
+    async def apply_rate_suggestion(self, tenant_id: str, target_date: str, new_rate: float, user_id: str) -> dict[str, Any]:
         """Apply a suggested rate to the rate plan for a specific date."""
         # Store rate override
         override = {
@@ -440,7 +440,7 @@ class RevenueManagementEngine:
             "date": target_date,
             "rate": new_rate,
             "applied_by": user_id,
-            "applied_at": datetime.now(timezone.utc).isoformat(),
+            "applied_at": datetime.now(UTC).isoformat(),
             "source": "revenue_engine",
         }
         await db.revenue_rate_overrides.insert_one(override)
@@ -453,7 +453,7 @@ class RevenueManagementEngine:
             "entity_id": override["id"],
             "action": "rate_override_applied",
             "user_id": user_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "details": {"date": target_date, "new_rate": new_rate},
         })
 

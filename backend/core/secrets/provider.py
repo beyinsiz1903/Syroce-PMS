@@ -6,20 +6,20 @@ Secret payloads are always JSON dicts. Providers must never log secret values.
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 
 @dataclass
 class SecretPayload:
     """Encrypted secret content + metadata."""
-    data: Dict[str, str]
+    data: dict[str, str]
     version: str = "1"
     created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
     updated_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
     rotation_count: int = 0
 
@@ -34,7 +34,7 @@ class SecretMetadata:
     created_at: str
     updated_at: str
     rotation_count: int
-    tags: Dict[str, str] = field(default_factory=dict)
+    tags: dict[str, str] = field(default_factory=dict)
     exists: bool = True
 
 
@@ -45,14 +45,14 @@ class SecretsProviderBase(ABC):
     async def create_secret(
         self,
         path: str,
-        payload: Dict[str, str],
-        tags: Optional[Dict[str, str]] = None,
+        payload: dict[str, str],
+        tags: dict[str, str] | None = None,
     ) -> SecretMetadata:
         """Create a new secret. Raises if already exists."""
         ...
 
     @abstractmethod
-    async def get_secret(self, path: str) -> Optional[SecretPayload]:
+    async def get_secret(self, path: str) -> SecretPayload | None:
         """Retrieve and decrypt a secret. Returns None if not found."""
         ...
 
@@ -60,7 +60,7 @@ class SecretsProviderBase(ABC):
     async def update_secret(
         self,
         path: str,
-        payload: Dict[str, str],
+        payload: dict[str, str],
     ) -> SecretMetadata:
         """Update an existing secret. Raises if not found."""
         ...
@@ -74,17 +74,17 @@ class SecretsProviderBase(ABC):
     async def rotate_secret(
         self,
         path: str,
-        new_payload: Dict[str, str],
+        new_payload: dict[str, str],
     ) -> SecretMetadata:
         """Rotate a secret to new values, incrementing rotation_count."""
         ...
 
     @abstractmethod
-    async def get_secret_metadata(self, path: str) -> Optional[SecretMetadata]:
+    async def get_secret_metadata(self, path: str) -> SecretMetadata | None:
         """Get metadata without retrieving secret values."""
         ...
 
     @abstractmethod
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """Validate provider connectivity and readiness."""
         ...

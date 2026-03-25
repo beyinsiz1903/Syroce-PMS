@@ -4,8 +4,8 @@ Domain Router: Mobile
 Extracted from legacy_routes.py — Mobile dashboard, GM mobile, department mobile endpoints.
 """
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -28,14 +28,14 @@ class ProcessNoShowRequest(BaseModel):
 class ChangeRoomRequest(BaseModel):
     booking_id: str
     new_room_id: str
-    reason: Optional[str] = None
+    reason: str | None = None
 
 class QuickTaskRequest(BaseModel):
     room_id: str
     task_type: str
     priority: str = 'normal'
-    assigned_to: Optional[str] = None
-    notes: Optional[str] = None
+    assigned_to: str | None = None
+    notes: str | None = None
 
 class QuickIssueRequest(BaseModel):
     room_id: str
@@ -49,13 +49,13 @@ class QuickOrderItem(BaseModel):
 
 class QuickOrderRequest(BaseModel):
     outlet_id: str
-    table_number: Optional[str] = None
-    items: List[QuickOrderItem] = []
-    notes: Optional[str] = None
+    table_number: str | None = None
+    items: list[QuickOrderItem] = []
+    notes: str | None = None
 
 class MenuPriceUpdateRequest(BaseModel):
     new_price: float
-    reason: Optional[str] = None
+    reason: str | None = None
 
 # --------------------------------------------------------------------------
 # GM Mobile Dashboard Endpoints
@@ -89,7 +89,7 @@ async def get_critical_issues_mobile(
         })
 
     # Get overbooking situations
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     overbookings = []
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -164,7 +164,7 @@ async def get_gm_notifications_mobile(
 ):
     """Get notifications for GM mobile dashboard"""
     current_user = await get_current_user(credentials)
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
 
     notifications = []
 
@@ -248,7 +248,7 @@ async def get_early_checkin_requests_mobile(
 ):
     """Get early check-in requests for front desk mobile"""
     current_user = await get_current_user(credentials)
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
 
     requests = []
     async for booking in db.bookings.find({
@@ -292,7 +292,7 @@ async def get_late_checkout_requests_mobile(
 ):
     """Get late checkout requests for front desk mobile"""
     current_user = await get_current_user(credentials)
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
 
     requests = []
     async for booking in db.bookings.find({
@@ -363,7 +363,7 @@ async def process_no_show_mobile(
         {
             '$set': {
                 'status': 'no_show',
-                'no_show_date': datetime.now(timezone.utc),
+                'no_show_date': datetime.now(UTC),
                 'no_show_processed_by': current_user.username
             }
         }
@@ -382,7 +382,7 @@ async def process_no_show_mobile(
             'charge_type': 'no_show_fee',
             'amount': no_show_fee,
             'description': 'No-show cancellation fee',
-            'created_at': datetime.now(timezone.utc),
+            'created_at': datetime.now(UTC),
             'created_by': current_user.username
         })
 
@@ -441,7 +441,7 @@ async def change_room_mobile(
                 'room_id': new_room_id,
                 'room_number': new_room.get('room_number'),
                 'room_type': new_room.get('room_type'),
-                'room_changed_at': datetime.now(timezone.utc),
+                'room_changed_at': datetime.now(UTC),
                 'room_changed_by': current_user.username,
                 'room_change_reason': reason
             }
@@ -488,7 +488,7 @@ async def change_room_mobile(
             'new_room_number': new_room.get('room_number'),
             'reason': reason
         },
-        'timestamp': datetime.now(timezone.utc)
+        'timestamp': datetime.now(UTC)
     })
 
     return {
@@ -506,7 +506,7 @@ async def get_frontdesk_notifications_mobile(
 ):
     """Get notifications for front desk mobile dashboard"""
     current_user = await get_current_user(credentials)
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
 
     notifications = []
 
@@ -600,7 +600,7 @@ async def get_sla_delayed_rooms_mobile(
     sla_threshold = timedelta(minutes=30)
     delayed_rooms = []
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     async for task in db.housekeeping_tasks.find({
         'tenant_id': current_user.tenant_id,
         'task_type': 'cleaning',
@@ -614,7 +614,7 @@ async def get_sla_delayed_rooms_mobile(
                 except (ValueError, TypeError):
                     continue
             if started_at.tzinfo is None:
-                started_at = started_at.replace(tzinfo=timezone.utc)
+                started_at = started_at.replace(tzinfo=UTC)
             duration = now_utc - started_at
             if duration > sla_threshold:
                 room = await db.rooms.find_one({
@@ -687,7 +687,7 @@ async def get_team_assignments_mobile(
             staff_assignments[staff_name]['in_progress'] += 1
 
     # Get completed tasks today for each staff
-    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
+    today = datetime.now(UTC).replace(hour=0, minute=0, second=0)
 
     for staff_name in staff_assignments:
         completed_count = await db.housekeeping_tasks.count_documents({
@@ -738,7 +738,7 @@ async def create_quick_task_mobile(
         'status': 'assigned' if assigned_to else 'new',
         'assigned_to': assigned_to,
         'notes': notes,
-        'created_at': datetime.now(timezone.utc),
+        'created_at': datetime.now(UTC),
         'created_by': current_user.username
     }
 
@@ -767,7 +767,7 @@ async def create_quick_task_mobile(
 
 @router.get("/housekeeping/mobile/inspection-checklist")
 async def get_inspection_checklist_template(
-    room_type: Optional[str] = None,
+    room_type: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get inspection checklist template"""
@@ -819,9 +819,9 @@ async def create_room_inspection(
     room_id: str,
     room_number: str,
     inspection_type: str,
-    checklist: List[Dict[str, Any]],
-    photos: Optional[List[str]] = None,
-    notes: Optional[str] = None,
+    checklist: list[dict[str, Any]],
+    photos: list[str] | None = None,
+    notes: str | None = None,
     maintenance_required: bool = False,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -851,7 +851,7 @@ async def create_room_inspection(
             'room_number': room_number,
             'department': 'maintenance',
             'created_by': current_user.username,
-            'created_at': datetime.now(timezone.utc)
+            'created_at': datetime.now(UTC)
         })
         maintenance_task_id = task_id
 
@@ -870,9 +870,9 @@ async def create_room_inspection(
         'issues_found': issues_found,
         'maintenance_required': maintenance_required,
         'maintenance_task_id': maintenance_task_id,
-        'completed_at': datetime.now(timezone.utc),
-        'created_at': datetime.now(timezone.utc),
-        'updated_at': datetime.now(timezone.utc)
+        'completed_at': datetime.now(UTC),
+        'created_at': datetime.now(UTC),
+        'updated_at': datetime.now(UTC)
     }
 
     await db.room_inspections.insert_one(inspection)
@@ -893,10 +893,10 @@ async def create_lost_found_item(
     category: str,
     room_number: str,
     found_location: str,
-    photos: Optional[List[str]] = None,
+    photos: list[str] | None = None,
     storage_location: str = "Lost & Found Office",
-    storage_number: Optional[str] = None,
-    notes: Optional[str] = None,
+    storage_number: str | None = None,
+    notes: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Register lost & found item"""
@@ -915,15 +915,15 @@ async def create_lost_found_item(
         'category': category,
         'room_number': room_number,
         'found_location': found_location,
-        'found_date': datetime.now(timezone.utc),
+        'found_date': datetime.now(UTC),
         'found_by': current_user.username,
         'photos': photos or [],
         'storage_location': storage_location,
         'storage_number': storage_number or item_number,
         'status': 'in_storage',
         'notes': notes,
-        'created_at': datetime.now(timezone.utc),
-        'updated_at': datetime.now(timezone.utc)
+        'created_at': datetime.now(UTC),
+        'updated_at': datetime.now(UTC)
     }
 
     await db.lost_found_items.insert_one(item)
@@ -938,7 +938,7 @@ async def create_lost_found_item(
 
 @router.get("/housekeeping/mobile/lost-found/items")
 async def get_lost_found_items(
-    status: Optional[str] = None,
+    status: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get lost & found items"""
@@ -985,8 +985,8 @@ async def get_lost_found_items(
 async def claim_lost_found_item(
     item_id: str,
     claimed_by: str,
-    guest_id: Optional[str] = None,
-    notes: Optional[str] = None,
+    guest_id: str | None = None,
+    notes: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Mark item as claimed"""
@@ -1006,9 +1006,9 @@ async def claim_lost_found_item(
             'status': 'claimed',
             'claimed_by': claimed_by,
             'guest_id': guest_id,
-            'claimed_date': datetime.now(timezone.utc),
+            'claimed_date': datetime.now(UTC),
             'delivery_notes': notes,
-            'updated_at': datetime.now(timezone.utc)
+            'updated_at': datetime.now(UTC)
         }}
     )
 
@@ -1024,8 +1024,8 @@ async def claim_lost_found_item(
 async def assign_hk_tasks(
     staff_id: str,
     staff_name: str,
-    room_ids: List[str],
-    notes: Optional[str] = None,
+    room_ids: list[str],
+    notes: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Assign rooms to housekeeping staff"""
@@ -1035,7 +1035,7 @@ async def assign_hk_tasks(
     assignment = {
         'id': assignment_id,
         'tenant_id': current_user.tenant_id,
-        'assignment_date': datetime.now(timezone.utc),
+        'assignment_date': datetime.now(UTC),
         'staff_id': staff_id,
         'staff_name': staff_name,
         'assigned_rooms': room_ids,
@@ -1043,8 +1043,8 @@ async def assign_hk_tasks(
         'status': 'assigned',
         'assigned_by': current_user.username,
         'notes': notes,
-        'created_at': datetime.now(timezone.utc),
-        'updated_at': datetime.now(timezone.utc)
+        'created_at': datetime.now(UTC),
+        'updated_at': datetime.now(UTC)
     }
 
     await db.hk_task_assignments.insert_one(assignment)
@@ -1057,7 +1057,7 @@ async def assign_hk_tasks(
         },
         {'$set': {
             'assigned_to': staff_name,
-            'assigned_at': datetime.now(timezone.utc)
+            'assigned_at': datetime.now(UTC)
         }}
     )
 
@@ -1071,7 +1071,7 @@ async def assign_hk_tasks(
 
 @router.get("/housekeeping/mobile/staff-assignments")
 async def get_staff_assignments(
-    assignment_date: Optional[str] = None,
+    assignment_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get staff task assignments"""
@@ -1081,14 +1081,14 @@ async def get_staff_assignments(
 
     if assignment_date:
         date_obj = datetime.fromisoformat(assignment_date).date()
-        start_of_day = datetime.combine(date_obj, datetime.min.time()).replace(tzinfo=timezone.utc)
-        end_of_day = datetime.combine(date_obj, datetime.max.time()).replace(tzinfo=timezone.utc)
+        start_of_day = datetime.combine(date_obj, datetime.min.time()).replace(tzinfo=UTC)
+        end_of_day = datetime.combine(date_obj, datetime.max.time()).replace(tzinfo=UTC)
         query['assignment_date'] = {'$gte': start_of_day, '$lte': end_of_day}
     else:
         # Today
-        today = datetime.now(timezone.utc).date()
-        start_of_day = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
-        end_of_day = datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
+        today = datetime.now(UTC).date()
+        start_of_day = datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
+        end_of_day = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
         query['assignment_date'] = {'$gte': start_of_day, '$lte': end_of_day}
 
     assignments = []
@@ -1156,7 +1156,7 @@ async def start_cleaning_timer(
         'staff_id': current_user.id,
         'staff_name': current_user.username,
         'task_type': task_type,
-        'started_at': datetime.now(timezone.utc),
+        'started_at': datetime.now(UTC),
         'status': 'in_progress'
     }
 
@@ -1179,7 +1179,7 @@ async def start_cleaning_timer(
 @router.post("/housekeeping/mobile/cleaning/stop")
 async def stop_cleaning_timer(
     room_id: str,
-    notes: Optional[str] = None,
+    notes: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Stop cleaning timer"""
@@ -1194,7 +1194,7 @@ async def stop_cleaning_timer(
     if not timer:
         raise HTTPException(status_code=404, detail="No active timer found")
 
-    completed_at = datetime.now(timezone.utc)
+    completed_at = datetime.now(UTC)
     duration = (completed_at - timer['started_at']).total_seconds() / 60
 
     await db.cleaning_timers.update_one(
@@ -1229,7 +1229,7 @@ async def report_maintenance_from_hk(
     issue_type: str,
     description: str,
     priority: str = "normal",
-    photos: Optional[List[str]] = None,
+    photos: list[str] | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Report maintenance issue from housekeeping"""
@@ -1250,7 +1250,7 @@ async def report_maintenance_from_hk(
         'reported_by': current_user.username,
         'source': 'housekeeping',
         'photos': photos or [],
-        'created_at': datetime.now(timezone.utc)
+        'created_at': datetime.now(UTC)
     }
 
     await db.tasks.insert_one(task)
@@ -1265,7 +1265,7 @@ async def report_maintenance_from_hk(
 
 @router.get("/housekeeping/mobile/reports/daily")
 async def get_hk_daily_report(
-    report_date: Optional[str] = None,
+    report_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get housekeeping daily report"""
@@ -1274,10 +1274,10 @@ async def get_hk_daily_report(
     if report_date:
         target_date = datetime.fromisoformat(report_date).date()
     else:
-        target_date = datetime.now(timezone.utc).date()
+        target_date = datetime.now(UTC).date()
 
-    start_of_day = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
-    end_of_day = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=timezone.utc)
+    start_of_day = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=UTC)
+    end_of_day = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=UTC)
 
     # Room statistics
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
@@ -1363,7 +1363,7 @@ async def get_housekeeping_notifications_mobile(
     async for report in db.damage_reports.find({
         'tenant_id': current_user.tenant_id,
         'status': 'new',
-        'created_at': {'$gte': datetime.now(timezone.utc) - timedelta(days=1)}
+        'created_at': {'$gte': datetime.now(UTC) - timedelta(days=1)}
     }):
         room = await db.rooms.find_one({
             'id': report.get('room_id'),
@@ -1379,7 +1379,7 @@ async def get_housekeeping_notifications_mobile(
         })
 
     # Rush room requests (early check-in)
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'check_in': {
@@ -1401,7 +1401,7 @@ async def get_housekeeping_notifications_mobile(
                 'title': 'Acil Temizlik',
                 'message': f"Oda {booking.get('room_number')} - Erken check-in {booking.get('early_checkin_time', 'talebi')}",
                 'priority': 'urgent',
-                'created_at': datetime.now(timezone.utc).isoformat()
+                'created_at': datetime.now(UTC).isoformat()
             })
 
     # Guest "clean now" requests
@@ -1409,7 +1409,7 @@ async def get_housekeeping_notifications_mobile(
         'tenant_id': current_user.tenant_id,
         'request_type': 'cleaning',
         'status': 'pending',
-        'created_at': {'$gte': datetime.now(timezone.utc) - timedelta(hours=2)}
+        'created_at': {'$gte': datetime.now(UTC) - timedelta(hours=2)}
     }):
         notifications.append({
             'id': str(uuid.uuid4()),
@@ -1437,7 +1437,7 @@ async def get_pm_schedule_mobile(
 ):
     """Get preventive maintenance schedule for mobile"""
     current_user = await get_current_user(credentials)
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     end_date = today + timedelta(days=days)
 
     # Get scheduled PM tasks
@@ -1511,7 +1511,7 @@ async def create_quick_issue_mobile(
         'issue_type': issue_type,
         'priority': priority,
         'status': 'new',
-        'created_at': datetime.now(timezone.utc),
+        'created_at': datetime.now(UTC),
         'created_by': current_user.username,
         'reported_by': current_user.username
     }
@@ -1598,7 +1598,7 @@ async def update_sla_configuration(
             {'$set': {
                 'response_time_minutes': response_time_minutes,
                 'resolution_time_minutes': resolution_time_minutes,
-                'updated_at': datetime.now(timezone.utc)
+                'updated_at': datetime.now(UTC)
             }}
         )
         config_id = existing['id']
@@ -1612,8 +1612,8 @@ async def update_sla_configuration(
             'response_time_minutes': response_time_minutes,
             'resolution_time_minutes': resolution_time_minutes,
             'is_active': True,
-            'created_at': datetime.now(timezone.utc),
-            'updated_at': datetime.now(timezone.utc)
+            'created_at': datetime.now(UTC),
+            'updated_at': datetime.now(UTC)
         })
 
     return {
@@ -1629,7 +1629,7 @@ async def update_sla_configuration(
 async def update_task_status_mobile(
     task_id: str,
     new_status: str,
-    reason: Optional[str] = None,
+    reason: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Update task status (complete, on_hold, waiting_parts, in_progress)"""
@@ -1645,25 +1645,25 @@ async def update_task_status_mobile(
 
     update_data = {
         'status': new_status,
-        'updated_at': datetime.now(timezone.utc)
+        'updated_at': datetime.now(UTC)
     }
 
     if new_status == 'in_progress':
         if not task.get('started_at'):
-            update_data['started_at'] = datetime.now(timezone.utc)
+            update_data['started_at'] = datetime.now(UTC)
 
     elif new_status == 'completed':
-        update_data['completed_at'] = datetime.now(timezone.utc)
+        update_data['completed_at'] = datetime.now(UTC)
 
         # Calculate actual duration
         if task.get('started_at'):
             started = task['started_at']
-            completed = datetime.now(timezone.utc)
+            completed = datetime.now(UTC)
             duration_minutes = int((completed - started).total_seconds() / 60)
             update_data['actual_duration_minutes'] = duration_minutes
 
     elif new_status == 'on_hold':
-        update_data['on_hold_at'] = datetime.now(timezone.utc)
+        update_data['on_hold_at'] = datetime.now(UTC)
         if reason:
             update_data['on_hold_reason'] = reason
 
@@ -1690,7 +1690,7 @@ async def upload_task_photo_mobile(
     task_id: str,
     photo_data: str,  # Base64 encoded
     photo_type: str,  # before, during, after
-    description: Optional[str] = None,
+    description: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Upload photo for maintenance task"""
@@ -1714,7 +1714,7 @@ async def upload_task_photo_mobile(
         'photo_type': photo_type,
         'description': description,
         'uploaded_by': current_user.username,
-        'uploaded_at': datetime.now(timezone.utc)
+        'uploaded_at': datetime.now(UTC)
     }
 
     await db.task_photos.insert_one(photo)
@@ -1764,7 +1764,7 @@ async def get_task_photos_mobile(
 @router.get("/maintenance/mobile/spare-parts")
 async def get_spare_parts_mobile(
     low_stock_only: bool = False,
-    warehouse_location: Optional[str] = None,
+    warehouse_location: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get spare parts inventory"""
@@ -1825,7 +1825,7 @@ async def use_spare_part_mobile(
     task_id: str,
     spare_part_id: str,
     quantity: int,
-    notes: Optional[str] = None,
+    notes: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Record spare part usage for a task"""
@@ -1870,7 +1870,7 @@ async def use_spare_part_mobile(
         'unit_price': unit_price,
         'total_cost': total_cost,
         'used_by': current_user.username,
-        'used_at': datetime.now(timezone.utc),
+        'used_at': datetime.now(UTC),
         'notes': notes
     }
 
@@ -1882,7 +1882,7 @@ async def use_spare_part_mobile(
         {'id': spare_part_id, 'tenant_id': current_user.tenant_id},
         {'$set': {
             'current_stock': new_stock,
-            'updated_at': datetime.now(timezone.utc)
+            'updated_at': datetime.now(UTC)
         }}
     )
 
@@ -1978,7 +1978,7 @@ async def get_planned_maintenance_mobile(
     """Get planned maintenance calendar"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     end_date = today + timedelta(days=upcoming_days)
 
     planned_items = []
@@ -2030,11 +2030,11 @@ async def get_planned_maintenance_mobile(
 
 @router.get("/maintenance/mobile/tasks/filtered")
 async def get_filtered_tasks_mobile(
-    status: Optional[str] = None,
-    priority: Optional[str] = None,
-    assigned_to: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    status: str | None = None,
+    priority: str | None = None,
+    assigned_to: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get filtered maintenance tasks"""
@@ -2103,7 +2103,7 @@ async def get_maintenance_notifications_mobile(
         'department': 'maintenance',
         'issue_type': {'$in': critical_issues},
         'status': {'$in': ['new', 'assigned', 'in_progress']},
-        'created_at': {'$gte': datetime.now(timezone.utc) - timedelta(hours=24)}
+        'created_at': {'$gte': datetime.now(UTC) - timedelta(hours=24)}
     }):
         notifications.append({
             'id': str(uuid.uuid4()),
@@ -2120,7 +2120,7 @@ async def get_maintenance_notifications_mobile(
         'department': 'maintenance',
         'priority': 'urgent',
         'status': {'$in': ['new', 'assigned']},
-        'created_at': {'$lte': datetime.now(timezone.utc) - timedelta(hours=2)}
+        'created_at': {'$lte': datetime.now(UTC) - timedelta(hours=2)}
     }):
         notifications.append({
             'id': str(uuid.uuid4()),
@@ -2135,7 +2135,7 @@ async def get_maintenance_notifications_mobile(
     async for room in db.rooms.find({
         'tenant_id': current_user.tenant_id,
         'status': 'out_of_order',
-        'updated_at': {'$gte': datetime.now(timezone.utc) - timedelta(days=1)}
+        'updated_at': {'$gte': datetime.now(UTC) - timedelta(days=1)}
     }):
         notifications.append({
             'id': str(uuid.uuid4()),
@@ -2221,7 +2221,7 @@ async def create_quick_order_mobile(
         'total': total,
         'status': 'pending',
         'notes': notes,
-        'created_at': datetime.now(timezone.utc),
+        'created_at': datetime.now(UTC),
         'created_by': current_user.username
     }
 
@@ -2265,7 +2265,7 @@ async def update_menu_item_price_mobile(
         {
             '$set': {
                 'price': new_price,
-                'price_updated_at': datetime.now(timezone.utc),
+                'price_updated_at': datetime.now(UTC),
                 'price_updated_by': current_user.username
             }
         }
@@ -2286,7 +2286,7 @@ async def update_menu_item_price_mobile(
             'new_price': new_price,
             'reason': reason
         },
-        'timestamp': datetime.now(timezone.utc)
+        'timestamp': datetime.now(UTC)
     })
 
     return {
@@ -2312,7 +2312,7 @@ async def get_fnb_notifications_mobile(
     async for transaction in db.pos_transactions.find({
         'tenant_id': current_user.tenant_id,
         'status': 'voided',
-        'voided_at': {'$gte': datetime.now(timezone.utc) - timedelta(hours=24)}
+        'voided_at': {'$gte': datetime.now(UTC) - timedelta(hours=24)}
     }):
         void_transactions += 1
 
@@ -2323,14 +2323,14 @@ async def get_fnb_notifications_mobile(
             'title': 'İptal Edilen İşlemler',
             'message': f"Son 24 saatte {void_transactions} işlem iptal edildi",
             'priority': 'medium',
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         })
 
     # POS connection errors
     async for error in db.system_logs.find({
         'tenant_id': current_user.tenant_id,
         'log_type': 'pos_error',
-        'created_at': {'$gte': datetime.now(timezone.utc) - timedelta(hours=1)}
+        'created_at': {'$gte': datetime.now(UTC) - timedelta(hours=1)}
     }).limit(1):
         notifications.append({
             'id': str(uuid.uuid4()),
@@ -2342,7 +2342,7 @@ async def get_fnb_notifications_mobile(
         })
 
     # End of day report ready notification
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     eod_report = await db.pos_eod_reports.find_one({
         'tenant_id': current_user.tenant_id,
         'report_date': today

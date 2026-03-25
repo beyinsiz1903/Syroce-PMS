@@ -16,7 +16,6 @@ import hashlib
 import logging
 import os
 import secrets
-from typing import Dict, Optional
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -77,7 +76,7 @@ class CredentialEncryptionService:
 
     # ── Core Encrypt/Decrypt ──────────────────────────────────────────
 
-    def encrypt(self, plaintext: str, *, aad: Optional[AADContext] = None) -> str:
+    def encrypt(self, plaintext: str, *, aad: AADContext | None = None) -> str:
         """Encrypt a single credential value.
 
         When CRYPTO_V2_ENABLED=true:  returns SYR1: envelope with HKDF key + AAD
@@ -96,7 +95,7 @@ class CredentialEncryptionService:
         else:
             return self._legacy_encrypt_aes(plaintext)
 
-    def decrypt(self, ciphertext: str, *, aad: Optional[AADContext] = None) -> str:
+    def decrypt(self, ciphertext: str, *, aad: AADContext | None = None) -> str:
         """Decrypt any supported format. Auto-detects SYR1: and aes256gcm: prefixes.
 
         For non-prefixed formats (XOR, base64), use decrypt_legacy_xor or
@@ -136,10 +135,10 @@ class CredentialEncryptionService:
 
     def encrypt_dict(
         self,
-        credentials: Dict[str, str],
+        credentials: dict[str, str],
         *,
-        aad: Optional[AADContext] = None,
-    ) -> Dict[str, str]:
+        aad: AADContext | None = None,
+    ) -> dict[str, str]:
         """Encrypt all non-empty string values in a dict."""
         encrypted = {}
         for k, v in credentials.items():
@@ -151,10 +150,10 @@ class CredentialEncryptionService:
 
     def decrypt_dict(
         self,
-        encrypted: Dict[str, str],
+        encrypted: dict[str, str],
         *,
-        aad: Optional[AADContext] = None,
-    ) -> Dict[str, str]:
+        aad: AADContext | None = None,
+    ) -> dict[str, str]:
         """Decrypt all encrypted values in a dict. Handles mixed formats."""
         decrypted = {}
         for k, v in encrypted.items():
@@ -164,14 +163,14 @@ class CredentialEncryptionService:
                 decrypted[k] = v
         return decrypted
 
-    def decrypt_dict_xor(self, encrypted: Dict[str, str]) -> Dict[str, str]:
+    def decrypt_dict_xor(self, encrypted: dict[str, str]) -> dict[str, str]:
         """Decrypt all values assuming XOR legacy format."""
         return {
             k: self.decrypt_legacy_xor(v) if isinstance(v, str) and v else v
             for k, v in encrypted.items()
         }
 
-    def decrypt_dict_base64(self, encrypted: Dict[str, str]) -> Dict[str, str]:
+    def decrypt_dict_base64(self, encrypted: dict[str, str]) -> dict[str, str]:
         """Decrypt all values assuming base64-only format."""
         return {
             k: self.decrypt_legacy_base64(v) if isinstance(v, str) and v else v
@@ -184,7 +183,7 @@ class CredentialEncryptionService:
         self,
         ciphertext: str,
         *,
-        aad: Optional[AADContext] = None,
+        aad: AADContext | None = None,
     ) -> str:
         """Decrypt any format, re-encrypt with current key + SYR1 envelope.
 
@@ -196,10 +195,10 @@ class CredentialEncryptionService:
 
     def re_encrypt_dict(
         self,
-        encrypted: Dict[str, str],
+        encrypted: dict[str, str],
         *,
-        aad: Optional[AADContext] = None,
-    ) -> Dict[str, str]:
+        aad: AADContext | None = None,
+    ) -> dict[str, str]:
         """Re-encrypt all values in a dict to current format."""
         result = {}
         for k, v in encrypted.items():
@@ -229,7 +228,7 @@ class CredentialEncryptionService:
         return mask_value(value, visible_suffix=visible_suffix)
 
     @staticmethod
-    def mask_credentials(credentials: Dict[str, str]) -> Dict[str, str]:
+    def mask_credentials(credentials: dict[str, str]) -> dict[str, str]:
         """Mask all credential values for safe display."""
         return mask_dict(credentials)
 
@@ -269,7 +268,7 @@ class CredentialEncryptionService:
 
 # ── Singleton ─────────────────────────────────────────────────────────
 
-_instance: Optional[CredentialEncryptionService] = None
+_instance: CredentialEncryptionService | None = None
 
 
 def get_crypto_service() -> CredentialEncryptionService:

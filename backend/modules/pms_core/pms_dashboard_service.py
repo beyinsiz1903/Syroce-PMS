@@ -2,8 +2,7 @@
 PMS Dashboard Service - Aggregates operational data for the PMS dashboard.
 Arrivals, departures, in-house, room status, folio issues, audit exceptions.
 """
-from datetime import datetime, timedelta, timezone
-from typing import Dict
+from datetime import UTC, datetime, timedelta
 
 from core.database import db
 
@@ -11,10 +10,10 @@ from core.database import db
 class PMSDashboardService:
     """Aggregates real-time operational data for the PMS dashboard."""
 
-    async def get_operational_snapshot(self, tenant_id: str) -> Dict:
+    async def get_operational_snapshot(self, tenant_id: str) -> dict:
         """Get comprehensive operational snapshot for today."""
-        today = datetime.now(timezone.utc).date().isoformat()
-        (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
+        today = datetime.now(UTC).date().isoformat()
+        (datetime.now(UTC).date() + timedelta(days=1)).isoformat()
 
         # Parallel data collection
         arrivals = await self._get_arrivals_today(tenant_id, today)
@@ -36,7 +35,7 @@ class PMSDashboardService:
             "blocked_checkins": blocked_checkins,
         }
 
-    async def _get_arrivals_today(self, tenant_id: str, today: str) -> Dict:
+    async def _get_arrivals_today(self, tenant_id: str, today: str) -> dict:
         arrivals = await db.bookings.find({
             "tenant_id": tenant_id,
             "status": {"$in": ["confirmed", "guaranteed", "pending"]},
@@ -59,7 +58,7 @@ class PMSDashboardService:
 
         return {"total": total, "arrivals": enriched}
 
-    async def _get_departures_today(self, tenant_id: str, today: str) -> Dict:
+    async def _get_departures_today(self, tenant_id: str, today: str) -> dict:
         departures = await db.bookings.find({
             "tenant_id": tenant_id,
             "status": "checked_in",
@@ -87,11 +86,11 @@ class PMSDashboardService:
 
         return {"total": len(departures), "departures": enriched}
 
-    async def _get_in_house_guests(self, tenant_id: str) -> Dict:
+    async def _get_in_house_guests(self, tenant_id: str) -> dict:
         count = await db.bookings.count_documents({"tenant_id": tenant_id, "status": "checked_in"})
         return {"count": count}
 
-    async def _get_room_status_summary(self, tenant_id: str) -> Dict:
+    async def _get_room_status_summary(self, tenant_id: str) -> dict:
         pipeline = [
             {"$match": {"tenant_id": tenant_id, "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]}},
             {"$group": {"_id": "$status", "count": {"$sum": 1}}},
@@ -112,7 +111,7 @@ class PMSDashboardService:
             "ready": summary.get("available", 0) + summary.get("inspected", 0),
         }
 
-    async def _get_pending_folio_issues(self, tenant_id: str) -> Dict:
+    async def _get_pending_folio_issues(self, tenant_id: str) -> dict:
         """Get open folios with high or negative balances."""
         open_folios = await db.folios.find(
             {"tenant_id": tenant_id, "status": "open"}, {"_id": 0}
@@ -138,14 +137,14 @@ class PMSDashboardService:
 
         return {"count": len(issues), "issues": issues}
 
-    async def _get_open_audit_exceptions(self, tenant_id: str) -> Dict:
+    async def _get_open_audit_exceptions(self, tenant_id: str) -> dict:
         count = await db.audit_exceptions.count_documents({"tenant_id": tenant_id, "status": "open"})
         exceptions = await db.audit_exceptions.find(
             {"tenant_id": tenant_id, "status": "open"}, {"_id": 0}
         ).sort("created_at", -1).limit(10).to_list(10)
         return {"count": count, "exceptions": exceptions}
 
-    async def _get_blocked_checkins(self, tenant_id: str, today: str) -> Dict:
+    async def _get_blocked_checkins(self, tenant_id: str, today: str) -> dict:
         """Find today's arrivals where room is not ready."""
         arrivals = await db.bookings.find({
             "tenant_id": tenant_id,

@@ -3,7 +3,7 @@ Night Audit — Domain Schemas
 Pydantic models for night audit operations.
 """
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -36,13 +36,13 @@ class AuditExceptionSeverity(str, Enum):
 
 
 class RunNightAuditRequest(BaseModel):
-    business_date: Optional[str] = None
-    property_id: Optional[str] = None
+    business_date: str | None = None
+    property_id: str | None = None
     trigger_source: str = "manual"
     force_rerun: bool = False
     skip_validations: bool = False
     dry_run: bool = False
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 class NightAuditSummary(BaseModel):
@@ -51,8 +51,8 @@ class NightAuditSummary(BaseModel):
     business_date: str
     status: NightAuditStatus
     started_at: str
-    completed_at: Optional[str] = None
-    duration_ms: Optional[int] = None
+    completed_at: str | None = None
+    duration_ms: int | None = None
     rooms_processed: int = 0
     charges_posted: int = 0
     total_room_revenue: float = 0.0
@@ -63,7 +63,7 @@ class NightAuditSummary(BaseModel):
     folios_balanced: int = 0
     folios_unbalanced: int = 0
     exceptions_count: int = 0
-    exception_details: List[Dict[str, Any]] = []
+    exception_details: list[dict[str, Any]] = []
     is_rerun: bool = False
     initiated_by: str = ""
 
@@ -75,11 +75,11 @@ class AuditException(BaseModel):
     severity: AuditExceptionSeverity
     category: str
     entity_type: str
-    entity_id: Optional[str] = None
+    entity_id: str | None = None
     message: str
-    details: Dict[str, Any] = {}
+    details: dict[str, Any] = {}
     auto_resolved: bool = False
-    resolution: Optional[str] = None
+    resolution: str | None = None
     created_at: str = ""
 
 

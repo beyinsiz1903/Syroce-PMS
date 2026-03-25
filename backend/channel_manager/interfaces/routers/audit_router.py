@@ -1,7 +1,6 @@
 """Reconciliation, observability, audit-trail, webhook, error-queue, admin endpoints."""
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -44,8 +43,8 @@ class CreateIssueRequest(BaseModel):
     issue_type: str
     severity: str
     description: str
-    suggested_actions: Optional[List[str]] = None
-    evidence_payload: Optional[dict] = None
+    suggested_actions: list[str] | None = None
+    evidence_payload: dict | None = None
 
 
 class ErrorQueueActionRequest(BaseModel):
@@ -55,18 +54,18 @@ class ErrorQueueActionRequest(BaseModel):
 
 
 class BulkRetryRequest(BaseModel):
-    item_ids: List[str]
+    item_ids: list[str]
     error_type: str
 
 
 class BulkDismissRequest(BaseModel):
-    item_ids: List[str]
+    item_ids: list[str]
     error_type: str
     reason: str = ""
 
 
 class BulkIssueActionRequest(BaseModel):
-    issue_ids: List[str]
+    issue_ids: list[str]
     reason: str = ""
 
 
@@ -84,7 +83,7 @@ async def run_reconciliation(
 
 @router.get("/reconciliation/issues")
 async def list_reconciliation_issues(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     status: str = Query("open"),
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
@@ -96,7 +95,7 @@ async def list_reconciliation_issues(
 
 @router.get("/reconciliation/issues/summary")
 async def get_reconciliation_summary(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     svc = ReconciliationService()
@@ -201,7 +200,7 @@ async def get_connector_health(
 
 @router.get("/audit")
 async def get_audit_log(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
@@ -217,9 +216,9 @@ async def get_audit_log(
 async def receive_webhook(
     provider: str,
     request: Request,
-    connector_id: Optional[str] = Query(None),
-    x_webhook_signature: Optional[str] = None,
-    x_webhook_timestamp: Optional[str] = None,
+    connector_id: str | None = Query(None),
+    x_webhook_signature: str | None = None,
+    x_webhook_timestamp: str | None = None,
 ):
     body = await request.body()
     tenant_id = ""
@@ -269,9 +268,9 @@ async def list_webhook_events(
 
 @router.get("/admin/reconciliation/issues")
 async def admin_list_issues(
-    connector_id: Optional[str] = None,
-    severity: Optional[str] = None,
-    issue_type: Optional[str] = None,
+    connector_id: str | None = None,
+    severity: str | None = None,
+    issue_type: str | None = None,
     status: str = Query("open"),
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
@@ -299,8 +298,8 @@ async def admin_retry_sync_for_issue(
         result = await sync_svc.trigger_inventory_sync(
             tenant_id=current_user.tenant_id,
             connector_id=issue["connector_id"],
-            date_start=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            date_end=(datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d"),
+            date_start=datetime.now(UTC).strftime("%Y-%m-%d"),
+            date_end=(datetime.now(UTC) + timedelta(days=7)).strftime("%Y-%m-%d"),
             triggered_by="admin",
             trigger_reason=f"Retry from issue {issue_id}",
             actor_id=current_user.id,
@@ -482,7 +481,7 @@ async def admin_disable_connector(
     if not connector:
         raise HTTPException(status_code=404, detail="Connector not found")
     connector["status"] = "disabled"
-    connector["disabled_at"] = datetime.now(timezone.utc).isoformat()
+    connector["disabled_at"] = datetime.now(UTC).isoformat()
     connector["disabled_by"] = current_user.id
     await repo.upsert_connector(connector)
 
@@ -561,8 +560,8 @@ async def admin_connector_sync_health(
 
 @router.get("/admin/error-queue")
 async def admin_error_queue(
-    connector_id: Optional[str] = None,
-    error_type: Optional[str] = None,
+    connector_id: str | None = None,
+    error_type: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
@@ -572,7 +571,7 @@ async def admin_error_queue(
 
 @router.get("/admin/error-queue/summary")
 async def admin_error_queue_summary(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     from ...infrastructure.repository import ChannelManagerRepository
@@ -629,7 +628,7 @@ async def admin_bulk_dismiss_errors(
 
 @router.get("/admin/observability/metrics")
 async def admin_observability_metrics(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     from ...infrastructure.repository import ChannelManagerRepository
@@ -688,8 +687,8 @@ async def admin_observability_metrics(
 
 @router.get("/admin/observability/audit-trail")
 async def admin_audit_trail(
-    connector_id: Optional[str] = None,
-    action: Optional[str] = None,
+    connector_id: str | None = None,
+    action: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):

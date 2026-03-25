@@ -4,8 +4,8 @@ Migrates in-memory stores to MongoDB with TTL, retention, and tenant isolation.
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -26,7 +26,7 @@ class EventReplayRepository:
         await coll.create_index([("timestamp", 1)], expireAfterSeconds=self.RETENTION_DAYS * 86400)
 
     async def get_backlog_size(self, tenant_id: str) -> int:
-        one_day_ago = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        one_day_ago = (datetime.now(UTC) - timedelta(days=1)).isoformat()
         return await db[self.COLLECTION].count_documents({
             "tenant_id": tenant_id, "timestamp": {"$gte": one_day_ago}
         })
@@ -46,8 +46,8 @@ class MessagingDeliveryRepository:
         await coll.create_index([("id", 1)], unique=True)
         await coll.create_index([("status", 1), ("next_retry_at", 1)])
 
-    async def get_retry_queue(self, tenant_id: str, limit: int = 50) -> List[dict]:
-        now = datetime.now(timezone.utc).isoformat()
+    async def get_retry_queue(self, tenant_id: str, limit: int = 50) -> list[dict]:
+        now = datetime.now(UTC).isoformat()
         return await db[self.COLLECTION].find(
             {
                 "tenant_id": tenant_id,
@@ -84,12 +84,12 @@ class AnalyticsExportRepository:
             "file_path": file_path,
             "status": status,
             "metadata": metadata or {},
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db[self.COLLECTION].insert_one(doc)
         return {k: v for k, v in doc.items() if k != "_id"}
 
-    async def get_recent_exports(self, tenant_id: str, limit: int = 50) -> List[dict]:
+    async def get_recent_exports(self, tenant_id: str, limit: int = 50) -> list[dict]:
         return await db[self.COLLECTION].find(
             {"tenant_id": tenant_id}, {"_id": 0}
         ).sort("created_at", -1).to_list(limit)
@@ -163,14 +163,14 @@ class AlertHistoryRepository:
             "acknowledged": False,
             "acknowledged_by": None,
             "acknowledged_at": None,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db[self.COLLECTION].insert_one(doc)
         return {k: v for k, v in doc.items() if k != "_id"}
 
     async def get_recent_alerts(self, limit: int = 50, severity: str = None,
-                                unacknowledged_only: bool = False) -> List[dict]:
-        q: Dict[str, Any] = {}
+                                unacknowledged_only: bool = False) -> list[dict]:
+        q: dict[str, Any] = {}
         if severity:
             q["severity"] = severity
         if unacknowledged_only:
@@ -183,7 +183,7 @@ class AlertHistoryRepository:
             {"$set": {
                 "acknowledged": True,
                 "acknowledged_by": user_id,
-                "acknowledged_at": datetime.now(timezone.utc).isoformat(),
+                "acknowledged_at": datetime.now(UTC).isoformat(),
             }},
         )
         return {"id": alert_id, "acknowledged": True}

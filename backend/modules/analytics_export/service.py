@@ -6,7 +6,7 @@ import csv
 import io
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def new_export_job(
         "file_size_bytes": None,
         "row_count": None,
         "error_message": None,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "completed_at": None,
     }
 
@@ -108,7 +108,7 @@ class AnalyticsExportService:
                     "status": ExportStatus.COMPLETED,
                     "row_count": len(rows),
                     "file_size_bytes": len(content.encode("utf-8")) if isinstance(content, str) else len(content),
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "completed_at": datetime.now(UTC).isoformat(),
                 }},
             )
 
@@ -132,8 +132,8 @@ class AnalyticsExportService:
 
     async def _fetch_data(self, tenant_id: str, report_type: str, filters: dict) -> dict:
         """Fetch data for the given report type."""
-        date_from = filters.get("date_from", (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d"))
-        date_to = filters.get("date_to", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+        date_from = filters.get("date_from", (datetime.now(UTC) - timedelta(days=30)).strftime("%Y-%m-%d"))
+        date_to = filters.get("date_to", datetime.now(UTC).strftime("%Y-%m-%d"))
         filters.get("property_id")
 
         if report_type == "revenue_ml_outputs":

@@ -3,7 +3,7 @@ Exely SOAP Response Parser
 Parses OTA-standard XML responses from the Exely channel manager.
 """
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from defusedxml import ElementTree as safe_ET
 
@@ -25,7 +25,7 @@ def _attr(el, key, default=""):
     return el.get(key, default) if el is not None else default
 
 
-def parse_soap_response(xml_bytes: bytes) -> Dict[str, Any]:
+def parse_soap_response(xml_bytes: bytes) -> dict[str, Any]:
     """Parse a SOAP envelope, extract body, detect faults."""
     try:
         root = safe_ET.fromstring(xml_bytes)
@@ -52,7 +52,7 @@ def parse_soap_response(xml_bytes: bytes) -> Dict[str, Any]:
     return {"success": True, "error": None, "body": children[0]}
 
 
-def parse_read_rs(xml_bytes: bytes) -> Dict[str, Any]:
+def parse_read_rs(xml_bytes: bytes) -> dict[str, Any]:
     """Parse OTA_ReadRS / OTA_ResRetrieveRS to extract reservations."""
     envelope = parse_soap_response(xml_bytes)
     if not envelope["success"]:
@@ -83,7 +83,7 @@ def parse_read_rs(xml_bytes: bytes) -> Dict[str, Any]:
     return {"success": True, "reservations": reservations, "count": len(reservations)}
 
 
-def _parse_hotel_reservation(hr_el) -> Optional[Dict[str, Any]]:
+def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
     """Parse a single HotelReservation element to a dict."""
     res = {
         "reservation_id": _attr(hr_el, "ResID_Value", _attr(hr_el, "ResID")),
@@ -212,7 +212,7 @@ def _parse_hotel_reservation(hr_el) -> Optional[Dict[str, Any]]:
     return res
 
 
-def parse_hotel_avail_rs(xml_bytes: bytes) -> Dict[str, Any]:
+def parse_hotel_avail_rs(xml_bytes: bytes) -> dict[str, Any]:
     """Parse OTA_HotelAvailRS to extract room types and rate plans."""
     envelope = parse_soap_response(xml_bytes)
     if not envelope["success"]:
@@ -258,7 +258,7 @@ def parse_hotel_avail_rs(xml_bytes: bytes) -> Dict[str, Any]:
     return {"success": True, "room_types": unique_rooms, "rate_plans": unique_rates}
 
 
-def parse_notif_report_rs(xml_bytes: bytes) -> Dict[str, Any]:
+def parse_notif_report_rs(xml_bytes: bytes) -> dict[str, Any]:
     """Parse OTA_NotifReportRS for delivery confirmation."""
     envelope = parse_soap_response(xml_bytes)
     if not envelope["success"]:
@@ -277,7 +277,7 @@ def parse_notif_report_rs(xml_bytes: bytes) -> Dict[str, Any]:
     return {"success": True, "message": "Delivery confirmed"}
 
 
-def parse_ari_update_rs(xml_bytes: bytes) -> Dict[str, Any]:
+def parse_ari_update_rs(xml_bytes: bytes) -> dict[str, Any]:
     """Parse ARI update response."""
     envelope = parse_soap_response(xml_bytes)
     if not envelope["success"]:

@@ -4,8 +4,8 @@ Scheduled pull via OTA_ReadRQ → common ingest pipeline.
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 from domains.channel_manager.credential_vault import get_decrypted_credentials
@@ -61,8 +61,8 @@ class ExelyPullScheduler:
         """Send a room discovery request to keep the connection alive in Exely."""
         try:
             from datetime import datetime, timedelta
-            tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")
-            week = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d")
+            tomorrow = (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d")
+            week = (datetime.now(UTC) + timedelta(days=7)).strftime("%Y-%m-%d")
             result = await provider.discover_rooms(tomorrow, week)
             logger.info(f"[EXELY-PULL] Heartbeat for {tenant_id}: success={result.success}")
         except Exception as e:
@@ -105,7 +105,7 @@ class ExelyPullScheduler:
         hotel_code: str,
         endpoint_url: str = "",
         safety_window_minutes: int = 5,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
         if endpoint_url:
             provider_kwargs["endpoint_url"] = endpoint_url
@@ -123,11 +123,11 @@ class ExelyPullScheduler:
             last_pull = datetime.fromisoformat(cursor_doc["last_pull_at"])
             fetch_from = last_pull - timedelta(minutes=safety_window_minutes)
         else:
-            fetch_from = datetime.now(timezone.utc) - timedelta(days=7)
+            fetch_from = datetime.now(UTC) - timedelta(days=7)
 
         from_date = fetch_from.strftime("%Y-%m-%d")
-        to_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        pull_start = datetime.now(timezone.utc)
+        to_date = datetime.now(UTC).strftime("%Y-%m-%d")
+        pull_start = datetime.now(UTC)
 
         result = await provider.legacy_pull_reservations(from_date=from_date, to_date=to_date)
 
@@ -200,7 +200,7 @@ class ExelyPullScheduler:
             upsert=True,
         )
 
-        duration_ms = int((datetime.now(timezone.utc) - pull_start).total_seconds() * 1000)
+        duration_ms = int((datetime.now(UTC) - pull_start).total_seconds() * 1000)
         await log_sync(PROVIDER, tenant_id, "scheduled_pull", "success", duration_ms, processed)
 
         # Auto-import all pending reservations to PMS + process cancellations + modifications
@@ -229,10 +229,10 @@ class ExelyPullScheduler:
             "from_date": from_date,
         }
 
-    async def _check_individual_changes(self, provider: ExelyProvider, tenant_id: str) -> Dict[str, int]:
+    async def _check_individual_changes(self, provider: ExelyProvider, tenant_id: str) -> dict[str, int]:
         """Check individual imported reservations for cancellations and modifications.
         Only check reservations with check-in within the next 30 days for performance."""
-        cutoff_date = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+        cutoff_date = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
         imported = await db.exely_reservations.find(
             {"tenant_id": tenant_id,
              "state": {"$in": ["confirmed", "modified", "pending"]},
@@ -335,7 +335,7 @@ class ExelyPullScheduler:
                     if result.success:
                         await db.exely_reservations.update_one(
                             {"tenant_id": tenant_id, "external_id": ext_id},
-                            {"$set": {"delivery_confirmed": True, "delivery_confirmed_at": datetime.now(timezone.utc).isoformat()}},
+                            {"$set": {"delivery_confirmed": True, "delivery_confirmed_at": datetime.now(UTC).isoformat()}},
                         )
                         confirmed += 1
                     else:

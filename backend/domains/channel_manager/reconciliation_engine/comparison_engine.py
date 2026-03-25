@@ -14,7 +14,7 @@ Mismatch types:
   - duplicate_reservation (multiple with same external_reservation_id)
 """
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger("reconciliation.comparison_engine")
 
@@ -48,18 +48,18 @@ SUGGESTED_ACTIONS = {
 
 
 def compare_reservations(
-    pms_reservations: List[Dict[str, Any]],
-    provider_snapshots: List[Dict[str, Any]],
+    pms_reservations: list[dict[str, Any]],
+    provider_snapshots: list[dict[str, Any]],
     provider: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Compare PMS reservations against provider snapshots for a single provider.
     Returns a list of mismatch dicts ready for case creation.
     """
-    mismatches: List[Dict[str, Any]] = []
+    mismatches: list[dict[str, Any]] = []
 
     # Index PMS by external_reservation_id
-    pms_by_ext_id: Dict[str, Dict] = {}
+    pms_by_ext_id: dict[str, dict] = {}
     for res in pms_reservations:
         ext_id = res.get("external_reservation_id", "")
         if ext_id:
@@ -75,7 +75,7 @@ def compare_reservations(
             pms_by_ext_id[ext_id] = res
 
     # Index provider snapshots by external_reservation_id
-    provider_by_ext_id: Dict[str, Dict] = {}
+    provider_by_ext_id: dict[str, dict] = {}
     for snap in provider_snapshots:
         ext_id = snap.get("external_reservation_id", "")
         if ext_id:
@@ -126,8 +126,8 @@ def compare_reservations(
 
 def _compare_fields(
     provider: str, ext_id: str,
-    pms: Dict[str, Any], snap: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    pms: dict[str, Any], snap: dict[str, Any],
+) -> list[dict[str, Any]]:
     """Compare individual fields between matched PMS and provider reservation."""
     mismatches = []
 
@@ -194,7 +194,7 @@ def _build_mismatch(
     pms_value: Any = None,
     provider_value: Any = None,
     description: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return {
         "case_type": mismatch_type,
         "severity": SEVERITY_MAP.get(mismatch_type, "medium"),

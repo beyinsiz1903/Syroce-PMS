@@ -4,8 +4,7 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -41,15 +40,15 @@ class ChannelMixRequest(BaseModel):
 @router.get("/enterprise/rate-leakage")
 @cached(ttl=900, key_prefix="enterprise_rate_leakage")  # Cache for 15 min
 async def detect_rate_leakage(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Detect rate leakage where OTA rates are lower than direct rates"""
     current_user = await get_current_user(credentials)
 
     # Default to next 30 days
-    start = datetime.fromisoformat(start_date).date() if start_date else datetime.now(timezone.utc).date()
+    start = datetime.fromisoformat(start_date).date() if start_date else datetime.now(UTC).date()
     end = datetime.fromisoformat(end_date).date() if end_date else (start + timedelta(days=30))
 
     # Get rooms
@@ -131,7 +130,7 @@ async def get_pickup_pace(
 ):
     """Analyze booking pickup pace for a target date"""
     target = datetime.fromisoformat(target_date).date()
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
 
     # Get bookings for target date created in last lookback_days
     bookings = await db.bookings.find({
@@ -393,12 +392,12 @@ async def get_pickup_pace_analytics(
     target_date: str,
     lookback_days: int = 90,
     group_only: bool = False,
-    company_id: Optional[str] = None,
+    company_id: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Advanced pickup pace analytics with trend analysis"""
     target = datetime.fromisoformat(target_date).date()
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
 
     # Get bookings created in lookback period for target date
     bookings = await db.bookings.find({
@@ -455,7 +454,7 @@ async def get_pickup_pace_analytics(
     velocity_30 = sum(daily_pickup.get(i, {}).get('count', 0) for i in range(30)) / 30
 
     # Aggregate channel-level pickup (for direct vs OTA and other breakdowns)
-    channel_pickup: Dict[str, int] = {}
+    channel_pickup: dict[str, int] = {}
     for day_data in daily_pickup.values():
         for ch, cnt in day_data.get('channels', {}).items():
             channel_pickup[ch] = channel_pickup.get(ch, 0) + cnt
@@ -642,17 +641,17 @@ async def get_oversell_protection_map(
 @router.get("/deluxe/grouped-conflicts")
 @cached(ttl=600, key_prefix="deluxe_grouped_conflicts")  # Cache for 10 min
 async def get_grouped_conflicts(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Get booking conflicts grouped by room for cleaner display"""
 
     # Default to next 30 days
     if not start_date:
-        start_date = datetime.now(timezone.utc).isoformat()
+        start_date = datetime.now(UTC).isoformat()
     if not end_date:
-        end_date = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        end_date = (datetime.now(UTC) + timedelta(days=30)).isoformat()
 
     # Find all overlapping bookings
     pipeline = [
@@ -948,7 +947,7 @@ async def create_rate_code(
         'is_refundable': request.is_refundable,
         'cancellation_policy': request.cancellation_policy,
         'price_modifier': request.price_modifier,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     rate_copy = rate_code.copy()

@@ -3,8 +3,7 @@ Multi-Property Night Audit Coordination Service.
 Property-level audit status board, exception summary, unresolved blocker list,
 escalation flow, and multi-property readiness score.
 """
-from datetime import datetime, timedelta, timezone
-from typing import Dict
+from datetime import UTC, datetime, timedelta
 
 from core.database import db
 
@@ -14,7 +13,7 @@ class MultiPropertyAuditService:
 
     AUDIT_STATUSES = ["completed", "running", "blocked", "failed", "pending"]
 
-    async def get_audit_status_board(self, tenant_id: str) -> Dict:
+    async def get_audit_status_board(self, tenant_id: str) -> dict:
         """Get audit status for all properties visible to this tenant."""
         # Get all properties (tenants) - in a real multi-property setup, this would
         # query properties linked to a parent/group tenant
@@ -65,10 +64,10 @@ class MultiPropertyAuditService:
             "readiness_score": readiness,
         }
 
-    async def _get_property_audit_status(self, property_id: str) -> Dict:
+    async def _get_property_audit_status(self, property_id: str) -> dict:
         """Get the latest audit status for a single property."""
-        today = datetime.now(timezone.utc).date().isoformat()
-        yesterday = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
+        today = datetime.now(UTC).date().isoformat()
+        yesterday = (datetime.now(UTC).date() - timedelta(days=1)).isoformat()
 
         # Check last audit record
         last_audit = await db.night_audit_records.find_one(
@@ -116,7 +115,7 @@ class MultiPropertyAuditService:
             "recent_exceptions": exceptions_list,
         }
 
-    async def get_exception_summary(self, tenant_id: str) -> Dict:
+    async def get_exception_summary(self, tenant_id: str) -> dict:
         """Get aggregated exception summary across all properties."""
         # Get all open exceptions
         exceptions = await db.audit_exceptions.find(
@@ -143,7 +142,7 @@ class MultiPropertyAuditService:
             "recent": exceptions[:20],
         }
 
-    async def get_unresolved_blockers(self, tenant_id: str) -> Dict:
+    async def get_unresolved_blockers(self, tenant_id: str) -> dict:
         """Get unresolved blockers preventing audit completion."""
         blockers = await db.audit_exceptions.find(
             {"status": "open", "exception_type": {"$in": [
@@ -164,7 +163,7 @@ class MultiPropertyAuditService:
             "warning_count": len(warning),
         }
 
-    async def escalate_exception(self, tenant_id: str, exception_id: str, escalated_by: str, escalation_note: str) -> Dict:
+    async def escalate_exception(self, tenant_id: str, exception_id: str, escalated_by: str, escalation_note: str) -> dict:
         """Escalate an audit exception."""
         exc = await db.audit_exceptions.find_one(
             {"id": exception_id}, {"_id": 0}
@@ -172,7 +171,7 @@ class MultiPropertyAuditService:
         if not exc:
             return {"success": False, "error": "Exception not found"}
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         await db.audit_exceptions.update_one(
             {"id": exception_id},
             {"$set": {
@@ -196,7 +195,7 @@ class MultiPropertyAuditService:
 
         return {"success": True, "exception_id": exception_id}
 
-    async def get_readiness_score(self, tenant_id: str) -> Dict:
+    async def get_readiness_score(self, tenant_id: str) -> dict:
         """Calculate multi-property readiness score."""
         board = await self.get_audit_status_board(tenant_id)
         score = board["readiness_score"]

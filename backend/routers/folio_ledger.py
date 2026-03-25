@@ -3,7 +3,8 @@ Folio Ledger API Router
 ========================
 Immutable folio ledger endpoints: charge, payment, void, transfer, reconciliation.
 """
-from typing import Dict, List, Optional
+
+from datetime import UTC
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -25,11 +26,11 @@ class ChargeRequest(BaseModel):
     booking_id: str = ""
     currency: str = "TRY"
     tax_amount: float = 0.0
-    tax_breakdown: Optional[List[Dict]] = None
-    idempotency_key: Optional[str] = None
-    business_date: Optional[str] = None
-    night_audit_run_id: Optional[str] = None
-    metadata: Optional[Dict] = None
+    tax_breakdown: list[dict] | None = None
+    idempotency_key: str | None = None
+    business_date: str | None = None
+    night_audit_run_id: str | None = None
+    metadata: dict | None = None
 
 
 class PaymentRequest(BaseModel):
@@ -38,9 +39,9 @@ class PaymentRequest(BaseModel):
     reference: str = ""
     booking_id: str = ""
     currency: str = "TRY"
-    idempotency_key: Optional[str] = None
-    business_date: Optional[str] = None
-    metadata: Optional[Dict] = None
+    idempotency_key: str | None = None
+    business_date: str | None = None
+    metadata: dict | None = None
 
 
 class VoidRequest(BaseModel):
@@ -52,7 +53,7 @@ class TransferRequest(BaseModel):
     amount: float = Field(..., gt=0)
     description: str = "Transfer"
     booking_id: str = ""
-    idempotency_key: Optional[str] = None
+    idempotency_key: str | None = None
 
 
 @router.post("/{folio_id}/charge")
@@ -146,8 +147,8 @@ async def reconcile_folio(folio_id: str, current_user: User = Depends(get_curren
 
 
 @router.post("/reconciliation/run")
-async def run_reconciliation(current_user: User = Depends(get_current_user), business_date: Optional[str] = None):
-    from datetime import datetime, timezone
-    bdate = business_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+async def run_reconciliation(current_user: User = Depends(get_current_user), business_date: str | None = None):
+    from datetime import datetime
+    bdate = business_date or datetime.now(UTC).strftime("%Y-%m-%d")
     result = await recon_engine.run_reconciliation(current_user.tenant_id, bdate)
     return result

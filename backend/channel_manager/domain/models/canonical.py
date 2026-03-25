@@ -5,7 +5,7 @@ This ensures HotelRunner (or any future provider) differences are absorbed at th
 """
 import uuid
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -44,8 +44,8 @@ class PriceBreakdown(BaseModel):
     currency: str = "TRY"
     adult_count: int = 2
     child_count: int = 0
-    taxes: List[TaxBreakdown] = Field(default_factory=list)
-    supplements: List[Dict[str, Any]] = Field(default_factory=list)
+    taxes: list[TaxBreakdown] = Field(default_factory=list)
+    supplements: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class CanonicalRoomType(BaseModel):
@@ -58,9 +58,9 @@ class CanonicalRoomType(BaseModel):
     base_occupancy: int = 2
     max_children: int = 0
     description: str = ""
-    amenities: List[str] = Field(default_factory=list)
+    amenities: list[str] = Field(default_factory=list)
     bed_type: str = ""
-    room_size_sqm: Optional[float] = None
+    room_size_sqm: float | None = None
 
 
 class CanonicalRatePlan(BaseModel):
@@ -77,8 +77,8 @@ class CanonicalRatePlan(BaseModel):
     min_stay: int = 1
     max_stay: int = 365
     is_derived: bool = False
-    base_rate_plan_id: Optional[str] = None
-    derivation_rule: Optional[Dict[str, Any]] = None
+    base_rate_plan_id: str | None = None
+    derivation_rule: dict[str, Any] | None = None
 
 
 class InventorySlice(BaseModel):
@@ -100,11 +100,11 @@ class RestrictionSet(BaseModel):
     closed: bool = False
     closed_to_arrival: bool = False
     closed_to_departure: bool = False
-    min_stay: Optional[int] = None
-    max_stay: Optional[int] = None
-    min_stay_arrival: Optional[int] = None
-    min_advance_booking: Optional[int] = None
-    max_advance_booking: Optional[int] = None
+    min_stay: int | None = None
+    max_stay: int | None = None
+    min_stay_arrival: int | None = None
+    min_advance_booking: int | None = None
+    max_advance_booking: int | None = None
 
 
 class CanonicalGuest(BaseModel):
@@ -127,7 +127,7 @@ class CanonicalGuest(BaseModel):
     company_name: str = ""
     loyalty_id: str = ""
     notes: str = ""
-    billing_address: Dict[str, Any] = Field(default_factory=dict)
+    billing_address: dict[str, Any] = Field(default_factory=dict)
 
 
 class CanonicalReservation(BaseModel):
@@ -159,7 +159,7 @@ class CanonicalReservation(BaseModel):
     # Occupancy
     adult_count: int = 1
     child_count: int = 0
-    child_ages: List[int] = Field(default_factory=list)
+    child_ages: list[int] = Field(default_factory=list)
     room_count: int = 1
 
     # Pricing
@@ -169,9 +169,9 @@ class CanonicalReservation(BaseModel):
     extras_total: float = 0.0
     paid_amount: float = 0.0
     currency: str = "TRY"
-    price_breakdown: List[PriceBreakdown] = Field(default_factory=list)
-    tax_breakdown: List[TaxBreakdown] = Field(default_factory=list)
-    daily_prices: List[Dict[str, Any]] = Field(default_factory=list)
+    price_breakdown: list[PriceBreakdown] = Field(default_factory=list)
+    tax_breakdown: list[TaxBreakdown] = Field(default_factory=list)
+    daily_prices: list[dict[str, Any]] = Field(default_factory=list)
     commission_amount: float = 0.0
     commission_rate: float = 0.0
 
@@ -179,12 +179,12 @@ class CanonicalReservation(BaseModel):
     payment_type: str = ""  # prepaid, pay_at_hotel, credit_card_guarantee
     card_type: str = ""
     card_last_four: str = ""
-    payments: List[Dict[str, Any]] = Field(default_factory=list)
+    payments: list[dict[str, Any]] = Field(default_factory=list)
 
     # Policy
     meal_plan: MealPlan = MealPlan.RO
     cancellation_policy: str = ""
-    cancellation_deadline: Optional[str] = None
+    cancellation_deadline: str | None = None
     non_refundable: bool = False
 
     # Notes
@@ -192,12 +192,12 @@ class CanonicalReservation(BaseModel):
     internal_notes: str = ""
 
     # Rooms raw data (multi-room support)
-    rooms: List[Dict[str, Any]] = Field(default_factory=list)
+    rooms: list[dict[str, Any]] = Field(default_factory=list)
 
     # Timestamps
-    booked_at: Optional[str] = None
-    modified_at: Optional[str] = None
-    cancelled_at: Optional[str] = None
+    booked_at: str | None = None
+    modified_at: str | None = None
+    cancelled_at: str | None = None
 
     # Raw data reference
-    raw_provider_data: Dict[str, Any] = Field(default_factory=dict)
+    raw_provider_data: dict[str, Any] = Field(default_factory=dict)

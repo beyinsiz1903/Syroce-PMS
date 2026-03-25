@@ -5,7 +5,7 @@ Generates: demo user, tenant, rooms, guests, bookings, folios, housekeeping task
 
 import random
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from passlib.context import CryptContext
 
@@ -17,7 +17,7 @@ DEMO_HOTEL_NAME = "Syroce Demo Hotel"
 
 
 def _now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _uuid():

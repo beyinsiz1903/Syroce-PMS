@@ -4,8 +4,8 @@ feature extraction -> dataset generation -> model training -> deployment -> pred
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 from modules.data_pipeline.dataset_generator import dataset_generator
@@ -35,10 +35,10 @@ class PipelineOrchestrator:
     }
 
     async def run_full_pipeline(self, tenant_id: str, model_type: str,
-                                triggered_by: str = "system") -> Dict[str, Any]:
+                                triggered_by: str = "system") -> dict[str, Any]:
         """Execute the complete pipeline for a model type."""
         run_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         feature_set = self.FEATURE_SET_MAP.get(model_type, "revenue")
 
         run_record = {
@@ -58,7 +58,7 @@ class PipelineOrchestrator:
 
         try:
             # Step 1: Feature Extraction
-            step_start = datetime.now(timezone.utc).isoformat()
+            step_start = datetime.now(UTC).isoformat()
             if feature_set == "revenue":
                 features = await feature_store.extract_revenue_features(tenant_id)
             elif feature_set == "operational":
@@ -69,12 +69,12 @@ class PipelineOrchestrator:
             run_record["steps"]["feature_extraction"] = {
                 "status": "completed",
                 "started_at": step_start,
-                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "completed_at": datetime.now(UTC).isoformat(),
                 "record_count": features.get("record_count", 0),
             }
 
             # Step 2: Dataset Generation
-            step_start = datetime.now(timezone.utc).isoformat()
+            step_start = datetime.now(UTC).isoformat()
             dataset = await dataset_generator.generate_dataset(
                 tenant_id, model_type, feature_set,
                 description=f"Pipeline run {run_id}",
@@ -85,13 +85,13 @@ class PipelineOrchestrator:
             run_record["steps"]["dataset_generation"] = {
                 "status": "completed",
                 "started_at": step_start,
-                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "completed_at": datetime.now(UTC).isoformat(),
                 "dataset_id": dataset["id"],
                 "version": dataset["version"],
             }
 
             # Step 3: Model Training (simulated)
-            step_start = datetime.now(timezone.utc).isoformat()
+            step_start = datetime.now(UTC).isoformat()
             training_metrics = {
                 "accuracy": 0.85,
                 "precision": 0.82,
@@ -107,31 +107,31 @@ class PipelineOrchestrator:
             run_record["steps"]["model_training"] = {
                 "status": "completed",
                 "started_at": step_start,
-                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "completed_at": datetime.now(UTC).isoformat(),
                 "model_id": model["id"],
                 "version": model["version"],
                 "metrics": training_metrics,
             }
 
             # Step 4: Model Deployment
-            step_start = datetime.now(timezone.utc).isoformat()
+            step_start = datetime.now(UTC).isoformat()
             await model_registry.deploy_model(model["id"])
             run_record["steps"]["model_deployment"] = {
                 "status": "completed",
                 "started_at": step_start,
-                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "completed_at": datetime.now(UTC).isoformat(),
                 "deployed_model_id": model["id"],
             }
 
             # Finalize
             run_record["status"] = "completed"
-            run_record["completed_at"] = datetime.now(timezone.utc).isoformat()
+            run_record["completed_at"] = datetime.now(UTC).isoformat()
 
         except Exception as e:
             logger.error(f"Pipeline run {run_id} failed: {e}")
             run_record["status"] = "failed"
             run_record["error"] = str(e)
-            run_record["completed_at"] = datetime.now(timezone.utc).isoformat()
+            run_record["completed_at"] = datetime.now(UTC).isoformat()
 
         # Update run record
         update_data = {k: v for k, v in run_record.items() if k not in ("id", "_id")}
@@ -152,16 +152,16 @@ class PipelineOrchestrator:
 
         return {k: v for k, v in run_record.items() if k != "_id"}
 
-    async def get_runs(self, tenant_id: str, model_type: Optional[str] = None,
+    async def get_runs(self, tenant_id: str, model_type: str | None = None,
                        limit: int = 20) -> list:
-        q: Dict[str, Any] = {"tenant_id": tenant_id}
+        q: dict[str, Any] = {"tenant_id": tenant_id}
         if model_type:
             q["model_type"] = model_type
         return await db.pipeline_runs.find(
             q, {"_id": 0}
         ).sort("started_at", -1).to_list(limit)
 
-    async def get_pipeline_health(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_pipeline_health(self, tenant_id: str) -> dict[str, Any]:
         """Get overall pipeline health for a tenant."""
         feature_summary = await feature_store.get_summary(tenant_id)
         model_summary = await model_registry.get_summary(tenant_id)

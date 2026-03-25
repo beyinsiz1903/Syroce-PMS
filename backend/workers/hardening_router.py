@@ -4,7 +4,6 @@ Production runtime APIs for queue health, stuck tasks, failure archive,
 task replay, and retry summary.
 Thin router: delegates all business logic to WorkerRuntimeService.
 """
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -45,7 +44,7 @@ async def unstick_task(
 
 @router.get("/tasks/failures", summary="Get failed tasks")
 async def get_task_failures(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
 ):

@@ -69,6 +69,8 @@ from bootstrap.middleware_registry import register_middleware  # noqa: E402
 register_middleware(app)
 
 # Additional CORS with explicit origins
+from datetime import UTC
+
 from starlette.middleware.cors import CORSMiddleware  # noqa: E402
 
 _cors_raw = os.environ.get("CORS_ORIGINS", "")
@@ -102,12 +104,12 @@ try:
     logger.info("APM & Rate Limiting middleware activated")
 except Exception:
     from collections import deque
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     class _FallbackStore:
         requests = deque(maxlen=100)
         rate_limit_hits = 0
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
         def get_summary(self, minutes=10): return {"total_requests": 0, "error_rate_percent": 0}
         def get_recent_errors(self, limit=50): return []
         def record_request(self, **kw): pass

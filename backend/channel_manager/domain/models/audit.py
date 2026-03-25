@@ -6,9 +6,9 @@ Indexes:
   - (tenant_id, entity_type, entity_id)
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -126,25 +126,25 @@ class AuditAction(str, Enum):
 class IntegrationAuditLog(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
-    property_id: Optional[str] = None
-    connector_id: Optional[str] = None
+    property_id: str | None = None
+    connector_id: str | None = None
 
     action: AuditAction
     entity_type: str = ""
     entity_id: str = ""
 
-    actor_id: Optional[str] = None
+    actor_id: str | None = None
     actor_type: str = "system"  # system, user, webhook
 
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    correlation_id: Optional[str] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    correlation_id: str | None = None
 
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         return self.model_dump()
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "IntegrationAuditLog":
+    def from_doc(cls, doc: dict[str, Any]) -> "IntegrationAuditLog":
         doc.pop("_id", None)
         return cls(**doc)

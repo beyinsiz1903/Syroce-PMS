@@ -5,8 +5,8 @@ No FastAPI dependencies.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -31,7 +31,7 @@ class MessagingService:
             "recipient": data["recipient"],
             "message_content": data["message_content"],
             "status": "sent",
-            "sent_at": datetime.now(timezone.utc).isoformat(),
+            "sent_at": datetime.now(UTC).isoformat(),
         }
         await self._db.sent_messages.insert_one(msg)
         msg_copy = {k: v for k, v in msg.items() if k != "_id"}
@@ -43,8 +43,8 @@ class MessagingService:
         ).sort("sent_at", -1).to_list(100)
         return ServiceResult.success({"messages": messages, "count": len(messages)})
 
-    async def get_templates(self, ctx: OperationContext, message_type: Optional[str] = None) -> ServiceResult:
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id, "active": True}
+    async def get_templates(self, ctx: OperationContext, message_type: str | None = None) -> ServiceResult:
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id, "active": True}
         if message_type:
             query["message_type"] = message_type
         templates = await self._db.message_templates.find(query, {"_id": 0}).to_list(100)
@@ -56,7 +56,7 @@ class MessagingService:
             "tenant_id": ctx.tenant_id,
             **data,
             "active": True,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await self._db.message_templates.insert_one(tpl)
         tpl_copy = {k: v for k, v in tpl.items() if k != "_id"}
@@ -77,7 +77,7 @@ class MessagingService:
             "message_type": data.get("message_type", "text"),
             "attachments": data.get("attachments", []),
             "read": False,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await self._db.internal_messages.insert_one(msg)
         msg_copy = {k: v for k, v in msg.items() if k != "_id"}
@@ -85,10 +85,10 @@ class MessagingService:
 
     async def get_internal_messages(
         self, ctx: OperationContext,
-        department: Optional[str] = None,
+        department: str | None = None,
         unread_only: bool = False,
     ) -> ServiceResult:
-        query: Dict[str, Any] = {
+        query: dict[str, Any] = {
             "tenant_id": ctx.tenant_id,
             "$or": [{"to_user_id": ctx.actor_id}, {"to_department": {"$exists": True}}, {"from_user_id": ctx.actor_id}],
         }

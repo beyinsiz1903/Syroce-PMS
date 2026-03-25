@@ -9,8 +9,8 @@ Generates canonical reservations with configurable chaos:
   - Delayed/failed ACK responses
 """
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from ...domain.models.canonical import (
     CanonicalGuest,
@@ -61,11 +61,11 @@ def generate_reservation(
     adult_count: int = 2,
     child_count: int = 0,
     special_requests: str = "",
-    message_uid: Optional[str] = None,
+    message_uid: str | None = None,
 ) -> CanonicalReservation:
     """Generate a single canonical reservation for a given provider profile."""
     profile = PROVIDER_PROFILES[provider]
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     arrival = (now + timedelta(days=arrival_offset_days)).strftime("%Y-%m-%d")
     departure = (now + timedelta(days=arrival_offset_days + stay_nights)).strftime("%Y-%m-%d")
 
@@ -98,7 +98,7 @@ def generate_reservation(
 
 def generate_duplicate_batch(
     provider: str, count: int = 3
-) -> List[CanonicalReservation]:
+) -> list[CanonicalReservation]:
     """Generate N identical reservations (same external_id, same data)."""
     ext_id = f"DUP-{uuid.uuid4().hex[:8]}"
     return [
@@ -109,7 +109,7 @@ def generate_duplicate_batch(
 
 def generate_modify_then_cancel(
     provider: str,
-) -> List[CanonicalReservation]:
+) -> list[CanonicalReservation]:
     """Generate a reservation, then a modification, then a cancellation."""
     ext_id = f"RACE-{uuid.uuid4().hex[:8]}"
     original = generate_reservation(provider, external_id=ext_id, seq=1, total_amount=1500.0)
@@ -125,9 +125,9 @@ def generate_modify_then_cancel(
 
 
 def generate_stale_inventory_snapshot(
-    provider: str, room_type_id: str, dates: List[str],
+    provider: str, room_type_id: str, dates: list[str],
     stale_available: int = 10, actual_available: int = 3,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Generate a stale inventory snapshot that doesn't match actual state."""
     profile = PROVIDER_PROFILES[provider]
     return {

@@ -18,8 +18,8 @@ Checks:
 """
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from ..connectors.hotelrunner import xml_parser
 from ..connectors.hotelrunner.auth import HotelRunnerAuth
@@ -38,15 +38,15 @@ logger = logging.getLogger("channel_manager.application.sandbox_validation")
 class SandboxValidationService:
     """Validates HotelRunner integration end-to-end in sandbox mode."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     async def run_validation(
         self,
         tenant_id: str,
         connector_id: str,
-        actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Run all 10 validation checks and produce Integration Readiness Report."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
         if not connector:
@@ -56,8 +56,8 @@ class SandboxValidationService:
         property_id = connector.get("property_id", "")
         environment = connector.get("environment", "sandbox")
 
-        checks: List[Dict[str, Any]] = []
-        blocker_issues: List[str] = []
+        checks: list[dict[str, Any]] = []
+        blocker_issues: list[str] = []
 
         try:
             auth = HotelRunnerAuth.from_credentials(credentials)
@@ -128,7 +128,7 @@ class SandboxValidationService:
 
     # ─── Individual Checks ────────────────────────────────────────────
 
-    async def _check_authentication(self, client: HotelRunnerClient) -> Dict[str, Any]:
+    async def _check_authentication(self, client: HotelRunnerClient) -> dict[str, Any]:
         start = time.monotonic()
         try:
             result = await client.test_connection_detailed()
@@ -147,7 +147,7 @@ class SandboxValidationService:
                 error=str(e), blocking_issue="Authentication unreachable",
             )
 
-    async def _check_reservation_pull(self, client: HotelRunnerClient) -> Dict[str, Any]:
+    async def _check_reservation_pull(self, client: HotelRunnerClient) -> dict[str, Any]:
         start = time.monotonic()
         try:
             reservations = await client.pull_reservations(per_page=5, undelivered=True)
@@ -165,7 +165,7 @@ class SandboxValidationService:
                 error=str(e),
             )
 
-    async def _check_reservation_pagination(self, client: HotelRunnerClient) -> Dict[str, Any]:
+    async def _check_reservation_pagination(self, client: HotelRunnerClient) -> dict[str, Any]:
         start = time.monotonic()
         try:
             reservations = await client.pull_reservations(per_page=2, undelivered=False)
@@ -183,7 +183,7 @@ class SandboxValidationService:
                 error=str(e),
             )
 
-    async def _check_reservation_parsing(self, client: HotelRunnerClient) -> Dict[str, Any]:
+    async def _check_reservation_parsing(self, client: HotelRunnerClient) -> dict[str, Any]:
         start = time.monotonic()
         try:
             reservations = await client.pull_reservations(per_page=5, undelivered=True)
@@ -208,7 +208,7 @@ class SandboxValidationService:
                 latency_ms=int((time.monotonic() - start) * 1000), error=str(e),
             )
 
-    async def _check_inventory_push(self, client: HotelRunnerClient, auth: HotelRunnerAuth) -> Dict[str, Any]:
+    async def _check_inventory_push(self, client: HotelRunnerClient, auth: HotelRunnerAuth) -> dict[str, Any]:
         start = time.monotonic()
         try:
             test_updates = [{
@@ -234,7 +234,7 @@ class SandboxValidationService:
                 error=str(e), blocking_issue="Inventory push failed",
             )
 
-    async def _check_rate_push(self, client: HotelRunnerClient, auth: HotelRunnerAuth) -> Dict[str, Any]:
+    async def _check_rate_push(self, client: HotelRunnerClient, auth: HotelRunnerAuth) -> dict[str, Any]:
         start = time.monotonic()
         try:
             test_updates = [{
@@ -262,7 +262,7 @@ class SandboxValidationService:
                 error=str(e), blocking_issue="Rate push failed",
             )
 
-    async def _check_ack(self, client: HotelRunnerClient) -> Dict[str, Any]:
+    async def _check_ack(self, client: HotelRunnerClient) -> dict[str, Any]:
         start = time.monotonic()
         try:
             await client.acknowledge_reservation("VALIDATION-TEST-UID")
@@ -283,7 +283,7 @@ class SandboxValidationService:
                 provider_status="expected_rejection" if is_expected else "error",
             )
 
-    async def _check_error_parsing(self) -> Dict[str, Any]:
+    async def _check_error_parsing(self) -> dict[str, Any]:
         start = time.monotonic()
         try:
             error_xml = '<?xml version="1.0"?><OTA_HotelAvailNotifRS><Errors><Error Code="42" Type="3">Invalid hotel code</Error></Errors></OTA_HotelAvailNotifRS>'
@@ -302,7 +302,7 @@ class SandboxValidationService:
                 latency_ms=int((time.monotonic() - start) * 1000), error=str(e),
             )
 
-    async def _check_retry_behaviour(self) -> Dict[str, Any]:
+    async def _check_retry_behaviour(self) -> dict[str, Any]:
         start = time.monotonic()
         try:
             policy = RetryPolicy(max_retries=2, base_delay=0.01, max_delay=0.05)
@@ -329,7 +329,7 @@ class SandboxValidationService:
                 latency_ms=int((time.monotonic() - start) * 1000), error=str(e),
             )
 
-    async def _check_audit_logging(self, client: HotelRunnerClient) -> Dict[str, Any]:
+    async def _check_audit_logging(self, client: HotelRunnerClient) -> dict[str, Any]:
         start = time.monotonic()
         audit_entries = client.audit_entries
         has_entries = len(audit_entries) > 0
@@ -352,9 +352,9 @@ class SandboxValidationService:
         response_summary: str = "",
         provider_status: str = "",
         canonical_mapping: str = "",
-        blocking_issue: Optional[str] = None,
-        error: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        blocking_issue: str | None = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
         return {
             "check_name": check_name,
             "success": success,
@@ -371,9 +371,9 @@ class SandboxValidationService:
     def _report(
         connector_id: str,
         property_id: str,
-        checks: List[Dict[str, Any]],
-        blocker_issues: List[str],
-    ) -> Dict[str, Any]:
+        checks: list[dict[str, Any]],
+        blocker_issues: list[str],
+    ) -> dict[str, Any]:
         passed = [c for c in checks if c["success"]]
         failed = [c for c in checks if not c["success"]]
         has_blockers = len(blocker_issues) > 0
@@ -415,7 +415,7 @@ class SandboxValidationService:
             "production_recommendation": recommendation,
             "total_latency_ms": total_latency,
             "checks": checks,
-            "run_at": datetime.now(timezone.utc).isoformat(),
+            "run_at": datetime.now(UTC).isoformat(),
         }
 
     async def _audit(self, tenant_id, property_id, connector_id, action, actor_id=None, metadata=None):
@@ -426,7 +426,7 @@ class SandboxValidationService:
         await self._repo.create_audit_log(log.to_doc())
 
     async def _integrate_with_ops_services(
-        self, tenant_id: str, connector_id: str, report: Dict[str, Any],
+        self, tenant_id: str, connector_id: str, report: dict[str, Any],
     ):
         """Push validation results into historical metrics, alerting, and reliability."""
         try:

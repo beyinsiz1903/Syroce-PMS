@@ -3,7 +3,7 @@ Observability — Night Audit & Operational Metrics API
 Exposes runtime metrics for load tests, night audit, and operational monitoring.
 """
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends
 
@@ -38,8 +38,8 @@ async def get_night_audit_metrics(
 
     # Business date status
     settings = await db.tenant_settings.find_one({"tenant_id": tid}, {"_id": 0})
-    business_date = (settings or {}).get("business_date", datetime.now(timezone.utc).date().isoformat())
-    today = datetime.now(timezone.utc).date().isoformat()
+    business_date = (settings or {}).get("business_date", datetime.now(UTC).date().isoformat())
+    today = datetime.now(UTC).date().isoformat()
     is_stale = business_date < today
 
     return {
@@ -72,7 +72,7 @@ async def get_operational_metrics(
     """Aggregated operational metrics for load testing and monitoring."""
     ctx = OperationContext.from_user(current_user)
     tid = ctx.tenant_id
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Room status distribution
     room_statuses = {}

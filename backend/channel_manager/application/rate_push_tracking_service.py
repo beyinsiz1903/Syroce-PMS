@@ -21,8 +21,8 @@ Response parsing + failure classification:
   - unknown: Unclassified error
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -37,7 +37,7 @@ _NO_ID = {"_id": 0}
 class RatePushTrackingService:
     """Tracks and aggregates rate push operation metrics."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     async def record_rate_push(
@@ -51,9 +51,9 @@ class RatePushTrackingService:
         update_count: int = 0,
         retry_count: int = 0,
         correlation_id: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Record a single rate push operation result."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         failure_class = self._classify_failure(error_type, error_message) if not success else ""
 
         record = {
@@ -74,9 +74,9 @@ class RatePushTrackingService:
 
     async def get_metrics(
         self, tenant_id: str, connector_id: str, days: int = 7,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get aggregated rate push metrics for a connector."""
-        datetime.now(timezone.utc).isoformat()[:10]  # today
+        datetime.now(UTC).isoformat()[:10]  # today
         query = {"tenant_id": tenant_id, "connector_id": connector_id}
 
         total = await db[RATE_PUSH_METRICS].count_documents(query)

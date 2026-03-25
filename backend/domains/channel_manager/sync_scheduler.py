@@ -4,8 +4,8 @@ Manages scheduled and event-driven inventory synchronization.
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -55,7 +55,7 @@ class SyncScheduler:
             {"_id": 0},
         ).to_list(500)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         threshold = now - timedelta(seconds=self._interval_seconds)
 
         for conn in connections:
@@ -69,7 +69,7 @@ class SyncScheduler:
                 logger.error(f"Sync failed for connection {conn.get('id')}: {e}")
                 await self._log_sync_failure(conn, str(e))
 
-    async def sync_connection(self, connection: Dict[str, Any]) -> Dict[str, Any]:
+    async def sync_connection(self, connection: dict[str, Any]) -> dict[str, Any]:
         """Sync a single channel connection."""
         tenant_id = connection["tenant_id"]
         connection_id = connection["id"]
@@ -92,7 +92,7 @@ class SyncScheduler:
             "total_rooms": len(rooms),
             "active_bookings": active_bookings,
             "available_rooms": sum(1 for r in rooms if r.get("status") == "available"),
-            "synced_at": datetime.now(timezone.utc).isoformat(),
+            "synced_at": datetime.now(UTC).isoformat(),
             "status": "success",
         }
 
@@ -103,19 +103,19 @@ class SyncScheduler:
             "channel": channel,
             "type": "scheduled_sync",
             "result": sync_result,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
 
         # Update last_sync
         await db.channel_connections.update_one(
             {"id": connection_id},
-            {"$set": {"last_sync": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {"last_sync": datetime.now(UTC).isoformat()}},
         )
 
         logger.info(f"Synced {channel} for tenant {tenant_id}: {sync_result['available_rooms']} available rooms")
         return sync_result
 
-    async def trigger_event_sync(self, tenant_id: str, event_type: str, event_data: Dict):
+    async def trigger_event_sync(self, tenant_id: str, event_type: str, event_data: dict):
         """Trigger an immediate sync based on a PMS event (booking, room status change, etc.)."""
         connections = await db.channel_connections.find(
             {"tenant_id": tenant_id, "status": "active"},
@@ -133,7 +133,7 @@ class SyncScheduler:
 
         return results
 
-    async def _log_sync_failure(self, connection: Dict, error: str):
+    async def _log_sync_failure(self, connection: dict, error: str):
         """Log a sync failure."""
         await db.channel_sync_logs.insert_one({
             "tenant_id": connection.get("tenant_id"),
@@ -142,7 +142,7 @@ class SyncScheduler:
             "type": "scheduled_sync",
             "status": "error",
             "error": error,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
 
 

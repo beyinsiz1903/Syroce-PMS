@@ -6,8 +6,8 @@ Moved from the standalone reconciliation_engine.py to resolve the
 file/package naming conflict (Python package shadows the .py file).
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 from domains.channel_manager.drift_detector import drift_detector
@@ -19,7 +19,7 @@ class ReconciliationEngine:
     """Automatically resolves inventory drift between PMS and OTAs."""
 
     @staticmethod
-    async def reconcile(tenant_id: str, *, auto_fix: bool = True) -> Dict[str, Any]:
+    async def reconcile(tenant_id: str, *, auto_fix: bool = True) -> dict[str, Any]:
         """Run drift scan and optionally auto-reconcile discrepancies."""
         scan = await drift_detector.scan_drift(tenant_id)
         drifts = scan.get("drifts", [])
@@ -29,7 +29,7 @@ class ReconciliationEngine:
                 "tenant_id": tenant_id,
                 "status": "clean",
                 "message": "No drift detected — PMS and OTAs are in sync",
-                "reconciled_at": datetime.now(timezone.utc).isoformat(),
+                "reconciled_at": datetime.now(UTC).isoformat(),
             }
 
         actions = []
@@ -72,12 +72,12 @@ class ReconciliationEngine:
             "actions": actions,
             "auto_fixed": sum(1 for a in actions if a["status"] == "queued_for_sync"),
             "manual_review": sum(1 for a in actions if a["status"] == "requires_manual_review"),
-            "reconciled_at": datetime.now(timezone.utc).isoformat(),
+            "reconciled_at": datetime.now(UTC).isoformat(),
         }
 
         await db.reconciliation_results.insert_one({
             **result,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
 
         logger.info(
@@ -90,7 +90,7 @@ class ReconciliationEngine:
     @staticmethod
     async def get_reconciliation_history(
         tenant_id: str, *, limit: int = 20,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         return await db.reconciliation_results.find(
             {"tenant_id": tenant_id},
             {"_id": 0},

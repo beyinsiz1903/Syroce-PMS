@@ -8,7 +8,7 @@ import asyncio
 import logging
 import time
 from collections import defaultdict
-from typing import Callable, Coroutine, Dict, List, Optional
+from typing import Callable, Coroutine
 
 from .events import ARIChangeEvent
 from .models import DEBOUNCE_WINDOWS
@@ -34,13 +34,13 @@ class ARIEventBuffer:
     the bucket is flushed to the on_flush callback.
     """
 
-    def __init__(self, on_flush: Callable[[str, List[ARIChangeEvent]], Coroutine]):
-        self._buckets: Dict[str, List[ARIChangeEvent]] = defaultdict(list)
-        self._timers: Dict[str, float] = {}
+    def __init__(self, on_flush: Callable[[str, list[ARIChangeEvent]], Coroutine]):
+        self._buckets: dict[str, list[ARIChangeEvent]] = defaultdict(list)
+        self._timers: dict[str, float] = {}
         self._on_flush = on_flush
         self._lock = asyncio.Lock()
         self._running = False
-        self._flush_task: Optional[asyncio.Task] = None
+        self._flush_task: asyncio.Task | None = None
 
     async def start(self):
         """Start the background flush checker."""

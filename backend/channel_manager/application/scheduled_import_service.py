@@ -13,8 +13,8 @@ Features:
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..infrastructure.repository import ChannelManagerRepository
@@ -24,7 +24,7 @@ from .reservation_import_service import ReservationImportService
 logger = logging.getLogger("channel_manager.application.scheduled_import")
 
 # In-memory lock set to prevent duplicate jobs
-_running_jobs: Dict[str, str] = {}  # connector_id -> job_id
+_running_jobs: dict[str, str] = {}  # connector_id -> job_id
 
 
 class ScheduledImportJob:
@@ -43,15 +43,15 @@ class ScheduledImportJob:
         self.property_id = property_id
         self.triggered_by = triggered_by
         self.status = "pending"
-        self.created_at = datetime.now(timezone.utc).isoformat()
-        self.started_at: Optional[str] = None
-        self.completed_at: Optional[str] = None
+        self.created_at = datetime.now(UTC).isoformat()
+        self.started_at: str | None = None
+        self.completed_at: str | None = None
         self.retry_count = 0
         self.max_retries = 3
-        self.error: Optional[str] = None
-        self.batch_summary: Optional[Dict[str, Any]] = None
+        self.error: str | None = None
+        self.batch_summary: dict[str, Any] | None = None
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "tenant_id": self.tenant_id,
@@ -72,7 +72,7 @@ class ScheduledImportJob:
 class ScheduledImportService:
     """Manages periodic reservation import jobs for all active connectors."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
         self._import_svc = ReservationImportService(repo=self._repo)
         self._alert_svc = AlertingService(repo=self._repo)
@@ -81,8 +81,8 @@ class ScheduledImportService:
         self,
         tenant_id: str,
         connector_id: str,
-        actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Run a single scheduled reservation import for a connector."""
         # Duplicate job prevention
         if connector_id in _running_jobs:
@@ -113,11 +113,11 @@ class ScheduledImportService:
             _running_jobs.pop(connector_id, None)
 
     async def _execute_job(
-        self, job: ScheduledImportJob, actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        self, job: ScheduledImportJob, actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Execute job with retry logic and lifecycle tracking."""
         job.status = "running"
-        job.started_at = datetime.now(timezone.utc).isoformat()
+        job.started_at = datetime.now(UTC).isoformat()
 
         await self._store_job(job)
         await self._audit(job, AuditAction.IMPORT_JOB_STARTED, actor_id)
@@ -130,7 +130,7 @@ class ScheduledImportService:
                     triggered_by=job.triggered_by,
                 )
                 job.status = "completed"
-                job.completed_at = datetime.now(timezone.utc).isoformat()
+                job.completed_at = datetime.now(UTC).isoformat()
                 job.batch_summary = {
                     "total_pulled": result.get("total_pulled", 0),
                     "imported": result.get("imported", 0),
@@ -156,7 +156,7 @@ class ScheduledImportService:
                     await asyncio.sleep(min(2 ** job.retry_count, 30))
                 else:
                     job.status = "failed"
-                    job.completed_at = datetime.now(timezone.utc).isoformat()
+                    job.completed_at = datetime.now(UTC).isoformat()
                     await self._store_job(job)
                     await self._audit(job, AuditAction.IMPORT_JOB_FAILED, actor_id, {
                         "error": job.error,
@@ -168,7 +168,7 @@ class ScheduledImportService:
 
         return {"status": "failed", "job": job.to_doc()}
 
-    async def run_all_connectors(self, tenant_id: str) -> Dict[str, Any]:
+    async def run_all_connectors(self, tenant_id: str) -> dict[str, Any]:
         """Run scheduled import for all active connectors of a tenant."""
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
         active = [c for c in connectors if c.get("status") == "active"]
@@ -183,16 +183,16 @@ class ScheduledImportService:
         return {
             "total_connectors": len(active),
             "results": results,
-            "run_at": datetime.now(timezone.utc).isoformat(),
+            "run_at": datetime.now(UTC).isoformat(),
         }
 
     async def get_import_jobs(
-        self, tenant_id: str, connector_id: Optional[str] = None,
-        status: Optional[str] = None, limit: int = 50,
-    ) -> List[Dict[str, Any]]:
+        self, tenant_id: str, connector_id: str | None = None,
+        status: str | None = None, limit: int = 50,
+    ) -> list[dict[str, Any]]:
         """List import jobs with optional filters."""
         from core.database import db
-        query: Dict[str, Any] = {"tenant_id": tenant_id}
+        query: dict[str, Any] = {"tenant_id": tenant_id}
         if connector_id:
             query["connector_id"] = connector_id
         if status:
@@ -202,14 +202,14 @@ class ScheduledImportService:
         ).sort("created_at", -1).limit(limit).to_list(limit)
         return jobs
 
-    async def get_job_detail(self, tenant_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+    async def get_job_detail(self, tenant_id: str, job_id: str) -> dict[str, Any] | None:
         """Get details of a specific import job."""
         from core.database import db
         return await db.cm_import_jobs.find_one(
             {"tenant_id": tenant_id, "id": job_id}, {"_id": 0},
         )
 
-    async def retry_failed_job(self, tenant_id: str, job_id: str, actor_id: str) -> Dict[str, Any]:
+    async def retry_failed_job(self, tenant_id: str, job_id: str, actor_id: str) -> dict[str, Any]:
         """Retry a previously failed import job."""
         from core.database import db
         job_doc = await db.cm_import_jobs.find_one(
@@ -223,7 +223,7 @@ class ScheduledImportService:
         )
         return result
 
-    async def run_safety_net_inventory_sync(self, tenant_id: str) -> Dict[str, Any]:
+    async def run_safety_net_inventory_sync(self, tenant_id: str) -> dict[str, Any]:
         """
         Cron safety-net: Run inventory sync for all active connectors
         to catch any missed updates.
@@ -236,8 +236,8 @@ class ScheduledImportService:
         results = []
         for c in active:
             try:
-                date_start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-                date_end = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+                date_start = datetime.now(UTC).strftime("%Y-%m-%d")
+                date_end = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
                 result = await sync_svc.trigger_inventory_sync(
                     tenant_id=tenant_id,
                     connector_id=c["id"],
@@ -262,7 +262,7 @@ class ScheduledImportService:
             "type": "safety_net_inventory_sync",
             "total": len(active),
             "results": results,
-            "run_at": datetime.now(timezone.utc).isoformat(),
+            "run_at": datetime.now(UTC).isoformat(),
         }
 
     # ─── Internal Helpers ────────────────────────────────────────────
@@ -281,7 +281,7 @@ class ScheduledImportService:
             "tenant_id": job.tenant_id,
             "connector_id": job.connector_id,
             "status": "failed",
-            "completed_at": {"$gte": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()},
+            "completed_at": {"$gte": (datetime.now(UTC) - timedelta(hours=1)).isoformat()},
         })
         if recent_failures >= 3:
             await self._alert_svc.check_and_fire_alert(
@@ -297,7 +297,7 @@ class ScheduledImportService:
 
     async def _audit(
         self, job: ScheduledImportJob, action: AuditAction,
-        actor_id: Optional[str] = None, metadata: Optional[Dict] = None,
+        actor_id: str | None = None, metadata: dict | None = None,
     ):
         log = IntegrationAuditLog(
             tenant_id=job.tenant_id,

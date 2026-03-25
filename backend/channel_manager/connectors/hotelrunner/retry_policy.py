@@ -4,7 +4,7 @@ HotelRunner Retry Policy - Exponential backoff with jitter for failed requests.
 import asyncio
 import logging
 import random
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from .errors import AuthenticationError, ConnectorError, ProviderUnavailableError, RateLimitError
 
@@ -38,7 +38,7 @@ class RetryPolicy:
             return True
         return False
 
-    def get_delay(self, attempt: int, error: Optional[Exception] = None) -> float:
+    def get_delay(self, attempt: int, error: Exception | None = None) -> float:
         """Calculate delay before next retry with exponential backoff + jitter."""
         if isinstance(error, RateLimitError):
             return float(error.retry_after_seconds)

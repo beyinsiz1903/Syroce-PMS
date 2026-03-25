@@ -3,7 +3,7 @@ Data Masking - Sensitive data masking for API responses and logs.
 """
 import logging
 import re
-from typing import Any, Dict
+from typing import Any
 
 logger = logging.getLogger("security.masking")
 
@@ -82,7 +82,7 @@ class DataMaskingService:
             return s[0] + "***"
         return s[:2] + "*" * (len(s) - 4) + s[-2:]
 
-    def get_masking_coverage(self, data: dict) -> Dict[str, Any]:
+    def get_masking_coverage(self, data: dict) -> dict[str, Any]:
         """Analyze masking coverage for a data structure."""
         total_fields = 0
         sensitive_found = 0
@@ -110,7 +110,7 @@ class DataMaskingService:
             "coverage": round(sensitive_found / max(total_fields, 1), 4) if sensitive_found > 0 else 1.0,
         }
 
-    def preview_masking(self, sample_data: dict) -> Dict[str, Any]:
+    def preview_masking(self, sample_data: dict) -> dict[str, Any]:
         """Preview how data would be masked."""
         original_fields = list(sample_data.keys())
         masked = self.mask_dict(sample_data)

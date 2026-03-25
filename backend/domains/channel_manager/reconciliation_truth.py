@@ -9,7 +9,7 @@ This is the system's constitutional document for data ownership.
 """
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any
 
 from .data_model import DriftResolution, DriftType
 
@@ -38,7 +38,7 @@ class TruthRule:
 # TRUTH TABLE — Resolution rules for every drift type
 # ══════════════════════════════════════════════════════════════════════
 
-TRUTH_TABLE: Dict[str, TruthRule] = {
+TRUTH_TABLE: dict[str, TruthRule] = {
     # ── Reservation Drifts ────────────────────────────────────
     DriftType.MISSING_LOCALLY: TruthRule(
         drift_type=DriftType.MISSING_LOCALLY,
@@ -133,7 +133,7 @@ def can_auto_heal(drift_type: str) -> bool:
     )
 
 
-def get_truth_table_summary() -> List[Dict[str, Any]]:
+def get_truth_table_summary() -> list[dict[str, Any]]:
     """Return the full truth table as a serializable list."""
     return [
         {

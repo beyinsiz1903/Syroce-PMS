@@ -2,8 +2,7 @@
 System Health — Live Events API
 Provides live event replay, audit metrics, and WebSocket status for the dashboard.
 """
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 
@@ -16,7 +15,7 @@ router = APIRouter(prefix="/api/system-health", tags=["System Health Live"])
 
 @router.get("/live/events")
 async def get_live_events(
-    since: Optional[str] = None,
+    since: str | None = None,
     limit: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
 ):
@@ -25,7 +24,7 @@ async def get_live_events(
     if since:
         query["timestamp"] = {"$gte": since}
     else:
-        query["timestamp"] = {"$gte": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()}
+        query["timestamp"] = {"$gte": (datetime.now(UTC) - timedelta(hours=1)).isoformat()}
 
     events = await db.system_health_events.find(
         query, {"_id": 0}
@@ -62,7 +61,7 @@ async def get_health_audit_metrics(
     current_user: User = Depends(get_current_user),
 ):
     """Audit and observability metrics for health dashboard interactions."""
-    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
     tid = current_user.tenant_id
 
     # Drift scan duration (from scan results)
@@ -118,5 +117,5 @@ async def get_health_audit_metrics(
             "total": dl_total,
             "new_in_period": dl_period,
         },
-        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        "retrieved_at": datetime.now(UTC).isoformat(),
     }

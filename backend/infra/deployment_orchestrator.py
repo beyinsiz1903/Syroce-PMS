@@ -4,8 +4,8 @@ deployment strategy recommendation, and infrastructure readiness scoring.
 """
 import logging
 import os
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.deployment_orchestrator")
 
@@ -118,7 +118,7 @@ RISK_FACTORS = {
 class DeploymentOrchestrator:
     """Assesses deployment risk and generates deployment strategy."""
 
-    def assess_risk(self) -> Dict[str, Any]:
+    def assess_risk(self) -> dict[str, Any]:
         """Full deployment risk assessment."""
         risks = []
         risk_score = 0
@@ -160,7 +160,7 @@ class DeploymentOrchestrator:
             verdict = "HIGH_RISK"
 
         return {
-            "assessed_at": datetime.now(timezone.utc).isoformat(),
+            "assessed_at": datetime.now(UTC).isoformat(),
             "safety_score": safety_score,
             "risk_score": risk_score,
             "verdict": verdict,
@@ -169,7 +169,7 @@ class DeploymentOrchestrator:
             "mitigations": self._generate_mitigations(risks),
         }
 
-    def _generate_mitigations(self, risks: List[Dict]) -> List[str]:
+    def _generate_mitigations(self, risks: list[dict]) -> list[str]:
         mitigations = []
         for r in risks:
             factor = r["factor"]
@@ -187,7 +187,7 @@ class DeploymentOrchestrator:
                 mitigations.append("Configure at least one messaging provider (Twilio, SendGrid, WhatsApp)")
         return mitigations
 
-    def get_deployment_strategy(self) -> Dict[str, Any]:
+    def get_deployment_strategy(self) -> dict[str, Any]:
         risk = self.assess_risk()
         safety = risk["safety_score"]
 
@@ -248,10 +248,10 @@ class DeploymentOrchestrator:
             ],
         }
 
-    def get_infra_summary(self) -> Dict[str, Any]:
+    def get_infra_summary(self) -> dict[str, Any]:
         """Infrastructure topology summary."""
         return {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "components": DEPLOYMENT_COMPONENTS,
             "total_components": len(DEPLOYMENT_COMPONENTS),
             "critical_components": sum(1 for c in DEPLOYMENT_COMPONENTS.values() if c["critical"]),

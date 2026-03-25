@@ -25,8 +25,7 @@ Endpoints:
   POST /api/ops/dashboard/drift-alerts/{alert_id}/acknowledge — Acknowledge a drift alert
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Body, Query
 
@@ -42,7 +41,7 @@ router = APIRouter(prefix="/api/ops/dashboard", tags=["Control Plane Dashboard"]
 
 @router.get("")
 async def get_dashboard(
-    tenant_id: Optional[str] = Query(None, description="Filter by tenant"),
+    tenant_id: str | None = Query(None, description="Filter by tenant"),
 ):
     """Full system dashboard — single pane of glass.
     Health score, failure counts, pipeline depth, connector status.
@@ -61,12 +60,12 @@ async def get_tenant_dashboard(tenant_id: str):
 @router.get("/trends")
 async def get_trends(
     hours: int = Query(24, ge=1, le=168),
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
 ):
     """Historical health score trends from snapshots."""
     from core.database import db
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
     query = {
         "timestamp": {"$gte": cutoff},
         "snapshot_type": "system",
@@ -102,7 +101,7 @@ async def get_trends(
 
 @router.get("/connectors")
 async def get_connectors(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
 ):
     """All connector health statuses."""
     agg = get_dashboard_aggregator()
@@ -112,7 +111,7 @@ async def get_connectors(
 
 @router.get("/pipeline")
 async def get_pipeline(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
 ):
     """End-to-end reservation pipeline depth."""
     agg = get_dashboard_aggregator()
@@ -122,7 +121,7 @@ async def get_pipeline(
 
 @router.get("/channel-health")
 async def get_channel_health(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
     hours: int = Query(24, ge=1, le=168),
 ):
     """Channel Health Dashboard — push latency percentiles, sync rates,
@@ -133,7 +132,7 @@ async def get_channel_health(
 
 @router.get("/channel-health/trends")
 async def get_channel_health_trends(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
     hours: int = Query(168, ge=1, le=720),
     bucket_hours: int = Query(0, ge=0, le=24, description="0 = auto"),
 ):
@@ -146,7 +145,7 @@ async def get_channel_health_trends(
 
 @router.get("/channel-health/field-kpis")
 async def get_channel_health_field_kpis(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
     period_hours: int = Query(24, ge=1, le=720),
 ):
     """Operational field KPIs — sync success, drift reduction, MTTR,
@@ -157,7 +156,7 @@ async def get_channel_health_field_kpis(
 
 @router.get("/channel-health/weekly-proof")
 async def get_channel_health_weekly_proof(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
     weeks: int = Query(8, ge=2, le=52),
 ):
     """Week-over-week improvement proof — drift reduction, MTTR improvement,
@@ -176,7 +175,7 @@ async def get_tech_debt():
 
 @router.get("/deploys")
 async def get_deploys(
-    environment: Optional[str] = Query(None, description="Filter by environment"),
+    environment: str | None = Query(None, description="Filter by environment"),
     limit: int = Query(20, ge=1, le=100),
 ):
     """Recent deployment events — CI/CD history in Control Plane."""
@@ -204,7 +203,7 @@ async def get_deploy_trend_endpoint(
 
 @router.get("/inventory-alignment")
 async def get_inventory_alignment(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
     days_ahead: int = Query(14, ge=1, le=60),
 ):
     """Inventory ledger alignment status.
@@ -221,7 +220,7 @@ async def get_inventory_alignment(
 @router.get("/dora-metrics")
 async def get_dora_metrics(
     days: int = Query(30, ge=7, le=90),
-    environment: Optional[str] = Query(None),
+    environment: str | None = Query(None),
 ):
     """DORA release metrics — deployment frequency, change failure rate, MTTR, lead time."""
     from .dora_metrics import compute_dora_metrics
@@ -231,7 +230,7 @@ async def get_dora_metrics(
 @router.get("/dora-correlation")
 async def get_dora_correlation(
     days: int = Query(30, ge=14, le=90),
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
 ):
     """DORA x Channel Health correlation analysis.
 
@@ -246,9 +245,9 @@ async def get_dora_correlation(
 
 @router.get("/drift-alerts")
 async def get_drift_alerts_endpoint(
-    tenant_id: Optional[str] = Query(None),
-    severity: Optional[str] = Query(None, description="Filter: warning, critical, severe"),
-    acknowledged: Optional[bool] = Query(None),
+    tenant_id: str | None = Query(None),
+    severity: str | None = Query(None, description="Filter: warning, critical, severe"),
+    acknowledged: bool | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
 ):
     """Active drift alerts — threshold-based inventory drift warnings."""
@@ -262,7 +261,7 @@ async def get_drift_alerts_endpoint(
 
 @router.get("/drift-alerts/summary")
 async def get_drift_alert_summary_endpoint(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
 ):
     """Drift alert summary for the ops dashboard — quick severity overview."""
     from .drift_alerting import get_drift_alert_summary
@@ -271,7 +270,7 @@ async def get_drift_alert_summary_endpoint(
 
 @router.post("/drift-alerts/evaluate")
 async def evaluate_drift_alerts_endpoint(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
 ):
     """Evaluate current inventory state and fire drift alerts if thresholds are breached.
 
@@ -287,7 +286,7 @@ async def evaluate_drift_alerts_endpoint(
 @router.post("/drift-alerts/{alert_id}/acknowledge")
 async def acknowledge_drift_alert_endpoint(
     alert_id: str,
-    acknowledged_by: Optional[str] = Query("operator"),
+    acknowledged_by: str | None = Query("operator"),
 ):
     """Acknowledge a drift alert."""
     from .drift_alerting import acknowledge_drift_alert
@@ -302,7 +301,7 @@ async def acknowledge_drift_alert_endpoint(
 
 @router.get("/auto-actions")
 async def get_auto_actions_endpoint(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
 ):
     """Auto-action history — automated responses to severe alerts."""
@@ -313,18 +312,18 @@ async def get_auto_actions_endpoint(
 
 @router.get("/ops-kpis")
 async def get_ops_kpis_endpoint(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
     hours: int = Query(24, ge=1, le=168),
 ):
     """Unified KPI panel data — MTTR, drift trend, sync success, auto-heal stats."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from core.database import db as _db
 
     from .auto_actions import COLL_AUTO_ACTIONS
     from .drift_alerting import COLL_DRIFT_EVAL_LOG, get_drift_alert_summary
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cutoff = (now - timedelta(hours=hours)).isoformat()
 
     # Drift alert stats

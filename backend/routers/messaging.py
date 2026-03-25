@@ -2,7 +2,7 @@
 Messaging Router - Provider management, template CRUD, sending, delivery logs.
 """
 import logging
-from typing import List, Optional
+from datetime import UTC
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -57,9 +57,9 @@ async def create_provider(req: ProviderConfigReq, current_user: User = Depends(g
 
 
 class ProviderUpdateReq(BaseModel):
-    credentials: Optional[dict] = None
-    is_sandbox: Optional[bool] = None
-    enabled: Optional[bool] = None
+    credentials: dict | None = None
+    is_sandbox: bool | None = None
+    enabled: bool | None = None
 
 
 @router.put("/providers/{config_id}")
@@ -73,8 +73,8 @@ async def update_provider(config_id: str, req: ProviderUpdateReq,
         updates["is_sandbox"] = req.is_sandbox
     if req.enabled is not None:
         updates["enabled"] = req.enabled
-    from datetime import datetime, timezone
-    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    from datetime import datetime
+    updates["updated_at"] = datetime.now(UTC).isoformat()
     result = await svc.db.messaging_provider_configs.update_one(
         {"id": config_id, "tenant_id": current_user.tenant_id},
         {"$set": updates},
@@ -106,9 +106,9 @@ class TemplateReq(BaseModel):
     name: str
     category: str
     channel: str
-    subject: Optional[str] = None
+    subject: str | None = None
     body_template: str
-    variables: List[str] = []
+    variables: list[str] = []
 
 
 @router.post("/templates")
@@ -128,9 +128,9 @@ async def create_template(req: TemplateReq, current_user: User = Depends(get_cur
 async def update_template(template_id: str, req: dict, current_user: User = Depends(get_current_user)):
     svc = _get_service()
     allowed = ["subject", "body_template", "variables", "is_active"]
-    from datetime import datetime, timezone
+    from datetime import datetime
     updates = {k: v for k, v in req.items() if k in allowed}
-    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    updates["updated_at"] = datetime.now(UTC).isoformat()
     result = await svc.db.messaging_templates.update_one(
         {"id": template_id, "tenant_id": current_user.tenant_id}, {"$set": updates}
     )
@@ -144,14 +144,14 @@ async def update_template(template_id: str, req: dict, current_user: User = Depe
 class SendReq(BaseModel):
     channel: str
     recipient: str
-    template_id: Optional[str] = None
-    subject: Optional[str] = None
-    body: Optional[str] = None
+    template_id: str | None = None
+    subject: str | None = None
+    body: str | None = None
     variables: dict = {}
-    booking_id: Optional[str] = None
-    guest_id: Optional[str] = None
-    property_id: Optional[str] = None
-    use_case: Optional[str] = None
+    booking_id: str | None = None
+    guest_id: str | None = None
+    property_id: str | None = None
+    use_case: str | None = None
 
 
 @router.post("/send")
@@ -176,8 +176,8 @@ async def retry_delivery(delivery_id: str, current_user: User = Depends(get_curr
 
 @router.get("/delivery-logs")
 async def get_delivery_logs(
-    status: Optional[str] = None,
-    channel: Optional[str] = None,
+    status: str | None = None,
+    channel: str | None = None,
     limit: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
 ):
@@ -212,12 +212,12 @@ class ConsentReq(BaseModel):
 async def update_consent(req: ConsentReq, current_user: User = Depends(get_current_user)):
     svc = _get_service()
     import uuid
-    from datetime import datetime, timezone
+    from datetime import datetime
     await svc.db.messaging_consents.update_one(
         {"tenant_id": current_user.tenant_id, "recipient": req.recipient, "channel": req.channel},
         {"$set": {
             "status": req.status,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
             "updated_by": current_user.id,
         },
          "$setOnInsert": {
@@ -225,7 +225,7 @@ async def update_consent(req: ConsentReq, current_user: User = Depends(get_curre
              "tenant_id": current_user.tenant_id,
              "recipient": req.recipient,
              "channel": req.channel,
-             "created_at": datetime.now(timezone.utc).isoformat(),
+             "created_at": datetime.now(UTC).isoformat(),
          }},
         upsert=True,
     )

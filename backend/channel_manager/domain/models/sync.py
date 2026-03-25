@@ -10,9 +10,9 @@ Indexes:
   PushReceipt: (tenant_id, connector_id, sync_event_id)
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -74,16 +74,16 @@ class ChangeRecord(BaseModel):
     date_end: str    # YYYY-MM-DD
 
     # Old & new values for delta detection
-    old_value: Optional[Any] = None
-    new_value: Optional[Any] = None
+    old_value: Any | None = None
+    new_value: Any | None = None
 
     # Coalescing tracking
-    coalesced_into: Optional[str] = None  # event_id if merged
+    coalesced_into: str | None = None  # event_id if merged
     is_coalesced: bool = False
 
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         return self.model_dump()
 
 
@@ -98,13 +98,13 @@ class SyncJob(BaseModel):
     status: SyncJobStatus = SyncJobStatus.PENDING
 
     # Scope
-    date_range_start: Optional[str] = None
-    date_range_end: Optional[str] = None
-    room_type_ids: List[str] = Field(default_factory=list)
-    rate_plan_ids: List[str] = Field(default_factory=list)
+    date_range_start: str | None = None
+    date_range_end: str | None = None
+    room_type_ids: list[str] = Field(default_factory=list)
+    rate_plan_ids: list[str] = Field(default_factory=list)
 
     # Change tracking
-    change_types: List[str] = Field(default_factory=list)
+    change_types: list[str] = Field(default_factory=list)
     total_changes_detected: int = 0
     total_changes_after_coalescing: int = 0
 
@@ -117,28 +117,28 @@ class SyncJob(BaseModel):
     # Trigger
     triggered_by: str = "system"  # system | user | webhook | schedule
     trigger_reason: str = ""
-    correlation_id: Optional[str] = None
+    correlation_id: str | None = None
 
     # Timing
-    started_at: Optional[str] = None
-    batched_at: Optional[str] = None
-    dispatched_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    duration_ms: Optional[int] = None
+    started_at: str | None = None
+    batched_at: str | None = None
+    dispatched_at: str | None = None
+    completed_at: str | None = None
+    duration_ms: int | None = None
 
     # Error
-    last_error: Optional[str] = None
+    last_error: str | None = None
     retry_count: int = 0
     max_retries: int = 3
 
     # Audit
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         return self.model_dump()
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "SyncJob":
+    def from_doc(cls, doc: dict[str, Any]) -> "SyncJob":
         doc.pop("_id", None)
         return cls(**doc)
 
@@ -157,40 +157,40 @@ class SyncEvent(BaseModel):
     change_type: str = ""  # ChangeType value
     entity_type: str = ""  # room_type, rate_plan
     entity_id: str = ""
-    date_key: Optional[str] = None  # YYYY-MM-DD
+    date_key: str | None = None  # YYYY-MM-DD
 
     # Batch payload
     batch_index: int = 0
     batch_size: int = 0
-    request_payload: Optional[Dict[str, Any]] = None
-    response_payload: Optional[Dict[str, Any]] = None
-    http_status: Optional[int] = None
+    request_payload: dict[str, Any] | None = None
+    response_payload: dict[str, Any] | None = None
+    http_status: int | None = None
 
     # Coalescing
     coalesced_count: int = 1
-    original_change_ids: List[str] = Field(default_factory=list)
+    original_change_ids: list[str] = Field(default_factory=list)
 
     # Error handling
-    error_message: Optional[str] = None
-    error_code: Optional[str] = None
+    error_message: str | None = None
+    error_code: str | None = None
     is_retryable: bool = True
     retry_count: int = 0
     max_retries: int = 3
-    next_retry_at: Optional[str] = None
+    next_retry_at: str | None = None
 
     # Timing
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    duration_ms: Optional[int] = None
-    latency_ms: Optional[int] = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    duration_ms: int | None = None
+    latency_ms: int | None = None
 
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         return self.model_dump()
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "SyncEvent":
+    def from_doc(cls, doc: dict[str, Any]) -> "SyncEvent":
         doc.pop("_id", None)
         return cls(**doc)
 
@@ -202,21 +202,21 @@ class PushReceipt(BaseModel):
     sync_event_id: str
     job_id: str
 
-    provider_message_id: Optional[str] = None
+    provider_message_id: str | None = None
     provider_status: str = ""
-    provider_response: Dict[str, Any] = Field(default_factory=dict)
+    provider_response: dict[str, Any] = Field(default_factory=dict)
 
     acknowledged: bool = False
-    acknowledged_at: Optional[str] = None
+    acknowledged_at: str | None = None
 
     latency_ms: int = 0
 
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         return self.model_dump()
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "PushReceipt":
+    def from_doc(cls, doc: dict[str, Any]) -> "PushReceipt":
         doc.pop("_id", None)
         return cls(**doc)

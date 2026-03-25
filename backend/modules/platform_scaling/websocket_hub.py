@@ -10,8 +10,8 @@ import os
 import time
 import uuid
 from collections import defaultdict, deque
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Set
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import jwt
 
@@ -63,7 +63,7 @@ class WebSocketSession:
         self.tenant_id = tenant_id
         self.user_id = user_id
         self.role = role
-        self.channels: Set[str] = {"general"}
+        self.channels: set[str] = {"general"}
         self.connected_at = time.time()
         self.last_heartbeat = time.time()
         self.reconnect_token = str(uuid.uuid4())
@@ -73,13 +73,13 @@ class EventReplayBuffer:
     """Per-tenant circular buffer for event replay on reconnect."""
 
     def __init__(self, max_size: int = EVENT_REPLAY_BUFFER_SIZE):
-        self._buffers: Dict[str, deque] = defaultdict(lambda: deque(maxlen=max_size))
+        self._buffers: dict[str, deque] = defaultdict(lambda: deque(maxlen=max_size))
 
-    def append(self, tenant_id: str, event: Dict[str, Any]):
+    def append(self, tenant_id: str, event: dict[str, Any]):
         event["_ts"] = time.time()
         self._buffers[tenant_id].append(event)
 
-    def get_since(self, tenant_id: str, since_ts: float) -> List[Dict[str, Any]]:
+    def get_since(self, tenant_id: str, since_ts: float) -> list[dict[str, Any]]:
         return [e for e in self._buffers.get(tenant_id, []) if e.get("_ts", 0) > since_ts]
 
 
@@ -90,14 +90,14 @@ class WebSocketHub:
     """
 
     def __init__(self):
-        self._sessions: Dict[str, WebSocketSession] = {}  # session_id -> session
-        self._tenant_sessions: Dict[str, Set[str]] = defaultdict(set)  # tenant_id -> set(session_id)
-        self._user_sessions: Dict[str, Set[str]] = defaultdict(set)  # user_id -> set(session_id)
-        self._reconnect_tokens: Dict[str, str] = {}  # token -> session_id (for replay)
+        self._sessions: dict[str, WebSocketSession] = {}  # session_id -> session
+        self._tenant_sessions: dict[str, set[str]] = defaultdict(set)  # tenant_id -> set(session_id)
+        self._user_sessions: dict[str, set[str]] = defaultdict(set)  # user_id -> set(session_id)
+        self._reconnect_tokens: dict[str, str] = {}  # token -> session_id (for replay)
         self._replay_buffer = EventReplayBuffer()
-        self._heartbeat_task: Optional[asyncio.Task] = None
+        self._heartbeat_task: asyncio.Task | None = None
 
-    async def authenticate_token(self, token: str) -> Optional[Dict[str, Any]]:
+    async def authenticate_token(self, token: str) -> dict[str, Any] | None:
         """Validate JWT and return user context."""
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
@@ -121,7 +121,7 @@ class WebSocketHub:
             logger.warning(f"WS auth failed: {e}")
             return None
 
-    async def connect(self, websocket, token: str, last_event_ts: Optional[float] = None) -> Optional[WebSocketSession]:
+    async def connect(self, websocket, token: str, last_event_ts: float | None = None) -> WebSocketSession | None:
         """Authenticate and register a WebSocket connection."""
         user_ctx = await self.authenticate_token(token)
         if not user_ctx:
@@ -166,7 +166,7 @@ class WebSocketHub:
             "user_id": session.user_id,
             "role": session.role,
             "action": "connect",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
 
         logger.info(f"WS connected: user={session.user_id} tenant={session.tenant_id} role={session.role}")
@@ -186,7 +186,7 @@ class WebSocketHub:
             "tenant_id": session.tenant_id,
             "user_id": session.user_id,
             "action": "disconnect",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
         logger.info(f"WS disconnected: session={session_id}")
 
@@ -220,10 +220,10 @@ class WebSocketHub:
 
     # ── Broadcasting ──
 
-    async def broadcast_to_tenant(self, tenant_id: str, event: Dict[str, Any], channel: str = "general"):
+    async def broadcast_to_tenant(self, tenant_id: str, event: dict[str, Any], channel: str = "general"):
         """Broadcast event to all sessions of a tenant, filtered by role."""
         event["channel"] = channel
-        event["broadcast_at"] = datetime.now(timezone.utc).isoformat()
+        event["broadcast_at"] = datetime.now(UTC).isoformat()
         self._replay_buffer.append(tenant_id, event)
 
         session_ids = list(self._tenant_sessions.get(tenant_id, set()))
@@ -237,7 +237,7 @@ class WebSocketHub:
                 continue
             await self._send(session, event)
 
-    async def broadcast_to_user(self, user_id: str, event: Dict[str, Any]):
+    async def broadcast_to_user(self, user_id: str, event: dict[str, Any]):
         """Send event to a specific user's sessions."""
         session_ids = list(self._user_sessions.get(user_id, set()))
         for sid in session_ids:
@@ -245,9 +245,9 @@ class WebSocketHub:
             if session:
                 await self._send(session, event)
 
-    async def broadcast_to_role(self, tenant_id: str, role: str, event: Dict[str, Any]):
+    async def broadcast_to_role(self, tenant_id: str, role: str, event: dict[str, Any]):
         """Broadcast to all sessions with a specific role in a tenant."""
-        event["broadcast_at"] = datetime.now(timezone.utc).isoformat()
+        event["broadcast_at"] = datetime.now(UTC).isoformat()
         session_ids = list(self._tenant_sessions.get(tenant_id, set()))
         for sid in session_ids:
             session = self._sessions.get(sid)
@@ -256,20 +256,20 @@ class WebSocketHub:
 
     # ── Helpers ──
 
-    def _event_passes_role_filter(self, event: Dict, role: str) -> bool:
+    def _event_passes_role_filter(self, event: dict, role: str) -> bool:
         allowed = ROLE_EVENT_FILTER.get(role)
         if allowed is None:
             return True  # admin sees everything
         event_type = event.get("event_type", event.get("type", ""))
         return event_type in allowed
 
-    def _filter_events_for_role(self, events: List[Dict], role: str) -> List[Dict]:
+    def _filter_events_for_role(self, events: list[dict], role: str) -> list[dict]:
         allowed = ROLE_EVENT_FILTER.get(role)
         if allowed is None:
             return events
         return [e for e in events if e.get("event_type", e.get("type", "")) in allowed]
 
-    async def _send(self, session: WebSocketSession, data: Dict[str, Any]):
+    async def _send(self, session: WebSocketSession, data: dict[str, Any]):
         try:
             await session.websocket.send_json(data)
         except Exception:
@@ -277,7 +277,7 @@ class WebSocketHub:
 
     # ── Stats ──
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         tenant_counts = {t: len(sids) for t, sids in self._tenant_sessions.items() if sids}
         return {
             "total_connections": len(self._sessions),
@@ -286,9 +286,9 @@ class WebSocketHub:
             "replay_buffer_tenants": len(self._replay_buffer._buffers),
         }
 
-    async def get_tenant_live_data(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_tenant_live_data(self, tenant_id: str) -> dict[str, Any]:
         """Get current live operational data for tenant's dashboard."""
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
 
         # Front desk queue
         front_desk_queue = await db.bookings.find(
@@ -306,7 +306,7 @@ class WebSocketHub:
         ).sort("priority", -1).limit(50).to_list(50)
 
         # Audit exceptions (last 24h)
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
         audit_exceptions = await db.platform_events.find(
             {"tenant_id": tenant_id, "event_type": "audit_exception",
              "created_at": {"$gte": cutoff}},
@@ -335,7 +335,7 @@ class WebSocketHub:
 
         return {
             "tenant_id": tenant_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "front_desk_queue": {"count": len(front_desk_queue), "items": front_desk_queue},
             "housekeeping_board": {"count": len(hk_tasks), "items": hk_tasks},
             "audit_exceptions": {"count": len(audit_exceptions), "items": audit_exceptions},

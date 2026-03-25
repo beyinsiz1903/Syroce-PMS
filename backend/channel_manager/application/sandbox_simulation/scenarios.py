@@ -10,8 +10,8 @@ Done criteria (per user spec):
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -35,12 +35,12 @@ SANDBOX_TIMELINE = "sandbox_event_timeline"
 SANDBOX_RESULTS = "sandbox_simulation_results"
 
 
-async def _write_timeline(tenant_id: str, run_id: str, event: Dict[str, Any]):
+async def _write_timeline(tenant_id: str, run_id: str, event: dict[str, Any]):
     """Write an event to the sandbox event timeline."""
     event.update({
         "tenant_id": tenant_id,
         "run_id": run_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     })
     await db[SANDBOX_TIMELINE].insert_one(event)
 
@@ -48,9 +48,9 @@ async def _write_timeline(tenant_id: str, run_id: str, event: Dict[str, Any]):
 async def _process_reservation_direct(
     tenant_id: str, property_id: str, connector_id: str,
     batch_id: str, canonical: CanonicalReservation,
-    room_reverse: Dict[str, str], rate_reverse: Dict[str, str],
+    room_reverse: dict[str, str], rate_reverse: dict[str, str],
     repo: ChannelManagerRepository,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Process a single reservation through the import pipeline's core logic.
     This bypasses provider calls and tests the actual business logic directly.
@@ -109,7 +109,7 @@ async def _process_reservation_direct(
             if pms_booking_id:
                 await db.bookings.update_one(
                     {"id": pms_booking_id, "tenant_id": tenant_id},
-                    {"$set": {"status": "cancelled", "cancelled_at": datetime.now(timezone.utc).isoformat()}},
+                    {"$set": {"status": "cancelled", "cancelled_at": datetime.now(UTC).isoformat()}},
                 )
             imported.pms_booking_id = pms_booking_id
             imported.import_status = ImportStatus.CANCELLED
@@ -150,7 +150,7 @@ async def _process_reservation_direct(
                     {"$set": {
                         "total_amount": imported.total_amount,
                         "special_requests": imported.special_requests,
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "updated_at": datetime.now(UTC).isoformat(),
                     }},
                 )
             imported.import_status = ImportStatus.MODIFIED
@@ -188,7 +188,7 @@ async def _process_reservation_direct(
         "total_amount": canonical.total_amount,
         "currency": canonical.currency,
         "external_confirmation": canonical.confirmation_number,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "created_by": "sandbox_simulation",
     }
     await db.bookings.insert_one(booking)
@@ -207,10 +207,10 @@ async def _process_reservation_direct(
 async def run_duplicate_delivery(
     tenant_id: str, property_id: str, connector_id: str,
     run_id: str, provider: str,
-    room_reverse: Dict[str, str], rate_reverse: Dict[str, str],
+    room_reverse: dict[str, str], rate_reverse: dict[str, str],
     repo: ChannelManagerRepository,
     duplicate_count: int = 5,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Send the same reservation N times. Assert:
       - Only 1 PMS booking created
@@ -281,9 +281,9 @@ async def run_duplicate_delivery(
 async def run_delayed_ack(
     tenant_id: str, property_id: str, connector_id: str,
     run_id: str, provider: str,
-    room_reverse: Dict[str, str], rate_reverse: Dict[str, str],
+    room_reverse: dict[str, str], rate_reverse: dict[str, str],
     repo: ChannelManagerRepository,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Import a reservation, then simulate ACK delay/failure.
     Assert: reservation created correctly, ACK status tracked, no inconsistent state.
@@ -323,7 +323,7 @@ async def run_delayed_ack(
     if result.get("reservation_id"):
         await repo.update_imported_reservation(tenant_id, result["reservation_id"], {
             "ack_status": AckStatus.ACK_SENT.value,
-            "ack_sent_at": datetime.now(timezone.utc).isoformat(),
+            "ack_sent_at": datetime.now(UTC).isoformat(),
         })
         await _write_timeline(tenant_id, run_id, {
             "event": "ack_retry_success", "scenario": "delayed_ack",
@@ -367,10 +367,10 @@ async def run_delayed_ack(
 async def run_retry_storm(
     tenant_id: str, property_id: str, connector_id: str,
     run_id: str, provider: str,
-    room_reverse: Dict[str, str], rate_reverse: Dict[str, str],
+    room_reverse: dict[str, str], rate_reverse: dict[str, str],
     repo: ChannelManagerRepository,
     storm_size: int = 10,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Simulate a retry storm: provider resends the same batch multiple times
     (as if retrying because it didn't get an ACK). Assert:
@@ -457,14 +457,14 @@ async def run_stale_provider_state(
     tenant_id: str, property_id: str, connector_id: str,
     run_id: str, provider: str,
     repo: ChannelManagerRepository,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Simulate stale provider inventory. Assert:
       - Reconciliation detects the drift
       - System can recover via reconciliation
     """
     profile = PROVIDER_PROFILES[provider]
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     dates = [(now + timedelta(days=d)).strftime("%Y-%m-%d") for d in range(1, 4)]
     room_type_id = f"{profile['room_type_prefix']}STD"
 
@@ -557,7 +557,7 @@ async def run_stale_provider_state(
                      "room_type_id": room_type_id, "date": date},
                     {"$set": {
                         "available": actual.get("sellable", 0),
-                        "pushed_at": datetime.now(timezone.utc).isoformat(),
+                        "pushed_at": datetime.now(UTC).isoformat(),
                         "reconciled": True,
                     }},
                 )
@@ -598,9 +598,9 @@ async def run_stale_provider_state(
 async def run_modify_cancel_race(
     tenant_id: str, property_id: str, connector_id: str,
     run_id: str, provider: str,
-    room_reverse: Dict[str, str], rate_reverse: Dict[str, str],
+    room_reverse: dict[str, str], rate_reverse: dict[str, str],
     repo: ChannelManagerRepository,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Send: new → modify → cancel for the same reservation. Assert:
       - Each step produces a deterministic outcome

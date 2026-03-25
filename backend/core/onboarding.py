@@ -3,8 +3,8 @@ Onboarding Automation Engine
 Structured per-tenant onboarding checklist with auto-detection and progress tracking.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -139,7 +139,7 @@ DEFAULT_STEPS = [
 ]
 
 
-async def _auto_detect_step(tenant_id: str, step: Dict) -> bool:
+async def _auto_detect_step(tenant_id: str, step: dict) -> bool:
     """Auto-detect if a step is completed based on collection counts."""
     coll_name = step.get("detect_collection")
     if not coll_name:
@@ -165,7 +165,7 @@ async def _auto_detect_step(tenant_id: str, step: Dict) -> bool:
         return False
 
 
-async def get_onboarding_progress(tenant_id: str) -> Dict[str, Any]:
+async def get_onboarding_progress(tenant_id: str) -> dict[str, Any]:
     """Get onboarding progress for a tenant. Auto-detects completed steps."""
     # Get or create progress doc
     progress = await db.onboarding_progress.find_one(
@@ -214,7 +214,7 @@ async def get_onboarding_progress(tenant_id: str) -> Dict[str, Any]:
         })
 
     # Update stored progress
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     await db.onboarding_progress.update_one(
         {"tenant_id": tenant_id},
         {
@@ -241,7 +241,7 @@ async def get_onboarding_progress(tenant_id: str) -> Dict[str, Any]:
 
 async def mark_step_complete(tenant_id: str, step_id: str) -> bool:
     """Manually mark an onboarding step as complete."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     await db.onboarding_progress.update_one(
         {"tenant_id": tenant_id},
         {
@@ -262,7 +262,7 @@ async def reset_onboarding(tenant_id: str) -> bool:
     return True
 
 
-async def get_all_onboarding_status() -> List[Dict[str, Any]]:
+async def get_all_onboarding_status() -> list[dict[str, Any]]:
     """Get onboarding status for all tenants (admin overview).
     Uses raw DB to bypass tenant isolation since this is a super_admin cross-tenant view.
     """

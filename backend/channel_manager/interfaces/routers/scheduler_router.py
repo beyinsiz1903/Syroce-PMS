@@ -1,6 +1,5 @@
 """Scheduled import job management, safety-net sync, and environment config endpoints."""
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -44,8 +43,8 @@ async def run_all_scheduled_imports(
 
 @router.get("/import-jobs")
 async def list_import_jobs(
-    connector_id: Optional[str] = None,
-    status: Optional[str] = None,
+    connector_id: str | None = None,
+    status: str | None = None,
     limit: int = Query(50, le=200),
     current_user: User = Depends(get_current_user),
 ):

@@ -2,7 +2,6 @@
 Guest Journey Layer Router - Pre-arrival, stay management, messaging, reviews.
 All endpoints under /api/guest-journey/
 """
-from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -17,16 +16,16 @@ journey_svc = GuestJourneyService()
 
 class OnlineCheckinRequest(BaseModel):
     booking_id: str
-    arrival_time: Optional[str] = None
-    flight_number: Optional[str] = None
-    room_preference: Optional[str] = None
-    bed_type: Optional[str] = None
-    floor_preference: Optional[str] = None
-    special_requests: Optional[str] = None
-    dietary_restrictions: Optional[str] = None
-    accessibility_needs: Optional[str] = None
-    passport_number: Optional[str] = None
-    nationality: Optional[str] = None
+    arrival_time: str | None = None
+    flight_number: str | None = None
+    room_preference: str | None = None
+    bed_type: str | None = None
+    floor_preference: str | None = None
+    special_requests: str | None = None
+    dietary_restrictions: str | None = None
+    accessibility_needs: str | None = None
+    passport_number: str | None = None
+    nationality: str | None = None
 
 
 class GuestRequestCreate(BaseModel):
@@ -34,13 +33,13 @@ class GuestRequestCreate(BaseModel):
     request_type: str
     description: str
     priority: str = "normal"
-    room_id: Optional[str] = None
+    room_id: str | None = None
 
 
 class RequestStatusUpdate(BaseModel):
     request_id: str
     new_status: str
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class AssignRequestBody(BaseModel):
@@ -58,8 +57,8 @@ class SendMessageRequest(BaseModel):
 class SubmitReviewRequest(BaseModel):
     booking_id: str
     rating: int
-    comment: Optional[str] = None
-    categories: Optional[Dict] = None
+    comment: str | None = None
+    categories: dict | None = None
 
 
 # ── PRE-ARRIVAL ──
@@ -116,9 +115,9 @@ async def api_assign_request(req: AssignRequestBody, current_user: User = Depend
 
 @router.get("/guest-requests")
 async def api_list_requests(
-    booking_id: Optional[str] = None,
-    status: Optional[str] = None,
-    request_type: Optional[str] = None,
+    booking_id: str | None = None,
+    status: str | None = None,
+    request_type: str | None = None,
     limit: int = 50,
     current_user: User = Depends(get_current_user),
 ):

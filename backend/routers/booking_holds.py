@@ -10,7 +10,6 @@ Endpoints for managing booking holds with automatic TTL-based expiry.
   POST /api/booking-holds/sweep     — Manually trigger expired hold cleanup
 """
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -27,7 +26,7 @@ class HoldCreateRequest(BaseModel):
     room_id: str
     check_in: str
     check_out: str
-    ttl_minutes: Optional[int] = None
+    ttl_minutes: int | None = None
 
 
 class HoldConfirmRequest(BaseModel):

@@ -5,7 +5,7 @@ HotelRunner Provider — Validators
 Pre-flight validation for credentials, payloads, and mappings.
 Fail fast before making API calls.
 """
-from typing import Any, Dict, Optional
+from typing import Any
 
 from .errors import HotelRunnerMappingError, HotelRunnerValidationError
 
@@ -22,7 +22,7 @@ def validate_connection_credentials(token: str, hr_id: str) -> None:
         )
 
 
-def validate_inventory_payload(payload: Dict[str, Any]) -> None:
+def validate_inventory_payload(payload: dict[str, Any]) -> None:
     """Validate an ARI inventory payload before sending."""
     inv_code = payload.get("inv_code", "")
     if not inv_code:
@@ -43,7 +43,7 @@ def validate_inventory_payload(payload: Dict[str, Any]) -> None:
 
 
 def validate_room_mapping(
-    mapping: Optional[Dict[str, Any]],
+    mapping: dict[str, Any] | None,
     pms_room_type_code: str = "",
 ) -> None:
     """Validate that a room mapping exists and is complete."""

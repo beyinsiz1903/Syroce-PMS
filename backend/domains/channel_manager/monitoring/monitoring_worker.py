@@ -11,8 +11,8 @@ Background worker running every 60 seconds:
 """
 import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -36,15 +36,15 @@ _monitoring_state = {
 _task = None
 
 
-def get_monitoring_worker_state() -> Dict[str, Any]:
+def get_monitoring_worker_state() -> dict[str, Any]:
     return {**_monitoring_state}
 
 
-def get_last_metrics() -> Dict[str, Any]:
+def get_last_metrics() -> dict[str, Any]:
     return _monitoring_state.get("last_metrics") or {}
 
 
-async def _store_metrics_snapshot(metrics: Dict[str, Any]):
+async def _store_metrics_snapshot(metrics: dict[str, Any]):
     """Store a compact metrics snapshot for trend analysis."""
     try:
         ingest = metrics.get("ingest_pipeline", {})
@@ -53,7 +53,7 @@ async def _store_metrics_snapshot(metrics: Dict[str, Any]):
         queue = metrics.get("queue_health", {})
 
         snapshot = {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "health": metrics.get("system_health", "unknown"),
             "ingest_events_1h": ingest.get("events_last_1h", 0),
             "ingest_failed": ingest.get("failed_events", 0),
@@ -71,7 +71,7 @@ async def _store_metrics_snapshot(metrics: Dict[str, Any]):
         logger.warning(f"Failed to store metrics snapshot: {e}")
 
 
-async def monitoring_run_once() -> Dict[str, Any]:
+async def monitoring_run_once() -> dict[str, Any]:
     """Execute a single monitoring cycle."""
     state = _monitoring_state
 
@@ -87,7 +87,7 @@ async def monitoring_run_once() -> Dict[str, Any]:
         await _store_metrics_snapshot(metrics)
 
         state["runs_total"] += 1
-        state["last_run"] = datetime.now(timezone.utc).isoformat()
+        state["last_run"] = datetime.now(UTC).isoformat()
 
         logger.info(
             f"Monitoring cycle #{state['runs_total']}: "

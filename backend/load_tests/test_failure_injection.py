@@ -40,6 +40,7 @@ class TestRetryStorm:
     The system must handle idempotent requests gracefully.
     """
 
+    @pytest.mark.ci_load
     async def test_idempotent_booking_creation_under_retry_storm(
         self, api_url, auth_headers, raw_db, tenant_id, load_test_room_factory,
     ):
@@ -278,6 +279,7 @@ class TestPartialFailureRecovery:
         print("\n[PARTIAL FAILURE] 5 valid succeeded, 5 invalid rejected, 0 server errors")
         await raw_db.guests.delete_many({"source": LOAD_SRC})
 
+    @pytest.mark.ci_load
     async def test_system_healthy_after_error_burst(
         self, api_url, auth_headers,
     ):
@@ -300,7 +302,7 @@ class TestPartialFailureRecovery:
 
         # Now check system health
         async with httpx.AsyncClient(base_url=api_url, timeout=10) as c:
-            health = await c.get("/api/health/")
+            health = await c.get("/health/")
             dashboard = await c.get("/api/pms/dashboard", headers=auth_headers)
 
         assert health.status_code == 200, "System unhealthy after error burst!"
@@ -431,7 +433,7 @@ class TestFailureInjection:
 
         # System still healthy
         async with httpx.AsyncClient(base_url=api_url, timeout=10) as c:
-            h = await c.get("/api/health/")
+            h = await c.get("/health/")
             assert h.status_code == 200, "System unhealthy after timeout storm!"
 
         print(f"\n[SHORT TIMEOUT] successes={successes}, timeouts={timeouts}, 0 server errors")
@@ -510,6 +512,7 @@ class TestSustainedMixedLoad:
     operations with no cool-down between waves.
     """
 
+    @pytest.mark.ci_load
     async def test_three_wave_sustained_load(
         self, api_url, auth_headers,
     ):

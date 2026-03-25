@@ -5,8 +5,8 @@ rate limiting readiness, admin endpoint protection, and log filtering.
 """
 import logging
 import os
-from datetime import datetime, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.security_checklist")
 
@@ -20,7 +20,7 @@ class SecurityChecklistValidator:
     def set_db(self, db):
         self._db = db
 
-    async def check_tenant_isolation(self) -> Dict[str, Any]:
+    async def check_tenant_isolation(self) -> dict[str, Any]:
         """Verify tenant isolation is enforced on critical collections."""
         if self._db is None:
             return {"status": "not_connected", "pass": False}
@@ -49,10 +49,10 @@ class SecurityChecklistValidator:
             "check": "tenant_isolation",
             "collections": results,
             "pass": all_pass,
-            "tested_at": datetime.now(timezone.utc).isoformat(),
+            "tested_at": datetime.now(UTC).isoformat(),
         }
 
-    async def check_rbac(self) -> Dict[str, Any]:
+    async def check_rbac(self) -> dict[str, Any]:
         """Verify RBAC roles and permissions are properly configured."""
         if self._db is None:
             return {"status": "not_connected", "pass": False}
@@ -70,12 +70,12 @@ class SecurityChecklistValidator:
                 "defined_roles": defined_roles,
                 "user_count": user_count,
                 "pass": len(roles) > 0,
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
         except Exception as e:
             return {"check": "rbac", "pass": False, "error": str(e)}
 
-    def check_credential_masking(self) -> Dict[str, Any]:
+    def check_credential_masking(self) -> dict[str, Any]:
         """Verify credential masking module is available and functional."""
         try:
             from modules.security_hardening.data_masking import mask_sensitive_data
@@ -98,7 +98,7 @@ class SecurityChecklistValidator:
         except Exception as e:
             return {"check": "credential_masking", "pass": True, "note": str(e)}
 
-    def check_secret_leakage(self) -> Dict[str, Any]:
+    def check_secret_leakage(self) -> dict[str, Any]:
         """Scan for potential secret leakage in environment."""
         from infra.production_config import production_config
         result = production_config.detect_leaked_secrets()
@@ -108,7 +108,7 @@ class SecurityChecklistValidator:
             **result,
         }
 
-    async def check_audit_completeness(self) -> Dict[str, Any]:
+    async def check_audit_completeness(self) -> dict[str, Any]:
         """Verify audit log system is capturing events."""
         if self._db is None:
             return {"check": "audit_completeness", "pass": False, "status": "not_connected"}
@@ -124,12 +124,12 @@ class SecurityChecklistValidator:
                 "total_audit_entries": total_logs,
                 "most_recent": recent,
                 "pass": total_logs > 0,
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
         except Exception as e:
             return {"check": "audit_completeness", "pass": False, "error": str(e)}
 
-    def check_rate_limiting(self) -> Dict[str, Any]:
+    def check_rate_limiting(self) -> dict[str, Any]:
         """Check if rate limiting middleware is configured."""
         try:
             from rate_limiter import RateLimiter  # noqa: F401
@@ -146,7 +146,7 @@ class SecurityChecklistValidator:
                 "note": "rate_limiter module not found",
             }
 
-    def check_admin_protection(self) -> Dict[str, Any]:
+    def check_admin_protection(self) -> dict[str, Any]:
         """Check if admin endpoints are protected with proper auth."""
         cors_origins = os.environ.get("CORS_ORIGINS", "")
         jwt_secret = os.environ.get("JWT_SECRET", "")
@@ -157,10 +157,10 @@ class SecurityChecklistValidator:
             "jwt_configured": bool(jwt_secret),
             "cors_wildcard": "*" in cors_origins,
             "pass": bool(jwt_secret) and "*" not in cors_origins,
-            "tested_at": datetime.now(timezone.utc).isoformat(),
+            "tested_at": datetime.now(UTC).isoformat(),
         }
 
-    def check_sensitive_log_filtering(self) -> Dict[str, Any]:
+    def check_sensitive_log_filtering(self) -> dict[str, Any]:
         """Check if sensitive data is filtered from logs."""
         try:
             from modules.security_hardening.data_masking import mask_sensitive_data  # noqa: F401
@@ -176,7 +176,7 @@ class SecurityChecklistValidator:
                 "pass": False,
             }
 
-    async def run_full_checklist(self) -> Dict[str, Any]:
+    async def run_full_checklist(self) -> dict[str, Any]:
         """Run the complete security go-live checklist."""
         checks = []
         checks.append(await self.check_tenant_isolation())
@@ -200,7 +200,7 @@ class SecurityChecklistValidator:
             overall = "FAIL"
 
         return {
-            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "completed_at": datetime.now(UTC).isoformat(),
             "overall_status": overall,
             "passed": passed,
             "total": total,

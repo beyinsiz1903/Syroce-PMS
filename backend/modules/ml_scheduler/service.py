@@ -5,8 +5,7 @@ Manages periodic execution of Revenue ML, Operational AI, Guest Intelligence mod
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +35,7 @@ DEFAULT_SCHEDULES = {
 def new_execution_job(
     tenant_id: str,
     model_type: str,
-    property_id: Optional[str] = None,
+    property_id: str | None = None,
     triggered_by: str = "scheduler",
 ) -> dict:
     return {
@@ -55,8 +54,8 @@ def new_execution_job(
         "max_retries": 2,
         "model_version": "1.0",
         "confidence_avg": None,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -65,7 +64,7 @@ def new_schedule_policy(
     model_type: str,
     interval_hours: int,
     enabled: bool = True,
-    property_id: Optional[str] = None,
+    property_id: str | None = None,
 ) -> dict:
     return {
         "id": str(uuid.uuid4()),
@@ -78,8 +77,8 @@ def new_schedule_policy(
         "next_run_at": None,
         "snapshot_retention_days": 30,
         "stale_threshold_hours": interval_hours * 3,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -103,8 +102,8 @@ class MLSchedulerService:
         return policies
 
     async def update_schedule(self, tenant_id: str, model_type: str,
-                              interval_hours: Optional[int] = None, enabled: Optional[bool] = None) -> dict:
-        update = {"updated_at": datetime.now(timezone.utc).isoformat()}
+                              interval_hours: int | None = None, enabled: bool | None = None) -> dict:
+        update = {"updated_at": datetime.now(UTC).isoformat()}
         if interval_hours is not None:
             update["interval_hours"] = interval_hours
             update["stale_threshold_hours"] = interval_hours * 3
@@ -127,7 +126,7 @@ class MLSchedulerService:
         return running is not None
 
     async def trigger_execution(self, tenant_id: str, model_type: str,
-                                property_id: Optional[str] = None,
+                                property_id: str | None = None,
                                 triggered_by: str = "manual") -> dict:
         """Trigger a model execution."""
         if await self._prevent_duplicate(tenant_id, model_type):
@@ -145,7 +144,7 @@ class MLSchedulerService:
         job_id = job["id"]
         tenant_id = job["tenant_id"]
         model_type = job["model_type"]
-        start = datetime.now(timezone.utc)
+        start = datetime.now(UTC)
 
         await self.db.ml_execution_jobs.update_one(
             {"id": job_id},
@@ -169,7 +168,7 @@ class MLSchedulerService:
                 result = await guest_intelligence.get_dashboard(tenant_id, 30)
                 confidence = 0.78
 
-            end = datetime.now(timezone.utc)
+            end = datetime.now(UTC)
             duration_ms = int((end - start).total_seconds() * 1000)
 
             # store snapshot
@@ -208,7 +207,7 @@ class MLSchedulerService:
 
         except Exception as e:
             logger.exception(f"ML execution failed: {model_type}")
-            end = datetime.now(timezone.utc)
+            end = datetime.now(UTC)
             await self.db.ml_execution_jobs.update_one(
                 {"id": job_id},
                 {"$set": {
@@ -232,10 +231,10 @@ class MLSchedulerService:
             "entity_type": "ml_execution_job",
             "entity_id": job_id,
             "acknowledged": False,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         })
 
-    async def get_execution_history(self, tenant_id: str, model_type: Optional[str] = None,
+    async def get_execution_history(self, tenant_id: str, model_type: str | None = None,
                                      limit: int = 20) -> list:
         q = {"tenant_id": tenant_id}
         if model_type:
@@ -248,7 +247,7 @@ class MLSchedulerService:
         """Find models whose last run exceeds the stale threshold."""
         policies = await self.get_schedule_policies(tenant_id)
         stale = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for p in policies:
             if not p.get("enabled"):
                 continue

@@ -100,6 +100,7 @@ class TestDoubleBookingPrevention:
         # At minimum, at least one booking should exist
         assert actual_bookings >= 1
 
+    @pytest.mark.ci_load
     async def test_api_booking_endpoint_handles_concurrent_requests(
         self, api_url, auth_headers, raw_db, tenant_id, load_test_room_factory
     ):
@@ -159,6 +160,7 @@ class TestDoubleBookingPrevention:
 class TestBookingCountAccuracy:
     """Booking counts reported by API must match DB reality."""
 
+    @pytest.mark.ci_load
     async def test_booking_count_matches_db(
         self, api_url, auth_headers, raw_db, tenant_id, load_test_room_factory, load_test_booking_factory
     ):

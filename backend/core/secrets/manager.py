@@ -17,7 +17,7 @@ Usage:
     creds = await sm.get_provider_credentials(tenant_id, "exely", property_id)
 """
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from .audit import SecretAuditLogger
 from .config import SecretsConfig, get_secrets_config
@@ -78,7 +78,7 @@ class SecretsManager:
         tenant_id: str,
         provider: str,
         property_id: str,
-        credentials: Dict[str, str],
+        credentials: dict[str, str],
         actor: str = "system",
     ) -> str:
         """
@@ -130,7 +130,7 @@ class SecretsManager:
         provider: str,
         property_id: str,
         actor: str = "system",
-    ) -> Optional[Dict[str, str]]:
+    ) -> dict[str, str] | None:
         """
         Retrieve decrypted provider credentials.
         Supports dual-read: tries new backend first, falls back to legacy if enabled.
@@ -208,7 +208,7 @@ class SecretsManager:
         tenant_id: str,
         provider: str,
         property_id: str,
-        new_credentials: Dict[str, str],
+        new_credentials: dict[str, str],
         actor: str = "system",
     ) -> SecretMetadata:
         identity = self._identity(tenant_id, provider, property_id)
@@ -248,14 +248,14 @@ class SecretsManager:
         tenant_id: str,
         provider: str,
         property_id: str,
-    ) -> Optional[SecretMetadata]:
+    ) -> SecretMetadata | None:
         identity = self._identity(tenant_id, provider, property_id)
         return await self._provider.get_secret_metadata(identity.path)
 
     # ── Masking ──────────────────────────────────────────────────────
 
     @staticmethod
-    def mask_credentials(credentials: Dict[str, str]) -> Dict[str, str]:
+    def mask_credentials(credentials: dict[str, str]) -> dict[str, str]:
         """Mask credential values for safe display."""
         masked = {}
         for k, v in credentials.items():
@@ -270,7 +270,7 @@ class SecretsManager:
 
     async def _read_legacy_credentials(
         self, tenant_id: str, provider: str, property_id: str,
-    ) -> Optional[Dict[str, str]]:
+    ) -> dict[str, str] | None:
         """
         Read from legacy provider_secrets collection (XOR/AES encrypted).
         Only used during migration window.
@@ -293,7 +293,7 @@ class SecretsManager:
 
     async def _read_legacy_connection_credentials(
         self, tenant_id: str, provider: str,
-    ) -> Optional[Dict[str, str]]:
+    ) -> dict[str, str] | None:
         """
         Read raw credentials from connection documents (HotelRunner pattern).
         Only used during migration window.
@@ -313,7 +313,7 @@ class SecretsManager:
 
     # ── Health / Status ──────────────────────────────────────────────
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         provider_health = await self._provider.health_check()
         return {
             **provider_health,
@@ -327,7 +327,7 @@ class SecretsManager:
 
 # ── Singleton ────────────────────────────────────────────────────────
 
-_instance: Optional[SecretsManager] = None
+_instance: SecretsManager | None = None
 
 
 def get_secrets_manager() -> SecretsManager:

@@ -8,7 +8,6 @@ API endpoints for the high-signal notification system:
   - Manual evaluation trigger
 """
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 
@@ -27,8 +26,8 @@ router = APIRouter(prefix="/api/lockdown/notifications", tags=["Notification Eve
 
 @router.get("/events")
 async def list_events(
-    severity: Optional[str] = Query(None, description="info|warning|critical|blocker"),
-    event_type: Optional[str] = Query(None),
+    severity: str | None = Query(None, description="info|warning|critical|blocker"),
+    event_type: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     skip: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),

@@ -8,7 +8,6 @@ Primary debug entry point: GET /api/ops/timeline/external/{external_id}
 "Trace any reservation from OTA webhook to PMS booking in seconds."
 """
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Query
 
@@ -25,13 +24,13 @@ router = APIRouter(prefix="/api/ops/timeline", tags=["Event Timeline"])
 
 @router.get("/search")
 async def search_timeline(
-    tenant_id: Optional[str] = Query(None),
-    provider: Optional[str] = Query(None),
-    entity_type: Optional[str] = Query(None),
-    stage: Optional[str] = Query(None),
-    status: Optional[str] = Query(None),
-    from_time: Optional[str] = Query(None, alias="from"),
-    to_time: Optional[str] = Query(None, alias="to"),
+    tenant_id: str | None = Query(None),
+    provider: str | None = Query(None),
+    entity_type: str | None = Query(None),
+    stage: str | None = Query(None),
+    status: str | None = Query(None),
+    from_time: str | None = Query(None, alias="from"),
+    to_time: str | None = Query(None, alias="to"),
     limit: int = Query(50, ge=1, le=200),
     skip: int = Query(0, ge=0),
 ):
@@ -52,7 +51,7 @@ async def search_timeline(
 
 @router.get("/gaps")
 async def get_stuck_events(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
     max_age_minutes: int = Query(30, ge=5, le=1440),
     limit: int = Query(50, ge=1, le=200),
 ):
@@ -68,7 +67,7 @@ async def get_stuck_events(
 @router.get("/correlation/{correlation_id}")
 async def get_correlation_timeline(
     correlation_id: str,
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
 ):
     """All events sharing a correlation ID — full flow trace."""
     reader = get_timeline_reader()
@@ -78,7 +77,7 @@ async def get_correlation_timeline(
 @router.get("/external/{external_id}")
 async def get_external_timeline(
     external_id: str,
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
 ):
     """Lookup by OTA reservation ID — the #1 debug entry point.
 
@@ -130,7 +129,7 @@ async def get_raw_payloads_by_external_id(
 async def get_entity_timeline(
     entity_type: str,
     entity_id: str,
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
 ):
     """Full timeline for an entity (e.g., reservation/booking-uuid)."""
     reader = get_timeline_reader()

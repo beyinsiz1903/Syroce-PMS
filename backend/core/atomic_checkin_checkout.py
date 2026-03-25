@@ -13,8 +13,8 @@ outside this module.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from pymongo import ReadPreference
 from pymongo.read_concern import ReadConcern
@@ -45,9 +45,9 @@ async def check_in_booking_atomic(
     tenant_id: str,
     actor_id: str,
     actor_name: str = "",
-    override_reason: Optional[str] = None,
-    extra_fields: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    override_reason: str | None = None,
+    extra_fields: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Atomically check in a booking.
 
@@ -63,7 +63,7 @@ async def check_in_booking_atomic(
     Returns dict with success info.
     Raises CheckInError on validation failure (no partial state).
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     now_iso = now.isoformat()
 
     async with await client.start_session() as session:
@@ -222,8 +222,8 @@ async def check_out_booking_atomic(
     actor_id: str,
     actor_name: str = "",
     force: bool = False,
-    extra_fields: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    extra_fields: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Atomically check out a booking.
 
@@ -240,7 +240,7 @@ async def check_out_booking_atomic(
     Returns dict with success info.
     Raises CheckOutError on validation failure (no partial state).
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     now_iso = now.isoformat()
 
     async with await client.start_session() as session:

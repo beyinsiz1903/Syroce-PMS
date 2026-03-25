@@ -8,15 +8,15 @@ import hashlib
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
 logger = logging.getLogger(__name__)
 
 
-def _compute_payload_hash(payload: Dict[str, Any]) -> str:
+def _compute_payload_hash(payload: dict[str, Any]) -> str:
     """Deterministic hash of payload for change detection."""
     canonical = json.dumps(payload, sort_keys=True, default=str)
     return hashlib.sha256(canonical.encode()).hexdigest()[:16]
@@ -44,7 +44,7 @@ def _col(provider: str, key: str):
 
 async def store_raw_event(
     provider: str, tenant_id: str, event_type: str,
-    external_id: str, channel: str, payload: Dict[str, Any], source: str = "webhook",
+    external_id: str, channel: str, payload: dict[str, Any], source: str = "webhook",
 ) -> str:
     event_id = str(uuid.uuid4())
     await _col(provider, "raw_events").insert_one({
@@ -57,7 +57,7 @@ async def store_raw_event(
         "source": source,
         "payload": payload,
         "payload_hash": _compute_payload_hash(payload),
-        "received_at": datetime.now(timezone.utc).isoformat(),
+        "received_at": datetime.now(UTC).isoformat(),
         "processed_at": None,
         "status": "pending",
         "error_message": None,
@@ -66,17 +66,17 @@ async def store_raw_event(
     return event_id
 
 
-async def mark_event_processed(provider: str, event_id: str, status: str = "processed", error: Optional[str] = None):
+async def mark_event_processed(provider: str, event_id: str, status: str = "processed", error: str | None = None):
     await _col(provider, "raw_events").update_one(
         {"id": event_id},
-        {"$set": {"processed_at": datetime.now(timezone.utc).isoformat(), "status": status, "error_message": error}},
+        {"$set": {"processed_at": datetime.now(UTC).isoformat(), "status": status, "error_message": error}},
     )
 
 
 async def check_idempotency(
     provider: str, tenant_id: str, external_id: str,
     event_type: str, provider_last_modified: str = "", payload_hash: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Versioned idempotency guard:
       same UniqueID + newer LastModifyDateTime → update
@@ -136,9 +136,9 @@ async def check_room_mapping(provider: str, tenant_id: str, rooms: list) -> bool
 
 
 async def process_reservation(
-    provider: str, tenant_id: str, canonical: Dict[str, Any],
+    provider: str, tenant_id: str, canonical: dict[str, Any],
     event_type: str, event_id: str, payload_hash: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     external_id = canonical["external_id"]
     channel = canonical["channel"]
     provider_last_modified = canonical.get("provider_last_modified_at", "")
@@ -155,7 +155,7 @@ async def process_reservation(
         return {"action": "skip", "reason": idem.get("reason"), "external_id": external_id}
 
     has_mapping = await check_room_mapping(provider, tenant_id, canonical["rooms"])
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     res_doc = {
         "tenant_id": tenant_id,
@@ -240,9 +240,9 @@ async def process_reservation(
 
 
 async def ingest_reservation(
-    provider: str, tenant_id: str, raw_payload: Dict[str, Any],
+    provider: str, tenant_id: str, raw_payload: dict[str, Any],
     normalizer, event_type: str = "reservation", source: str = "pull",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Full pipeline entry point. Provider passes its own normalizer function.
     normalizer(raw_payload, source) -> canonical dict
@@ -263,12 +263,12 @@ async def ingest_reservation(
 
 
 async def log_sync(provider: str, tenant_id: str, sync_type: str, status: str,
-                    duration_ms: int = 0, records: int = 0, error: Optional[str] = None, user_name: str = "system"):
+                    duration_ms: int = 0, records: int = 0, error: str | None = None, user_name: str = "system"):
     await _col(provider, "sync_logs").insert_one({
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
         "provider": provider,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "sync_type": sync_type,
         "status": status,
         "duration_ms": duration_ms,

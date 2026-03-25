@@ -4,8 +4,8 @@ Provides named queues, retry policies, dead letter handling, and status APIs.
 """
 import logging
 from collections import defaultdict
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.worker_queue")
 
@@ -85,8 +85,8 @@ class WorkerQueueManager:
     """Monitors worker health, queue sizes, and task execution."""
 
     def __init__(self):
-        self._task_history: List[Dict[str, Any]] = []
-        self._failure_archive: List[Dict[str, Any]] = []
+        self._task_history: list[dict[str, Any]] = []
+        self._failure_archive: list[dict[str, Any]] = []
         self._max_history = 1000
         self._max_failures = 500
         self._metrics = defaultdict(lambda: {
@@ -100,7 +100,7 @@ class WorkerQueueManager:
             "task_name": task_name,
             "queue": queue,
             "status": "started",
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": datetime.now(UTC).isoformat(),
         })
         self._metrics[queue]["submitted"] += 1
         if len(self._task_history) > self._max_history:
@@ -113,7 +113,7 @@ class WorkerQueueManager:
             if entry["task_id"] == task_id:
                 entry["status"] = "completed"
                 entry["duration_sec"] = round(duration_sec, 3)
-                entry["completed_at"] = datetime.now(timezone.utc).isoformat()
+                entry["completed_at"] = datetime.now(UTC).isoformat()
                 break
 
     def record_task_failure(self, task_name: str, task_id: str,
@@ -125,7 +125,7 @@ class WorkerQueueManager:
             "queue": queue,
             "error": error[:500],
             "retries": retries,
-            "failed_at": datetime.now(timezone.utc).isoformat(),
+            "failed_at": datetime.now(UTC).isoformat(),
         }
         self._failure_archive.append(failure)
         if len(self._failure_archive) > self._max_failures:
@@ -134,7 +134,7 @@ class WorkerQueueManager:
     def record_task_retry(self, task_name: str, task_id: str, queue: str):
         self._metrics[queue]["retried"] += 1
 
-    def get_queue_status(self) -> Dict[str, Any]:
+    def get_queue_status(self) -> dict[str, Any]:
         """Get status of all queues with metrics."""
         result = {}
         for queue_name, definition in QUEUE_DEFINITIONS.items():
@@ -149,12 +149,12 @@ class WorkerQueueManager:
             }
         return result
 
-    def get_failure_archive(self, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_failure_archive(self, limit: int = 50) -> list[dict[str, Any]]:
         return self._failure_archive[-limit:]
 
-    def get_stuck_task_candidates(self, timeout_sec: float = 300) -> List[Dict[str, Any]]:
+    def get_stuck_task_candidates(self, timeout_sec: float = 300) -> list[dict[str, Any]]:
         """Find tasks that might be stuck."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         stuck = []
         for entry in self._task_history:
             if entry["status"] == "started":
@@ -163,7 +163,7 @@ class WorkerQueueManager:
                     stuck.append(entry)
         return stuck
 
-    def get_worker_summary(self) -> Dict[str, Any]:
+    def get_worker_summary(self) -> dict[str, Any]:
         total_submitted = sum(m.get("submitted", 0) for m in self._metrics.values())
         total_completed = sum(m.get("completed", 0) for m in self._metrics.values())
         total_failed = sum(m.get("failed", 0) for m in self._metrics.values())

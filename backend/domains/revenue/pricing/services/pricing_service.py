@@ -3,8 +3,8 @@ Revenue Domain — Pricing Service
 Business logic for rate management and pricing. No FastAPI dependencies.
 """
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 from domains.revenue.pricing.repositories.pricing_repository import PricingRepository
 
@@ -13,17 +13,17 @@ class PricingService:
     """Pure business logic for pricing and rate management."""
 
     @staticmethod
-    async def get_rate_plans(tenant_id: str) -> List[Dict[str, Any]]:
+    async def get_rate_plans(tenant_id: str) -> list[dict[str, Any]]:
         return await PricingRepository.get_rate_plans(tenant_id)
 
     @staticmethod
-    async def create_rate_plan(tenant_id: str, plan_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def create_rate_plan(tenant_id: str, plan_data: dict[str, Any]) -> dict[str, Any]:
         plan = {
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
             **plan_data,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }
         await PricingRepository.upsert_rate_plan(plan)
         return plan
@@ -32,7 +32,7 @@ class PricingService:
     async def get_effective_rate(
         tenant_id: str, room_type: str,
         check_in: str, check_out: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Calculate the effective rate for a room type and date range."""
         rate_periods = await PricingRepository.get_rate_periods(
             tenant_id, room_type=room_type, date_from=check_in, date_to=check_out,
@@ -64,9 +64,9 @@ class PricingService:
     @staticmethod
     async def override_rate(
         tenant_id: str, user_id: str,
-        room_type: str, date_range: Dict[str, str],
+        room_type: str, date_range: dict[str, str],
         new_rate: float, reason: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         override = {
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
@@ -76,7 +76,7 @@ class PricingService:
             "date_to": date_range.get("to"),
             "rate": new_rate,
             "reason": reason,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await PricingRepository.insert_rate_override(override)
         return override

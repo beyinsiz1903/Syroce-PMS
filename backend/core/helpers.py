@@ -2,7 +2,7 @@
 Syroce PMS - Shared Helper Functions
 Common utilities used across multiple routers.
 """
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import Depends, HTTPException, status
 
@@ -13,7 +13,7 @@ from models.schemas import AuditLog, User
 
 # ================== PLAN & FEATURES ==================
 
-FEATURES_BY_PLAN: Dict[str, Dict[str, bool]] = {
+FEATURES_BY_PLAN: dict[str, dict[str, bool]] = {
     "core_small_hotel": {
         "core_dashboard": True, "core_pms": True, "core_rooms": True,
         "core_rates_availability": True, "core_bookings_frontdesk": True,
@@ -82,7 +82,7 @@ FEATURES_BY_PLAN: Dict[str, Dict[str, bool]] = {
 }
 
 
-def resolve_tenant_features(tenant_doc: Dict[str, Any]) -> Dict[str, bool]:
+def resolve_tenant_features(tenant_doc: dict[str, Any]) -> dict[str, bool]:
     """Plan + overrides ile efektif feature set uretir."""
     tenant_doc = tenant_doc or {}
     plan = (
@@ -95,7 +95,7 @@ def resolve_tenant_features(tenant_doc: Dict[str, Any]) -> Dict[str, bool]:
     for _plan, feats in FEATURES_BY_PLAN.items():
         for k in (feats or {}).keys():
             all_keys.add(k)
-    resolved: Dict[str, bool] = dict.fromkeys(all_keys, False)
+    resolved: dict[str, bool] = dict.fromkeys(all_keys, False)
     plan_feats = FEATURES_BY_PLAN.get(plan) or FEATURES_BY_PLAN.get("core_small_hotel") or {}
     for k, v in plan_feats.items():
         resolved[k] = bool(v)
@@ -112,7 +112,7 @@ def resolve_tenant_features(tenant_doc: Dict[str, Any]) -> Dict[str, bool]:
     return resolved
 
 
-async def load_tenant_doc(tenant_id: str) -> Optional[Dict[str, Any]]:
+async def load_tenant_doc(tenant_id: str) -> dict[str, Any] | None:
     """tenant_id hem id alani hem de _id(ObjectId veya string) icin calissin."""
     if not tenant_id:
         return None
@@ -142,8 +142,8 @@ async def create_audit_log(
     action: str,
     entity_type: str,
     entity_id: str,
-    changes: Optional[dict] = None,
-    ip_address: Optional[str] = None,
+    changes: dict | None = None,
+    ip_address: str | None = None,
 ):
     """Create an audit log entry."""
     audit = AuditLog(
@@ -162,7 +162,7 @@ async def create_audit_log(
     await db.audit_logs.insert_one(audit_dict)
 
 
-MODULE_DEFAULTS: Dict[str, bool] = {
+MODULE_DEFAULTS: dict[str, bool] = {
     "pms": True, "reservation_calendar": True, "dashboard": True,
     "guests": True, "housekeeping": True, "basic_reporting": True,
     "settings": True, "pms_mobile": True, "invoices_basic": True,
@@ -179,7 +179,7 @@ MODULE_DEFAULTS: Dict[str, bool] = {
 }
 
 
-def get_tenant_modules(tenant_doc: Dict[str, Any]) -> Dict[str, bool]:
+def get_tenant_modules(tenant_doc: dict[str, Any]) -> dict[str, bool]:
     """Merge stored tenant modules with tier-based defaults."""
     from domains.admin.subscription_models import get_plan_default_modules
 

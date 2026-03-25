@@ -4,8 +4,8 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials
@@ -33,11 +33,11 @@ except ImportError:
 class ChannelConnectionCreate(BaseModel):
     channel_name: str
     channel_type: str = "ota"
-    api_key: Optional[str] = None
-    api_secret: Optional[str] = None
-    property_id: Optional[str] = None
+    api_key: str | None = None
+    api_secret: str | None = None
+    property_id: str | None = None
     enabled: bool = True
-    sync_config: Optional[Dict[str, Any]] = None
+    sync_config: dict[str, Any] | None = None
 
 router = APIRouter(prefix="/api", tags=["Channel Manager / Operations"])
 
@@ -87,7 +87,7 @@ async def create_channel_connection(
     sync_log = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
-        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'timestamp': datetime.now(UTC).isoformat(),
         'channel': payload.channel_type,
         'sync_type': 'connection',
         'status': 'success',
@@ -138,7 +138,7 @@ async def create_room_mapping(
     sync_log = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
-        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'timestamp': datetime.now(UTC).isoformat(),
         'channel': room_mapping.channel_id,
         'sync_type': 'mapping_create',
         'status': 'success',
@@ -175,7 +175,7 @@ async def delete_room_mapping(
     sync_log = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
-        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'timestamp': datetime.now(UTC).isoformat(),
         'channel': mapping.get('channel_id') if mapping else None,
         'sync_type': 'mapping_delete',
         'status': 'success',
@@ -196,8 +196,8 @@ async def delete_room_mapping(
 @router.get("/channel-manager/ota-reservations")
 @cached(ttl=180, key_prefix="cm_ota_reservations")  # Cache for 3 min
 async def get_ota_reservations(
-    status: Optional[str] = None,
-    channel: Optional[ChannelType] = None,
+    status: str | None = None,
+    channel: ChannelType | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Get OTA reservations with filters"""
@@ -310,7 +310,7 @@ async def import_ota_reservation(
         {'$set': {
             'status': 'imported',
             'pms_booking_id': booking.id,
-            'processed_at': datetime.now(timezone.utc).isoformat()
+            'processed_at': datetime.now(UTC).isoformat()
         }}
     )
 
@@ -319,7 +319,7 @@ async def import_ota_reservation(
     sync_log = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
-        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'timestamp': datetime.now(UTC).isoformat(),
         'channel': ota_res['channel_type'],
         'sync_type': 'reservation_import',
         'status': 'success',
@@ -345,8 +345,8 @@ async def import_ota_reservation(
 @router.get("/channel-manager/exceptions")
 @cached(ttl=180, key_prefix="cm_exceptions")  # Cache for 3 min
 async def get_exception_queue(
-    status: Optional[str] = None,
-    exception_type: Optional[str] = None,
+    status: str | None = None,
+    exception_type: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Get exception queue with filters"""
@@ -366,12 +366,12 @@ async def get_exception_queue(
 @router.get("/channel/parity/check")
 @cached(ttl=300, key_prefix="channel_parity")  # Cache for 5 min
 async def check_rate_parity(
-    date: Optional[str] = None,
-    room_type: Optional[str] = None,
+    date: str | None = None,
+    room_type: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Check rate parity between OTA and direct rates"""
-    target_date = datetime.fromisoformat(date).date() if date else datetime.now(timezone.utc).date()
+    target_date = datetime.fromisoformat(date).date() if date else datetime.now(UTC).date()
 
     # Get rooms
     room_query = {'tenant_id': current_user.tenant_id}
@@ -460,7 +460,7 @@ async def get_channel_status(current_user: User = Depends(get_current_user)):
     recent_exceptions = await db.exception_queue.find({
         'tenant_id': current_user.tenant_id,
         'status': 'pending',
-        'created_at': {'$gte': (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()}
+        'created_at': {'$gte': (datetime.now(UTC) - timedelta(hours=1)).isoformat()}
     }, {'_id': 0}).to_list(100)
 
     channel_statuses = []
@@ -486,7 +486,7 @@ async def get_channel_status(current_user: User = Depends(get_current_user)):
         delay_minutes = 0
         if conn_exceptions:
             oldest = min(conn_exceptions, key=lambda x: x['created_at'])
-            delay_minutes = int((datetime.now(timezone.utc) - datetime.fromisoformat(oldest['created_at'])).total_seconds() / 60)
+            delay_minutes = int((datetime.now(UTC) - datetime.fromisoformat(oldest['created_at'])).total_seconds() / 60)
 
         channel_statuses.append({
             'channel_type': conn.get('channel_type'),
@@ -510,13 +510,13 @@ async def get_channel_status(current_user: User = Depends(get_current_user)):
 
 @router.post("/channel/insights/analyze")
 async def analyze_ota_insights(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """AI-powered OTA channel analysis (Phase E preparation)"""
     # Default to last 30 days
-    end = datetime.fromisoformat(end_date).date() if end_date else datetime.now(timezone.utc).date()
+    end = datetime.fromisoformat(end_date).date() if end_date else datetime.now(UTC).date()
     start = datetime.fromisoformat(start_date).date() if start_date else (end - timedelta(days=30))
 
     # Get all bookings in date range
@@ -624,8 +624,8 @@ async def analyze_ota_insights(
 
 @router.get("/channel-manager/rate-parity-check")
 async def check_rate_parity_detailed(
-    date: Optional[str] = None,
-    room_type: Optional[str] = None,
+    date: str | None = None,
+    room_type: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -708,7 +708,7 @@ async def check_rate_parity_detailed(
 @router.get("/channel-manager/sync-history")
 async def get_channel_sync_history(
     days: int = 7,
-    channel: Optional[str] = None,
+    channel: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -717,7 +717,7 @@ async def get_channel_sync_history(
     - Failed syncs
     - Sync duration
     """
-    end_dt = datetime.now(timezone.utc)
+    end_dt = datetime.now(UTC)
     start_dt = end_dt - timedelta(days=days)
 
     match_criteria = {
@@ -752,7 +752,7 @@ async def get_channel_sync_history(
         channels = ['booking_com', 'expedia', 'airbnb']
         for ch in channels:
             sync_logs.append({
-                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'timestamp': datetime.now(UTC).isoformat(),
                 'channel': ch,
                 'sync_type': 'rates',
                 'status': 'success',
@@ -997,7 +997,7 @@ async def push_rates_to_channels(
     room_type: str,
     date: str,
     rate: float,
-    channels: List[str],
+    channels: list[str],
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
@@ -1010,7 +1010,7 @@ async def push_rates_to_channels(
         results.append({
             'channel': channel,
             'status': 'success',
-            'pushed_at': datetime.now(timezone.utc).isoformat()
+            'pushed_at': datetime.now(UTC).isoformat()
         })
 
     return {

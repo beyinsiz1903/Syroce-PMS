@@ -3,8 +3,8 @@ Real-Time Operational Event System - Event Bus, Persistence, WebSocket Gateway.
 Handles hotel operational events: check-in, guest arrival, HK overdue, room ready, etc.
 """
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -44,8 +44,8 @@ NOTIFICATION_RULES = {
 class EventBus:
     """Central event bus for publishing and persisting operational events."""
 
-    async def publish(self, tenant_id: str, event_type: str, payload: Dict[str, Any],
-                      user_id: Optional[str] = None, property_id: Optional[str] = None) -> Dict[str, Any]:
+    async def publish(self, tenant_id: str, event_type: str, payload: dict[str, Any],
+                      user_id: str | None = None, property_id: str | None = None) -> dict[str, Any]:
         """Publish an operational event to the event bus."""
         if event_type not in EVENT_TYPES:
             return {"success": False, "error": f"Unknown event type: {event_type}"}
@@ -61,7 +61,7 @@ class EventBus:
             "channels": rule.get("channels", ["dashboard"]),
             "target_roles": rule.get("roles", []),
             "user_id": user_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "read": False,
             "acknowledged": False,
         }
@@ -70,10 +70,10 @@ class EventBus:
         return {"success": True, "event_id": event["id"], "event_type": event_type, "priority": event["priority"]}
 
     async def get_live_feed(self, tenant_id: str, limit: int = 50,
-                            event_type: Optional[str] = None,
-                            priority: Optional[str] = None) -> Dict[str, Any]:
+                            event_type: str | None = None,
+                            priority: str | None = None) -> dict[str, Any]:
         """Get live activity feed for the operational dashboard."""
-        query: Dict[str, Any] = {"tenant_id": tenant_id}
+        query: dict[str, Any] = {"tenant_id": tenant_id}
         if event_type:
             query["event_type"] = event_type
         if priority:
@@ -89,9 +89,9 @@ class EventBus:
             "events": events,
         }
 
-    async def get_unread_count(self, tenant_id: str, role: Optional[str] = None) -> Dict[str, Any]:
+    async def get_unread_count(self, tenant_id: str, role: str | None = None) -> dict[str, Any]:
         """Get count of unread events, optionally filtered by target role."""
-        query: Dict[str, Any] = {"tenant_id": tenant_id, "read": False}
+        query: dict[str, Any] = {"tenant_id": tenant_id, "read": False}
         if role:
             query["target_roles"] = role
 
@@ -108,22 +108,22 @@ class EventBus:
             "normal": count - critical - high,
         }
 
-    async def mark_read(self, tenant_id: str, event_ids: List[str]) -> Dict[str, Any]:
+    async def mark_read(self, tenant_id: str, event_ids: list[str]) -> dict[str, Any]:
         """Mark events as read."""
         result = await db.operational_events.update_many(
             {"tenant_id": tenant_id, "id": {"$in": event_ids}},
-            {"$set": {"read": True, "read_at": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {"read": True, "read_at": datetime.now(UTC).isoformat()}},
         )
         return {"success": True, "modified": result.modified_count}
 
-    async def acknowledge_event(self, tenant_id: str, event_id: str, user_id: str, note: Optional[str] = None) -> Dict[str, Any]:
+    async def acknowledge_event(self, tenant_id: str, event_id: str, user_id: str, note: str | None = None) -> dict[str, Any]:
         """Acknowledge a critical/high priority event."""
         result = await db.operational_events.update_one(
             {"tenant_id": tenant_id, "id": event_id},
             {"$set": {
                 "acknowledged": True,
                 "acknowledged_by": user_id,
-                "acknowledged_at": datetime.now(timezone.utc).isoformat(),
+                "acknowledged_at": datetime.now(UTC).isoformat(),
                 "acknowledge_note": note,
             }},
         )
@@ -131,9 +131,9 @@ class EventBus:
             return {"success": False, "error": "Event not found"}
         return {"success": True, "event_id": event_id}
 
-    async def get_event_stats(self, tenant_id: str, hours: int = 24) -> Dict[str, Any]:
+    async def get_event_stats(self, tenant_id: str, hours: int = 24) -> dict[str, Any]:
         """Get event statistics for the last N hours."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
         events = await db.operational_events.find(
             {"tenant_id": tenant_id, "created_at": {"$gte": cutoff}},
             {"_id": 0, "event_type": 1, "priority": 1, "acknowledged": 1},
@@ -159,9 +159,9 @@ class EventBus:
             "unacknowledged_critical": unack_critical,
         }
 
-    async def get_front_desk_queue(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_front_desk_queue(self, tenant_id: str) -> dict[str, Any]:
         """Get front desk live queue - pending arrivals, departures, requests."""
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
 
         arrivals = await db.bookings.find(
             {"tenant_id": tenant_id, "check_in": today, "status": {"$in": ["confirmed", "guaranteed"]}},
@@ -187,7 +187,7 @@ class EventBus:
             "alerts": recent,
         }
 
-    async def get_housekeeping_board(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_housekeeping_board(self, tenant_id: str) -> dict[str, Any]:
         """Get housekeeping live board with pending tasks and alerts."""
         rooms = await db.rooms.find(
             {"tenant_id": tenant_id},

@@ -10,8 +10,7 @@ Endpoints:
   GET  /api/ops/sandbox/correlation    — Correlation with deploys and drift
 """
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query
 
@@ -28,7 +27,7 @@ SANDBOX_RESULTS = "sandbox_simulation_results"
 
 @router.get("/dashboard")
 async def sandbox_dashboard(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
 ):
     """Dashboard summary — provider cards with pass/fail, last run time, scenario status."""
     query = {}
@@ -46,7 +45,7 @@ async def sandbox_dashboard(
             "has_data": False,
             "provider_cards": [],
             "last_run": None,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
     # Build provider cards
@@ -83,13 +82,13 @@ async def sandbox_dashboard(
             "triggered_by": last_run.get("triggered_by", ""),
         },
         "label": "sandbox_pass",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
 @router.get("/trends")
 async def sandbox_trends(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
     limit: int = Query(30, ge=1, le=100),
 ):
     """Pass rate trends over last N simulation runs.
@@ -164,13 +163,13 @@ async def sandbox_trends(
             {"key": k, "failure_count": v} for k, v in most_failing
         ],
         "total_runs": len(runs),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
 @router.get("/regressions")
 async def sandbox_regressions(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
 ):
     """Detect regressions — scenarios that previously passed but now fail.
 
@@ -191,7 +190,7 @@ async def sandbox_regressions(
             "regressions": [],
             "message": "Not enough runs to detect regressions (need at least 2)",
             "label": "sandbox_regression",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
     current = runs[0]
@@ -222,13 +221,13 @@ async def sandbox_regressions(
         "current_run": current.get("run_id", ""),
         "previous_run": previous.get("run_id", ""),
         "label": "sandbox_regression",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
 @router.get("/correlation")
 async def sandbox_correlation(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
     limit: int = Query(10, ge=1, le=50),
 ):
     """Correlation between sandbox results, deploys, and drift.
@@ -300,7 +299,7 @@ async def sandbox_correlation(
             else "Sandbox pass rate dropped — investigate recent deploy impact"
         ),
         "label": "prod_health",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 

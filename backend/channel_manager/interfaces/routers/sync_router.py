@@ -1,7 +1,6 @@
 """Inventory/rate sync, mapping, event-driven sync, scheduler, provider push endpoints."""
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -28,15 +27,15 @@ class CreateMappingRequest(BaseModel):
     pms_entity_name: str = ""
     external_entity_id: str
     external_entity_name: str = ""
-    extras: Optional[dict] = None
+    extras: dict | None = None
 
 
 class TriggerSyncRequest(BaseModel):
     connector_id: str
     date_start: str = ""
     date_end: str = ""
-    room_type_ids: Optional[List[str]] = None
-    rate_plan_ids: Optional[List[str]] = None
+    room_type_ids: list[str] | None = None
+    rate_plan_ids: list[str] | None = None
     reason: str = ""
 
 
@@ -46,12 +45,12 @@ class DomainEventRequest(BaseModel):
 
 
 class BatchEventsRequest(BaseModel):
-    events: List[DomainEventRequest]
+    events: list[DomainEventRequest]
 
 
 class ProviderPushRequest(BaseModel):
     connector_id: str
-    updates: List[dict]
+    updates: list[dict]
     environment: str = "sandbox"
 
 
@@ -60,7 +59,7 @@ class ProviderPushRequest(BaseModel):
 @router.get("/mappings/{connector_id}")
 async def list_mappings(
     connector_id: str,
-    entity_type: Optional[str] = None,
+    entity_type: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     svc = MappingService()
@@ -159,9 +158,9 @@ async def trigger_inventory_sync(
 ):
     svc = InventorySyncService()
     if not req.date_start:
-        req.date_start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        req.date_start = datetime.now(UTC).strftime("%Y-%m-%d")
     if not req.date_end:
-        req.date_end = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+        req.date_end = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
     try:
         result = await svc.trigger_inventory_sync(
             tenant_id=current_user.tenant_id,
@@ -185,9 +184,9 @@ async def trigger_rate_sync(
 ):
     svc = InventorySyncService()
     if not req.date_start:
-        req.date_start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        req.date_start = datetime.now(UTC).strftime("%Y-%m-%d")
     if not req.date_end:
-        req.date_end = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+        req.date_end = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
     try:
         result = await svc.trigger_rate_sync(
             tenant_id=current_user.tenant_id,
@@ -205,7 +204,7 @@ async def trigger_rate_sync(
 
 @router.get("/sync/jobs")
 async def list_sync_jobs(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     limit: int = Query(50, le=200),
     current_user: User = Depends(get_current_user),
 ):
@@ -245,7 +244,7 @@ async def get_sync_job_events(
 
 @router.get("/sync/manual-review")
 async def get_manual_review_queue(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     svc = InventorySyncService()

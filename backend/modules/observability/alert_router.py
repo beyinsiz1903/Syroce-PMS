@@ -3,7 +3,6 @@ Observability — Alert Enrichment API Router
 ============================================
 Alert management: evaluate rules, list active, acknowledge, resolve, get summary.
 """
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -36,7 +35,7 @@ async def evaluate_alerts(req: EvaluateRequest, user=Depends(get_current_user)):
 
 @router.get("/active")
 async def get_active_alerts(
-    severity: Optional[str] = None,
+    severity: str | None = None,
     limit: int = Query(50, le=200),
     user=Depends(get_current_user),
 ):

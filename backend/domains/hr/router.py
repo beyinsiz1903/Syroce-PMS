@@ -4,8 +4,8 @@ Domain Router: HR Operations
 HR complete suite, F&B complete suite for department managers.
 """
 import uuid
-from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -30,10 +30,10 @@ async def clock_in(staff_data: dict, current_user: User = Depends(get_current_us
         'tenant_id': current_user.tenant_id,
         'staff_id': staff_data['staff_id'],
         'date': date.today().isoformat(),
-        'clock_in': datetime.now(timezone.utc).isoformat(),
+        'clock_in': datetime.now(UTC).isoformat(),
         'clock_out': None,
         'status': 'present',
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
     await db.attendance_records.insert_one(record)
     return {'success': True, 'message': 'Clock-in kaydedildi', 'time': record['clock_in']}
@@ -44,7 +44,7 @@ async def clock_out(staff_data: dict, current_user: User = Depends(get_current_u
         'staff_id': staff_data['staff_id'], 'date': date.today().isoformat(), 'clock_out': None
     })
     if record:
-        clock_out_time = datetime.now(timezone.utc)
+        clock_out_time = datetime.now(UTC)
         clock_in_time = datetime.fromisoformat(record['clock_in'].replace('Z', '+00:00'))
         hours = (clock_out_time - clock_in_time).total_seconds() / 3600
         await db.attendance_records.update_one(
@@ -71,7 +71,7 @@ async def create_leave_request(leave_data: dict, current_user: User = Depends(ge
         'leave_type': leave_data['leave_type'],
         'start_date': leave_data['start_date'], 'end_date': leave_data['end_date'],
         'total_days': total_days, 'reason': leave_data.get('reason'),
-        'status': 'pending', 'created_at': datetime.now(timezone.utc).isoformat()
+        'status': 'pending', 'created_at': datetime.now(UTC).isoformat()
     }
     await db.leave_requests.insert_one(leave)
     return {'success': True, 'leave_id': leave['id'], 'total_days': total_days}
@@ -83,7 +83,7 @@ async def get_payroll(month: str, current_user: User = Depends(get_current_user)
     return {'payroll': payroll, 'total': total, 'count': len(payroll)}
 
 
-def _parse_date_range(start: Optional[str], end: Optional[str], days: int = 7):
+def _parse_date_range(start: str | None, end: str | None, days: int = 7):
     today = date.today()
     start_date = datetime.fromisoformat(start).date() if start else today - timedelta(days=days)
     end_date = datetime.fromisoformat(end).date() if end else today
@@ -94,14 +94,14 @@ def _parse_date_range(start: Optional[str], end: Optional[str], days: int = 7):
 
 @router.get("/hr/attendance/records")
 async def get_attendance_records(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    staff_id: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    staff_id: str | None = None,
     limit: int = 500,
     current_user: User = Depends(get_current_user)
 ):
     start_dt, end_dt = _parse_date_range(start_date, end_date, days=7)
-    query: Dict[str, Any] = {
+    query: dict[str, Any] = {
         'tenant_id': current_user.tenant_id,
         'date': {'$gte': start_dt.isoformat(), '$lte': end_dt.isoformat()}
     }
@@ -124,8 +124,8 @@ async def get_attendance_records(
 
 @router.get("/hr/attendance/summary")
 async def get_attendance_summary(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     start_dt, end_dt = _parse_date_range(start_date, end_date, days=30)
@@ -136,7 +136,7 @@ async def get_attendance_summary(
     records = await db.attendance_records.find(query, {'_id': 0}).to_list(2000)
     staff_map = await _get_staff_map(current_user.tenant_id)
 
-    summary: Dict[str, Any] = {}
+    summary: dict[str, Any] = {}
     for record in records:
         staff_id = record['staff_id']
         summary.setdefault(staff_id, {
@@ -178,7 +178,7 @@ async def get_attendance_summary(
 
 @router.get("/hr/payroll/export")
 async def export_payroll(
-    month: Optional[str] = None,
+    month: str | None = None,
     format: str = 'json',
     current_user: User = Depends(get_current_user)
 ):
@@ -249,7 +249,7 @@ async def create_job_posting(job_data: dict, current_user: User = Depends(get_cu
     job = {
         'id': str(uuid.uuid4()), 'tenant_id': current_user.tenant_id,
         **job_data, 'status': 'active', 'applicants_count': 0,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
     await db.job_postings.insert_one(job)
     return {'success': True, 'job_id': job['id']}
@@ -262,7 +262,7 @@ async def _get_ingredient_map(tenant_id: str):
     return {ing['id']: ing for ing in ingredients}, ingredients
 
 
-def _enrich_recipe_cost(recipe: dict, ingredient_map: Dict[str, dict]):
+def _enrich_recipe_cost(recipe: dict, ingredient_map: dict[str, dict]):
     enriched_lines = []
     total_cost = 0
     for line in recipe.get('ingredients', []):
@@ -306,7 +306,7 @@ async def create_recipe(recipe_data: dict, current_user: User = Depends(get_curr
         'ingredients': recipe_data.get('ingredients', []),
         'selling_price': recipe_data.get('selling_price', 0),
         'active': True,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     recipe = _enrich_recipe_cost(recipe, ingredient_map)
@@ -372,12 +372,12 @@ async def create_beo(beo_data: dict, current_user: User = Depends(get_current_us
     beo = {
         'id': str(uuid.uuid4()), 'tenant_id': current_user.tenant_id,
         **beo_data, 'status': 'confirmed',
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
     await db.banquet_event_orders.insert_one(beo)
     return {'success': True, 'beo_id': beo['id'], 'message': 'BEO olusturuldu'}
 
-async def _get_active_kitchen_orders(tenant_id: str, statuses: Optional[List[str]] = None):
+async def _get_active_kitchen_orders(tenant_id: str, statuses: list[str] | None = None):
     query = {'tenant_id': tenant_id}
     if statuses:
         query['status'] = {'$in': statuses}
@@ -403,7 +403,7 @@ async def _broadcast_kitchen_queue(tenant_id: str):
 
 @router.get("/fnb/kitchen-display")
 async def get_kitchen_orders(
-    status: Optional[str] = None,
+    status: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     statuses = status.split(',') if status else None
@@ -428,7 +428,7 @@ async def create_kitchen_order(order_data: dict, current_user: User = Depends(ge
         'items': order_data.get('items'),
         'notes': order_data.get('notes'),
         'ordered_by': current_user.name,
-        'ordered_at': datetime.now(timezone.utc).isoformat()
+        'ordered_at': datetime.now(UTC).isoformat()
     }
     await db.kitchen_orders.insert_one(order)
     await _broadcast_kitchen_queue(current_user.tenant_id)
@@ -444,9 +444,9 @@ async def update_kitchen_order_status(
 ):
     update_data = {'status': status}
     if status == 'preparing':
-        update_data['started_at'] = datetime.now(timezone.utc).isoformat()
+        update_data['started_at'] = datetime.now(UTC).isoformat()
     if status in ['ready', 'served']:
-        update_data['ready_at'] = datetime.now(timezone.utc).isoformat()
+        update_data['ready_at'] = datetime.now(UTC).isoformat()
     result = await db.kitchen_orders.update_one(
         {'tenant_id': current_user.tenant_id, 'id': order_id},
         {'$set': update_data}
@@ -497,7 +497,7 @@ async def add_ingredient(ing_data: dict, current_user: User = Depends(get_curren
         'unit_cost': ing_data.get('unit_cost', 0),
         'supplier': ing_data.get('supplier'),
         'last_order_date': ing_data.get('last_order_date'),
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
     await db.ingredients.insert_one(ingredient)
     ingredient.pop('_id', None)

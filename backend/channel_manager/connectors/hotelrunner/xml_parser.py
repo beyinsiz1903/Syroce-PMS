@@ -11,7 +11,7 @@ Contract hardening:
 import hashlib
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 from xml.etree import ElementTree as ET
 
 from .contract_errors import (
@@ -104,8 +104,8 @@ def build_audit_record(
     operation: str,
     raw_request: str = "",
     raw_response: str = "",
-    correlation_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    correlation_id: str | None = None,
+) -> dict[str, Any]:
     """Build a standardized audit record for raw payloads."""
     return {
         "correlation_id": correlation_id or str(uuid.uuid4()),
@@ -117,7 +117,7 @@ def build_audit_record(
     }
 
 
-def parse_response_status(xml_str: str) -> Dict[str, Any]:
+def parse_response_status(xml_str: str) -> dict[str, Any]:
     """Parse generic OTA response for success/error status with contract hardening."""
     if not xml_str or not xml_str.strip():
         raise InvalidXmlError("Empty XML response", raw_xml="", parse_error="empty_input")
@@ -149,7 +149,7 @@ def parse_response_status(xml_str: str) -> Dict[str, Any]:
     return {"success": True, "errors": [], "warnings": warnings}
 
 
-def parse_reservations_response(xml_str: str) -> List[Dict[str, Any]]:
+def parse_reservations_response(xml_str: str) -> list[dict[str, Any]]:
     """
     Parse OTA_ResRetrieveRS or HotelRunner reservation response.
     Returns a list of raw reservation dicts ready for canonical mapping.
@@ -173,7 +173,7 @@ def parse_reservations_response(xml_str: str) -> List[Dict[str, Any]]:
     return reservations
 
 
-def _parse_single_reservation(elem: ET.Element) -> Optional[Dict[str, Any]]:
+def _parse_single_reservation(elem: ET.Element) -> dict[str, Any] | None:
     """Parse a single HotelReservation element with contract hardening.
 
     Contract hardening:
@@ -308,7 +308,7 @@ def _parse_single_reservation(elem: ET.Element) -> Optional[Dict[str, Any]]:
     }
 
 
-def parse_provider_error(xml_str: str) -> Optional[Dict[str, Any]]:
+def parse_provider_error(xml_str: str) -> dict[str, Any] | None:
     """Parse a provider error response and raise typed contract error."""
     try:
         root = ET.fromstring(xml_str)

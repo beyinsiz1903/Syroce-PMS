@@ -7,8 +7,7 @@ Falls back to in-memory pub/sub when Redis is not available.
 import logging
 import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from datetime import UTC, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +45,9 @@ class EventBroadcastService:
     def __init__(self, db):
         self.db = db
         # In-memory subscribers: {tenant_id: {session_id: {user_id, roles, property_ids, ws}}}
-        self._sessions: Dict[str, Dict[str, dict]] = defaultdict(dict)
+        self._sessions: dict[str, dict[str, dict]] = defaultdict(dict)
         # Recent events buffer for replay (per tenant, last 100)
-        self._event_buffer: Dict[str, List[dict]] = defaultdict(list)
+        self._event_buffer: dict[str, list[dict]] = defaultdict(list)
         self._metrics = {"total_published": 0, "total_delivered": 0, "total_missed": 0}
 
     def register_session(self, tenant_id: str, session_id: str, user_id: str,
@@ -57,7 +56,7 @@ class EventBroadcastService:
             "user_id": user_id,
             "roles": roles,
             "property_ids": property_ids or [],
-            "connected_at": datetime.now(timezone.utc).isoformat(),
+            "connected_at": datetime.now(UTC).isoformat(),
             "last_event_at": None,
         }
         return {"session_id": session_id, "status": "registered"}
@@ -75,7 +74,7 @@ class EventBroadcastService:
         return False
 
     async def publish(self, tenant_id: str, event_type: str, payload: dict,
-                      property_id: Optional[str] = None, source: str = "system") -> dict:
+                      property_id: str | None = None, source: str = "system") -> dict:
         """Publish an event to all eligible sessions."""
         event = {
             "id": str(uuid.uuid4()),
@@ -84,7 +83,7 @@ class EventBroadcastService:
             "event_type": event_type,
             "payload": payload,
             "source": source,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         # buffer
@@ -111,7 +110,7 @@ class EventBroadcastService:
         self._metrics["total_delivered"] += delivered_count
         return {"event_id": event["id"], "delivered_to": delivered_count}
 
-    async def get_replay(self, tenant_id: str, since: Optional[str] = None, limit: int = 50) -> list:
+    async def get_replay(self, tenant_id: str, since: str | None = None, limit: int = 50) -> list:
         """Replay missed events since a timestamp."""
         q = {"tenant_id": tenant_id}
         if since:
@@ -131,7 +130,7 @@ class EventBroadcastService:
     async def get_metrics(self, tenant_id: str) -> dict:
         session_count = len(self._sessions.get(tenant_id, {}))
         # count recent events
-        one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        one_hour_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
         recent = await self.db.event_broadcast_log.count_documents(
             {"tenant_id": tenant_id, "timestamp": {"$gte": one_hour_ago}}
         )

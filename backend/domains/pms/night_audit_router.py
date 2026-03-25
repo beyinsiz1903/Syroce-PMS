@@ -3,7 +3,6 @@ PMS / Night Audit Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -29,12 +28,12 @@ router = APIRouter(prefix="/api", tags=["PMS / Night Audit"])
 @router.get("/audit-logs")
 @cached(ttl=600, key_prefix="audit_logs")
 async def get_audit_logs(
-    entity_type: Optional[str] = None,
-    entity_id: Optional[str] = None,
-    user_id: Optional[str] = None,
-    action: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    user_id: str | None = None,
+    action: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     limit: int = 100,
     current_user: User = Depends(get_current_user)
 ):
@@ -49,11 +48,11 @@ async def get_audit_logs(
 
 @router.get("/logs/errors")
 async def get_error_logs(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    severity: Optional[str] = None,
-    endpoint: Optional[str] = None,
-    resolved: Optional[bool] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    severity: str | None = None,
+    endpoint: str | None = None,
+    resolved: bool | None = None,
     limit: int = 100,
     skip: int = 0,
     current_user: User = Depends(get_current_user)
@@ -67,7 +66,7 @@ async def get_error_logs(
 @router.post("/logs/errors/{error_id}/resolve")
 async def resolve_error_log(
     error_id: str,
-    resolution_notes: Optional[str] = None,
+    resolution_notes: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Mark error log as resolved"""
@@ -82,9 +81,9 @@ async def resolve_error_log(
 
 @router.get("/logs/night-audit")
 async def get_night_audit_logs(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    status: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    status: str | None = None,
     limit: int = 100,
     skip: int = 0,
     current_user: User = Depends(get_current_user)
@@ -97,11 +96,11 @@ async def get_night_audit_logs(
 
 @router.get("/logs/ota-sync")
 async def get_ota_sync_logs(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    channel: Optional[str] = None,
-    sync_type: Optional[str] = None,
-    status: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    channel: str | None = None,
+    sync_type: str | None = None,
+    status: str | None = None,
     limit: int = 100,
     skip: int = 0,
     current_user: User = Depends(get_current_user)
@@ -114,11 +113,11 @@ async def get_ota_sync_logs(
 
 @router.get("/logs/rms-publish")
 async def get_rms_publish_logs(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    publish_type: Optional[str] = None,
-    auto_published: Optional[bool] = None,
-    status: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    publish_type: str | None = None,
+    auto_published: bool | None = None,
+    status: str | None = None,
     limit: int = 100,
     skip: int = 0,
     current_user: User = Depends(get_current_user)
@@ -131,11 +130,11 @@ async def get_rms_publish_logs(
 
 @router.get("/logs/maintenance-predictions")
 async def get_maintenance_prediction_logs(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    equipment_type: Optional[str] = None,
-    prediction_result: Optional[str] = None,
-    room_number: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    equipment_type: str | None = None,
+    prediction_result: str | None = None,
+    room_number: str | None = None,
     limit: int = 100,
     skip: int = 0,
     current_user: User = Depends(get_current_user)

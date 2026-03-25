@@ -8,7 +8,7 @@ import asyncio
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from common.result import ServiceResult
@@ -78,7 +78,7 @@ class DeployPipeline:
     async def start_pipeline(self, triggered_by: str, version_tag: str = "latest") -> ServiceResult:
         """Create a new pipeline run. Returns pipeline_id."""
         pipeline_id = f"pipe-{uuid.uuid4().hex[:12]}"
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         run = {
             "pipeline_id": pipeline_id,
@@ -117,7 +117,7 @@ class DeployPipeline:
                 if gs.get("status") != "passed":
                     return ServiceResult.fail(f"Gate '{g['id']}' must pass before '{gate_id}'", "GATE_ORDER")
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         await self._db.deploy_pipelines.update_one(
             {"pipeline_id": pipeline_id},
             {"$set": {
@@ -131,7 +131,7 @@ class DeployPipeline:
         result = await self._run_gate(gate_id, gate_def)
         duration_ms = int((time.time() - t0) * 1000)
 
-        finished_at = datetime.now(timezone.utc).isoformat()
+        finished_at = datetime.now(UTC).isoformat()
         gate_status = "passed" if result["passed"] else "failed"
 
         update = {
@@ -237,7 +237,7 @@ class DeployPipeline:
                 output_lines.append(ruff_out[:500])
             else:
                 output_lines.append("[RUFF] PASSED")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             errors.append("ruff: timeout")
         except FileNotFoundError:
             output_lines.append("[RUFF] skipped (not installed)")
@@ -260,7 +260,7 @@ class DeployPipeline:
                 output_lines.append(eslint_out[:500])
             else:
                 output_lines.append("[ESLINT] PASSED")
-        except (asyncio.TimeoutError, FileNotFoundError):
+        except (TimeoutError, FileNotFoundError):
             output_lines.append("[ESLINT] skipped")
 
         return {
@@ -323,7 +323,7 @@ class DeployPipeline:
                         errors.append(line.strip())
                 if not errors:
                     errors.append(f"pytest exited with code {proc.returncode}")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             errors.append("pytest: timeout exceeded")
         except FileNotFoundError:
             output_lines.append("[PYTEST] skipped (not found)")
@@ -346,7 +346,7 @@ class DeployPipeline:
         for scan_dir in scan_dirs:
             for py_file in glob.glob(f"{scan_dir}/**/*.py", recursive=True):
                 try:
-                    with open(py_file, "r") as f:
+                    with open(py_file) as f:
                         content = f.read()
                     for pat in secret_patterns:
                         if pat in content:
@@ -468,7 +468,7 @@ class DeployPipeline:
                 output_lines.append("[IMPORT] server.py imports OK")
             else:
                 errors.append(f"server.py import failed: {stderr.decode()[:200]}")
-        except (asyncio.TimeoutError, FileNotFoundError):
+        except (TimeoutError, FileNotFoundError):
             output_lines.append("[IMPORT] import check skipped")
 
         return {

@@ -13,8 +13,8 @@ Health Domains:
   5. Queue & Worker Health
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 from domains.channel_manager.data_model import (
@@ -31,7 +31,7 @@ logger = logging.getLogger("monitoring.aggregator")
 _NO_ID = {"_id": 0}
 
 
-async def collect_provider_health() -> Dict[str, Any]:
+async def collect_provider_health() -> dict[str, Any]:
     """Track provider connectivity and response success."""
     providers = {}
     connections = await db[COLL_PROVIDER_CONNECTIONS].find(
@@ -91,9 +91,9 @@ async def collect_provider_health() -> Dict[str, Any]:
     }
 
 
-async def collect_ingest_health() -> Dict[str, Any]:
+async def collect_ingest_health() -> dict[str, Any]:
     """Monitor the reservation ingest pipeline."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     one_hour_ago = (now - timedelta(hours=1)).isoformat()
     one_day_ago = (now - timedelta(days=1)).isoformat()
 
@@ -101,7 +101,7 @@ async def collect_ingest_health() -> Dict[str, Any]:
     status_pipeline = [
         {"$group": {"_id": "$processing_status", "count": {"$sum": 1}}},
     ]
-    status_counts: Dict[str, int] = {}
+    status_counts: dict[str, int] = {}
     async for doc in db[COLL_RAW_CHANNEL_EVENTS].aggregate(status_pipeline):
         status_counts[doc["_id"]] = doc["count"]
 
@@ -148,9 +148,9 @@ async def collect_ingest_health() -> Dict[str, Any]:
     }
 
 
-async def collect_ari_health() -> Dict[str, Any]:
+async def collect_ari_health() -> dict[str, Any]:
     """Monitor outbound ARI synchronization."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     one_day_ago = (now - timedelta(days=1)).isoformat()
 
     # Outbound logs (last 24h)
@@ -198,7 +198,7 @@ async def collect_ari_health() -> Dict[str, Any]:
     }
 
 
-async def collect_reconciliation_health() -> Dict[str, Any]:
+async def collect_reconciliation_health() -> dict[str, Any]:
     """Track mismatch trends."""
     # Open cases
     open_q = {"status": {"$in": ["open", "acknowledged"]}}
@@ -207,7 +207,7 @@ async def collect_reconciliation_health() -> Dict[str, Any]:
         {"$match": open_q},
         {"$group": {"_id": "$case_type", "count": {"$sum": 1}}},
     ]
-    by_type: Dict[str, int] = {}
+    by_type: dict[str, int] = {}
     async for doc in db[COLL_RECONCILIATION_CASES].aggregate(type_pipeline):
         by_type[doc["_id"]] = doc["count"]
 
@@ -215,14 +215,14 @@ async def collect_reconciliation_health() -> Dict[str, Any]:
         {"$match": open_q},
         {"$group": {"_id": "$severity", "count": {"$sum": 1}}},
     ]
-    by_severity: Dict[str, int] = {}
+    by_severity: dict[str, int] = {}
     async for doc in db[COLL_RECONCILIATION_CASES].aggregate(severity_pipeline):
         by_severity[doc["_id"]] = doc["count"]
 
     total_open = sum(by_type.values())
 
     # Growth rate (cases created in last 24h)
-    one_day_ago = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    one_day_ago = (datetime.now(UTC) - timedelta(days=1)).isoformat()
     recent_cases = await db[COLL_RECONCILIATION_CASES].count_documents(
         {"created_at": {"$gte": one_day_ago}},
     )
@@ -241,7 +241,7 @@ async def collect_reconciliation_health() -> Dict[str, Any]:
     }
 
 
-async def collect_queue_worker_health() -> Dict[str, Any]:
+async def collect_queue_worker_health() -> dict[str, Any]:
     """Monitor background workers."""
     from domains.channel_manager.ingest.workers import get_worker_states
     from domains.channel_manager.reconciliation_engine.reconciliation_worker import get_reconciliation_worker_state
@@ -249,7 +249,7 @@ async def collect_queue_worker_health() -> Dict[str, Any]:
     worker_states = get_worker_states()
     recon_state = get_reconciliation_worker_state()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stalled_workers = []
     worker_details = {}
 
@@ -262,7 +262,7 @@ async def collect_queue_worker_health() -> Dict[str, Any]:
             try:
                 last_dt = datetime.fromisoformat(last_run)
                 if last_dt.tzinfo is None:
-                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                    last_dt = last_dt.replace(tzinfo=UTC)
                 age_seconds = (now - last_dt).total_seconds()
                 is_stalled = age_seconds > interval * 3
             except (ValueError, TypeError):
@@ -286,7 +286,7 @@ async def collect_queue_worker_health() -> Dict[str, Any]:
         try:
             last_dt = datetime.fromisoformat(recon_last)
             if last_dt.tzinfo is None:
-                last_dt = last_dt.replace(tzinfo=timezone.utc)
+                last_dt = last_dt.replace(tzinfo=UTC)
             recon_stalled = (now - last_dt).total_seconds() > 3600
         except (ValueError, TypeError):
             pass
@@ -322,7 +322,7 @@ async def collect_queue_worker_health() -> Dict[str, Any]:
     }
 
 
-async def collect_all_metrics() -> Dict[str, Any]:
+async def collect_all_metrics() -> dict[str, Any]:
     """Aggregate all health domain metrics."""
     provider = await collect_provider_health()
     ingest = await collect_ingest_health()
@@ -352,7 +352,7 @@ async def collect_all_metrics() -> Dict[str, Any]:
 
     return {
         "system_health": system_health,
-        "collected_at": datetime.now(timezone.utc).isoformat(),
+        "collected_at": datetime.now(UTC).isoformat(),
         "provider_health": provider,
         "ingest_health": ingest,
         "ari_health": ari,

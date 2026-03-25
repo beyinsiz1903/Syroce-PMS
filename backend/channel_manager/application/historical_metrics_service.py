@@ -9,8 +9,8 @@ Aggregation: daily, weekly, monthly
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -24,19 +24,19 @@ SNAPSHOTS = "cm_metrics_snapshots"
 class HistoricalMetricsService:
     """Collects, stores, and queries historical metrics snapshots."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     # ─── Snapshot Creation ─────────────────────────────────────────────
 
-    async def create_snapshot(self, tenant_id: str, connector_id: Optional[str] = None) -> Dict[str, Any]:
+    async def create_snapshot(self, tenant_id: str, connector_id: str | None = None) -> dict[str, Any]:
         """Create a metrics snapshot for all connectors or a specific one."""
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
         if connector_id:
             connectors = [c for c in connectors if c.get("id") == connector_id]
 
         snapshots = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         for c in connectors:
             cid = c.get("id", "")
@@ -148,14 +148,14 @@ class HistoricalMetricsService:
     # ─── Trend Calculation ─────────────────────────────────────────────
 
     async def get_trends(
-        self, tenant_id: str, connector_id: Optional[str] = None,
-        period: str = "7d", metric_keys: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        self, tenant_id: str, connector_id: str | None = None,
+        period: str = "7d", metric_keys: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Get trend data for specified metrics over a period."""
         days = {"24h": 1, "7d": 7, "30d": 30, "90d": 90, "1y": 365}.get(period, 7)
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
-        q: Dict[str, Any] = {"tenant_id": tenant_id, "timestamp": {"$gte": cutoff}}
+        q: dict[str, Any] = {"tenant_id": tenant_id, "timestamp": {"$gte": cutoff}}
         if connector_id:
             q["connector_id"] = connector_id
 
@@ -169,7 +169,7 @@ class HistoricalMetricsService:
             ]
 
         # Aggregate by date
-        by_date: Dict[str, Dict[str, List]] = {}
+        by_date: dict[str, dict[str, list]] = {}
         for doc in docs:
             date = doc.get("date", "")
             if date not in by_date:
@@ -197,14 +197,14 @@ class HistoricalMetricsService:
     # ─── History Query ─────────────────────────────────────────────────
 
     async def get_history(
-        self, tenant_id: str, connector_id: Optional[str] = None,
+        self, tenant_id: str, connector_id: str | None = None,
         period: str = "7d", limit: int = 500,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get raw snapshot history."""
         days = {"24h": 1, "7d": 7, "30d": 30, "90d": 90, "1y": 365}.get(period, 7)
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
-        q: Dict[str, Any] = {"tenant_id": tenant_id, "timestamp": {"$gte": cutoff}}
+        q: dict[str, Any] = {"tenant_id": tenant_id, "timestamp": {"$gte": cutoff}}
         if connector_id:
             q["connector_id"] = connector_id
 
@@ -214,10 +214,10 @@ class HistoricalMetricsService:
     async def get_history_by_property(
         self, tenant_id: str, property_id: str,
         period: str = "7d", limit: int = 500,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get snapshot history for a specific property."""
         days = {"24h": 1, "7d": 7, "30d": 30, "90d": 90, "1y": 365}.get(period, 7)
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
         q = {"tenant_id": tenant_id, "property_id": property_id, "timestamp": {"$gte": cutoff}}
         docs = await db[SNAPSHOTS].find(q, {"_id": 0}).sort("timestamp", -1).to_list(limit)
@@ -225,9 +225,9 @@ class HistoricalMetricsService:
 
     # ─── Retention Cleanup ─────────────────────────────────────────────
 
-    async def run_retention_cleanup(self, tenant_id: str) -> Dict[str, Any]:
+    async def run_retention_cleanup(self, tenant_id: str) -> dict[str, Any]:
         """Clean up old snapshots based on retention policy."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         deleted = {"hourly": 0, "daily": 0, "weekly": 0}
 
         # Hourly snapshots older than 30 days
@@ -255,10 +255,10 @@ class HistoricalMetricsService:
 
     # ─── Daily Aggregation ─────────────────────────────────────────────
 
-    async def create_daily_aggregation(self, tenant_id: str, date: Optional[str] = None) -> Dict[str, Any]:
+    async def create_daily_aggregation(self, tenant_id: str, date: str | None = None) -> dict[str, Any]:
         """Aggregate hourly snapshots into a daily snapshot."""
         if not date:
-            date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+            date = (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
 
         q = {"tenant_id": tenant_id, "granularity": "hourly", "date": date}
         hourly_docs = await db[SNAPSHOTS].find(q, {"_id": 0}).to_list(5000)
@@ -267,7 +267,7 @@ class HistoricalMetricsService:
             return {"aggregated": 0, "date": date}
 
         # Group by connector
-        by_connector: Dict[str, List] = {}
+        by_connector: dict[str, list] = {}
         for doc in hourly_docs:
             cid = doc.get("connector_id", "")
             if cid not in by_connector:
@@ -298,7 +298,7 @@ class HistoricalMetricsService:
                 "hour": "",
                 "metrics": avg_metrics,
                 "sample_count": len(docs),
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             }
             await db[SNAPSHOTS].insert_one(daily)
             daily.pop("_id", None)
@@ -318,13 +318,13 @@ class HistoricalMetricsService:
             "connector_id": connector_id,
             "property_id": "",
             "granularity": "event",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "metrics": {
                 "validation_passed": passed,
                 "validation_failed": failed,
                 "validation_total": total,
                 "validation_score": round(passed / max(total, 1) * 100, 1),
             },
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db[SNAPSHOTS].insert_one(doc)

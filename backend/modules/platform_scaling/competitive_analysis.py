@@ -3,8 +3,8 @@ Competitive Set Analysis - Competitor price tracking, market positioning,
 and ADR adjustment suggestions based on competitive intelligence.
 """
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -13,8 +13,8 @@ class CompetitorPriceTracker:
     """Track and analyze competitor pricing."""
 
     async def add_competitor(self, tenant_id: str, name: str, star_rating: int = 4,
-                              room_types: Optional[List[str]] = None,
-                              location: Optional[str] = None) -> Dict[str, Any]:
+                              room_types: list[str] | None = None,
+                              location: str | None = None) -> dict[str, Any]:
         """Add a competitor hotel to the comp set."""
         competitor = {
             "id": str(uuid.uuid4()),
@@ -24,12 +24,12 @@ class CompetitorPriceTracker:
             "room_types": room_types or ["Standard", "Deluxe", "Suite"],
             "location": location,
             "active": True,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db.competitors.insert_one(competitor)
         return {"success": True, "competitor_id": competitor["id"], "name": name}
 
-    async def get_competitors(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_competitors(self, tenant_id: str) -> dict[str, Any]:
         """Get all competitors in the comp set."""
         competitors = await db.competitors.find(
             {"tenant_id": tenant_id, "active": True}, {"_id": 0}
@@ -38,7 +38,7 @@ class CompetitorPriceTracker:
 
     async def record_competitor_rate(self, tenant_id: str, competitor_id: str,
                                       room_type: str, rate: float, date_str: str,
-                                      source: str = "manual") -> Dict[str, Any]:
+                                      source: str = "manual") -> dict[str, Any]:
         """Record a competitor's rate for a specific date."""
         record = {
             "id": str(uuid.uuid4()),
@@ -48,15 +48,15 @@ class CompetitorPriceTracker:
             "rate": rate,
             "date": date_str,
             "source": source,
-            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "recorded_at": datetime.now(UTC).isoformat(),
         }
         await db.competitor_rates.insert_one(record)
         return {"success": True, "rate_id": record["id"]}
 
-    async def get_competitor_rates(self, tenant_id: str, target_date: Optional[str] = None,
-                                    competitor_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_competitor_rates(self, tenant_id: str, target_date: str | None = None,
+                                    competitor_id: str | None = None) -> dict[str, Any]:
         """Get competitor rates with optional filters."""
-        query: Dict[str, Any] = {"tenant_id": tenant_id}
+        query: dict[str, Any] = {"tenant_id": tenant_id}
         if target_date:
             query["date"] = target_date
         if competitor_id:
@@ -76,7 +76,7 @@ class CompetitorPriceTracker:
 
         return {"count": len(rates), "rates": rates}
 
-    async def bulk_record_rates(self, tenant_id: str, rates: List[Dict]) -> Dict[str, Any]:
+    async def bulk_record_rates(self, tenant_id: str, rates: list[dict]) -> dict[str, Any]:
         """Bulk record competitor rates."""
         recorded = 0
         for r in rates:
@@ -91,7 +91,7 @@ class CompetitorPriceTracker:
 class MarketPositioning:
     """Analyze hotel's position relative to competitors."""
 
-    async def get_market_position(self, tenant_id: str, room_type: str = "Standard") -> Dict[str, Any]:
+    async def get_market_position(self, tenant_id: str, room_type: str = "Standard") -> dict[str, Any]:
         """Analyze market position relative to comp set."""
         # Our rates
         our_rooms = await db.rooms.find(
@@ -172,7 +172,7 @@ class MarketPositioning:
             "competitors": comp_analysis,
         }
 
-    async def get_rate_parity_check(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_rate_parity_check(self, tenant_id: str) -> dict[str, Any]:
         """Check rate parity across competitors and channels."""
         room_types = await db.rooms.distinct("room_type", {"tenant_id": tenant_id})
         if not room_types:
@@ -195,7 +195,7 @@ class MarketPositioning:
 class ADRAdjustmentEngine:
     """Generate ADR adjustment suggestions based on competitive intelligence."""
 
-    async def get_adr_suggestions(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_adr_suggestions(self, tenant_id: str) -> dict[str, Any]:
         """Generate ADR adjustment suggestions per room type."""
         positioning = MarketPositioning()
         room_types = await db.rooms.distinct("room_type", {"tenant_id": tenant_id})
@@ -255,11 +255,11 @@ class ADRAdjustmentEngine:
         }
 
     async def apply_suggestion(self, tenant_id: str, room_type: str,
-                                new_rate: float, user_id: str) -> Dict[str, Any]:
+                                new_rate: float, user_id: str) -> dict[str, Any]:
         """Apply an ADR adjustment suggestion."""
         result = await db.rooms.update_many(
             {"tenant_id": tenant_id, "room_type": room_type},
-            {"$set": {"base_price": new_rate, "rate_updated_at": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {"base_price": new_rate, "rate_updated_at": datetime.now(UTC).isoformat()}},
         )
 
         # Audit
@@ -269,7 +269,7 @@ class ADRAdjustmentEngine:
             "room_type": room_type,
             "new_rate": new_rate,
             "applied_by": user_id,
-            "applied_at": datetime.now(timezone.utc).isoformat(),
+            "applied_at": datetime.now(UTC).isoformat(),
             "rooms_affected": result.modified_count,
         })
 
@@ -285,7 +285,7 @@ class CompetitiveSetDashboard:
         self.positioning = MarketPositioning()
         self.adr_engine = ADRAdjustmentEngine()
 
-    async def get_dashboard(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_dashboard(self, tenant_id: str) -> dict[str, Any]:
         """Get comprehensive competitive analysis dashboard."""
         competitors = await self.tracker.get_competitors(tenant_id)
         parity = await self.positioning.get_rate_parity_check(tenant_id)
@@ -296,5 +296,5 @@ class CompetitiveSetDashboard:
             "comp_set": competitors,
             "rate_parity": parity,
             "adr_suggestions": suggestions,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
         }

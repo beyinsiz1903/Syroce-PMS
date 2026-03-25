@@ -1,20 +1,20 @@
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
 
 def build_audit_entry(
-    actor_id: Optional[str],
+    actor_id: str | None,
     tenant_id: str,
     entity_type: str,
     entity_id: str,
     action: str,
-    metadata: Optional[Dict[str, Any]] = None,
-    property_id: Optional[str] = None,
-    correlation_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    metadata: dict[str, Any] | None = None,
+    property_id: str | None = None,
+    correlation_id: str | None = None,
+) -> dict[str, Any]:
     return {
         "id": str(uuid.uuid4()),
         "actor_id": actor_id,
@@ -25,20 +25,20 @@ def build_audit_entry(
         "action": action,
         "metadata": metadata or {},
         "correlation_id": correlation_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
 async def audit_log(
-    actor_id: Optional[str],
+    actor_id: str | None,
     tenant_id: str,
     entity_type: str,
     entity_id: str,
     action: str,
-    metadata: Optional[Dict[str, Any]] = None,
-    property_id: Optional[str] = None,
-    correlation_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    metadata: dict[str, Any] | None = None,
+    property_id: str | None = None,
+    correlation_id: str | None = None,
+) -> dict[str, Any]:
     entry = build_audit_entry(
         actor_id=actor_id,
         tenant_id=tenant_id,

@@ -24,7 +24,6 @@ import hashlib
 import json
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
 from .errors import EnvelopeParseError
 
@@ -92,7 +91,7 @@ class EncryptionEnvelope:
         kid: str,
         nonce: bytes,
         ciphertext: bytes,
-        aad: Optional[bytes] = None,
+        aad: bytes | None = None,
     ) -> "EncryptionEnvelope":
         """Create a new envelope from encryption output."""
         aad_fp = ""

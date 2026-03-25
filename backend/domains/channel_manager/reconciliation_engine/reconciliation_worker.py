@@ -16,8 +16,8 @@ The worker supports:
   - Batching to avoid full table scans
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 from domains.channel_manager import unified_repository as repo
@@ -52,11 +52,11 @@ _reconciliation_state = {
 }
 
 
-def get_reconciliation_worker_state() -> Dict[str, Any]:
+def get_reconciliation_worker_state() -> dict[str, Any]:
     return {**_reconciliation_state}
 
 
-async def reconciliation_run_once() -> Dict[str, Any]:
+async def reconciliation_run_once() -> dict[str, Any]:
     """
     Execute a single reconciliation cycle across all active connections.
     """
@@ -65,7 +65,7 @@ async def reconciliation_run_once() -> Dict[str, Any]:
         return {"status": "already_running"}
 
     state["running"] = True
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     result = {
         "status": "completed",
         "started_at": now.isoformat(),
@@ -92,7 +92,7 @@ async def reconciliation_run_once() -> Dict[str, Any]:
             ).to_list(100)
 
         # Group connections by (tenant_id, property_id)
-        grouped: Dict[str, List[Dict]] = {}
+        grouped: dict[str, list[dict]] = {}
         for conn in active_connections:
             key = f"{conn['tenant_id']}:{conn['property_id']}"
             grouped.setdefault(key, []).append(conn)
@@ -118,7 +118,7 @@ async def reconciliation_run_once() -> Dict[str, Any]:
                     result["errors"].append(error_msg)
                     logger.error(error_msg)
 
-        result["completed_at"] = datetime.now(timezone.utc).isoformat()
+        result["completed_at"] = datetime.now(UTC).isoformat()
         state["runs_total"] += 1
         state["cases_created"] += result["cases_created"]
         state["cases_auto_resolved"] += result["cases_auto_resolved"]
@@ -144,8 +144,8 @@ async def _reconcile_provider(
     tenant_id: str,
     property_id: str,
     provider: str,
-    connection: Dict[str, Any],
-) -> Dict[str, Any]:
+    connection: dict[str, Any],
+) -> dict[str, Any]:
     """Reconcile a single provider for a single property."""
     result = {
         "pms_count": 0,
@@ -223,7 +223,7 @@ def _build_case(
     tenant_id: str,
     property_id: str,
     provider: str,
-    mismatch: Dict[str, Any],
+    mismatch: dict[str, Any],
 ) -> ReconciliationCase:
     """Build a ReconciliationCase from a mismatch dict."""
     case_type_str = mismatch["case_type"]
@@ -254,7 +254,7 @@ def _build_case(
         provider_value=mismatch.get("provider_value"),
         details={
             "detected_by": "reconciliation_engine",
-            "comparison_timestamp": datetime.now(timezone.utc).isoformat(),
+            "comparison_timestamp": datetime.now(UTC).isoformat(),
         },
     )
 
@@ -263,8 +263,8 @@ async def reconciliation_run_with_snapshots(
     tenant_id: str,
     property_id: str,
     provider: str,
-    provider_snapshots: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    provider_snapshots: list[dict[str, Any]],
+) -> dict[str, Any]:
     """
     Run reconciliation with explicitly provided snapshots.
     Used for testing and manual reconciliation triggers.

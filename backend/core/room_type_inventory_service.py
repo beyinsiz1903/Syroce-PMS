@@ -18,8 +18,8 @@ INV-7: room_type_inventory.sellable == physical_total - count(locks for that typ
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 from core.tenant_db import get_system_db, tenant_context
@@ -64,7 +64,7 @@ async def ensure_room_type_inventory_indexes() -> None:
 async def compute_room_type_inventory(
     tenant_id: str,
     date: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Compute room-type inventory for a single date by aggregating room_night_locks.
 
@@ -72,7 +72,7 @@ async def compute_room_type_inventory(
       {tenant_id, room_type, date, physical_total, locked_booking,
        locked_hold, locked_ooo, locked_oos, sellable, last_computed_at, computation_source}
     """
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # Step 1: Count active rooms per type for this tenant
     room_type_pipeline = [
@@ -82,8 +82,8 @@ async def compute_room_type_inventory(
     room_groups = await db.rooms.aggregate(room_type_pipeline).to_list(200)
 
     # Build room_id → room_type lookup for this tenant
-    room_id_to_type: Dict[str, str] = {}
-    type_totals: Dict[str, int] = {}
+    room_id_to_type: dict[str, str] = {}
+    type_totals: dict[str, int] = {}
     for group in room_groups:
         rt = group["_id"]
         if not rt:
@@ -106,7 +106,7 @@ async def compute_room_type_inventory(
     lock_groups = await db.room_night_locks.aggregate(lock_pipeline).to_list(5000)
 
     # Step 3: Aggregate by room type
-    type_locks: Dict[str, Dict[str, int]] = {}
+    type_locks: dict[str, dict[str, int]] = {}
     for lg in lock_groups:
         room_id = lg["_id"]["room_id"]
         lock_type = lg["_id"]["lock_type"]
@@ -149,7 +149,7 @@ async def reconcile_date_range(
     tenant_id: str,
     start_date: str,
     end_date: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Run reconciliation for a date range. Upserts into room_type_inventory.
 
@@ -201,7 +201,7 @@ async def reconcile_date_range(
             writer = get_timeline_writer()
             await writer.append(
                 tenant_id=tenant_id,
-                correlation_id=f"recon-{datetime.now(timezone.utc).isoformat()}",
+                correlation_id=f"recon-{datetime.now(UTC).isoformat()}",
                 entity_type="inventory",
                 entity_id="room_type_inventory",
                 stage="inventory_drift_detected",
@@ -227,13 +227,13 @@ async def reconcile_date_range(
 async def get_room_type_inventory(
     tenant_id: str,
     date: str,
-    room_type: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    room_type: str | None = None,
+) -> list[dict[str, Any]]:
     """
     Get room-type inventory for a date. Returns from materialized view.
     If no data exists, computes on-the-fly.
     """
-    query: Dict[str, Any] = {"tenant_id": tenant_id, "date": date}
+    query: dict[str, Any] = {"tenant_id": tenant_id, "date": date}
     if room_type:
         query["room_type"] = room_type
 
@@ -265,7 +265,7 @@ async def get_inventory_summary(
     tenant_id: str,
     start_date: str,
     end_date: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get aggregated inventory summary across a date range.
     Returns: {room_types: [...], date_range: {start, end}, total_sellable, total_physical}
@@ -282,7 +282,7 @@ async def get_inventory_summary(
     ).to_list(5000)
 
     # Aggregate by room type
-    type_summary: Dict[str, Dict[str, Any]] = {}
+    type_summary: dict[str, dict[str, Any]] = {}
     for item in all_items:
         rt = item["room_type"]
         if rt not in type_summary:
@@ -317,7 +317,7 @@ async def get_inventory_summary(
         "room_types": list(type_summary.values()),
         "total_sellable_room_nights": total_sellable,
         "total_physical_room_nights": total_physical,
-        "computed_at": datetime.now(timezone.utc).isoformat(),
+        "computed_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -328,7 +328,7 @@ class RoomTypeInventoryWorker:
 
     def __init__(self, interval_seconds: int = 300):
         self._interval = interval_seconds
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._running = False
 
     async def start(self) -> None:
@@ -365,7 +365,7 @@ class RoomTypeInventoryWorker:
             if room and room.get("tenant_id"):
                 tenants = [{"id": room["tenant_id"]}]
 
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         start_date = today.isoformat()
         end_date = (today + timedelta(days=30)).isoformat()
 
@@ -391,7 +391,7 @@ class RoomTypeInventoryWorker:
 
 
 # Singleton
-_worker: Optional[RoomTypeInventoryWorker] = None
+_worker: RoomTypeInventoryWorker | None = None
 
 
 def get_inventory_worker() -> RoomTypeInventoryWorker:

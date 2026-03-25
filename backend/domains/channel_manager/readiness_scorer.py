@@ -16,8 +16,8 @@ Score Components:
   - Quarantine clear (5 pts)
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 from domains.channel_manager.ari.hard_fail_gate import get_hard_fail_stats
@@ -41,7 +41,7 @@ WEIGHT_DRIFT = 10
 WEIGHT_QUARANTINE = 5
 
 
-async def compute_readiness_score(tenant_id: str, property_id: str = "default") -> Dict[str, Any]:
+async def compute_readiness_score(tenant_id: str, property_id: str = "default") -> dict[str, Any]:
     """
     Compute a scored readiness assessment.
 
@@ -51,7 +51,7 @@ async def compute_readiness_score(tenant_id: str, property_id: str = "default") 
       - breakdown: list of issues sorted by priority (BLOCKER > CRITICAL > WARNING > INFO)
       - fix_order: recommended fix sequence
     """
-    issues: List[Dict[str, Any]] = []
+    issues: list[dict[str, Any]] = []
     scores = {}
 
     # 1. Mapping Completeness (40 pts)
@@ -105,7 +105,7 @@ async def compute_readiness_score(tenant_id: str, property_id: str = "default") 
         "scores": scores,
         "issues": issues,
         "fix_order": fix_order,
-        "evaluated_at": datetime.now(timezone.utc).isoformat(),
+        "evaluated_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -320,15 +320,15 @@ async def log_ready_state_transition(
     tenant_id: str,
     new_state: str,
     score: int,
-    scores: Dict[str, Any],
-    issues: List[Dict[str, Any]],
+    scores: dict[str, Any],
+    issues: list[dict[str, Any]],
 ) -> None:
     """
     Log READY state transitions for delta analysis.
     When tenant becomes READY: log why.
     When tenant falls NOT READY: log what changed.
     """
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     coll = db["readiness_state_log"]
 
     # Get previous state

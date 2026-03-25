@@ -4,8 +4,8 @@ Enforces tenant isolation at the query/response level.
 Ensures no cross-tenant data leakage.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.tenant_db import LazyCollection
 
@@ -20,9 +20,9 @@ class TenantGuard:
     @classmethod
     async def validate_query(
         cls,
-        query: Dict[str, Any],
+        query: dict[str, Any],
         expected_tenant_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Validate that a DB query is properly scoped to the expected tenant."""
         query_tenant = query.get("tenant_id")
         if not query_tenant:
@@ -45,9 +45,9 @@ class TenantGuard:
     @classmethod
     async def validate_response(
         cls,
-        documents: List[Dict[str, Any]],
+        documents: list[dict[str, Any]],
         expected_tenant_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Validate that all returned documents belong to the expected tenant."""
         violations = []
         for i, doc in enumerate(documents):
@@ -72,15 +72,15 @@ class TenantGuard:
         return {"valid": True, "checked_count": len(documents)}
 
     @classmethod
-    async def get_status(cls, tenant_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_status(cls, tenant_id: str | None = None) -> dict[str, Any]:
         """Get tenant guard enforcement status and violation counts."""
-        query: Dict[str, Any] = {}
+        query: dict[str, Any] = {}
         if tenant_id:
             query["expected_tenant_id"] = tenant_id
 
         total_violations = await cls._violation_log_collection.count_documents(query)
 
-        last_24h = (datetime.now(timezone.utc) - __import__("datetime").timedelta(hours=24)).isoformat()
+        last_24h = (datetime.now(UTC) - __import__("datetime").timedelta(hours=24)).isoformat()
         recent_violations = await cls._violation_log_collection.count_documents({
             **query,
             "timestamp": {"$gte": last_24h},
@@ -95,7 +95,7 @@ class TenantGuard:
             "total_violations": total_violations,
             "violations_last_24h": recent_violations,
             "recent_violations": recent,
-            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "checked_at": datetime.now(UTC).isoformat(),
         }
 
     @classmethod
@@ -110,7 +110,7 @@ class TenantGuard:
             "expected_tenant_id": expected_tenant,
             "actual_tenant_id": actual_tenant,
             "violation_type": violation_type,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
 
 

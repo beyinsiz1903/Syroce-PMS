@@ -9,8 +9,7 @@ import asyncio
 import logging
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Dict
+from datetime import UTC, datetime, timedelta
 
 from common.audit_hook import SEVERITY_WARNING, audited
 from common.context import OperationContext
@@ -83,7 +82,7 @@ class IncidentDrillService:
             return ServiceResult.fail(f"Unknown drill: {drill_id}", "NOT_FOUND")
 
         run_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Execute the drill
         result = await self._run_drill(ctx, drill, run_id)
@@ -143,14 +142,14 @@ class IncidentDrillService:
             "expected_recovery_seconds": drill["expected_recovery_seconds"],
             "detection_within_threshold": detection_latency_ms / 1000 <= drill["expected_detection_seconds"],
             "started_at": now.isoformat(),
-            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "completed_at": datetime.now(UTC).isoformat(),
             "executed_by": ctx.actor_id,
         }
         await self._db.incident_drills.insert_one(drill_doc.copy())
 
         return ServiceResult.success(drill_doc)
 
-    async def _run_drill(self, ctx: OperationContext, drill: Dict, run_id: str) -> Dict:
+    async def _run_drill(self, ctx: OperationContext, drill: dict, run_id: str) -> dict:
         """Execute the actual drill simulation."""
         start = time.monotonic()
         metrics = {}
@@ -165,7 +164,7 @@ class IncidentDrillService:
                     "tenant_id": ctx.tenant_id,
                     "queue_name": "drill_queue",
                     "status": "processing",
-                    "started_at": (datetime.now(timezone.utc) - timedelta(minutes=45)).isoformat(),
+                    "started_at": (datetime.now(UTC) - timedelta(minutes=45)).isoformat(),
                     "is_drill": True,
                 })
             metrics = {
@@ -184,7 +183,7 @@ class IncidentDrillService:
                     "sync_type": "ari",
                     "status": "failed",
                     "error": "Connection timeout (drill)",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                     "is_drill": True,
                 })
             metrics = {

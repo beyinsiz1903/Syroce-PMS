@@ -10,8 +10,8 @@ import asyncio
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.scaling")
 
@@ -22,12 +22,12 @@ class InstanceInfo:
     def __init__(self, instance_id: str, service_type: str):
         self.instance_id = instance_id
         self.service_type = service_type
-        self.started_at = datetime.now(timezone.utc).isoformat()
-        self.last_heartbeat = datetime.now(timezone.utc).isoformat()
+        self.started_at = datetime.now(UTC).isoformat()
+        self.last_heartbeat = datetime.now(UTC).isoformat()
         self.status = "running"
-        self.metadata: Dict[str, Any] = {}
+        self.metadata: dict[str, Any] = {}
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "instance_id": self.instance_id,
             "service_type": self.service_type,
@@ -48,7 +48,7 @@ class HorizontalScalingManager:
         self._instance_info = InstanceInfo(self._instance_id, "backend")
         self._registry_key = "syroce:instances"
         self._heartbeat_interval = 30
-        self._heartbeat_task: Optional[asyncio.Task] = None
+        self._heartbeat_task: asyncio.Task | None = None
         self._stale_threshold = 90  # seconds
 
     @property
@@ -84,7 +84,7 @@ class HorizontalScalingManager:
                 await asyncio.sleep(self._heartbeat_interval)
                 if self._redis:
                     import json
-                    self._instance_info.last_heartbeat = datetime.now(timezone.utc).isoformat()
+                    self._instance_info.last_heartbeat = datetime.now(UTC).isoformat()
                     await self._redis.hset(
                         self._registry_key,
                         self._instance_id,
@@ -95,7 +95,7 @@ class HorizontalScalingManager:
             except Exception as e:
                 logger.error(f"Heartbeat failed: {e}")
 
-    async def get_active_instances(self) -> List[Dict[str, Any]]:
+    async def get_active_instances(self) -> list[dict[str, Any]]:
         """Get all active instances from registry."""
         if not self._redis:
             return [self._instance_info.to_dict()]
@@ -104,7 +104,7 @@ class HorizontalScalingManager:
             import json
             all_instances = await self._redis.hgetall(self._registry_key)
             active = []
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             for inst_id, data_str in all_instances.items():
                 data = json.loads(data_str)
@@ -137,7 +137,7 @@ class HorizontalScalingManager:
             except Exception:
                 pass
 
-    def stateless_validation(self) -> Dict[str, Any]:
+    def stateless_validation(self) -> dict[str, Any]:
         """Validate service statelessness for horizontal scaling."""
         checks = {
             "no_local_file_state": True,
@@ -155,17 +155,17 @@ class HorizontalScalingManager:
             "instance_id": self._instance_id,
         }
 
-    def readiness_check(self) -> Dict[str, Any]:
+    def readiness_check(self) -> dict[str, Any]:
         """Load balancer readiness data."""
         return {
             "ready": True,
             "instance_id": self._instance_id,
             "uptime_seconds": 0,
             "scaling_mode": self._scaling_mode,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
-    async def get_scaling_summary(self) -> Dict[str, Any]:
+    async def get_scaling_summary(self) -> dict[str, Any]:
         instances = await self.get_active_instances()
         active = [i for i in instances if not i.get("is_stale")]
         stale = [i for i in instances if i.get("is_stale")]

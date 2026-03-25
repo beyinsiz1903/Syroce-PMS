@@ -4,8 +4,8 @@ Extracts features from reservations, stays, folios, guest journey events, and ch
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -44,10 +44,10 @@ class FeatureStore:
     }
 
     async def extract_revenue_features(self, tenant_id: str,
-                                       date_from: Optional[str] = None,
-                                       date_to: Optional[str] = None) -> Dict[str, Any]:
+                                       date_from: str | None = None,
+                                       date_to: str | None = None) -> dict[str, Any]:
         """Extract revenue-related features from operational data."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if not date_from:
             date_from = (now - timedelta(days=90)).isoformat()
         if not date_to:
@@ -64,7 +64,7 @@ class FeatureStore:
         lead_times = []
         cancellations = 0
         los_values = []
-        channel_counts: Dict[str, int] = {}
+        channel_counts: dict[str, int] = {}
 
         for b in bookings:
             status = b.get("status", "")
@@ -126,9 +126,9 @@ class FeatureStore:
         })
         return features
 
-    async def extract_operational_features(self, tenant_id: str) -> Dict[str, Any]:
+    async def extract_operational_features(self, tenant_id: str) -> dict[str, Any]:
         """Extract operational features from tasks and room data."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         q = {"tenant_id": tenant_id}
 
         tasks = await db.tasks.find(q, {"_id": 0}).to_list(2000)
@@ -153,7 +153,7 @@ class FeatureStore:
             "record_count": len(tasks) + len(rooms),
         }
 
-        status_counts: Dict[str, int] = {}
+        status_counts: dict[str, int] = {}
         for r in rooms:
             s = r.get("status", "unknown")
             status_counts[s] = status_counts.get(s, 0) + 1
@@ -162,15 +162,15 @@ class FeatureStore:
         await db.feature_store.insert_one({"id": str(uuid.uuid4()), **features})
         return features
 
-    async def extract_guest_features(self, tenant_id: str) -> Dict[str, Any]:
+    async def extract_guest_features(self, tenant_id: str) -> dict[str, Any]:
         """Extract guest intelligence features."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         q = {"tenant_id": tenant_id}
 
         guests = await db.guests.find(q, {"_id": 0}).to_list(5000)
         bookings = await db.bookings.find(q, {"_id": 0}).to_list(5000)
 
-        guest_bookings: Dict[str, list] = {}
+        guest_bookings: dict[str, list] = {}
         for b in bookings:
             gid = b.get("guest_id", "")
             if gid:
@@ -201,7 +201,7 @@ class FeatureStore:
         await db.feature_store.insert_one({"id": str(uuid.uuid4()), **features})
         return features
 
-    async def get_summary(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_summary(self, tenant_id: str) -> dict[str, Any]:
         """Get feature store summary for a tenant."""
         pipeline = [
             {"$match": {"tenant_id": tenant_id}},

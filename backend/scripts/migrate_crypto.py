@@ -29,7 +29,7 @@ import asyncio
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # Add backend to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -93,7 +93,7 @@ async def migrate_provider_secrets(db, svc, dry_run: bool):
                     {"$set": {
                         "encrypted_payload": new_payload,
                         "key_version": svc._keyring.current_kid,
-                        "migrated_at": datetime.now(timezone.utc).isoformat(),
+                        "migrated_at": datetime.now(UTC).isoformat(),
                     }},
                 )
             stats["migrated"] += 1
@@ -147,7 +147,7 @@ async def migrate_credential_vault(db, svc, dry_run: bool):
                         "key_version": svc._keyring.current_kid,
                         "credential_value_encoded": None,
                         "credential_value_hash": None,
-                        "migrated_at": datetime.now(timezone.utc).isoformat(),
+                        "migrated_at": datetime.now(UTC).isoformat(),
                     }},
                 )
             stats["migrated"] += 1
@@ -196,7 +196,7 @@ async def migrate_dev_secrets(db, svc, dry_run: bool):
                     {"$set": {
                         "encrypted_payload": new_encrypted,
                         "key_version": svc._keyring.current_kid,
-                        "migrated_at": datetime.now(timezone.utc).isoformat(),
+                        "migrated_at": datetime.now(UTC).isoformat(),
                     }},
                 )
             stats["migrated"] += 1

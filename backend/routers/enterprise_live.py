@@ -3,7 +3,6 @@ Enterprise Live Router - WebSocket push, messaging, auto-pricing, cross-module i
 Production-grade endpoints for enterprise hotel operations.
 """
 import logging
-from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
@@ -29,10 +28,10 @@ class SendMessageReq(BaseModel):
     to: str
     subject: str = ""
     body: str
-    template_id: Optional[str] = None
-    template_vars: Optional[Dict] = None
-    guest_id: Optional[str] = None
-    booking_id: Optional[str] = None
+    template_id: str | None = None
+    template_vars: dict | None = None
+    guest_id: str | None = None
+    booking_id: str | None = None
 
 class CreateTemplateReq(BaseModel):
     name: str
@@ -52,11 +51,11 @@ class CreateRecommendationReq(BaseModel):
     reason: str
     source: str = "manual"
     confidence: float = 0.0
-    property_id: Optional[str] = None
+    property_id: str | None = None
 
 class ApproveRejectReq(BaseModel):
     recommendation_id: str
-    note: Optional[str] = None
+    note: str | None = None
 
 class RejectReq(BaseModel):
     recommendation_id: str
@@ -76,7 +75,7 @@ class AutomationPolicyReq(BaseModel):
     max_auto_change_pct: float = 10
     min_rate: float = 0
     max_rate: float = 99999
-    property_id: Optional[str] = None
+    property_id: str | None = None
 
 
 # ═══════════════════════════════════════════════════════════
@@ -85,7 +84,7 @@ class AutomationPolicyReq(BaseModel):
 
 @router.websocket("/ws/live")
 async def websocket_live_endpoint(websocket: WebSocket, token: str = Query(...),
-                                   last_event_ts: Optional[float] = Query(None)):
+                                   last_event_ts: float | None = Query(None)):
     """
     Authenticated WebSocket endpoint for real-time push.
     Connect with: ws://host/api/enterprise/ws/live?token=JWT&last_event_ts=0
@@ -144,7 +143,7 @@ async def create_template(req: CreateTemplateReq, current_user: User = Depends(g
     )
 
 @router.get("/messaging/templates")
-async def get_templates(channel: Optional[str] = None, current_user: User = Depends(get_current_user)):
+async def get_templates(channel: str | None = None, current_user: User = Depends(get_current_user)):
     """Get message templates."""
     return await messaging_gateway.get_templates(current_user.tenant_id, channel)
 
@@ -157,7 +156,7 @@ async def get_delivery_status(delivery_id: str, current_user: User = Depends(get
     return result
 
 @router.get("/messaging/history")
-async def get_delivery_history(guest_id: Optional[str] = None, channel: Optional[str] = None,
+async def get_delivery_history(guest_id: str | None = None, channel: str | None = None,
                                 limit: int = 50, current_user: User = Depends(get_current_user)):
     """Get message delivery history."""
     return await messaging_gateway.get_delivery_history(
@@ -240,7 +239,7 @@ async def get_pricing_audit(limit: int = 50, current_user: User = Depends(get_cu
     return await autopricing.get_pricing_audit_trail(current_user.tenant_id, limit)
 
 @router.get("/autopricing/channel-push")
-async def get_channel_push_status(rec_id: Optional[str] = None,
+async def get_channel_push_status(rec_id: str | None = None,
                                    current_user: User = Depends(get_current_user)):
     """Get rate push status to channels."""
     return await autopricing.get_channel_push_status(current_user.tenant_id, rec_id)

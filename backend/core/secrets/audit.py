@@ -5,8 +5,8 @@ Writes audit records to MongoDB `secret_access_audit` collection.
 Never stores plaintext secret values. Records who/what/when/result.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("core.secrets.audit")
 
@@ -34,7 +34,7 @@ class SecretAuditLogger:
         property_id: str = "",
         actor: str = "system",
         error_class: str = "",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """
         Record a secret access event.
@@ -55,7 +55,7 @@ class SecretAuditLogger:
             "actor": actor,
             "error_class": error_class,
             "metadata": metadata or {},
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         try:

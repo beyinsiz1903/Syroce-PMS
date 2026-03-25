@@ -3,7 +3,7 @@ Redis-based Ultra-Fast Cache System
 %100 Performance with Distributed Caching
 """
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import orjson
 import redis
@@ -44,7 +44,7 @@ class RedisCache:
         key_str = ":".join(str(k) for k in key_parts)
         return f"fastapi:{key_str}"
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """Get from Redis cache"""
         try:
             data = self.redis_client.get(key)

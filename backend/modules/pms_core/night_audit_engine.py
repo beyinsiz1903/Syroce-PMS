@@ -3,8 +3,7 @@ Night Audit Engine - Business date roll, room charge posting, pending arrival/de
 unbalanced folio detection, tax consistency, daily snapshot, exceptions queue.
 """
 import uuid
-from datetime import date, datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from datetime import UTC, date, datetime, timedelta
 
 from core.database import db
 
@@ -12,10 +11,10 @@ from core.database import db
 class NightAuditEngine:
     """Executes nightly audit operations for a hotel property."""
 
-    async def run_night_audit(self, tenant_id: str, business_date: str, started_by: str) -> Dict:
+    async def run_night_audit(self, tenant_id: str, business_date: str, started_by: str) -> dict:
         """Execute complete night audit for a business date."""
         audit_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         audit_record = {
             "id": audit_id,
@@ -68,12 +67,12 @@ class NightAuditEngine:
             audit_record["steps"].append({"step": "business_date_roll", "result": {"new_business_date": self._next_date(business_date)}})
 
             audit_record["status"] = "completed"
-            audit_record["completed_at"] = datetime.now(timezone.utc).isoformat()
+            audit_record["completed_at"] = datetime.now(UTC).isoformat()
 
         except Exception as e:
             audit_record["status"] = "failed"
             audit_record["error"] = str(e)
-            audit_record["completed_at"] = datetime.now(timezone.utc).isoformat()
+            audit_record["completed_at"] = datetime.now(UTC).isoformat()
 
         await db.night_audit_records.insert_one(audit_record)
 
@@ -89,13 +88,13 @@ class NightAuditEngine:
                 "entity_type": exc.get("entity_type"),
                 "entity_id": exc.get("entity_id"),
                 "status": "open",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             })
 
         audit_record.pop("_id", None)
         return audit_record
 
-    async def _check_pending_arrivals(self, tenant_id: str, business_date: str) -> Dict:
+    async def _check_pending_arrivals(self, tenant_id: str, business_date: str) -> dict:
         """Check for expected arrivals that haven't checked in."""
         arrivals = await db.bookings.find({
             "tenant_id": tenant_id,
@@ -113,7 +112,7 @@ class NightAuditEngine:
 
         return {"count": len(today_arrivals), "bookings": today_arrivals, "exceptions": exceptions}
 
-    async def _check_pending_departures(self, tenant_id: str, business_date: str) -> Dict:
+    async def _check_pending_departures(self, tenant_id: str, business_date: str) -> dict:
         """Check for guests who should have checked out but haven't."""
         overdue = await db.bookings.find({
             "tenant_id": tenant_id,
@@ -130,7 +129,7 @@ class NightAuditEngine:
 
         return {"count": len(today_departures), "bookings": today_departures, "exceptions": exceptions}
 
-    async def _process_no_shows(self, tenant_id: str, business_date: str, user_id: str) -> Dict:
+    async def _process_no_shows(self, tenant_id: str, business_date: str, user_id: str) -> dict:
         """Mark confirmed/guaranteed bookings with arrival <= business_date as no-show."""
         from modules.pms_core.reservation_state_machine import ReservationStateMachine
         rsm = ReservationStateMachine()
@@ -152,7 +151,7 @@ class NightAuditEngine:
 
         return {"candidates": len(to_process), "processed": processed}
 
-    async def _post_room_charges(self, tenant_id: str, business_date: str, user_id: str) -> Dict:
+    async def _post_room_charges(self, tenant_id: str, business_date: str, user_id: str) -> dict:
         """Post nightly room charges for all checked-in guests."""
         checked_in = await db.bookings.find({
             "tenant_id": tenant_id,
@@ -205,7 +204,7 @@ class NightAuditEngine:
                 room_number = room.get("room_number", "N/A") if room else "N/A"
 
                 charge_id = str(uuid.uuid4())
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
 
                 await db.folio_charges.insert_one({
                     "id": charge_id,
@@ -246,7 +245,7 @@ class NightAuditEngine:
             "exceptions": exceptions,
         }
 
-    async def _detect_unbalanced_folios(self, tenant_id: str) -> Dict:
+    async def _detect_unbalanced_folios(self, tenant_id: str) -> dict:
         """Find open folios with unusual balances."""
         open_folios = await db.folios.find({"tenant_id": tenant_id, "status": "open"}, {"_id": 0}).to_list(1000)
         warnings = []
@@ -282,7 +281,7 @@ class NightAuditEngine:
 
         return {"checked": len(open_folios), "warnings": warnings}
 
-    async def _check_tax_consistency(self, tenant_id: str, business_date: str) -> Dict:
+    async def _check_tax_consistency(self, tenant_id: str, business_date: str) -> dict:
         """Check tax calculations for consistency."""
         charges = await db.folio_charges.find({
             "tenant_id": tenant_id,
@@ -308,7 +307,7 @@ class NightAuditEngine:
 
         return {"checked": len(charges), "warnings": warnings}
 
-    async def _create_daily_snapshot(self, tenant_id: str, business_date: str, room_charges_result: Dict) -> Dict:
+    async def _create_daily_snapshot(self, tenant_id: str, business_date: str, room_charges_result: dict) -> dict:
         """Create a daily audit snapshot for reporting."""
         rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0, "status": 1}).to_list(2000)
         total_rooms = len(rooms)
@@ -329,7 +328,7 @@ class NightAuditEngine:
             "room_postings": room_charges_result.get("posted", 0),
             "failed_postings": room_charges_result.get("failed", 0),
             "in_house_guests": checked_in_count,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
 
         await db.daily_audit_snapshots.insert_one(snapshot)
@@ -354,17 +353,17 @@ class NightAuditEngine:
         settings = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0})
         if settings and settings.get("business_date"):
             return settings["business_date"]
-        return datetime.now(timezone.utc).date().isoformat()
+        return datetime.now(UTC).date().isoformat()
 
-    async def get_audit_exceptions(self, tenant_id: str, status: str = "open") -> List[Dict]:
+    async def get_audit_exceptions(self, tenant_id: str, status: str = "open") -> list[dict]:
         """Get audit exceptions queue."""
         return await db.audit_exceptions.find(
             {"tenant_id": tenant_id, "status": status}, {"_id": 0}
         ).sort("created_at", -1).to_list(200)
 
-    async def resolve_exception(self, tenant_id: str, exception_id: str, resolved_by: str, resolution: str) -> Dict:
+    async def resolve_exception(self, tenant_id: str, exception_id: str, resolved_by: str, resolution: str) -> dict:
         """Resolve an audit exception."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = await db.audit_exceptions.update_one(
             {"id": exception_id, "tenant_id": tenant_id},
             {"$set": {"status": "resolved", "resolved_by": resolved_by, "resolution": resolution, "resolved_at": now.isoformat()}}
@@ -373,7 +372,7 @@ class NightAuditEngine:
             return {"success": False, "error": "Exception not found"}
         return {"success": True, "exception_id": exception_id}
 
-    async def get_daily_snapshot(self, tenant_id: str, business_date: str) -> Optional[Dict]:
+    async def get_daily_snapshot(self, tenant_id: str, business_date: str) -> dict | None:
         """Get daily snapshot for a specific date."""
         snapshot = await db.daily_audit_snapshots.find_one(
             {"tenant_id": tenant_id, "business_date": business_date}, {"_id": 0}

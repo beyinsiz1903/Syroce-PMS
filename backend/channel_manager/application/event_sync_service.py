@@ -11,7 +11,7 @@ Flow:
   Failure -> audit log + optional reconciliation issue
 """
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..domain.models.sync import SyncType
@@ -45,15 +45,15 @@ EVENT_SYNC_MAP = {
 class EventSyncService:
     """Handles domain events and triggers appropriate sync operations."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     async def handle_event(
         self,
         tenant_id: str,
         event_type: str,
-        event_payload: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        event_payload: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Process a domain event and trigger sync if applicable.
 
@@ -173,8 +173,8 @@ class EventSyncService:
     async def handle_batch_events(
         self,
         tenant_id: str,
-        events: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        events: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Process multiple domain events with deduplication."""
         results = []
         for evt in events:
@@ -193,7 +193,7 @@ class EventSyncService:
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def _extract_date_range(event_type: str, payload: Dict[str, Any]) -> tuple:
+    def _extract_date_range(event_type: str, payload: dict[str, Any]) -> tuple:
         """Extract affected date range from event payload."""
         if event_type in ("booking_created", "booking_modified", "booking_cancelled"):
             check_in = payload.get("check_in", payload.get("date_start", ""))
@@ -212,7 +212,7 @@ class EventSyncService:
         return ("", "")
 
     @staticmethod
-    def _extract_room_types(event_type: str, payload: Dict[str, Any]) -> Optional[List[str]]:
+    def _extract_room_types(event_type: str, payload: dict[str, Any]) -> list[str] | None:
         """Extract affected room types from event payload."""
         rt = payload.get("room_type_id", payload.get("room_type", ""))
         if rt:

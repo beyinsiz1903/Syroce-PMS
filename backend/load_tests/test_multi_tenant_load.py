@@ -37,7 +37,7 @@ async def _create_tenant_with_user(raw_db, suffix: str):
         "tenant_id": tid,
         "email": f"lt-{suffix}@test.com",
         "name": f"Load Tenant {suffix}",
-        "role": "manager",
+        "role": "admin",
         "permissions": ["all"],
         "active": True,
         "hashed_password": hash_password("lt-pass"),
@@ -55,6 +55,7 @@ async def _create_tenant_with_user(raw_db, suffix: str):
         {"$set": {
             "id": tid,
             "name": f"Load Hotel {suffix}",
+            "property_name": f"Load Hotel {suffix}",
             "subscription_plan": "core_small_hotel",
             "source": LOAD_SRC,
         }},
@@ -190,6 +191,7 @@ class TestMultiTenantBookingIsolation:
 class TestMultiTenantDashboardIsolation:
     """Dashboard data must be scoped to the requesting tenant."""
 
+    @pytest.mark.ci_load
     async def test_concurrent_dashboard_reads_per_tenant(self, api_url, two_tenants):
         """
         Both tenants read the dashboard simultaneously 10 times each.

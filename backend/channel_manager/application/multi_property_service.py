@@ -6,8 +6,8 @@ Features: property-level aggregation, tenant-wide health, cross-property compari
            best performing properties, degraded connectors by property.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -19,15 +19,15 @@ logger = logging.getLogger("channel_manager.application.multi_property")
 class MultiPropertyService:
     """Aggregates integration status across all properties in a tenant."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
-    async def get_dashboard(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_dashboard(self, tenant_id: str) -> dict[str, Any]:
         """Get the multi-property integration dashboard."""
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
 
         # Group by property
-        by_property: Dict[str, List[Dict]] = {}
+        by_property: dict[str, list[dict]] = {}
         for c in connectors:
             pid = c.get("property_id", "unknown")
             if pid not in by_property:
@@ -80,13 +80,13 @@ class MultiPropertyService:
             "best_performing": [{"property_id": p["property_id"], "health_score": p.get("health_score", 0)} for p in best_performing],
             "provider_distribution": provider_dist,
             "error_distribution": error_dist,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
         }
 
-    async def get_comparison(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_comparison(self, tenant_id: str) -> dict[str, Any]:
         """Cross-property comparison."""
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
-        by_property: Dict[str, List[Dict]] = {}
+        by_property: dict[str, list[dict]] = {}
         for c in connectors:
             pid = c.get("property_id", "unknown")
             if pid not in by_property:
@@ -111,16 +111,16 @@ class MultiPropertyService:
         comparisons.sort(key=lambda x: x.get("health_score", 0), reverse=True)
         return {"comparisons": comparisons, "count": len(comparisons)}
 
-    async def get_issues(self, tenant_id: str, property_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_issues(self, tenant_id: str, property_id: str | None = None) -> dict[str, Any]:
         """Get issues across all properties or a specific one."""
-        q: Dict[str, Any] = {"tenant_id": tenant_id, "status": {"$in": ["open", "investigating", "retrying"]}}
+        q: dict[str, Any] = {"tenant_id": tenant_id, "status": {"$in": ["open", "investigating", "retrying"]}}
         if property_id:
             q["property_id"] = property_id
 
         issues = await db.cm_reconciliation_issues.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
 
-        by_property: Dict[str, int] = {}
-        by_severity: Dict[str, int] = {}
+        by_property: dict[str, int] = {}
+        by_severity: dict[str, int] = {}
         for issue in issues:
             pid = issue.get("property_id", "unknown")
             sev = issue.get("severity", "unknown")
@@ -134,10 +134,10 @@ class MultiPropertyService:
             "by_severity": by_severity,
         }
 
-    async def get_health(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_health(self, tenant_id: str) -> dict[str, Any]:
         """Get aggregated health across all properties."""
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
-        by_property: Dict[str, List[Dict]] = {}
+        by_property: dict[str, list[dict]] = {}
         for c in connectors:
             pid = c.get("property_id", "unknown")
             if pid not in by_property:
@@ -160,7 +160,7 @@ class MultiPropertyService:
 
     # ─── Internal Helpers ──────────────────────────────────────────────
 
-    async def _aggregate_property(self, tenant_id: str, property_id: str, connectors: List[Dict]) -> Dict[str, Any]:
+    async def _aggregate_property(self, tenant_id: str, property_id: str, connectors: list[dict]) -> dict[str, Any]:
         """Aggregate metrics for a single property."""
         from ..application.reconciliation_service import ReconciliationService
         recon = ReconciliationService(self._repo)
@@ -250,6 +250,6 @@ class MultiPropertyService:
             "connectors": connector_details,
         }
 
-    async def _get_error_distribution(self, tenant_id: str) -> Dict[str, int]:
+    async def _get_error_distribution(self, tenant_id: str) -> dict[str, int]:
         summary = await self._repo.get_error_queue_summary(tenant_id)
         return summary

@@ -4,7 +4,7 @@ Core: Audit Event Logger
 Shared audit logging utility used across all domain routers.
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 async def log_audit_event(
@@ -31,7 +31,7 @@ async def log_audit_event(
         "after_value": after_value,
         "ip_address": None,
         "user_agent": None,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
     audit_copy = audit_log.copy()
     await db.audit_logs.insert_one(audit_copy)

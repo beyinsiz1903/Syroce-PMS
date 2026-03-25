@@ -5,8 +5,7 @@ Periodically compares PMS snapshot vs provider snapshot.
 On mismatch: generates corrective delta → push queue.
 """
 import logging
-from datetime import datetime, timezone
-from typing import List
+from datetime import UTC, datetime
 
 from . import repositories as repo
 from .repositories import compute_outbound_delta_hash
@@ -22,8 +21,8 @@ async def check_drift(
     tenant_id: str,
     property_id: str,
     provider: str,
-    pms_snapshot: List[dict],
-    provider_snapshot: List[dict],
+    pms_snapshot: list[dict],
+    provider_snapshot: list[dict],
 ) -> dict:
     """
     Compare PMS state vs provider state and detect drift.
@@ -146,7 +145,7 @@ async def check_drift(
                 payload=provider_item,
             ),
             "drift_detected": False,
-            "last_reconciled_at": datetime.now(timezone.utc).isoformat(),
+            "last_reconciled_at": datetime.now(UTC).isoformat(),
         })
 
     # Generate alerts
@@ -166,7 +165,7 @@ async def check_drift(
         "drifts_found": len(drifts),
         "drifts": drifts[:50],  # limit response size
         "alerts": alerts,
-        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "checked_at": datetime.now(UTC).isoformat(),
     }
 
     logger.info(

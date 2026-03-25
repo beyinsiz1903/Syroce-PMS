@@ -13,8 +13,8 @@ Key guarantees:
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, Tuple
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
@@ -85,7 +85,7 @@ PERMANENT_KEYWORDS = [
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _is_retryable(error_msg: str) -> bool:
@@ -101,15 +101,15 @@ def _is_retryable(error_msg: str) -> bool:
 
 def _compute_next_retry_at(retry_count: int) -> str:
     backoff = IMPORT_RETRY_BACKOFF.get(retry_count, 7200)
-    return (datetime.now(timezone.utc) + timedelta(seconds=backoff)).isoformat()
+    return (datetime.now(UTC) + timedelta(seconds=backoff)).isoformat()
 
 
 async def create_import_record(
-    lineage: Dict[str, Any],
+    lineage: dict[str, Any],
     import_status: str,
-    review_reason: Optional[str] = None,
-    connector_id: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
+    review_reason: str | None = None,
+    connector_id: str | None = None,
+) -> dict[str, Any] | None:
     """
     Create an imported_reservations record from a lineage record.
     Returns the created document or None if duplicate.
@@ -171,7 +171,7 @@ async def create_import_record(
 
 async def auto_import_reservation_to_pms(
     imported_reservation_id: str,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """
     Attempt to auto-import an imported reservation into PMS.
 
@@ -504,7 +504,7 @@ async def _mark_review(
 
 
 async def _handle_import_failure(
-    record: Dict[str, Any],
+    record: dict[str, Any],
     error_msg: str,
 ) -> None:
     """Handle import failure — retry or mark as permanently failed."""

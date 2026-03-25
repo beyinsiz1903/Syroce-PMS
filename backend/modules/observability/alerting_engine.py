@@ -5,8 +5,7 @@ and integration with observability metrics.
 """
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from datetime import UTC, datetime, timedelta
 
 from core.database import db
 
@@ -85,13 +84,13 @@ class ProductionAlertEngine:
     """Production alerting engine with dedup, cooldown, and threshold evaluation."""
 
     def __init__(self):
-        self._cooldowns: Dict[str, datetime] = {}
+        self._cooldowns: dict[str, datetime] = {}
         self._cooldown_minutes = 15  # Minimum time between same alert type
-        self._alert_counts: Dict[str, int] = defaultdict(int)
+        self._alert_counts: dict[str, int] = defaultdict(int)
         self._suppressed_count = 0
-        self._active_alerts: List[dict] = []
+        self._active_alerts: list[dict] = []
 
-    async def evaluate_all(self) -> List[dict]:
+    async def evaluate_all(self) -> list[dict]:
         """Run all threshold checks and generate alerts."""
         alerts = []
 
@@ -130,7 +129,7 @@ class ProductionAlertEngine:
 
         # 3. Messaging failure spike
         try:
-            one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+            one_hour_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
             msg_failures = await db.messaging_delivery_logs.count_documents({
                 "status": "failed",
                 "created_at": {"$gte": one_hour_ago},
@@ -168,7 +167,7 @@ class ProductionAlertEngine:
 
         # 5. High error rate
         try:
-            one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+            one_hour_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
             error_count = await db.observability_errors.count_documents({
                 "timestamp": {"$gte": one_hour_ago},
                 "severity": {"$in": ["critical", "high"]},
@@ -190,7 +189,7 @@ class ProductionAlertEngine:
             retry_burst = await db.messaging_delivery_logs.count_documents({
                 "status": "failed",
                 "retry_count": {"$gte": 2},
-                "created_at": {"$gte": (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()},
+                "created_at": {"$gte": (datetime.now(UTC) - timedelta(minutes=10)).isoformat()},
             })
             if retry_burst > DEFAULT_THRESHOLDS[AlertType.ABNORMAL_RETRY_BURST]["count"]:
                 alert = await self._fire_alert(
@@ -221,13 +220,13 @@ class ProductionAlertEngine:
         return alerts
 
     async def _fire_alert(self, alert_type: str, title: str, message: str,
-                          context: dict = None) -> Optional[dict]:
+                          context: dict = None) -> dict | None:
         """Fire an alert with dedup and cooldown."""
         # Cooldown check
         last_fired = self._cooldowns.get(alert_type)
         if last_fired:
             cooldown_until = last_fired + timedelta(minutes=self._cooldown_minutes)
-            if datetime.now(timezone.utc) < cooldown_until:
+            if datetime.now(UTC) < cooldown_until:
                 self._suppressed_count += 1
                 return None
 
@@ -243,7 +242,7 @@ class ProductionAlertEngine:
             "context": context or {},
             "runbook_hint": runbook,
             "acknowledged": False,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
 
         # Persist to MongoDB
@@ -253,22 +252,22 @@ class ProductionAlertEngine:
             logger.error(f"Failed to persist alert: {e}")
 
         # Update cooldown
-        self._cooldowns[alert_type] = datetime.now(timezone.utc)
+        self._cooldowns[alert_type] = datetime.now(UTC)
         self._alert_counts[alert_type] += 1
 
         logger.warning(f"ALERT [{severity.upper()}] {title}: {message}")
 
         return {k: v for k, v in alert_doc.items() if k != "_id"}
 
-    async def get_alert_candidates(self) -> List[dict]:
+    async def get_alert_candidates(self) -> list[dict]:
         """Get recent unacknowledged alerts."""
         return await db.alert_history.find(
             {"acknowledged": False},
             {"_id": 0},
         ).sort("created_at", -1).to_list(50)
 
-    async def get_alert_history(self, hours: int = 24, limit: int = 100) -> List[dict]:
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    async def get_alert_history(self, hours: int = 24, limit: int = 100) -> list[dict]:
+        cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
         return await db.alert_history.find(
             {"created_at": {"$gte": cutoff}},
             {"_id": 0},
@@ -280,7 +279,7 @@ class ProductionAlertEngine:
             {"$set": {
                 "acknowledged": True,
                 "acknowledged_by": user_id,
-                "acknowledged_at": datetime.now(timezone.utc).isoformat(),
+                "acknowledged_at": datetime.now(UTC).isoformat(),
             }},
         )
         return {"id": alert_id, "acknowledged": True}
@@ -292,7 +291,7 @@ class ProductionAlertEngine:
             "suppressed_by_cooldown": self._suppressed_count,
             "cooldown_minutes": self._cooldown_minutes,
             "thresholds": DEFAULT_THRESHOLDS,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
 

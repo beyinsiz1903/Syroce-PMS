@@ -6,7 +6,6 @@ Endpoint groups:
   /api/data-intelligence/guests/*
 """
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -27,9 +26,9 @@ router = APIRouter(prefix="/api/data-intelligence", tags=["data-intelligence"])
 # ═══════════════════════════════════════════════════════════
 
 class RunPipelineReq(BaseModel):
-    room_type: Optional[str] = None
-    target_date: Optional[str] = None
-    property_id: Optional[str] = None
+    room_type: str | None = None
+    target_date: str | None = None
+    property_id: str | None = None
 
 
 # ═══════════════════════════════════════════════════════════
@@ -71,21 +70,21 @@ async def get_revenue_recommendations(current_user: User = Depends(get_current_u
 # ═══════════════════════════════════════════════════════════
 
 @router.get("/operations/dashboard")
-async def get_operations_dashboard(target_date: Optional[str] = None,
+async def get_operations_dashboard(target_date: str | None = None,
                                     current_user: User = Depends(get_current_user)):
     """Get full operational AI dashboard."""
     return await operational_ai.get_dashboard(current_user.tenant_id, target_date)
 
 
 @router.get("/operations/staffing")
-async def get_staffing_recommendations(target_date: Optional[str] = None,
+async def get_staffing_recommendations(target_date: str | None = None,
                                         current_user: User = Depends(get_current_user)):
     """Get staffing recommendations for front desk and housekeeping."""
     return await operational_ai.get_staffing_recommendations(current_user.tenant_id, target_date)
 
 
 @router.get("/operations/workload-heatmap")
-async def get_workload_heatmap(target_date: Optional[str] = None,
+async def get_workload_heatmap(target_date: str | None = None,
                                 current_user: User = Depends(get_current_user)):
     """Get housekeeping workload heatmap and check-in hourly distribution."""
     return await operational_ai.get_workload_heatmap(current_user.tenant_id, target_date)
@@ -129,7 +128,7 @@ async def get_guest_churn_risk(guest_id: str,
 
 
 @router.get("/guests/{guest_id}/upsell")
-async def get_guest_upsell(guest_id: str, booking_id: Optional[str] = None,
+async def get_guest_upsell(guest_id: str, booking_id: str | None = None,
                             current_user: User = Depends(get_current_user)):
     """Get upsell recommendations for a guest."""
     return await guest_intelligence.upsell.recommend(

@@ -16,7 +16,7 @@ import logging
 import time
 import uuid as _uuid
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 
@@ -66,14 +66,14 @@ class HotelRunnerHttpClient:
             return path
         return f"{self._base_url}{path}"
 
-    def _auth_params(self) -> Dict[str, str]:
+    def _auth_params(self) -> dict[str, str]:
         return build_auth_params(self._token, self._hr_id)
 
     async def get(
         self,
         path: str,
         *,
-        params: Optional[Dict[str, str]] = None,
+        params: dict[str, str] | None = None,
         correlation_id: str = "",
     ) -> HttpResult:
         """HTTP GET with auth params."""
@@ -83,9 +83,9 @@ class HotelRunnerHttpClient:
         self,
         path: str,
         *,
-        params: Optional[Dict[str, str]] = None,
-        json_body: Optional[Dict[str, Any]] = None,
-        form_data: Optional[Dict[str, Any]] = None,
+        params: dict[str, str] | None = None,
+        json_body: dict[str, Any] | None = None,
+        form_data: dict[str, Any] | None = None,
         correlation_id: str = "",
     ) -> HttpResult:
         """HTTP PUT with auth params."""
@@ -98,9 +98,9 @@ class HotelRunnerHttpClient:
         self,
         path: str,
         *,
-        params: Optional[Dict[str, str]] = None,
-        json_body: Optional[Dict[str, Any]] = None,
-        form_data: Optional[Dict[str, Any]] = None,
+        params: dict[str, str] | None = None,
+        json_body: dict[str, Any] | None = None,
+        form_data: dict[str, Any] | None = None,
         correlation_id: str = "",
     ) -> HttpResult:
         """HTTP POST with auth params."""
@@ -114,9 +114,9 @@ class HotelRunnerHttpClient:
         method: str,
         path: str,
         *,
-        params: Optional[Dict[str, str]] = None,
-        json_body: Optional[Dict[str, Any]] = None,
-        form_data: Optional[Dict[str, Any]] = None,
+        params: dict[str, str] | None = None,
+        json_body: dict[str, Any] | None = None,
+        form_data: dict[str, Any] | None = None,
         correlation_id: str = "",
     ) -> HttpResult:
         corr_id = correlation_id or str(_uuid.uuid4())[:12]
@@ -126,7 +126,7 @@ class HotelRunnerHttpClient:
 
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             try:
-                kwargs: Dict[str, Any] = {"params": merged_params}
+                kwargs: dict[str, Any] = {"params": merged_params}
                 if json_body is not None:
                     kwargs["json"] = json_body
                 elif form_data is not None:

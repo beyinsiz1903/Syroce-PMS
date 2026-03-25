@@ -4,8 +4,8 @@ Detects default/weak credentials and enforces credential policies.
 """
 import logging
 import re
-from datetime import datetime, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -29,14 +29,14 @@ class CredentialGuard:
     """Detects weak credentials and enforces password policies."""
 
     @staticmethod
-    async def scan_weak_credentials(tenant_id: str = None) -> Dict[str, Any]:
+    async def scan_weak_credentials(tenant_id: str = None) -> dict[str, Any]:
         """Scan for users with known weak passwords or default credentials.
         Limits to admin/super_admin roles first, then samples others for performance.
         """
         from passlib.context import CryptContext
         pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-        query: Dict[str, Any] = {}
+        query: dict[str, Any] = {}
         if tenant_id:
             query["tenant_id"] = tenant_id
         # Prioritize admin/privileged users for credential scanning
@@ -83,11 +83,11 @@ class CredentialGuard:
             "scanned_users": len(users),
             "weak_credentials_found": len(findings),
             "findings": findings,
-            "scanned_at": datetime.now(timezone.utc).isoformat(),
+            "scanned_at": datetime.now(UTC).isoformat(),
         }
 
     @staticmethod
-    def validate_password_strength(password: str) -> Dict[str, Any]:
+    def validate_password_strength(password: str) -> dict[str, Any]:
         """Validate password meets minimum complexity requirements."""
         issues = []
         if len(password) < 8:

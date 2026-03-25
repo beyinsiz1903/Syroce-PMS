@@ -5,8 +5,8 @@ Reads the quarantine manifest and provides categorized counts,
 weekly burn-down targets, and progress tracking.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("controlplane.tech_debt_aggregator")
 
@@ -49,7 +49,7 @@ QUARANTINE_CATEGORIES = {
 }
 
 
-def compute_tech_debt() -> Dict[str, Any]:
+def compute_tech_debt() -> dict[str, Any]:
     """Compute tech debt dashboard from quarantine manifest."""
     try:
         from tests._quarantine.quarantine_manifest import QUARANTINE_SKIP_MAP
@@ -57,10 +57,10 @@ def compute_tech_debt() -> Dict[str, Any]:
         logger.warning("Quarantine manifest not found — returning empty")
         return _empty_response()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
-    category_counts: Dict[str, int] = {}
-    category_tests: Dict[str, list] = {}
+    category_counts: dict[str, int] = {}
+    category_tests: dict[str, list] = {}
 
     for test_id, meta in QUARANTINE_SKIP_MAP.items():
         cat = meta.get("category", "unknown")
@@ -144,7 +144,7 @@ def _debt_health_grade(total: int) -> str:
     return "D"
 
 
-def _empty_response() -> Dict[str, Any]:
+def _empty_response() -> dict[str, Any]:
     return {
         "total_quarantined": 0,
         "total_effort_hours": 0,
@@ -153,5 +153,5 @@ def _empty_response() -> Dict[str, Any]:
         "categories": [],
         "health_score": 100,
         "health_grade": "A",
-        "calculated_at": datetime.now(timezone.utc).isoformat(),
+        "calculated_at": datetime.now(UTC).isoformat(),
     }

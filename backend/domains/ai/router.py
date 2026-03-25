@@ -5,8 +5,7 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 import logging
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -186,7 +185,7 @@ async def ai_chat(
 
         # ── RESERVATION INTENT ──
         elif any(w in msg_lower for w in ['rezervasyon', 'booking', 'geçmiş', 'gelecek', 'bugün', 'yarın', 'misafir listesi', 'kimler var', 'kimler gelecek']):
-            datetime.now(timezone.utc).strftime('%Y-%m-%d')
+            datetime.now(UTC).strftime('%Y-%m-%d')
 
             if any(w in msg_lower for w in ['geçmiş', 'önceki', 'eski', 'tamamlanan']):
                 # Past reservations
@@ -437,8 +436,8 @@ async def get_sentiment(guest_id: str, current_user: User = Depends(get_current_
 
 @router.get("/pricing/ai-recommendation")
 async def get_ai_pricing_recommendation(
-    room_type: Optional[str] = None,
-    target_date: Optional[str] = None,
+    room_type: str | None = None,
+    target_date: str | None = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("ai_pricing")),
 ):
@@ -601,7 +600,7 @@ async def ai_whatsapp_concierge(
         'user_message': message,
         'ai_response': result['response'],
         'action_taken': result.get('action'),
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
     await db.ai_conversations.insert_one(conversation)
 
@@ -611,7 +610,7 @@ async def ai_whatsapp_concierge(
 
 @router.get("/ai-concierge/conversations")
 async def get_ai_conversations(
-    phone: Optional[str] = None,
+    phone: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """AI Concierge conversation history"""
@@ -731,7 +730,7 @@ async def get_autopilot_status(current_user: User = Depends(get_current_user)):
     return {
         'mode': autopilot.mode,
         'active': True,
-        'last_cycle': datetime.now(timezone.utc).isoformat()
+        'last_cycle': datetime.now(UTC).isoformat()
     }
 
 
@@ -1183,7 +1182,7 @@ async def predict_no_shows_detailed(
             risk_factors.append("Virtual card")
 
         # Factor 3: Booking lead time (last-minute bookings higher risk)
-        created_at = datetime.fromisoformat(booking.get('created_at', datetime.now(timezone.utc).isoformat()))
+        created_at = datetime.fromisoformat(booking.get('created_at', datetime.now(UTC).isoformat()))
         lead_time = (target_date - created_at.date()).days
         if lead_time < 2:
             risk_score += 20
@@ -1263,7 +1262,7 @@ async def predict_no_shows_detailed(
 @router.get("/ai/activity-log")
 async def get_ai_activity_log(
     limit: int = 50,
-    activity_type: Optional[str] = None,
+    activity_type: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Get AI activity log for dashboard visualization"""
@@ -1417,7 +1416,7 @@ async def generate_auto_reply(
 async def get_reviews_by_source(
     source: str,  # google, booking, tripadvisor, in_house
     days: int = 30,
-    sentiment: Optional[str] = None,
+    sentiment: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -1427,7 +1426,7 @@ async def get_reviews_by_source(
     - TripAdvisor
     - In-house surveys
     """
-    end_dt = datetime.now(timezone.utc)
+    end_dt = datetime.now(UTC)
     start_dt = end_dt - timedelta(days=days)
 
     match_criteria = {
@@ -1717,7 +1716,7 @@ async def analyze_guest_persona(
 
 @router.get("/ai/guest-persona/all-insights")
 async def get_all_guest_insights(
-    persona_type: Optional[str] = None,
+    persona_type: str | None = None,
     min_confidence: float = 0.7,
     current_user: User = Depends(get_current_user)
 ):
@@ -2012,7 +2011,7 @@ async def ai_housekeeping_smart_scheduler(
                 'status': 'pending',
                 'scheduled_date': date,
                 'estimated_duration': task['estimated_minutes'],
-                'created_at': datetime.now(timezone.utc).isoformat(),
+                'created_at': datetime.now(UTC).isoformat(),
                 'source': 'ai_scheduler'
             })
 
@@ -2173,7 +2172,7 @@ async def auto_loyalty_tier_upgrade(
             'description': upgrade['reason'],
             'source_module': 'loyalty_ai',
             'status': 'unread',
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         })
 
     return {
@@ -2498,7 +2497,7 @@ async def get_ml_models_status(
         metrics_file = [f for f in info['files'] if f.endswith('_metrics.json')]
         if metrics_file and all_files_exist:
             try:
-                with open(os.path.join(model_dir, metrics_file[0]), 'r') as f:
+                with open(os.path.join(model_dir, metrics_file[0])) as f:
                     info['metrics'] = json.load(f)
             except Exception:
                 info['metrics'] = None
@@ -2536,7 +2535,7 @@ async def get_occupancy_prediction(
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
 
     # Get bookings for next N days
-    start_date = datetime.now(timezone.utc)
+    start_date = datetime.now(UTC)
     start_date + timedelta(days=days)
 
     predictions = []

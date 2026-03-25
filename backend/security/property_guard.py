@@ -3,7 +3,7 @@ Security — Property Guard
 Enforces property-level access within multi-property tenants.
 """
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from core.database import db
 
@@ -14,7 +14,7 @@ class PropertyGuard:
     """Validates property-level access for multi-property tenants."""
 
     @staticmethod
-    async def get_user_properties(user_id: str, tenant_id: str) -> List[str]:
+    async def get_user_properties(user_id: str, tenant_id: str) -> list[str]:
         """Get list of property IDs a user has access to."""
         user = await db.users.find_one(
             {"id": user_id, "tenant_id": tenant_id},
@@ -35,7 +35,7 @@ class PropertyGuard:
         user_id: str,
         tenant_id: str,
         property_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Check if a user has access to a specific property."""
         allowed = await PropertyGuard.get_user_properties(user_id, tenant_id)
         if not allowed:

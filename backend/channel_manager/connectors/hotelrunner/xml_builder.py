@@ -7,14 +7,14 @@ Supported message types:
   - OTA_ReadRQ (reservation pull)
   - OTA_NotifReportRQ (acknowledgement)
 """
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 
-def _xml_header(message_type: str, hr_id: str, timestamp: Optional[str] = None) -> Element:
+def _xml_header(message_type: str, hr_id: str, timestamp: str | None = None) -> Element:
     """Create root OTA element with standard attributes."""
-    ts = timestamp or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    ts = timestamp or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
     root = Element(message_type)
     root.set("xmlns", "http://www.opentravel.org/OTA/2003/05")
     root.set("TimeStamp", ts)
@@ -32,7 +32,7 @@ def _xml_header(message_type: str, hr_id: str, timestamp: Optional[str] = None) 
 
 def build_availability_notif(
     hr_id: str,
-    updates: List[Dict[str, Any]],
+    updates: list[dict[str, Any]],
 ) -> str:
     """
     Build OTA_HotelAvailNotifRQ XML for inventory updates.
@@ -84,7 +84,7 @@ def build_availability_notif(
 
 def build_rate_amount_notif(
     hr_id: str,
-    updates: List[Dict[str, Any]],
+    updates: list[dict[str, Any]],
 ) -> str:
     """
     Build OTA_HotelRateAmountNotifRQ XML for rate updates.
@@ -134,8 +134,8 @@ def build_rate_amount_notif(
 def build_read_rq(
     hr_id: str,
     read_type: str = "reservations",
-    date_start: Optional[str] = None,
-    date_end: Optional[str] = None,
+    date_start: str | None = None,
+    date_end: str | None = None,
 ) -> str:
     """
     Build OTA_ReadRQ XML for pulling reservations.
@@ -157,7 +157,7 @@ def build_read_rq(
 
 def build_notif_report_rq(
     hr_id: str,
-    reservation_ids: List[str],
+    reservation_ids: list[str],
 ) -> str:
     """
     Build OTA_NotifReportRQ XML for acknowledging received reservations.

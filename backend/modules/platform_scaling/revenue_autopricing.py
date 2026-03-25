@@ -5,8 +5,8 @@ and channel push status tracking.
 """
 import logging
 import uuid
-from datetime import date, datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, date, datetime
+from typing import Any
 
 from core.database import db
 
@@ -24,8 +24,8 @@ class AutoPricingWorkflow:
     async def create_recommendation(
         self, tenant_id: str, room_type: str, current_rate: float,
         suggested_rate: float, reason: str, source: str = "ml",
-        confidence: float = 0.0, property_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        confidence: float = 0.0, property_id: str | None = None,
+    ) -> dict[str, Any]:
         """Create a pricing recommendation for review/auto-apply."""
         # Check property automation policy
         policy = await self._get_automation_policy(tenant_id, property_id)
@@ -58,7 +58,7 @@ class AutoPricingWorkflow:
             "status": "pending",
             "auto_eligible": auto_eligible,
             "is_protected_date": is_protected,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db.pricing_recommendations.insert_one(rec)
 
@@ -72,7 +72,7 @@ class AutoPricingWorkflow:
     # ── Approval Workflow ──
 
     async def approve_recommendation(self, tenant_id: str, rec_id: str,
-                                      user_id: str, note: Optional[str] = None) -> Dict[str, Any]:
+                                      user_id: str, note: str | None = None) -> dict[str, Any]:
         """Approve and apply a pricing recommendation."""
         rec = await db.pricing_recommendations.find_one(
             {"id": rec_id, "tenant_id": tenant_id}, {"_id": 0}
@@ -85,18 +85,18 @@ class AutoPricingWorkflow:
         await db.pricing_recommendations.update_one(
             {"id": rec_id},
             {"$set": {"status": "approved", "approved_by": user_id,
-                       "approved_at": datetime.now(timezone.utc).isoformat(),
+                       "approved_at": datetime.now(UTC).isoformat(),
                        "approval_note": note}},
         )
         return await self.apply_recommendation(tenant_id, rec_id, user_id)
 
     async def reject_recommendation(self, tenant_id: str, rec_id: str,
-                                     user_id: str, reason: str = "") -> Dict[str, Any]:
+                                     user_id: str, reason: str = "") -> dict[str, Any]:
         """Reject a pricing recommendation."""
         result = await db.pricing_recommendations.update_one(
             {"id": rec_id, "tenant_id": tenant_id, "status": "pending"},
             {"$set": {"status": "rejected", "rejected_by": user_id,
-                       "rejected_at": datetime.now(timezone.utc).isoformat(),
+                       "rejected_at": datetime.now(UTC).isoformat(),
                        "rejection_reason": reason}},
         )
         if result.matched_count == 0:
@@ -106,7 +106,7 @@ class AutoPricingWorkflow:
     # ── Rate Application ──
 
     async def apply_recommendation(self, tenant_id: str, rec_id: str,
-                                    user_id: str, auto: bool = False) -> Dict[str, Any]:
+                                    user_id: str, auto: bool = False) -> dict[str, Any]:
         """Apply the recommended rate to rooms."""
         rec = await db.pricing_recommendations.find_one(
             {"id": rec_id, "tenant_id": tenant_id}, {"_id": 0}
@@ -131,7 +131,7 @@ class AutoPricingWorkflow:
             "recommendation_id": rec_id,
             "room_type": room_type,
             "rooms": [{"room_id": r["id"], "old_price": r.get("base_price", 0)} for r in rooms_before],
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db.pricing_rollbacks.insert_one(rollback_snapshot)
 
@@ -139,7 +139,7 @@ class AutoPricingWorkflow:
         update_result = await db.rooms.update_many(
             {"tenant_id": property_id, "room_type": room_type},
             {"$set": {"base_price": new_rate,
-                       "rate_updated_at": datetime.now(timezone.utc).isoformat(),
+                       "rate_updated_at": datetime.now(UTC).isoformat(),
                        "rate_source": "auto_pricing"}},
         )
 
@@ -149,7 +149,7 @@ class AutoPricingWorkflow:
             {"$set": {
                 "status": "applied",
                 "applied_by": user_id,
-                "applied_at": datetime.now(timezone.utc).isoformat(),
+                "applied_at": datetime.now(UTC).isoformat(),
                 "auto_applied": auto,
                 "rooms_affected": update_result.modified_count,
                 "rollback_id": rollback_snapshot["id"],
@@ -168,7 +168,7 @@ class AutoPricingWorkflow:
             "rooms_affected": update_result.modified_count,
             "applied_by": user_id,
             "auto": auto,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
 
         # Channel push status tracking (simulate)
@@ -180,7 +180,7 @@ class AutoPricingWorkflow:
             "new_rate": new_rate,
             "channels": [],
             "status": "pending_push",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         # Check connected channels
         channels = await db.channel_connections.find(
@@ -213,7 +213,7 @@ class AutoPricingWorkflow:
     # ── Rollback ──
 
     async def rollback_recommendation(self, tenant_id: str, rec_id: str,
-                                       user_id: str, reason: str = "") -> Dict[str, Any]:
+                                       user_id: str, reason: str = "") -> dict[str, Any]:
         """Rollback a previously applied recommendation."""
         rec = await db.pricing_recommendations.find_one(
             {"id": rec_id, "tenant_id": tenant_id}, {"_id": 0}
@@ -234,7 +234,7 @@ class AutoPricingWorkflow:
             await db.rooms.update_one(
                 {"id": room_data["room_id"]},
                 {"$set": {"base_price": room_data["old_price"],
-                           "rate_updated_at": datetime.now(timezone.utc).isoformat(),
+                           "rate_updated_at": datetime.now(UTC).isoformat(),
                            "rate_source": "rollback"}},
             )
             restored += 1
@@ -244,7 +244,7 @@ class AutoPricingWorkflow:
             {"id": rec_id},
             {"$set": {"status": "rolled_back",
                        "rolled_back_by": user_id,
-                       "rolled_back_at": datetime.now(timezone.utc).isoformat(),
+                       "rolled_back_at": datetime.now(UTC).isoformat(),
                        "rollback_reason": reason}},
         )
 
@@ -258,7 +258,7 @@ class AutoPricingWorkflow:
             "restored_rooms": restored,
             "rolled_back_by": user_id,
             "reason": reason,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
 
         return {"success": True, "recommendation_id": rec_id, "status": "rolled_back",
@@ -267,7 +267,7 @@ class AutoPricingWorkflow:
     # ── Protected Dates / Blackout Rules ──
 
     async def add_protected_dates(self, tenant_id: str, start_date: str, end_date: str,
-                                   reason: str, user_id: str) -> Dict[str, Any]:
+                                   reason: str, user_id: str) -> dict[str, Any]:
         rule = {
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
@@ -275,13 +275,13 @@ class AutoPricingWorkflow:
             "end_date": end_date,
             "reason": reason,
             "created_by": user_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "active": True,
         }
         await db.protected_dates.insert_one(rule)
         return {"success": True, "rule_id": rule["id"]}
 
-    async def get_protected_dates(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_protected_dates(self, tenant_id: str) -> dict[str, Any]:
         rules = await db.protected_dates.find(
             {"tenant_id": tenant_id, "active": True}, {"_id": 0}
         ).to_list(200)
@@ -300,8 +300,8 @@ class AutoPricingWorkflow:
     async def set_automation_policy(self, tenant_id: str, mode: str,
                                      max_auto_change_pct: float = 10,
                                      min_rate: float = 0, max_rate: float = 99999,
-                                     property_id: Optional[str] = None,
-                                     user_id: str = "") -> Dict[str, Any]:
+                                     property_id: str | None = None,
+                                     user_id: str = "") -> dict[str, Any]:
         pid = property_id or tenant_id
         policy = {
             "tenant_id": tenant_id,
@@ -311,7 +311,7 @@ class AutoPricingWorkflow:
             "min_rate": min_rate,
             "max_rate": max_rate,
             "updated_by": user_id,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }
         await db.automation_policies.update_one(
             {"tenant_id": tenant_id, "property_id": pid},
@@ -320,7 +320,7 @@ class AutoPricingWorkflow:
         )
         return {"success": True, "policy": policy}
 
-    async def _get_automation_policy(self, tenant_id: str, property_id: Optional[str] = None) -> Dict:
+    async def _get_automation_policy(self, tenant_id: str, property_id: str | None = None) -> dict:
         pid = property_id or tenant_id
         policy = await db.automation_policies.find_one(
             {"tenant_id": tenant_id, "property_id": pid}, {"_id": 0}
@@ -330,27 +330,27 @@ class AutoPricingWorkflow:
 
     # ── Dashboard / Queries ──
 
-    async def get_pending_recommendations(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_pending_recommendations(self, tenant_id: str) -> dict[str, Any]:
         recs = await db.pricing_recommendations.find(
             {"tenant_id": tenant_id, "status": "pending"},
             {"_id": 0},
         ).sort("created_at", -1).to_list(100)
         return {"count": len(recs), "recommendations": recs}
 
-    async def get_recommendation_history(self, tenant_id: str, limit: int = 50) -> Dict[str, Any]:
+    async def get_recommendation_history(self, tenant_id: str, limit: int = 50) -> dict[str, Any]:
         recs = await db.pricing_recommendations.find(
             {"tenant_id": tenant_id}, {"_id": 0}
         ).sort("created_at", -1).limit(limit).to_list(limit)
         return {"count": len(recs), "recommendations": recs}
 
-    async def get_pricing_audit_trail(self, tenant_id: str, limit: int = 50) -> Dict[str, Any]:
+    async def get_pricing_audit_trail(self, tenant_id: str, limit: int = 50) -> dict[str, Any]:
         audits = await db.pricing_audit.find(
             {"tenant_id": tenant_id}, {"_id": 0}
         ).sort("timestamp", -1).limit(limit).to_list(limit)
         return {"count": len(audits), "audits": audits}
 
-    async def get_channel_push_status(self, tenant_id: str, rec_id: Optional[str] = None) -> Dict[str, Any]:
-        query: Dict[str, Any] = {"tenant_id": tenant_id}
+    async def get_channel_push_status(self, tenant_id: str, rec_id: str | None = None) -> dict[str, Any]:
+        query: dict[str, Any] = {"tenant_id": tenant_id}
         if rec_id:
             query["recommendation_id"] = rec_id
         pushes = await db.rate_push_tracking.find(
@@ -358,7 +358,7 @@ class AutoPricingWorkflow:
         ).sort("created_at", -1).limit(50).to_list(50)
         return {"count": len(pushes), "pushes": pushes}
 
-    async def get_autopricing_dashboard(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_autopricing_dashboard(self, tenant_id: str) -> dict[str, Any]:
         pending = await self.get_pending_recommendations(tenant_id)
         policy = await self._get_automation_policy(tenant_id)
         protected = await self.get_protected_dates(tenant_id)
@@ -382,7 +382,7 @@ class AutoPricingWorkflow:
             "pending_recommendations": pending["recommendations"][:10],
             "protected_dates": protected,
             "stats": stats,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
         }
 
 

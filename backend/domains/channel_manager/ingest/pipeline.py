@@ -17,8 +17,8 @@ Unified ingest pipeline with full traceability and hardening:
 TIMELINE: Writes normalized, deduplicated, validated stages for end-to-end traceability.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from domains.channel_manager import unified_repository as repo
 from domains.channel_manager.data_model import (
@@ -41,7 +41,7 @@ LOCK_TTL_SECONDS = 30
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _timeline_append(**kwargs):
@@ -61,13 +61,13 @@ class PipelineResult:
         self.decision: str = ""
         self.reason: str = ""
         self.status: str = "pending"
-        self.error: Optional[str] = None
-        self.lineage_id: Optional[str] = None
-        self.case_id: Optional[str] = None
-        self.mutation_type: Optional[str] = None
-        self.trace_id: Optional[str] = None
+        self.error: str | None = None
+        self.lineage_id: str | None = None
+        self.case_id: str | None = None
+        self.mutation_type: str | None = None
+        self.trace_id: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "event_id": self.event_id,
             "decision": self.decision,
@@ -81,7 +81,7 @@ class PipelineResult:
         }
 
 
-async def process_event(event: Dict[str, Any]) -> PipelineResult:
+async def process_event(event: dict[str, Any]) -> PipelineResult:
     """
     Process a single raw_channel_event through the full pipeline.
     The event must already be persisted in raw_channel_events.
@@ -407,7 +407,7 @@ async def _finalize_event(
     event_id: str,
     status: str,
     result: PipelineResult,
-    canonical: Optional[Dict] = None,
+    canonical: dict | None = None,
 ) -> None:
     """Update raw event with decision trace for full traceability."""
     update = {
@@ -440,7 +440,7 @@ async def _finalize_event(
 # ══════════════════════════════════════════════════════════════════════
 
 async def _acquire_reservation_lock(
-    lineage: Dict, worker_id: str,
+    lineage: dict, worker_id: str,
 ) -> bool:
     """
     Acquire a reservation-scoped lock using optimistic concurrency.
@@ -449,7 +449,7 @@ async def _acquire_reservation_lock(
     from core.database import db
     from domains.channel_manager.data_model import COLL_RESERVATION_LINEAGE
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires = (now + timedelta(seconds=LOCK_TTL_SECONDS)).isoformat()
 
     # Try to acquire: only succeed if no lock or lock expired
@@ -479,7 +479,7 @@ async def _acquire_reservation_lock(
     return False
 
 
-async def _release_reservation_lock(lineage: Dict) -> None:
+async def _release_reservation_lock(lineage: dict) -> None:
     """Release reservation-scoped lock."""
     from core.database import db
     from domains.channel_manager.data_model import COLL_RESERVATION_LINEAGE
@@ -500,7 +500,7 @@ async def _release_reservation_lock(lineage: Dict) -> None:
 
 async def _create_lineage(
     tenant_id: str, property_id: str, provider: str,
-    canonical: Dict, payload_hash: str, received_via: str,
+    canonical: dict, payload_hash: str, received_via: str,
     mutation_type: str,
 ) -> str:
     now = _now()
@@ -543,7 +543,7 @@ async def _create_lineage(
 
 
 async def _update_lineage(
-    existing: Dict, canonical: Dict, payload_hash: str,
+    existing: dict, canonical: dict, payload_hash: str,
     received_via: str, mutation_type: str,
 ) -> str:
     now = _now()
@@ -575,7 +575,7 @@ async def _update_lineage(
     return await repo.upsert_reservation_lineage(existing)
 
 
-async def _cancel_lineage(existing: Dict, canonical: Dict) -> str:
+async def _cancel_lineage(existing: dict, canonical: dict) -> str:
     now = _now()
     existing["previous_status"] = existing.get("status")
     existing["status"] = "cancelled"
@@ -595,7 +595,7 @@ async def _cancel_lineage(existing: Dict, canonical: Dict) -> str:
 
 async def _trigger_import_bridge(
     tenant_id: str, property_id: str, provider: str,
-    lineage_id: str, canonical: Dict, room_mapping, rate_mapping,
+    lineage_id: str, canonical: dict, room_mapping, rate_mapping,
     connector_id: str,
 ) -> None:
     """

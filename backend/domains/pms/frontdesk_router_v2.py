@@ -3,7 +3,6 @@ PMS / Front Desk — Production Router v2
 Routes for enhanced front desk operations:
 room_move, late_checkout, no_show, walk_in, post_charge, void_charge.
 """
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -21,13 +20,13 @@ router = APIRouter(prefix="/api/frontdesk/v2", tags=["Front Desk v2"])
 class CheckinRequest(BaseModel):
     booking_id: str
     create_folio: bool = True
-    idempotency_key: Optional[str] = None
+    idempotency_key: str | None = None
 
 class CheckoutRequest(BaseModel):
     booking_id: str
     force: bool = False
     auto_close_folios: bool = True
-    reason: Optional[str] = None
+    reason: str | None = None
 
 class RoomMoveRequest(BaseModel):
     booking_id: str
@@ -52,9 +51,9 @@ class WalkInRequest(BaseModel):
     nights: int = 1
     rate_amount: float = 0.0
     payment_method: str = "cash"
-    guest_email: Optional[str] = None
-    guest_phone: Optional[str] = None
-    id_number: Optional[str] = None
+    guest_email: str | None = None
+    guest_phone: str | None = None
+    id_number: str | None = None
 
 class PostChargeRequest(BaseModel):
     booking_id: str
@@ -62,7 +61,7 @@ class PostChargeRequest(BaseModel):
     description: str
     amount: float
     charge_category: str = "misc"
-    idempotency_key: Optional[str] = None
+    idempotency_key: str | None = None
 
 class VoidChargeRequest(BaseModel):
     charge_id: str

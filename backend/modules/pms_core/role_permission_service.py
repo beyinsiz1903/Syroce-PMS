@@ -1,7 +1,6 @@
 """
 Role & Permission Enforcement Service - Validates user permissions for PMS operations.
 """
-from typing import List
 
 from fastapi import HTTPException, status
 
@@ -78,7 +77,7 @@ class RolePermissionService:
         supervisor_operations = {"override_rate", "void_charge", "void_payment", "run_night_audit"}
         return operation in supervisor_operations
 
-    def get_user_permissions(self, user_role: str) -> List[str]:
+    def get_user_permissions(self, user_role: str) -> list[str]:
         """Get all permissions for a user role."""
         try:
             role_enum = UserRole(user_role)

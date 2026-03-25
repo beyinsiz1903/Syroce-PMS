@@ -5,7 +5,6 @@ Exely Provider — Pre-flight Validators
 Validates credentials and payloads before sending to the SOAP API.
 Catches obvious errors early, before consuming network resources.
 """
-from typing import Dict, Optional
 
 from .errors import ExelyValidationError
 
@@ -19,7 +18,7 @@ def validate_credentials(username: str, password: str, hotel_code: str) -> None:
         raise ExelyValidationError("Hotel code is required", field="hotel_code")
 
 
-def extract_credentials(credentials: Dict[str, str]) -> tuple:
+def extract_credentials(credentials: dict[str, str]) -> tuple:
     """Extract username, password, hotel_code from a credentials dict."""
     username = credentials.get("username", "").strip()
     password = credentials.get("password", "").strip()
@@ -51,7 +50,7 @@ def validate_ari_payload(
         )
 
 
-def validate_date_range(from_date: Optional[str], to_date: Optional[str]) -> None:
+def validate_date_range(from_date: str | None, to_date: str | None) -> None:
     if from_date and to_date and to_date < from_date:
         raise ExelyValidationError(
             f"to_date ({to_date}) must be >= from_date ({from_date})",

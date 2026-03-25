@@ -5,8 +5,7 @@ maintenance conflict check, floor attendant workload balancing,
 room readiness ETA, task assignment suggestion engine, manual override.
 """
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List
+from datetime import UTC, datetime, timedelta
 
 from core.database import db
 
@@ -26,7 +25,7 @@ class AutoHousekeepingService:
     VIP_PRIORITY_BOOST = 2  # priority levels to boost for VIP
     EARLY_CHECKIN_PRIORITY_BOOST = 1
 
-    async def auto_assign_after_checkout(self, tenant_id: str, booking_id: str, user_id: str) -> Dict:
+    async def auto_assign_after_checkout(self, tenant_id: str, booking_id: str, user_id: str) -> dict:
         """Automatically create and assign housekeeping task after checkout."""
         booking = await db.bookings.find_one(
             {"id": booking_id, "tenant_id": tenant_id}, {"_id": 0}
@@ -63,7 +62,7 @@ class AutoHousekeepingService:
 
         # Create the task
         task_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         task = {
             "id": task_id,
@@ -103,7 +102,7 @@ class AutoHousekeepingService:
             "eta_minutes": eta_minutes,
         }
 
-    async def get_assignment_suggestions(self, tenant_id: str) -> Dict:
+    async def get_assignment_suggestions(self, tenant_id: str) -> dict:
         """Get task assignment suggestions for all dirty/pending rooms."""
         # Get all dirty rooms
         dirty_rooms = await db.rooms.find(
@@ -152,7 +151,7 @@ class AutoHousekeepingService:
             "staff_workload": staff_workload,
         }
 
-    async def manual_override_assignment(self, tenant_id: str, task_id: str, new_assignee_id: str, reason: str, overridden_by: str) -> Dict:
+    async def manual_override_assignment(self, tenant_id: str, task_id: str, new_assignee_id: str, reason: str, overridden_by: str) -> dict:
         """Manually override a task assignment."""
         task = await db.housekeeping_tasks.find_one(
             {"id": task_id, "tenant_id": tenant_id}, {"_id": 0}
@@ -164,7 +163,7 @@ class AutoHousekeepingService:
         staff = await db.users.find_one({"id": new_assignee_id}, {"_id": 0, "name": 1})
         staff_name = staff.get("name", "Unknown") if staff else "Unknown"
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         old_assignee = task.get("assigned_to")
 
         await db.housekeeping_tasks.update_one(
@@ -196,7 +195,7 @@ class AutoHousekeepingService:
 
         return {"success": True, "task_id": task_id, "new_assignee": staff_name}
 
-    async def get_room_readiness_eta(self, tenant_id: str, room_id: str) -> Dict:
+    async def get_room_readiness_eta(self, tenant_id: str, room_id: str) -> dict:
         """Calculate estimated time until room is ready."""
         room = await db.rooms.find_one({"id": room_id, "tenant_id": tenant_id}, {"_id": 0})
         if not room:
@@ -227,7 +226,7 @@ class AutoHousekeepingService:
             started = task.get("started_at")
             if started:
                 start_dt = datetime.fromisoformat(started.replace("Z", "+00:00"))
-                elapsed = (datetime.now(timezone.utc) - start_dt).total_seconds() / 60
+                elapsed = (datetime.now(UTC) - start_dt).total_seconds() / 60
                 estimated = task.get("estimated_minutes", 35)
                 remaining = max(estimated - elapsed, 5)
                 remaining += 10  # inspection buffer
@@ -246,9 +245,9 @@ class AutoHousekeepingService:
             "assigned_to": task.get("assigned_to_name"),
         }
 
-    async def _calculate_priority(self, tenant_id: str, room_id: str, room: Dict) -> Dict:
+    async def _calculate_priority(self, tenant_id: str, room_id: str, room: dict) -> dict:
         """Calculate cleaning priority based on next booking and VIP status."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         today = now.date().isoformat()
 
         # Check next booking for this room
@@ -301,7 +300,7 @@ class AutoHousekeepingService:
 
         return {"level": base_priority, "reason": reason}
 
-    async def _suggest_assignee(self, tenant_id: str, room: Dict) -> Dict:
+    async def _suggest_assignee(self, tenant_id: str, room: dict) -> dict:
         """Suggest best assignee based on workload and floor proximity."""
         floor = room.get("floor", self._extract_floor(room.get("room_number", "")))
 
@@ -349,7 +348,7 @@ class AutoHousekeepingService:
 
         return best or {"staff_id": None, "staff_name": "Unassigned", "current_tasks": 0, "reason": "No staff available"}
 
-    async def _get_staff_workload(self, tenant_id: str) -> List[Dict]:
+    async def _get_staff_workload(self, tenant_id: str) -> list[dict]:
         """Get workload summary for all housekeeping staff."""
         staff = await db.users.find(
             {"tenant_id": tenant_id, "role": {"$in": ["housekeeping", "staff"]},
@@ -370,7 +369,7 @@ class AutoHousekeepingService:
             completed_today = await db.housekeeping_tasks.count_documents({
                 "tenant_id": tenant_id, "assigned_to": s["id"],
                 "status": "completed",
-                "completed_at": {"$gte": datetime.now(timezone.utc).date().isoformat()},
+                "completed_at": {"$gte": datetime.now(UTC).date().isoformat()},
             })
 
             workload.append({
@@ -385,7 +384,7 @@ class AutoHousekeepingService:
         workload.sort(key=lambda w: w["total_active"])
         return workload
 
-    async def _check_maintenance_conflict(self, tenant_id: str, room_id: str) -> Dict:
+    async def _check_maintenance_conflict(self, tenant_id: str, room_id: str) -> dict:
         """Check if room has active maintenance blocking cleaning."""
         active_blocks = await db.room_blocks.find({
             "room_id": room_id, "tenant_id": tenant_id, "status": "active",

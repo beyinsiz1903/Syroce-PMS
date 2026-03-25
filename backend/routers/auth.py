@@ -2,8 +2,7 @@
 Auth Router - Authentication, Registration, Email Verification, Password Reset
 Extracted from server.py for modularity.
 """
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
@@ -272,7 +271,7 @@ async def login(data: UserLogin):
             "action": "login_failed",
             "resource_type": "auth",
             "details": "Invalid credentials",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -296,7 +295,7 @@ async def login(data: UserLogin):
         "action": "login_success",
         "resource_type": "auth",
         "details": f"Login successful for {user.name}",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     })
 
     token = create_token(user.id, user.tenant_id)
@@ -339,7 +338,7 @@ async def refresh_token(current_user: User = Depends(get_current_user)):
         "resource_type": "auth",
         "details": "Token refreshed",
         "ip_address": "",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     })
 
     return {
@@ -352,7 +351,7 @@ async def refresh_token(current_user: User = Depends(get_current_user)):
 @router.get("/security/summary")
 async def get_security_summary(current_user: User = Depends(get_current_user)):
     """Güvenlik özet dashboard verisi."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     last_24h = (now - timedelta(hours=24)).isoformat()
     last_7d = (now - timedelta(days=7)).isoformat()
 
@@ -432,8 +431,8 @@ class EmailVerificationRequest(BaseModel):
     email: EmailStr
     name: str
     password: str
-    property_name: Optional[str] = None  # Hotel için
-    phone: Optional[str] = None
+    property_name: str | None = None  # Hotel için
+    phone: str | None = None
     user_type: str = "hotel"  # "hotel" veya "guest"
 
 class VerifyCodeRequest(BaseModel):
@@ -472,8 +471,8 @@ async def request_verification_code(data: EmailVerificationRequest):
         'property_name': data.property_name,
         'phone': data.phone,
         'user_type': data.user_type,
-        'created_at': datetime.now(timezone.utc),
-        'expires_at': datetime.now(timezone.utc) + timedelta(minutes=15),
+        'created_at': datetime.now(UTC),
+        'expires_at': datetime.now(UTC) + timedelta(minutes=15),
         'verified': False
     }
 
@@ -507,8 +506,8 @@ async def verify_email_and_register(data: VerifyCodeRequest):
     # Kod süresi dolmuş mu kontrol et
     expires_at = verification['expires_at']
     if not expires_at.tzinfo:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if datetime.now(timezone.utc) > expires_at:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if datetime.now(UTC) > expires_at:
         await db.verification_codes.delete_one({'_id': verification['_id']})
         raise HTTPException(status_code=400, detail="Doğrulama kodu süresi dolmuş. Lütfen yeni kod isteyin")
 
@@ -545,7 +544,7 @@ async def verify_email_and_register(data: VerifyCodeRequest):
         user_dict['hashed_password'] = verification['password']
         user_dict['created_at'] = user_dict['created_at'].isoformat()
         user_dict['email_verified'] = True
-        user_dict['email_verified_at'] = datetime.now(timezone.utc).isoformat()
+        user_dict['email_verified_at'] = datetime.now(UTC).isoformat()
         await db.users.insert_one(user_dict)
 
         # Doğrulama kaydını sil
@@ -572,7 +571,7 @@ async def verify_email_and_register(data: VerifyCodeRequest):
         user_dict['hashed_password'] = verification['password']
         user_dict['created_at'] = user_dict['created_at'].isoformat()
         user_dict['email_verified'] = True
-        user_dict['email_verified_at'] = datetime.now(timezone.utc).isoformat()
+        user_dict['email_verified_at'] = datetime.now(UTC).isoformat()
         await db.users.insert_one(user_dict)
 
         prefs = NotificationPreferences(user_id=user.id)
@@ -608,8 +607,8 @@ async def forgot_password(data: ForgotPasswordRequest):
     reset_doc = {
         'email': data.email,
         'code': code,
-        'created_at': datetime.now(timezone.utc),
-        'expires_at': datetime.now(timezone.utc) + timedelta(minutes=15),
+        'created_at': datetime.now(UTC),
+        'expires_at': datetime.now(UTC) + timedelta(minutes=15),
         'used': False
     }
 
@@ -644,8 +643,8 @@ async def reset_password(data: ResetPasswordRequest):
     # Kod süresi dolmuş mu kontrol et
     expires_at = reset['expires_at']
     if not expires_at.tzinfo:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if datetime.now(timezone.utc) > expires_at:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if datetime.now(UTC) > expires_at:
         await db.password_reset_codes.delete_one({'_id': reset['_id']})
         raise HTTPException(status_code=400, detail="Sıfırlama kodu süresi dolmuş. Lütfen yeni kod isteyin")
 
@@ -661,7 +660,7 @@ async def reset_password(data: ResetPasswordRequest):
         {
             '$set': {
                 'hashed_password': new_hashed_password,
-                'password_reset_at': datetime.now(timezone.utc).isoformat()
+                'password_reset_at': datetime.now(UTC).isoformat()
             }
         }
     )
@@ -676,7 +675,7 @@ async def reset_password(data: ResetPasswordRequest):
     # Kodu kullanıldı olarak işaretle
     await db.password_reset_codes.update_one(
         {'_id': reset['_id']},
-        {'$set': {'used': True, 'used_at': datetime.now(timezone.utc)}}
+        {'$set': {'used': True, 'used_at': datetime.now(UTC)}}
     )
 
     return {

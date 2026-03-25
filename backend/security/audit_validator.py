@@ -3,8 +3,8 @@ Security — Audit Validator
 Validates audit trail completeness and detects gaps.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -27,9 +27,9 @@ class AuditValidator:
     @staticmethod
     async def validate_completeness(
         tenant_id: str, *, hours: int = 24,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Check audit trail completeness for the last N hours."""
-        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
 
         # Get audit entries
         audit_entries = await db.audit_logs.find(
@@ -69,12 +69,12 @@ class AuditValidator:
             "gaps_found": len(gaps),
             "gaps": gaps,
             "status": "complete" if not gaps else "gaps_detected",
-            "validated_at": datetime.now(timezone.utc).isoformat(),
+            "validated_at": datetime.now(UTC).isoformat(),
         }
 
     @staticmethod
-    async def get_audit_summary(tenant_id: str, *, hours: int = 24) -> Dict[str, Any]:
-        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    async def get_audit_summary(tenant_id: str, *, hours: int = 24) -> dict[str, Any]:
+        since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
         pipeline = [
             {"$match": {"tenant_id": tenant_id, "timestamp": {"$gte": since}}},
             {"$group": {"_id": "$action", "count": {"$sum": 1}, "last": {"$max": "$timestamp"}}},

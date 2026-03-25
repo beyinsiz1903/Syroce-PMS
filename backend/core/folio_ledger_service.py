@@ -6,8 +6,8 @@ Entries are NEVER updated — voids, adjustments, and transfers create new entri
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from pymongo.errors import DuplicateKeyError
 
@@ -82,7 +82,7 @@ class FolioLedgerService:
         )
         return (last["sequence_number"] + 1) if last else 1
 
-    async def _insert_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+    async def _insert_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
         try:
             await self.coll.insert_one(entry)
             entry.pop("_id", None)
@@ -106,14 +106,14 @@ class FolioLedgerService:
         charge_code: str = "ROOM",
         currency: str = "TRY",
         tax_amount: float = 0.0,
-        tax_breakdown: Optional[List[Dict]] = None,
-        idempotency_key: Optional[str] = None,
+        tax_breakdown: list[dict] | None = None,
+        idempotency_key: str | None = None,
         posted_by: str = "system",
-        business_date: Optional[str] = None,
-        night_audit_run_id: Optional[str] = None,
-        metadata: Optional[Dict] = None,
-    ) -> Dict[str, Any]:
-        now = datetime.now(timezone.utc).isoformat()
+        business_date: str | None = None,
+        night_audit_run_id: str | None = None,
+        metadata: dict | None = None,
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC).isoformat()
         seq = await self._next_sequence(tenant_id, folio_id)
         entry = {
             "id": str(uuid.uuid4()),
@@ -154,12 +154,12 @@ class FolioLedgerService:
         payment_method: str = "cash",
         reference: str = "",
         currency: str = "TRY",
-        idempotency_key: Optional[str] = None,
+        idempotency_key: str | None = None,
         posted_by: str = "system",
-        business_date: Optional[str] = None,
-        metadata: Optional[Dict] = None,
-    ) -> Dict[str, Any]:
-        now = datetime.now(timezone.utc).isoformat()
+        business_date: str | None = None,
+        metadata: dict | None = None,
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC).isoformat()
         seq = await self._next_sequence(tenant_id, folio_id)
         entry = {
             "id": str(uuid.uuid4()),
@@ -198,7 +198,7 @@ class FolioLedgerService:
         entry_id: str,
         reason: str,
         posted_by: str = "system",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         original = await self.coll.find_one(
             {"id": entry_id, "tenant_id": tenant_id, "folio_id": folio_id},
             {"_id": 0},
@@ -210,7 +210,7 @@ class FolioLedgerService:
         if original["entry_type"] == "void":
             raise ValueError("Cannot void a void entry")
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         seq = await self._next_sequence(tenant_id, folio_id)
         void_entry = {
             "id": str(uuid.uuid4()),
@@ -259,10 +259,10 @@ class FolioLedgerService:
         amount: float,
         description: str = "Transfer",
         booking_id: str = "",
-        idempotency_key: Optional[str] = None,
+        idempotency_key: str | None = None,
         posted_by: str = "system",
-    ) -> Dict[str, Any]:
-        now = datetime.now(timezone.utc).isoformat()
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC).isoformat()
         corr_id = str(uuid.uuid4())
         idem_key = idempotency_key or str(uuid.uuid4())
 
@@ -347,7 +347,7 @@ class FolioLedgerService:
 
     async def get_ledger(
         self, tenant_id: str, folio_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         entries = await self.coll.find(
             {"tenant_id": tenant_id, "folio_id": folio_id},
             {"_id": 0},
@@ -355,7 +355,7 @@ class FolioLedgerService:
         balance = await self.compute_balance(tenant_id, folio_id)
         return {"entries": entries, "balance": balance, "entry_count": len(entries)}
 
-    async def reconcile_folio(self, tenant_id: str, folio_id: str) -> Dict[str, Any]:
+    async def reconcile_folio(self, tenant_id: str, folio_id: str) -> dict[str, Any]:
         """Compare ledger balance vs stored folio balance."""
         ledger_balance = await self.compute_balance(tenant_id, folio_id)
         folio = await db.folios.find_one(
@@ -379,9 +379,9 @@ class ReconciliationEngine:
     def __init__(self):
         self.ledger = FolioLedgerService()
 
-    async def run_reconciliation(self, tenant_id: str, business_date: str) -> Dict[str, Any]:
+    async def run_reconciliation(self, tenant_id: str, business_date: str) -> dict[str, Any]:
         report_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         open_folios = await db.folios.find(
             {"tenant_id": tenant_id, "status": "open"},

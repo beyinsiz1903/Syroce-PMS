@@ -1,7 +1,7 @@
 """
 Security Hardening Router - API endpoints for multi-tenant security.
 """
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Query
 
@@ -34,7 +34,7 @@ async def get_violations(
 
 @router.get("/property-permissions")
 async def get_property_permissions(
-    property_id: Optional[str] = None,
+    property_id: str | None = None,
     tenant: TenantContext = Depends(get_current_tenant),
 ):
     return await property_permissions.get_property_permissions(tenant.tenant_id, property_id)
@@ -98,7 +98,7 @@ async def check_leakage(tenant: TenantContext = Depends(get_current_tenant)):
 
 @router.post("/masking-preview")
 async def preview_masking(
-    data: Dict[str, Any] = Body(...),
+    data: dict[str, Any] = Body(...),
     tenant: TenantContext = Depends(get_current_tenant),
 ):
     return data_masking.preview_masking(data)
@@ -106,7 +106,7 @@ async def preview_masking(
 
 @router.post("/masking-coverage")
 async def check_masking_coverage(
-    data: Dict[str, Any] = Body(...),
+    data: dict[str, Any] = Body(...),
     tenant: TenantContext = Depends(get_current_tenant),
 ):
     return data_masking.get_masking_coverage(data)

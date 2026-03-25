@@ -1,7 +1,6 @@
 """
 Revenue Autopilot Router - Policy, approval queue, apply, rollback, dashboard.
 """
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -43,7 +42,7 @@ async def update_policy(req: dict, current_user: User = Depends(get_current_user
 
 @router.get("/queue")
 async def get_approval_queue(
-    status: Optional[str] = None,
+    status: str | None = None,
     limit: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
 ):
@@ -58,7 +57,7 @@ class ProcessRecommendationReq(BaseModel):
     current_price: float = 100.0
     recommended_price: float = 110.0
     confidence: float = 0.8
-    source_job_id: Optional[str] = None
+    source_job_id: str | None = None
 
 
 @router.post("/process")

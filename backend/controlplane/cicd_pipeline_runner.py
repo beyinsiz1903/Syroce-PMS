@@ -14,8 +14,8 @@ Each run produces:
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from channel_manager.application.sandbox_simulation.engine import SandboxSimulationEngine
 from core.database import db
@@ -116,18 +116,18 @@ class CICDPipelineRunner:
         tier: str,
         tenant_id: str,
         property_id: str,
-        build_id: Optional[str] = None,
-        commit_sha: Optional[str] = None,
-        deploy_id: Optional[str] = None,
+        build_id: str | None = None,
+        commit_sha: str | None = None,
+        deploy_id: str | None = None,
         triggered_by: str = "system",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute a CI/CD pipeline run for the given tier."""
         config = TIER_CONFIGS.get(tier)
         if not config:
             return {"error": f"Unknown tier: {tier}", "valid_tiers": list(TIER_CONFIGS.keys())}
 
         run_id = f"cicd-{tier}-{uuid.uuid4().hex[:10]}"
-        started_at = datetime.now(timezone.utc).isoformat()
+        started_at = datetime.now(UTC).isoformat()
 
         logger.info(
             "CI/CD Pipeline [%s] starting — run=%s build=%s commit=%s",
@@ -142,7 +142,7 @@ class CICDPipelineRunner:
             actor_id=f"cicd:{tier}:{triggered_by}",
         )
 
-        completed_at = datetime.now(timezone.utc).isoformat()
+        completed_at = datetime.now(UTC).isoformat()
 
         # Evaluate acceptance criteria
         acceptance = self._evaluate_acceptance(sim_result, tier)
@@ -183,7 +183,7 @@ class CICDPipelineRunner:
 
         return pipeline_result
 
-    def _evaluate_acceptance(self, sim_result: Dict, tier: str) -> Dict[str, Any]:
+    def _evaluate_acceptance(self, sim_result: dict, tier: str) -> dict[str, Any]:
         """Evaluate minimum acceptance criteria for deploy."""
         provider_results = sim_result.get("provider_results", {})
         summary = sim_result.get("summary", {})
@@ -295,7 +295,7 @@ class CICDPipelineRunner:
             "critical_failures": [c["id"] for c in critical_failures],
         }
 
-    def _compute_gate_verdict(self, acceptance: Dict, config: Dict) -> Dict[str, Any]:
+    def _compute_gate_verdict(self, acceptance: dict, config: dict) -> dict[str, Any]:
         """Compute deploy gate verdict: PASS or BLOCK."""
         all_passed = acceptance.get("all_passed", False)
         blocks = config.get("blocks_deploy", False)
@@ -337,7 +337,7 @@ class CICDPipelineRunner:
             "failure_details": fail_details,
         }
 
-    def _enrich_provider_results(self, provider_results: Dict) -> Dict[str, Any]:
+    def _enrich_provider_results(self, provider_results: dict) -> dict[str, Any]:
         """Attach runbook info to each failed scenario."""
         enriched = {}
         for provider, data in provider_results.items():
@@ -368,12 +368,12 @@ class CICDPipelineRunner:
 
     async def get_runs(
         self,
-        tenant_id: Optional[str] = None,
-        tier: Optional[str] = None,
+        tenant_id: str | None = None,
+        tier: str | None = None,
         limit: int = 20,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get recent CI/CD pipeline runs."""
-        query: Dict[str, Any] = {}
+        query: dict[str, Any] = {}
         if tenant_id:
             query["tenant_id"] = tenant_id
         if tier:
@@ -383,17 +383,17 @@ class CICDPipelineRunner:
         ).sort("started_at", -1).limit(limit).to_list(limit)
         return runs
 
-    async def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+    async def get_run(self, run_id: str) -> dict[str, Any] | None:
         """Get a specific pipeline run."""
         return await db[CICD_RUNS].find_one(
             {"run_id": run_id}, {"_id": 0, "_persist": 0},
         )
 
-    async def get_baseline(self, tenant_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_baseline(self, tenant_id: str | None = None) -> dict[str, Any]:
         """Get the last passing baseline for each tier."""
         baselines = {}
         for tier in TIER_CONFIGS:
-            query: Dict[str, Any] = {"tier": tier, "acceptance_criteria.all_passed": True}
+            query: dict[str, Any] = {"tier": tier, "acceptance_criteria.all_passed": True}
             if tenant_id:
                 query["tenant_id"] = tenant_id
             last_pass = await db[CICD_RUNS].find_one(
@@ -411,7 +411,7 @@ class CICDPipelineRunner:
                 baselines[tier] = None
         return baselines
 
-    async def get_health_badges(self, tenant_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_health_badges(self, tenant_id: str | None = None) -> dict[str, Any]:
         """Get health badges for sandbox / staging / prod — kept separate."""
         badges = {}
         label_map = {
@@ -420,7 +420,7 @@ class CICDPipelineRunner:
             "nightly": "prod_health",
         }
         for tier, label in label_map.items():
-            query: Dict[str, Any] = {"tier": tier}
+            query: dict[str, Any] = {"tier": tier}
             if tenant_id:
                 query["tenant_id"] = tenant_id
             last_run = await db[CICD_RUNS].find_one(
@@ -451,12 +451,12 @@ class CICDPipelineRunner:
 
     async def get_trends(
         self,
-        tenant_id: Optional[str] = None,
-        tier: Optional[str] = None,
+        tenant_id: str | None = None,
+        tier: str | None = None,
         limit: int = 30,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get trend data across CI/CD runs for charting."""
-        query: Dict[str, Any] = {}
+        query: dict[str, Any] = {}
         if tenant_id:
             query["tenant_id"] = tenant_id
         if tier:
@@ -509,7 +509,7 @@ class CICDPipelineRunner:
             "overall_trend": trend_data,
             "provider_trends": provider_trends,
             "total_runs": len(runs),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
 

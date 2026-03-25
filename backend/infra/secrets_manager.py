@@ -12,8 +12,8 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.secrets")
 
@@ -21,23 +21,23 @@ logger = logging.getLogger("infra.secrets")
 class SecretsProvider:
     """Base secrets provider interface."""
 
-    async def get_secret(self, key: str) -> Optional[str]:
+    async def get_secret(self, key: str) -> str | None:
         raise NotImplementedError
 
-    async def get_secret_json(self, key: str) -> Optional[Dict[str, Any]]:
+    async def get_secret_json(self, key: str) -> dict[str, Any] | None:
         raise NotImplementedError
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         raise NotImplementedError
 
 
 class EnvSecretsProvider(SecretsProvider):
     """Local environment variable secrets provider (development fallback)."""
 
-    async def get_secret(self, key: str) -> Optional[str]:
+    async def get_secret(self, key: str) -> str | None:
         return os.environ.get(key)
 
-    async def get_secret_json(self, key: str) -> Optional[Dict[str, Any]]:
+    async def get_secret_json(self, key: str) -> dict[str, Any] | None:
         val = os.environ.get(key)
         if val:
             try:
@@ -46,7 +46,7 @@ class EnvSecretsProvider(SecretsProvider):
                 return None
         return None
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         return {"provider": "env", "status": "healthy", "mode": "development"}
 
 
@@ -55,9 +55,9 @@ class AWSSecretsProvider(SecretsProvider):
 
     def __init__(self):
         self._client = None
-        self._cache: Dict[str, Any] = {}
+        self._cache: dict[str, Any] = {}
         self._cache_ttl = 300  # 5 minutes
-        self._cache_timestamps: Dict[str, float] = {}
+        self._cache_timestamps: dict[str, float] = {}
         self._region = os.environ.get("AWS_REGION", "eu-west-1")
 
     def _get_client(self):
@@ -71,7 +71,7 @@ class AWSSecretsProvider(SecretsProvider):
                 logger.error(f"AWS Secrets Manager client init failed: {e}")
         return self._client
 
-    async def get_secret(self, key: str) -> Optional[str]:
+    async def get_secret(self, key: str) -> str | None:
         # Check cache
         if key in self._cache:
             if time.time() - self._cache_timestamps.get(key, 0) < self._cache_ttl:
@@ -90,7 +90,7 @@ class AWSSecretsProvider(SecretsProvider):
             logger.error(f"AWS get_secret({key}) failed: {e}")
             return None
 
-    async def get_secret_json(self, key: str) -> Optional[Dict[str, Any]]:
+    async def get_secret_json(self, key: str) -> dict[str, Any] | None:
         val = await self.get_secret(key)
         if val:
             try:
@@ -99,7 +99,7 @@ class AWSSecretsProvider(SecretsProvider):
                 return None
         return None
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         client = self._get_client()
         if not client:
             return {"provider": "aws", "status": "unavailable", "error": "client not initialized"}
@@ -116,11 +116,11 @@ class VaultSecretsProvider(SecretsProvider):
     def __init__(self):
         self._addr = os.environ.get("VAULT_ADDR", "")
         self._token = os.environ.get("VAULT_TOKEN", "")
-        self._cache: Dict[str, Any] = {}
+        self._cache: dict[str, Any] = {}
         self._cache_ttl = 300
-        self._cache_timestamps: Dict[str, float] = {}
+        self._cache_timestamps: dict[str, float] = {}
 
-    async def get_secret(self, key: str) -> Optional[str]:
+    async def get_secret(self, key: str) -> str | None:
         if key in self._cache:
             if time.time() - self._cache_timestamps.get(key, 0) < self._cache_ttl:
                 return self._cache[key]
@@ -145,7 +145,7 @@ class VaultSecretsProvider(SecretsProvider):
             logger.error(f"Vault get_secret({key}) failed: {e}")
         return None
 
-    async def get_secret_json(self, key: str) -> Optional[Dict[str, Any]]:
+    async def get_secret_json(self, key: str) -> dict[str, Any] | None:
         val = await self.get_secret(key)
         if val:
             try:
@@ -154,7 +154,7 @@ class VaultSecretsProvider(SecretsProvider):
                 return None
         return None
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         if not self._addr:
             return {"provider": "vault", "status": "not_configured"}
         try:
@@ -192,7 +192,7 @@ class SecretsManager:
             "errors": 0,
         }
 
-    async def get_secret(self, key: str, requester: str = "system") -> Optional[str]:
+    async def get_secret(self, key: str, requester: str = "system") -> str | None:
         self._metrics["total_requests"] += 1
         self._log_access(key, requester)
         try:
@@ -202,7 +202,7 @@ class SecretsManager:
             logger.error(f"Secret fetch error ({key}): {e}")
             return None
 
-    async def get_secret_json(self, key: str, requester: str = "system") -> Optional[Dict[str, Any]]:
+    async def get_secret_json(self, key: str, requester: str = "system") -> dict[str, Any] | None:
         self._metrics["total_requests"] += 1
         self._log_access(key, requester)
         try:
@@ -215,13 +215,13 @@ class SecretsManager:
         self._access_log.append({
             "key": key,
             "requester": requester,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "provider": self._provider_name,
         })
         if len(self._access_log) > self._max_log:
             self._access_log = self._access_log[-self._max_log:]
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         result = await self._provider.health_check()
         result["metrics"] = self._metrics
         return result
@@ -233,7 +233,7 @@ class SecretsManager:
             for entry in self._access_log[-limit:]
         ]
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         return {
             "provider": self._provider_name,
             **self._metrics,

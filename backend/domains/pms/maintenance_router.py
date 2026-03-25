@@ -4,8 +4,7 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -42,7 +41,7 @@ async def control_smart_device(control_data: dict, current_user: User = Depends(
         'device_id': control_data['device_id'],
         'command': control_data['command'],
         'value': control_data.get('value'),
-        'executed_at': datetime.now(timezone.utc).isoformat()
+        'executed_at': datetime.now(UTC).isoformat()
     }
     await db.iot_commands.insert_one(command)
     return {'success': True, 'message': 'Cihaz komutu gönderildi (MOCK)'}
@@ -53,7 +52,7 @@ async def control_smart_device(control_data: dict, current_user: User = Depends(
 async def get_energy_consumption(days: int = 30, current_user: User = Depends(get_current_user)):
     """Enerji tüketim raporu"""
     from datetime import timedelta
-    start = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    start = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
     consumption = await db.energy_consumption.find({
         'tenant_id': current_user.tenant_id,
@@ -87,7 +86,7 @@ async def create_maintenance_work_order(
         'tenant_id': current_user.tenant_id,
         'reported_by_user_id': data.reported_by_user_id or current_user.id,
         'reported_by_role': data.reported_by_role or current_user.role,
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'status': data.status or 'open',
     })
     await db.maintenance_work_orders.insert_one(payload)
@@ -98,9 +97,9 @@ async def create_maintenance_work_order(
 
 @router.get("/maintenance/work-orders")
 async def get_maintenance_work_orders(
-    status: Optional[str] = None,
-    room_id: Optional[str] = None,
-    priority: Optional[str] = None,
+    status: str | None = None,
+    room_id: str | None = None,
+    priority: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """List maintenance work orders with basic filters"""
@@ -121,8 +120,8 @@ async def get_maintenance_work_orders(
 @router.patch("/maintenance/work-orders/{work_order_id}")
 async def update_maintenance_work_order(
     work_order_id: str,
-    status: Optional[str] = None,
-    priority: Optional[str] = None,
+    status: str | None = None,
+    priority: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Update status/priority of a maintenance work order"""
@@ -130,7 +129,7 @@ async def update_maintenance_work_order(
     if status:
         updates['status'] = status
         if status == 'completed':
-            updates['completed_at'] = datetime.now(timezone.utc)
+            updates['completed_at'] = datetime.now(UTC)
     if priority:
         updates['priority'] = priority
 
@@ -161,7 +160,7 @@ async def ingest_sensor_alert(
     payload.update({
         'id': str(uuid.uuid4()),
         'tenant_id': tenant_id,
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
     })
 
     await db.sensor_alerts.insert_one(payload)
@@ -205,7 +204,7 @@ async def ingest_sensor_alert(
             'tenant_id': tenant_id,
             'reported_by_user_id': current_user.id,
             'reported_by_role': current_user.role,
-            'created_at': datetime.now(timezone.utc).isoformat(),
+            'created_at': datetime.now(UTC).isoformat(),
             'status': 'open',
         })
         await db.maintenance_work_orders.insert_one(wo_payload)
@@ -223,10 +222,10 @@ async def ingest_sensor_alert(
 async def technician_submit_task(
     task_id: str,
     status: str,  # started, completed, needs_parts
-    notes: Optional[str] = None,
-    time_spent_minutes: Optional[int] = None,
-    parts_used: Optional[List[Dict]] = None,
-    photo_urls: Optional[List[str]] = None,
+    notes: str | None = None,
+    time_spent_minutes: int | None = None,
+    parts_used: list[dict] | None = None,
+    photo_urls: list[str] | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Mobile technician app - submit task update"""
@@ -240,11 +239,11 @@ async def technician_submit_task(
 
     updates = {
         'status': status,
-        'updated_at': datetime.now(timezone.utc).isoformat()
+        'updated_at': datetime.now(UTC).isoformat()
     }
 
     if status == 'completed':
-        updates['completed_at'] = datetime.now(timezone.utc).isoformat()
+        updates['completed_at'] = datetime.now(UTC).isoformat()
         updates['completed_by'] = current_user.name
 
     if time_spent_minutes:
@@ -285,7 +284,7 @@ async def get_repeat_issues(
     - Same room, same issue type multiple times
     - Preventive maintenance needed
     """
-    end_dt = datetime.now(timezone.utc)
+    end_dt = datetime.now(UTC)
     start_dt = end_dt - timedelta(days=days)
 
     # Get all maintenance tasks in period
@@ -364,7 +363,7 @@ async def get_maintenance_sla(
     - SLA compliance rate
     - By priority level
     """
-    end_dt = datetime.now(timezone.utc)
+    end_dt = datetime.now(UTC)
     start_dt = end_dt - timedelta(days=days)
 
     # SLA targets (in hours)
@@ -468,8 +467,8 @@ async def create_maintenance_asset(
 
 @router.get("/maintenance/assets")
 async def list_maintenance_assets(
-    asset_type: Optional[str] = None,
-    room_id: Optional[str] = None,
+    asset_type: str | None = None,
+    room_id: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     query = {'tenant_id': current_user.tenant_id}
@@ -501,7 +500,7 @@ async def create_preventive_plan(
 
 @router.get("/maintenance/plans")
 async def list_preventive_plans(
-    asset_id: Optional[str] = None,
+    asset_id: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     query = {'tenant_id': current_user.tenant_id}
@@ -525,7 +524,7 @@ async def run_preventive_maintenance_scheduler(
     - Updates last_completed_date and next_due_date
     """
     tenant_id = current_user.tenant_id
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     now.date()
 
     due_plans_cursor = db.maintenance_plans.find({

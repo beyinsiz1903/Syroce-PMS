@@ -9,8 +9,7 @@ Endpoints:
   POST /api/inventory/room-types/reconcile — Trigger manual reconciliation
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -24,8 +23,8 @@ router = APIRouter(prefix="/api/inventory")
 @router.get("/room-types", tags=["Room-Type Inventory"])
 async def get_room_type_inventory(
     date: str = Query(..., description="Date in YYYY-MM-DD format"),
-    room_type: Optional[str] = Query(None, description="Filter by room type"),
-    tenant_id: Optional[str] = Query(None, description="Tenant ID (auto-detected if omitted)"),
+    room_type: str | None = Query(None, description="Filter by room type"),
+    tenant_id: str | None = Query(None, description="Tenant ID (auto-detected if omitted)"),
 ):
     """
     Get room-type inventory for a specific date.
@@ -79,7 +78,7 @@ async def get_room_type_inventory(
 async def get_inventory_summary(
     start_date: str = Query(..., description="Start date YYYY-MM-DD"),
     end_date: str = Query(..., description="End date YYYY-MM-DD"),
-    tenant_id: Optional[str] = Query(None, description="Tenant ID"),
+    tenant_id: str | None = Query(None, description="Tenant ID"),
 ):
     """Get aggregated inventory summary for a date range."""
     try:
@@ -105,9 +104,9 @@ async def get_inventory_summary(
 
 @router.post("/room-types/reconcile", tags=["Room-Type Inventory"])
 async def trigger_reconciliation(
-    start_date: Optional[str] = Query(None, description="Start date (default: today)"),
-    end_date: Optional[str] = Query(None, description="End date (default: today + 30 days)"),
-    tenant_id: Optional[str] = Query(None, description="Tenant ID"),
+    start_date: str | None = Query(None, description="Start date (default: today)"),
+    end_date: str | None = Query(None, description="End date (default: today + 30 days)"),
+    tenant_id: str | None = Query(None, description="Tenant ID"),
 ):
     """
     Manually trigger inventory reconciliation.
@@ -115,7 +114,7 @@ async def trigger_reconciliation(
     Recomputes room_type_inventory from room_night_locks for the date range.
     Reports any drift detected.
     """
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     if not start_date:
         start_date = today.isoformat()
     if not end_date:
@@ -154,7 +153,7 @@ async def trigger_reconciliation(
 
 @router.get("/room-types/health", tags=["Room-Type Inventory"])
 async def inventory_health(
-    tenant_id: Optional[str] = Query(None, description="Tenant ID"),
+    tenant_id: str | None = Query(None, description="Tenant ID"),
 ):
     """
     Quick health check: Does the materialized view exist and is it recent?
@@ -170,7 +169,7 @@ async def inventory_health(
     if not tenant_id:
         return {"status": "no_tenant", "healthy": False}
 
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now(UTC).date().isoformat()
 
     # Check if we have data for today
     count = await db.room_type_inventory.count_documents(
@@ -188,7 +187,7 @@ async def inventory_health(
     if latest and latest.get("last_computed_at"):
         try:
             last_dt = datetime.fromisoformat(latest["last_computed_at"])
-            age_minutes = (datetime.now(timezone.utc) - last_dt).total_seconds() / 60
+            age_minutes = (datetime.now(UTC) - last_dt).total_seconds() / 60
             if age_minutes < 10:
                 freshness = "fresh"
             elif age_minutes < 60:

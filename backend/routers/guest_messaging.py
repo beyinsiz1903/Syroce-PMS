@@ -3,8 +3,7 @@ Guest Messaging Router - Misafir Mesajlaşma Sistemi
 Misafirlerin otel ile mesajlaşmasını sağlar.
 """
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
@@ -23,9 +22,9 @@ def init_guest_messaging(db, get_current_user_dep):
 
 
 class SendMessageRequest(BaseModel):
-    booking_id: Optional[str] = None
+    booking_id: str | None = None
     message: str
-    message_type: Optional[str] = "general"  # general, request, complaint, feedback
+    message_type: str | None = "general"  # general, request, complaint, feedback
 
 
 class ReplyMessageRequest(BaseModel):
@@ -34,7 +33,7 @@ class ReplyMessageRequest(BaseModel):
 
 @router.get("")
 async def get_guest_messages(
-    booking_id: Optional[str] = None,
+    booking_id: str | None = None,
     credentials=Depends(HTTPBearer())
 ):
     """Misafirin mesajlarını listele."""
@@ -118,7 +117,7 @@ async def send_guest_message(
         "message": req.message,
         "message_type": req.message_type,
         "read": False,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
     await _db.guest_messages.insert_one(msg_doc)
@@ -159,7 +158,7 @@ async def reply_to_message(
         "message_type": original.get("message_type", "general"),
         "reply_to": message_id,
         "read": False,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
     await _db.guest_messages.insert_one(reply_doc)
@@ -178,14 +177,14 @@ async def mark_message_read(
 
     await _db.guest_messages.update_one(
         {"id": message_id, "tenant_id": current_user.tenant_id},
-        {"$set": {"read": True, "read_at": datetime.now(timezone.utc).isoformat()}}
+        {"$set": {"read": True, "read_at": datetime.now(UTC).isoformat()}}
     )
     return {"message": "Okundu olarak işaretlendi"}
 
 
 @router.put("/mark-all-read")
 async def mark_all_read(
-    booking_id: Optional[str] = None,
+    booking_id: str | None = None,
     credentials=Depends(HTTPBearer())
 ):
     """Tüm mesajları okundu işaretle."""
@@ -200,7 +199,7 @@ async def mark_all_read(
         query["sender"] = "guest"
 
     result = await _db.guest_messages.update_many(query, {
-        "$set": {"read": True, "read_at": datetime.now(timezone.utc).isoformat()}
+        "$set": {"read": True, "read_at": datetime.now(UTC).isoformat()}
     })
 
     return {"marked_read": result.modified_count}

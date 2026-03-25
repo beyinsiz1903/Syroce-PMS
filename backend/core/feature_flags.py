@@ -5,16 +5,16 @@ Stored in MongoDB `feature_flags` collection.
 """
 import hashlib
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
 logger = logging.getLogger(__name__)
 
 # ─── In-memory cache (refreshed periodically) ───
-_cache: Dict[str, Dict[str, Any]] = {}
-_cache_ts: Optional[datetime] = None
+_cache: dict[str, dict[str, Any]] = {}
+_cache_ts: datetime | None = None
 CACHE_TTL_SECONDS = 30
 
 
@@ -24,21 +24,21 @@ async def _refresh_cache():
     try:
         flags = await db.feature_flags.find({}, {"_id": 0}).to_list(500)
         _cache = {f["flag_key"]: f for f in flags}
-        _cache_ts = datetime.now(timezone.utc)
+        _cache_ts = datetime.now(UTC)
     except Exception as e:
         logger.warning(f"Feature flag cache refresh failed: {e}")
 
 
-async def _get_flags() -> Dict[str, Dict[str, Any]]:
+async def _get_flags() -> dict[str, dict[str, Any]]:
     """Get cached flags, refresh if stale."""
     global _cache_ts
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if _cache_ts is None or (now - _cache_ts).total_seconds() > CACHE_TTL_SECONDS:
         await _refresh_cache()
     return _cache
 
 
-async def is_flag_enabled(flag_key: str, tenant_id: Optional[str] = None) -> bool:
+async def is_flag_enabled(flag_key: str, tenant_id: str | None = None) -> bool:
     """Check if a feature flag is enabled for a given tenant.
 
     Resolution order:
@@ -64,7 +64,7 @@ async def is_flag_enabled(flag_key: str, tenant_id: Optional[str] = None) -> boo
     if expires:
         try:
             exp_dt = datetime.fromisoformat(expires.replace("Z", "+00:00"))
-            if datetime.now(timezone.utc) > exp_dt:
+            if datetime.now(UTC) > exp_dt:
                 return False
         except Exception:
             pass
@@ -83,13 +83,13 @@ async def is_flag_enabled(flag_key: str, tenant_id: Optional[str] = None) -> boo
     return flag.get("enabled", False)
 
 
-async def list_flags() -> List[Dict[str, Any]]:
+async def list_flags() -> list[dict[str, Any]]:
     """List all feature flags."""
     flags = await _get_flags()
     return list(flags.values())
 
 
-async def get_flag(flag_key: str) -> Optional[Dict[str, Any]]:
+async def get_flag(flag_key: str) -> dict[str, Any] | None:
     """Get a single feature flag."""
     flags = await _get_flags()
     return flags.get(flag_key)
@@ -99,14 +99,14 @@ async def upsert_flag(
     flag_key: str,
     enabled: bool = False,
     description: str = "",
-    rollout_percentage: Optional[int] = None,
-    tenant_overrides: Optional[Dict[str, bool]] = None,
+    rollout_percentage: int | None = None,
+    tenant_overrides: dict[str, bool] | None = None,
     kill_switch: bool = False,
-    expires_at: Optional[str] = None,
+    expires_at: str | None = None,
     updated_by: str = "system",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Create or update a feature flag."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     doc = {
         "flag_key": flag_key,
@@ -145,7 +145,7 @@ async def set_tenant_override(flag_key: str, tenant_id: str, enabled: bool):
     """Set a tenant-specific override for a flag."""
     await db.feature_flags.update_one(
         {"flag_key": flag_key},
-        {"$set": {f"tenant_overrides.{tenant_id}": enabled, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        {"$set": {f"tenant_overrides.{tenant_id}": enabled, "updated_at": datetime.now(UTC).isoformat()}},
     )
     global _cache_ts
     _cache_ts = None
@@ -155,7 +155,7 @@ async def remove_tenant_override(flag_key: str, tenant_id: str):
     """Remove a tenant-specific override."""
     await db.feature_flags.update_one(
         {"flag_key": flag_key},
-        {"$unset": {f"tenant_overrides.{tenant_id}": ""}, "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}},
+        {"$unset": {f"tenant_overrides.{tenant_id}": ""}, "$set": {"updated_at": datetime.now(UTC).isoformat()}},
     )
     global _cache_ts
     _cache_ts = None

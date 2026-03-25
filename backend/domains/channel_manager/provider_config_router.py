@@ -10,8 +10,8 @@ Endpoints for:
 Prefix: /api/channel-manager/config/
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -76,7 +76,7 @@ VALIDATION_CHECKS = {
 # ── Request/Response Models ───────────────────────────────────────────
 
 class SaveCredentialsRequest(BaseModel):
-    credentials: Dict[str, str]
+    credentials: dict[str, str]
     property_id: str = ""
 
 
@@ -85,7 +85,7 @@ class ValidationResult(BaseModel):
     status: str  # passed, failed, skipped
     message: str
     duration_ms: int = 0
-    data: Optional[Dict[str, Any]] = None
+    data: dict[str, Any] | None = None
 
 
 # ── Provider Overview ─────────────────────────────────────────────────
@@ -193,7 +193,7 @@ async def save_credentials(
             {"$set": {
                 "credentials": req.credentials,
                 "credentials_ref": secret_id,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }},
         )
 
@@ -247,7 +247,7 @@ async def run_full_validation(
         raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
 
     tenant_id = current_user.tenant_id
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
 
     # Get credentials
     creds = await vault.get_decrypted_credentials(tenant_id, provider, "default")
@@ -289,7 +289,7 @@ async def run_full_validation(
         {"tenant_id": tenant_id, "provider": provider},
         {"$set": {
             "status": new_status,
-            "last_validation_at": datetime.now(timezone.utc).isoformat(),
+            "last_validation_at": datetime.now(UTC).isoformat(),
             "validation_results": results,
         }},
     )
@@ -340,7 +340,7 @@ async def test_connection(
         await db[COLL_PROVIDER_CONNECTIONS].update_one(
             {"tenant_id": tenant_id, "provider": provider},
             {"$set": {
-                "last_successful_sync": datetime.now(timezone.utc).isoformat(),
+                "last_successful_sync": datetime.now(UTC).isoformat(),
                 "consecutive_failures": 0,
                 "last_error": None,
             }},
@@ -350,7 +350,7 @@ async def test_connection(
             {"tenant_id": tenant_id, "provider": provider},
             {"$set": {
                 "last_error": result.get("error", "Connection failed"),
-                "last_error_at": datetime.now(timezone.utc).isoformat(),
+                "last_error_at": datetime.now(UTC).isoformat(),
             },
             "$inc": {"consecutive_failures": 1}},
         )
@@ -381,7 +381,7 @@ async def get_readiness(
 
 # ── HotelRunner Validation ────────────────────────────────────────────
 
-async def _test_hotelrunner_connection(creds: Dict[str, str]) -> Dict[str, Any]:
+async def _test_hotelrunner_connection(creds: dict[str, str]) -> dict[str, Any]:
     from .providers.hotelrunner import HotelRunnerProvider
     token = creds.get("token") or creds.get("api_key", "")
     hr_id = creds.get("hr_id") or creds.get("hotel_id", "")
@@ -394,7 +394,7 @@ async def _test_hotelrunner_connection(creds: Dict[str, str]) -> Dict[str, Any]:
     return {"connected": False, "error": result.error}
 
 
-async def _validate_hotelrunner(creds: Dict[str, str], tenant_id: str) -> List[Dict[str, Any]]:
+async def _validate_hotelrunner(creds: dict[str, str], tenant_id: str) -> list[dict[str, Any]]:
     import time
 
     from .providers.hotelrunner import HotelRunnerProvider
@@ -504,7 +504,7 @@ async def _validate_hotelrunner(creds: Dict[str, str], tenant_id: str) -> List[D
 
 # ── Exely Validation ──────────────────────────────────────────────────
 
-async def _test_exely_connection(creds: Dict[str, str]) -> Dict[str, Any]:
+async def _test_exely_connection(creds: dict[str, str]) -> dict[str, Any]:
     from .providers.exely import ExelyProvider
     username = creds.get("username", "")
     password = creds.get("password", "")
@@ -519,7 +519,7 @@ async def _test_exely_connection(creds: Dict[str, str]) -> Dict[str, Any]:
     return await provider.legacy_test_connection()
 
 
-async def _validate_exely(creds: Dict[str, str], tenant_id: str) -> List[Dict[str, Any]]:
+async def _validate_exely(creds: dict[str, str], tenant_id: str) -> list[dict[str, Any]]:
     import time
 
     from .providers.exely import ExelyProvider

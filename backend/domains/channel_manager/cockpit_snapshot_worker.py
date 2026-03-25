@@ -16,7 +16,7 @@ Streams only critical metrics every 3 seconds:
 """
 import asyncio
 import logging
-from typing import Any, Dict
+from typing import Any
 
 logger = logging.getLogger("cockpit.snapshot_worker")
 
@@ -24,7 +24,7 @@ _running = False
 _task = None
 
 
-async def _compute_snapshot(tenant_id: str) -> Dict[str, Any]:
+async def _compute_snapshot(tenant_id: str) -> dict[str, Any]:
     """Compute a lightweight cockpit snapshot (critical metrics only)."""
     from core.database import db
     from domains.channel_manager.ari.hard_fail_gate import get_hard_fail_stats

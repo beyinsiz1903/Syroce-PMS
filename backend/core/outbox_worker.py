@@ -18,8 +18,8 @@ import os
 import socket
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from pymongo import ReturnDocument
 
@@ -65,7 +65,7 @@ def _failure_record(**kwargs):
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _iso(dt: datetime) -> str:
@@ -92,16 +92,16 @@ class OutboxWorker:
         self.processing_timeout = processing_timeout
         self.drain_pause = drain_pause
         self.worker_id = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
         # Metrics
         self._processed_count = 0
         self._failed_count = 0
         self._retry_count = 0
-        self._last_processed_at: Optional[str] = None
+        self._last_processed_at: str | None = None
 
     @property
-    def metrics(self) -> Dict[str, Any]:
+    def metrics(self) -> dict[str, Any]:
         return {
             "worker_id": self.worker_id,
             "processed_total": self._processed_count,
@@ -183,7 +183,7 @@ class OutboxWorker:
                 await asyncio.sleep(self.drain_pause)
         return processed
 
-    async def _claim_event(self) -> Optional[Dict[str, Any]]:
+    async def _claim_event(self) -> dict[str, Any] | None:
         """Atomically claim the next pending/retry event.
 
         Only claims OTA outbox events (those with max_attempts field set by
@@ -214,7 +214,7 @@ class OutboxWorker:
         )
         return event
 
-    async def _process_event(self, event: Dict[str, Any]) -> None:
+    async def _process_event(self, event: dict[str, Any]) -> None:
         """Dispatch event and handle result within tenant context."""
         event_id = event.get("id", "unknown")
         tenant_id = event.get("tenant_id", "")
@@ -253,7 +253,7 @@ class OutboxWorker:
                 else:
                     await self._handle_failure(event, f"permanent: {error_msg[:500]}")
 
-    async def _mark_processed(self, event: Dict[str, Any], message: str) -> None:
+    async def _mark_processed(self, event: dict[str, Any], message: str) -> None:
         """Mark event as successfully processed."""
         now = _iso(_utc_now())
         sysdb = get_system_db()
@@ -289,7 +289,7 @@ class OutboxWorker:
             event.get("id"), event.get("event_type"), message[:100],
         )
 
-    async def _handle_failure(self, event: Dict[str, Any], message: str) -> None:
+    async def _handle_failure(self, event: dict[str, Any], message: str) -> None:
         """Handle failed dispatch — retry or mark as permanently failed."""
         now = _iso(_utc_now())
         attempt_count = event.get("attempt_count", 1)

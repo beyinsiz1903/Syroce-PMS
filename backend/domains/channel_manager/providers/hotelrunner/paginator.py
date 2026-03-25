@@ -6,7 +6,7 @@ Centralizes pagination logic for the reservations endpoint.
 Includes safety limits, duplicate page detection, and infinite loop protection.
 """
 import logging
-from typing import Any, Awaitable, Callable, Dict, List
+from typing import Any, Awaitable, Callable
 
 from .errors import HotelRunnerPaginationError
 
@@ -27,8 +27,8 @@ class HotelRunnerPaginator:
 
     async def fetch_all_pages(
         self,
-        fetch_page_fn: Callable[[int], Awaitable[Dict[str, Any]]],
-    ) -> List[Dict[str, Any]]:
+        fetch_page_fn: Callable[[int], Awaitable[dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
         """
         Fetch all pages by calling fetch_page_fn(page_number).
 
@@ -37,7 +37,7 @@ class HotelRunnerPaginator:
 
         Returns aggregated list of all reservation dicts.
         """
-        all_items: List[Dict[str, Any]] = []
+        all_items: list[dict[str, Any]] = []
         seen_first_ids: set[str] = set()
         page = 1
 

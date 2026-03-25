@@ -7,8 +7,7 @@ night audit concurrency, websocket event stream.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Dict
+from datetime import UTC, datetime
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -69,7 +68,7 @@ class ProductionLoadValidationService:
         if not scenario:
             return ServiceResult.fail(f"Unknown scenario: {scenario_id}", "INVALID_SCENARIO")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         # Execute scenario simulation
         results = await self._execute_scenario(scenario)
 
@@ -101,7 +100,7 @@ class ProductionLoadValidationService:
             "passed_count": passed_metrics,
             "total_count": total_metrics,
             "started_at": now.isoformat(),
-            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "completed_at": datetime.now(UTC).isoformat(),
         }
 
         await self._db.production_load_runs.insert_one(run_entry)
@@ -110,7 +109,7 @@ class ProductionLoadValidationService:
 
     async def get_load_report(self, ctx: OperationContext, hours: int = 24) -> ServiceResult:
         from datetime import timedelta
-        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
         runs = await self._db.production_load_runs.find(
             {"tenant_id": ctx.tenant_id, "started_at": {"$gte": since}},
             {"_id": 0},
@@ -124,7 +123,7 @@ class ProductionLoadValidationService:
             "pass_rate": round(passed / max(len(runs), 1) * 100, 1),
         })
 
-    async def _execute_scenario(self, scenario: Dict) -> Dict:
+    async def _execute_scenario(self, scenario: dict) -> dict:
         """Execute scenario and return metric values."""
         # Simulated results — within healthy thresholds
         import random

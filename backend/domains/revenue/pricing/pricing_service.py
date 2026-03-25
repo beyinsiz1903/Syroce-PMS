@@ -5,8 +5,8 @@ dynamic pricing, and rate overrides. No FastAPI dependencies.
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -30,7 +30,7 @@ class PricingService:
             "target_date": target_date,
             "new_rate": rate_data.get("new_rate", 100.0),
             "reason": rate_data.get("reason", "Manual update"),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
             "pushed_to_channels": ["booking_com", "expedia", "website", "direct"],
         }
         await self._db.rate_updates.insert_one(rate_update)
@@ -41,7 +41,7 @@ class PricingService:
         })
 
     async def list_rate_plans(self, ctx: OperationContext, channel=None, company_id=None, stay_date=None) -> ServiceResult:
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id, "is_active": True}
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id, "is_active": True}
         if channel:
             query["$or"] = [{"channel_restrictions": {"$size": 0}}, {"channel_restrictions": channel.value if hasattr(channel, "value") else channel}]
         if company_id:
@@ -55,7 +55,7 @@ class PricingService:
             "tenant_id": ctx.tenant_id,
             **data,
             "is_active": True,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await self._db.rate_plans.insert_one(plan)
         plan.pop("_id", None)
@@ -69,8 +69,8 @@ class PricingService:
         }, {"_id": 0}).to_list(365)
         return ServiceResult.success({"forecasts": forecasts, "count": len(forecasts)})
 
-    async def get_competitor_rates(self, ctx: OperationContext, date_str: Optional[str] = None, room_type: Optional[str] = None) -> ServiceResult:
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id}
+    async def get_competitor_rates(self, ctx: OperationContext, date_str: str | None = None, room_type: str | None = None) -> ServiceResult:
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if date_str:
             query["date"] = date_str
         if room_type:
@@ -79,7 +79,7 @@ class PricingService:
         return ServiceResult.success({"competitor_rates": rates, "count": len(rates)})
 
     async def get_revenue_dashboard(self, ctx: OperationContext, period: str = "month") -> ServiceResult:
-        today = datetime.now(timezone.utc)
+        today = datetime.now(UTC)
         if period == "week":
             start = today - timedelta(days=7)
         elif period == "year":
@@ -114,7 +114,7 @@ class PricingService:
             "tenant_id": ctx.tenant_id,
             **data,
             "created_by": ctx.actor_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "status": "pending" if data.get("requires_approval") else "active",
         }
         await self._db.rate_overrides.insert_one(override)

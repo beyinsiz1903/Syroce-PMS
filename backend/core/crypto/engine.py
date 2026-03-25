@@ -13,7 +13,6 @@ Security properties:
 import logging
 import secrets
 from dataclasses import dataclass
-from typing import Optional
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -47,7 +46,7 @@ class AADContext:
         return (
             f"{self.tenant_id}|{self.provider}|{self.property_id}"
             f"|{self.environment}|{self.context_type}"
-        ).encode("utf-8")
+        ).encode()
 
 
 class AESGCMEngine:
@@ -56,7 +55,7 @@ class AESGCMEngine:
     def __init__(self, keyring: KeyRing):
         self._keyring = keyring
 
-    def encrypt(self, plaintext: str, *, aad: Optional[AADContext] = None) -> str:
+    def encrypt(self, plaintext: str, *, aad: AADContext | None = None) -> str:
         """Encrypt plaintext → SYR1: envelope string.
 
         Args:
@@ -81,7 +80,7 @@ class AESGCMEngine:
         )
         return envelope.serialize()
 
-    def decrypt(self, envelope_str: str, *, aad: Optional[AADContext] = None) -> str:
+    def decrypt(self, envelope_str: str, *, aad: AADContext | None = None) -> str:
         """Decrypt a SYR1: envelope string → plaintext.
 
         Args:

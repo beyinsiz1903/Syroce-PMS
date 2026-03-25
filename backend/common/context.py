@@ -3,8 +3,7 @@ Common — Operation Context
 Carries tenant, property, actor, and audit info through service calls.
 """
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 
 @dataclass(frozen=True)
@@ -15,10 +14,10 @@ class OperationContext:
     actor_id: str
     actor_email: str = ""
     actor_role: str = ""
-    property_id: Optional[str] = None
-    idempotency_key: Optional[str] = None
-    correlation_id: Optional[str] = None
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    property_id: str | None = None
+    idempotency_key: str | None = None
+    correlation_id: str | None = None
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     @classmethod
     def from_user(cls, user, **overrides) -> "OperationContext":

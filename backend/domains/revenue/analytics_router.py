@@ -4,8 +4,7 @@ Domain Router: Analytics
 Extracted from legacy_routes.py — GM Dashboard, pickup analysis, anomaly detection, revenue analytics.
 """
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials
@@ -25,21 +24,21 @@ router = APIRouter(prefix="/api", tags=["analytics"])
 
 @router.get("/dashboard/gm/pickup-analysis")
 async def get_pickup_analysis(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get pickup analysis for revenue management"""
     current_user = await get_current_user(credentials)
 
     if not start_date:
-        start_date = datetime.now(timezone.utc).replace(day=1)
+        start_date = datetime.now(UTC).replace(day=1)
     else:
         start_date = datetime.fromisoformat(start_date)
 
     if not end_date:
         # Next 30 days
-        end_date = datetime.now(timezone.utc) + timedelta(days=30)
+        end_date = datetime.now(UTC) + timedelta(days=30)
     else:
         end_date = datetime.fromisoformat(end_date)
 
@@ -108,14 +107,14 @@ async def get_pickup_analysis(
 
 @router.get("/revenue/market-segment-breakdown")
 async def get_market_segment_breakdown(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get revenue breakdown by market segment (OTA, Direct, Corporate, Group)"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     if not start_date:
         start_date = today.replace(day=1)
     else:
@@ -185,7 +184,7 @@ async def get_channel_manager_overview(
         'booking_com': {
             'name': 'Booking.com',
             'status': 'connected',
-            'last_sync': (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(),
+            'last_sync': (datetime.now(UTC) - timedelta(minutes=5)).isoformat(),
             'active_listings': 24,
             'bookings_today': 3,
             'revenue_today': 1250.0,
@@ -195,7 +194,7 @@ async def get_channel_manager_overview(
         'expedia': {
             'name': 'Expedia',
             'status': 'connected',
-            'last_sync': (datetime.now(timezone.utc) - timedelta(minutes=8)).isoformat(),
+            'last_sync': (datetime.now(UTC) - timedelta(minutes=8)).isoformat(),
             'active_listings': 24,
             'bookings_today': 2,
             'revenue_today': 890.0,
@@ -205,7 +204,7 @@ async def get_channel_manager_overview(
         'airbnb': {
             'name': 'Airbnb',
             'status': 'connected',
-            'last_sync': (datetime.now(timezone.utc) - timedelta(minutes=12)).isoformat(),
+            'last_sync': (datetime.now(UTC) - timedelta(minutes=12)).isoformat(),
             'active_listings': 15,
             'bookings_today': 1,
             'revenue_today': 450.0,
@@ -215,7 +214,7 @@ async def get_channel_manager_overview(
         'direct': {
             'name': 'Direct Website',
             'status': 'active',
-            'last_sync': datetime.now(timezone.utc).isoformat(),
+            'last_sync': datetime.now(UTC).isoformat(),
             'active_listings': 24,
             'bookings_today': 4,
             'revenue_today': 1800.0,
@@ -239,15 +238,15 @@ async def get_channel_manager_overview(
 
 @router.get("/channel-manager/rate-comparison")
 async def get_channel_rate_comparison(
-    date: Optional[str] = None,
-    room_type: Optional[str] = None,
+    date: str | None = None,
+    room_type: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Compare rates across all channels"""
     await get_current_user(credentials)
 
     if not date:
-        date = datetime.now(timezone.utc).date().isoformat()
+        date = datetime.now(UTC).date().isoformat()
 
     # Mock rate comparison data
     rate_comparison = {
@@ -270,14 +269,14 @@ async def get_channel_rate_comparison(
 
 @router.get("/channel-manager/revenue-by-channel")
 async def get_revenue_by_channel(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get revenue breakdown by channel"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     if not start_date:
         start_date = (today - timedelta(days=30)).date().isoformat()
     if not end_date:
@@ -347,7 +346,7 @@ async def assign_room_to_booking(
         {'$set': {
             'room_id': room_id,
             'room_number': room['room_number'],
-            'room_assigned_at': datetime.now(timezone.utc).isoformat(),
+            'room_assigned_at': datetime.now(UTC).isoformat(),
             'room_assigned_by': current_user.name
         }}
     )
@@ -370,10 +369,10 @@ async def assign_room_to_booking(
 @router.get("/frontdesk/search-bookings")
 @cached(ttl=180, key_prefix="frontdesk_search_bookings")  # Cache for 3 min
 async def search_bookings(
-    query: Optional[str] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
-    status: Optional[str] = None,
+    query: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    status: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Search bookings by various criteria"""
@@ -417,7 +416,7 @@ async def search_bookings(
 async def get_available_rooms_for_assignment(
     check_in: str,
     check_out: str,
-    room_type: Optional[str] = None,
+    room_type: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get available rooms for a specific date range"""
@@ -449,7 +448,7 @@ async def get_available_rooms_for_assignment(
 async def push_channel_availability(
     check_in: str,
     check_out: str,
-    room_type: Optional[str] = None,
+    room_type: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Simulate pushing availability to Booking.com and other OTAs.
@@ -481,7 +480,7 @@ async def push_channel_availability(
     sync_log = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
-        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'timestamp': datetime.now(UTC).isoformat(),
         'channel': ChannelType.BOOKING_COM,
         'sync_type': 'availability',
         'status': 'success',
@@ -537,7 +536,7 @@ async def update_channel_rates(
         'updated_by_id': current_user.id,
         'initiator_type': initiator_type,
         'ip_address': ip_address,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     await db.rate_updates.insert_one(rate_log)
@@ -546,7 +545,7 @@ async def update_channel_rates(
     sync_log = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
-        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'timestamp': datetime.now(UTC).isoformat(),
         'channel': ','.join(rate_update.get('channels', [])) or 'multiple',
         'sync_type': 'rates',
         'status': 'success',
@@ -580,14 +579,14 @@ async def update_channel_rates(
 
 @router.get("/pos/outlet-sales-breakdown")
 async def get_outlet_sales_breakdown(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get F&B sales breakdown by outlet"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     if not start_date:
         start_date = (today - timedelta(days=7)).date().isoformat()
     if not end_date:
@@ -631,9 +630,9 @@ async def get_outlet_sales_breakdown(
 
 @router.get("/pos/inventory-movements")
 async def get_inventory_movements(
-    item_id: Optional[str] = None,
-    movement_type: Optional[str] = None,
-    date_from: Optional[str] = None,
+    item_id: str | None = None,
+    movement_type: str | None = None,
+    date_from: str | None = None,
     limit: int = 50,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -670,7 +669,7 @@ async def get_inventory_movements(
                 'reference': f'Order #{random.randint(1000, 9999)}',
                 'notes': 'Günlük kullanım' if i % 2 == 0 else 'Tedarikçi teslimatı',
                 'created_by': current_user.name,
-                'created_at': (datetime.now(timezone.utc) - timedelta(hours=i*2)).isoformat()
+                'created_at': (datetime.now(UTC) - timedelta(hours=i*2)).isoformat()
             })
         movements = mock_movements
 
@@ -698,7 +697,7 @@ async def create_inventory_movement(
         'reference': movement_data.get('reference'),
         'notes': movement_data.get('notes', ''),
         'created_by': current_user.name,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     await db.inventory_movements.insert_one(movement)
@@ -728,7 +727,7 @@ async def get_weekly_maintenance_report(
     """Get weekly maintenance report"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     week_start = today - timedelta(days=today.weekday() + (week_offset * 7))
     week_end = week_start + timedelta(days=6)
 
@@ -816,23 +815,23 @@ async def get_weekly_maintenance_report(
 
 @router.get("/maintenance/reports/monthly")
 async def get_monthly_maintenance_report(
-    month: Optional[str] = None,
+    month: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get monthly maintenance report"""
     current_user = await get_current_user(credentials)
 
     if not month:
-        month = datetime.now(timezone.utc).strftime('%Y-%m')
+        month = datetime.now(UTC).strftime('%Y-%m')
 
     year, m = month.split('-')
-    month_start = datetime(int(year), int(m), 1, tzinfo=timezone.utc)
+    month_start = datetime(int(year), int(m), 1, tzinfo=UTC)
 
     # Calculate month end
     if int(m) == 12:
-        month_end = datetime(int(year) + 1, 1, 1, tzinfo=timezone.utc) - timedelta(days=1)
+        month_end = datetime(int(year) + 1, 1, 1, tzinfo=UTC) - timedelta(days=1)
     else:
-        month_end = datetime(int(year), int(m) + 1, 1, tzinfo=timezone.utc) - timedelta(days=1)
+        month_end = datetime(int(year), int(m) + 1, 1, tzinfo=UTC) - timedelta(days=1)
 
     # Get all maintenance tasks for the month
     query = {
@@ -945,7 +944,7 @@ async def get_maintenance_summary(
     """Get quick maintenance summary for mobile dashboard"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
 
     # Today's stats
     today_tasks = await db.maintenance_tasks.count_documents({
@@ -994,14 +993,14 @@ async def get_maintenance_summary(
 
 @router.get("/maintenance/calendar")
 async def get_maintenance_calendar(
-    month: Optional[str] = None,
+    month: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get routine maintenance calendar"""
     current_user = await get_current_user(credentials)
 
     if not month:
-        month = datetime.now(timezone.utc).strftime('%Y-%m')
+        month = datetime.now(UTC).strftime('%Y-%m')
 
     # Get scheduled maintenance tasks
     year, m = month.split('-')
@@ -1059,7 +1058,7 @@ async def schedule_routine_maintenance(
         'assigned_to': schedule_data.get('assigned_to'),
         'status': 'scheduled',
         'created_by': current_user.name,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     await db.maintenance_schedule.insert_one(schedule)
@@ -1071,14 +1070,14 @@ async def schedule_routine_maintenance(
 
 @router.get("/pos/shift-metrics")
 async def get_shift_metrics(
-    date: Optional[str] = None,
+    date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get POS sales metrics by shift (morning/afternoon/evening)"""
     current_user = await get_current_user(credentials)
 
     if not date:
-        date = datetime.now(timezone.utc).date().isoformat()
+        date = datetime.now(UTC).date().isoformat()
 
     shift_data = {
         'morning': {'sales': 0, 'orders': 0, 'hours': '06:00-14:00'},
@@ -1130,7 +1129,7 @@ async def upload_room_photo(
         'photo_type': photo_data.get('photo_type', 'inspection'),  # inspection, damage, before, after
         'notes': photo_data.get('notes', ''),
         'uploaded_by': current_user.name,
-        'uploaded_at': datetime.now(timezone.utc).isoformat()
+        'uploaded_at': datetime.now(UTC).isoformat()
     }
 
     await db.room_photos.insert_one(photo)
@@ -1173,7 +1172,7 @@ async def complete_room_checklist(
         'room_id': room_id,
         'items': checklist_data.get('items', []),  # List of checklist items with status
         'completed_by': current_user.name,
-        'completed_at': datetime.now(timezone.utc).isoformat(),
+        'completed_at': datetime.now(UTC).isoformat(),
         'total_items': len(checklist_data.get('items', [])),
         'completed_items': sum(1 for item in checklist_data.get('items', []) if item.get('checked')),
         'notes': checklist_data.get('notes', '')
@@ -1200,14 +1199,14 @@ async def update_lost_found_status(
 
     update_data = {
         'status': new_status,
-        'updated_at': datetime.now(timezone.utc).isoformat(),
+        'updated_at': datetime.now(UTC).isoformat(),
         'updated_by': current_user.name
     }
 
     if new_status == 'claimed':
         update_data['claimed_by_name'] = status_data.get('claimed_by_name')
         update_data['claimed_by_id'] = status_data.get('claimed_by_id')
-        update_data['claimed_at'] = datetime.now(timezone.utc).isoformat()
+        update_data['claimed_at'] = datetime.now(UTC).isoformat()
 
     await db.lost_found_items.update_one(
         {'id': item_id, 'tenant_id': current_user.tenant_id},
@@ -1237,7 +1236,7 @@ async def transfer_lost_found_item(
         'to_location': transfer_data.get('to_location'),
         'transferred_by': current_user.name,
         'notes': transfer_data.get('notes', ''),
-        'transferred_at': datetime.now(timezone.utc).isoformat()
+        'transferred_at': datetime.now(UTC).isoformat()
     }
 
     await db.lost_found_transfers.insert_one(transfer_record)
@@ -1247,7 +1246,7 @@ async def transfer_lost_found_item(
         {'id': item_id},
         {'$set': {
             'current_location': transfer_data.get('to_location'),
-            'last_transfer_at': datetime.now(timezone.utc).isoformat()
+            'last_transfer_at': datetime.now(UTC).isoformat()
         }}
     )
 
@@ -1322,11 +1321,11 @@ async def qr_room_access(
             'room_number': room_number,
             'staff_id': current_user.id,
             'staff_name': current_user.name,
-            'start_time': datetime.now(timezone.utc).isoformat(),
+            'start_time': datetime.now(UTC).isoformat(),
             'end_time': None,
             'duration_minutes': None,
             'notes': access_data.get('notes', ''),
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         }
 
         await db.room_access_logs.insert_one(session)
@@ -1348,7 +1347,7 @@ async def qr_room_access(
             raise HTTPException(status_code=400, detail="No active cleaning session found")
 
         # End session
-        end_time = datetime.now(timezone.utc)
+        end_time = datetime.now(UTC)
         start_time = datetime.fromisoformat(active_session['start_time'])
         duration = (end_time - start_time).total_seconds() / 60  # minutes
 
@@ -1394,7 +1393,7 @@ async def get_my_active_sessions(
 
         # Calculate elapsed time
         start_time = datetime.fromisoformat(session['start_time'])
-        elapsed = (datetime.now(timezone.utc) - start_time).total_seconds() / 60
+        elapsed = (datetime.now(UTC) - start_time).total_seconds() / 60
         session['elapsed_minutes'] = round(elapsed, 1)
 
         sessions.append(session)
@@ -1406,9 +1405,9 @@ async def get_my_active_sessions(
 
 @router.get("/housekeeping/room-access-logs")
 async def get_room_access_logs(
-    room_id: Optional[str] = None,
-    staff_id: Optional[str] = None,
-    date: Optional[str] = None,
+    room_id: str | None = None,
+    staff_id: str | None = None,
+    date: str | None = None,
     limit: int = 50,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -1445,7 +1444,7 @@ async def get_room_access_logs(
 
 @router.get("/housekeeping/checklist-template")
 async def get_checklist_template(
-    room_type: Optional[str] = None,
+    room_type: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get standard cleaning checklist template"""
@@ -1505,7 +1504,7 @@ async def add_guest_note(
         'content': note_data.get('content'),
         'category': note_data.get('category', 'general'),
         'created_by': current_user.name,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     await db.crm_notes.insert_one(note)
@@ -1537,7 +1536,7 @@ async def create_approval_request(
         'status': 'pending',
         'priority': request_data.get('priority', 'normal'),
         'metadata': request_data.get('metadata', {}),
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'approved_at': None,
         'approved_by': None,
         'approved_by_name': None,
@@ -1574,12 +1573,12 @@ async def get_pending_approvals(
         created_at = approval.get('created_at')
         is_urgent = False
         if created_at:
-            from datetime import datetime, timezone
+            from datetime import datetime
             if isinstance(created_at, str):
                 created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
             else:
                 created_dt = created_at
-            hours_waiting = (datetime.now(timezone.utc) - created_dt).total_seconds() / 3600
+            hours_waiting = (datetime.now(UTC) - created_dt).total_seconds() / 3600
             is_urgent = hours_waiting > 24 or approval.get('priority') == 'urgent'
         if is_urgent:
             urgent_count += 1
@@ -1593,7 +1592,7 @@ async def get_pending_approvals(
 
 @router.get("/approvals/my-requests")
 async def get_my_approval_requests(
-    status: Optional[str] = None,
+    status: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get approval requests created by current user"""
@@ -1646,7 +1645,7 @@ async def approve_request(
         {
             '$set': {
                 'status': 'approved',
-                'approved_at': datetime.now(timezone.utc).isoformat(),
+                'approved_at': datetime.now(UTC).isoformat(),
                 'approved_by': current_user.id,
                 'approved_by_name': current_user.name,
                 'approval_note': approval_note.get('note', '')
@@ -1689,7 +1688,7 @@ async def reject_request(
         {
             '$set': {
                 'status': 'rejected',
-                'approved_at': datetime.now(timezone.utc).isoformat(),
+                'approved_at': datetime.now(UTC).isoformat(),
                 'approved_by': current_user.id,
                 'approved_by_name': current_user.name,
                 'rejection_reason': rejection_data.get('reason', 'No reason provided')
@@ -1705,7 +1704,7 @@ async def reject_request(
 
 @router.get("/gm/team-performance")
 async def get_team_performance(
-    department: Optional[str] = None,
+    department: str | None = None,
     period: str = 'month',
     credentials: HTTPAuthorizationCredentials = Depends(security),
     _: None = Depends(require_module("gm_dashboards")),
@@ -1780,8 +1779,8 @@ async def get_team_performance(
 
 @router.get("/gm/complaints")
 async def get_complaints(
-    status: Optional[str] = None,
-    priority: Optional[str] = None,
+    status: str | None = None,
+    priority: str | None = None,
     limit: int = 50,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -1813,7 +1812,7 @@ async def get_complaints(
                 'description': 'Banyoda havlu eksikliği var',
                 'priority': 'normal',
                 'status': 'open',
-                'created_at': (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+                'created_at': (datetime.now(UTC) - timedelta(hours=2)).isoformat(),
                 'assigned_to': 'Housekeeping',
                 'resolution': None
             },
@@ -1827,7 +1826,7 @@ async def get_complaints(
                 'description': 'Yan odadan yüksek ses geliyor',
                 'priority': 'high',
                 'status': 'in_progress',
-                'created_at': (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat(),
+                'created_at': (datetime.now(UTC) - timedelta(hours=5)).isoformat(),
                 'assigned_to': 'Front Desk',
                 'resolution': None
             }
@@ -1862,7 +1861,7 @@ async def create_complaint(
         'description': complaint_data.get('description'),
         'priority': complaint_data.get('priority', 'normal'),
         'status': 'open',
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'created_by': current_user.name,
         'assigned_to': complaint_data.get('assigned_to'),
         'resolution': None
@@ -1891,7 +1890,7 @@ async def resolve_complaint(
                 'status': 'resolved',
                 'resolution': resolution_data.get('resolution'),
                 'resolved_by': current_user.name,
-                'resolved_at': datetime.now(timezone.utc).isoformat()
+                'resolved_at': datetime.now(UTC).isoformat()
             }
         }
     )
@@ -1921,7 +1920,7 @@ async def send_notification(
         'read': False,
         'action_url': notification_data.get('action_url'),
         'metadata': notification_data.get('metadata', {}),
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'expires_at': notification_data.get('expires_at')
     }
 
@@ -2028,7 +2027,7 @@ async def check_alerts_and_notify(
     alerts_sent = []
 
     # Check revenue drop
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     yesterday = today - timedelta(days=1)
 
     # Revenue alert
@@ -2064,7 +2063,7 @@ async def check_alerts_and_notify(
                 'today_revenue': revenue_today,
                 'yesterday_revenue': revenue_yesterday
             },
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         }
         await db.notifications.insert_one(alert)
         alerts_sent.append('revenue_drop')
@@ -2088,7 +2087,7 @@ async def check_alerts_and_notify(
             'priority': 'critical',
             'user_id': None,
             'read': False,
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         }
         await db.notifications.insert_one(alert)
         alerts_sent.append('overbooking')
@@ -2111,7 +2110,7 @@ async def check_alerts_and_notify(
             'priority': 'high',
             'user_id': None,
             'read': False,
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         }
         await db.notifications.insert_one(alert)
         alerts_sent.append('maintenance_emergency')
@@ -2135,7 +2134,7 @@ async def get_api_metrics(
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Mock API metrics (in production, collect from actual monitoring)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     metrics = []
 
     for i in range(24):
@@ -2234,7 +2233,7 @@ async def get_system_health_detailed(
         'system': system_info,
         'services': services,
         'health_score': round(health_score, 1),
-        'timestamp': datetime.now(timezone.utc).isoformat()
+        'timestamp': datetime.now(UTC).isoformat()
     }
 
 @router.get("/monitoring/alert-thresholds")
@@ -2301,7 +2300,7 @@ async def set_alert_threshold(
         'warning_value': threshold_data.get('warning_value'),
         'critical_value': threshold_data.get('critical_value'),
         'updated_by': current_user.name,
-        'updated_at': datetime.now(timezone.utc).isoformat()
+        'updated_at': datetime.now(UTC).isoformat()
     }
 
     await db.alert_thresholds.insert_one(threshold)
@@ -2338,7 +2337,7 @@ async def get_security_login_logs(
                 'success': True,
                 'ip_address': '192.168.1.100',
                 'user_agent': 'Mozilla/5.0',
-                'timestamp': (datetime.now(timezone.utc) - timedelta(hours=i)).isoformat()
+                'timestamp': (datetime.now(UTC) - timedelta(hours=i)).isoformat()
             }
             for i in range(10)
         ]
@@ -2353,7 +2352,7 @@ async def get_adr_tracking(
     """Get ADR tracking with last year vs forecast vs actual comparison"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     current_year = today.year
     last_year = current_year - 1
 

@@ -4,8 +4,7 @@ Domain Router: POS Marketplace
 POS enhancements, warehouse procurement, marketplace extensions.
 """
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -50,7 +49,7 @@ async def get_outlets(current_user: User = Depends(get_current_user)):
         today_trans = await db.pos_menu_transactions.count_documents({
             'tenant_id': current_user.tenant_id,
             'outlet_id': outlet['id'],
-            'transaction_date': datetime.now(timezone.utc).date().isoformat()
+            'transaction_date': datetime.now(UTC).date().isoformat()
         })
         outlet['today_transactions'] = today_trans
 
@@ -71,7 +70,7 @@ async def create_outlet(
         'capacity': request.capacity,
         'opening_hours': request.opening_hours,
         'status': 'active',
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     outlet_copy = outlet.copy()
@@ -99,7 +98,7 @@ async def get_outlet_details(
     }, {'_id': 0}).to_list(1000)
 
     # Get today's stats
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now(UTC).date().isoformat()
     today_transactions = await db.pos_menu_transactions.find({
         'tenant_id': current_user.tenant_id,
         'outlet_id': outlet_id,
@@ -163,7 +162,7 @@ async def create_menu_item(
         'cost': request.cost,
         'description': request.description,
         'status': 'active',
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     menu_copy = menu_item.copy()
@@ -219,8 +218,8 @@ async def create_pos_transaction_with_menu(
         'tenant_id': current_user.tenant_id,
         'outlet_id': request.outlet_id,
         'outlet_name': outlet.get('outlet_name'),
-        'transaction_date': datetime.now(timezone.utc).date().isoformat(),
-        'transaction_time': datetime.now(timezone.utc).time().isoformat(),
+        'transaction_date': datetime.now(UTC).date().isoformat(),
+        'transaction_time': datetime.now(UTC).time().isoformat(),
         'items': enriched_items,
         'subtotal': round(subtotal, 2),
         'total_amount': round(subtotal, 2),  # Can add tax/service charge
@@ -232,7 +231,7 @@ async def create_pos_transaction_with_menu(
         'server_name': request.server_name,
         'status': 'completed',
         'processed_by': current_user.id,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     trans_copy = transaction.copy()
@@ -244,14 +243,14 @@ async def create_pos_transaction_with_menu(
             'id': str(uuid.uuid4()),
             'tenant_id': current_user.tenant_id,
             'folio_id': request.folio_id,
-            'charge_date': datetime.now(timezone.utc).date().isoformat(),
+            'charge_date': datetime.now(UTC).date().isoformat(),
             'description': f"F&B - {outlet.get('outlet_name')}",
             'category': 'fnb',
             'amount': subtotal,
             'quantity': 1,
             'total': subtotal,
             'voided': False,
-            'posted_at': datetime.now(timezone.utc).isoformat(),
+            'posted_at': datetime.now(UTC).isoformat(),
             'posted_by': current_user.id
         }
         folio_copy = folio_charge.copy()
@@ -268,7 +267,7 @@ async def get_menu_sales_breakdown(
 ):
     """Get menu item sales breakdown"""
     if not start_date:
-        start_date = datetime.now(timezone.utc).date().isoformat()
+        start_date = datetime.now(UTC).date().isoformat()
     if not end_date:
         end_date = start_date
 
@@ -348,7 +347,7 @@ async def generate_z_report(
     current_user: User = Depends(get_current_user)
 ):
     """Generate Z Report (End of Day report)"""
-    date = request.date or datetime.now(timezone.utc).date().isoformat()
+    date = request.date or datetime.now(UTC).date().isoformat()
     outlet_id = request.outlet_id
 
     # Get transactions for the day
@@ -431,7 +430,7 @@ async def generate_z_report(
         'outlet_id': outlet_id,
         'outlet_name': outlet_name,
         'report_type': 'Z-Report',
-        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'generated_at': datetime.now(UTC).isoformat(),
         'generated_by': current_user.id,
 
         # Summary
@@ -546,7 +545,7 @@ async def get_fnb_outlets_mobile(
 
 @router.get("/fnb/mobile/orders/active")
 async def get_active_orders_mobile(
-    outlet_id: Optional[str] = None,
+    outlet_id: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get active POS orders (pending, preparing, ready)"""
@@ -582,7 +581,7 @@ async def get_active_orders_mobile(
 
         # Calculate wait time
         if order.get('created_at'):
-            wait_time = datetime.now(timezone.utc) - order['created_at']
+            wait_time = datetime.now(UTC) - order['created_at']
             order_data['wait_time_minutes'] = int(wait_time.total_seconds() / 60)
 
         orders.append(order_data)
@@ -664,15 +663,15 @@ async def update_order_status_mobile(
 
     update_data = {
         'status': new_status,
-        'updated_at': datetime.now(timezone.utc)
+        'updated_at': datetime.now(UTC)
     }
 
     if new_status == 'preparing' and not order.get('started_at'):
-        update_data['started_at'] = datetime.now(timezone.utc)
+        update_data['started_at'] = datetime.now(UTC)
     elif new_status == 'ready' and not order.get('ready_at'):
-        update_data['ready_at'] = datetime.now(timezone.utc)
+        update_data['ready_at'] = datetime.now(UTC)
     elif new_status == 'served' and not order.get('served_at'):
-        update_data['served_at'] = datetime.now(timezone.utc)
+        update_data['served_at'] = datetime.now(UTC)
 
     await db.pos_orders.update_one(
         {'id': order_id, 'tenant_id': current_user.tenant_id},
@@ -688,7 +687,7 @@ async def update_order_status_mobile(
 
 @router.get("/fnb/mobile/recipes")
 async def get_recipes_mobile(
-    menu_item_id: Optional[str] = None,
+    menu_item_id: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get recipes with ingredient details"""
@@ -723,7 +722,7 @@ async def get_recipes_mobile(
 @router.get("/fnb/mobile/ingredients")
 async def get_ingredients_mobile(
     low_stock_only: bool = False,
-    category: Optional[str] = None,
+    category: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get ingredient inventory"""
@@ -780,9 +779,9 @@ async def get_ingredients_mobile(
 
 @router.get("/fnb/mobile/stock-consumption")
 async def get_stock_consumption_mobile(
-    outlet_id: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    outlet_id: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get stock consumption report"""
@@ -802,9 +801,9 @@ async def get_stock_consumption_mobile(
         query['consumed_at'] = date_filter
     else:
         # Default to today
-        today = datetime.now(timezone.utc).date()
-        start_of_day = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
-        end_of_day = datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
+        today = datetime.now(UTC).date()
+        start_of_day = datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
+        end_of_day = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
         query['consumed_at'] = {'$gte': start_of_day, '$lte': end_of_day}
 
     consumptions = []
@@ -855,7 +854,7 @@ async def get_stock_consumption_mobile(
 
 @router.get("/fnb/mobile/daily-summary")
 async def get_fnb_daily_summary_mobile(
-    date: Optional[str] = None,
+    date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get comprehensive F&B daily summary"""
@@ -864,10 +863,10 @@ async def get_fnb_daily_summary_mobile(
     if date:
         target_date = datetime.fromisoformat(date).date()
     else:
-        target_date = datetime.now(timezone.utc).date()
+        target_date = datetime.now(UTC).date()
 
-    start_of_day = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
-    end_of_day = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=timezone.utc)
+    start_of_day = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=UTC)
+    end_of_day = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=UTC)
 
     # Orders summary
     orders_query = {
@@ -966,7 +965,7 @@ async def create_marketplace_product(
         'supplier': request.supplier,
         'min_order_qty': request.min_order_qty,
         'status': 'active',
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     product_copy = product.copy()
@@ -1012,7 +1011,7 @@ async def adjust_inventory(
             'product_id': request.product_id,
             'location': request.location,
             'quantity': max(0, request.quantity_change),
-            'updated_at': datetime.now(timezone.utc).isoformat()
+            'updated_at': datetime.now(UTC).isoformat()
         }
         await db.inventory.insert_one(inventory)
     else:
@@ -1023,7 +1022,7 @@ async def adjust_inventory(
             {
                 '$set': {
                     'quantity': new_qty,
-                    'updated_at': datetime.now(timezone.utc).isoformat()
+                    'updated_at': datetime.now(UTC).isoformat()
                 }
             }
         )
@@ -1037,7 +1036,7 @@ async def adjust_inventory(
         'quantity_change': request.quantity_change,
         'reason': request.reason,
         'adjusted_by': current_user.id,
-        'adjusted_at': datetime.now(timezone.utc).isoformat()
+        'adjusted_at': datetime.now(UTC).isoformat()
     }
     await db.inventory_adjustments.insert_one(log)
 
@@ -1079,7 +1078,7 @@ async def create_purchase_order(
         'expected_delivery_date': request.expected_delivery_date,
         'total_amount': round(total_amount, 2),
         'status': 'pending',
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
         'created_by': current_user.id
     }
 
@@ -1106,7 +1105,7 @@ async def approve_purchase_order(
         {
             '$set': {
                 'status': 'approved',
-                'approved_at': datetime.now(timezone.utc).isoformat(),
+                'approved_at': datetime.now(UTC).isoformat(),
                 'approved_by': current_user.id
             }
         }
@@ -1140,7 +1139,7 @@ async def receive_purchase_order(
             },
             {
                 '$inc': {'quantity': item['quantity_received']},
-                '$set': {'updated_at': datetime.now(timezone.utc).isoformat()}
+                '$set': {'updated_at': datetime.now(UTC).isoformat()}
             },
             upsert=True
         )
@@ -1151,7 +1150,7 @@ async def receive_purchase_order(
         {
             '$set': {
                 'status': 'received',
-                'received_at': datetime.now(timezone.utc).isoformat(),
+                'received_at': datetime.now(UTC).isoformat(),
                 'received_by': current_user.id,
                 'received_items': received_items
             }
@@ -1191,7 +1190,7 @@ async def create_delivery(
         'carrier': request.carrier,
         'estimated_delivery': request.estimated_delivery,
         'status': 'in_transit',
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     delivery_copy = delivery.copy()
@@ -1269,7 +1268,7 @@ async def create_supplier(
         'available_credit': request.credit_limit,
         'payment_terms': request.payment_terms,
         'status': request.status,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     supplier_copy = supplier.copy()
@@ -1301,7 +1300,7 @@ async def update_supplier_credit(
                 'credit_limit': request.credit_limit,
                 'available_credit': available_credit,
                 'payment_terms': request.payment_terms,
-                'updated_at': datetime.now(timezone.utc).isoformat()
+                'updated_at': datetime.now(UTC).isoformat()
             }
         }
     )
@@ -1371,7 +1370,7 @@ async def submit_po_for_approval(
         {
             '$set': {
                 'status': 'awaiting_approval',
-                'submitted_for_approval_at': datetime.now(timezone.utc).isoformat(),
+                'submitted_for_approval_at': datetime.now(UTC).isoformat(),
                 'submitted_by': current_user.id
             }
         }
@@ -1387,7 +1386,7 @@ async def submit_po_for_approval(
         'supplier': po.get('supplier'),
         'status': 'pending',
         'requested_by': current_user.id,
-        'requested_at': datetime.now(timezone.utc).isoformat()
+        'requested_at': datetime.now(UTC).isoformat()
     }
 
     approval_copy = approval_request.copy()
@@ -1432,7 +1431,7 @@ async def approve_purchase_order_by_gm(
         {
             '$set': {
                 'status': 'approved',
-                'approved_at': datetime.now(timezone.utc).isoformat(),
+                'approved_at': datetime.now(UTC).isoformat(),
                 'approved_by': current_user.id,
                 'approval_notes': request.approval_notes
             }
@@ -1446,7 +1445,7 @@ async def approve_purchase_order_by_gm(
             '$set': {
                 'status': 'approved',
                 'approved_by': current_user.id,
-                'approved_at': datetime.now(timezone.utc).isoformat(),
+                'approved_at': datetime.now(UTC).isoformat(),
                 'notes': request.approval_notes
             }
         }
@@ -1492,7 +1491,7 @@ async def reject_purchase_order(
         {
             '$set': {
                 'status': 'rejected',
-                'rejected_at': datetime.now(timezone.utc).isoformat(),
+                'rejected_at': datetime.now(UTC).isoformat(),
                 'rejected_by': current_user.id,
                 'rejection_reason': request.rejection_reason
             }
@@ -1505,7 +1504,7 @@ async def reject_purchase_order(
             '$set': {
                 'status': 'rejected',
                 'rejected_by': current_user.id,
-                'rejected_at': datetime.now(timezone.utc).isoformat(),
+                'rejected_at': datetime.now(UTC).isoformat(),
                 'rejection_reason': request.rejection_reason
             }
         }
@@ -1540,7 +1539,7 @@ async def create_warehouse(
         'warehouse_type': request.warehouse_type,
         'current_stock_count': 0,
         'status': 'active',
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
 
     warehouse_copy = warehouse.copy()
@@ -1639,7 +1638,7 @@ async def update_delivery_status(
         'status': request.status,
         'location': request.location,
         'notes': request.notes,
-        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'timestamp': datetime.now(UTC).isoformat(),
         'updated_by': current_user.id
     }
 
@@ -1650,7 +1649,7 @@ async def update_delivery_status(
             '$set': {
                 'status': request.status,
                 'current_location': request.location,
-                'updated_at': datetime.now(timezone.utc).isoformat()
+                'updated_at': datetime.now(UTC).isoformat()
             },
             '$push': {
                 'tracking_history': tracking_event
@@ -1662,7 +1661,7 @@ async def update_delivery_status(
     if request.status == 'delivered':
         await db.deliveries.update_one(
             {'id': delivery_id},
-            {'$set': {'delivered_at': datetime.now(timezone.utc).isoformat()}}
+            {'$set': {'delivered_at': datetime.now(UTC).isoformat()}}
         )
 
     return {

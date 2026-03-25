@@ -5,8 +5,7 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 import logging
 import random
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials
@@ -45,16 +44,16 @@ class BudgetMonth(BaseModel):
 class BudgetConfig(BaseModel):
     year: int
     currency: str = "TRY"
-    months: List[BudgetMonth]
+    months: list[BudgetMonth]
 
 
 @router.get("/dashboard/role-based")
 @cached(ttl=300, key_prefix="dashboard_role_based")  # Cache for 5 minutes
 async def get_role_based_dashboard(current_user: User = Depends(get_current_user)):
     """Role-based dashboard data - GM, Owner, Front Desk, Housekeeping"""
-    today = datetime.now(timezone.utc)
-    today_start = datetime.combine(today.date(), datetime.min.time()).replace(tzinfo=timezone.utc)
-    today_end = datetime.combine(today.date(), datetime.max.time()).replace(tzinfo=timezone.utc)
+    today = datetime.now(UTC)
+    today_start = datetime.combine(today.date(), datetime.min.time()).replace(tzinfo=UTC)
+    today_end = datetime.combine(today.date(), datetime.max.time()).replace(tzinfo=UTC)
 
     # Base data for all roles
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
@@ -202,7 +201,7 @@ async def get_role_based_dashboard(current_user: User = Depends(get_current_user
 @cached(ttl=600, key_prefix="gm_forecast")  # Cache for 10 minutes
 async def get_gm_forecast_summary(current_user: User = Depends(get_current_user)):
     """Get 30-day forecast summary for GM Dashboard"""
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     thirty_days = today + timedelta(days=30)
 
     # Get existing forecasts
@@ -262,9 +261,9 @@ async def get_gm_forecast_summary(current_user: User = Depends(get_current_user)
 @router.get("/dashboard/employee-performance")
 @cached(ttl=600, key_prefix="dashboard_employee_performance")  # Cache for 10 minutes
 async def get_employee_performance(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    department: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    department: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -275,14 +274,14 @@ async def get_employee_performance(
     """
     # Default to last 30 days
     if not end_date:
-        end_dt = datetime.now(timezone.utc)
+        end_dt = datetime.now(UTC)
     else:
-        end_dt = datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc)
+        end_dt = datetime.fromisoformat(end_date).replace(tzinfo=UTC)
 
     if not start_date:
         start_dt = end_dt - timedelta(days=30)
     else:
-        start_dt = datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc)
+        start_dt = datetime.fromisoformat(start_date).replace(tzinfo=UTC)
 
     # Housekeeping Performance
     hk_pipeline = [
@@ -422,7 +421,7 @@ async def get_guest_satisfaction_trends(
     - Last 30 days
     - Trend analysis
     """
-    end_dt = datetime.now(timezone.utc)
+    end_dt = datetime.now(UTC)
     start_dt = end_dt - timedelta(days=days)
 
     # Get all feedback/reviews in the period
@@ -595,7 +594,7 @@ async def get_ota_cancellation_rate(
     - By booking window
     - Impact on revenue
     """
-    end_dt = datetime.now(timezone.utc)
+    end_dt = datetime.now(UTC)
     start_dt = end_dt - timedelta(days=days)
 
     # Get all bookings in period (created during this period)
@@ -705,7 +704,7 @@ async def get_revenue_expense_chart(
     current_user = await get_current_user(credentials)
 
     # Calculate date range based on period
-    end = datetime.now(timezone.utc)
+    end = datetime.now(UTC)
     if period == "30days":
         start = end - timedelta(days=30)
         interval = "daily"
@@ -803,7 +802,7 @@ async def get_revenue_expense_chart(
 @router.get("/dashboard/budget-vs-actual")
 @cached(ttl=600, key_prefix="budget_vs_actual")  # Cache for 10 minutes
 async def get_budget_vs_actual(
-    month: Optional[str] = None,  # YYYY-MM format
+    month: str | None = None,  # YYYY-MM format
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get budget vs actual comparison for dashboard"""
@@ -811,7 +810,7 @@ async def get_budget_vs_actual(
 
     # Default to current month
     if not month:
-        month = datetime.now(timezone.utc).strftime('%Y-%m')
+        month = datetime.now(UTC).strftime('%Y-%m')
 
     start = datetime.fromisoformat(f"{month}-01")
     # Last day of month
@@ -941,7 +940,7 @@ async def get_monthly_profitability(
 
     for i in range(months, 0, -1):
         # Calculate month
-        target_date = datetime.now(timezone.utc) - timedelta(days=30*i)
+        target_date = datetime.now(UTC) - timedelta(days=30*i)
         month_str = target_date.strftime('%Y-%m')
 
         start = datetime.fromisoformat(f"{month_str}-01")
@@ -1018,7 +1017,7 @@ async def get_trend_kpis(
 
     # Calculate periods
     days = int(period.replace('days', ''))
-    current_end = datetime.now(timezone.utc)
+    current_end = datetime.now(UTC)
     current_start = current_end - timedelta(days=days)
 
     previous_end = current_start
@@ -1293,7 +1292,7 @@ async def get_executive_kpi_snapshot(
         if cached_data:
             return cached_data
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
 
     # Get total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
@@ -1311,7 +1310,7 @@ async def get_executive_kpi_snapshot(
     occupancy_pct = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
 
     # Revenue calculation (last 24 hours)
-    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
 
     # Get payments from last 24 hours
     total_revenue = 0
@@ -1367,7 +1366,7 @@ async def get_executive_kpi_snapshot(
     yesterday_revenue = 0
     async for payment in db.payments.find({
         'tenant_id': current_user.tenant_id,
-        'payment_date': {'$gte': (datetime.now(timezone.utc) - timedelta(days=2)).isoformat(), '$lt': yesterday}
+        'payment_date': {'$gte': (datetime.now(UTC) - timedelta(days=2)).isoformat(), '$lt': yesterday}
     }):
         yesterday_revenue += payment.get('amount', 0)
 
@@ -1375,7 +1374,7 @@ async def get_executive_kpi_snapshot(
 
     return {
         'snapshot_date': today_str,
-        'snapshot_time': datetime.now(timezone.utc).isoformat(),
+        'snapshot_time': datetime.now(UTC).isoformat(),
         'kpis': {
             'revpar': {
                 'value': round(revpar, 2),
@@ -1439,7 +1438,7 @@ async def get_executive_performance_alerts(
     alerts = []
 
     # Revenue drop alert
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     yesterday = (today - timedelta(days=1)).isoformat()
     last_week = (today - timedelta(days=7)).isoformat()
 
@@ -1468,7 +1467,7 @@ async def get_executive_performance_alerts(
                 'title': 'Gelir Düşüşü',
                 'message': f'Gelir geçen haftaya göre %{abs(revenue_change):.1f} düştü',
                 'value': revenue_change,
-                'created_at': datetime.now(timezone.utc).isoformat()
+                'created_at': datetime.now(UTC).isoformat()
             })
 
     # Low occupancy alert
@@ -1488,7 +1487,7 @@ async def get_executive_performance_alerts(
                 'title': 'Düşük Doluluk',
                 'message': f'Doluluk oranı %{occupancy_pct:.1f} - Hedefin altında',
                 'value': occupancy_pct,
-                'created_at': datetime.now(timezone.utc).isoformat()
+                'created_at': datetime.now(UTC).isoformat()
             })
 
     # Overbooking risk
@@ -1513,7 +1512,7 @@ async def get_executive_performance_alerts(
             'title': 'Overbooking Riski',
             'message': f'Yarın {arrivals_tomorrow} giriş var, sadece {available_rooms} oda hazır',
             'value': arrivals_tomorrow - available_rooms,
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         })
 
     # Maintenance backlog
@@ -1531,7 +1530,7 @@ async def get_executive_performance_alerts(
             'title': 'Bakım Birikiyor',
             'message': f'{pending_maintenance} acil bakım görevi bekliyor',
             'value': pending_maintenance,
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         })
 
     # Cash flow warning
@@ -1539,7 +1538,7 @@ async def get_executive_performance_alerts(
     total_cash = sum(account.get('balance', 0) for account in bank_accounts)
 
     # Get monthly costs
-    month_start = datetime.now(timezone.utc).replace(day=1).isoformat()
+    month_start = datetime.now(UTC).replace(day=1).isoformat()
     monthly_costs = 0
     async for expense in db.expenses.find({
         'tenant_id': current_user.tenant_id,
@@ -1555,7 +1554,7 @@ async def get_executive_performance_alerts(
             'title': 'Nakit Akışı Uyarısı',
             'message': f'Nakit pozisyon aylık giderlerin %{(total_cash/monthly_costs*100):.0f}\'i seviyesinde',
             'value': total_cash,
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         })
 
     # Sort by severity
@@ -1581,7 +1580,7 @@ async def get_executive_comp_set_summary(
     current_user = await get_current_user(credentials)
 
     # Fetch hotel-level KPIs using existing snapshot logic for consistency
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now(UTC).date().isoformat()
 
     # Get tenant rooms and bookings to estimate hotel metrics
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id}) or 0
@@ -1592,7 +1591,7 @@ async def get_executive_comp_set_summary(
     hotel_occupancy = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
 
     # Use last 30 days revenue and room nights to approximate ADR/RevPAR
-    thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    thirty_days_ago = (datetime.now(UTC) - timedelta(days=30)).isoformat()
 
     total_revenue = 0
     room_nights = 0
@@ -1657,12 +1656,12 @@ async def get_executive_comp_set_summary(
 
 @router.get("/executive/budget-config")
 async def get_executive_budget_config(
-    year: Optional[int] = None,
+    year: int | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get or initialize budget configuration for a given year (manual input ready)."""
     current_user = await get_current_user(credentials)
-    target_year = year or datetime.now(timezone.utc).year
+    target_year = year or datetime.now(UTC).year
 
     existing = await db.executive_budgets.find_one(
         {'tenant_id': current_user.tenant_id, 'year': target_year},
@@ -1714,12 +1713,12 @@ async def upsert_executive_budget_config(
 
 @router.get("/executive/budget-overview")
 async def get_executive_budget_overview(
-    year: Optional[int] = None,
+    year: int | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Return budget vs actual overview for the selected year (simple heuristic actuals)."""
     current_user = await get_current_user(credentials)
-    target_year = year or datetime.now(timezone.utc).year
+    target_year = year or datetime.now(UTC).year
 
     # Load budget config (or defaults)
     config = await db.executive_budgets.find_one(
@@ -1738,8 +1737,8 @@ async def get_executive_budget_overview(
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id}) or 0
 
     # Fetch bookings for the year
-    year_start = datetime(target_year, 1, 1, tzinfo=timezone.utc).isoformat()
-    year_end = datetime(target_year + 1, 1, 1, tzinfo=timezone.utc).isoformat()
+    year_start = datetime(target_year, 1, 1, tzinfo=UTC).isoformat()
+    year_end = datetime(target_year + 1, 1, 1, tzinfo=UTC).isoformat()
 
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -1770,7 +1769,7 @@ async def get_executive_budget_overview(
             ma['adr_actual'] = ma['rev_actual'] / ma['occ_actual']
         # Rough occupancy: occupied room nights / (total_rooms * days_in_month)
         try:
-            days_in_month = (datetime(target_year + (1 if m == 12 else 0), (m % 12) + 1, 1, tzinfo=timezone.utc) - datetime(target_year, m, 1, tzinfo=timezone.utc)).days
+            days_in_month = (datetime(target_year + (1 if m == 12 else 0), (m % 12) + 1, 1, tzinfo=UTC) - datetime(target_year, m, 1, tzinfo=UTC)).days
         except Exception:
             days_in_month = 30
         if total_rooms > 0 and days_in_month > 0:
@@ -1835,7 +1834,7 @@ async def get_executive_budget_overview(
 
 @router.get("/executive/daily-summary")
 async def get_executive_daily_summary(
-    date: Optional[str] = None,
+    date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
@@ -1844,7 +1843,7 @@ async def get_executive_daily_summary(
     """
     current_user = await get_current_user(credentials)
 
-    target_date = date if date else datetime.now(timezone.utc).date().isoformat()
+    target_date = date if date else datetime.now(UTC).date().isoformat()
 
     # Get bookings created today
     new_bookings = await db.bookings.count_documents({
@@ -1943,7 +1942,7 @@ async def get_complaint_management(
             'category': feedback.get('category', 'general'),
             'comment': feedback.get('comment', ''),
             'created_at': feedback.get('created_at'),
-            'days_open': (datetime.now(timezone.utc) - datetime.fromisoformat(feedback.get('created_at', datetime.now(timezone.utc).isoformat()).replace('Z', '+00:00'))).days
+            'days_open': (datetime.now(UTC) - datetime.fromisoformat(feedback.get('created_at', datetime.now(UTC).isoformat()).replace('Z', '+00:00'))).days
         })
 
     # Complaint categories
@@ -2021,7 +2020,7 @@ async def get_complaint_management_v2(
             'category': feedback.get('category', 'general'),
             'comment': feedback.get('comment', ''),
             'created_at': feedback.get('created_at'),
-            'days_open': (datetime.now(timezone.utc) - datetime.fromisoformat(feedback.get('created_at', datetime.now(timezone.utc).isoformat()).replace('Z', '+00:00'))).days
+            'days_open': (datetime.now(UTC) - datetime.fromisoformat(feedback.get('created_at', datetime.now(UTC).isoformat()).replace('Z', '+00:00'))).days
         })
 
     # Complaint categories
@@ -2085,7 +2084,7 @@ async def get_enhanced_snapshot(
     """
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     yesterday = today - timedelta(days=1)
     last_week = today - timedelta(days=7)
 

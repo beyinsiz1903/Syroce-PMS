@@ -6,9 +6,9 @@ import csv
 import io
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -31,8 +31,8 @@ class RoomCsvImportResponse(BaseModel):
     created: int
     skipped: int
     errors: int
-    skipped_room_numbers: List[str] = []
-    error_rows: List[Dict[str, Any]] = []
+    skipped_room_numbers: list[str] = []
+    error_rows: list[dict[str, Any]] = []
 
 
 class RoomBulkRangeRequest(BaseModel):
@@ -43,16 +43,16 @@ class RoomBulkRangeRequest(BaseModel):
     - start/end inclusive
     """
 
-    prefix: Optional[str] = None
+    prefix: str | None = None
     start_number: int
     end_number: int
     floor: int
     room_type: str
     capacity: int = 2
     base_price: float = 0
-    amenities: List[str] = []
-    view: Optional[str] = None
-    bed_type: Optional[str] = None
+    amenities: list[str] = []
+    view: str | None = None
+    bed_type: str | None = None
 
 
 class RoomBulkTemplateRequest(BaseModel):
@@ -61,16 +61,16 @@ class RoomBulkTemplateRequest(BaseModel):
     Supports prefix + starting number to auto-generate unique room_number values.
     """
 
-    prefix: Optional[str] = None
+    prefix: str | None = None
     start_number: int = 1
     count: int
     floor: int
     room_type: str
     capacity: int = 2
     base_price: float = 0
-    amenities: List[str] = []
-    view: Optional[str] = None
-    bed_type: Optional[str] = None
+    amenities: list[str] = []
+    view: str | None = None
+    bed_type: str | None = None
 
 
 class RoomBulkCreateResponse(BaseModel):
@@ -91,12 +91,12 @@ class RoomBulkDeleteRequest(BaseModel):
     - blocks rooms with active/checked_in bookings in date range
     """
 
-    ids: Optional[List[str]] = None
-    room_numbers: Optional[List[str]] = None
+    ids: list[str] | None = None
+    room_numbers: list[str] | None = None
 
-    prefix: Optional[str] = None
-    start_number: Optional[int] = None
-    end_number: Optional[int] = None
+    prefix: str | None = None
+    start_number: int | None = None
+    end_number: int | None = None
 
     confirm_text: str
 
@@ -105,11 +105,11 @@ class RoomBulkDeleteResponse(BaseModel):
     to_delete: int
     deleted: int
     blocked: int
-    blocked_rooms: List[str] = []
-    deleted_room_numbers: List[str] = []
+    blocked_rooms: list[str] = []
+    deleted_room_numbers: list[str] = []
 
-    rooms: List[Room] = []
-    skipped_room_numbers: List[str] = []
+    rooms: list[Room] = []
+    skipped_room_numbers: list[str] = []
 
 
 # ── Routes ──
@@ -128,14 +128,14 @@ async def create_room(
     return room
 
 
-@router.get("/pms/rooms", response_model=List[Room])
+@router.get("/pms/rooms", response_model=list[Room])
 async def get_rooms(
     limit: int = 100,  # Optimized for 550+ room properties - load in batches
     offset: int = 0,
-    status: Optional[str] = None,
-    room_type: Optional[str] = None,
-    view: Optional[str] = None,
-    amenity: Optional[str] = None,
+    status: str | None = None,
+    room_type: str | None = None,
+    view: str | None = None,
+    amenity: str | None = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
 ):
@@ -249,8 +249,8 @@ async def bulk_create_rooms_range(
 
     prefix = (payload.prefix or "").strip()
 
-    created_rooms: List[Room] = []
-    skipped: List[str] = []
+    created_rooms: list[Room] = []
+    skipped: list[str] = []
 
     existing = await db.rooms.find(
         {"tenant_id": current_user.tenant_id},
@@ -311,8 +311,8 @@ async def bulk_create_rooms_template(
     ).to_list(5000)
     existing_numbers = {r.get("room_number") for r in existing if r.get("room_number")}
 
-    created_rooms: List[Room] = []
-    skipped: List[str] = []
+    created_rooms: list[Room] = []
+    skipped: list[str] = []
     docs = []
 
     current = payload.start_number
@@ -388,7 +388,7 @@ async def bulk_delete_rooms(
     if not target_ids and not target_numbers:
         raise HTTPException(status_code=400, detail="Silinecek oda secilmedi")
 
-    query: Dict[str, Any] = {
+    query: dict[str, Any] = {
         "tenant_id": current_user.tenant_id,
         "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
     }
@@ -421,9 +421,9 @@ async def bulk_delete_rooms(
     to_delete_rooms = [r for r in rooms if r['id'] not in blocked_room_ids]
     blocked_rooms = [r['room_number'] for r in rooms if r['id'] in blocked_room_ids]
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
-    deleted_numbers: List[str] = []
+    deleted_numbers: list[str] = []
     if to_delete_rooms:
         ids_to_delete = [r['id'] for r in to_delete_rooms]
         deleted_numbers = [r['room_number'] for r in to_delete_rooms]
@@ -475,8 +475,8 @@ async def import_rooms_csv(
     existing_numbers = {r.get("room_number") for r in existing if r.get("room_number")}
 
     created = 0
-    skipped_numbers: List[str] = []
-    error_rows: List[Dict[str, Any]] = []
+    skipped_numbers: list[str] = []
+    error_rows: list[dict[str, Any]] = []
     docs = []
 
     for idx, row in enumerate(reader, start=2):  # header is row 1
@@ -537,7 +537,7 @@ async def import_rooms_csv(
 @router.post("/pms/rooms/{room_id}/images")
 async def upload_room_images(
     room_id: str,
-    files: List[UploadFile] = File(...),
+    files: list[UploadFile] = File(...),
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
 ):
@@ -548,7 +548,7 @@ async def upload_room_images(
     room_folder = UPLOAD_DIR / current_user.tenant_id / 'rooms' / room_id
     room_folder.mkdir(parents=True, exist_ok=True)
 
-    saved_urls: List[str] = []
+    saved_urls: list[str] = []
     for f in files:
         if f.content_type and not f.content_type.startswith('image/'):
             raise HTTPException(status_code=400, detail=f"Only image uploads allowed. Got: {f.content_type}")
@@ -583,7 +583,7 @@ async def upload_room_images(
 
 
 @router.put("/pms/rooms/{room_id}")
-async def update_room(room_id: str, updates: Dict[str, Any], current_user: User = Depends(get_current_user)):
+async def update_room(room_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
     await db.rooms.update_one({'id': room_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
     room_doc = await db.rooms.find_one({'id': room_id}, {'_id': 0})
     return room_doc
@@ -591,8 +591,8 @@ async def update_room(room_id: str, updates: Dict[str, Any], current_user: User 
 
 @router.get("/pms/companies")
 async def get_pms_companies(
-    search: Optional[str] = None,
-    status: Optional[CompanyStatus] = None,
+    search: str | None = None,
+    status: CompanyStatus | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Get all companies - PMS module alias."""

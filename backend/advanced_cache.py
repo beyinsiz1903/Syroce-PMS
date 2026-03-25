@@ -8,7 +8,7 @@ import hashlib
 import json
 import logging
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import redis
 
@@ -50,7 +50,7 @@ class AdvancedCacheManager:
             logger.error(f"Deserialization error: {e}")
             return None
 
-    async def get(self, key: str, layer: str = CacheLayer.L2_STANDARD) -> Optional[Any]:
+    async def get(self, key: str, layer: str = CacheLayer.L2_STANDARD) -> Any | None:
         """
         Get value from cache
 
@@ -81,7 +81,7 @@ class AdvancedCacheManager:
         key: str,
         value: Any,
         layer: str = CacheLayer.L2_STANDARD,
-        ttl: Optional[int] = None
+        ttl: int | None = None
     ) -> bool:
         """
         Set value in cache
@@ -191,7 +191,7 @@ class AdvancedCacheManager:
 def cache_with_layer(
     layer: str = CacheLayer.L2_STANDARD,
     key_prefix: str = "",
-    ttl: Optional[int] = None
+    ttl: int | None = None
 ):
     """
     Decorator for caching function results with specific layer

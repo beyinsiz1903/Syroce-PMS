@@ -14,8 +14,7 @@ These endpoints produce DATA, not dashboards.
 Visibility first, visuals later.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 
@@ -50,7 +49,7 @@ _NO_ID = {"_id": 0}
 @router.get("/trace/reservation/{external_reservation_id}")
 async def trace_reservation(
     external_reservation_id: str,
-    provider: Optional[str] = None,
+    provider: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """
@@ -130,7 +129,7 @@ async def trace_reservation(
 
 @router.get("/health/mapping")
 async def mapping_health(
-    provider: Optional[str] = None,
+    provider: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """
@@ -172,7 +171,7 @@ async def ingest_metrics(
     - processing latency, failed decision count
     """
     tenant_id = current_user.tenant_id
-    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
 
     pipeline = [
         {"$match": {
@@ -309,7 +308,7 @@ async def reconciliation_metrics(
     if oldest:
         created = datetime.fromisoformat(oldest["created_at"].replace("Z", "+00:00"))
         oldest_age_hours = round(
-            (datetime.now(timezone.utc) - created).total_seconds() / 3600, 1,
+            (datetime.now(UTC) - created).total_seconds() / 3600, 1,
         )
 
     return {
@@ -402,7 +401,7 @@ async def lockdown_status(
     tenant_id = current_user.tenant_id
 
     # Quick health checks
-    since_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    since_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
 
     # Ingest stats (last 24h)
     total_events = await db[COLL_RAW_CHANNEL_EVENTS].count_documents(
@@ -458,5 +457,5 @@ async def lockdown_status(
                 "unreconciled_lineages": unreconciled,
             },
         },
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }

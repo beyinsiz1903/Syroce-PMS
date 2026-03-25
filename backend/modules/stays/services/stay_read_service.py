@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import HTTPException
 
@@ -6,10 +6,10 @@ from modules.stays.repository import StaysRepository
 
 
 class StayReadService:
-    def __init__(self, repository: Optional[StaysRepository] = None):
+    def __init__(self, repository: StaysRepository | None = None):
         self.repository = repository or StaysRepository()
 
-    async def get_stay_detail(self, tenant_id: str, stay_id: str) -> Dict[str, Any]:
+    async def get_stay_detail(self, tenant_id: str, stay_id: str) -> dict[str, Any]:
         reservation = await self.repository.get_booking_projection(tenant_id, stay_id)
         if not reservation:
             raise HTTPException(status_code=404, detail="Stay not found")

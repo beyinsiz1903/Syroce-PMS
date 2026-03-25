@@ -3,8 +3,8 @@ PMS Domain — Folio Service
 Business logic for folio, charge, and payment operations. No FastAPI dependencies.
 """
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from domains.pms.folio.repositories.folio_repository import (
     FolioRepository,
@@ -30,24 +30,24 @@ class FolioService:
 
     @staticmethod
     async def get_folios(
-        tenant_id: str, *, booking_id: Optional[str] = None,
-        guest_id: Optional[str] = None, status: Optional[str] = None,
+        tenant_id: str, *, booking_id: str | None = None,
+        guest_id: str | None = None, status: str | None = None,
         limit: int = 50, offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         return await FolioRepository.find_by_tenant(
             tenant_id, booking_id=booking_id, guest_id=guest_id,
             status=status, limit=limit, offset=offset,
         )
 
     @staticmethod
-    async def get_folio(tenant_id: str, folio_id: str) -> Optional[Dict[str, Any]]:
+    async def get_folio(tenant_id: str, folio_id: str) -> dict[str, Any] | None:
         return await FolioRepository.find_one(tenant_id, folio_id)
 
     @staticmethod
     async def create_folio(
         tenant_id: str, booking_id: str, guest_id: str,
         folio_type: str = "guest",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         folio_number = await generate_folio_number(tenant_id)
         folio = {
             "id": str(uuid.uuid4()),
@@ -60,16 +60,16 @@ class FolioService:
             "charges": [],
             "payments": [],
             "balance": 0,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }
         await FolioRepository.insert(folio)
         return folio
 
     @staticmethod
     async def post_charge(
-        tenant_id: str, folio_id: str, charge_data: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        tenant_id: str, folio_id: str, charge_data: dict[str, Any],
+    ) -> dict[str, Any]:
         folio = await FolioRepository.find_one(tenant_id, folio_id)
         if not folio:
             raise ValueError("Folio not found")
@@ -80,7 +80,7 @@ class FolioService:
             "id": str(uuid.uuid4()),
             "folio_id": folio_id,
             **charge_data,
-            "posted_at": datetime.now(timezone.utc).isoformat(),
+            "posted_at": datetime.now(UTC).isoformat(),
         }
         await FolioRepository.add_charge(tenant_id, folio_id, charge)
 
@@ -92,8 +92,8 @@ class FolioService:
 
     @staticmethod
     async def post_payment(
-        tenant_id: str, folio_id: str, payment_data: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        tenant_id: str, folio_id: str, payment_data: dict[str, Any],
+    ) -> dict[str, Any]:
         folio = await FolioRepository.find_one(tenant_id, folio_id)
         if not folio:
             raise ValueError("Folio not found")
@@ -102,7 +102,7 @@ class FolioService:
             "id": str(uuid.uuid4()),
             "folio_id": folio_id,
             **payment_data,
-            "posted_at": datetime.now(timezone.utc).isoformat(),
+            "posted_at": datetime.now(UTC).isoformat(),
         }
         await FolioRepository.add_payment(tenant_id, folio_id, payment)
 
@@ -122,5 +122,5 @@ class FolioService:
 
         return await FolioRepository.update(tenant_id, folio_id, {
             "status": "closed",
-            "closed_at": datetime.now(timezone.utc).isoformat(),
+            "closed_at": datetime.now(UTC).isoformat(),
         })

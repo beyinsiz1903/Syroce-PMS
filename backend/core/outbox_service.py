@@ -22,8 +22,8 @@ import hashlib
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from pymongo.errors import DuplicateKeyError
 
@@ -95,14 +95,14 @@ PERMANENT_ERROR_KEYWORDS = [
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _build_idempotency_key(
     tenant_id: str,
     event_type: str,
     entity_id: str,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
 ) -> str:
     payload_hash = hashlib.sha256(
         json.dumps(payload, sort_keys=True, default=str).encode()
@@ -125,7 +125,7 @@ def is_retryable_error(error_message: str) -> bool:
 def compute_next_available_at(attempt_count: int) -> str:
     backoff_seconds = RETRY_BACKOFF.get(attempt_count, 1800)
     from datetime import timedelta
-    return (datetime.now(timezone.utc) + timedelta(seconds=backoff_seconds)).isoformat()
+    return (datetime.now(UTC) + timedelta(seconds=backoff_seconds)).isoformat()
 
 
 async def enqueue_outbox_event(
@@ -136,13 +136,13 @@ async def enqueue_outbox_event(
     event_type: str,
     entity_type: str,
     entity_id: str,
-    payload: Dict[str, Any],
-    provider: Optional[str] = None,
-    connector_id: Optional[str] = None,
-    property_id: Optional[str] = None,
-    correlation_id: Optional[str] = None,
+    payload: dict[str, Any],
+    provider: str | None = None,
+    connector_id: str | None = None,
+    property_id: str | None = None,
+    correlation_id: str | None = None,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Enqueue an outbox event for guaranteed OTA delivery.
 

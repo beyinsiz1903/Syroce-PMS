@@ -2,7 +2,7 @@
 HotelRunner Authentication Manager.
 Handles token-based auth with hr_id for all HotelRunner API calls.
 """
-from typing import Any, Dict
+from typing import Any
 
 
 class HotelRunnerAuth:
@@ -16,14 +16,14 @@ class HotelRunnerAuth:
     def hr_id(self) -> str:
         return self._hr_id
 
-    def get_auth_params(self) -> Dict[str, str]:
+    def get_auth_params(self) -> dict[str, str]:
         """Returns query parameters for HotelRunner API authentication."""
         return {
             "token": self._token,
             "hr_id": self._hr_id,
         }
 
-    def get_auth_headers(self) -> Dict[str, str]:
+    def get_auth_headers(self) -> dict[str, str]:
         """Returns HTTP headers for HotelRunner API calls."""
         return {
             "Content-Type": "application/xml",
@@ -31,7 +31,7 @@ class HotelRunnerAuth:
         }
 
     @classmethod
-    def from_credentials(cls, credentials: Dict[str, Any]) -> "HotelRunnerAuth":
+    def from_credentials(cls, credentials: dict[str, Any]) -> "HotelRunnerAuth":
         """Factory from ConnectorAccount.credentials dict."""
         token = credentials.get("token", "")
         hr_id = credentials.get("hr_id", "")

@@ -4,7 +4,7 @@ Exposes hardened night audit execution, status, items, resume, abort,
 plus legacy schedule management and financial reporting.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -186,7 +186,7 @@ async def get_financial_summary(date: str = Query(None), current_user: User = De
     ctx = OperationContext.from_user(current_user)
     if not date:
         bd_result = await night_audit_core_service.get_business_date(ctx)
-        date = bd_result.data.get("business_date", datetime.now(timezone.utc).date().isoformat())
+        date = bd_result.data.get("business_date", datetime.now(UTC).date().isoformat())
     result = await financial_service.get_daily_financial_summary(ctx, date)
     return result.data
 
@@ -198,7 +198,7 @@ async def get_payment_reconciliation(date: str = Query(None), current_user: User
     ctx = OperationContext.from_user(current_user)
     if not date:
         bd_result = await night_audit_core_service.get_business_date(ctx)
-        date = bd_result.data.get("business_date", datetime.now(timezone.utc).date().isoformat())
+        date = bd_result.data.get("business_date", datetime.now(UTC).date().isoformat())
     result = await financial_service.get_payment_reconciliation(ctx, date)
     return result.data
 
@@ -223,6 +223,6 @@ async def get_integrity_check(date: str = Query(None), current_user: User = Depe
     ctx = OperationContext.from_user(current_user)
     if not date:
         bd_result = await night_audit_core_service.get_business_date(ctx)
-        date = bd_result.data.get("business_date", datetime.now(timezone.utc).date().isoformat())
+        date = bd_result.data.get("business_date", datetime.now(UTC).date().isoformat())
     result = await financial_service.get_integrity_check(ctx, date)
     return result.data

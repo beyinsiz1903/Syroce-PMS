@@ -6,8 +6,8 @@ Records provider call metrics, logs, and health indicators.
 Mirrors the HotelRunner observability module for consistency.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("exely.observability")
 
@@ -36,7 +36,7 @@ def record_provider_call(
 ) -> None:
     _metrics["call_count"] += 1
     _metrics["total_latency_ms"] += duration_ms
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     if success:
         _metrics["success_count"] += 1
@@ -60,7 +60,7 @@ def record_provider_failure(
     soap_action: str = "",
 ) -> None:
     _metrics["error_count"] += 1
-    _metrics["last_error_at"] = datetime.now(timezone.utc).isoformat()
+    _metrics["last_error_at"] = datetime.now(UTC).isoformat()
     _metrics["last_error_type"] = error_type
 
     if "auth" in error_type.lower():
@@ -76,7 +76,7 @@ def record_provider_failure(
     )
 
 
-def get_provider_health() -> Dict[str, Any]:
+def get_provider_health() -> dict[str, Any]:
     call_count = _metrics["call_count"]
     avg_latency = (
         round(_metrics["total_latency_ms"] / call_count)
@@ -118,8 +118,8 @@ async def persist_outbound_log(
     connection_id: str,
     operation: str,
     soap_action: str,
-    request_payload: Optional[str] = None,
-    response_payload: Optional[str] = None,
+    request_payload: str | None = None,
+    response_payload: str | None = None,
     duration_ms: int = 0,
     success: bool = True,
     error_type: str = "",
@@ -135,7 +135,7 @@ async def persist_outbound_log(
         "success": success,
         "error_type": error_type,
         "correlation_id": correlation_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
     if request_payload:
         log_doc["request_payload_summary"] = request_payload[:1000]

@@ -7,8 +7,8 @@ import functools
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Callable, Optional
+from datetime import UTC, datetime
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ def audited(
                 "override_reason": kwargs.get("reason"),
                 "correlation_id": correlation_id,
                 "duration_ms": duration_ms,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
 
             # Write audit asynchronously (fire-and-forget style)
@@ -125,7 +125,7 @@ def audited(
     return decorator
 
 
-def _collection_for(target_type: str) -> Optional[str]:
+def _collection_for(target_type: str) -> str | None:
     """Map target_type to MongoDB collection name for before-snapshots."""
     mapping = {
         "booking": "bookings",

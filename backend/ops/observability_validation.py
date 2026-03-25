@@ -6,7 +6,7 @@ metrics collection, log correlation, audit completeness,
 alert firing & routing, tracing continuity.
 """
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -24,7 +24,7 @@ class ObservabilityValidationService:
     async def validate_metrics(self, ctx: OperationContext) -> ServiceResult:
         """Verify metric collection is working."""
         checks = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         since_1h = (now - timedelta(hours=1)).isoformat()
 
         # API latency metrics
@@ -82,7 +82,7 @@ class ObservabilityValidationService:
     async def validate_logs(self, ctx: OperationContext) -> ServiceResult:
         """Verify log correlation and completeness."""
         checks = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         since_24h = (now - timedelta(hours=24)).isoformat()
 
         # Correlation ID presence
@@ -127,7 +127,7 @@ class ObservabilityValidationService:
     async def validate_alerts(self, ctx: OperationContext) -> ServiceResult:
         """Verify alert system functionality."""
         checks = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         since_24h = (now - timedelta(hours=24)).isoformat()
 
         # Alert rules configured
@@ -184,7 +184,7 @@ class ObservabilityValidationService:
     async def validate_audit_timeline(self, ctx: OperationContext) -> ServiceResult:
         """Verify audit timeline for production use."""
         checks = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         since_24h = (now - timedelta(hours=24)).isoformat()
 
         # Entity types covered
@@ -290,7 +290,7 @@ class ObservabilityValidationService:
             "categories": categories,
             "total_passed": total_passed,
             "total_checks": total_checks,
-            "validated_at": datetime.now(timezone.utc).isoformat(),
+            "validated_at": datetime.now(UTC).isoformat(),
         })
 
 

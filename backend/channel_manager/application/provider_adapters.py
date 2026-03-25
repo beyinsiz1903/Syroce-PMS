@@ -12,8 +12,8 @@ Production-grade adapters that wrap the HotelRunner client with:
 import logging
 import time
 import uuid as _uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from ..connectors.hotelrunner.auth import HotelRunnerAuth
 from ..connectors.hotelrunner.client import HotelRunnerClient
@@ -77,7 +77,7 @@ class InventoryProviderAdapter:
     error handling, auditing, and reconciliation integration.
     """
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     async def push(
@@ -85,12 +85,12 @@ class InventoryProviderAdapter:
         tenant_id: str,
         connector_id: str,
         property_id: str,
-        updates: List[Dict[str, Any]],
-        credentials: Dict[str, str],
+        updates: list[dict[str, Any]],
+        credentials: dict[str, str],
         environment: str = "sandbox",
-        correlation_id: Optional[str] = None,
-        job_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        correlation_id: str | None = None,
+        job_id: str | None = None,
+    ) -> dict[str, Any]:
         corr_id = correlation_id or str(_uuid.uuid4())
         start = time.monotonic()
 
@@ -102,7 +102,7 @@ class InventoryProviderAdapter:
             "operation": "inventory_push",
             "environment": environment,
             "update_count": len(updates),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "job_id": job_id,
         }
 
@@ -200,7 +200,7 @@ class RateProviderAdapter:
     error handling, auditing, and reconciliation integration.
     """
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     async def push(
@@ -208,12 +208,12 @@ class RateProviderAdapter:
         tenant_id: str,
         connector_id: str,
         property_id: str,
-        updates: List[Dict[str, Any]],
-        credentials: Dict[str, str],
+        updates: list[dict[str, Any]],
+        credentials: dict[str, str],
         environment: str = "sandbox",
-        correlation_id: Optional[str] = None,
-        job_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        correlation_id: str | None = None,
+        job_id: str | None = None,
+    ) -> dict[str, Any]:
         corr_id = correlation_id or str(_uuid.uuid4())
         start = time.monotonic()
 
@@ -225,7 +225,7 @@ class RateProviderAdapter:
             "operation": "rate_push",
             "environment": environment,
             "update_count": len(updates),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "job_id": job_id,
         }
 

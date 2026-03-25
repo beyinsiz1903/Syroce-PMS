@@ -1,8 +1,8 @@
 import hashlib
 import json
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import HTTPException, Request, status
 
@@ -45,16 +45,16 @@ ALLOWED_FIELDS = {
 
 
 class UpdateReservationService:
-    def __init__(self, repository: Optional[ReservationsRepository] = None):
+    def __init__(self, repository: ReservationsRepository | None = None):
         self.repository = repository or ReservationsRepository()
 
     async def update(
         self,
         booking_id: str,
-        booking_data: Dict[str, Any],
+        booking_data: dict[str, Any],
         current_user,
         request: Request,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         tenant_context = build_tenant_context(current_user, request)
         property_context = build_property_context(current_user, request)
         self._enforce_property_scope(tenant_context.tenant_id, property_context.property_id)
@@ -264,10 +264,10 @@ class UpdateReservationService:
         self,
         tenant_id: str,
         booking_id: str,
-        existing_booking: Dict[str, Any],
-        booking_data: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        update_data: Dict[str, Any] = {}
+        existing_booking: dict[str, Any],
+        booking_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        update_data: dict[str, Any] = {}
 
         if "guest_id" in booking_data and booking_data["guest_id"] != existing_booking.get("guest_id"):
             guest = await self.repository.get_guest_for_tenant(tenant_id, booking_data["guest_id"])
@@ -295,8 +295,8 @@ class UpdateReservationService:
 
         return update_data
 
-    def _normalize_payload(self, booking_data: Dict[str, Any]) -> Dict[str, Any]:
-        normalized: Dict[str, Any] = {}
+    def _normalize_payload(self, booking_data: dict[str, Any]) -> dict[str, Any]:
+        normalized: dict[str, Any] = {}
         for field in ALLOWED_FIELDS:
             if field not in booking_data:
                 continue
@@ -319,10 +319,10 @@ class UpdateReservationService:
             return raw_value
         parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
+            parsed = parsed.replace(tzinfo=UTC)
         return parsed.isoformat()
 
-    def _build_request_hash(self, tenant_id: str, booking_id: str, payload: Dict[str, Any]) -> str:
+    def _build_request_hash(self, tenant_id: str, booking_id: str, payload: dict[str, Any]) -> str:
         serialized = json.dumps(
             {
                 "tenant_id": tenant_id,
@@ -334,7 +334,7 @@ class UpdateReservationService:
         )
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
-    def _enforce_property_scope(self, tenant_id: str, property_id: Optional[str]) -> None:
+    def _enforce_property_scope(self, tenant_id: str, property_id: str | None) -> None:
         if property_id and property_id != tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

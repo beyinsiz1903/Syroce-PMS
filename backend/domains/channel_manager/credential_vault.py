@@ -9,8 +9,8 @@ provider_connections stores credentials_ref → provider_secrets stores encrypte
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.crypto import AADContext, get_crypto_service
 from core.database import db
@@ -22,7 +22,7 @@ _NO_ID = {"_id": 0}
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _build_aad(tenant_id: str, provider: str, property_id: str) -> AADContext:
@@ -36,11 +36,11 @@ def _build_aad(tenant_id: str, provider: str, property_id: str) -> AADContext:
 
 
 def _encrypt_payload(
-    credentials: Dict[str, str],
+    credentials: dict[str, str],
     tenant_id: str,
     provider: str,
     property_id: str,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Encrypt all values in a credentials dict."""
     svc = get_crypto_service()
     aad = _build_aad(tenant_id, provider, property_id)
@@ -48,18 +48,18 @@ def _encrypt_payload(
 
 
 def _decrypt_payload(
-    encrypted: Dict[str, str],
+    encrypted: dict[str, str],
     tenant_id: str,
     provider: str,
     property_id: str,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Decrypt all values in an encrypted credentials dict."""
     svc = get_crypto_service()
     aad = _build_aad(tenant_id, provider, property_id)
     return svc.decrypt_dict(encrypted, aad=aad)
 
 
-def _mask_payload(credentials: Dict[str, str]) -> Dict[str, str]:
+def _mask_payload(credentials: dict[str, str]) -> dict[str, str]:
     """Mask all values for display."""
     svc = get_crypto_service()
     return svc.mask_credentials(credentials)
@@ -71,7 +71,7 @@ async def store_secret(
     tenant_id: str,
     provider: str,
     property_id: str,
-    credentials: Dict[str, str],
+    credentials: dict[str, str],
 ) -> str:
     """Encrypt and store credentials. Returns secret_id (credentials_ref)."""
     secret_id = str(uuid.uuid4())
@@ -120,7 +120,7 @@ async def get_decrypted_credentials(
     tenant_id: str,
     provider: str,
     property_id: str,
-) -> Optional[Dict[str, str]]:
+) -> dict[str, str] | None:
     """Retrieve and decrypt credentials."""
     doc = await db[COLL_PROVIDER_SECRETS].find_one(
         {"tenant_id": tenant_id, "provider": provider, "property_id": property_id},
@@ -137,7 +137,7 @@ async def get_masked_credentials(
     tenant_id: str,
     provider: str,
     property_id: str,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Get masked credentials for display (never expose raw values)."""
     doc = await db[COLL_PROVIDER_SECRETS].find_one(
         {"tenant_id": tenant_id, "provider": provider, "property_id": property_id},

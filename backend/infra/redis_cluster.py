@@ -13,8 +13,8 @@ import asyncio
 import logging
 import os
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.redis_cluster")
 
@@ -32,7 +32,7 @@ class RedisClusterManager:
         self._sentinel_master = os.environ.get("REDIS_SENTINEL_MASTER", "mymaster")
         self._connected = False
         self._reconnect_count = 0
-        self._last_health_check: Optional[str] = None
+        self._last_health_check: str | None = None
         self._metrics = {
             "connections_created": 0,
             "connections_failed": 0,
@@ -139,7 +139,7 @@ class RedisClusterManager:
         logger.error(f"Redis reconnect failed after {max_retries} attempts")
         return False
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """Comprehensive health check."""
         self._metrics["health_checks"] += 1
         result = {
@@ -147,7 +147,7 @@ class RedisClusterManager:
             "mode": self._mode,
             "connected": self._connected,
             "reconnect_count": self._reconnect_count,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         if not self._connected or not self._redis:
@@ -205,7 +205,7 @@ class RedisClusterManager:
         """Get dedicated lock Redis client."""
         return self._lock_redis or self._redis
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         """Get connection metrics."""
         return {
             **self._metrics,

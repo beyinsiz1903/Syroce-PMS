@@ -2,7 +2,6 @@
 Real-Time Operational Event System Router - Event bus, live feed, notifications.
 All endpoints under /api/event-system/
 """
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -18,16 +17,16 @@ event_bus = EventBus()
 class PublishEventRequest(BaseModel):
     event_type: str
     payload: dict
-    property_id: Optional[str] = None
+    property_id: str | None = None
 
 
 class MarkReadRequest(BaseModel):
-    event_ids: List[str]
+    event_ids: list[str]
 
 
 class AcknowledgeRequest(BaseModel):
     event_id: str
-    note: Optional[str] = None
+    note: str | None = None
 
 
 # ── EVENT PUBLISHING ──
@@ -48,8 +47,8 @@ async def api_publish_event(req: PublishEventRequest, current_user: User = Depen
 @router.get("/live-feed")
 async def api_live_feed(
     limit: int = 50,
-    event_type: Optional[str] = None,
-    priority: Optional[str] = None,
+    event_type: str | None = None,
+    priority: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Get live operational activity feed."""
@@ -57,7 +56,7 @@ async def api_live_feed(
 
 
 @router.get("/unread-count")
-async def api_unread_count(role: Optional[str] = None, current_user: User = Depends(get_current_user)):
+async def api_unread_count(role: str | None = None, current_user: User = Depends(get_current_user)):
     """Get unread event count."""
     user_role = role or current_user.role
     return await event_bus.get_unread_count(current_user.tenant_id, user_role)

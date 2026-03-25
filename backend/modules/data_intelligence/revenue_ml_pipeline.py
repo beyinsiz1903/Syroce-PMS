@@ -10,8 +10,8 @@ Integrates with:
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 from modules.platform_scaling.revenue_autopricing import autopricing
@@ -49,12 +49,12 @@ class RevenueMLPipeline:
 
     # ── Full Pipeline Execution ──
 
-    async def run_pipeline(self, tenant_id: str, room_type: Optional[str] = None,
-                           target_date: Optional[str] = None,
-                           property_id: Optional[str] = None) -> Dict[str, Any]:
+    async def run_pipeline(self, tenant_id: str, room_type: str | None = None,
+                           target_date: str | None = None,
+                           property_id: str | None = None) -> dict[str, Any]:
         """Execute the full revenue ML pipeline for a tenant/room_type."""
         run_id = str(uuid.uuid4())
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
 
         # Resolve room types
         room_types = [room_type] if room_type else await db.rooms.distinct(
@@ -103,7 +103,7 @@ class RevenueMLPipeline:
             },
             "confidence_score": self._avg_confidence(recommendations),
             "generated_at": started_at.isoformat(),
-            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "completed_at": datetime.now(UTC).isoformat(),
             "version": "1.0",
         }
         await db.revenue_ml_snapshots.insert_one(snapshot)
@@ -137,9 +137,9 @@ class RevenueMLPipeline:
 
     async def _generate_recommendation(
         self, tenant_id: str, room_type: str,
-        demand: Dict, elasticity: Dict, at_risk: Dict,
-        conversion: Dict, property_id: Optional[str]
-    ) -> Optional[Dict[str, Any]]:
+        demand: dict, elasticity: dict, at_risk: dict,
+        conversion: dict, property_id: str | None
+    ) -> dict[str, Any] | None:
         """Generate a single ADR recommendation for a room type."""
         # Get current average price
         rooms = await db.rooms.find(
@@ -271,7 +271,7 @@ class RevenueMLPipeline:
 
         return rec_data
 
-    def _extract_demand_signal(self, demand: Dict) -> float:
+    def _extract_demand_signal(self, demand: dict) -> float:
         """Extract aggregate demand signal from forecast."""
         forecast = demand.get("forecast", [])
         if not forecast:
@@ -279,7 +279,7 @@ class RevenueMLPipeline:
         occ_values = [f.get("predicted_occupancy_pct", 50) for f in forecast[:7]]
         return min(sum(occ_values) / len(occ_values) / 100, 1.0)
 
-    def _extract_pace_signal(self, demand: Dict) -> float:
+    def _extract_pace_signal(self, demand: dict) -> float:
         """Extract booking pace signal."""
         forecast = demand.get("forecast", [])
         if not forecast:
@@ -312,13 +312,13 @@ class RevenueMLPipeline:
         raw = data_conf + signal_conf + demand_conf
         return min(max(round(raw, 3), 0.1), 0.95)
 
-    def _avg_confidence(self, recommendations: List[Dict]) -> float:
+    def _avg_confidence(self, recommendations: list[dict]) -> float:
         if not recommendations:
             return 0.0
         scores = [r.get("confidence_score", 0) for r in recommendations]
         return round(sum(scores) / len(scores), 3)
 
-    def _summarize_demand(self, demand: Dict) -> Dict[str, Any]:
+    def _summarize_demand(self, demand: dict) -> dict[str, Any]:
         forecast = demand.get("forecast", [])
         if not forecast:
             return {"avg_occupancy": 0, "high_days": 0, "low_days": 0}
@@ -332,7 +332,7 @@ class RevenueMLPipeline:
 
     # ── Forecast Dashboard ──
 
-    async def get_forecast_dashboard(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_forecast_dashboard(self, tenant_id: str) -> dict[str, Any]:
         """Get comprehensive forecast dashboard data."""
         demand = await self.demand_model.forecast_demand(tenant_id, 14)
         price_points = await self.elasticity_model.get_optimal_price_points(tenant_id)
@@ -367,7 +367,7 @@ class RevenueMLPipeline:
             "ml_recommendations": recent_recs,
             "pipeline_runs": recent_runs,
             "autopricing": autopricing_dash,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
         }
 
     # ── Model Execution Logging ──
@@ -383,8 +383,8 @@ class RevenueMLPipeline:
             "status": status,
             "output_count": output_count,
             "started_at": started_at.isoformat(),
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-            "duration_ms": int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000),
+            "completed_at": datetime.now(UTC).isoformat(),
+            "duration_ms": int((datetime.now(UTC) - started_at).total_seconds() * 1000),
         })
 
 

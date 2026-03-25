@@ -5,8 +5,7 @@ Replaces legacy mock endpoints in server.py with production-grade implementation
 All routes are prefixed with /api/channel-manager/v2/ to coexist with legacy endpoints.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -45,7 +44,7 @@ class CreateConnectorRequest(BaseModel):
     display_name: str
     property_id: str = ""
     credentials: dict = Field(default_factory=dict)
-    sync_config: Optional[dict] = None
+    sync_config: dict | None = None
 
 class UpdateCredentialsRequest(BaseModel):
     credentials: dict
@@ -57,14 +56,14 @@ class CreateMappingRequest(BaseModel):
     pms_entity_name: str = ""
     external_entity_id: str
     external_entity_name: str = ""
-    extras: Optional[dict] = None
+    extras: dict | None = None
 
 class TriggerSyncRequest(BaseModel):
     connector_id: str
     date_start: str = ""
     date_end: str = ""
-    room_type_ids: Optional[List[str]] = None
-    rate_plan_ids: Optional[List[str]] = None
+    room_type_ids: list[str] | None = None
+    rate_plan_ids: list[str] | None = None
     reason: str = ""
 
 class RetryJobRequest(BaseModel):
@@ -72,15 +71,15 @@ class RetryJobRequest(BaseModel):
 
 class TriggerImportRequest(BaseModel):
     connector_id: str
-    date_start: Optional[str] = None
-    date_end: Optional[str] = None
+    date_start: str | None = None
+    date_end: str | None = None
 
 class ApproveReviewRequest(BaseModel):
     reservation_id: str
-    room_type_override: Optional[str] = None
+    room_type_override: str | None = None
 
 class ReprocessReviewRequest(BaseModel):
-    room_type_override: Optional[str] = None
+    room_type_override: str | None = None
 
 class ResolveIssueRequest(BaseModel):
     resolution: str
@@ -96,8 +95,8 @@ class CreateIssueRequest(BaseModel):
     issue_type: str
     severity: str
     description: str
-    suggested_actions: Optional[List[str]] = None
-    evidence_payload: Optional[dict] = None
+    suggested_actions: list[str] | None = None
+    evidence_payload: dict | None = None
 
 class RotateCredentialsRequest(BaseModel):
     credentials: dict
@@ -107,19 +106,19 @@ class DomainEventRequest(BaseModel):
     payload: dict = Field(default_factory=dict)
 
 class BatchEventsRequest(BaseModel):
-    events: List[DomainEventRequest]
+    events: list[DomainEventRequest]
 
 class ProviderPushRequest(BaseModel):
     connector_id: str
-    updates: List[dict]
+    updates: list[dict]
     environment: str = "sandbox"
 
 class BulkRetryRequest(BaseModel):
-    item_ids: List[str]
+    item_ids: list[str]
     error_type: str
 
 class BulkDismissRequest(BaseModel):
-    item_ids: List[str]
+    item_ids: list[str]
     error_type: str
     reason: str = ""
 
@@ -129,14 +128,14 @@ class ErrorQueueActionRequest(BaseModel):
     reason: str = ""
 
 class BulkIssueActionRequest(BaseModel):
-    issue_ids: List[str]
+    issue_ids: list[str]
     reason: str = ""
 
 # ─── Connector Endpoints ──────────────────────────────────────────────
 
 @router.get("/connectors")
 async def list_connectors(
-    status: Optional[str] = None,
+    status: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     svc = ConnectorService()
@@ -181,7 +180,7 @@ async def get_connector(
 class ConnectionTestStepResult(BaseModel):
     status: str  # pass, fail, warn
     latency_ms: int = 0
-    error_code: Optional[str] = None
+    error_code: str | None = None
     message: str = ""
 
 class ConnectionTestResponse(BaseModel):
@@ -192,12 +191,12 @@ class ConnectionTestResponse(BaseModel):
     tested_at: str = ""
     total_latency_ms: int = 0
     summary: str = ""
-    auth_status: Optional[ConnectionTestStepResult] = None
-    property_access_status: Optional[ConnectionTestStepResult] = None
-    inventory_read_status: Optional[ConnectionTestStepResult] = None
-    rate_read_status: Optional[ConnectionTestStepResult] = None
-    xml_connectivity_status: Optional[ConnectionTestStepResult] = None
-    message: Optional[str] = None
+    auth_status: ConnectionTestStepResult | None = None
+    property_access_status: ConnectionTestStepResult | None = None
+    inventory_read_status: ConnectionTestStepResult | None = None
+    rate_read_status: ConnectionTestStepResult | None = None
+    xml_connectivity_status: ConnectionTestStepResult | None = None
+    message: str | None = None
 
 @router.post("/connectors/{connector_id}/test", response_model=ConnectionTestResponse)
 async def test_connector(
@@ -254,7 +253,7 @@ async def delete_connector(
 @router.get("/mappings/{connector_id}")
 async def list_mappings(
     connector_id: str,
-    entity_type: Optional[str] = None,
+    entity_type: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     svc = MappingService()
@@ -348,9 +347,9 @@ async def trigger_inventory_sync(
 ):
     svc = InventorySyncService()
     if not req.date_start:
-        req.date_start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        req.date_start = datetime.now(UTC).strftime("%Y-%m-%d")
     if not req.date_end:
-        req.date_end = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+        req.date_end = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
     try:
         result = await svc.trigger_inventory_sync(
             tenant_id=current_user.tenant_id,
@@ -373,9 +372,9 @@ async def trigger_rate_sync(
 ):
     svc = InventorySyncService()
     if not req.date_start:
-        req.date_start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        req.date_start = datetime.now(UTC).strftime("%Y-%m-%d")
     if not req.date_end:
-        req.date_end = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+        req.date_end = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
     try:
         result = await svc.trigger_rate_sync(
             tenant_id=current_user.tenant_id,
@@ -392,7 +391,7 @@ async def trigger_rate_sync(
 
 @router.get("/sync/jobs")
 async def list_sync_jobs(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     limit: int = Query(50, le=200),
     current_user: User = Depends(get_current_user),
 ):
@@ -429,7 +428,7 @@ async def get_sync_job_events(
 
 @router.get("/sync/manual-review")
 async def get_manual_review_queue(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     svc = InventorySyncService()
@@ -479,8 +478,8 @@ async def trigger_reservation_pull(
 
 @router.get("/reservations/imported")
 async def list_imported_reservations(
-    connector_id: Optional[str] = None,
-    status: Optional[str] = None,
+    connector_id: str | None = None,
+    status: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
@@ -503,7 +502,7 @@ async def get_imported_reservation_detail(
 
 @router.get("/reservations/review-queue")
 async def get_review_queue(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     svc = ReservationImportService()
@@ -555,7 +554,7 @@ async def approve_review(
 
 @router.get("/reservations/batches")
 async def list_import_batches(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     svc = ReservationImportService()
@@ -576,7 +575,7 @@ async def get_import_batch_detail(
 
 @router.get("/reservations/stats")
 async def get_reservation_stats(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     svc = ReservationImportService()
@@ -595,7 +594,7 @@ async def retry_failed_acks(
 
 @router.get("/reservations/audit-trail")
 async def get_reservation_audit_trail(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
@@ -619,7 +618,7 @@ async def run_reconciliation(
 
 @router.get("/reconciliation/issues")
 async def list_reconciliation_issues(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     status: str = Query("open"),
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
@@ -630,7 +629,7 @@ async def list_reconciliation_issues(
 
 @router.get("/reconciliation/issues/summary")
 async def get_reconciliation_summary(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     svc = ReconciliationService()
@@ -718,7 +717,7 @@ async def get_connector_health(
 
 @router.get("/audit")
 async def get_audit_log(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
@@ -950,9 +949,9 @@ async def get_reconciliation_health(
 
 @router.get("/admin/reconciliation/issues")
 async def admin_list_issues(
-    connector_id: Optional[str] = None,
-    severity: Optional[str] = None,
-    issue_type: Optional[str] = None,
+    connector_id: str | None = None,
+    severity: str | None = None,
+    issue_type: str | None = None,
     status: str = Query("open"),
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
@@ -984,8 +983,8 @@ async def admin_retry_sync_for_issue(
         result = await sync_svc.trigger_inventory_sync(
             tenant_id=current_user.tenant_id,
             connector_id=issue["connector_id"],
-            date_start=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            date_end=(datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d"),
+            date_start=datetime.now(UTC).strftime("%Y-%m-%d"),
+            date_end=(datetime.now(UTC) + timedelta(days=7)).strftime("%Y-%m-%d"),
             triggered_by="admin",
             trigger_reason=f"Retry from issue {issue_id}",
             actor_id=current_user.id,
@@ -1177,7 +1176,7 @@ async def admin_disable_connector(
     if not connector:
         raise HTTPException(status_code=404, detail="Connector not found")
     connector["status"] = "disabled"
-    connector["disabled_at"] = datetime.now(timezone.utc).isoformat()
+    connector["disabled_at"] = datetime.now(UTC).isoformat()
     connector["disabled_by"] = current_user.id
     await repo.upsert_connector(connector)
 
@@ -1261,9 +1260,9 @@ async def admin_connector_sync_health(
 async def receive_webhook(
     provider: str,
     request: Request,
-    connector_id: Optional[str] = Query(None),
-    x_webhook_signature: Optional[str] = None,
-    x_webhook_timestamp: Optional[str] = None,
+    connector_id: str | None = Query(None),
+    x_webhook_signature: str | None = None,
+    x_webhook_timestamp: str | None = None,
 ):
     """Receive and process an incoming webhook from a channel provider."""
     body = await request.body()
@@ -1319,8 +1318,8 @@ async def list_webhook_events(
 
 @router.get("/admin/error-queue")
 async def admin_error_queue(
-    connector_id: Optional[str] = None,
-    error_type: Optional[str] = None,
+    connector_id: str | None = None,
+    error_type: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
@@ -1331,7 +1330,7 @@ async def admin_error_queue(
 
 @router.get("/admin/error-queue/summary")
 async def admin_error_queue_summary(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Get error queue summary counts."""
@@ -1394,7 +1393,7 @@ async def admin_bulk_dismiss_errors(
 
 @router.get("/admin/observability/metrics")
 async def admin_observability_metrics(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Get operational observability metrics."""
@@ -1458,8 +1457,8 @@ async def admin_observability_metrics(
 
 @router.get("/admin/observability/audit-trail")
 async def admin_audit_trail(
-    connector_id: Optional[str] = None,
-    action: Optional[str] = None,
+    connector_id: str | None = None,
+    action: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
@@ -1511,7 +1510,7 @@ async def admin_production_readiness_overview(
 # ─── Phase 1: Historical Metrics Storage ──────────────────────────────
 
 class CreateSnapshotRequest(BaseModel):
-    connector_id: Optional[str] = None
+    connector_id: str | None = None
 
 class AlertRuleRequest(BaseModel):
     trigger: str
@@ -1519,7 +1518,7 @@ class AlertRuleRequest(BaseModel):
     severity: str = "warning"
     description: str = ""
     enabled: bool = True
-    connector_id: Optional[str] = None
+    connector_id: str | None = None
 
 class AlertActionRequest(BaseModel):
     reason: str = ""
@@ -1538,7 +1537,7 @@ async def create_metrics_snapshot(
 
 @router.get("/metrics/history")
 async def get_metrics_history(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     period: str = Query("7d"),
     limit: int = Query(500, le=2000),
     current_user: User = Depends(get_current_user),
@@ -1550,7 +1549,7 @@ async def get_metrics_history(
 
 @router.get("/metrics/trends")
 async def get_metrics_trends(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     period: str = Query("7d"),
     current_user: User = Depends(get_current_user),
 ):
@@ -1592,7 +1591,7 @@ async def run_retention_cleanup(
 
 @router.post("/metrics/daily-aggregation")
 async def run_daily_aggregation(
-    date: Optional[str] = Body(None, embed=True),
+    date: str | None = Body(None, embed=True),
     current_user: User = Depends(get_current_user),
 ):
     """Create daily aggregation from hourly snapshots."""
@@ -1604,9 +1603,9 @@ async def run_daily_aggregation(
 
 @router.get("/alerts")
 async def list_alerts(
-    status: Optional[str] = None,
-    severity: Optional[str] = None,
-    connector_id: Optional[str] = None,
+    status: str | None = None,
+    severity: str | None = None,
+    connector_id: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
@@ -1811,7 +1810,7 @@ async def get_multi_property_comparison(
 
 @router.get("/multi-property/issues")
 async def get_multi_property_issues(
-    property_id: Optional[str] = None,
+    property_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Get issues across all properties."""

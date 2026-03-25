@@ -17,8 +17,8 @@ Report: passed_checks, failed_checks, warnings, blocker_issues,
         production_recommendation (NOT_READY / CONDITIONALLY_READY / PRODUCTION_READY)
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -31,19 +31,19 @@ logger = logging.getLogger("channel_manager.application.production_readiness_ser
 class ProductionReadinessService:
     """Runs comprehensive production readiness checks for a connector."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     async def run_readiness_check(
-        self, tenant_id: str, connector_id: str, actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        self, tenant_id: str, connector_id: str, actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Run all 11 production readiness checks and generate a report."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
         if not connector:
             return {"error": "Connector not found"}
 
         property_id = connector.get("property_id", "")
-        checks: List[Dict[str, Any]] = []
+        checks: list[dict[str, Any]] = []
 
         # 1. HotelRunner sandbox auth success
         checks.append(await self._check_authentication(connector))
@@ -110,7 +110,7 @@ class ProductionReadinessService:
             "blocker_issues": [c["check"] for c in blockers],
             "total_checks": len(checks),
             "production_recommendation": recommendation,
-            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "checked_at": datetime.now(UTC).isoformat(),
         }
 
         # Audit
@@ -123,7 +123,7 @@ class ProductionReadinessService:
 
         return report
 
-    async def _check_authentication(self, connector: Dict) -> Dict[str, Any]:
+    async def _check_authentication(self, connector: dict) -> dict[str, Any]:
         status = connector.get("status", "")
         has_creds = bool(connector.get("credentials"))
         if status == "active" and has_creds:
@@ -132,7 +132,7 @@ class ProductionReadinessService:
             return {"check": "sandbox_auth_success", "status": "warning", "detail": f"Connector status: {status}", "blocker": False}
         return {"check": "sandbox_auth_success", "status": "failed", "detail": "No credentials configured", "blocker": True}
 
-    async def _check_inventory_push(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def _check_inventory_push(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         succeeded = await db.cm_sync_jobs.count_documents({
             "tenant_id": tenant_id, "connector_id": connector_id, "sync_type": "inventory", "status": "succeeded",
         })
@@ -140,13 +140,13 @@ class ProductionReadinessService:
             return {"check": "inventory_push_success", "status": "passed", "detail": f"{succeeded} successful inventory syncs"}
         return {"check": "inventory_push_success", "status": "warning", "detail": "No successful inventory syncs yet", "blocker": False}
 
-    async def _check_reservation_pull(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def _check_reservation_pull(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         count = await self._repo.count_imported_reservations(tenant_id, connector_id)
         if count > 0:
             return {"check": "reservation_import_success", "status": "passed", "detail": f"{count} reservations imported"}
         return {"check": "reservation_import_success", "status": "warning", "detail": "No reservations imported yet", "blocker": False}
 
-    async def _check_reservation_modification(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def _check_reservation_modification(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         modified = await db.cm_imported_reservations.count_documents({
             "tenant_id": tenant_id, "connector_id": connector_id,
             "canonical_status": {"$in": ["modified", "Modify"]},
@@ -161,7 +161,7 @@ class ProductionReadinessService:
         return {"check": "reservation_modification_success", "status": "warning",
                 "detail": "No modification events yet", "blocker": False}
 
-    async def _check_reservation_cancellation(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def _check_reservation_cancellation(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         cancelled = await db.cm_imported_reservations.count_documents({
             "tenant_id": tenant_id, "connector_id": connector_id,
             "canonical_status": {"$in": ["cancelled", "Cancel"]},
@@ -176,7 +176,7 @@ class ProductionReadinessService:
         return {"check": "reservation_cancellation_success", "status": "warning",
                 "detail": "No cancellation events yet", "blocker": False}
 
-    async def _check_reservation_ack(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def _check_reservation_ack(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         ack_failed = await db.cm_imported_reservations.count_documents({
             "tenant_id": tenant_id, "connector_id": connector_id, "ack_status": "ack_failed",
         })
@@ -189,7 +189,7 @@ class ProductionReadinessService:
             return {"check": "ack_lifecycle_success", "status": "passed", "detail": f"{ack_sent} ACKs sent successfully"}
         return {"check": "ack_lifecycle_success", "status": "warning", "detail": "No ACKs processed yet", "blocker": False}
 
-    async def _check_alerts_functioning(self, tenant_id: str) -> Dict[str, Any]:
+    async def _check_alerts_functioning(self, tenant_id: str) -> dict[str, Any]:
         total_alerts = await db.cm_alerts.count_documents({"tenant_id": tenant_id})
         rules = await db.cm_alert_rules.count_documents({"tenant_id": tenant_id, "enabled": True})
         if rules > 0:
@@ -198,7 +198,7 @@ class ProductionReadinessService:
         return {"check": "alerts_functioning", "status": "warning",
                 "detail": "No alert rules configured", "blocker": False}
 
-    async def _check_metrics_aggregation(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def _check_metrics_aggregation(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         metrics_count = await db.cm_historical_metrics.count_documents({
             "tenant_id": tenant_id, "connector_id": connector_id,
         })
@@ -208,7 +208,7 @@ class ProductionReadinessService:
         return {"check": "metrics_aggregation_functioning", "status": "warning",
                 "detail": "No historical metrics recorded yet", "blocker": False}
 
-    async def _check_scheduler_jobs(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def _check_scheduler_jobs(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         completed_jobs = await db.cm_import_jobs.count_documents({
             "tenant_id": tenant_id, "connector_id": connector_id, "status": "completed",
         })
@@ -223,7 +223,7 @@ class ProductionReadinessService:
                 "detail": "No scheduled jobs have run yet", "blocker": False}
 
     @staticmethod
-    def _check_credential_security(connector: Dict) -> Dict[str, Any]:
+    def _check_credential_security(connector: dict) -> dict[str, Any]:
         encrypted = connector.get("credentials_encrypted", False)
         algo = connector.get("encryption_algorithm", "")
         if encrypted and algo == "AES-256-GCM":
@@ -234,7 +234,7 @@ class ProductionReadinessService:
         return {"check": "credential_security_verified", "status": "failed",
                 "detail": "Credentials not encrypted", "blocker": True}
 
-    async def _check_rate_push(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def _check_rate_push(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         """Check rate push success metrics."""
         succeeded = await db.cm_sync_jobs.count_documents({
             "tenant_id": tenant_id, "connector_id": connector_id, "sync_type": "rates", "status": "succeeded",
@@ -249,7 +249,7 @@ class ProductionReadinessService:
         return {"check": "rate_push_success", "status": "warning",
                 "detail": "No successful rate pushes yet", "blocker": False}
 
-    async def _check_mapping_completeness(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def _check_mapping_completeness(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         """Check mapping completeness via mapping completeness service."""
         try:
             from .mapping_completeness_service import MappingCompletenessService

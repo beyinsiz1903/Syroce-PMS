@@ -8,8 +8,8 @@ Worker 3: Ingest Processor    (processes pending raw events)
 Worker 4: Replay Worker       (retries failed events)
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 from domains.channel_manager import unified_repository as repo
@@ -65,7 +65,7 @@ _worker_state = {
 SAFETY_WINDOW_MINUTES = 5
 
 
-def get_worker_states() -> Dict[str, Any]:
+def get_worker_states() -> dict[str, Any]:
     return {k: {**v} for k, v in _worker_state.items()}
 
 
@@ -73,7 +73,7 @@ def get_worker_states() -> Dict[str, Any]:
 # Worker 1: HotelRunner Pull
 # ══════════════════════════════════════════════════════════════════════
 
-async def hotelrunner_pull_once() -> Dict[str, Any]:
+async def hotelrunner_pull_once() -> dict[str, Any]:
     """
     Pull reservations from HotelRunner REST API for all active connections.
     Fetches updated reservations since last cursor, persists into raw_channel_events.
@@ -85,7 +85,7 @@ async def hotelrunner_pull_once() -> Dict[str, Any]:
     if state["running"]:
         return {"fetched": 0, "errors": 0, "provider": "hotelrunner", "status": "already_running"}
     state["running"] = True
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     result = {"fetched": 0, "errors": 0, "provider": "hotelrunner"}
 
     try:
@@ -176,7 +176,7 @@ async def hotelrunner_pull_once() -> Dict[str, Any]:
 
 async def _persist_pull_events(
     provider: str,
-    events: List[Dict[str, Any]],
+    events: list[dict[str, Any]],
     tenant_id: str,
     property_id: str,
     connection_id: str = "",
@@ -218,7 +218,7 @@ async def _persist_pull_events(
 # Worker 2: Exely Pull
 # ══════════════════════════════════════════════════════════════════════
 
-async def exely_pull_once() -> Dict[str, Any]:
+async def exely_pull_once() -> dict[str, Any]:
     """
     Pull reservations from Exely via OTA_ReadRQ SOAP for all active connections.
     Fetches updated reservations since last cursor, persists into raw_channel_events.
@@ -230,7 +230,7 @@ async def exely_pull_once() -> Dict[str, Any]:
     if state["running"]:
         return {"fetched": 0, "errors": 0, "provider": "exely", "status": "already_running"}
     state["running"] = True
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     result = {"fetched": 0, "errors": 0, "provider": "exely"}
 
     try:
@@ -315,7 +315,7 @@ async def exely_pull_once() -> Dict[str, Any]:
     return result
 
 
-def _convert_exely_parsed_to_raw(parsed_reservations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _convert_exely_parsed_to_raw(parsed_reservations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Convert Exely response_parser output to the raw format expected
     by extract_exely_identity (OTA-style dict with UniqueID, ResStatus, etc.).
@@ -361,13 +361,13 @@ def _convert_exely_parsed_to_raw(parsed_reservations: List[Dict[str, Any]]) -> L
 # Worker 3: Ingest Processor
 # ══════════════════════════════════════════════════════════════════════
 
-async def ingest_processor_once(batch_size: int = 50) -> Dict[str, Any]:
+async def ingest_processor_once(batch_size: int = 50) -> dict[str, Any]:
     """
     Process pending raw events through the ingest pipeline.
     """
     state = _worker_state["ingest_processor"]
     state["running"] = True
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     result = {
         "processed": 0,
         "created": 0,
@@ -418,13 +418,13 @@ async def ingest_processor_once(batch_size: int = 50) -> Dict[str, Any]:
 # Worker 4: Replay Worker
 # ══════════════════════════════════════════════════════════════════════
 
-async def replay_worker_once(batch_size: int = 20) -> Dict[str, Any]:
+async def replay_worker_once(batch_size: int = 20) -> dict[str, Any]:
     """
     Retry failed events by resetting their status to pending.
     """
     state = _worker_state["replay_worker"]
     state["running"] = True
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     result = {"replayed": 0, "errors": 0}
 
     try:
@@ -452,17 +452,17 @@ async def replay_worker_once(batch_size: int = 20) -> Dict[str, Any]:
 # Manual Trigger API helpers
 # ══════════════════════════════════════════════════════════════════════
 
-async def trigger_ingest_now() -> Dict[str, Any]:
+async def trigger_ingest_now() -> dict[str, Any]:
     """Manually trigger the ingest processor."""
     return await ingest_processor_once()
 
 
-async def trigger_replay_now() -> Dict[str, Any]:
+async def trigger_replay_now() -> dict[str, Any]:
     """Manually trigger the replay worker."""
     return await replay_worker_once()
 
 
-async def trigger_pull(provider: str) -> Dict[str, Any]:
+async def trigger_pull(provider: str) -> dict[str, Any]:
     """Manually trigger a pull worker."""
     if provider == "hotelrunner":
         return await hotelrunner_pull_once()

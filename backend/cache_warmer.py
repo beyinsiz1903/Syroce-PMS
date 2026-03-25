@@ -3,7 +3,7 @@ Cache Warmer - Pre-warm critical endpoints for instant response
 Runs on startup and periodically refreshes cache
 """
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 
 class CacheWarmer:
@@ -66,7 +66,7 @@ class CacheWarmer:
             total_bookings = await self.db.bookings.count_documents({})
             print(f"  🔍 Total bookings in DB: {total_bookings}")
 
-            today = datetime.now(timezone.utc)
+            today = datetime.now(UTC)
             (today - timedelta(days=30)).isoformat()  # Wider range
             (today + timedelta(days=30)).isoformat()
 
@@ -116,7 +116,7 @@ class CacheWarmer:
             occupied_rooms = room_stats[0]['occupied_rooms'] if room_stats else 0
 
             # Quick counts
-            today = datetime.now(timezone.utc).replace(hour=0, minute=0).isoformat()
+            today = datetime.now(UTC).replace(hour=0, minute=0).isoformat()
             today_checkins = await self.db.bookings.count_documents({
                 'tenant_id': tenant_id, 'check_in': {'$gte': today}
             })

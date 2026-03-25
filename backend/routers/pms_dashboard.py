@@ -2,7 +2,7 @@
 PMS Dashboard Router — Extracted from routers/pms.py (Stage 2 decomposition)
 Dashboard overview, operational alerts, room alternatives.
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
 
@@ -82,7 +82,7 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
 async def get_operational_alerts(current_user: User = Depends(get_current_user)):
     """Decision-driven operational intelligence: what needs attention NOW."""
     tenant_id = current_user.tenant_id
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     alerts = []
 
     # 1) Dirty rooms blocking check-ins

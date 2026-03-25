@@ -6,8 +6,8 @@ Provides a single endpoint to see the health and failure state
 of the entire reservation processing pipeline.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends
 
@@ -21,9 +21,9 @@ router = APIRouter(prefix="/api/wire-status", tags=["wire-status"])
 WIRE_SUBSYSTEMS = ["reservation_import", "outbox_dispatch", "ari_outbound_push"]
 
 
-async def _subsystem_stats(db, tenant_id: str, operation_type: str, hours: int = 24) -> Dict[str, Any]:
+async def _subsystem_stats(db, tenant_id: str, operation_type: str, hours: int = 24) -> dict[str, Any]:
     """Aggregate failure stats for a subsystem within a time window."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
     pipeline = [
         {
             "$match": {
@@ -58,7 +58,7 @@ async def _recent_failures(db, tenant_id: str, operation_type: str, limit: int =
     ).sort("last_seen_at", -1).limit(limit).to_list(limit)
 
 
-def _health_status(stats: Dict) -> str:
+def _health_status(stats: dict) -> str:
     """Derive health status from failure stats."""
     open_count = stats.get("open", {}).get("count", 0)
     recurring_count = stats.get("recurring", {}).get("count", 0)

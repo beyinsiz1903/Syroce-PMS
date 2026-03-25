@@ -4,8 +4,7 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials
@@ -39,9 +38,9 @@ router = APIRouter(prefix="/api", tags=["PMS / Housekeeping"])
 
 class CleaningRequestStatusUpdate(BaseModel):
     status: str  # in_progress, completed, cancelled
-    assigned_to: Optional[str] = None
-    completed_by: Optional[str] = None
-    notes: Optional[str] = None
+    assigned_to: str | None = None
+    completed_by: str | None = None
+    notes: str | None = None
 
 
 @router.get("/housekeeping/ai/predict-time")
@@ -114,11 +113,11 @@ async def predict_cleaning_time_simple(
 async def upload_room_photo(
     photo: UploadFile = File(...),
     room_id: str = Form(...),
-    photo_type: Optional[str] = Form(None),
-    legacy_type: Optional[str] = Form(None, alias="type"),
-    room_number: Optional[str] = Form(None),
-    quality_score: Optional[int] = Form(None),
-    notes: Optional[str] = Form(None),
+    photo_type: str | None = Form(None),
+    legacy_type: str | None = Form(None, alias="type"),
+    room_number: str | None = Form(None),
+    quality_score: int | None = Form(None),
+    notes: str | None = Form(None),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -155,7 +154,7 @@ async def upload_room_photo(
         'notes': notes,
         'uploaded_by': current_user.id,
         'uploaded_by_name': current_user.name,
-        'uploaded_at': datetime.now(timezone.utc).isoformat(),
+        'uploaded_at': datetime.now(UTC).isoformat(),
         'file_name': photo.filename,
         'content_type': photo.content_type,
         'size_kb': round(file_size / 1024, 2),
@@ -179,8 +178,8 @@ async def upload_room_photo(
 @router.get("/housekeeping/photos/feed")
 async def get_housekeeping_photo_feed(
     limit: int = 12,
-    room_id: Optional[str] = None,
-    photo_type: Optional[str] = None,
+    room_id: str | None = None,
+    photo_type: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Return the most recent housekeeping photos for quick quality control."""
@@ -252,7 +251,7 @@ async def start_housekeeping_task(
         {
             '$set': {
                 'status': 'in_progress',
-                'started_at': datetime.now(timezone.utc).isoformat()
+                'started_at': datetime.now(UTC).isoformat()
             }
         }
     )
@@ -290,7 +289,7 @@ async def complete_housekeeping_task(
         {
             '$set': {
                 'status': 'completed',
-                'completed_at': datetime.now(timezone.utc).isoformat(),
+                'completed_at': datetime.now(UTC).isoformat(),
                 'completion_notes': notes,
                 'photos': photos
             }
@@ -325,7 +324,7 @@ async def report_housekeeping_issue(
         'photos': request.photos,
         'status': 'open',
         'reported_by': current_user.name,
-        'reported_at': datetime.now(timezone.utc).isoformat()
+        'reported_at': datetime.now(UTC).isoformat()
     }
 
     issue_copy = issue.copy()
@@ -342,7 +341,7 @@ async def report_housekeeping_issue(
             'priority': request.priority,
             'status': 'pending',
             'assigned_to': 'Engineering',
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         }
         await db.housekeeping_tasks.insert_one(maintenance_task)
 
@@ -362,7 +361,7 @@ async def upload_housekeeping_photo(
         'task_id': request.task_id,
         'photo_data': request.photo_base64[:100] + '...',  # Store truncated for demo
         'uploaded_by': current_user.name,
-        'uploaded_at': datetime.now(timezone.utc).isoformat()
+        'uploaded_at': datetime.now(UTC).isoformat()
     }
 
     photo_copy = photo_record.copy()
@@ -413,9 +412,9 @@ async def get_mobile_room_status(
 
 @router.get("/housekeeping/task-timing")
 async def get_task_timing_analysis(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    staff_member: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    staff_member: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -426,14 +425,14 @@ async def get_task_timing_analysis(
     """
     # Default to last 30 days
     if not end_date:
-        end_dt = datetime.now(timezone.utc)
+        end_dt = datetime.now(UTC)
     else:
-        end_dt = datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc)
+        end_dt = datetime.fromisoformat(end_date).replace(tzinfo=UTC)
 
     if not start_date:
         start_dt = end_dt - timedelta(days=30)
     else:
-        start_dt = datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc)
+        start_dt = datetime.fromisoformat(start_date).replace(tzinfo=UTC)
 
     # Get completed tasks with timing
     match_criteria = {
@@ -561,7 +560,7 @@ async def get_staff_performance_table(
     - Quality score (based on inspections)
     - Attendance/punctuality
     """
-    end_dt = datetime.now(timezone.utc)
+    end_dt = datetime.now(UTC)
     start_dt = end_dt - timedelta(days=period_days)
 
     # Get all completed tasks
@@ -791,7 +790,7 @@ async def adjust_linen_inventory(
     item_id: str,
     adjustment_type: str,  # restock, use, return_from_use, send_to_laundry, return_from_laundry, mark_damaged
     quantity: int,
-    notes: Optional[str] = None,
+    notes: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -814,7 +813,7 @@ async def adjust_linen_inventory(
 
     if adjustment_type == 'restock':
         updates['quantity_in_stock'] = item.get('quantity_in_stock', 0) + quantity
-        updates['last_restocked'] = datetime.now(timezone.utc).isoformat()
+        updates['last_restocked'] = datetime.now(UTC).isoformat()
 
     elif adjustment_type == 'use':
         if item.get('quantity_in_stock', 0) < quantity:
@@ -878,7 +877,7 @@ async def adjust_linen_inventory(
 
 @router.get("/housekeeping/mobile/room-assignments")
 async def get_room_assignments(
-    staff_name: Optional[str] = None,
+    staff_name: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get room assignments showing who is cleaning which room"""
@@ -908,8 +907,8 @@ async def get_room_assignments(
                 started_at = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
             # Ensure started_at is timezone-aware
             if started_at.tzinfo is None:
-                started_at = started_at.replace(tzinfo=timezone.utc)
-            duration_minutes = (datetime.now(timezone.utc) - started_at).total_seconds() / 60
+                started_at = started_at.replace(tzinfo=UTC)
+            duration_minutes = (datetime.now(UTC) - started_at).total_seconds() / 60
 
         assignments.append({
             'task_id': task['id'],
@@ -932,8 +931,8 @@ async def get_room_assignments(
 
 @router.get("/housekeeping/cleaning-time-statistics")
 async def get_cleaning_time_statistics(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get room cleaning time statistics by staff member"""
@@ -945,7 +944,7 @@ async def get_cleaning_time_statistics(
         end = datetime.fromisoformat(end_date)
     else:
         # Default to last 30 days
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
         start = end - timedelta(days=30)
 
     # Get completed tasks
@@ -1025,8 +1024,8 @@ async def get_cleaning_time_statistics(
 
 @router.get("/housekeeping/cleaning-requests")
 async def get_cleaning_requests(
-    status: Optional[str] = None,  # pending, in_progress, completed
-    priority: Optional[str] = None,  # normal, urgent
+    status: str | None = None,  # pending, in_progress, completed
+    priority: str | None = None,  # normal, urgent
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -1047,7 +1046,7 @@ async def get_cleaning_requests(
         # Categorize by status
         pending = [r for r in requests if r['status'] == 'pending']
         in_progress = [r for r in requests if r['status'] == 'in_progress']
-        completed_today = [r for r in requests if r['status'] == 'completed' and r.get('completed_at', '').startswith(datetime.now(timezone.utc).date().isoformat())]
+        completed_today = [r for r in requests if r['status'] == 'completed' and r.get('completed_at', '').startswith(datetime.now(UTC).date().isoformat())]
 
         return {
             'requests': requests,
@@ -1090,15 +1089,15 @@ async def update_cleaning_request_status(
 
         update_fields = {
             'status': update_data.status,
-            'updated_at': datetime.now(timezone.utc).isoformat()
+            'updated_at': datetime.now(UTC).isoformat()
         }
 
         if update_data.status == 'in_progress':
             update_fields['assigned_to'] = update_data.assigned_to or current_user.name
-            update_fields['started_at'] = datetime.now(timezone.utc).isoformat()
+            update_fields['started_at'] = datetime.now(UTC).isoformat()
 
         if update_data.status == 'completed':
-            update_fields['completed_at'] = datetime.now(timezone.utc).isoformat()
+            update_fields['completed_at'] = datetime.now(UTC).isoformat()
             update_fields['completed_by'] = update_data.completed_by or current_user.name
 
             # Notify guest
@@ -1112,7 +1111,7 @@ async def update_cleaning_request_status(
                 'priority': 'normal',
                 'related_id': request_id,
                 'read': False,
-                'created_at': datetime.now(timezone.utc).isoformat()
+                'created_at': datetime.now(UTC).isoformat()
             })
 
         await db.cleaning_requests.update_one(

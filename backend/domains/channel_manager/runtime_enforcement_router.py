@@ -11,7 +11,6 @@ API endpoints for the runtime enforcement layers:
   6. Rollout Framework — controlled live deployment
 """
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -37,8 +36,8 @@ router = APIRouter(prefix="/api/lockdown/runtime", tags=["Runtime Enforcement"])
 
 class ReleaseQuarantineRequest(BaseModel):
     room_type_code: str
-    rate_plan_code: Optional[str] = None
-    provider: Optional[str] = None
+    rate_plan_code: str | None = None
+    provider: str | None = None
 
 
 class AutoHealRequest(BaseModel):
@@ -303,8 +302,8 @@ async def quarantine_overview(
 
 class SafeReleaseRequest(BaseModel):
     room_type_code: str
-    rate_plan_code: Optional[str] = None
-    provider: Optional[str] = None
+    rate_plan_code: str | None = None
+    provider: str | None = None
 
 
 @router.post("/quarantine/check-release")
@@ -398,10 +397,10 @@ class RetrySafeRequest(BaseModel):
     pass
 
 class RevalidateMappingRequest(BaseModel):
-    provider: Optional[str] = None
+    provider: str | None = None
 
 class SuppressNoiseRequest(BaseModel):
-    event_type: Optional[str] = None
+    event_type: str | None = None
     duration_minutes: int = 30
 
 

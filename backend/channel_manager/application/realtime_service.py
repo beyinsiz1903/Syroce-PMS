@@ -13,8 +13,8 @@ Uses a simple in-process pub/sub pattern with connected WebSocket clients.
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Set
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import WebSocket
 
@@ -25,7 +25,7 @@ class ConnectionManager:
     """Manages WebSocket connections for real-time admin updates."""
 
     def __init__(self):
-        self._connections: Dict[str, Set[WebSocket]] = {}
+        self._connections: dict[str, set[WebSocket]] = {}
         self._lock = asyncio.Lock()
 
     async def connect(self, websocket: WebSocket, tenant_id: str):
@@ -47,7 +47,7 @@ class ConnectionManager:
                     del self._connections[tenant_id]
         logger.info("WS client disconnected for tenant %s", tenant_id)
 
-    async def broadcast(self, tenant_id: str, event: Dict[str, Any]):
+    async def broadcast(self, tenant_id: str, event: dict[str, Any]):
         """Broadcast an event to all connections for a tenant."""
         async with self._lock:
             connections = self._connections.get(tenant_id, set()).copy()
@@ -57,7 +57,7 @@ class ConnectionManager:
 
         payload = json.dumps({
             **event,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
 
         dead = []
@@ -85,7 +85,7 @@ class RealtimeEventService:
     """Publishes domain events to connected WebSocket clients."""
 
     @staticmethod
-    async def emit_alert_triggered(tenant_id: str, alert: Dict[str, Any]):
+    async def emit_alert_triggered(tenant_id: str, alert: dict[str, Any]):
         await ws_manager.broadcast(tenant_id, {
             "type": "alert_triggered",
             "data": {
@@ -98,7 +98,7 @@ class RealtimeEventService:
         })
 
     @staticmethod
-    async def emit_health_change(tenant_id: str, connector_id: str, health_data: Dict[str, Any]):
+    async def emit_health_change(tenant_id: str, connector_id: str, health_data: dict[str, Any]):
         await ws_manager.broadcast(tenant_id, {
             "type": "connector_health_change",
             "data": {
@@ -110,7 +110,7 @@ class RealtimeEventService:
         })
 
     @staticmethod
-    async def emit_sync_job_update(tenant_id: str, job: Dict[str, Any]):
+    async def emit_sync_job_update(tenant_id: str, job: dict[str, Any]):
         await ws_manager.broadcast(tenant_id, {
             "type": "sync_job_update",
             "data": {
@@ -123,7 +123,7 @@ class RealtimeEventService:
         })
 
     @staticmethod
-    async def emit_import_batch_update(tenant_id: str, batch: Dict[str, Any]):
+    async def emit_import_batch_update(tenant_id: str, batch: dict[str, Any]):
         await ws_manager.broadcast(tenant_id, {
             "type": "reservation_import_batch_update",
             "data": {
@@ -137,7 +137,7 @@ class RealtimeEventService:
         })
 
     @staticmethod
-    async def emit_scheduler_job_change(tenant_id: str, job: Dict[str, Any]):
+    async def emit_scheduler_job_change(tenant_id: str, job: dict[str, Any]):
         await ws_manager.broadcast(tenant_id, {
             "type": "scheduler_job_state_change",
             "data": {

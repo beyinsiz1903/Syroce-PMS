@@ -2,8 +2,7 @@
 Folio & Billing Hardening Service - Charge posting, payment, refund, split, void/reversal, tax breakdown.
 """
 import uuid
-from datetime import datetime, timezone
-from typing import Dict, List
+from datetime import UTC, datetime
 
 from core.database import db
 
@@ -13,7 +12,7 @@ class FolioHardeningService:
 
     # ── CHARGE POSTING ──
 
-    async def post_charge(self, tenant_id: str, folio_id: str, booking_id: str, charge_data: Dict, posted_by: str) -> Dict:
+    async def post_charge(self, tenant_id: str, folio_id: str, booking_id: str, charge_data: dict, posted_by: str) -> dict:
         """Post a charge to a folio with validation."""
         folio = await db.folios.find_one({"id": folio_id, "tenant_id": tenant_id}, {"_id": 0})
         if not folio:
@@ -29,7 +28,7 @@ class FolioHardeningService:
         total = round(line_amount + tax_amount, 2)
 
         charge_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         charge_doc = {
             "id": charge_id,
@@ -63,7 +62,7 @@ class FolioHardeningService:
 
     # ── PAYMENT POSTING ──
 
-    async def post_payment(self, tenant_id: str, folio_id: str, booking_id: str, payment_data: Dict, processed_by: str) -> Dict:
+    async def post_payment(self, tenant_id: str, folio_id: str, booking_id: str, payment_data: dict, processed_by: str) -> dict:
         """Post a payment to a folio."""
         folio = await db.folios.find_one({"id": folio_id, "tenant_id": tenant_id}, {"_id": 0})
         if not folio:
@@ -76,7 +75,7 @@ class FolioHardeningService:
             return {"success": False, "error": "Payment amount must be positive"}
 
         payment_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         payment_doc = {
             "id": payment_id,
@@ -105,7 +104,7 @@ class FolioHardeningService:
 
     # ── REFUND ──
 
-    async def post_refund(self, tenant_id: str, folio_id: str, booking_id: str, amount: float, reason: str, method: str, processed_by: str) -> Dict:
+    async def post_refund(self, tenant_id: str, folio_id: str, booking_id: str, amount: float, reason: str, method: str, processed_by: str) -> dict:
         """Post a refund to a folio."""
         folio = await db.folios.find_one({"id": folio_id, "tenant_id": tenant_id}, {"_id": 0})
         if not folio:
@@ -115,7 +114,7 @@ class FolioHardeningService:
             return {"success": False, "error": "Refund amount must be positive"}
 
         refund_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         refund_doc = {
             "id": refund_id,
@@ -144,7 +143,7 @@ class FolioHardeningService:
 
     # ── VOID CHARGE ──
 
-    async def void_charge(self, tenant_id: str, charge_id: str, reason: str, voided_by: str) -> Dict:
+    async def void_charge(self, tenant_id: str, charge_id: str, reason: str, voided_by: str) -> dict:
         """Void a charge (soft delete with reason tracking)."""
         charge = await db.folio_charges.find_one({"id": charge_id, "tenant_id": tenant_id}, {"_id": 0})
         if not charge:
@@ -155,7 +154,7 @@ class FolioHardeningService:
         if not reason:
             return {"success": False, "error": "Void reason is required"}
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         await db.folio_charges.update_one(
             {"id": charge_id, "tenant_id": tenant_id},
             {"$set": {"voided": True, "void_reason": reason, "voided_by": voided_by, "voided_at": now.isoformat()}}
@@ -170,7 +169,7 @@ class FolioHardeningService:
 
     # ── VOID PAYMENT ──
 
-    async def void_payment(self, tenant_id: str, payment_id: str, reason: str, voided_by: str) -> Dict:
+    async def void_payment(self, tenant_id: str, payment_id: str, reason: str, voided_by: str) -> dict:
         """Void a payment."""
         payment = await db.payments.find_one({"id": payment_id, "tenant_id": tenant_id}, {"_id": 0})
         if not payment:
@@ -180,7 +179,7 @@ class FolioHardeningService:
         if not reason:
             return {"success": False, "error": "Void reason is required"}
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         await db.payments.update_one(
             {"id": payment_id, "tenant_id": tenant_id},
             {"$set": {"voided": True, "void_reason": reason, "voided_by": voided_by, "voided_at": now.isoformat()}}
@@ -195,7 +194,7 @@ class FolioHardeningService:
 
     # ── SPLIT FOLIO ──
 
-    async def split_folio(self, tenant_id: str, source_folio_id: str, charge_ids: List[str], target_folio_type: str, reason: str, performed_by: str) -> Dict:
+    async def split_folio(self, tenant_id: str, source_folio_id: str, charge_ids: list[str], target_folio_type: str, reason: str, performed_by: str) -> dict:
         """Split charges from one folio to a new folio."""
         source_folio = await db.folios.find_one({"id": source_folio_id, "tenant_id": tenant_id}, {"_id": 0})
         if not source_folio:
@@ -216,7 +215,7 @@ class FolioHardeningService:
         # Create new folio
         from core.utils import generate_folio_number
         new_folio_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         new_folio = {
             "id": new_folio_id,
@@ -268,7 +267,7 @@ class FolioHardeningService:
 
     # ── TAX BREAKDOWN ──
 
-    async def get_tax_breakdown(self, tenant_id: str, folio_id: str) -> Dict:
+    async def get_tax_breakdown(self, tenant_id: str, folio_id: str) -> dict:
         """Get detailed tax breakdown for a folio."""
         charges = await db.folio_charges.find(
             {"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}, {"_id": 0}
@@ -308,7 +307,7 @@ class FolioHardeningService:
 
     # ── CITY LEDGER ──
 
-    async def transfer_to_city_ledger(self, tenant_id: str, folio_id: str, account_id: str, reason: str, performed_by: str) -> Dict:
+    async def transfer_to_city_ledger(self, tenant_id: str, folio_id: str, account_id: str, reason: str, performed_by: str) -> dict:
         """Transfer folio balance to city ledger account."""
         folio = await db.folios.find_one({"id": folio_id, "tenant_id": tenant_id}, {"_id": 0})
         if not folio:
@@ -324,7 +323,7 @@ class FolioHardeningService:
         if balance <= 0:
             return {"success": False, "error": "No outstanding balance to transfer"}
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Create city ledger transaction
         await db.city_ledger_transactions.insert_one({
@@ -353,7 +352,7 @@ class FolioHardeningService:
 
     # ── TRANSACTION AUDIT TRAIL ──
 
-    async def get_folio_audit_trail(self, tenant_id: str, folio_id: str) -> List[Dict]:
+    async def get_folio_audit_trail(self, tenant_id: str, folio_id: str) -> list[dict]:
         """Get complete audit trail for a folio."""
         trail = await db.pms_audit_trail.find(
             {"tenant_id": tenant_id, "entity_id": folio_id},
@@ -371,7 +370,7 @@ class FolioHardeningService:
         balance = round(total_charges - total_payments, 2)
         await db.folios.update_one({"id": folio_id, "tenant_id": tenant_id}, {"$set": {"balance": balance}})
 
-    async def _log_audit(self, tenant_id: str, entity_type: str, entity_id: str, action: str, user_id: str, metadata: Dict = None):
+    async def _log_audit(self, tenant_id: str, entity_type: str, entity_id: str, action: str, user_id: str, metadata: dict = None):
         await db.pms_audit_trail.insert_one({
             "tenant_id": tenant_id,
             "entity_type": entity_type,
@@ -379,5 +378,5 @@ class FolioHardeningService:
             "action": action,
             "performed_by": user_id,
             "metadata": metadata or {},
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })

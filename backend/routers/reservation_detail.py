@@ -4,8 +4,8 @@ Provides full reservation detail view, folio operations, activity logging,
 payment processing, cari transfers, room changes, and front office operations.
 """
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -23,29 +23,29 @@ class PaymentRecord(BaseModel):
     amount: float
     method: str  # cash, card, bank_transfer, online
     payment_type: str = "interim"  # prepayment, deposit, interim, final
-    reference: Optional[str] = None
-    notes: Optional[str] = None
+    reference: str | None = None
+    notes: str | None = None
 
 
 class CariTransfer(BaseModel):
     amount: float
     cari_account_id: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 class AgencyPaymentRecord(BaseModel):
     amount: float
-    agency_name: Optional[str] = None
-    reference: Optional[str] = None
-    notes: Optional[str] = None
+    agency_name: str | None = None
+    reference: str | None = None
+    notes: str | None = None
 
 
 class ChargeSplit(BaseModel):
     charge_id: str
-    target_folio_id: Optional[str] = None
-    target_booking_id: Optional[str] = None
+    target_folio_id: str | None = None
+    target_booking_id: str | None = None
     split_amount: float
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 class NoteCreate(BaseModel):
@@ -60,32 +60,32 @@ class RoomChangeRequest(BaseModel):
 
 
 class EarlyCheckinRequest(BaseModel):
-    checkin_time: Optional[str] = None
+    checkin_time: str | None = None
     extra_charge: float = 0.0
 
 
 class LateCheckoutRequest(BaseModel):
-    checkout_time: Optional[str] = None
+    checkout_time: str | None = None
     extra_charge: float = 0.0
 
 
 class DepositRecord(BaseModel):
     amount: float
     method: str = "cash"
-    reference: Optional[str] = None
+    reference: str | None = None
 
 
 class DailyRateUpdate(BaseModel):
-    rates: List[Dict[str, Any]]  # [{date: "2026-03-18", rate: 450.0}, ...]
+    rates: list[dict[str, Any]]  # [{date: "2026-03-18", rate: 450.0}, ...]
 
 
 class CariAccountCreate(BaseModel):
     name: str
     account_type: str = "company"  # company, agency, individual
-    company_id: Optional[str] = None
-    contact_person: Optional[str] = None
-    contact_email: Optional[str] = None
-    contact_phone: Optional[str] = None
+    company_id: str | None = None
+    contact_person: str | None = None
+    contact_email: str | None = None
+    contact_phone: str | None = None
     credit_limit: float = 0.0
     payment_terms_days: int = 30
 
@@ -98,17 +98,17 @@ class ExtraChargeAdd(BaseModel):
 
 
 class GuestUpdate(BaseModel):
-    name: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    id_number: Optional[str] = None
-    nationality: Optional[str] = None
-    vip_status: Optional[bool] = None
+    name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    id_number: str | None = None
+    nationality: str | None = None
+    vip_status: bool | None = None
 
 
 class GroupBookingCreate(BaseModel):
     group_name: str
-    booking_ids: List[str] = []
+    booking_ids: list[str] = []
 
 
 class GroupBookingAddRoom(BaseModel):
@@ -118,16 +118,16 @@ class GroupBookingAddRoom(BaseModel):
 class CommunicationLogCreate(BaseModel):
     channel: str = "email"  # email, sms, phone, whatsapp
     direction: str = "outbound"  # inbound, outbound
-    subject: Optional[str] = None
+    subject: str | None = None
     content: str
-    recipient: Optional[str] = None
+    recipient: str | None = None
 
 
 class DepositRefund(BaseModel):
     deposit_id: str
     refund_amount: float
     refund_method: str = "cash"
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 # ── Helper ──
@@ -153,7 +153,7 @@ async def _log_activity(tenant_id: str, booking_id: str, action: str, actor: str
         "action": action,
         "actor": actor,
         "details": details or {},
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.reservation_activity_log.insert_one(log_entry)
     return log_entry
@@ -329,7 +329,7 @@ async def record_payment(
             "status": "open",
             "guest_id": booking.get("guest_id"),
             "balance": 0.0,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db.folios.insert_one({**folio})
 
@@ -345,7 +345,7 @@ async def record_payment(
         "reference": data.reference,
         "notes": data.notes,
         "processed_by": current_user.name,
-        "processed_at": datetime.now(timezone.utc).isoformat(),
+        "processed_at": datetime.now(UTC).isoformat(),
         "voided": False,
     }
     await db.payments.insert_one({**payment})
@@ -393,7 +393,7 @@ async def transfer_to_cari(
         "amount": data.amount,
         "description": data.description or f"Rezervasyon {booking_id} - Cariye aktarım",
         "posted_by": current_user.name,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.cari_transactions.insert_one({**transaction})
 
@@ -445,7 +445,7 @@ async def record_agency_payment(
             "status": "open",
             "guest_id": booking.get("guest_id"),
             "balance": 0.0,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db.folios.insert_one({**folio})
 
@@ -462,7 +462,7 @@ async def record_agency_payment(
         "notes": data.notes,
         "agency_name": data.agency_name or booking.get("source_channel", ""),
         "processed_by": current_user.name,
-        "processed_at": datetime.now(timezone.utc).isoformat(),
+        "processed_at": datetime.now(UTC).isoformat(),
         "voided": False,
     }
     await db.payments.insert_one({**payment})
@@ -524,7 +524,7 @@ async def split_charge(
                 "status": "open",
                 "guest_id": target_booking.get("guest_id"),
                 "balance": 0.0,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             }
             await db.folios.insert_one({**target_folio})
         target_folio_id = target_folio["id"]
@@ -542,7 +542,7 @@ async def split_charge(
         "amount": data.split_amount,
         "tax_amount": 0.0,
         "total": data.split_amount,
-        "date": datetime.now(timezone.utc).isoformat(),
+        "date": datetime.now(UTC).isoformat(),
         "posted_by": current_user.name,
         "voided": False,
         "split_from_charge_id": data.charge_id,
@@ -572,7 +572,7 @@ async def split_charge(
         "amount": data.split_amount,
         "reason": data.reason or "Masraf bölme",
         "performed_by": current_user.name,
-        "performed_at": datetime.now(timezone.utc).isoformat(),
+        "performed_at": datetime.now(UTC).isoformat(),
     }
     await db.folio_operations.insert_one({**split_log})
 
@@ -602,7 +602,7 @@ async def add_reservation_note(
         "content": data.content,
         "note_type": data.note_type,
         "created_by": current_user.name,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.reservation_notes.insert_one({**note})
 
@@ -668,7 +668,7 @@ async def room_change(
         "to_room_number": new_room.get("room_number"),
         "reason": data.reason,
         "moved_by": current_user.name,
-        "moved_at": datetime.now(timezone.utc).isoformat(),
+        "moved_at": datetime.now(UTC).isoformat(),
     }
     await db.room_move_history.insert_one({**move_record})
 
@@ -718,7 +718,7 @@ async def early_checkin(
             "charge_name": "Erken Giriş Ücreti",
             "charge_amount": data.extra_charge,
             "category": "room",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db.extra_charges.insert_one({**charge})
 
@@ -758,7 +758,7 @@ async def late_checkout(
             "charge_name": "Geç Çıkış Ücreti",
             "charge_amount": data.extra_charge,
             "category": "room",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db.extra_charges.insert_one({**charge})
 
@@ -785,7 +785,7 @@ async def mark_noshow(
 
     await db.bookings.update_one(
         {"id": booking_id, "tenant_id": tid},
-        {"$set": {"status": "no_show", "no_show_at": datetime.now(timezone.utc).isoformat()}},
+        {"$set": {"status": "no_show", "no_show_at": datetime.now(UTC).isoformat()}},
     )
 
     # Release the room
@@ -849,7 +849,7 @@ async def record_deposit(
         "deposit_type": "deposit",
         "status": "received",
         "recorded_by": current_user.name,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.deposits.insert_one({**deposit})
 
@@ -865,7 +865,7 @@ async def record_deposit(
         "status": "paid",
         "reference": data.reference,
         "processed_by": current_user.name,
-        "processed_at": datetime.now(timezone.utc).isoformat(),
+        "processed_at": datetime.now(UTC).isoformat(),
         "voided": False,
     }
     await db.payments.insert_one({**payment})
@@ -912,7 +912,7 @@ async def add_extra_charge_detail(
         "quantity": data.quantity,
         "total": total,
         "posted_by": current_user.name,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "voided": False,
     }
     await db.extra_charges.insert_one({**charge})
@@ -945,7 +945,7 @@ async def update_daily_rates(
             {"$set": {
                 "rate": rate_entry["rate"],
                 "updated_by": current_user.name,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }},
             upsert=True,
         )
@@ -1035,7 +1035,7 @@ async def create_cari_account(
         "current_balance": 0.0,
         "status": "active",
         "created_by": current_user.name,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.cari_accounts.insert_one({**account})
 
@@ -1063,7 +1063,7 @@ async def get_cari_transactions(
 
 class CariReconciliation(BaseModel):
     amount: float
-    description: Optional[str] = None
+    description: str | None = None
 
 
 @router.post("/cari-accounts/{account_id}/reconcile")
@@ -1089,7 +1089,7 @@ async def reconcile_cari_account(
         "amount": data.amount,
         "description": data.description or "Mahsuplaştırma",
         "posted_by": current_user.name or current_user.email,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.cari_transactions.insert_one({**txn})
     txn.pop("_id", None)
@@ -1121,7 +1121,7 @@ async def transfer_cari_to_agency(
     if not target:
         raise HTTPException(status_code=404, detail="Hedef cari hesap bulunamadı")
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     actor = current_user.name or current_user.email
 
     # Debit from source
@@ -1217,7 +1217,7 @@ async def create_group_booking(
         "status": "active",
         "total_rooms": len(data.booking_ids),
         "created_by": current_user.name,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.group_bookings.insert_one({**group})
 
@@ -1403,7 +1403,7 @@ async def add_communication_log(
         "content": data.content,
         "recipient": data.recipient,
         "sent_by": current_user.name,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.communication_logs.insert_one({**log_entry})
 
@@ -1482,7 +1482,7 @@ async def refund_deposit(
         "reason": data.reason,
         "status": "refunded",
         "refunded_by": current_user.name,
-        "refunded_at": datetime.now(timezone.utc).isoformat(),
+        "refunded_at": datetime.now(UTC).isoformat(),
     }
     await db.deposit_refunds.insert_one({**refund})
 

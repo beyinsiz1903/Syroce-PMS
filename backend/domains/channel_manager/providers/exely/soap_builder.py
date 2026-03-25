@@ -14,8 +14,7 @@ Supported messages:
 """
 import base64
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from lxml import etree
 
@@ -62,7 +61,7 @@ def _soap_envelope(username: str, password: str, hotel_code: str, body_element: 
     })
 
     # Timestamp (replay attack protection)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires = now + timedelta(minutes=5)
     timestamp = etree.SubElement(wsse_security, f"{{{WSU_NS}}}Timestamp")
     created_el = etree.SubElement(timestamp, f"{{{WSU_NS}}}Created")
@@ -99,8 +98,8 @@ def _soap_envelope(username: str, password: str, hotel_code: str, body_element: 
 
 def build_read_rq(
     username: str, password: str, hotel_code: str,
-    from_date: Optional[str] = None, to_date: Optional[str] = None,
-    reservation_id: Optional[str] = None,
+    from_date: str | None = None, to_date: str | None = None,
+    reservation_id: str | None = None,
 ) -> str:
     """
     Build OTA_ReadRQ to pull reservations.
@@ -109,7 +108,7 @@ def build_read_rq(
     """
     rq = etree.Element(f"{{{OTA_NS}}}OTA_ReadRQ", attrib={
         "Version": "1.0",
-        "TimeStamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "TimeStamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     })
 
     read_requests = etree.SubElement(rq, f"{{{OTA_NS}}}ReadRequests")
@@ -145,7 +144,7 @@ def build_hotel_avail_rq(
     """Build OTA_HotelAvailRQ to discover rooms and rates."""
     rq = etree.Element(f"{{{OTA_NS}}}OTA_HotelAvailRQ", attrib={
         "Version": "1.0",
-        "TimeStamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "TimeStamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     })
 
     avail_request = etree.SubElement(rq, f"{{{OTA_NS}}}AvailRequestSegments")
@@ -179,7 +178,7 @@ def build_notif_report_rq(
 
     Exely accepts ResStatus="Reserved" for delivery confirmation.
     """
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now_str = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     rq = etree.Element(f"{{{OTA_NS}}}OTA_NotifReportRQ", attrib={
         "Version": "1.0",
         "TimeStamp": now_str,
@@ -228,7 +227,7 @@ def build_hotel_res_notif_rq(
     res_status: str = "Reserved",
 ) -> str:
     """Build OTA_HotelResNotifRQ to push reservation confirmation back to Exely."""
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now_str = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     rq = etree.Element(f"{{{OTA_NS}}}OTA_HotelResNotifRQ", attrib={
         "Version": "1.0",
         "TimeStamp": now_str,
@@ -266,17 +265,17 @@ def build_ari_update_rq(
     username: str, password: str, hotel_code: str,
     room_type_code: str, rate_plan_code: str,
     start_date: str, end_date: str,
-    availability: Optional[int] = None,
-    rate_amount: Optional[float] = None,
+    availability: int | None = None,
+    rate_amount: float | None = None,
     currency: str = "TRY",
-    stop_sell: Optional[bool] = None,
-    min_stay: Optional[int] = None,
+    stop_sell: bool | None = None,
+    min_stay: int | None = None,
 ) -> str:
     """Build OTA_HotelAvailNotifRQ for availability + restrictions only.
     Rate updates go via OTA_HotelRateAmountNotifRQ separately."""
     rq = etree.Element(f"{{{OTA_NS}}}OTA_HotelAvailNotifRQ", attrib={
         "Version": "1.0",
-        "TimeStamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "TimeStamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     })
 
     avail_status = etree.SubElement(rq, f"{{{OTA_NS}}}AvailStatusMessages", attrib={
@@ -322,7 +321,7 @@ def build_rate_amount_notif_rq(
     """Build OTA_HotelRateAmountNotifRQ for rate-only push."""
     rq = etree.Element(f"{{{OTA_NS}}}OTA_HotelRateAmountNotifRQ", attrib={
         "Version": "1.0",
-        "TimeStamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "TimeStamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     })
 
     rate_amount_msgs = etree.SubElement(rq, f"{{{OTA_NS}}}RateAmountMessages", attrib={

@@ -4,7 +4,6 @@ ARI Outbound Service — Main push orchestrator.
 Coordinates: buffer → coalesce → compile delta → rate limit check → provider push → ack.
 """
 import logging
-from typing import Dict, List, Optional
 
 from . import repositories as repo
 from .ack_service import process_ack
@@ -17,10 +16,10 @@ from .rate_limit_service import rate_limiter
 logger = logging.getLogger(__name__)
 
 # Active providers per tenant (in production, this comes from DB)
-_ACTIVE_PROVIDERS: Dict[str, List[str]] = {}
+_ACTIVE_PROVIDERS: dict[str, list[str]] = {}
 
 # Provider adapter registry
-_PROVIDER_ADAPTERS: Dict[str, object] = {}
+_PROVIDER_ADAPTERS: dict[str, object] = {}
 
 
 def register_provider_adapter(provider: str, adapter):
@@ -29,17 +28,17 @@ def register_provider_adapter(provider: str, adapter):
     logger.info(f"Registered ARI adapter: {provider}")
 
 
-def set_active_providers(tenant_id: str, providers: List[str]):
+def set_active_providers(tenant_id: str, providers: list[str]):
     """Set active providers for a tenant."""
     _ACTIVE_PROVIDERS[tenant_id] = providers
 
 
-def get_active_providers(tenant_id: str) -> List[str]:
+def get_active_providers(tenant_id: str) -> list[str]:
     """Get active providers for a tenant. Default: hotelrunner."""
     return _ACTIVE_PROVIDERS.get(tenant_id, ["hotelrunner"])
 
 
-async def _on_buffer_flush(coalescing_key: str, events: List[ARIChangeEvent]):
+async def _on_buffer_flush(coalescing_key: str, events: list[ARIChangeEvent]):
     """Callback when buffer flushes a batch of events."""
     if not events:
         return
@@ -62,7 +61,7 @@ async def _on_buffer_flush(coalescing_key: str, events: List[ARIChangeEvent]):
 
 
 # Singleton buffer
-_buffer: Optional[ARIEventBuffer] = None
+_buffer: ARIEventBuffer | None = None
 
 
 def get_buffer() -> ARIEventBuffer:
@@ -91,7 +90,7 @@ async def publish_ari_event(event: ARIChangeEvent) -> dict:
 
 async def push_pending_changes(
     tenant_id: str,
-    provider: Optional[str] = None,
+    provider: str | None = None,
     limit: int = 50,
 ) -> dict:
     """

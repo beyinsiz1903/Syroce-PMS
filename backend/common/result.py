@@ -2,7 +2,7 @@
 Common — Service Result Object
 Standardized return type for all service methods.
 """
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class ServiceResult:
@@ -14,9 +14,9 @@ class ServiceResult:
         self,
         ok: bool = True,
         data: Any = None,
-        error: Optional[str] = None,
-        code: Optional[str] = None,
-        meta: Optional[Dict[str, Any]] = None,
+        error: str | None = None,
+        code: str | None = None,
+        meta: dict[str, Any] | None = None,
     ):
         self.ok = ok
         self.data = data
@@ -32,8 +32,8 @@ class ServiceResult:
     def fail(cls, error: str, code: str = "ERROR", **meta) -> "ServiceResult":
         return cls(ok=False, error=error, code=code, meta=meta)
 
-    def to_dict(self) -> Dict[str, Any]:
-        d: Dict[str, Any] = {"ok": self.ok}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"ok": self.ok}
         if self.ok:
             d["data"] = self.data
         else:
@@ -49,13 +49,13 @@ class PaginatedResult:
 
     __slots__ = ("items", "total", "limit", "offset")
 
-    def __init__(self, items: List[Any], total: int, limit: int, offset: int):
+    def __init__(self, items: list[Any], total: int, limit: int, offset: int):
         self.items = items
         self.total = total
         self.limit = limit
         self.offset = offset
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "items": self.items,
             "total": self.total,

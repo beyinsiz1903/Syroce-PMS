@@ -4,9 +4,8 @@ Centralized logging for production monitoring
 """
 
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Dict, List, Optional
 
 
 class LogLevel(str, Enum):
@@ -42,13 +41,13 @@ class LoggingService:
         tenant_id: str,
         error_type: str,
         error_message: str,
-        endpoint: Optional[str] = None,
-        user_id: Optional[str] = None,
-        user_name: Optional[str] = None,
-        request_data: Optional[Dict] = None,
-        stack_trace: Optional[str] = None,
+        endpoint: str | None = None,
+        user_id: str | None = None,
+        user_name: str | None = None,
+        request_data: dict | None = None,
+        stack_trace: str | None = None,
         severity: LogLevel = LogLevel.ERROR,
-        metadata: Optional[Dict] = None
+        metadata: dict | None = None
     ) -> str:
         """
         Log an error
@@ -75,7 +74,7 @@ class LoggingService:
         log_entry = {
             'id': log_id,
             'tenant_id': tenant_id,
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
             'category': LogCategory.ERROR,
             'severity': severity,
             'error_type': error_type,
@@ -118,9 +117,9 @@ class LoggingService:
         rooms_processed: int = 0,
         charges_posted: int = 0,
         total_amount: float = 0.0,
-        duration_seconds: Optional[float] = None,
-        errors: Optional[List[str]] = None,
-        metadata: Optional[Dict] = None
+        duration_seconds: float | None = None,
+        errors: list[str] | None = None,
+        metadata: dict | None = None
     ) -> str:
         """Log night audit operation"""
         import uuid
@@ -130,7 +129,7 @@ class LoggingService:
         log_entry = {
             'id': log_id,
             'tenant_id': tenant_id,
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
             'category': LogCategory.NIGHT_AUDIT,
             'audit_date': audit_date,
             'user_id': user_id,
@@ -169,10 +168,10 @@ class LoggingService:
         status: str,  # started, completed, failed, partial
         records_synced: int = 0,
         records_failed: int = 0,
-        duration_seconds: Optional[float] = None,
-        errors: Optional[List[str]] = None,
-        warnings: Optional[List[str]] = None,
-        metadata: Optional[Dict] = None
+        duration_seconds: float | None = None,
+        errors: list[str] | None = None,
+        warnings: list[str] | None = None,
+        metadata: dict | None = None
     ) -> str:
         """Log OTA channel sync operation"""
         import uuid
@@ -182,7 +181,7 @@ class LoggingService:
         log_entry = {
             'id': log_id,
             'tenant_id': tenant_id,
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
             'category': LogCategory.OTA_SYNC,
             'channel': channel,
             'sync_type': sync_type,
@@ -216,19 +215,19 @@ class LoggingService:
         self,
         tenant_id: str,
         publish_type: str,  # rates, restrictions, inventory
-        channels: List[str],
-        room_types: List[str],
-        date_range: Dict[str, str],
+        channels: list[str],
+        room_types: list[str],
+        date_range: dict[str, str],
         status: str,  # started, completed, failed, partial
         records_published: int = 0,
         records_failed: int = 0,
         auto_published: bool = False,
         triggered_by: str = 'manual',  # manual, auto, ai_recommendation
-        user_id: Optional[str] = None,
-        user_name: Optional[str] = None,
-        duration_seconds: Optional[float] = None,
-        errors: Optional[List[str]] = None,
-        metadata: Optional[Dict] = None
+        user_id: str | None = None,
+        user_name: str | None = None,
+        duration_seconds: float | None = None,
+        errors: list[str] | None = None,
+        metadata: dict | None = None
     ) -> str:
         """Log RMS rate/restriction publishing"""
         import uuid
@@ -238,7 +237,7 @@ class LoggingService:
         log_entry = {
             'id': log_id,
             'tenant_id': tenant_id,
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
             'category': LogCategory.RMS_PUBLISH,
             'publish_type': publish_type,
             'channels': channels,
@@ -277,18 +276,18 @@ class LoggingService:
         tenant_id: str,
         prediction_type: str,  # failure_risk, days_until_failure, preventive_schedule
         prediction_result: str,  # low, medium, high risk
-        equipment_id: Optional[str] = None,
-        equipment_type: Optional[str] = None,
-        room_id: Optional[str] = None,
-        room_number: Optional[str] = None,
+        equipment_id: str | None = None,
+        equipment_type: str | None = None,
+        room_id: str | None = None,
+        room_number: str | None = None,
         confidence_score: float = 0.0,
-        days_until_failure: Optional[int] = None,
-        indicators: Optional[List[str]] = None,
-        recommended_action: Optional[str] = None,
+        days_until_failure: int | None = None,
+        indicators: list[str] | None = None,
+        recommended_action: str | None = None,
         auto_task_created: bool = False,
-        task_id: Optional[str] = None,
-        model_version: Optional[str] = None,
-        metadata: Optional[Dict] = None
+        task_id: str | None = None,
+        model_version: str | None = None,
+        metadata: dict | None = None
     ) -> str:
         """Log predictive maintenance AI predictions"""
         import uuid
@@ -298,7 +297,7 @@ class LoggingService:
         log_entry = {
             'id': log_id,
             'tenant_id': tenant_id,
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
             'category': LogCategory.MAINTENANCE_PREDICTION,
             'prediction_type': prediction_type,
             'equipment_id': equipment_id,
@@ -340,8 +339,8 @@ class LoggingService:
         description: str,
         severity: str = 'medium',  # low, medium, high, critical
         source_module: str = 'system',
-        assigned_to: Optional[str] = None,
-        metadata: Optional[Dict] = None
+        assigned_to: str | None = None,
+        metadata: dict | None = None
     ) -> str:
         """Create an alert in alert center"""
         import uuid
@@ -351,7 +350,7 @@ class LoggingService:
         alert_entry = {
             'id': alert_id,
             'tenant_id': tenant_id,
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
             'alert_type': alert_type,
             'title': title,
             'description': description,
@@ -378,16 +377,16 @@ class LoggingService:
         tenant_id: str,
         endpoint: str,
         method: str,
-        user_id: Optional[str] = None,
-        user_name: Optional[str] = None,
+        user_id: str | None = None,
+        user_name: str | None = None,
         status_code: int = 200,
-        duration_ms: Optional[float] = None,
-        error: Optional[str] = None
+        duration_ms: float | None = None,
+        error: str | None = None
     ):
         """Log API request for monitoring"""
         log_entry = {
             'tenant_id': tenant_id,
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
             'category': LogCategory.API,
             'endpoint': endpoint,
             'method': method,
@@ -404,7 +403,7 @@ class LoggingService:
 
 
 # Helper function to capture exception details
-def format_exception(e: Exception) -> Dict[str, str]:
+def format_exception(e: Exception) -> dict[str, str]:
     """Format exception for logging"""
     return {
         'type': type(e).__name__,

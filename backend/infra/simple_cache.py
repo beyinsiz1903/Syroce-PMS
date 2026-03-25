@@ -4,14 +4,14 @@ Ultra-fast caching without Redis dependency
 """
 from datetime import datetime, timedelta
 from functools import wraps
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class SimpleCache:
     """Thread-safe in-memory cache"""
 
     def __init__(self):
-        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._cache: dict[str, dict[str, Any]] = {}
 
     def set(self, key: str, value: Any, ttl: int = 60):
         """Set cache with TTL in seconds"""
@@ -21,7 +21,7 @@ class SimpleCache:
             'expires_at': expires_at
         }
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """Get cached value if not expired"""
         if key not in self._cache:
             return None

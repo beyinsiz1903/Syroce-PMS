@@ -6,8 +6,8 @@ no-show handling, folio balancing, tax validation, and exception management.
 import logging
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from common.audit_hook import SEVERITY_CRITICAL, audited
 from common.context import OperationContext
@@ -30,7 +30,7 @@ class NightAuditCoreService:
         self._lock_collection = "night_audit_locks"
 
     # ── Idempotency guard ──────────────────────────────────────────────
-    async def _acquire_lock(self, tenant_id: str, business_date: str) -> Optional[str]:
+    async def _acquire_lock(self, tenant_id: str, business_date: str) -> str | None:
         lock_id = str(uuid.uuid4())
         try:
             result = await self._db[self._lock_collection].update_one(
@@ -39,7 +39,7 @@ class NightAuditCoreService:
                     "id": lock_id,
                     "tenant_id": tenant_id,
                     "business_date": business_date,
-                    "acquired_at": datetime.now(timezone.utc).isoformat(),
+                    "acquired_at": datetime.now(UTC).isoformat(),
                     "released": False,
                 }},
                 upsert=True,
@@ -53,7 +53,7 @@ class NightAuditCoreService:
     async def _release_lock(self, tenant_id: str, business_date: str):
         await self._db[self._lock_collection].update_one(
             {"tenant_id": tenant_id, "business_date": business_date},
-            {"$set": {"released": True, "released_at": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {"released": True, "released_at": datetime.now(UTC).isoformat()}},
         )
 
     # ── Main entry point ───────────────────────────────────────────────
@@ -61,14 +61,14 @@ class NightAuditCoreService:
     async def run_night_audit(
         self,
         ctx: OperationContext,
-        business_date: Optional[str] = None,
+        business_date: str | None = None,
         force_rerun: bool = False,
         skip_validations: bool = False,
         dry_run: bool = False,
-        reason: Optional[str] = None,
+        reason: str | None = None,
     ) -> ServiceResult:
         start_ts = time.monotonic()
-        bd = business_date or datetime.now(timezone.utc).date().isoformat()
+        bd = business_date or datetime.now(UTC).date().isoformat()
 
         # 1. Idempotency: check previous successful run
         if not force_rerun:
@@ -92,7 +92,7 @@ class NightAuditCoreService:
             )
 
         audit_id = str(uuid.uuid4())
-        exceptions: List[Dict[str, Any]] = []
+        exceptions: list[dict[str, Any]] = []
 
         try:
             # 3. Pre-audit validations
@@ -123,7 +123,7 @@ class NightAuditCoreService:
                 "is_dry_run": dry_run,
                 "initiated_by": ctx.actor_id,
                 "reason": reason,
-                "started_at": datetime.now(timezone.utc).isoformat(),
+                "started_at": datetime.now(UTC).isoformat(),
                 "rooms_processed": 0,
                 "charges_posted": 0,
                 "total_room_revenue": 0.0,
@@ -181,7 +181,7 @@ class NightAuditCoreService:
                     {"id": audit_id},
                     {"$set": {
                         **summary,
-                        "completed_at": datetime.now(timezone.utc).isoformat(),
+                        "completed_at": datetime.now(UTC).isoformat(),
                         "exception_details": exceptions,
                     }},
                 )
@@ -201,7 +201,7 @@ class NightAuditCoreService:
                     {"$set": {
                         "status": "failed",
                         "error": str(exc),
-                        "completed_at": datetime.now(timezone.utc).isoformat(),
+                        "completed_at": datetime.now(UTC).isoformat(),
                     }},
                 )
             return ServiceResult.fail(f"Night audit failed: {exc}", "AUDIT_FAILED")
@@ -212,7 +212,7 @@ class NightAuditCoreService:
     async def _post_room_charges(
         self, ctx: OperationContext, bd: str, audit_id: str,
         exceptions: list, dry_run: bool,
-    ) -> Tuple[int, int, float, float]:
+    ) -> tuple[int, int, float, float]:
         """Post nightly room charges to folios for all checked-in bookings."""
         rooms_processed = 0
         charges_posted = 0
@@ -262,7 +262,7 @@ class NightAuditCoreService:
                     "voided": False,
                     "posted_by": "night_audit",
                     "audit_id": audit_id,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                 }
                 await self._db.folio_charges.insert_one({**charge_doc})
 
@@ -299,7 +299,7 @@ class NightAuditCoreService:
                     {"id": booking["id"]},
                     {"$set": {
                         "status": "no_show",
-                        "no_show_date": datetime.now(timezone.utc).isoformat(),
+                        "no_show_date": datetime.now(UTC).isoformat(),
                         "no_show_processed_by": "night_audit",
                     }},
                 )
@@ -325,7 +325,7 @@ class NightAuditCoreService:
                     "voided": False,
                     "posted_by": "night_audit",
                     "audit_id": audit_id,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                 })
 
             exceptions.append(self._make_exception(
@@ -390,7 +390,7 @@ class NightAuditCoreService:
     # ── Step: Check folio balances ─────────────────────────────────────
     async def _check_folio_balances(
         self, ctx: OperationContext, audit_id: str, exceptions: list,
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         balanced = 0
         unbalanced = 0
         cursor = self._db.folios.find({
@@ -444,7 +444,7 @@ class NightAuditCoreService:
             {"$set": {
                 "business_date": next_bd,
                 "previous_business_date": current_bd,
-                "business_date_updated_at": datetime.now(timezone.utc).isoformat(),
+                "business_date_updated_at": datetime.now(UTC).isoformat(),
             }},
             upsert=True,
         )
@@ -477,7 +477,7 @@ class NightAuditCoreService:
         settings = await self._db.tenant_settings.find_one(
             {"tenant_id": ctx.tenant_id}, {"_id": 0},
         )
-        bd = (settings or {}).get("business_date", datetime.now(timezone.utc).date().isoformat())
+        bd = (settings or {}).get("business_date", datetime.now(UTC).date().isoformat())
         return ServiceResult.success({
             "business_date": bd,
             "previous_business_date": (settings or {}).get("previous_business_date"),
@@ -508,7 +508,7 @@ class NightAuditCoreService:
         return ServiceResult.success(doc)
 
     async def update_schedule(self, ctx: OperationContext, schedule_data: dict) -> ServiceResult:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         update_doc = {
             "tenant_id": ctx.tenant_id,
             "enabled": schedule_data.get("enabled", False),
@@ -558,7 +558,7 @@ class NightAuditCoreService:
         if not schedule or not schedule.get("enabled"):
             return {"skipped": True, "reason": "Schedule not enabled"}
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         log_id = str(uuid.uuid4())
 
         # Create a system context
@@ -617,7 +617,7 @@ class NightAuditCoreService:
                 {"id": log_id},
                 {"$set": {
                     "status": status,
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "completed_at": datetime.now(UTC).isoformat(),
                     "error": error_msg,
                     "audit_result": result.data if result.ok else None,
                 }},
@@ -638,7 +638,7 @@ class NightAuditCoreService:
                 {"id": log_id},
                 {"$set": {
                     "status": "failed",
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "completed_at": datetime.now(UTC).isoformat(),
                     "error": str(e),
                 }},
             )
@@ -655,9 +655,9 @@ class NightAuditCoreService:
     @staticmethod
     def _make_exception(
         audit_id: str, tenant_id: str, severity: str, category: str,
-        entity_type: str, entity_id: Optional[str], message: str,
-        details: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        entity_type: str, entity_id: str | None, message: str,
+        details: dict[str, Any],
+    ) -> dict[str, Any]:
         return {
             "id": str(uuid.uuid4()),
             "audit_id": audit_id,
@@ -669,7 +669,7 @@ class NightAuditCoreService:
             "message": message,
             "details": details,
             "auto_resolved": False,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
 
 

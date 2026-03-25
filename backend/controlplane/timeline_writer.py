@@ -9,8 +9,8 @@ Idempotent: (entity_id, stage, source) deduplication via upsert.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("controlplane.timeline_writer")
 
@@ -50,16 +50,16 @@ class TimelineWriter:
         stage: str,
         source: str,
         status: str = "success",
-        provider: Optional[str] = None,
-        entity_id: Optional[str] = None,
-        external_id: Optional[str] = None,
-        duration_ms: Optional[int] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        parent_event_id: Optional[str] = None,
-    ) -> Optional[str]:
+        provider: str | None = None,
+        entity_id: str | None = None,
+        external_id: str | None = None,
+        duration_ms: int | None = None,
+        metadata: dict[str, Any] | None = None,
+        parent_event_id: str | None = None,
+    ) -> str | None:
         """Append a timeline event. Fire-and-forget — never raises."""
         try:
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             event_id = str(uuid.uuid4())
 
             # Compute sequence number for this correlation
@@ -137,7 +137,7 @@ async def ensure_timeline_indexes():
 
 
 # ── Singleton ──────────────────────────────────────────────────────
-_writer: Optional[TimelineWriter] = None
+_writer: TimelineWriter | None = None
 
 
 def get_timeline_writer() -> TimelineWriter:

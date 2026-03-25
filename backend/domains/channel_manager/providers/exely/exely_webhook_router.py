@@ -14,7 +14,7 @@ stages to the event timeline for full end-to-end traceability.
 import logging
 import uuid
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
@@ -54,7 +54,7 @@ async def _store_raw_payload(
             "raw_payload": raw_body.decode("utf-8", errors="replace"),
             "payload_size_bytes": len(raw_body),
             "source_ip": source_ip,
-            "received_at": datetime.now(timezone.utc).isoformat(),
+            "received_at": datetime.now(UTC).isoformat(),
         })
     except Exception as e:
         logger.warning("Raw payload storage failed (non-blocking): %s", e)
@@ -73,7 +73,7 @@ def _xml_response(body: str, status_code: int = 200) -> Response:
 
 
 def _soap_success_rs(echo_token: str = "", res_id: str = "") -> str:
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         f'<soap-env:Envelope xmlns:soap-env="{SOAP_NS}">'
@@ -88,7 +88,7 @@ def _soap_success_rs(echo_token: str = "", res_id: str = "") -> str:
 
 
 def _soap_error_rs(message: str, code: str = "450", echo_token: str = "") -> str:
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         f'<soap-env:Envelope xmlns:soap-env="{SOAP_NS}">'
@@ -239,7 +239,7 @@ def _parse_reservation(root) -> dict:
 @router.get("/health")
 async def webhook_health():
     """SOAP PingRS health check."""
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     body = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         f'<soap-env:Envelope xmlns:soap-env="{SOAP_NS}">'
@@ -282,7 +282,7 @@ async def receive_reservation(request: Request):
     raw_body = await request.body()
     correlation_id = str(uuid.uuid4())
     source_ip = request.client.host if request.client else "unknown"
-    t_start = datetime.now(timezone.utc)
+    t_start = datetime.now(UTC)
 
     if not raw_body or not raw_body.strip():
         return _xml_response(_soap_error_rs("Empty request body", "400"))
@@ -379,7 +379,7 @@ async def receive_reservation(request: Request):
         pass
 
     # Timeline: webhook_received (success)
-    t_received = datetime.now(timezone.utc)
+    t_received = datetime.now(UTC)
     recv_duration_ms = int((t_received - t_start).total_seconds() * 1000)
     await _timeline_append(
         tenant_id=tenant_id,
@@ -402,7 +402,7 @@ async def receive_reservation(request: Request):
     )
 
     # ── Stage 2: NORMALIZED — XML → structured data ──────────────
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     status_lower = (data["res_status"] or "commit").lower()
     canonical_status = {
         "commit": "confirmed", "cancel": "cancelled",

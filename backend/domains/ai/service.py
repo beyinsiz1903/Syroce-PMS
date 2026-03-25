@@ -5,7 +5,7 @@ Provides AI-powered insights, predictions, and recommendations
 
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -92,12 +92,12 @@ Samimi bir karşılama yap, önemli metrikleri vurgula ve bugün için 1-2 uygul
 
     async def predict_occupancy(
         self,
-        historical_data: List[Dict[str, Any]],
+        historical_data: list[dict[str, Any]],
         current_occupancy: float,
         upcoming_bookings: int,
         season: str = "normal",
-        room_capacity: Optional[int] = None
-    ) -> Dict[str, Any]:
+        room_capacity: int | None = None
+    ) -> dict[str, Any]:
         """
         Predict occupancy trends and patterns for PMS.
         Falls back to a deterministic heuristic when the LLM backend is unavailable.
@@ -158,9 +158,9 @@ Format your response as JSON with keys: tomorrow_prediction, next_week_predictio
         current_occupancy: float,
         upcoming_bookings: int,
         season: str,
-        room_capacity: Optional[int] = None,
-        error_message: Optional[str] = None
-    ) -> Dict[str, Any]:
+        room_capacity: int | None = None,
+        error_message: str | None = None
+    ) -> dict[str, Any]:
         """
         Generate a deterministic occupancy prediction when the AI backend
         is unavailable. Keeps the UI responsive instead of surfacing 500 errors.
@@ -207,8 +207,8 @@ Format your response as JSON with keys: tomorrow_prediction, next_week_predictio
 
     async def analyze_guest_patterns(
         self,
-        checkin_times: List[str],
-        checkout_times: List[str],
+        checkin_times: list[str],
+        checkout_times: list[str],
         guest_count: int
     ) -> str:
         """
@@ -241,7 +241,7 @@ Keep response concise (under 80 words)."""
         description: str,
         amount: float,
         vendor: str = ""
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """
         Automatically categorize expenses for invoicing
         """
@@ -284,9 +284,9 @@ Format: Category: [category], Confidence: [level]"""
 
     async def detect_invoice_anomalies(
         self,
-        invoices: List[Dict[str, Any]],
+        invoices: list[dict[str, Any]],
         average_amount: float
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Detect unusual patterns in invoices
         """
@@ -323,8 +323,8 @@ List only genuine anomalies. Be concise."""
 
     async def segment_guests(
         self,
-        guests: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        guests: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         """
         Segment guests for loyalty program targeting
         """
@@ -366,7 +366,7 @@ Format as JSON with segments array."""
         last_visit_days: int,
         total_visits: int,
         average_spend: float
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Predict if a guest is at risk of churning
         """
@@ -405,10 +405,10 @@ Be concise (under 60 words)."""
 
     async def recommend_products(
         self,
-        inventory: List[Dict[str, Any]],
-        recent_orders: List[Dict[str, Any]],
+        inventory: list[dict[str, Any]],
+        recent_orders: list[dict[str, Any]],
         season: str = "normal"
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Recommend products to order based on usage patterns
         """
@@ -444,7 +444,7 @@ Keep it concise and practical."""
 
     async def analyze_revenue_trends(
         self,
-        revenue_data: List[Dict[str, Any]],
+        revenue_data: list[dict[str, Any]],
         current_month_revenue: float,
         last_month_revenue: float
     ) -> str:

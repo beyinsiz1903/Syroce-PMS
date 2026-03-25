@@ -3,8 +3,7 @@ REPORTS Router - Extracted from server.py
 """
 import asyncio
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -68,7 +67,7 @@ async def get_migration_observability(
 
 @router.post("/reports/send-flash-now")
 async def send_flash_report_now(
-    recipients: List[str],
+    recipients: list[str],
     current_user: User = Depends(get_current_user)
 ):
     """Flash report'u şimdi gönder"""
@@ -87,7 +86,7 @@ async def send_flash_report_now(
 @router.get("/reports/flash-report")
 @cached(ttl=300, key_prefix="flash_report")  # Cache for 5 min
 async def get_flash_report(
-    date: Optional[str] = None,
+    date: str | None = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
 ):
@@ -95,7 +94,7 @@ async def get_flash_report(
     Daily Flash Report - Günlük özet rapor
     5 yıldızlı otel yöneticileri için sabah raporu
     """
-    target_date = datetime.now(timezone.utc) if not date else datetime.fromisoformat(date)
+    target_date = datetime.now(UTC) if not date else datetime.fromisoformat(date)
     today_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = target_date.replace(hour=23, minute=59, second=59)
 
@@ -191,7 +190,7 @@ async def get_flash_report(
 
 @router.get("/reports/official-guest-list")
 async def get_official_guest_list(
-    date: Optional[str] = None,
+    date: str | None = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
 ):
@@ -200,11 +199,11 @@ async def get_official_guest_list(
     Verilen tarihte (veya bugün) otelde konaklayan tüm misafirleri ve konaklama
     bilgilerini döner. Check-in <= tarih <= Check-out koşulunu kullanır.
     """
-    target_date = datetime.now(timezone.utc).date() if not date else datetime.fromisoformat(date).date()
+    target_date = datetime.now(UTC).date() if not date else datetime.fromisoformat(date).date()
 
     # Tarihi gün başlangıç/bitiş aralığına çevir
-    day_start = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
-    day_end = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=timezone.utc)
+    day_start = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=UTC)
+    day_end = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=UTC)
 
     # İlgili tarihte otelde konaklayan rezervasyonlar
     bookings_cursor = db.bookings.find(
@@ -327,7 +326,7 @@ async def get_official_guest_list(
 
     return {
         'report_date': target_date.strftime('%Y-%m-%d'),
-        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'generated_at': datetime.now(UTC).isoformat(),
 
         # Occupancy Metrics
         'occupancy': {
@@ -380,7 +379,7 @@ async def post_room_charges(current_user: User = Depends(get_current_user)):
     start_time = time.time()
 
     logging_service = get_logging_service(db)
-    audit_date = datetime.now(timezone.utc).date().isoformat()
+    audit_date = datetime.now(UTC).date().isoformat()
     errors = []
 
     try:
@@ -487,7 +486,7 @@ async def get_basic_reports_dashboard(
     """
     Temel Raporlar Dashboard - OPTIMIZED: Batch queries
     """
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     today_start = today.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today.replace(hour=23, minute=59, second=59)
     tenant_id = current_user.tenant_id
@@ -684,9 +683,9 @@ async def get_occupancy_report(
 
     # Normalize to timezone-aware UTC datetimes to avoid naive/aware comparison issues
     if start.tzinfo is None:
-        start = start.replace(tzinfo=timezone.utc)
+        start = start.replace(tzinfo=UTC)
     if end.tzinfo is None:
-        end = end.replace(tzinfo=timezone.utc)
+        end = end.replace(tzinfo=UTC)
 
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     bookings = await db.bookings.find({'tenant_id': current_user.tenant_id, 'status': {'$in': ['confirmed', 'checked_in', 'checked_out']},
@@ -702,9 +701,9 @@ async def get_occupancy_report(
         check_in = datetime.fromisoformat(ci_raw) if isinstance(ci_raw, str) else ci_raw
         check_out = datetime.fromisoformat(co_raw) if isinstance(co_raw, str) else co_raw
         if check_in.tzinfo is None:
-            check_in = check_in.replace(tzinfo=timezone.utc)
+            check_in = check_in.replace(tzinfo=UTC)
         if check_out.tzinfo is None:
-            check_out = check_out.replace(tzinfo=timezone.utc)
+            check_out = check_out.replace(tzinfo=UTC)
         overlap_start = max(start, check_in)
         overlap_end = min(end, check_out)
         if overlap_start < overlap_end:
@@ -745,11 +744,11 @@ async def get_revenue_report(
 @router.get("/reports/daily-summary")
 @cached(ttl=300, key_prefix="report_daily_summary")  # Cache for 5 minutes
 async def get_daily_summary(
-    date_str: Optional[str] = None,
+    date_str: str | None = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
 ):
-    target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(timezone.utc).date()
+    target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(UTC).date()
     start_of_day = datetime.combine(target_date, datetime.min.time())
     end_of_day = datetime.combine(target_date, datetime.max.time())
     arrivals = await db.bookings.count_documents({'tenant_id': current_user.tenant_id, 'check_in': {'$gte': start_of_day.isoformat(), '$lte': end_of_day.isoformat()}})
@@ -770,7 +769,7 @@ async def get_forecast(
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
 ):
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     forecast_data = []
     for i in range(days):
         forecast_date = today + timedelta(days=i)
@@ -813,7 +812,7 @@ async def get_daily_flash_pdf(current_user: User = Depends(get_current_user)):
         </head>
         <body>
             <h1>Daily Flash Report</h1>
-            <p><strong>Date:</strong> {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}</p>
+            <p><strong>Date:</strong> {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}</p>
 
             <div class="metric">
                 <h3>Occupancy</h3>
@@ -847,7 +846,7 @@ async def get_daily_flash_pdf(current_user: User = Depends(get_current_user)):
             pdf_buffer,
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f"attachment; filename=daily-flash-{datetime.now(timezone.utc).strftime('%Y%m%d')}.pdf"
+                "Content-Disposition": f"attachment; filename=daily-flash-{datetime.now(UTC).strftime('%Y%m%d')}.pdf"
             }
         )
     except Exception as e:
@@ -882,7 +881,7 @@ async def email_daily_flash(
             </style>
         </head>
         <body>
-            <h2>Daily Flash Report - {datetime.now(timezone.utc).strftime('%Y-%m-%d')}</h2>
+            <h2>Daily Flash Report - {datetime.now(UTC).strftime('%Y-%m-%d')}</h2>
 
             <div class="metric">
                 <h3>Occupancy</h3>
@@ -911,7 +910,7 @@ async def email_daily_flash(
         # TODO: Implement actual SMTP email sending
 
         print(f"Email would be sent to: {recipients}")
-        print(f"Subject: Daily Flash Report - {datetime.now(timezone.utc).strftime('%Y-%m-%d')}")
+        print(f"Subject: Daily Flash Report - {datetime.now(UTC).strftime('%Y-%m-%d')}")
         print(f"Content length: {len(email_html)} characters")
 
         return {
@@ -927,9 +926,9 @@ async def email_daily_flash(
 
 @router.get("/reports/daily-flash")
 @cached(ttl=300, key_prefix="report_daily_flash")  # Cache for 5 minutes
-async def get_daily_flash_report(date_str: Optional[str] = None, current_user: User = Depends(get_current_user)):
+async def get_daily_flash_report(date_str: str | None = None, current_user: User = Depends(get_current_user)):
     """Daily Flash Report - GM/CFO Dashboard"""
-    target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(timezone.utc).date()
+    target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(UTC).date()
     start_of_day = datetime.combine(target_date, datetime.min.time())
     end_of_day = datetime.combine(target_date, datetime.max.time())
 
@@ -1003,7 +1002,7 @@ async def get_daily_flash_report(date_str: Optional[str] = None, current_user: U
 
 @router.get("/reports/daily-flash/excel")
 @cached(ttl=600, key_prefix="report_daily_flash_excel")  # Cache for 10 min
-async def export_daily_flash_excel(date_str: Optional[str] = None, current_user: User = Depends(get_current_user)):
+async def export_daily_flash_excel(date_str: str | None = None, current_user: User = Depends(get_current_user)):
     """Export Daily Flash Report to Excel"""
     # Get the report data
     report_data = await get_daily_flash_report(date_str, current_user)
@@ -1048,7 +1047,7 @@ async def export_daily_flash_excel(date_str: Optional[str] = None, current_user:
 
 @router.post("/night-audit/run-night-audit")
 async def run_night_audit(
-    audit_date: Optional[str] = None,
+    audit_date: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -1065,7 +1064,7 @@ async def run_night_audit(
     audit_results = {
         'audit_id': str(uuid.uuid4()),
         'audit_date': audit_date_str,
-        'started_at': datetime.now(timezone.utc).isoformat(),
+        'started_at': datetime.now(UTC).isoformat(),
         'status': 'in_progress',
         'steps': []
     }
@@ -1117,7 +1116,7 @@ async def run_night_audit(
 
     # Complete audit
     audit_results['status'] = 'completed'
-    audit_results['completed_at'] = datetime.now(timezone.utc).isoformat()
+    audit_results['completed_at'] = datetime.now(UTC).isoformat()
 
     # Store audit record
     await db.night_audit_logs.insert_one(audit_results)
@@ -1135,7 +1134,7 @@ async def send_weekly_management_email(
     current_user = await get_current_user(credentials)
 
     # Get weekly summary data
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     week_start = today - timedelta(days=7)
 
     total_bookings = await db.bookings.count_documents({
@@ -1169,7 +1168,7 @@ async def send_weekly_management_email(
             }
         },
         'status': 'sent',
-        'sent_at': datetime.now(timezone.utc).isoformat(),
+        'sent_at': datetime.now(UTC).isoformat(),
         'sent_by': current_user.name
     }
 
@@ -1210,7 +1209,7 @@ async def get_weekly_management_summary(
     """Get weekly management summary report"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     week_start = today - timedelta(days=7)
 
     # Get key metrics for the week
@@ -1283,7 +1282,7 @@ async def start_night_audit(
     # Calculate statistics
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
 
-    datetime.fromisoformat(audit_date).replace(tzinfo=timezone.utc)
+    datetime.fromisoformat(audit_date).replace(tzinfo=UTC)
     occupied_rooms = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'checked_in',
@@ -1362,7 +1361,7 @@ async def end_of_day_audit(
         {
             '$set': {
                 'status': 'completed',
-                'completed_at': datetime.now(timezone.utc).isoformat(),
+                'completed_at': datetime.now(UTC).isoformat(),
                 'no_shows_processed': no_shows
             }
         }
@@ -1371,7 +1370,7 @@ async def end_of_day_audit(
     return {
         'success': True,
         'audit_id': audit_id,
-        'completed_at': datetime.now(timezone.utc).isoformat(),
+        'completed_at': datetime.now(UTC).isoformat(),
         'summary': {
             'total_revenue': audit.get('total_revenue', 0),
             'no_shows': no_shows,
@@ -1416,7 +1415,7 @@ async def automatic_posting(
                     'booking_id': booking['id'],
                     'folio_type': 'guest',
                     'status': 'open',
-                    'created_at': datetime.now(timezone.utc).isoformat()
+                    'created_at': datetime.now(UTC).isoformat()
                 }
                 await db.folios.insert_one(folio)
 
@@ -1430,7 +1429,7 @@ async def automatic_posting(
                 'description': f"Room {booking.get('room_number', 'TBD')} - {audit_date}",
                 'amount': booking.get('base_rate', booking.get('total_amount', 0) / max(1, booking.get('nights', 1))),
                 'quantity': 1,
-                'posted_at': datetime.now(timezone.utc).isoformat(),
+                'posted_at': datetime.now(UTC).isoformat(),
                 'posted_by': 'night_audit_system',
                 'voided': False
             }
@@ -1448,7 +1447,7 @@ async def automatic_posting(
                 'description': f"Room Tax - {audit_date}",
                 'amount': tax_amount,
                 'quantity': 1,
-                'posted_at': datetime.now(timezone.utc).isoformat(),
+                'posted_at': datetime.now(UTC).isoformat(),
                 'posted_by': 'night_audit_system',
                 'voided': False
             }
@@ -1509,7 +1508,7 @@ async def get_audit_report(
     return {
         'audit': audit,
         'bookings_by_status': bookings_summary,
-        'generated_at': datetime.now(timezone.utc).isoformat()
+        'generated_at': datetime.now(UTC).isoformat()
     }
 
 
@@ -1552,7 +1551,7 @@ async def handle_no_shows(
                 '$set': {
                     'status': 'no_show',
                     'no_show_date': audit_date,
-                    'updated_at': datetime.now(timezone.utc).isoformat()
+                    'updated_at': datetime.now(UTC).isoformat()
                 }
             }
         )
@@ -1577,7 +1576,7 @@ async def handle_no_shows(
                     'charge_category': 'no_show_fee',
                     'description': f"No-Show Fee - {audit_date}",
                     'amount': no_show_fee,
-                    'posted_at': datetime.now(timezone.utc).isoformat(),
+                    'posted_at': datetime.now(UTC).isoformat(),
                     'voided': False
                 }
                 await db.folio_charges.insert_one(charge)
@@ -1626,14 +1625,14 @@ async def handle_no_shows(
 
 @router.get("/night-audit/legacy-status")
 async def get_night_audit_status_legacy(
-    audit_date: Optional[str] = None,
+    audit_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Legacy night audit status (use /api/night-audit/status for hardened version)"""
     current_user = await get_current_user(credentials)
 
     if not audit_date:
-        audit_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        audit_date = datetime.now(UTC).strftime("%Y-%m-%d")
 
     audit = await db.night_audits.find_one({
         'tenant_id': current_user.tenant_id,
@@ -1680,7 +1679,7 @@ async def post_room_rates(
                 'charge_category': 'room',
                 'description': f"Room Charge - {audit_date}",
                 'amount': rate,
-                'posted_at': datetime.now(timezone.utc).isoformat(),
+                'posted_at': datetime.now(UTC).isoformat(),
                 'voided': False
             }
             await db.folio_charges.insert_one(charge)
@@ -1727,7 +1726,7 @@ async def post_taxes(
                 'charge_category': 'tax',
                 'description': f"Room Tax ({tax_rate*100}%) - {audit_date}",
                 'amount': tax_amount,
-                'posted_at': datetime.now(timezone.utc).isoformat(),
+                'posted_at': datetime.now(UTC).isoformat(),
                 'voided': False
             }
             await db.folio_charges.insert_one(charge)
@@ -1744,8 +1743,8 @@ async def post_taxes(
 
 @router.get("/night-audit/audit-trail")
 async def get_audit_trail(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     limit: int = 100,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -1793,7 +1792,7 @@ async def rollback_audit(
                 'completed_at': None
             },
             '$push': {
-                'warnings': f"Audit rolled back by {current_user.name} at {datetime.now(timezone.utc).isoformat()}"
+                'warnings': f"Audit rolled back by {current_user.name} at {datetime.now(UTC).isoformat()}"
             }
         }
     )

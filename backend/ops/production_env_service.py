@@ -5,8 +5,7 @@ Validates infrastructure, security, data safety, and observability
 readiness for production rollout.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Dict
+from datetime import UTC, datetime, timedelta
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -23,7 +22,7 @@ class ProductionEnvService:
 
     async def run_full_validation(self, ctx: OperationContext) -> ServiceResult:
         """Run all 4 category validations and produce overall readiness."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         categories = {
             "infrastructure": await self._validate_infrastructure(ctx),
             "security": await self._validate_security(ctx),
@@ -57,7 +56,7 @@ class ProductionEnvService:
 
         return ServiceResult.success(result)
 
-    async def _validate_infrastructure(self, ctx: OperationContext) -> Dict:
+    async def _validate_infrastructure(self, ctx: OperationContext) -> dict:
         checks = []
         issues = []
         critical = False
@@ -72,7 +71,7 @@ class ProductionEnvService:
 
         # Worker readiness
         worker_tasks = await self._db.celery_task_log.count_documents({
-            "created_at": {"$gte": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()}
+            "created_at": {"$gte": (datetime.now(UTC) - timedelta(hours=1)).isoformat()}
         })
         if worker_tasks >= 0:
             checks.append({"name": "worker_autoscaling_readiness", "status": "pass"})
@@ -98,7 +97,7 @@ class ProductionEnvService:
             "critical_fail": critical,
         }
 
-    async def _validate_security(self, ctx: OperationContext) -> Dict:
+    async def _validate_security(self, ctx: OperationContext) -> dict:
         checks = []
         issues = []
         critical = False
@@ -136,7 +135,7 @@ class ProductionEnvService:
             "critical_fail": critical,
         }
 
-    async def _validate_data_safety(self, ctx: OperationContext) -> Dict:
+    async def _validate_data_safety(self, ctx: OperationContext) -> dict:
         checks = []
         issues = []
 
@@ -166,7 +165,7 @@ class ProductionEnvService:
             "critical_fail": False,
         }
 
-    async def _validate_observability(self, ctx: OperationContext) -> Dict:
+    async def _validate_observability(self, ctx: OperationContext) -> dict:
         checks = []
         issues = []
 

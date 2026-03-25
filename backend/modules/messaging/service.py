@@ -4,8 +4,7 @@ Production runtime with credential vault integration, delivery metrics,
 provider latency tracking, cost/usage summary, and per-tenant policy.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from datetime import UTC, datetime, timedelta
 
 from .models import (
     ConsentStatus,
@@ -22,16 +21,16 @@ class MessagingService:
 
     def __init__(self, db):
         self.db = db
-        self._rate_counters: Dict[str, int] = {}
-        self._provider_latencies: Dict[str, List[float]] = {}
-        self._provider_errors: Dict[str, int] = {}
-        self._provider_successes: Dict[str, int] = {}
-        self._fallback_usage: Dict[str, int] = {}
+        self._rate_counters: dict[str, int] = {}
+        self._provider_latencies: dict[str, list[float]] = {}
+        self._provider_errors: dict[str, int] = {}
+        self._provider_successes: dict[str, int] = {}
+        self._fallback_usage: dict[str, int] = {}
         self._consent_rejections = 0
 
     # ── helpers ──
 
-    async def _get_provider_config(self, tenant_id: str, provider_type: str) -> Optional[dict]:
+    async def _get_provider_config(self, tenant_id: str, provider_type: str) -> dict | None:
         return await self.db.messaging_provider_configs.find_one(
             {"tenant_id": tenant_id, "provider_type": provider_type, "enabled": True},
             {"_id": 0},
@@ -96,14 +95,14 @@ class MessagingService:
         tenant_id: str,
         channel: str,
         recipient: str,
-        body: Optional[str] = None,
-        subject: Optional[str] = None,
-        template_id: Optional[str] = None,
+        body: str | None = None,
+        subject: str | None = None,
+        template_id: str | None = None,
         variables: dict = None,
-        booking_id: Optional[str] = None,
-        guest_id: Optional[str] = None,
-        property_id: Optional[str] = None,
-        use_case: Optional[str] = None,
+        booking_id: str | None = None,
+        guest_id: str | None = None,
+        property_id: str | None = None,
+        use_case: str | None = None,
     ) -> dict:
         """Send a message via the requested channel with fallback support."""
         variables = variables or {}
@@ -198,8 +197,8 @@ class MessagingService:
                 {"$set": {
                     "status": DeliveryStatus.SENT.value,
                     "provider_message_id": result.get("provider_message_id"),
-                    "delivered_at": datetime.now(timezone.utc).isoformat(),
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "delivered_at": datetime.now(UTC).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
                 }},
             )
             return {"success": True, "delivery_id": log_doc["id"],
@@ -213,7 +212,7 @@ class MessagingService:
                     "status": DeliveryStatus.FAILED.value,
                     "error_message": result.get("error"),
                     "error_class": error_class,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
                 }},
             )
             return await self._try_fallback(
@@ -243,7 +242,7 @@ class MessagingService:
                 )
                 fb_log["status"] = DeliveryStatus.SENT.value
                 fb_log["provider_message_id"] = result.get("provider_message_id")
-                fb_log["delivered_at"] = datetime.now(timezone.utc).isoformat()
+                fb_log["delivered_at"] = datetime.now(UTC).isoformat()
                 await self.db.messaging_delivery_logs.insert_one(fb_log)
                 return {"success": True, "delivery_id": fb_log["id"], "fallback_channel": fb_channel,
                         "provider_message_id": result.get("provider_message_id")}
@@ -280,20 +279,20 @@ class MessagingService:
                     "status": DeliveryStatus.SENT.value,
                     "retry_count": new_count,
                     "provider_message_id": result.get("provider_message_id"),
-                    "delivered_at": datetime.now(timezone.utc).isoformat(),
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "delivered_at": datetime.now(UTC).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
                 }},
             )
             return {"success": True, "delivery_id": delivery_id}
         else:
-            next_retry = datetime.now(timezone.utc) + timedelta(minutes=2 ** new_count)
+            next_retry = datetime.now(UTC) + timedelta(minutes=2 ** new_count)
             await self.db.messaging_delivery_logs.update_one(
                 {"id": delivery_id},
                 {"$set": {
                     "retry_count": new_count,
                     "error_message": result.get("error"),
                     "next_retry_at": next_retry.isoformat(),
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
                 }},
             )
             return {"success": False, "error": result.get("error"), "retry_count": new_count}
@@ -301,7 +300,7 @@ class MessagingService:
     # ── delivery metrics ──
 
     async def get_delivery_metrics(self, tenant_id: str, days: int = 7) -> dict:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
         pipeline = [
             {"$match": {"tenant_id": tenant_id, "created_at": {"$gte": cutoff}}},
             {"$group": {
@@ -366,7 +365,7 @@ class MessagingService:
             "provider_latency": provider_latency_summary,
             "fallback_usage": dict(self._fallback_usage),
             "consent_rejections": self._consent_rejections,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
     async def get_retry_queue_size(self, tenant_id: str) -> int:

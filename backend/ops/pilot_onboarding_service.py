@@ -7,8 +7,7 @@ operational validation.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Dict
+from datetime import UTC, datetime
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -53,8 +52,8 @@ class PilotOnboardingService:
         from core.database import db
         self._db = db
 
-    async def create_onboarding(self, ctx: OperationContext, hotel_name: str, config: Dict = None) -> ServiceResult:
-        now = datetime.now(timezone.utc).isoformat()
+    async def create_onboarding(self, ctx: OperationContext, hotel_name: str, config: dict = None) -> ServiceResult:
+        now = datetime.now(UTC).isoformat()
         onboarding_id = str(uuid.uuid4())
 
         steps_status = {}
@@ -102,7 +101,7 @@ class PilotOnboardingService:
         return ServiceResult.success(onboarding)
 
     async def complete_step(self, ctx: OperationContext, step_id: str, notes: str = "") -> ServiceResult:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         valid_ids = {s["id"] for s in ONBOARDING_STEPS}
         if step_id not in valid_ids:
             return ServiceResult.fail(f"Unknown step: {step_id}", "INVALID_STEP")
@@ -124,7 +123,7 @@ class PilotOnboardingService:
 
     async def run_auto_validations(self, ctx: OperationContext) -> ServiceResult:
         """Run all auto-validatable steps."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         results = []
 
         for step in ONBOARDING_STEPS:
@@ -178,7 +177,7 @@ class PilotOnboardingService:
             "success_rate": round(met_count / len(results) * 100, 1),
         })
 
-    async def _run_step_validation(self, ctx: OperationContext, step_id: str) -> Dict:
+    async def _run_step_validation(self, ctx: OperationContext, step_id: str) -> dict:
         """Run validation for a specific step. Returns {passed, details}."""
         # Each step validates against real DB state
         if step_id == "tenant_creation":
@@ -244,7 +243,7 @@ class PilotOnboardingService:
 
         return 0.0
 
-    def _check_threshold(self, criterion: Dict, value: float) -> bool:
+    def _check_threshold(self, criterion: dict, value: float) -> bool:
         cid = criterion["id"]
         threshold = criterion["threshold"]
         # For queue/drift/incident: lower is better

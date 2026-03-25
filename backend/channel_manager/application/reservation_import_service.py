@@ -15,8 +15,8 @@ Features:
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -45,7 +45,7 @@ IMPORT_BATCHES = "cm_import_batches"
 class ReservationImportService:
     """Orchestrates reservation pull, dedup, import, and acknowledgement."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
         self._mapper = HotelRunnerMapper()
 
@@ -55,10 +55,10 @@ class ReservationImportService:
         self,
         tenant_id: str,
         connector_id: str,
-        date_start: Optional[str] = None,
-        date_end: Optional[str] = None,
+        date_start: str | None = None,
+        date_end: str | None = None,
         triggered_by: str = "system",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Pull reservations from provider, process each with full lifecycle,
         acknowledge successes, and return batch summary.
@@ -99,7 +99,7 @@ class ReservationImportService:
                 duration = int((time.monotonic() - start_time) * 1000)
                 await self._repo.update_import_batch(batch.id, {
                     "status": "completed",
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "completed_at": datetime.now(UTC).isoformat(),
                     "duration_ms": duration,
                 })
                 await self._audit(
@@ -160,7 +160,7 @@ class ReservationImportService:
                         if rid and i < len(ack_items):
                             await self._repo.update_imported_reservation(tenant_id, rid, {
                                 "ack_status": AckStatus.ACK_SENT.value,
-                                "ack_sent_at": datetime.now(timezone.utc).isoformat(),
+                                "ack_sent_at": datetime.now(UTC).isoformat(),
                             })
                     ack_results["sent"] = ack_sent
                     ack_results["failed"] = ack_failed
@@ -204,7 +204,7 @@ class ReservationImportService:
                 "out_of_order_count": stats["out_of_order"],
                 "ack_sent_count": ack_results["sent"],
                 "ack_failed_count": ack_results["failed"],
-                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "completed_at": datetime.now(UTC).isoformat(),
                 "duration_ms": duration,
             })
 
@@ -228,7 +228,7 @@ class ReservationImportService:
             duration = int((time.monotonic() - start_time) * 1000)
             await self._repo.update_import_batch(batch.id, {
                 "status": "failed",
-                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "completed_at": datetime.now(UTC).isoformat(),
                 "duration_ms": duration,
             })
             await self._audit(
@@ -244,9 +244,9 @@ class ReservationImportService:
     async def _process_single_reservation(
         self, tenant_id: str, property_id: str, connector_id: str, batch_id: str,
         canonical: CanonicalReservation,
-        room_reverse: Dict[str, str],
-        rate_reverse: Dict[str, str],
-    ) -> Dict[str, Any]:
+        room_reverse: dict[str, str],
+        rate_reverse: dict[str, str],
+    ) -> dict[str, Any]:
         """Process a single reservation with full lifecycle handling."""
 
         # Compute payload fingerprint
@@ -416,9 +416,9 @@ class ReservationImportService:
 
     async def _handle_cancellation(
         self, tenant_id: str, property_id: str, connector_id: str,
-        imported: ImportedReservation, existing: Optional[Dict],
+        imported: ImportedReservation, existing: dict | None,
         fingerprint: str, requires_ack: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Handle cancellation with checked-in protection and duplicate detection."""
         imported.is_cancellation = True
 
@@ -529,7 +529,7 @@ class ReservationImportService:
             "payment_status": "pending",
             "special_requests": canonical.special_requests,
             "external_confirmation": canonical.confirmation_number,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "created_by": "channel_manager",
         }
         from core.atomic_booking import BookingConflictError, create_booking_atomic
@@ -554,7 +554,7 @@ class ReservationImportService:
             "children": imported.child_count,
             "total_amount": imported.total_amount,
             "special_requests": imported.special_requests,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
             "updated_by": "channel_manager",
         }
         if imported.room_type_mapped_id:
@@ -566,7 +566,7 @@ class ReservationImportService:
         logger.info("Modified PMS booking %s", imported.pms_booking_id)
 
     async def _cancel_pms_booking(self, tenant_id: str, pms_booking_id: str):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         booking = await db.bookings.find_one(
             {"id": pms_booking_id, "tenant_id": tenant_id},
             {"_id": 0, "guest_name": 1, "guest_id": 1, "room_id": 1, "room_number": 1, "check_in": 1, "check_out": 1},
@@ -624,7 +624,7 @@ class ReservationImportService:
             "phone": canonical.guest.phone,
             "nationality": canonical.guest.nationality,
             "source": "ota",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db.guests.insert_one(guest)
         return guest_id
@@ -633,8 +633,8 @@ class ReservationImportService:
 
     async def _pull_from_provider(
         self, connector: ConnectorAccount,
-        date_start: Optional[str], date_end: Optional[str],
-    ) -> List[Dict[str, Any]]:
+        date_start: str | None, date_end: str | None,
+    ) -> list[dict[str, Any]]:
         if connector.provider == ConnectorProvider.HOTELRUNNER:
             auth = HotelRunnerAuth.from_credentials(connector.credentials)
             client = HotelRunnerClient(auth=auth, sandbox=True)
@@ -666,8 +666,8 @@ class ReservationImportService:
         raise ValueError(f"Unsupported provider: {connector.provider}")
 
     async def _acknowledge_to_provider(
-        self, connector: ConnectorAccount, ack_items: List[Dict[str, str]],
-    ) -> Dict[str, Any]:
+        self, connector: ConnectorAccount, ack_items: list[dict[str, str]],
+    ) -> dict[str, Any]:
         """
         Confirm delivery of reservations to HotelRunner.
         Each item: {"message_uid": str, "pms_number": Optional[str]}
@@ -684,13 +684,13 @@ class ReservationImportService:
 
     # ─── Manual Review Queue ─────────────────────────────────────────
 
-    async def get_review_queue(self, tenant_id: str, connector_id: Optional[str] = None) -> List[Dict]:
+    async def get_review_queue(self, tenant_id: str, connector_id: str | None = None) -> list[dict]:
         return await self._repo.get_reservation_review_queue(tenant_id, connector_id)
 
     async def reprocess_review(
         self, tenant_id: str, reservation_id: str, actor_id: str,
-        room_type_override: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        room_type_override: str | None = None,
+    ) -> dict[str, Any]:
         """Reprocess a reservation from the review queue."""
         imported = await self._repo.get_imported_reservation_by_id(tenant_id, reservation_id)
         if not imported:
@@ -710,8 +710,8 @@ class ReservationImportService:
             await self._repo.update_imported_reservation(tenant_id, reservation_id, {
                 "import_status": ImportStatus.CANCELLED.value,
                 "reviewed_by": actor_id,
-                "reviewed_at": datetime.now(timezone.utc).isoformat(),
-                "reprocessed_at": datetime.now(timezone.utc).isoformat(),
+                "reviewed_at": datetime.now(UTC).isoformat(),
+                "reprocessed_at": datetime.now(UTC).isoformat(),
                 "ack_status": AckStatus.ACK_PENDING.value,
             })
             await self._audit(
@@ -748,8 +748,8 @@ class ReservationImportService:
             "import_status": ImportStatus.CREATED.value,
             "room_type_mapped_id": pms_room_type,
             "reviewed_by": actor_id,
-            "reviewed_at": datetime.now(timezone.utc).isoformat(),
-            "reprocessed_at": datetime.now(timezone.utc).isoformat(),
+            "reviewed_at": datetime.now(UTC).isoformat(),
+            "reprocessed_at": datetime.now(UTC).isoformat(),
             "ack_status": AckStatus.ACK_PENDING.value,
         })
 
@@ -764,7 +764,7 @@ class ReservationImportService:
 
     async def dismiss_review(
         self, tenant_id: str, reservation_id: str, actor_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Dismiss a reservation from the review queue."""
         imported = await self._repo.get_imported_reservation_by_id(tenant_id, reservation_id)
         if not imported:
@@ -775,7 +775,7 @@ class ReservationImportService:
         await self._repo.update_imported_reservation(tenant_id, reservation_id, {
             "import_status": ImportStatus.DISMISSED.value,
             "dismissed_by": actor_id,
-            "dismissed_at": datetime.now(timezone.utc).isoformat(),
+            "dismissed_at": datetime.now(UTC).isoformat(),
         })
 
         await self._audit(
@@ -791,17 +791,17 @@ class ReservationImportService:
 
     async def approve_review(
         self, tenant_id: str, reservation_id: str, actor_id: str,
-        room_type_override: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        room_type_override: str | None = None,
+    ) -> dict[str, Any]:
         """Alias for reprocess_review for backward compatibility."""
         return await self.reprocess_review(tenant_id, reservation_id, actor_id, room_type_override)
 
     # ─── Batch & Reservation Queries ─────────────────────────────────
 
-    async def get_import_batches(self, tenant_id: str, connector_id: Optional[str] = None) -> List[Dict]:
+    async def get_import_batches(self, tenant_id: str, connector_id: str | None = None) -> list[dict]:
         return await self._repo.get_import_batches(tenant_id, connector_id)
 
-    async def get_import_batch_detail(self, tenant_id: str, batch_id: str) -> Dict[str, Any]:
+    async def get_import_batch_detail(self, tenant_id: str, batch_id: str) -> dict[str, Any]:
         batch = await self._repo.get_import_batch_by_id(tenant_id, batch_id)
         if not batch:
             raise ValueError("Batch not found")
@@ -809,19 +809,19 @@ class ReservationImportService:
         return {"batch": batch, "reservations": reservations, "reservation_count": len(reservations)}
 
     async def get_imported_reservations(
-        self, tenant_id: str, connector_id: Optional[str] = None,
-        status: Optional[str] = None, limit: int = 100,
-    ) -> List[Dict]:
+        self, tenant_id: str, connector_id: str | None = None,
+        status: str | None = None, limit: int = 100,
+    ) -> list[dict]:
         return await self._repo.get_imported_reservations(tenant_id, connector_id, status, limit)
 
-    async def get_imported_reservation_detail(self, tenant_id: str, reservation_id: str) -> Optional[Dict]:
+    async def get_imported_reservation_detail(self, tenant_id: str, reservation_id: str) -> dict | None:
         return await self._repo.get_imported_reservation_by_id(tenant_id, reservation_id)
 
     # ─── Reservation Stats & Summary ────────────────────────────────
 
-    async def get_reservation_stats(self, tenant_id: str, connector_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_reservation_stats(self, tenant_id: str, connector_id: str | None = None) -> dict[str, Any]:
         """Get reservation import stats for dashboard display."""
-        base_q: Dict[str, Any] = {"tenant_id": tenant_id}
+        base_q: dict[str, Any] = {"tenant_id": tenant_id}
         if connector_id:
             base_q["connector_id"] = connector_id
 
@@ -831,7 +831,7 @@ class ReservationImportService:
             {"$match": base_q},
             {"$group": {"_id": "$import_status", "count": {"$sum": 1}}},
         ]
-        by_status: Dict[str, int] = {}
+        by_status: dict[str, int] = {}
         async for doc in db[IMPORTED_RESERVATIONS].aggregate(status_pipeline):
             by_status[doc["_id"]] = doc["count"]
 
@@ -840,7 +840,7 @@ class ReservationImportService:
             {"$match": base_q},
             {"$group": {"_id": "$ack_status", "count": {"$sum": 1}}},
         ]
-        by_ack: Dict[str, int] = {}
+        by_ack: dict[str, int] = {}
         async for doc in db[IMPORTED_RESERVATIONS].aggregate(ack_pipeline):
             by_ack[doc["_id"]] = doc["count"]
 
@@ -852,7 +852,7 @@ class ReservationImportService:
         ack_failed_count = by_ack.get("ack_failed", 0)
 
         # Recent batches (last 5)
-        batch_q: Dict[str, Any] = {"tenant_id": tenant_id}
+        batch_q: dict[str, Any] = {"tenant_id": tenant_id}
         if connector_id:
             batch_q["connector_id"] = connector_id
         recent_batches = await db[IMPORT_BATCHES].find(batch_q, {"_id": 0}).sort("started_at", -1).to_list(5)
@@ -872,7 +872,7 @@ class ReservationImportService:
 
     # ─── Retry Failed ACKs ──────────────────────────────────────────
 
-    async def retry_failed_acks(self, tenant_id: str, connector_id: str, actor_id: Optional[str] = None) -> Dict[str, Any]:
+    async def retry_failed_acks(self, tenant_id: str, connector_id: str, actor_id: str | None = None) -> dict[str, Any]:
         """Retry all failed ACKs for a connector."""
         connector_doc = await self._repo.get_connector(tenant_id, connector_id)
         if not connector_doc:
@@ -913,7 +913,7 @@ class ReservationImportService:
             for doc in failed_docs:
                 await self._repo.update_imported_reservation(tenant_id, doc["id"], {
                     "ack_status": AckStatus.ACK_SENT.value,
-                    "ack_sent_at": datetime.now(timezone.utc).isoformat(),
+                    "ack_sent_at": datetime.now(UTC).isoformat(),
                 })
             await self._audit(
                 tenant_id, property_id, connector_id,
@@ -939,7 +939,7 @@ class ReservationImportService:
 
     # ─── Audit Log Query ─────────────────────────────────────────────
 
-    async def get_audit_trail(self, tenant_id: str, connector_id: Optional[str] = None, limit: int = 100) -> List[Dict]:
+    async def get_audit_trail(self, tenant_id: str, connector_id: str | None = None, limit: int = 100) -> list[dict]:
         return await self._repo.get_audit_logs(tenant_id, connector_id, limit)
 
     # ─── Audit ───────────────────────────────────────────────────────

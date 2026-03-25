@@ -15,8 +15,8 @@ Severity: critical > high > medium > low
 Lifecycle: open -> investigating -> retrying -> resolved | dismissed
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -43,7 +43,7 @@ FAILED_IMPORT_CRITICAL = 3
 class ReconciliationService:
     """Detects and tracks data drift between PMS and external providers."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     # ------------------------------------------------------------------ #
@@ -51,15 +51,15 @@ class ReconciliationService:
     # ------------------------------------------------------------------ #
 
     async def run_reconciliation(
-        self, tenant_id: str, connector_id: str, actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        self, tenant_id: str, connector_id: str, actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Run a full reconciliation check for a connector."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
         if not connector:
             raise ValueError("Connector not found")
 
         property_id = connector.get("property_id", "")
-        issues_found: List[ReconciliationIssue] = []
+        issues_found: list[ReconciliationIssue] = []
 
         # Run all checks
         issues_found.extend(await self._check_stale_sync(tenant_id, connector_id, property_id))
@@ -94,7 +94,7 @@ class ReconciliationService:
             "issues_found": len(issues_found),
             "severity_breakdown": severity_counts,
             "issue_types": list({i.issue_type.value for i in issues_found}),
-            "run_at": datetime.now(timezone.utc).isoformat(),
+            "run_at": datetime.now(UTC).isoformat(),
         }
 
     # ------------------------------------------------------------------ #
@@ -102,18 +102,18 @@ class ReconciliationService:
     # ------------------------------------------------------------------ #
 
     async def get_issues(
-        self, tenant_id: str, connector_id: Optional[str] = None,
+        self, tenant_id: str, connector_id: str | None = None,
         status: str = "open", limit: int = 100,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         return await self._repo.get_reconciliation_issues(tenant_id, connector_id, status, limit)
 
-    async def get_issue_detail(self, tenant_id: str, issue_id: str) -> Optional[Dict[str, Any]]:
+    async def get_issue_detail(self, tenant_id: str, issue_id: str) -> dict[str, Any] | None:
         return await self._repo.get_reconciliation_issue(tenant_id, issue_id)
 
     async def update_issue_status(
         self, tenant_id: str, issue_id: str,
-        new_status: str, actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        new_status: str, actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Transition issue status (investigating, retrying)."""
         issue = await self._repo.get_reconciliation_issue(tenant_id, issue_id)
         if not issue:
@@ -130,16 +130,16 @@ class ReconciliationService:
 
         updates = {
             "status": new_status,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }
         await self._repo.update_reconciliation_issue(issue_id, updates)
         return {"issue_id": issue_id, "status": new_status}
 
     async def resolve_issue(
         self, tenant_id: str, issue_id: str,
-        resolution: str, actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        now = datetime.now(timezone.utc).isoformat()
+        resolution: str, actor_id: str | None = None,
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC).isoformat()
         await self._repo.update_reconciliation_issue(issue_id, {
             "status": IssueStatus.RESOLVED.value,
             "resolution": resolution,
@@ -158,9 +158,9 @@ class ReconciliationService:
 
     async def dismiss_issue(
         self, tenant_id: str, issue_id: str,
-        reason: str = "", actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        now = datetime.now(timezone.utc).isoformat()
+        reason: str = "", actor_id: str | None = None,
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC).isoformat()
         await self._repo.update_reconciliation_issue(issue_id, {
             "status": IssueStatus.DISMISSED.value,
             "dismiss_reason": reason,
@@ -175,14 +175,14 @@ class ReconciliationService:
     # ------------------------------------------------------------------ #
 
     async def get_issue_summary(
-        self, tenant_id: str, connector_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        self, tenant_id: str, connector_id: str | None = None,
+    ) -> dict[str, Any]:
         """Aggregate issue counts by type and severity for dashboard."""
         return await self._repo.get_reconciliation_summary(tenant_id, connector_id)
 
     async def get_health_score(
         self, tenant_id: str, connector_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Compute an operational health score (0-100) for a connector.
 
@@ -218,7 +218,7 @@ class ReconciliationService:
             else:
                 try:
                     last_dt = datetime.fromisoformat(last_sync.replace("Z", "+00:00"))
-                    age_hours = (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600
+                    age_hours = (datetime.now(UTC) - last_dt).total_seconds() / 3600
                     if age_hours > 48:
                         score -= 15
                         details["sync_staleness"] = f"{age_hours:.0f}h"
@@ -257,7 +257,7 @@ class ReconciliationService:
             "by_severity": by_severity,
             "by_type": summary.get("by_type", {}),
             "details": details,
-            "calculated_at": datetime.now(timezone.utc).isoformat(),
+            "calculated_at": datetime.now(UTC).isoformat(),
         }
 
     # ------------------------------------------------------------------ #
@@ -266,7 +266,7 @@ class ReconciliationService:
 
     async def _check_stale_sync(
         self, tenant_id: str, connector_id: str, property_id: str,
-    ) -> List[ReconciliationIssue]:
+    ) -> list[ReconciliationIssue]:
         issues = []
         connector = await self._repo.get_connector(tenant_id, connector_id)
         last_sync = connector.get("last_successful_sync") if connector else None
@@ -283,7 +283,7 @@ class ReconciliationService:
         else:
             try:
                 last_dt = datetime.fromisoformat(last_sync.replace("Z", "+00:00"))
-                age_hours = (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600
+                age_hours = (datetime.now(UTC) - last_dt).total_seconds() / 3600
                 if age_hours > STALE_SYNC_HOURS_HIGH:
                     issues.append(ReconciliationIssue(
                         tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
@@ -313,7 +313,7 @@ class ReconciliationService:
 
     async def _check_mapping_validity(
         self, tenant_id: str, connector_id: str, property_id: str,
-    ) -> List[ReconciliationIssue]:
+    ) -> list[ReconciliationIssue]:
         issues = []
         mappings = await self._repo.get_mappings(tenant_id, connector_id)
 
@@ -365,7 +365,7 @@ class ReconciliationService:
 
     async def _check_unprocessed_imports(
         self, tenant_id: str, connector_id: str, property_id: str,
-    ) -> List[ReconciliationIssue]:
+    ) -> list[ReconciliationIssue]:
         issues = []
         review_count = await self._repo.count_imported_reservations(tenant_id, connector_id, "review")
         failed_count = await self._repo.count_imported_reservations(tenant_id, connector_id, "failed")
@@ -400,7 +400,7 @@ class ReconciliationService:
 
     async def _check_ack_failures(
         self, tenant_id: str, connector_id: str, property_id: str,
-    ) -> List[ReconciliationIssue]:
+    ) -> list[ReconciliationIssue]:
         issues = []
         ack_failed = await db.cm_imported_reservations.count_documents({
             "tenant_id": tenant_id,
@@ -424,9 +424,9 @@ class ReconciliationService:
 
     async def _check_ack_pending(
         self, tenant_id: str, connector_id: str, property_id: str,
-    ) -> List[ReconciliationIssue]:
+    ) -> list[ReconciliationIssue]:
         issues = []
-        threshold = (datetime.now(timezone.utc) - timedelta(hours=ACK_PENDING_HOURS)).isoformat()
+        threshold = (datetime.now(UTC) - timedelta(hours=ACK_PENDING_HOURS)).isoformat()
         ack_pending_old = await db.cm_imported_reservations.count_documents({
             "tenant_id": tenant_id,
             "connector_id": connector_id,
@@ -450,7 +450,7 @@ class ReconciliationService:
 
     async def _check_inventory_mismatch(
         self, tenant_id: str, connector_id: str, property_id: str,
-    ) -> List[ReconciliationIssue]:
+    ) -> list[ReconciliationIssue]:
         """Compare PMS availability with last synced snapshot for today + 7 days."""
         issues = []
         from ..application.mapping_service import MappingService
@@ -459,12 +459,12 @@ class ReconciliationService:
         if not room_lookup:
             return issues
 
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         rooms = await db.rooms.find(
             {"tenant_id": tenant_id, "property_id": property_id, "status": {"$ne": "out_of_service"}},
             {"_id": 0, "room_type": 1},
         ).to_list(1000)
-        room_type_counts: Dict[str, int] = {}
+        room_type_counts: dict[str, int] = {}
         for r in rooms:
             rt = r.get("room_type", "")
             if rt and rt in room_lookup:
@@ -508,7 +508,7 @@ class ReconciliationService:
 
     async def _check_rate_mismatch(
         self, tenant_id: str, connector_id: str, property_id: str,
-    ) -> List[ReconciliationIssue]:
+    ) -> list[ReconciliationIssue]:
         """Compare PMS rates with last synced snapshot for today + 7 days."""
         issues = []
         from ..application.mapping_service import MappingService
@@ -518,7 +518,7 @@ class ReconciliationService:
         if not room_lookup or not rate_lookup:
             return issues
 
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         end_date = (today + timedelta(days=7)).isoformat()
 
         rates = await db.rate_overrides.find({
@@ -563,12 +563,12 @@ class ReconciliationService:
         issue_type: str,
         severity: str,
         description: str,
-        suggested_actions: Optional[List[str]] = None,
-        evidence_payload: Optional[Dict[str, Any]] = None,
-        related_sync_job_ids: Optional[List[str]] = None,
-        related_mapping_ids: Optional[List[str]] = None,
-        related_reservation_ids: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        suggested_actions: list[str] | None = None,
+        evidence_payload: dict[str, Any] | None = None,
+        related_sync_job_ids: list[str] | None = None,
+        related_mapping_ids: list[str] | None = None,
+        related_reservation_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Create a reconciliation issue from external callers (e.g., push failure)."""
         issue = ReconciliationIssue(
             tenant_id=tenant_id,

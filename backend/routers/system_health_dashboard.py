@@ -2,8 +2,8 @@
 System Health — Role-Based Data Shaping API (Enriched)
 Returns real system health data scoped by user role (GM, Admin, Superadmin).
 """
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends
 
@@ -15,7 +15,7 @@ from models.schemas import User
 router = APIRouter(prefix="/api/system-health", tags=["System Health"])
 
 
-async def _get_queue_health(tenant_id: str) -> Dict[str, Any]:
+async def _get_queue_health(tenant_id: str) -> dict[str, Any]:
     stuck = await db.task_queue.count_documents({"tenant_id": tenant_id, "status": "stuck"}) if hasattr(db, "task_queue") else 0
     pending = await db.task_queue.count_documents({"tenant_id": tenant_id, "status": "pending"}) if hasattr(db, "task_queue") else 0
     processing = await db.task_queue.count_documents({"tenant_id": tenant_id, "status": "processing"}) if hasattr(db, "task_queue") else 0
@@ -30,13 +30,13 @@ async def _get_queue_health(tenant_id: str) -> Dict[str, Any]:
     }
 
 
-async def _get_security_summary(tenant_id: str) -> Dict[str, Any]:
+async def _get_security_summary(tenant_id: str) -> dict[str, Any]:
     violations = await db.tenant_guard_violations.count_documents({
         "expected_tenant_id": tenant_id
     }) if hasattr(db, "tenant_guard_violations") else 0
     recent = await db.tenant_guard_violations.count_documents({
         "expected_tenant_id": tenant_id,
-        "timestamp": {"$gte": (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()}
+        "timestamp": {"$gte": (datetime.now(UTC) - timedelta(hours=24)).isoformat()}
     }) if hasattr(db, "tenant_guard_violations") else 0
     return {
         "violations_count": violations,
@@ -45,7 +45,7 @@ async def _get_security_summary(tenant_id: str) -> Dict[str, Any]:
     }
 
 
-async def _get_drift_summary(tenant_id: str) -> Dict[str, Any]:
+async def _get_drift_summary(tenant_id: str) -> dict[str, Any]:
     latest = await db.drift_scan_results.find_one(
         {"tenant_id": tenant_id}, {"_id": 0}, sort=[("timestamp", -1)]
     )
@@ -61,10 +61,10 @@ async def _get_drift_summary(tenant_id: str) -> Dict[str, Any]:
     return {"drift_count": 0, "critical_drifts": 0, "last_scan_at": None, "status": "healthy"}
 
 
-async def _get_worker_health(tenant_id: str) -> Dict[str, Any]:
+async def _get_worker_health(tenant_id: str) -> dict[str, Any]:
     recent_activity = await db.task_queue.count_documents({
         "status": "completed",
-        "started_at": {"$gte": (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()}
+        "started_at": {"$gte": (datetime.now(UTC) - timedelta(minutes=10)).isoformat()}
     })
     dl_total = await db.dead_letter_tasks.count_documents({})
     return {
@@ -75,7 +75,7 @@ async def _get_worker_health(tenant_id: str) -> Dict[str, Any]:
     }
 
 
-async def _get_night_audit_status(tenant_id: str) -> Dict[str, Any]:
+async def _get_night_audit_status(tenant_id: str) -> dict[str, Any]:
     last_audit = await db.night_audit_logs.find_one(
         {"tenant_id": tenant_id}, sort=[("timestamp", -1)]
     )
@@ -87,8 +87,8 @@ async def _get_night_audit_status(tenant_id: str) -> Dict[str, Any]:
     return {"last_audit_status": "no_data", "last_audit_date": None}
 
 
-async def _get_sync_summary(tenant_id: str) -> Dict[str, Any]:
-    now = datetime.now(timezone.utc)
+async def _get_sync_summary(tenant_id: str) -> dict[str, Any]:
+    now = datetime.now(UTC)
     last_24h = (now - timedelta(hours=24)).isoformat()
     total = await db.channel_sync_logs.count_documents({"tenant_id": tenant_id, "timestamp": {"$gte": last_24h}})
     failed = await db.channel_sync_logs.count_documents({"tenant_id": tenant_id, "timestamp": {"$gte": last_24h}, "status": "error"})
@@ -110,11 +110,11 @@ async def get_role_based_dashboard(current_user: User = Depends(get_current_user
     ctx = OperationContext.from_user(current_user)
     role = str(ctx.actor_role).lower().replace("userrole.", "")
 
-    base_data: Dict[str, Any] = {
+    base_data: dict[str, Any] = {
         "role": role,
         "tenant_id": ctx.tenant_id,
         "scope": "property" if role == "gm" else ("tenant" if role == "admin" else "global"),
-        "last_updated_at": datetime.now(timezone.utc).isoformat(),
+        "last_updated_at": datetime.now(UTC).isoformat(),
     }
 
     if role == "gm":

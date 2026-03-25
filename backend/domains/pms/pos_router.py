@@ -4,8 +4,8 @@ Domain Router: POS & F&B
 Extracted from legacy_routes.py — Point of Sale, F&B operations, kitchen, transactions.
 """
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -112,7 +112,7 @@ async def get_void_transactions(start_date: str = None, end_date: str = None, cu
         return {'void_transactions': []}
 
 @router.post("/pos/mobile/quick-order")
-async def create_quick_order(order_data: Dict[str, Any], current_user: User = Depends(get_current_user)):
+async def create_quick_order(order_data: dict[str, Any], current_user: User = Depends(get_current_user)):
     """Create quick order from mobile"""
     try:
         order = {
@@ -141,7 +141,7 @@ async def get_anomaly_detection(
             '$match': {
                 'tenant_id': current_user.tenant_id,
                 'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-                'created_at': {'$gte': datetime.now(timezone.utc) - timedelta(days=30)}
+                'created_at': {'$gte': datetime.now(UTC) - timedelta(days=30)}
             }
         },
         {
@@ -161,7 +161,7 @@ async def get_anomaly_detection(
     # Check for low-priced bookings
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
-        'check_in': {'$gte': datetime.now(timezone.utc)},
+        'check_in': {'$gte': datetime.now(UTC)},
         'status': {'$in': ['confirmed', 'guaranteed']}
     }):
         room_type = booking.get('room_type')
@@ -187,9 +187,9 @@ async def get_anomaly_detection(
         'tenant_id': current_user.tenant_id,
         'task_type': 'cleaning',
         'status': 'in_progress',
-        'started_at': {'$lte': datetime.now(timezone.utc) - timedelta(hours=1)}
+        'started_at': {'$lte': datetime.now(UTC) - timedelta(hours=1)}
     }):
-        duration = (datetime.now(timezone.utc) - task.get('started_at')).total_seconds() / 60
+        duration = (datetime.now(UTC) - task.get('started_at')).total_seconds() / 60
 
         room = await db.rooms.find_one({
             'id': task.get('room_id'),
@@ -207,7 +207,7 @@ async def get_anomaly_detection(
         })
 
     # 3. Overstay Risk Detection
-    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
+    today = datetime.now(UTC).replace(hour=0, minute=0, second=0)
     async for booking in db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'check_out': {'$lte': today},
@@ -232,7 +232,7 @@ async def get_anomaly_detection(
             '$match': {
                 'tenant_id': current_user.tenant_id,
                 'department': 'maintenance',
-                'created_at': {'$gte': datetime.now(timezone.utc) - timedelta(days=30)}
+                'created_at': {'$gte': datetime.now(UTC) - timedelta(days=30)}
             }
         },
         {
@@ -278,7 +278,7 @@ async def get_weekly_forecast(
     """Get weekly forecast for next 4 weeks"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
+    today = datetime.now(UTC).replace(hour=0, minute=0, second=0)
     forecast_weeks = []
 
     for week_num in range(4):
@@ -345,7 +345,7 @@ async def get_monthly_forecast(
     """Get monthly forecast for next 3 months"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     forecast_months = []
 
     for month_offset in range(3):
@@ -358,13 +358,13 @@ async def get_monthly_forecast(
             if month > 12:
                 month = month - 12
                 year += 1
-            month_start = datetime(year, month, 1, tzinfo=timezone.utc)
+            month_start = datetime(year, month, 1, tzinfo=UTC)
 
         # Calculate month end
         if month_start.month == 12:
-            month_end = datetime(month_start.year + 1, 1, 1, tzinfo=timezone.utc) - timedelta(days=1)
+            month_end = datetime(month_start.year + 1, 1, 1, tzinfo=UTC) - timedelta(days=1)
         else:
-            month_end = datetime(month_start.year, month_start.month + 1, 1, tzinfo=timezone.utc) - timedelta(days=1)
+            month_end = datetime(month_start.year, month_start.month + 1, 1, tzinfo=UTC) - timedelta(days=1)
 
         # Get bookings
         bookings_count = await db.bookings.count_documents({
@@ -434,9 +434,9 @@ async def get_monthly_forecast(
 @router.get("/frontdesk/rooms-with-filters")
 @cached(ttl=180, key_prefix="frontdesk_rooms_filtered")  # Cache for 3 min
 async def get_rooms_with_filters(
-    bed_type: Optional[str] = None,
-    floor: Optional[int] = None,
-    status: Optional[str] = None,
+    bed_type: str | None = None,
+    floor: int | None = None,
+    status: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get rooms with advanced filters for room moves"""
@@ -484,7 +484,7 @@ async def get_rooms_with_filters(
 async def get_available_rooms_mobile(
     check_in: str,
     check_out: str,
-    room_type: Optional[str] = None,
+    room_type: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get available rooms for check-in"""
@@ -541,10 +541,10 @@ async def scan_id_mobile(
     last_name: str,
     nationality: str,
     id_number: str,
-    date_of_birth: Optional[str] = None,
-    issue_date: Optional[str] = None,
-    expiry_date: Optional[str] = None,
-    scan_image: Optional[str] = None,
+    date_of_birth: str | None = None,
+    issue_date: str | None = None,
+    expiry_date: str | None = None,
+    scan_image: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Scan and save ID/Passport information"""
@@ -563,7 +563,7 @@ async def scan_id_mobile(
         'issue_date': issue_date,
         'expiry_date': expiry_date,
         'scan_image': scan_image,
-        'scanned_at': datetime.now(timezone.utc),
+        'scanned_at': datetime.now(UTC),
         'scanned_by': current_user.username
     }
 
@@ -586,9 +586,9 @@ async def scan_id_mobile(
 async def mobile_checkin(
     booking_id: str,
     room_id: str,
-    id_scan_id: Optional[str] = None,
-    signature: Optional[str] = None,
-    notes: Optional[str] = None,
+    id_scan_id: str | None = None,
+    signature: str | None = None,
+    notes: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Perform mobile check-in"""
@@ -631,11 +631,11 @@ async def mobile_checkin(
         'registration_card_signed': True if signature else False,
         'keys_issued': True,
         'welcome_package_given': True,
-        'check_in_time': datetime.now(timezone.utc),
+        'check_in_time': datetime.now(UTC),
         'checked_in_by': current_user.username,
         'notes': notes,
-        'created_at': datetime.now(timezone.utc),
-        'updated_at': datetime.now(timezone.utc)
+        'created_at': datetime.now(UTC),
+        'updated_at': datetime.now(UTC)
     }
 
     await db.mobile_checkins.insert_one(checkin_record)
@@ -647,8 +647,8 @@ async def mobile_checkin(
             'status': 'checked_in',
             'room_id': room_id,
             'room_number': room.get('room_number'),
-            'actual_check_in': datetime.now(timezone.utc),
-            'updated_at': datetime.now(timezone.utc)
+            'actual_check_in': datetime.now(UTC),
+            'updated_at': datetime.now(UTC)
         }}
     )
 
@@ -657,7 +657,7 @@ async def mobile_checkin(
         {'id': room_id, 'tenant_id': current_user.tenant_id},
         {'$set': {
             'status': 'occupied',
-            'updated_at': datetime.now(timezone.utc)
+            'updated_at': datetime.now(UTC)
         }}
     )
 
@@ -673,7 +673,7 @@ async def mobile_checkin(
         'booking_id': booking_id,
         'room_number': room.get('room_number'),
         'guest_name': guest.get('name') if guest else 'Unknown',
-        'check_in_time': datetime.now(timezone.utc).isoformat()
+        'check_in_time': datetime.now(UTC).isoformat()
     }
 
 
@@ -681,7 +681,7 @@ async def mobile_checkin(
 async def assign_room_mobile(
     booking_id: str,
     room_id: str,
-    notes: Optional[str] = None,
+    notes: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Assign room to booking (pre-checkin)"""
@@ -710,9 +710,9 @@ async def assign_room_mobile(
             'room_id': room_id,
             'room_number': room.get('room_number'),
             'room_assigned': True,
-            'room_assigned_at': datetime.now(timezone.utc),
+            'room_assigned_at': datetime.now(UTC),
             'room_assigned_by': current_user.username,
-            'updated_at': datetime.now(timezone.utc)
+            'updated_at': datetime.now(UTC)
         }}
     )
 
@@ -721,7 +721,7 @@ async def assign_room_mobile(
         {'id': room_id, 'tenant_id': current_user.tenant_id},
         {'$set': {
             'status': 'blocked',
-            'updated_at': datetime.now(timezone.utc)
+            'updated_at': datetime.now(UTC)
         }}
     )
 
@@ -900,9 +900,9 @@ async def get_guest_history_mobile(
 
 @router.post("/frontoffice/mobile/guest-request")
 async def create_guest_request_mobile(
-    booking_id: Optional[str] = None,
-    guest_id: Optional[str] = None,
-    room_number: Optional[str] = None,
+    booking_id: str | None = None,
+    guest_id: str | None = None,
+    room_number: str | None = None,
     request_type: str = "other",
     description: str = "",
     priority: str = "normal",
@@ -922,9 +922,9 @@ async def create_guest_request_mobile(
         'status': 'pending',
         'priority': priority,
         'description': description,
-        'requested_at': datetime.now(timezone.utc),
+        'requested_at': datetime.now(UTC),
         'created_by': current_user.username,
-        'updated_at': datetime.now(timezone.utc)
+        'updated_at': datetime.now(UTC)
     }
 
     await db.guest_requests.insert_one(request)
@@ -939,8 +939,8 @@ async def create_guest_request_mobile(
 
 @router.get("/frontoffice/mobile/guest-requests")
 async def get_guest_requests_mobile(
-    status: Optional[str] = None,
-    room_number: Optional[str] = None,
+    status: str | None = None,
+    room_number: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get guest requests"""
@@ -986,8 +986,8 @@ async def get_guest_requests_mobile(
 async def update_guest_request_status_mobile(
     request_id: str,
     new_status: str,
-    assigned_to: Optional[str] = None,
-    notes: Optional[str] = None,
+    assigned_to: str | None = None,
+    notes: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Update guest request status"""
@@ -1003,16 +1003,16 @@ async def update_guest_request_status_mobile(
 
     update_data = {
         'status': new_status,
-        'updated_at': datetime.now(timezone.utc)
+        'updated_at': datetime.now(UTC)
     }
 
     if assigned_to:
         update_data['assigned_to'] = assigned_to
         if new_status == 'assigned':
-            update_data['assigned_at'] = datetime.now(timezone.utc)
+            update_data['assigned_at'] = datetime.now(UTC)
 
     if new_status == 'completed':
-        update_data['completed_at'] = datetime.now(timezone.utc)
+        update_data['completed_at'] = datetime.now(UTC)
 
     if notes:
         update_data['notes'] = notes
@@ -1037,7 +1037,7 @@ async def add_folio_charge_mobile(
     quantity: float,
     unit_price: float,
     tax_rate: float = 0.18,
-    department: Optional[str] = None,
+    department: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Add charge to folio"""
@@ -1071,7 +1071,7 @@ async def add_folio_charge_mobile(
         'tax_amount': tax_amount,
         'total': total,
         'posted_by': current_user.username,
-        'posted_at': datetime.now(timezone.utc),
+        'posted_at': datetime.now(UTC),
         'voided': False,
         'department': department
     }
@@ -1084,7 +1084,7 @@ async def add_folio_charge_mobile(
         {'id': folio_id, 'tenant_id': current_user.tenant_id},
         {'$set': {
             'balance': new_balance,
-            'updated_at': datetime.now(timezone.utc)
+            'updated_at': datetime.now(UTC)
         }}
     )
 
@@ -1124,7 +1124,7 @@ async def void_folio_charge_mobile(
         {'$set': {
             'voided': True,
             'voided_by': current_user.username,
-            'voided_at': datetime.now(timezone.utc),
+            'voided_at': datetime.now(UTC),
             'void_reason': void_reason
         }}
     )
@@ -1141,7 +1141,7 @@ async def void_folio_charge_mobile(
             {'id': charge.get('folio_id'), 'tenant_id': current_user.tenant_id},
             {'$set': {
                 'balance': new_balance,
-                'updated_at': datetime.now(timezone.utc)
+                'updated_at': datetime.now(UTC)
             }}
         )
 
@@ -1240,8 +1240,8 @@ async def get_folio_transactions_mobile(
 @router.post("/frontdesk/calculate-early-late-fees")
 async def calculate_early_late_fees(
     booking_id: str,
-    early_checkin_time: Optional[str] = None,
-    late_checkout_time: Optional[str] = None,
+    early_checkin_time: str | None = None,
+    late_checkout_time: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Calculate early check-in and late checkout fees"""
@@ -1275,8 +1275,8 @@ async def calculate_early_late_fees(
 
 @router.get("/revenue/mobile/dashboard")
 async def get_revenue_dashboard_mobile(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get comprehensive revenue dashboard"""
@@ -1284,13 +1284,13 @@ async def get_revenue_dashboard_mobile(
 
     # Default to current month
     if not start_date or not end_date:
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         start_date = today.replace(day=1).isoformat()
         last_day = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
         end_date = last_day.isoformat()
 
-    start_dt = datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc)
-    end_dt = datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc)
+    start_dt = datetime.fromisoformat(start_date).replace(tzinfo=UTC)
+    end_dt = datetime.fromisoformat(end_date).replace(tzinfo=UTC)
 
     # Total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
@@ -1342,8 +1342,8 @@ async def get_revenue_dashboard_mobile(
 
 @router.get("/revenue/mobile/segment-analysis")
 async def get_segment_analysis_mobile(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get revenue by market segment"""
@@ -1351,7 +1351,7 @@ async def get_segment_analysis_mobile(
 
     # Default to current month
     if not start_date or not end_date:
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         start_date = today.replace(day=1).isoformat()
         last_day = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
         end_date = last_day.isoformat()
@@ -1409,8 +1409,8 @@ async def get_segment_analysis_mobile(
 
 @router.get("/revenue/mobile/channel-distribution")
 async def get_channel_distribution_mobile(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get revenue by booking channel"""
@@ -1418,7 +1418,7 @@ async def get_channel_distribution_mobile(
 
     # Default to current month
     if not start_date or not end_date:
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         start_date = today.replace(day=1).isoformat()
         last_day = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
         end_date = last_day.isoformat()
@@ -1494,12 +1494,12 @@ async def get_pickup_graph_mobile(
     pickup_points = []
 
     # Group by days before arrival
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     days_until_arrival = (arrival_dt - today).days
 
     for i in range(365, -1, -7):  # Weekly points going back 1 year
         cutoff_date = arrival_dt - timedelta(days=i)
-        cutoff_dt = datetime.combine(cutoff_date, datetime.max.time()).replace(tzinfo=timezone.utc)
+        cutoff_dt = datetime.combine(cutoff_date, datetime.max.time()).replace(tzinfo=UTC)
 
         rooms_at_cutoff = sum(
             b['room_nights'] for b in bookings
@@ -1528,7 +1528,7 @@ async def get_revenue_forecast_mobile(
     """Get revenue forecast"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
 
     # Get historical data for forecasting
@@ -1607,7 +1607,7 @@ async def get_demand_heatmap_mobile(
     """Get demand heatmap"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     end_date = today + timedelta(days=months_ahead * 30)
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
 
@@ -1658,8 +1658,8 @@ async def get_demand_heatmap_mobile(
 
 @router.get("/revenue/mobile/cancellations-noshows")
 async def get_cancellations_noshows_mobile(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get cancellation and no-show analysis"""
@@ -1667,7 +1667,7 @@ async def get_cancellations_noshows_mobile(
 
     # Default to current month
     if not start_date or not end_date:
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         start_date = today.replace(day=1).isoformat()
         last_day = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
         end_date = last_day.isoformat()
@@ -1772,7 +1772,7 @@ async def create_rate_override_mobile(
         'reason': reason,
         'approved_by': current_user.username,
         'created_by': current_user.username,
-        'created_at': datetime.now(timezone.utc)
+        'created_at': datetime.now(UTC)
     }
 
     await db.rate_overrides.insert_one(override)
@@ -1791,8 +1791,8 @@ async def create_rate_override_mobile(
 
 @router.get("/revenue/mobile/rate-overrides")
 async def get_rate_overrides_mobile(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get rate overrides"""
@@ -1836,7 +1836,7 @@ async def get_guest_alerts(
     current_user = await get_current_user(credentials)
 
     alerts = []
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
 
     # Get all in-house and arriving guests
     async for booking in db.bookings.find({
@@ -1845,8 +1845,8 @@ async def get_guest_alerts(
             {'status': 'checked_in'},
             {
                 'check_in': {
-                    '$gte': datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc),
-                    '$lte': datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
+                    '$gte': datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC),
+                    '$lte': datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
                 },
                 'status': {'$in': ['confirmed', 'guaranteed']}
             }
@@ -1960,7 +1960,7 @@ async def get_guest_alerts(
 
 @router.get("/housekeeping/status-change-logs")
 async def get_status_change_logs(
-    room_id: Optional[str] = None,
+    room_id: str | None = None,
     limit: int = 50,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -2003,10 +2003,10 @@ class LostFoundItemCreate(BaseModel):
     item_description: str
     location_found: str
     found_by: str
-    category: Optional[str] = 'other'
-    room_number: Optional[str] = None
-    guest_name: Optional[str] = None
-    notes: Optional[str] = None
+    category: str | None = 'other'
+    room_number: str | None = None
+    guest_name: str | None = None
+    notes: str | None = None
 
 @router.post("/housekeeping/lost-found/item")
 async def create_lost_found_item(
@@ -2028,9 +2028,9 @@ async def create_lost_found_item(
         'guest_name': item.guest_name,
         'notes': item.notes,
         'status': 'unclaimed',
-        'found_date': datetime.now(timezone.utc),
+        'found_date': datetime.now(UTC),
         'created_by': current_user.username,
-        'created_at': datetime.now(timezone.utc)
+        'created_at': datetime.now(UTC)
     }
 
     await db.lost_found.insert_one(lost_found_item)
@@ -2044,7 +2044,7 @@ async def create_lost_found_item(
 
 @router.get("/housekeeping/lost-found/items")
 async def get_lost_found_items(
-    status: Optional[str] = None,
+    status: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get lost and found items"""
@@ -2082,16 +2082,16 @@ async def get_lost_found_items(
 
 @router.get("/housekeeping/task-assignments")
 async def get_task_assignments(
-    date: Optional[str] = None,
+    date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get housekeeping task assignments and routes"""
     current_user = await get_current_user(credentials)
 
     if date:
-        target_date = datetime.fromisoformat(date).replace(tzinfo=timezone.utc)
+        target_date = datetime.fromisoformat(date).replace(tzinfo=UTC)
     else:
-        target_date = datetime.now(timezone.utc)
+        target_date = datetime.now(UTC)
 
     start_of_day = target_date.replace(hour=0, minute=0, second=0)
     end_of_day = target_date.replace(hour=23, minute=59, second=59)
@@ -2261,8 +2261,8 @@ async def get_asset_maintenance_history(
 
 @router.get("/pos/z-report")
 async def get_z_report_detailed(
-    date: Optional[str] = None,
-    outlet_id: Optional[str] = None,
+    date: str | None = None,
+    outlet_id: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get Z report (end of day report) for POS"""
@@ -2271,7 +2271,7 @@ async def get_z_report_detailed(
     if date:
         target_date = datetime.fromisoformat(date)
     else:
-        target_date = datetime.now(timezone.utc)
+        target_date = datetime.now(UTC)
 
     start_of_day = target_date.replace(hour=0, minute=0, second=0)
     end_of_day = target_date.replace(hour=23, minute=59, second=59)
@@ -2327,26 +2327,26 @@ async def get_z_report_detailed(
         },
         'payment_methods': payment_methods,
         'category_sales': category_sales,
-        'generated_at': datetime.now(timezone.utc).isoformat()
+        'generated_at': datetime.now(UTC).isoformat()
     }
 
 
 @router.get("/pos/void-report")
 async def get_void_report(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get voided transactions report"""
     current_user = await get_current_user(credentials)
 
     if not start_date:
-        start_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
+        start_date = datetime.now(UTC).replace(hour=0, minute=0, second=0)
     else:
         start_date = datetime.fromisoformat(start_date)
 
     if not end_date:
-        end_date = datetime.now(timezone.utc).replace(hour=23, minute=59, second=59)
+        end_date = datetime.now(UTC).replace(hour=23, minute=59, second=59)
     else:
         end_date = datetime.fromisoformat(end_date)
 
@@ -2387,10 +2387,10 @@ class MenuItemCreate(BaseModel):
     name: str
     category: str
     price: float
-    description: Optional[str] = None
-    cost: Optional[float] = None
+    description: str | None = None
+    cost: float | None = None
     available: bool = True
-    image_url: Optional[str] = None
+    image_url: str | None = None
 
 @router.post("/pos/menu-item")
 async def create_menu_item(
@@ -2411,7 +2411,7 @@ async def create_menu_item(
         'cost': item.cost,
         'available': item.available,
         'image_url': item.image_url,
-        'created_at': datetime.now(timezone.utc),
+        'created_at': datetime.now(UTC),
         'created_by': current_user.username
     }
 
@@ -2452,7 +2452,7 @@ async def update_menu_item(
                 'cost': item.cost,
                 'available': item.available,
                 'image_url': item.image_url,
-                'updated_at': datetime.now(timezone.utc),
+                'updated_at': datetime.now(UTC),
                 'updated_by': current_user.username
             }
         }

@@ -7,8 +7,8 @@ Supports: Twilio SMS, SendGrid Email, WhatsApp, Redis, Sentry, OTel Exporter.
 import logging
 import os
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.provider_test_connection")
 
@@ -20,16 +20,16 @@ class ConnectionTestResult:
         self.provider = provider
         self.status = "pending"
         self.latency_ms: float = 0
-        self.error: Optional[str] = None
-        self.error_masked: Optional[str] = None
-        self.failure_class: Optional[str] = None
+        self.error: str | None = None
+        self.error_masked: str | None = None
+        self.failure_class: str | None = None
         self.mode: str = "unknown"  # sandbox / test / live
-        self.validated_at: str = datetime.now(timezone.utc).isoformat()
+        self.validated_at: str = datetime.now(UTC).isoformat()
         self.network_reachable: bool = False
         self.credential_valid: bool = False
-        self.details: Dict[str, Any] = {}
+        self.details: dict[str, Any] = {}
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "provider": self.provider,
             "status": self.status,
@@ -79,10 +79,10 @@ class ProviderTestConnectionService:
     """Live test connection for all external providers."""
 
     def __init__(self):
-        self._test_history: List[Dict[str, Any]] = []
-        self._last_results: Dict[str, Dict[str, Any]] = {}
+        self._test_history: list[dict[str, Any]] = []
+        self._last_results: dict[str, dict[str, Any]] = {}
         self._max_history = 200
-        self._audit_log: List[Dict[str, Any]] = []
+        self._audit_log: list[dict[str, Any]] = []
 
     def _record_audit(self, provider: str, action: str, result: str, user_id: str = "system"):
         entry = {
@@ -90,13 +90,13 @@ class ProviderTestConnectionService:
             "action": action,
             "result": result,
             "user_id": user_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
         self._audit_log.append(entry)
         if len(self._audit_log) > 500:
             self._audit_log = self._audit_log[-500:]
 
-    async def test_provider(self, provider: str, user_id: str = "system") -> Dict[str, Any]:
+    async def test_provider(self, provider: str, user_id: str = "system") -> dict[str, Any]:
         """Run live test for a specific provider."""
         result = ConnectionTestResult(provider)
         start = time.time()
@@ -134,7 +134,7 @@ class ProviderTestConnectionService:
         self._record_audit(provider, "test_connection", result.status, user_id)
         return result_dict
 
-    async def test_all_providers(self, user_id: str = "system") -> Dict[str, Any]:
+    async def test_all_providers(self, user_id: str = "system") -> dict[str, Any]:
         """Test all providers and return aggregated results."""
         providers = ["twilio_sms", "sendgrid_email", "whatsapp", "redis", "sentry", "otel"]
         results = {}
@@ -153,7 +153,7 @@ class ProviderTestConnectionService:
             overall = "failed"
 
         return {
-            "tested_at": datetime.now(timezone.utc).isoformat(),
+            "tested_at": datetime.now(UTC).isoformat(),
             "providers": results,
             "summary": {
                 "total": len(providers),
@@ -164,15 +164,15 @@ class ProviderTestConnectionService:
             },
         }
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get last known status for all providers."""
         return {
             "last_results": self._last_results,
             "total_tests": len(self._test_history),
-            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "checked_at": datetime.now(UTC).isoformat(),
         }
 
-    def get_audit_log(self, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_audit_log(self, limit: int = 50) -> list[dict[str, Any]]:
         return self._audit_log[-limit:]
 
     # ── Provider-specific test implementations ──────────────────

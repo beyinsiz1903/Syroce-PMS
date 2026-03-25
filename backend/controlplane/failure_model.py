@@ -7,9 +7,9 @@ sync jobs, and secret access MUST be classified using this taxonomy.
 No silent failures. No unclassified errors.
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class FailureType(str, Enum):
@@ -57,7 +57,7 @@ class OperationType(str, Enum):
 
 
 # ── Severity Defaults by FailureType ───────────────────────────────
-DEFAULT_SEVERITY: Dict[FailureType, Severity] = {
+DEFAULT_SEVERITY: dict[FailureType, Severity] = {
     FailureType.RETRYABLE: Severity.WARNING,
     FailureType.PERMANENT: Severity.HIGH,
     FailureType.PROVIDER_ERROR: Severity.HIGH,
@@ -93,7 +93,7 @@ _SECURITY_KEYWORDS = [
 def classify_failure(
     error_message: str,
     *,
-    operation_type: Optional[str] = None,
+    operation_type: str | None = None,
 ) -> FailureType:
     """Classify an error message into the failure taxonomy.
 
@@ -128,7 +128,7 @@ def classify_failure(
 def resolve_severity(
     failure_type: FailureType,
     *,
-    override: Optional[Severity] = None,
+    override: Severity | None = None,
 ) -> Severity:
     """Get severity for a failure type, with optional override."""
     if override:
@@ -144,18 +144,18 @@ def build_failure_event(
     failure_type: FailureType,
     error_code: str,
     error_message: str,
-    severity: Optional[Severity] = None,
-    context: Optional[Dict[str, Any]] = None,
+    severity: Severity | None = None,
+    context: dict[str, Any] | None = None,
     retry_count: int = 0,
-    correlation_id: Optional[str] = None,
-    property_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    correlation_id: str | None = None,
+    property_id: str | None = None,
+) -> dict[str, Any]:
     """Build a structured failure event document.
 
     This is the canonical failure schema used across the entire system.
     Context must contain ONLY safe metadata — no secrets, no plaintext credentials.
     """
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     resolved_severity = resolve_severity(failure_type, override=severity)
 
     # Sanitize context: strip any keys that might leak secrets
@@ -191,7 +191,7 @@ _FORBIDDEN_CONTEXT_KEYS = {
 }
 
 
-def _sanitize_context(context: Dict[str, Any]) -> Dict[str, Any]:
+def _sanitize_context(context: dict[str, Any]) -> dict[str, Any]:
     """Remove any keys that might contain sensitive data."""
     return {
         k: v for k, v in context.items()

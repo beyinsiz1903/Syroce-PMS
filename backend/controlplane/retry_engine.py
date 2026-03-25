@@ -11,8 +11,8 @@ Every retry MUST be safe to call multiple times.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from .failure_model import FailureStatus, FailureType, OperationType
 
@@ -47,7 +47,7 @@ class RetryEngine:
         *,
         dry_run: bool = False,
         initiated_by: str = "operator",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Retry a failed operation.
 
         Args:
@@ -97,7 +97,7 @@ class RetryEngine:
             }
 
         # 4. Mark as retrying
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         await db[COLL_FAILURES].update_one(
             {"id": failure_id},
             {"$set": {
@@ -130,16 +130,16 @@ class RetryEngine:
                 {"id": failure_id},
                 {"$set": {
                     "status": FailureStatus.RESOLVED.value,
-                    "resolved_at": datetime.now(timezone.utc).isoformat(),
+                    "resolved_at": datetime.now(UTC).isoformat(),
                     "resolved_by": f"retry:{initiated_by}",
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
                 }},
             )
             await db[COLL_RETRY_LOG].update_one(
                 {"id": retry_log["id"]},
                 {"$set": {
                     "status": "success",
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "completed_at": datetime.now(UTC).isoformat(),
                     "result": result,
                 }},
             )
@@ -163,16 +163,16 @@ class RetryEngine:
                 {"id": failure_id},
                 {"$set": {
                     "status": FailureStatus.OPEN.value,
-                    "last_seen_at": datetime.now(timezone.utc).isoformat(),
+                    "last_seen_at": datetime.now(UTC).isoformat(),
                     "error_message": error_msg[:1000],
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
                 }},
             )
             await db[COLL_RETRY_LOG].update_one(
                 {"id": retry_log["id"]},
                 {"$set": {
                     "status": "failed",
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "completed_at": datetime.now(UTC).isoformat(),
                     "error": error_msg[:1000],
                 }},
             )
@@ -188,7 +188,7 @@ class RetryEngine:
                 "reason": error_msg[:500],
             }
 
-    async def _dispatch_retry(self, failure: Dict[str, Any]) -> Dict[str, Any]:
+    async def _dispatch_retry(self, failure: dict[str, Any]) -> dict[str, Any]:
         """Route retry to the appropriate handler based on operation_type."""
         op = failure.get("operation_type", "")
         context = failure.get("context", {})
@@ -208,8 +208,8 @@ class RetryEngine:
                     "message": f"No automatic retry handler for '{op}'. Manual intervention required."}
 
     async def _retry_reservation_import(
-        self, tenant_id: str, provider: str, context: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        self, tenant_id: str, provider: str, context: dict[str, Any],
+    ) -> dict[str, Any]:
         """Retry a failed reservation import. Duplicate-safe via import bridge."""
         import_id = context.get("import_id", "")
         if not import_id:
@@ -232,15 +232,15 @@ class RetryEngine:
             raise RuntimeError(f"Reservation import retry failed: {e}")
 
     async def _retry_outbox_event(
-        self, tenant_id: str, provider: str, context: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        self, tenant_id: str, provider: str, context: dict[str, Any],
+    ) -> dict[str, Any]:
         """Retry a failed outbox event by resetting it to pending."""
         event_id = context.get("event_id", "")
         if not event_id:
             return {"status": "skipped", "reason": "No event_id in failure context"}
 
         db = self._get_db()
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         result = await db.outbox_events.update_one(
             {"event_id": event_id, "status": {"$in": ["failed", "parked"]}},
             {"$set": {"status": "pending", "updated_at": now},
@@ -252,8 +252,8 @@ class RetryEngine:
                 "reason": "Event not in failed/parked state or not found"}
 
     async def _retry_ari_push(
-        self, tenant_id: str, provider: str, context: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        self, tenant_id: str, provider: str, context: dict[str, Any],
+    ) -> dict[str, Any]:
         """Retry an ARI push by re-enqueuing the outbox event."""
         # ARI push failures map to outbox events
         event_id = context.get("event_id", "")
@@ -262,15 +262,15 @@ class RetryEngine:
         return {"status": "skipped", "reason": "No event_id for ARI retry"}
 
     async def _retry_sync_job(
-        self, tenant_id: str, provider: str, context: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        self, tenant_id: str, provider: str, context: dict[str, Any],
+    ) -> dict[str, Any]:
         """Retry a failed sync job."""
         job_id = context.get("job_id", "")
         if not job_id:
             return {"status": "skipped", "reason": "No job_id in failure context"}
         # Mark sync job for re-execution
         db = self._get_db()
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         result = await db.cp_sync_jobs.update_one(
             {"id": job_id, "status": {"$in": ["failed", "stalled"]}},
             {"$set": {"status": "pending", "updated_at": now, "retry_requested_at": now}},
@@ -281,7 +281,7 @@ class RetryEngine:
 
 
 # ── Singleton ──────────────────────────────────────────────────────
-_engine: Optional[RetryEngine] = None
+_engine: RetryEngine | None = None
 
 
 def get_retry_engine() -> RetryEngine:

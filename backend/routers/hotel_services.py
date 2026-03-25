@@ -3,8 +3,7 @@ Hotel Services Router - Housekeeping Status, Wake-up Calls, Lost & Found,
 Hotel Settings (logo/template), Group Folio Merging, PDF Invoice Generation
 """
 import uuid
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -29,14 +28,14 @@ def _clean_doc(doc):
 
 class RoomStatusUpdate(BaseModel):
     status: str  # clean, dirty, inspected, maintenance, out_of_order
-    notes: Optional[str] = None
-    priority: Optional[str] = "normal"  # low, normal, high, urgent
+    notes: str | None = None
+    priority: str | None = "normal"  # low, normal, high, urgent
 
 
 @router.get("/housekeeping/rooms")
 async def get_housekeeping_rooms(
-    status_filter: Optional[str] = None,
-    floor: Optional[str] = None,
+    status_filter: str | None = None,
+    floor: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Get all rooms with housekeeping status."""
@@ -87,7 +86,7 @@ async def update_room_housekeeping_status(
 
     update_data = {
         "housekeeping_status": data.status,
-        "housekeeping_updated_at": datetime.now(timezone.utc).isoformat(),
+        "housekeeping_updated_at": datetime.now(UTC).isoformat(),
         "housekeeping_updated_by": current_user.name,
     }
     if data.notes:
@@ -108,7 +107,7 @@ async def update_room_housekeeping_status(
         "new_status": data.status,
         "notes": data.notes,
         "changed_by": current_user.name,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.housekeeping_log.insert_one(log_entry)
     log_entry.pop("_id", None)
@@ -118,7 +117,7 @@ async def update_room_housekeeping_status(
 
 @router.put("/housekeeping/rooms/bulk-status")
 async def bulk_update_room_status(
-    room_ids: List[str] = [],
+    room_ids: list[str] = [],
     status: str = "clean",
     current_user: User = Depends(get_current_user),
 ):
@@ -126,7 +125,7 @@ async def bulk_update_room_status(
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     result = await db.rooms.update_many(
         {"id": {"$in": room_ids}, "tenant_id": tid},
         {"$set": {
@@ -145,30 +144,30 @@ async def bulk_update_room_status(
 
 class WakeUpCallCreate(BaseModel):
     room_number: str
-    guest_name: Optional[str] = None
-    booking_id: Optional[str] = None
+    guest_name: str | None = None
+    booking_id: str | None = None
     wake_time: str  # HH:MM format
     wake_date: str  # YYYY-MM-DD
     recurring: bool = False
-    recurrence_end_date: Optional[str] = None
-    notes: Optional[str] = None
+    recurrence_end_date: str | None = None
+    notes: str | None = None
     method: str = "phone"  # phone, system, both
 
 
 class WakeUpCallUpdate(BaseModel):
-    wake_time: Optional[str] = None
-    wake_date: Optional[str] = None
-    status: Optional[str] = None  # pending, completed, missed, cancelled
-    notes: Optional[str] = None
-    completed_by: Optional[str] = None
-    attempt_count: Optional[int] = None
-    response: Optional[str] = None  # answered, no_answer, busy
+    wake_time: str | None = None
+    wake_date: str | None = None
+    status: str | None = None  # pending, completed, missed, cancelled
+    notes: str | None = None
+    completed_by: str | None = None
+    attempt_count: int | None = None
+    response: str | None = None  # answered, no_answer, busy
 
 
 @router.get("/wake-up-calls")
 async def get_wake_up_calls(
-    date: Optional[str] = None,
-    status: Optional[str] = None,
+    date: str | None = None,
+    status: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Get wake-up calls, optionally filtered by date and status."""
@@ -186,7 +185,7 @@ async def get_wake_up_calls(
         calls.append(c)
 
     # Stats
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     today_calls = [c for c in calls if c.get("wake_date") == today]
     pending = len([c for c in today_calls if c.get("status") == "pending"])
     completed = len([c for c in today_calls if c.get("status") == "completed"])
@@ -227,7 +226,7 @@ async def create_wake_up_call(
         "status": "pending",
         "attempt_count": 0,
         "created_by": current_user.name,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.wake_up_calls.insert_one(call)
     call.pop("_id", None)
@@ -253,7 +252,7 @@ async def update_wake_up_call(
     if data.status:
         updates["status"] = data.status
         if data.status == "completed":
-            updates["completed_at"] = datetime.now(timezone.utc).isoformat()
+            updates["completed_at"] = datetime.now(UTC).isoformat()
             updates["completed_by"] = data.completed_by or current_user.name
     if data.notes is not None:
         updates["notes"] = data.notes
@@ -262,7 +261,7 @@ async def update_wake_up_call(
     if data.response:
         updates["response"] = data.response
 
-    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    updates["updated_at"] = datetime.now(UTC).isoformat()
 
     result = await db.wake_up_calls.update_one(
         {"id": call_id, "tenant_id": tid},
@@ -298,35 +297,35 @@ async def delete_wake_up_call(
 
 class LostFoundCreate(BaseModel):
     item_name: str
-    description: Optional[str] = None
+    description: str | None = None
     category: str = "other"  # electronics, clothing, jewelry, documents, bags, other
     found_location: str
     found_date: str
-    found_by: Optional[str] = None
-    room_number: Optional[str] = None
-    guest_name: Optional[str] = None
-    guest_contact: Optional[str] = None
-    booking_id: Optional[str] = None
-    storage_location: Optional[str] = None
-    photo_data: Optional[str] = None  # base64
+    found_by: str | None = None
+    room_number: str | None = None
+    guest_name: str | None = None
+    guest_contact: str | None = None
+    booking_id: str | None = None
+    storage_location: str | None = None
+    photo_data: str | None = None  # base64
 
 
 class LostFoundUpdate(BaseModel):
-    status: Optional[str] = None  # found, claimed, returned, disposed, stored
-    claimed_by: Optional[str] = None
-    claimed_date: Optional[str] = None
-    return_method: Optional[str] = None  # in_person, shipping, courier
-    tracking_number: Optional[str] = None
-    notes: Optional[str] = None
-    guest_name: Optional[str] = None
-    guest_contact: Optional[str] = None
+    status: str | None = None  # found, claimed, returned, disposed, stored
+    claimed_by: str | None = None
+    claimed_date: str | None = None
+    return_method: str | None = None  # in_person, shipping, courier
+    tracking_number: str | None = None
+    notes: str | None = None
+    guest_name: str | None = None
+    guest_contact: str | None = None
 
 
 @router.get("/lost-found")
 async def get_lost_found_items(
-    status: Optional[str] = None,
-    category: Optional[str] = None,
-    search: Optional[str] = None,
+    status: str | None = None,
+    category: str | None = None,
+    search: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Get lost & found items."""
@@ -386,7 +385,7 @@ async def create_lost_found_item(
         "photo_data": data.photo_data,
         "status": "found",
         "created_by": current_user.name,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.lost_found.insert_one(item)
     item.pop("_id", None)
@@ -404,7 +403,7 @@ async def update_lost_found_item(
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
-    updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    updates = {"updated_at": datetime.now(UTC).isoformat()}
     if data.status:
         updates["status"] = data.status
     if data.claimed_by:
@@ -462,7 +461,7 @@ async def match_guest_to_item(
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
-    updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    updates = {"updated_at": datetime.now(UTC).isoformat()}
     if guest_name:
         updates["guest_name"] = guest_name
     if guest_contact:
@@ -523,18 +522,18 @@ async def get_hotel_settings(
 
 
 class HotelSettingsUpdate(BaseModel):
-    hotel_name: Optional[str] = None
-    hotel_address: Optional[str] = None
-    hotel_phone: Optional[str] = None
-    hotel_email: Optional[str] = None
-    tax_id: Optional[str] = None
-    tax_office: Optional[str] = None
-    logo_data: Optional[str] = None  # base64 encoded image
-    invoice_header: Optional[str] = None
-    invoice_footer: Optional[str] = None
-    invoice_notes: Optional[str] = None
-    currency: Optional[str] = None
-    currency_symbol: Optional[str] = None
+    hotel_name: str | None = None
+    hotel_address: str | None = None
+    hotel_phone: str | None = None
+    hotel_email: str | None = None
+    tax_id: str | None = None
+    tax_office: str | None = None
+    logo_data: str | None = None  # base64 encoded image
+    invoice_header: str | None = None
+    invoice_footer: str | None = None
+    invoice_notes: str | None = None
+    currency: str | None = None
+    currency_symbol: str | None = None
 
 
 @router.put("/hotel-settings")
@@ -546,7 +545,7 @@ async def update_hotel_settings(
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
-    updates = {"tenant_id": tid, "updated_at": datetime.now(timezone.utc).isoformat()}
+    updates = {"tenant_id": tid, "updated_at": datetime.now(UTC).isoformat()}
     for field in data.model_fields:
         val = getattr(data, field)
         if val is not None:
@@ -612,7 +611,7 @@ async def generate_invoice_pdf(
         guest = await db.guests.find_one({"id": booking["guest_id"], "tenant_id": tid}, {"_id": 0})
 
     # Build invoice data
-    invoice_number = f"INV-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{booking_id[:8].upper()}"
+    invoice_number = f"INV-{datetime.now(UTC).strftime('%Y%m%d')}-{booking_id[:8].upper()}"
 
     # Calculate totals
     total_payments = sum(p.get("amount", 0) for p in payments)
@@ -693,7 +692,7 @@ th {{ background:#f1f5f9; padding:10px 8px; text-align:left; font-weight:600; fo
 <div class="invoice-title">FATURA</div>
 <div style="margin-bottom:20px;color:#64748b;">
     Fatura No: <strong>{invoice_number}</strong><br>
-    Tarih: <strong>{datetime.now(timezone.utc).strftime("%d.%m.%Y")}</strong>
+    Tarih: <strong>{datetime.now(UTC).strftime("%d.%m.%Y")}</strong>
 </div>
 
 <div class="info-grid">
@@ -777,7 +776,7 @@ th {{ background:#f1f5f9; padding:10px 8px; text-align:left; font-weight:600; fo
 class GroupFolioMerge(BaseModel):
     group_id: str
     master_booking_id: str
-    merge_booking_ids: List[str]
+    merge_booking_ids: list[str]
     merge_payments: bool = True
 
 
@@ -819,8 +818,8 @@ async def merge_group_folios(
                 "amount": folio.get("amount", 0),
                 "type": folio.get("type", "charge"),
                 "merged_from": bid,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "merged_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
+                "merged_at": datetime.now(UTC).isoformat(),
             }
             await db.folios.insert_one(new_entry)
             new_entry.pop("_id", None)
@@ -840,7 +839,7 @@ async def merge_group_folios(
                     "payment_type": "transfer",
                     "reference": f"Grup birlestirme - Oda {source_booking.get('room_number', '?')}",
                     "merged_from": bid,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                 }
                 await db.payments.insert_one(new_payment)
                 new_payment.pop("_id", None)
@@ -849,7 +848,7 @@ async def merge_group_folios(
         # Mark source booking folio as merged
         await db.bookings.update_one(
             {"id": bid, "tenant_id": tid},
-            {"$set": {"folio_merged_to": data.master_booking_id, "folio_merged_at": datetime.now(timezone.utc).isoformat()}}
+            {"$set": {"folio_merged_to": data.master_booking_id, "folio_merged_at": datetime.now(UTC).isoformat()}}
         )
 
     # Log the merge
@@ -863,7 +862,7 @@ async def merge_group_folios(
         "total_payments_merged": len(merged_payments),
         "total_amount_transferred": total_transferred,
         "merged_by": current_user.name,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.folio_merge_logs.insert_one(merge_log)
     merge_log.pop("_id", None)
@@ -1011,7 +1010,7 @@ async def record_group_payment(
         "payment_type": "group_payment",
         "reference": data.reference or f"Grup odeme - {data.group_id[:8]}",
         "recorded_by": current_user.name,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.payments.insert_one(payment)
     payment.pop("_id", None)
@@ -1105,7 +1104,7 @@ async def record_group_bulk_payment(
             "payment_type": "group_bulk_payment",
             "reference": data.reference or f"Toplu grup odeme - Oda {ab['room_number']}",
             "recorded_by": current_user.name,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db.payments.insert_one(payment)
         payment.pop("_id", None)
@@ -1177,8 +1176,8 @@ class CancelReservationRequest(BaseModel):
     reason: str
     cancel_type: str = "guest_request"
     apply_noshow: bool = False
-    noshow_charge_type: Optional[str] = None
-    noshow_charge_amount: Optional[float] = None
+    noshow_charge_type: str | None = None
+    noshow_charge_amount: float | None = None
 
 
 @router.post("/reservations/{booking_id}/cancel")
@@ -1196,7 +1195,7 @@ async def cancel_reservation(
 
     update_data = {
         "status": "no_show" if body.apply_noshow else "cancelled",
-        "cancelled_at": datetime.now(timezone.utc).isoformat(),
+        "cancelled_at": datetime.now(UTC).isoformat(),
         "cancellation_reason": body.reason,
         "cancel_type": body.cancel_type,
     }
@@ -1211,7 +1210,7 @@ async def cancel_reservation(
             "category": "no_show",
             "description": f"No-Show Ucreti ({body.noshow_charge_type or 'ozel'})",
             "amount": body.noshow_charge_amount,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "created_by": current_user.name,
         })
         update_data["noshow_charge"] = body.noshow_charge_amount
@@ -1230,7 +1229,7 @@ async def cancel_reservation(
             "noshow": body.apply_noshow,
             "noshow_charge": body.noshow_charge_amount if body.apply_noshow else None,
         },
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     })
 
     return {"success": True, "status": update_data["status"], "message": "Rezervasyon iptal edildi"}
@@ -1273,7 +1272,7 @@ async def generate_voucher(
     guest_name = guest.get("name", booking.get("guest_name", "-")) if guest else booking.get("guest_name", "-")
     nights = max(1, (datetime.fromisoformat(str(booking.get("check_out", ""))[:10]) - datetime.fromisoformat(str(booking.get("check_in", ""))[:10])).days)
 
-    voucher_no = f"V-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{booking_id[:8].upper()}"
+    voucher_no = f"V-{datetime.now(UTC).strftime('%Y%m%d')}-{booking_id[:8].upper()}"
 
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -1311,7 +1310,7 @@ body {{ font-family: 'Segoe UI', Arial, sans-serif; margin:0; padding:40px; colo
     <div class="footer">
         <div>Bu voucher {settings.get("hotel_name","")} tarafindan duzenlenmistir.</div>
         <div>{settings.get("hotel_phone","")} | {settings.get("hotel_email","")}</div>
-        <div style="margin-top:8px;">Tarih: {datetime.now(timezone.utc).strftime("%d.%m.%Y %H:%M")}</div>
+        <div style="margin-top:8px;">Tarih: {datetime.now(UTC).strftime("%d.%m.%Y %H:%M")}</div>
     </div>
 </div>
 </body></html>"""
@@ -1324,13 +1323,13 @@ body {{ font-family: 'Segoe UI', Arial, sans-serif; margin:0; padding:40px; colo
 # ═══════════════════════════════════════════════════
 
 class InvoiceItemSelection(BaseModel):
-    selected_charge_ids: List[str] = []
-    billing_name: Optional[str] = None
-    billing_tax_id: Optional[str] = None
-    billing_tax_office: Optional[str] = None
-    billing_address: Optional[str] = None
-    billing_email: Optional[str] = None
-    invoice_note: Optional[str] = None
+    selected_charge_ids: list[str] = []
+    billing_name: str | None = None
+    billing_tax_id: str | None = None
+    billing_tax_office: str | None = None
+    billing_address: str | None = None
+    billing_email: str | None = None
+    invoice_note: str | None = None
 
 
 @router.post("/reservations/{booking_id}/generate-invoice")
@@ -1396,7 +1395,7 @@ async def generate_custom_invoice(
 
     currency = settings.get("currency_symbol", "₺")
     grand_total = sum(c["amount"] for c in selected)
-    invoice_number = f"INV-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M')}-{booking_id[:6].upper()}"
+    invoice_number = f"INV-{datetime.now(UTC).strftime('%Y%m%d%H%M')}-{booking_id[:6].upper()}"
 
     guest_name = body.billing_name or (guest.get("name", booking.get("guest_name", "-")) if guest else booking.get("guest_name", "-"))
 
@@ -1437,7 +1436,7 @@ thead th {{ background:#f1f5f9; padding:10px 12px; text-align:left; font-weight:
 <div class="page">
     <div class="header">
         <div>{logo_html}<div class="invoice-badge">FATURA</div>
-            <div class="invoice-meta">Fatura No: <strong>{invoice_number}</strong><br>Tarih: <strong>{datetime.now(timezone.utc).strftime("%d.%m.%Y")}</strong></div>
+            <div class="invoice-meta">Fatura No: <strong>{invoice_number}</strong><br>Tarih: <strong>{datetime.now(UTC).strftime("%d.%m.%Y")}</strong></div>
         </div>
         <div class="hotel-info">
             <div class="hotel-name">{settings.get("hotel_name","")}</div>
@@ -1496,7 +1495,7 @@ thead th {{ background:#f1f5f9; padding:10px 12px; text-align:left; font-weight:
         "billing_tax_id": body.billing_tax_id,
         "total": grand_total,
         "item_count": len(selected),
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "created_by": current_user.name,
     })
 
@@ -1601,11 +1600,11 @@ async def get_available_rooms_by_type(
 class CreateCariAccount(BaseModel):
     name: str
     account_type: str = "agency"
-    tax_id: Optional[str] = None
-    tax_office: Optional[str] = None
-    address: Optional[str] = None
-    phone: Optional[str] = None
-    email: Optional[str] = None
+    tax_id: str | None = None
+    tax_office: str | None = None
+    address: str | None = None
+    phone: str | None = None
+    email: str | None = None
 
 
 @router.post("/cari-accounts/create")
@@ -1629,7 +1628,7 @@ async def create_cari_account(
         "email": body.email,
         "balance": 0,
         "is_active": True,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "created_by": current_user.name,
     }
     await db.cari_accounts.insert_one(account)

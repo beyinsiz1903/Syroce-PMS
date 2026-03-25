@@ -18,8 +18,7 @@ SEC-002 Endpoints:
 """
 import logging
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -95,7 +94,7 @@ async def secrets_status():
         pass
 
     # Audit stats (last 24h)
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
     audit_stats = {}
     try:
         pipeline = [
@@ -127,13 +126,13 @@ async def secrets_status():
             "legacy_fallback": os.environ.get("ENABLE_LEGACY_SECRET_FALLBACK", "true"),
             "audit_enabled": os.environ.get("SECRET_ACCESS_AUDIT_ENABLED", "true"),
         },
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
 @router.get("/secrets/rotation-plan")
 async def secrets_rotation_plan(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
 ):
     """Show rotation readiness for all managed secrets.
 
@@ -155,7 +154,7 @@ async def secrets_rotation_plan(
                      "rotation_count": 1, "previous_version": 1}
         ).to_list(500)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for sec in secrets:
             path = sec.get("path", "")
             parts = path.split("/")
@@ -216,7 +215,7 @@ async def secrets_rotation_plan(
             "warning_age_days": 30,
             "auto_rotation_enabled": False,
         },
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -252,7 +251,7 @@ async def rotate_secret(body: RotateRequest):
             "provider": body.provider,
             "property_id": body.property_id,
             "rotation_count": meta.rotation_count,
-            "rotated_at": datetime.now(timezone.utc).isoformat(),
+            "rotated_at": datetime.now(UTC).isoformat(),
             "rollback_available": True,
         }
     except HTTPException:
@@ -299,7 +298,7 @@ async def rollback_secret(body: RollbackRequest):
             "tenant_id": body.tenant_id,
             "provider": body.provider,
             "property_id": body.property_id,
-            "rolled_back_at": datetime.now(timezone.utc).isoformat(),
+            "rolled_back_at": datetime.now(UTC).isoformat(),
         }
     except HTTPException:
         raise
@@ -310,7 +309,7 @@ async def rollback_secret(body: RollbackRequest):
 
 @router.get("/secrets/scoping")
 async def secrets_scoping(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
 ):
     """Show tenant/provider-based secret scoping overview.
 
@@ -361,7 +360,7 @@ async def secrets_scoping(
         "isolation_model": "tenant/provider/property",
         "cross_tenant_access": "DENIED",
         "policy_enforcement": "active",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -401,7 +400,7 @@ async def crypto_status():
             "break_glass": "CRYPTO_BYPASS_ALLOWED=true disables all encryption (emergency only)",
             "rollback": "Set CRYPTO_V2_ENABLED=false to revert writes to legacy format",
         },
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -510,7 +509,7 @@ async def crypto_cutover_metrics():
         ),
     }
     metrics["key_version"] = os.environ.get("CM_KEY_VERSION", "v1")
-    metrics["timestamp"] = datetime.now(timezone.utc).isoformat()
+    metrics["timestamp"] = datetime.now(UTC).isoformat()
 
     return metrics
 
@@ -562,7 +561,7 @@ async def crypto_migrate_check():
             if check["would_migrate"] == 0
             else f"Run `python scripts/migrate_crypto.py --all` to migrate {check['would_migrate']} records"
         ),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -592,5 +591,5 @@ async def crypto_key_info():
             "break_glass": "Set CRYPTO_BYPASS_ALLOWED=true — disables ALL encryption (extreme emergency only)",
             "key_rollback": "Swap CM_MASTER_KEY_CURRENT back with previous value, decrement CM_KEY_VERSION",
         },
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }

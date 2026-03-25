@@ -6,7 +6,7 @@ Returns structured results for dashboard display.
 """
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .events import ARIDelta
 
@@ -65,7 +65,7 @@ class HotelRunnerTestRunner:
                 "duration_ms": duration,
                 "detail": result.get("detail", ""),
                 "data": result.get("data"),
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
         except Exception as e:
             duration = int((time.time() - start) * 1000)
@@ -74,7 +74,7 @@ class HotelRunnerTestRunner:
                 "success": False,
                 "duration_ms": duration,
                 "detail": f"Exception: {str(e)}",
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
 
     async def run_all(self) -> list:
@@ -90,7 +90,7 @@ class HotelRunnerTestRunner:
                         "success": False,
                         "duration_ms": 0,
                         "detail": "Skipped: connection failed",
-                        "tested_at": datetime.now(timezone.utc).isoformat(),
+                        "tested_at": datetime.now(UTC).isoformat(),
                     })
                 break
         return results
@@ -201,7 +201,7 @@ class ExelyTestRunner:
                 "duration_ms": duration,
                 "detail": result.get("detail", ""),
                 "data": result.get("data"),
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
         except Exception as e:
             duration = int((time.time() - start) * 1000)
@@ -210,7 +210,7 @@ class ExelyTestRunner:
                 "success": False,
                 "duration_ms": duration,
                 "detail": f"Exception: {str(e)}",
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
 
     async def run_all(self) -> list:
@@ -225,7 +225,7 @@ class ExelyTestRunner:
                         "success": False,
                         "duration_ms": 0,
                         "detail": "Skipped: WSSE authentication failed",
-                        "tested_at": datetime.now(timezone.utc).isoformat(),
+                        "tested_at": datetime.now(UTC).isoformat(),
                     })
                 break
         return results

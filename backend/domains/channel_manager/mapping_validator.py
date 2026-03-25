@@ -11,8 +11,8 @@ Every mapping failure produces:
   - operator_action_hint
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from .data_model import MappingFailure
 
@@ -36,7 +36,7 @@ class MappingValidationError:
         self.reason = reason
         self.operator_action = operator_action
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "failure_type": self.failure_type.value,
             "entity_type": self.entity_type,
@@ -47,9 +47,9 @@ class MappingValidationError:
 
 
 def validate_room_mapping(
-    mapping: Optional[Dict[str, Any]],
+    mapping: dict[str, Any] | None,
     provider_room_code: str,
-) -> Optional[MappingValidationError]:
+) -> MappingValidationError | None:
     """
     Validate a room mapping. Returns error if invalid, None if OK.
     Hard fail policy: no silent fallback.
@@ -94,9 +94,9 @@ def validate_room_mapping(
 
 
 def validate_rate_plan_mapping(
-    mapping: Optional[Dict[str, Any]],
+    mapping: dict[str, Any] | None,
     provider_rate_code: str,
-) -> Optional[MappingValidationError]:
+) -> MappingValidationError | None:
     """
     Validate a rate plan mapping. Returns error if invalid, None if OK.
     Hard fail policy: no silent fallback.
@@ -144,14 +144,14 @@ async def compute_mapping_health(
     tenant_id: str,
     property_id: str,
     provider: str,
-    room_mappings: List[Dict],
-    rate_plan_mappings: List[Dict],
-) -> Dict[str, Any]:
+    room_mappings: list[dict],
+    rate_plan_mappings: list[dict],
+) -> dict[str, Any]:
     """
     Compute mapping health score for a tenant/property/provider.
     Returns completeness %, broken/ambiguous/inactive counts.
     """
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     room_total = len(room_mappings)
     room_active = sum(1 for m in room_mappings if m.get("is_active"))

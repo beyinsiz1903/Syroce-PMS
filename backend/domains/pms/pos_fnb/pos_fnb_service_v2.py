@@ -7,8 +7,7 @@ void/refund safety, stock race protection.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from datetime import UTC, datetime
 
 from common.audit_hook import SEVERITY_CRITICAL, SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
@@ -32,12 +31,12 @@ class PosFnbServiceV2:
         self,
         ctx: OperationContext,
         outlet_id: str,
-        table_number: Optional[str] = None,
-        items: Optional[List[Dict]] = None,
-        guest_name: Optional[str] = None,
-        booking_id: Optional[str] = None,
+        table_number: str | None = None,
+        items: list[dict] | None = None,
+        guest_name: str | None = None,
+        booking_id: str | None = None,
         order_type: str = "dine_in",
-        idempotency_key: Optional[str] = None,
+        idempotency_key: str | None = None,
     ) -> ServiceResult:
         # Idempotency guard
         if idempotency_key:
@@ -63,7 +62,7 @@ class PosFnbServiceV2:
                     f"Table {table_number} is reserved", "TABLE_RESERVED"
                 )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         order_id = str(uuid.uuid4())
         order_number = f"ORD-{now.strftime('%Y%m%d%H%M')}-{uuid.uuid4().hex[:4].upper()}"
 
@@ -162,9 +161,9 @@ class PosFnbServiceV2:
         order_id: str,
         payment_method: str = "cash",
         post_to_folio: bool = False,
-        booking_id: Optional[str] = None,
+        booking_id: str | None = None,
         tip_amount: float = 0.0,
-        idempotency_key: Optional[str] = None,
+        idempotency_key: str | None = None,
     ) -> ServiceResult:
         # Idempotency
         if idempotency_key:
@@ -190,7 +189,7 @@ class PosFnbServiceV2:
                 {"message": "Already paid (idempotent)", "idempotent": True}
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         grand_total = order.get("grand_total", 0)
         total_with_tip = round(grand_total + tip_amount, 2)
 
@@ -300,7 +299,7 @@ class PosFnbServiceV2:
         if order.get("status") == "voided":
             return ServiceResult.success({"message": "Already voided", "idempotent": True})
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         await self._db.pos_orders.update_one(
             {"id": order_id},
             {
@@ -356,7 +355,7 @@ class PosFnbServiceV2:
         adjustment_type: str,
         quantity: int,
         reason: str,
-        idempotency_key: Optional[str] = None,
+        idempotency_key: str | None = None,
     ) -> ServiceResult:
         if ctx.actor_role not in ("admin", "warehouse", "fnb_manager", "supervisor", "super_admin"):
             return ServiceResult.fail("Insufficient permissions", "FORBIDDEN")
@@ -402,7 +401,7 @@ class PosFnbServiceV2:
             {
                 "$set": {
                     "quantity": new_qty,
-                    "last_updated": datetime.now(timezone.utc).isoformat(),
+                    "last_updated": datetime.now(UTC).isoformat(),
                     "last_updated_by": ctx.actor_id,
                 }
             },
@@ -413,7 +412,7 @@ class PosFnbServiceV2:
                 "CONCURRENT_MODIFICATION",
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         movement_doc = {
             "id": str(uuid.uuid4()),
             "tenant_id": ctx.tenant_id,
@@ -462,7 +461,7 @@ class PosFnbServiceV2:
             )
 
         reservation_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         await self._db.table_reservations.insert_one({
             "id": reservation_id,
             "tenant_id": ctx.tenant_id,

@@ -9,8 +9,8 @@ import os
 import time
 import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -23,10 +23,10 @@ class MessagingProvider:
     """Base provider interface."""
     provider_name: str = "base"
 
-    async def send(self, to: str, subject: str, body: str, template_vars: Dict = None) -> Dict[str, Any]:
+    async def send(self, to: str, subject: str, body: str, template_vars: dict = None) -> dict[str, Any]:
         raise NotImplementedError
 
-    async def check_health(self) -> Dict[str, Any]:
+    async def check_health(self) -> dict[str, Any]:
         return {"provider": self.provider_name, "status": "unknown"}
 
 
@@ -40,7 +40,7 @@ class TwilioProvider(MessagingProvider):
         self.from_number = os.environ.get("TWILIO_FROM_NUMBER", "")
         self.active = bool(self.account_sid and self.auth_token)
 
-    async def send(self, to: str, subject: str, body: str, template_vars: Dict = None) -> Dict[str, Any]:
+    async def send(self, to: str, subject: str, body: str, template_vars: dict = None) -> dict[str, Any]:
         message_id = f"twilio_{uuid.uuid4().hex[:12]}"
         if not self.active:
             logger.info(f"[MOCK-TWILIO] SMS to={to} body={body[:80]}")
@@ -49,7 +49,7 @@ class TwilioProvider(MessagingProvider):
         logger.info(f"[TWILIO] SMS sent to={to}")
         return {"success": True, "message_id": message_id, "provider": "twilio", "mode": "live"}
 
-    async def check_health(self) -> Dict[str, Any]:
+    async def check_health(self) -> dict[str, Any]:
         return {"provider": "twilio", "status": "active" if self.active else "mock", "has_credentials": self.active}
 
 
@@ -62,7 +62,7 @@ class SendGridProvider(MessagingProvider):
         self.from_email = os.environ.get("SENDGRID_FROM_EMAIL", "noreply@hotel.com")
         self.active = bool(self.api_key)
 
-    async def send(self, to: str, subject: str, body: str, template_vars: Dict = None) -> Dict[str, Any]:
+    async def send(self, to: str, subject: str, body: str, template_vars: dict = None) -> dict[str, Any]:
         message_id = f"sg_{uuid.uuid4().hex[:12]}"
         if not self.active:
             logger.info(f"[MOCK-SENDGRID] Email to={to} subject={subject}")
@@ -70,7 +70,7 @@ class SendGridProvider(MessagingProvider):
         logger.info(f"[SENDGRID] Email sent to={to}")
         return {"success": True, "message_id": message_id, "provider": "sendgrid", "mode": "live"}
 
-    async def check_health(self) -> Dict[str, Any]:
+    async def check_health(self) -> dict[str, Any]:
         return {"provider": "sendgrid", "status": "active" if self.active else "mock", "has_credentials": self.active}
 
 
@@ -83,7 +83,7 @@ class WhatsAppProvider(MessagingProvider):
         self.phone_id = os.environ.get("WHATSAPP_PHONE_ID", "")
         self.active = bool(self.api_key and self.phone_id)
 
-    async def send(self, to: str, subject: str, body: str, template_vars: Dict = None) -> Dict[str, Any]:
+    async def send(self, to: str, subject: str, body: str, template_vars: dict = None) -> dict[str, Any]:
         message_id = f"wa_{uuid.uuid4().hex[:12]}"
         if not self.active:
             logger.info(f"[MOCK-WHATSAPP] Message to={to} body={body[:80]}")
@@ -91,7 +91,7 @@ class WhatsAppProvider(MessagingProvider):
         logger.info(f"[WHATSAPP] Message sent to={to}")
         return {"success": True, "message_id": message_id, "provider": "whatsapp", "mode": "live"}
 
-    async def check_health(self) -> Dict[str, Any]:
+    async def check_health(self) -> dict[str, Any]:
         return {"provider": "whatsapp", "status": "active" if self.active else "mock", "has_credentials": self.active}
 
 
@@ -100,8 +100,8 @@ class WhatsAppProvider(MessagingProvider):
 class MessageRateLimiter:
     """Per-tenant, per-channel rate limiting."""
     def __init__(self, max_per_minute: int = 60, max_per_hour: int = 500):
-        self._minute_counters: Dict[str, List[float]] = defaultdict(list)
-        self._hour_counters: Dict[str, List[float]] = defaultdict(list)
+        self._minute_counters: dict[str, list[float]] = defaultdict(list)
+        self._hour_counters: dict[str, list[float]] = defaultdict(list)
         self.max_per_minute = max_per_minute
         self.max_per_hour = max_per_hour
 
@@ -129,7 +129,7 @@ class MessagingGateway:
     """
 
     def __init__(self):
-        self.providers: Dict[str, MessagingProvider] = {
+        self.providers: dict[str, MessagingProvider] = {
             "sms": TwilioProvider(),
             "email": SendGridProvider(),
             "whatsapp": WhatsAppProvider(),
@@ -139,10 +139,10 @@ class MessagingGateway:
 
     async def send_message(
         self, tenant_id: str, channel: str, to: str,
-        subject: str, body: str, template_id: Optional[str] = None,
-        template_vars: Optional[Dict] = None, user_id: Optional[str] = None,
-        guest_id: Optional[str] = None, booking_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        subject: str, body: str, template_id: str | None = None,
+        template_vars: dict | None = None, user_id: str | None = None,
+        guest_id: str | None = None, booking_id: str | None = None,
+    ) -> dict[str, Any]:
         """Send a message through the specified channel with full lifecycle tracking."""
         # Rate limit check
         if not self.rate_limiter.check(tenant_id, channel):
@@ -179,7 +179,7 @@ class MessagingGateway:
             "sent_by": user_id,
             "status": "pending",
             "attempts": 0,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
 
         # Send with retry
@@ -194,8 +194,8 @@ class MessagingGateway:
         return result
 
     async def _send_with_retry(self, provider: MessagingProvider, to: str, subject: str,
-                                body: str, template_vars: Optional[Dict],
-                                delivery: Dict) -> Dict[str, Any]:
+                                body: str, template_vars: dict | None,
+                                delivery: dict) -> dict[str, Any]:
         last_error = ""
         for attempt in range(1, self.max_retries + 1):
             delivery["attempts"] = attempt
@@ -204,7 +204,7 @@ class MessagingGateway:
                 if result.get("success"):
                     delivery["status"] = "delivered"
                     delivery["provider_message_id"] = result.get("message_id")
-                    delivery["delivered_at"] = datetime.now(timezone.utc).isoformat()
+                    delivery["delivered_at"] = datetime.now(UTC).isoformat()
                     delivery["mode"] = result.get("mode", "unknown")
                     await db.message_deliveries.insert_one(delivery)
 
@@ -234,7 +234,7 @@ class MessagingGateway:
         # All retries exhausted
         delivery["status"] = "failed"
         delivery["error"] = last_error
-        delivery["failed_at"] = datetime.now(timezone.utc).isoformat()
+        delivery["failed_at"] = datetime.now(UTC).isoformat()
         await db.message_deliveries.insert_one(delivery)
 
         await db.messaging_audit.insert_one({
@@ -250,7 +250,7 @@ class MessagingGateway:
         })
         return {"success": False, "delivery_id": delivery["id"], "error": last_error}
 
-    def _render_template(self, template: str, vars: Dict) -> str:
+    def _render_template(self, template: str, vars: dict) -> str:
         result = template
         for key, val in vars.items():
             result = result.replace(f"{{{{{key}}}}}", str(val))
@@ -268,7 +268,7 @@ class MessagingGateway:
     # ── Template Management ──
 
     async def create_template(self, tenant_id: str, name: str, channel: str,
-                               subject: str, body: str, user_id: str) -> Dict[str, Any]:
+                               subject: str, body: str, user_id: str) -> dict[str, Any]:
         template = {
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
@@ -277,14 +277,14 @@ class MessagingGateway:
             "subject": subject,
             "body": body,
             "created_by": user_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "active": True,
         }
         await db.message_templates.insert_one(template)
         return {"success": True, "template_id": template["id"]}
 
-    async def get_templates(self, tenant_id: str, channel: Optional[str] = None) -> Dict[str, Any]:
-        query: Dict[str, Any] = {"tenant_id": tenant_id, "active": True}
+    async def get_templates(self, tenant_id: str, channel: str | None = None) -> dict[str, Any]:
+        query: dict[str, Any] = {"tenant_id": tenant_id, "active": True}
         if channel:
             query["channel"] = channel
         templates = await db.message_templates.find(query, {"_id": 0}).to_list(200)
@@ -292,7 +292,7 @@ class MessagingGateway:
 
     # ── Delivery Tracking ──
 
-    async def get_delivery_status(self, tenant_id: str, delivery_id: str) -> Dict[str, Any]:
+    async def get_delivery_status(self, tenant_id: str, delivery_id: str) -> dict[str, Any]:
         d = await db.message_deliveries.find_one(
             {"id": delivery_id, "tenant_id": tenant_id}, {"_id": 0}
         )
@@ -300,9 +300,9 @@ class MessagingGateway:
             return {"success": False, "error": "Delivery not found"}
         return {"success": True, "delivery": d}
 
-    async def get_delivery_history(self, tenant_id: str, guest_id: Optional[str] = None,
-                                    channel: Optional[str] = None, limit: int = 50) -> Dict[str, Any]:
-        query: Dict[str, Any] = {"tenant_id": tenant_id}
+    async def get_delivery_history(self, tenant_id: str, guest_id: str | None = None,
+                                    channel: str | None = None, limit: int = 50) -> dict[str, Any]:
+        query: dict[str, Any] = {"tenant_id": tenant_id}
         if guest_id:
             query["guest_id"] = guest_id
         if channel:
@@ -315,7 +315,7 @@ class MessagingGateway:
     # ── Consent Management ──
 
     async def update_consent(self, tenant_id: str, guest_id: str,
-                              channel: str, opted_in: bool) -> Dict[str, Any]:
+                              channel: str, opted_in: bool) -> dict[str, Any]:
         consent = await db.messaging_consents.find_one(
             {"tenant_id": tenant_id, "guest_id": guest_id}
         )
@@ -325,7 +325,7 @@ class MessagingGateway:
                 "tenant_id": tenant_id,
                 "guest_id": guest_id,
                 "opted_out_channels": [] if opted_in else [channel],
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }
             await db.messaging_consents.insert_one(doc)
         else:
@@ -337,22 +337,22 @@ class MessagingGateway:
             await db.messaging_consents.update_one(
                 {"tenant_id": tenant_id, "guest_id": guest_id},
                 {"$set": {"opted_out_channels": opted_out,
-                           "updated_at": datetime.now(timezone.utc).isoformat()}},
+                           "updated_at": datetime.now(UTC).isoformat()}},
             )
         return {"success": True, "guest_id": guest_id, "channel": channel, "opted_in": opted_in}
 
     # ── Provider Health ──
 
-    async def get_provider_health(self) -> Dict[str, Any]:
+    async def get_provider_health(self) -> dict[str, Any]:
         health = {}
         for channel, provider in self.providers.items():
             health[channel] = await provider.check_health()
-        return {"providers": health, "checked_at": datetime.now(timezone.utc).isoformat()}
+        return {"providers": health, "checked_at": datetime.now(UTC).isoformat()}
 
     # ── Analytics ──
 
-    async def get_messaging_analytics(self, tenant_id: str, days: int = 7) -> Dict[str, Any]:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    async def get_messaging_analytics(self, tenant_id: str, days: int = 7) -> dict[str, Any]:
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
         deliveries = await db.message_deliveries.find(
             {"tenant_id": tenant_id, "created_at": {"$gte": cutoff}},
             {"_id": 0, "channel": 1, "status": 1},

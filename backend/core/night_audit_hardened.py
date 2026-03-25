@@ -15,9 +15,9 @@ Status: pending → running → (blocked | failed | completed | partial_recovery
 """
 import logging
 import uuid
+from datetime import UTC, datetime, timedelta
 from datetime import date as dt_date
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pymongo import ReadPreference
 from pymongo.errors import DuplicateKeyError
@@ -58,7 +58,7 @@ IS_FAILED = "failed"
 
 
 def _now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _now_iso():
@@ -159,7 +159,7 @@ async def start_night_audit(
     business_date: str = None,
     trigger_source: str = "manual",
     actor: dict = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Main entry point. Creates a run, validates, builds candidates,
     posts charges transactionally, reconciles, and rolls business date.
@@ -194,7 +194,7 @@ async def start_night_audit(
     return await _execute_pipeline(run_id, tenant_id, prop_id, bd)
 
 
-async def _handle_duplicate_run(tenant_id: str, prop_id: str, bd: str) -> Dict:
+async def _handle_duplicate_run(tenant_id: str, prop_id: str, bd: str) -> dict:
     existing = await db.night_audit_runs.find_one(
         {"tenant_id": tenant_id, "property_id": prop_id, "business_date": bd}, {"_id": 0},
     )
@@ -211,7 +211,7 @@ async def _handle_duplicate_run(tenant_id: str, prop_id: str, bd: str) -> Dict:
         if hb:
             hb_dt = datetime.fromisoformat(hb)
             if hb_dt.tzinfo is None:
-                hb_dt = hb_dt.replace(tzinfo=timezone.utc)
+                hb_dt = hb_dt.replace(tzinfo=UTC)
             age = (_now() - hb_dt).total_seconds()
             if age > STALE_THRESHOLD_SECONDS:
                 await _fail_run(existing["id"], existing.get("stage", ST_POSTING),
@@ -223,7 +223,7 @@ async def _handle_duplicate_run(tenant_id: str, prop_id: str, bd: str) -> Dict:
     return {"success": False, "error": f"Unexpected state: {st}", "code": "UNEXPECTED"}
 
 
-async def _execute_pipeline(run_id: str, tenant_id: str, prop_id: str, bd: str) -> Dict:
+async def _execute_pipeline(run_id: str, tenant_id: str, prop_id: str, bd: str) -> dict:
     """Execute the full night audit pipeline for a run."""
 
     # ── Stage: Validate ──
@@ -261,7 +261,7 @@ async def _execute_pipeline(run_id: str, tenant_id: str, prop_id: str, bd: str) 
     return await _posting_and_close(run_id, tenant_id, bd)
 
 
-async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> Dict:
+async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
     """Post charges, reconcile, and roll date. Shared by start and resume."""
     # ── Stage: Post charges ──
     try:
@@ -310,10 +310,10 @@ async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> Dict:
 
 async def _validate_preconditions(
     tenant_id: str, property_id: str, bd: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Validate preconditions before posting. Returns blocking errors and warnings."""
-    blocking: List[str] = []
-    warnings: List[str] = []
+    blocking: list[str] = []
+    warnings: list[str] = []
 
     # 1. No running/blocked/partial audit for this tenant
     active = await db.night_audit_runs.find_one({
@@ -387,7 +387,7 @@ async def _build_candidate_set(
 ) -> int:
     """Build the posting candidate set and persist to night_audit_run_items."""
     now = _now_iso()
-    items: List[Dict] = []
+    items: list[dict] = []
 
     # ── Room charges for checked-in stayover guests ──
     cursor = db.bookings.find(
@@ -487,7 +487,7 @@ async def _build_candidate_set(
 #  4. TRANSACTIONAL POSTING
 # ═══════════════════════════════════════════════════════════════
 
-async def _post_charges(tenant_id: str, run_id: str) -> Tuple[int, int, int]:
+async def _post_charges(tenant_id: str, run_id: str) -> tuple[int, int, int]:
     """Post all pending items transactionally. Returns (posted, failed, skipped)."""
     posted = 0
     failed = 0
@@ -521,7 +521,7 @@ async def _post_charges(tenant_id: str, run_id: str) -> Tuple[int, int, int]:
     return posted, failed, skipped
 
 
-async def _post_room_charge_item(tenant_id: str, item: Dict, run_id: str) -> bool:
+async def _post_room_charge_item(tenant_id: str, item: dict, run_id: str) -> bool:
     """Post a single room charge within a MongoDB transaction."""
     item_id = item["id"]
     charge_id = str(uuid.uuid4())
@@ -617,7 +617,7 @@ async def _post_room_charge_item(tenant_id: str, item: Dict, run_id: str) -> boo
         return False
 
 
-async def _post_no_show_item(tenant_id: str, item: Dict, run_id: str) -> bool:
+async def _post_no_show_item(tenant_id: str, item: dict, run_id: str) -> bool:
     """Post a no-show entry: update booking status and optionally charge fee."""
     item_id = item["id"]
     now = _now_iso()
@@ -694,7 +694,7 @@ async def _post_no_show_item(tenant_id: str, item: Dict, run_id: str) -> bool:
 #  5. RECONCILIATION
 # ═══════════════════════════════════════════════════════════════
 
-async def _reconcile(run_id: str) -> Dict[str, Any]:
+async def _reconcile(run_id: str) -> dict[str, Any]:
     """Verify posting integrity before rolling the date."""
     total = await db.night_audit_run_items.count_documents({"run_id": run_id})
     posted = await db.night_audit_run_items.count_documents({"run_id": run_id, "status": IS_POSTED})
@@ -748,7 +748,7 @@ async def _roll_business_date(tenant_id: str, current_bd: str):
 
 async def resume_night_audit(
     tenant_id: str, run_id: str, actor: dict = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Resume a failed/partial_recovery run.
     Resets failed items to pending and re-enters the posting pipeline.
@@ -801,7 +801,7 @@ async def resume_night_audit(
 
 async def abort_night_audit(
     tenant_id: str, run_id: str, actor: dict = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Abort a running/blocked/partial run. Does NOT roll back posted charges."""
     run = await db.night_audit_runs.find_one(
         {"id": run_id, "tenant_id": tenant_id}, {"_id": 0},
@@ -829,7 +829,7 @@ async def abort_night_audit(
 #  9. QUERIES
 # ═══════════════════════════════════════════════════════════════
 
-async def get_run_status(tenant_id: str, property_id: str = None) -> Dict:
+async def get_run_status(tenant_id: str, property_id: str = None) -> dict:
     """Get current night audit status for a tenant."""
     prop_id = property_id or DEFAULT_PROPERTY
     settings = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0})
@@ -862,9 +862,9 @@ async def get_run_status(tenant_id: str, property_id: str = None) -> Dict:
 async def get_runs(
     tenant_id: str, limit: int = 20, skip: int = 0,
     status_filter: str = None,
-) -> Dict:
+) -> dict:
     """List night audit runs for a tenant."""
-    query: Dict[str, Any] = {"tenant_id": tenant_id}
+    query: dict[str, Any] = {"tenant_id": tenant_id}
     if status_filter:
         query["status"] = status_filter
     runs = await db.night_audit_runs.find(
@@ -874,7 +874,7 @@ async def get_runs(
     return {"runs": runs, "total": total, "limit": limit, "skip": skip}
 
 
-async def get_run_detail(tenant_id: str, run_id: str) -> Optional[Dict]:
+async def get_run_detail(tenant_id: str, run_id: str) -> dict | None:
     """Get a specific run by ID."""
     return await db.night_audit_runs.find_one(
         {"id": run_id, "tenant_id": tenant_id}, {"_id": 0},
@@ -884,9 +884,9 @@ async def get_run_detail(tenant_id: str, run_id: str) -> Optional[Dict]:
 async def get_run_items(
     tenant_id: str, run_id: str, status_filter: str = None,
     limit: int = 100, skip: int = 0,
-) -> Dict:
+) -> dict:
     """List items for a specific run."""
-    query: Dict[str, Any] = {"run_id": run_id, "tenant_id": tenant_id}
+    query: dict[str, Any] = {"run_id": run_id, "tenant_id": tenant_id}
     if status_filter:
         query["status"] = status_filter
     items = await db.night_audit_run_items.find(
@@ -896,7 +896,7 @@ async def get_run_items(
     return {"items": items, "total": total, "limit": limit, "skip": skip}
 
 
-async def detect_stale_runs() -> List[Dict]:
+async def detect_stale_runs() -> list[dict]:
     """Find runs that appear stuck (running but heartbeat expired)."""
     cutoff = (_now() - timedelta(seconds=STALE_THRESHOLD_SECONDS)).isoformat()
     stale = await db.night_audit_runs.find(
@@ -906,7 +906,7 @@ async def detect_stale_runs() -> List[Dict]:
     return stale
 
 
-async def get_health_metrics() -> Dict[str, Any]:
+async def get_health_metrics() -> dict[str, Any]:
     """Provide metrics for /health/deep endpoint."""
     try:
         # Get any tenant's last successful close

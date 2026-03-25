@@ -1,7 +1,6 @@
 """
 Data Pipeline Router - API endpoints for ML data pipeline management.
 """
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -33,7 +32,7 @@ async def extract_features(feature_set: str, tenant: TenantContext = Depends(get
 
 @router.get("/datasets")
 async def list_datasets(
-    model_type: Optional[str] = None,
+    model_type: str | None = None,
     limit: int = Query(20, le=100),
     tenant: TenantContext = Depends(get_current_tenant),
 ):
@@ -54,7 +53,7 @@ async def generate_dataset(
 
 @router.get("/models")
 async def list_models(
-    model_type: Optional[str] = None,
+    model_type: str | None = None,
     limit: int = Query(20, le=100),
     tenant: TenantContext = Depends(get_current_tenant),
 ):
@@ -81,7 +80,7 @@ async def deploy_model(model_id: str, tenant: TenantContext = Depends(get_curren
 
 @router.get("/predictions")
 async def list_predictions(
-    model_type: Optional[str] = None,
+    model_type: str | None = None,
     limit: int = Query(20, le=100),
     tenant: TenantContext = Depends(get_current_tenant),
 ):
@@ -112,7 +111,7 @@ async def make_prediction(
 
 @router.get("/runs")
 async def list_pipeline_runs(
-    model_type: Optional[str] = None,
+    model_type: str | None = None,
     limit: int = Query(20, le=100),
     tenant: TenantContext = Depends(get_current_tenant),
 ):

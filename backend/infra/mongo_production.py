@@ -3,8 +3,8 @@ MongoDB Production Validator — Connection pool monitoring, replica set detecti
 slow query metrics, index validation, schema drift detection, and collection health.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.mongo_production")
 
@@ -44,7 +44,7 @@ class MongoProductionValidator:
         self._db = db
         self._client = client
 
-    async def get_connection_pool_info(self) -> Dict[str, Any]:
+    async def get_connection_pool_info(self) -> dict[str, Any]:
         """Get connection pool statistics."""
         if self._db is None:
             return {"status": "not_connected", "error": "Database not initialized"}
@@ -64,7 +64,7 @@ class MongoProductionValidator:
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
-    async def detect_replica_set(self) -> Dict[str, Any]:
+    async def detect_replica_set(self) -> dict[str, Any]:
         """Detect if connected to a replica set and its health."""
         if self._db is None:
             return {"status": "not_connected", "is_replica_set": False}
@@ -90,7 +90,7 @@ class MongoProductionValidator:
         except Exception:
             return {"is_replica_set": False, "status": "standalone", "note": "Not a replica set member"}
 
-    async def get_slow_query_metrics(self, threshold_ms: int = 100) -> Dict[str, Any]:
+    async def get_slow_query_metrics(self, threshold_ms: int = 100) -> dict[str, Any]:
         """Get slow query statistics from profiling data."""
         if self._db is None:
             return {"status": "not_connected"}
@@ -123,7 +123,7 @@ class MongoProductionValidator:
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
-    async def validate_indexes(self) -> Dict[str, Any]:
+    async def validate_indexes(self) -> dict[str, Any]:
         """Validate expected indexes exist on critical collections."""
         if self._db is None:
             return {"status": "not_connected"}
@@ -147,7 +147,7 @@ class MongoProductionValidator:
                 results[collection] = {"status": "error", "error": str(e)}
 
         return {
-            "validated_at": datetime.now(timezone.utc).isoformat(),
+            "validated_at": datetime.now(UTC).isoformat(),
             "collections_checked": len(results),
             "missing_index_count": len(missing_indexes),
             "missing_indexes": missing_indexes,
@@ -155,7 +155,7 @@ class MongoProductionValidator:
             "status": "valid" if not missing_indexes else "action_required",
         }
 
-    async def detect_schema_drift(self) -> Dict[str, Any]:
+    async def detect_schema_drift(self) -> dict[str, Any]:
         """Detect potential schema drift by sampling document structures."""
         if self._db is None:
             return {"status": "not_connected"}
@@ -178,12 +178,12 @@ class MongoProductionValidator:
                 drift_report[coll_name] = {"status": "error", "error": str(e)}
 
         return {
-            "scanned_at": datetime.now(timezone.utc).isoformat(),
+            "scanned_at": datetime.now(UTC).isoformat(),
             "collections_scanned": len(drift_report),
             "details": drift_report,
         }
 
-    async def get_collection_health(self) -> Dict[str, Any]:
+    async def get_collection_health(self) -> dict[str, Any]:
         """Get health summary for all known collections."""
         if self._db is None:
             return {"status": "not_connected"}
@@ -203,14 +203,14 @@ class MongoProductionValidator:
             health[category][coll_name] = stats
 
         return {
-            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "checked_at": datetime.now(UTC).isoformat(),
             "total_documents": total_docs,
             "critical_collections": len(CRITICAL_COLLECTIONS),
             "secondary_collections": len(SECONDARY_COLLECTIONS),
             "health": health,
         }
 
-    async def get_full_report(self) -> Dict[str, Any]:
+    async def get_full_report(self) -> dict[str, Any]:
         """Comprehensive MongoDB production report."""
         pool = await self.get_connection_pool_info()
         replica = await self.detect_replica_set()

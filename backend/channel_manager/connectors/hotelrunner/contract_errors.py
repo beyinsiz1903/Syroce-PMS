@@ -4,18 +4,18 @@ Provider Contract Error Classes — Typed error hierarchy for XML builder/parser
 Covers: invalid_xml, missing_required_field, schema_mismatch,
         provider_error_response, unknown_response_format.
 """
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class ProviderContractError(Exception):
     """Base class for all provider contract violations."""
     error_type: str = "provider_contract_error"
 
-    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+    def __init__(self, message: str, details: dict[str, Any] | None = None):
         super().__init__(message)
         self.details = details or {}
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "error_type": self.error_type,
             "message": str(self),

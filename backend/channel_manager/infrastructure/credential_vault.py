@@ -5,8 +5,8 @@ Manages encrypted credential storage for connector accounts.
 All encryption delegates to CredentialEncryptionService.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.crypto import get_crypto_service
 
@@ -19,20 +19,20 @@ logger = logging.getLogger("channel_manager.infrastructure.credential_vault")
 class CredentialVault:
     """Manages encrypted credential storage with audit trail."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
         self._svc = get_crypto_service()
 
-    def encrypt_credentials(self, credentials: Dict[str, str]) -> Dict[str, str]:
+    def encrypt_credentials(self, credentials: dict[str, str]) -> dict[str, str]:
         """Encrypt credential values."""
         return self._svc.encrypt_dict(credentials)
 
-    def decrypt_credentials(self, encrypted: Dict[str, str]) -> Dict[str, str]:
+    def decrypt_credentials(self, encrypted: dict[str, str]) -> dict[str, str]:
         """Decrypt credential values (supports all formats)."""
         return self._svc.decrypt_dict(encrypted)
 
     @staticmethod
-    def mask_credentials(credentials: Dict[str, Any]) -> Dict[str, str]:
+    def mask_credentials(credentials: dict[str, Any]) -> dict[str, str]:
         """Mask credential values for UI display."""
         svc = get_crypto_service()
         return svc.mask_credentials(
@@ -43,8 +43,8 @@ class CredentialVault:
         self,
         tenant_id: str,
         connector_id: str,
-        credentials: Dict[str, str],
-        actor_id: Optional[str] = None,
+        credentials: dict[str, str],
+        actor_id: str | None = None,
         is_rotation: bool = False,
     ) -> None:
         """Encrypt and store credentials."""
@@ -58,9 +58,9 @@ class CredentialVault:
         connector["credentials_encrypted"] = True
         connector["encryption_algorithm"] = "AES-256-GCM"
         connector["key_version"] = self._svc._keyring.current_kid
-        connector["credentials_updated_at"] = datetime.now(timezone.utc).isoformat()
+        connector["credentials_updated_at"] = datetime.now(UTC).isoformat()
         if is_rotation:
-            connector["credentials_rotated_at"] = datetime.now(timezone.utc).isoformat()
+            connector["credentials_rotated_at"] = datetime.now(UTC).isoformat()
         await self._repo.upsert_connector(connector)
 
         action = AuditAction.CREDENTIAL_ROTATED if is_rotation else AuditAction.CREDENTIAL_CHANGED
@@ -77,7 +77,7 @@ class CredentialVault:
 
     async def retrieve_credentials(
         self, tenant_id: str, connector_id: str,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """Retrieve and decrypt credentials for a connector."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
         if not connector:
@@ -91,8 +91,8 @@ class CredentialVault:
         self,
         tenant_id: str,
         connector_id: str,
-        new_credentials: Dict[str, str],
-        actor_id: Optional[str] = None,
+        new_credentials: dict[str, str],
+        actor_id: str | None = None,
     ) -> None:
         """Rotate credentials with audit trail."""
         await self.store_credentials(
@@ -104,8 +104,8 @@ class CredentialVault:
         self,
         tenant_id: str,
         connector_id: str,
-        actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Re-encrypt credentials to current format."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
         if not connector:
@@ -129,7 +129,7 @@ class CredentialVault:
         connector["credentials_encrypted"] = True
         connector["encryption_algorithm"] = "AES-256-GCM"
         connector["key_version"] = self._svc._keyring.current_kid
-        connector["credentials_updated_at"] = datetime.now(timezone.utc).isoformat()
+        connector["credentials_updated_at"] = datetime.now(UTC).isoformat()
         await self._repo.upsert_connector(connector)
 
         await self._audit(

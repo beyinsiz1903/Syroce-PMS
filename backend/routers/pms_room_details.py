@@ -11,8 +11,7 @@ Models:
   RoomNote, MiniBarUpdate
 """
 import uuid
-from datetime import datetime, timezone
-from typing import Dict, Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -44,9 +43,9 @@ class RoomNote(BaseModel):
     description: str
     priority: str = "normal"
     created_by: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     resolved: bool = False
-    resolved_at: Optional[datetime] = None
+    resolved_at: datetime | None = None
 
 
 class MiniBarUpdate(BaseModel):
@@ -56,10 +55,10 @@ class MiniBarUpdate(BaseModel):
     tenant_id: str
     room_id: str
     updated_by: str
-    items_restocked: Dict[str, int] = {}  # {item_name: quantity}
-    items_consumed: Dict[str, int] = {}
+    items_restocked: dict[str, int] = {}  # {item_name: quantity}
+    items_consumed: dict[str, int] = {}
     total_value: float = 0.0
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 # ── Routes ───────────────────────────────────────────────────────────
@@ -109,7 +108,7 @@ async def get_room_details_enhanced(
     minibar_info = None
     if minibar_update:
         updated_at = datetime.fromisoformat(minibar_update.get('updated_at'))
-        hours_ago = (datetime.now(timezone.utc) - updated_at).total_seconds() / 3600
+        hours_ago = (datetime.now(UTC) - updated_at).total_seconds() / 3600
 
         minibar_info = {
             'last_updated': minibar_update.get('updated_at'),
@@ -126,13 +125,13 @@ async def get_room_details_enhanced(
         'room_id': room_id,
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['scheduled', 'pending']},
-        'scheduled_date': {'$gte': datetime.now(timezone.utc).isoformat()}
+        'scheduled_date': {'$gte': datetime.now(UTC).isoformat()}
     }, sort=[('scheduled_date', 1)])
 
     maintenance_info = None
     if next_maintenance:
         scheduled_date = datetime.fromisoformat(next_maintenance.get('scheduled_date'))
-        days_until = (scheduled_date - datetime.now(timezone.utc)).days
+        days_until = (scheduled_date - datetime.now(UTC)).days
 
         maintenance_info = {
             'scheduled_date': next_maintenance.get('scheduled_date'),
@@ -191,8 +190,8 @@ async def add_room_note(
 @router.post("/rooms/{room_id}/minibar-update")
 async def update_minibar(
     room_id: str,
-    items_restocked: Dict[str, int] = {},
-    items_consumed: Dict[str, int] = {},
+    items_restocked: dict[str, int] = {},
+    items_consumed: dict[str, int] = {},
     total_value: float = 0.0,
     current_user: User = Depends(get_current_user)
 ):

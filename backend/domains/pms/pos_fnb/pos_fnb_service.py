@@ -5,8 +5,8 @@ F&B dashboards, stock management. No FastAPI dependencies.
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
@@ -29,11 +29,11 @@ class PosFnbService:
     async def complete_kitchen_order(self, ctx: OperationContext, order_id: str) -> ServiceResult:
         await self._db.kitchen_orders.update_one(
             {"id": order_id},
-            {"$set": {"status": "ready", "ready_at": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {"status": "ready", "ready_at": datetime.now(UTC).isoformat()}},
         )
         return ServiceResult.success({"success": True, "message": "Siparis hazir olarak isaretlendi"})
 
-    async def get_kitchen_display(self, ctx: OperationContext, station: Optional[str] = None, status: Optional[str] = None) -> ServiceResult:
+    async def get_kitchen_display(self, ctx: OperationContext, station: str | None = None, status: str | None = None) -> ServiceResult:
         match = {"tenant_id": ctx.tenant_id, "status": {"$in": ["pending", "preparing"]}}
         if station:
             match["station"] = station
@@ -44,7 +44,7 @@ class PosFnbService:
         async for order in self._db.kitchen_orders.find(match).sort("ordered_at", 1):
             order.pop("_id", None)
             ordered_at = datetime.fromisoformat(order.get("ordered_at"))
-            wait_minutes = (datetime.now(timezone.utc) - ordered_at).total_seconds() / 60
+            wait_minutes = (datetime.now(UTC) - ordered_at).total_seconds() / 60
             priority = "urgent" if wait_minutes > 15 else ("high" if wait_minutes > 10 else "normal")
             priority_color = "red" if priority == "urgent" else ("orange" if priority == "high" else "green")
             orders.append({
@@ -66,11 +66,11 @@ class PosFnbService:
 
     @audited("pos.update_kitchen_order_status", "kitchen_order", severity=SEVERITY_INFO)
     async def update_kitchen_order_status(self, ctx: OperationContext, order_id: str, new_status: str) -> ServiceResult:
-        updates: Dict[str, Any] = {"status": new_status}
+        updates: dict[str, Any] = {"status": new_status}
         if new_status == "ready":
-            updates["ready_at"] = datetime.now(timezone.utc).isoformat()
+            updates["ready_at"] = datetime.now(UTC).isoformat()
         elif new_status == "served":
-            updates["served_at"] = datetime.now(timezone.utc).isoformat()
+            updates["served_at"] = datetime.now(UTC).isoformat()
         await self._db.kitchen_orders.update_one({"id": order_id, "tenant_id": ctx.tenant_id}, {"$set": updates})
         return ServiceResult.success({"success": True, "order_id": order_id, "new_status": new_status})
 
@@ -78,15 +78,15 @@ class PosFnbService:
     # POS Transactions
     # ------------------------------------------------------------------
     @audited("pos.create_transaction", "pos_transaction", severity=SEVERITY_INFO)
-    async def create_pos_transaction(self, ctx: OperationContext, amount: float, payment_method: str, folio_id: Optional[str] = None) -> ServiceResult:
+    async def create_pos_transaction(self, ctx: OperationContext, amount: float, payment_method: str, folio_id: str | None = None) -> ServiceResult:
         txn = {
             "id": str(uuid.uuid4()), "tenant_id": ctx.tenant_id,
-            "transaction_date": datetime.now(timezone.utc).date().isoformat(),
-            "transaction_time": datetime.now(timezone.utc).time().isoformat(),
+            "transaction_date": datetime.now(UTC).date().isoformat(),
+            "transaction_time": datetime.now(UTC).time().isoformat(),
             "amount": amount, "payment_method": payment_method,
             "folio_id": folio_id, "status": "completed",
             "processed_by": ctx.actor_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await self._db.pos_transactions.insert_one(txn.copy())
         return ServiceResult.success(txn)
@@ -122,9 +122,9 @@ class PosFnbService:
     # ------------------------------------------------------------------
     # F&B Dashboard
     # ------------------------------------------------------------------
-    async def get_fnb_dashboard(self, ctx: OperationContext, date_str: Optional[str] = None) -> ServiceResult:
+    async def get_fnb_dashboard(self, ctx: OperationContext, date_str: str | None = None) -> ServiceResult:
         if not date_str:
-            date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            date_str = datetime.now(UTC).strftime("%Y-%m-%d")
         target = datetime.fromisoformat(date_str)
         start = target.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=1)
@@ -160,12 +160,12 @@ class PosFnbService:
     # ------------------------------------------------------------------
     # F&B Sales Report
     # ------------------------------------------------------------------
-    async def get_fnb_sales_report(self, ctx: OperationContext, start_date: Optional[str] = None, end_date: Optional[str] = None) -> ServiceResult:
+    async def get_fnb_sales_report(self, ctx: OperationContext, start_date: str | None = None, end_date: str | None = None) -> ServiceResult:
         if start_date and end_date:
             start = datetime.fromisoformat(start_date)
             end = datetime.fromisoformat(end_date)
         else:
-            end = datetime.now(timezone.utc)
+            end = datetime.now(UTC)
             start = end - timedelta(days=30)
 
         charges = await self._db.folio_charges.find({
@@ -174,7 +174,7 @@ class PosFnbService:
             "date": {"$gte": start.isoformat(), "$lte": end.isoformat()},
         }).to_list(10000)
 
-        daily: Dict[str, Dict[str, float]] = {}
+        daily: dict[str, dict[str, float]] = {}
         for c in charges:
             ds = c.get("date", "")[:10]
             if ds not in daily:
@@ -200,8 +200,8 @@ class PosFnbService:
     # ------------------------------------------------------------------
     # Active Orders (mobile)
     # ------------------------------------------------------------------
-    async def get_active_orders(self, ctx: OperationContext, status: Optional[str] = None, outlet_id: Optional[str] = None) -> ServiceResult:
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id, "status": {"$in": ["pending", "preparing", "ready"]}}
+    async def get_active_orders(self, ctx: OperationContext, status: str | None = None, outlet_id: str | None = None) -> ServiceResult:
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id, "status": {"$in": ["pending", "preparing", "ready"]}}
         if status:
             query["status"] = status
         if outlet_id:
@@ -213,7 +213,7 @@ class PosFnbService:
             created_at = order.get("created_at")
             if isinstance(created_at, str):
                 created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-            elapsed = (datetime.now(timezone.utc) - created_at).total_seconds() / 60
+            elapsed = (datetime.now(UTC) - created_at).total_seconds() / 60
             is_delayed = order.get("status") in ("pending", "preparing") and elapsed > 30
             orders.append({
                 "id": order["id"],
@@ -237,8 +237,8 @@ class PosFnbService:
     # ------------------------------------------------------------------
     # Stock Management
     # ------------------------------------------------------------------
-    async def get_stock_levels(self, ctx: OperationContext, category: Optional[str] = None, low_stock_only: bool = False) -> ServiceResult:
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id}
+    async def get_stock_levels(self, ctx: OperationContext, category: str | None = None, low_stock_only: bool = False) -> ServiceResult:
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if category:
             query["category"] = category
 
@@ -266,7 +266,7 @@ class PosFnbService:
         })
 
     @audited("pos.adjust_stock", "inventory", severity=SEVERITY_WARNING, capture_before=True)
-    async def adjust_stock(self, ctx: OperationContext, product_id: str, adjustment_type: str, quantity: int, reason: str, notes: Optional[str] = None) -> ServiceResult:
+    async def adjust_stock(self, ctx: OperationContext, product_id: str, adjustment_type: str, quantity: int, reason: str, notes: str | None = None) -> ServiceResult:
         allowed_roles = ("admin", "warehouse", "fnb_manager", "supervisor")
         if ctx.actor_role not in allowed_roles:
             return ServiceResult.fail("Insufficient permissions", "FORBIDDEN")
@@ -287,7 +287,7 @@ class PosFnbService:
 
         await self._db.inventory.update_one(
             {"id": product_id, "tenant_id": ctx.tenant_id},
-            {"$set": {"quantity": new_qty, "last_updated": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {"quantity": new_qty, "last_updated": datetime.now(UTC).isoformat()}},
         )
 
         movement = {
@@ -298,7 +298,7 @@ class PosFnbService:
             "previous_quantity": current_qty, "new_quantity": new_qty,
             "reason": reason, "notes": notes,
             "performed_by": ctx.actor_email,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
         await self._db.inventory_movements.insert_one(movement)
 

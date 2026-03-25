@@ -14,8 +14,8 @@ Metrics tracked over time:
 Enables SLA tracking and early detection of degradation patterns.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -30,7 +30,7 @@ _NO_ID = {"_id": 0}
 class HealthTrendService:
     """Manages health trend snapshots and provides trend analytics."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     async def record_health_snapshot(
@@ -43,9 +43,9 @@ class HealthTrendService:
         active_alerts: int,
         retry_count: int,
         rate_push_success_rate: float = 100.0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Record a health snapshot for trend tracking."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         snapshot = {
             "tenant_id": tenant_id,
             "connector_id": connector_id,
@@ -64,9 +64,9 @@ class HealthTrendService:
 
     async def get_daily_trend(
         self, tenant_id: str, connector_id: str, days: int = 30,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get daily health score trend for a connector."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
         pipeline = [
             {"$match": {
                 "tenant_id": tenant_id,
@@ -100,9 +100,9 @@ class HealthTrendService:
 
     async def get_weekly_trend(
         self, tenant_id: str, connector_id: str, weeks: int = 12,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get weekly aggregated health trend."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(weeks=weeks)).strftime("%Y-%m-%d")
+        cutoff = (datetime.now(UTC) - timedelta(weeks=weeks)).strftime("%Y-%m-%d")
         pipeline = [
             {"$match": {
                 "tenant_id": tenant_id,
@@ -139,9 +139,9 @@ class HealthTrendService:
 
     async def get_trend_summary(
         self, tenant_id: str, connector_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get trend summary comparing recent vs previous period."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         recent_cutoff = (now - timedelta(days=7)).strftime("%Y-%m-%d")
         previous_cutoff = (now - timedelta(days=14)).strftime("%Y-%m-%d")
 
@@ -185,7 +185,7 @@ class HealthTrendService:
             },
         }
 
-    async def _period_avg(self, base_q: Dict, from_date: str, to_date: str) -> Dict[str, Any]:
+    async def _period_avg(self, base_q: dict, from_date: str, to_date: str) -> dict[str, Any]:
         """Get average metrics for a period."""
         pipeline = [
             {"$match": {**base_q, "date": {"$gte": from_date, "$lt": to_date}}},

@@ -3,9 +3,8 @@ Guest / Messaging Domain — Pydantic Schemas
 Extracted from messaging/router.py inline models.
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -29,7 +28,7 @@ class SendMessageRequest(BaseModel):
     message_type: MessageType
     recipient: str
     message_content: str
-    booking_id: Optional[str] = None
+    booking_id: str | None = None
 
     @field_validator("message_type", mode="before")
     @classmethod
@@ -44,12 +43,12 @@ class SentMessage(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     guest_id: str
-    booking_id: Optional[str] = None
+    booking_id: str | None = None
     message_type: MessageType
     recipient: str
     message_content: str
     status: str = "sent"
-    sent_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    sent_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class MessageTemplate(BaseModel):
@@ -61,7 +60,7 @@ class MessageTemplate(BaseModel):
     trigger: AutoMessageTrigger
     message_content: str
     active: bool = True
-    variables: List[str] = []
+    variables: list[str] = []
 
 
 class InternalMessage(BaseModel):
@@ -71,14 +70,14 @@ class InternalMessage(BaseModel):
     from_user_id: str
     from_user_name: str
     from_department: str
-    to_user_id: Optional[str] = None
-    to_user_name: Optional[str] = None
-    to_department: Optional[str] = None
+    to_user_id: str | None = None
+    to_user_name: str | None = None
+    to_department: str | None = None
     message: str
     priority: str = "normal"
     message_type: str = "text"
-    attachments: List[str] = []
+    attachments: list[str] = []
     read: bool = False
-    read_at: Optional[datetime] = None
-    replied_to: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    read_at: datetime | None = None
+    replied_to: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

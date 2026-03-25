@@ -6,8 +6,7 @@ folio mutation safety, idempotency, supervisor override, housekeeping interactio
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
@@ -30,7 +29,7 @@ class FrontdeskServiceV2:
     # Concurrency Guard
     # ==================================================================
     async def _acquire_lock(self, lock_key: str, holder: str) -> bool:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expiry = now + timedelta(seconds=_LOCK_TTL_SECONDS)
         try:
             result = await self._db.operation_locks.update_one(
@@ -72,7 +71,7 @@ class FrontdeskServiceV2:
         ctx: OperationContext,
         booking_id: str,
         create_folio: bool = True,
-        idempotency_key: Optional[str] = None,
+        idempotency_key: str | None = None,
     ) -> ServiceResult:
         lock_key = f"frontdesk:checkin:{booking_id}"
         holder = idempotency_key or str(uuid.uuid4())
@@ -168,14 +167,14 @@ class FrontdeskServiceV2:
                     "status": "open",
                     "balance": 0.0,
                     "currency": booking.get("currency", "TRY"),
-                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                     "created_by": ctx.actor_id,
                 }
                 await self._db.folios.insert_one(folio_doc)
             else:
                 folio_id = existing_folio.get("id")
 
-        checked_in_at = datetime.now(timezone.utc)
+        checked_in_at = datetime.now(UTC)
         await self._db.bookings.update_one(
             {"id": booking_id},
             {
@@ -214,7 +213,7 @@ class FrontdeskServiceV2:
         booking_id: str,
         force: bool = False,
         auto_close_folios: bool = True,
-        reason: Optional[str] = None,
+        reason: str | None = None,
     ) -> ServiceResult:
         lock_key = f"frontdesk:checkout:{booking_id}"
         holder = str(uuid.uuid4())
@@ -236,7 +235,7 @@ class FrontdeskServiceV2:
         booking_id: str,
         force: bool,
         auto_close_folios: bool,
-        reason: Optional[str],
+        reason: str | None,
     ) -> ServiceResult:
         booking = await self._db.bookings.find_one(
             {"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
@@ -308,7 +307,7 @@ class FrontdeskServiceV2:
                         "$set": {
                             "status": "closed",
                             "balance": 0.0,
-                            "closed_at": datetime.now(timezone.utc).isoformat(),
+                            "closed_at": datetime.now(UTC).isoformat(),
                             "closed_by": ctx.actor_id,
                         }
                     },
@@ -324,13 +323,13 @@ class FrontdeskServiceV2:
                 {
                     "$set": {
                         "status": "deactivated",
-                        "deactivated_at": datetime.now(timezone.utc).isoformat(),
+                        "deactivated_at": datetime.now(UTC).isoformat(),
                         "deactivation_reason": "checkout",
                     }
                 },
             )
 
-        checked_out_at = datetime.now(timezone.utc)
+        checked_out_at = datetime.now(UTC)
         await self._db.bookings.update_one(
             {"id": booking_id},
             {
@@ -359,7 +358,7 @@ class FrontdeskServiceV2:
                 "priority": "high",
                 "status": "new",
                 "notes": f"Departure clean - Booking {booking_id}",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
                 "created_by": "system",
             }
             await self._db.housekeeping_tasks.insert_one(hk_task)
@@ -435,7 +434,7 @@ class FrontdeskServiceV2:
                         "priority": "medium",
                         "status": "new",
                         "notes": f"Room move clean - guest moved to {new_room.get('room_number')}",
-                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "created_at": datetime.now(UTC).isoformat(),
                     }
                 )
 
@@ -453,7 +452,7 @@ class FrontdeskServiceV2:
                         + [old_room_id]
                         if old_room_id
                         else [],
-                        "room_moved_at": datetime.now(timezone.utc).isoformat(),
+                        "room_moved_at": datetime.now(UTC).isoformat(),
                         "room_move_reason": reason,
                     }
                 },
@@ -474,7 +473,7 @@ class FrontdeskServiceV2:
                         {
                             "$set": {
                                 "status": "deactivated",
-                                "deactivated_at": datetime.now(timezone.utc).isoformat(),
+                                "deactivated_at": datetime.now(UTC).isoformat(),
                                 "deactivation_reason": "room_move",
                             }
                         },
@@ -528,7 +527,7 @@ class FrontdeskServiceV2:
                     "late_checkout": True,
                     "late_checkout_approved_by": ctx.actor_id,
                     "late_checkout_reason": reason,
-                    "late_checkout_at": datetime.now(timezone.utc).isoformat(),
+                    "late_checkout_at": datetime.now(UTC).isoformat(),
                 }
             },
         )
@@ -549,9 +548,9 @@ class FrontdeskServiceV2:
                     "tax_amount": round(charge_amount * 0.10, 2),
                     "total": round(charge_amount * 1.10, 2),
                     "voided": False,
-                    "date": datetime.now(timezone.utc).isoformat(),
+                    "date": datetime.now(UTC).isoformat(),
                     "posted_by": ctx.actor_id,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                 }
             )
             # Update folio balance
@@ -627,9 +626,9 @@ class FrontdeskServiceV2:
                         "tax_amount": tax,
                         "total": total,
                         "voided": False,
-                        "date": datetime.now(timezone.utc).isoformat(),
+                        "date": datetime.now(UTC).isoformat(),
                         "posted_by": "system",
-                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "created_at": datetime.now(UTC).isoformat(),
                     }
                 )
 
@@ -647,7 +646,7 @@ class FrontdeskServiceV2:
                 {
                     "$set": {
                         "status": "no_show",
-                        "no_show_at": datetime.now(timezone.utc).isoformat(),
+                        "no_show_at": datetime.now(UTC).isoformat(),
                         "no_show_processed_by": ctx.actor_id,
                         "no_show_charge": charge_posted,
                     }
@@ -677,9 +676,9 @@ class FrontdeskServiceV2:
         nights: int = 1,
         rate_amount: float = 0.0,
         payment_method: str = "cash",
-        guest_email: Optional[str] = None,
-        guest_phone: Optional[str] = None,
-        id_number: Optional[str] = None,
+        guest_email: str | None = None,
+        guest_phone: str | None = None,
+        id_number: str | None = None,
     ) -> ServiceResult:
         room = await self._db.rooms.find_one(
             {"id": room_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
@@ -691,7 +690,7 @@ class FrontdeskServiceV2:
                 f"Room not available. Status: {room['status']}", "ROOM_NOT_AVAILABLE"
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         guest_id = str(uuid.uuid4())
         booking_id = str(uuid.uuid4())
         folio_id = str(uuid.uuid4())
@@ -786,7 +785,7 @@ class FrontdeskServiceV2:
         if booking["status"] != "checked_in":
             return ServiceResult.fail("Guest must be checked in", "INVALID_STATUS")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         original_checkout = booking.get("check_out")
 
         await self._db.bookings.update_one(
@@ -816,7 +815,7 @@ class FrontdeskServiceV2:
         description: str,
         amount: float,
         charge_category: str = "misc",
-        idempotency_key: Optional[str] = None,
+        idempotency_key: str | None = None,
     ) -> ServiceResult:
         if amount <= 0:
             return ServiceResult.fail("Charge amount must be positive", "VALIDATION_ERROR")
@@ -863,10 +862,10 @@ class FrontdeskServiceV2:
             "tax_amount": tax_amount,
             "total": total,
             "voided": False,
-            "date": datetime.now(timezone.utc).isoformat(),
+            "date": datetime.now(UTC).isoformat(),
             "posted_by": ctx.actor_id,
             "idempotency_key": idempotency_key,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await self._db.folio_charges.insert_one(charge_doc)
 
@@ -911,7 +910,7 @@ class FrontdeskServiceV2:
             {
                 "$set": {
                     "voided": True,
-                    "voided_at": datetime.now(timezone.utc).isoformat(),
+                    "voided_at": datetime.now(UTC).isoformat(),
                     "voided_by": ctx.actor_id,
                     "void_reason": reason,
                 }

@@ -9,8 +9,8 @@ import logging
 import os
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Callable, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Callable
 
 logger = logging.getLogger("event_bus.redis")
 
@@ -27,7 +27,7 @@ class RedisConnectionManager:
         self._base_backoff = base_backoff_sec
         self._max_backoff = max_backoff_sec
         self._reconnect_count = 0
-        self._last_reconnect_at: Optional[str] = None
+        self._last_reconnect_at: str | None = None
         self._connect_lock = asyncio.Lock()
 
     @property
@@ -59,7 +59,7 @@ class RedisConnectionManager:
                 )
                 await self._redis.ping()
                 self._connected = True
-                self._last_reconnect_at = datetime.now(timezone.utc).isoformat()
+                self._last_reconnect_at = datetime.now(UTC).isoformat()
                 logger.info(f"Redis connected: {self._redis_url}")
                 return True
             except Exception as e:
@@ -102,18 +102,18 @@ class RedisPubSubBackend:
     def __init__(self, redis_url: str):
         self._conn_mgr = RedisConnectionManager(redis_url)
         self._pubsub = None
-        self._subscriptions: Dict[str, dict] = {}
-        self._listener_task: Optional[asyncio.Task] = None
+        self._subscriptions: dict[str, dict] = {}
+        self._listener_task: asyncio.Task | None = None
 
         # Delivery metrics
         self._published = 0
         self._delivered = 0
         self._dropped = 0
         self._errors = 0
-        self._publish_latencies: List[float] = []
+        self._publish_latencies: list[float] = []
 
         # Channel cardinality
-        self._channel_message_counts: Dict[str, int] = {}
+        self._channel_message_counts: dict[str, int] = {}
 
         # Backpressure
         self._max_buffer_size = 10000
@@ -284,7 +284,7 @@ class RedisPubSubBackend:
                                     self._delivered += 1
                                 except Exception as e:
                                     logger.warning(f"Callback error: {e}")
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
                 except Exception as e:
                     logger.warning(f"Listener error: {e}")
@@ -315,7 +315,7 @@ class RedisPubSubBackend:
             logger.error("Redis reconnect exhausted, falling back to in-memory")
 
 
-async def try_init_redis_backend(redis_url: Optional[str] = None) -> Optional[RedisPubSubBackend]:
+async def try_init_redis_backend(redis_url: str | None = None) -> RedisPubSubBackend | None:
     """Try to initialize Redis backend. Returns None if unavailable."""
     if not redis_url:
         redis_url = os.environ.get("REDIS_URL")

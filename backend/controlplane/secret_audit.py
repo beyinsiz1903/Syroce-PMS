@@ -12,8 +12,8 @@ Rules:
 - No secret values in audit logs
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 logger = logging.getLogger("controlplane.secret_audit")
 
@@ -73,7 +73,7 @@ class SecretAccessControl:
         caller: str,
         result: str,
         reason: str = "",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Log a secret access event. NO secret values stored."""
         db = self._get_db()
@@ -86,7 +86,7 @@ class SecretAccessControl:
             "result": result,
             "reason": reason,
             "metadata": metadata or {},
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
         try:
             await db[COLL_SECRET_AUDIT].insert_one(record)
@@ -112,7 +112,7 @@ class SecretAccessControl:
         property_id: str = "",
         access_type: str,
         caller: str,
-        request_tenant_id: Optional[str] = None,
+        request_tenant_id: str | None = None,
     ) -> bool:
         """Check access policy and log the result.
 
@@ -168,14 +168,14 @@ class SecretAccessControl:
     async def get_audit_trail(
         self,
         *,
-        tenant_id: Optional[str] = None,
-        provider: Optional[str] = None,
-        result_filter: Optional[str] = None,
+        tenant_id: str | None = None,
+        provider: str | None = None,
+        result_filter: str | None = None,
         limit: int = 50,
         skip: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get audit trail with filters and pagination."""
-        query: Dict[str, Any] = {}
+        query: dict[str, Any] = {}
         if tenant_id:
             query["tenant_id"] = tenant_id
         if provider:
@@ -201,11 +201,11 @@ class SecretAccessControl:
         self,
         *,
         hours: int = 24,
-        tenant_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        tenant_id: str | None = None,
+    ) -> dict[str, Any]:
         """Get secret access anomalies (failures, denials)."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-        query: Dict[str, Any] = {
+        cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
+        query: dict[str, Any] = {
             "result": {"$in": ["failure", "denied", "not_found"]},
             "timestamp": {"$gte": cutoff},
         }
@@ -259,7 +259,7 @@ class SecretAccessControl:
 
 
 # ── Singleton ──────────────────────────────────────────────────────
-_access_control: Optional[SecretAccessControl] = None
+_access_control: SecretAccessControl | None = None
 
 
 def get_secret_access_control() -> SecretAccessControl:

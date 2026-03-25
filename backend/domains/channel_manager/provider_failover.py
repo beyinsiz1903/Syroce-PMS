@@ -5,9 +5,9 @@ Circuit breaker + retry/backoff for OTA provider communication.
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class CircuitBreaker:
         self.state = CircuitState.CLOSED
         self.failure_count = 0
         self.success_count = 0
-        self.last_failure_time: Optional[float] = None
+        self.last_failure_time: float | None = None
         self.half_open_calls = 0
 
     @property
@@ -76,14 +76,14 @@ class CircuitBreaker:
             self.state = CircuitState.OPEN
             logger.warning(f"Circuit {self.provider}: CLOSED → OPEN (threshold breached)")
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {
             "provider": self.provider,
             "state": self.state.value,
             "failure_count": self.failure_count,
             "failure_threshold": self.failure_threshold,
             "recovery_timeout": self.recovery_timeout,
-            "last_failure": datetime.fromtimestamp(self.last_failure_time, tz=timezone.utc).isoformat() if self.last_failure_time else None,
+            "last_failure": datetime.fromtimestamp(self.last_failure_time, tz=UTC).isoformat() if self.last_failure_time else None,
         }
 
 
@@ -91,7 +91,7 @@ class ProviderFailover:
     """Manages circuit breakers and retry logic for all OTA providers."""
 
     def __init__(self):
-        self._breakers: Dict[str, CircuitBreaker] = {}
+        self._breakers: dict[str, CircuitBreaker] = {}
         self._retry_config = {
             "max_retries": 3,
             "base_delay": 1.0,
@@ -111,7 +111,7 @@ class ProviderFailover:
         operation: Callable[..., Awaitable],
         *args,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute an operation against a provider with circuit breaker and retry logic."""
         breaker = self.get_breaker(provider)
 

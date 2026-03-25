@@ -14,8 +14,7 @@ Restricted roles (read-only or no access):
 Unauthorized attempts are logged via audit trail.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import HTTPException
 
@@ -33,7 +32,7 @@ async def enforce_credential_access(
     user,
     action: str,
     connector_id: str = "",
-    repo: Optional[ChannelManagerRepository] = None,
+    repo: ChannelManagerRepository | None = None,
     require_write: bool = True,
 ) -> None:
     """
@@ -63,7 +62,7 @@ async def enforce_credential_access(
                     "attempted_action": action,
                     "user_role": user_role,
                     "required_roles": list(allowed_roles),
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
             await repo.create_audit_log(log.to_doc())

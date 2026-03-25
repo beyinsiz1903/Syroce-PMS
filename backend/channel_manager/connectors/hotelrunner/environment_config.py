@@ -4,7 +4,7 @@ Environment Configuration for HotelRunner Connector.
 Supports: sandbox, mock, production environments.
 Each environment defines its own base URLs, timeouts, and feature flags.
 """
-from typing import Any, Dict
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -28,7 +28,7 @@ class EnvironmentConfig(BaseModel):
     description: str = ""
 
 
-ENVIRONMENTS: Dict[str, EnvironmentConfig] = {
+ENVIRONMENTS: dict[str, EnvironmentConfig] = {
     "mock": EnvironmentConfig(
         name="mock",
         api_base_url="http://localhost:9999/api/v2",
@@ -88,6 +88,6 @@ def get_environment_config(env_name: str) -> EnvironmentConfig:
     return ENVIRONMENTS.get(env_name, ENVIRONMENTS["sandbox"])
 
 
-def get_all_environments() -> Dict[str, Dict[str, Any]]:
+def get_all_environments() -> dict[str, dict[str, Any]]:
     """Return all environment configs as dicts."""
     return {k: v.model_dump() for k, v in ENVIRONMENTS.items()}

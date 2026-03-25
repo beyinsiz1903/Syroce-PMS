@@ -1,10 +1,10 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from modules.reservations.repository import ReservationsRepository
 
 
 class ReservationReadService:
-    def __init__(self, repository: Optional[ReservationsRepository] = None):
+    def __init__(self, repository: ReservationsRepository | None = None):
         self.repository = repository or ReservationsRepository()
 
     async def list_reservations(
@@ -12,10 +12,10 @@ class ReservationReadService:
         tenant_id: str,
         limit: int = 30,
         offset: int = 0,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        status: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        start_date: str | None = None,
+        end_date: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
         bookings = await self.repository.list_reservations(
             tenant_id=tenant_id,
             limit=limit,
@@ -25,7 +25,7 @@ class ReservationReadService:
             status=status,
         )
 
-        enriched: List[Dict[str, Any]] = []
+        enriched: list[dict[str, Any]] = []
         for booking in bookings:
             booking = dict(booking)
             guest_name = booking.get("guest_name")
