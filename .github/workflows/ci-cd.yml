@@ -108,7 +108,7 @@ jobs:
       - name: Seed test database (hard gate)
         run: |
           cd backend
-          python create_test_user.py || python create_demo_users.py || { echo "::error::No seed script found — tests require a seeded database"; exit 1; }
+          python scripts/create_test_user.py || python create_demo_users.py || { echo "::error::No seed script found — tests require a seeded database"; exit 1; }
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
           DB_NAME: ${{ env.DB_NAME }}

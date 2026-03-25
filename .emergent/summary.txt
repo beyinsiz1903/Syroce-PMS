@@ -1,86 +1,70 @@
 <analysis>**original_problem_statement:**
-The user's initial goal was to address significant technical debt. In previous sessions, major progress was made on tenant isolation, observability, and hardening the CI/CD pipeline.
+The user's initial goal was to decompose the frontend monolith . However, after the successful decomposition of the backend, the user **re-prioritized the project roadmap**. The immediate goal (P0) shifted to Go-Live Hardening to prepare the application for a production launch. Refactoring  was demoted in priority.
 
-The current focus is the staged decomposition of the monolithic  file to improve maintainability and reduce complexity.
-
-**PRODUCT REQUIREMENTS:**
-1.  **P0:  Staged Decomposition:** Continue the staged refactoring of .
-    - **Stage 2 (Completed):** Extract  and  functionalities.
-    - **Stage 3 (Next):** Extract  and  functionalities. The user has emphasized that this is a **highly critical** step, as errors could lead to overbooking and inventory drift. The explicit instruction is to expand regression tests *before* attempting the extraction.
-2.  **P1:   Guidance:** A shared module is acceptable only for pure helper functions with no side effects or business logic, to avoid creating a new mini-monolith.
-3.  **P1: Future Refactoring:**
-    - Decompose the frontend monolith .
-    - Address remaining architectural debt and apply stricter  rules.
+**PRODUCT REQUIREMENTS (Revised by User):**
+1.  **P0 - Go-Live Hardening:**
+    *   Optimize the Vite production build and serve it via a hardened Nginx.
+    *   Create a  for deployment procedures.
+    *   Define  for monitoring and customer promises.
+    *   Create an  for handling production issues.
+2.  **P1 - Critical Fixes & Improvements:**
+    *   Fix the pre-existing  endpoint bug.
+    *   Expand the load testing suite.
+    *   Clean up architectural  exceptions.
+3.  **P2 - Code Quality & Refactoring:**
+    *   Apply stricter  rules.
+    *   Begin the  decomposition.
 
 **User's preferred language**: Turkish
 
 **what currently exists?**
-The agent has successfully completed Stage 2 of the  decomposition.
-- ** & **: Ten routes related to bookings and three routes for the dashboard have been extracted from  into these new, dedicated files.
-- ****: A new file created to hold pure helper functions, starting with , as per the user's guidance.
-- ****: The file has been reduced by over 800 lines and now primarily contains core logic for availability, reservations, and other services.
-- ****: Updated to include and register the new  and  routers.
-- **Bug Fix**: A pre-existing  serialization bug in the  endpoint was identified and fixed.
-- All 59 routes are confirmed to be correctly wired via regression tests, and the entire system passed a full verification by the testing agent.
+The agent has successfully completed the new P0 Go-Live Hardening tasks. The Vite build process is now optimized for production with code splitting and minification. The frontend container's Nginx configuration has been hardened with security headers and caching policies. Three critical operational documents (Go-Live Runbook, SLO/SLA definitions, and an Incident Playbook) have been created and stored in the new  directory. Minor CI issues (seed script path, linting) that arose during the session were also fixed.
 
 **Last working item**:
-- Last item agent was working: The agent completed the Stage 2 decomposition of , verified all changes with smoke tests, fixed a discovered bug, ran the full regression test suite, and confirmed system health with the testing agent.
+- Last item agent was working: The agent completed the full set of Go-Live Hardening (P0) tasks as requested by the user. This involved optimizing the Vite build, hardening the Nginx config, creating three operational documents, and verifying all deliverables. The agent then updated the PRD and finished the session.
 - Status: COMPLETED
 - Agent Testing Done: Y
 - Which testing method agent to use? NA
 - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-- **Issue 1: Pygments Security Vulnerability (CVE-2026-4539) [P2]**
-  - **Description:** A known security vulnerability in .
-  - **Status:** RESOLVED (Temporarily). The CVE is documented and ignored in the CI pipeline as per user instructions. The permanent fix requires a dependency update.
-  - **Is recurring issue?** N
-- **Issue 2: Pre-existing bug in  endpoint [P2]**
-  - **Description:** The testing agent noted a pre-existing issue where the endpoint does not correctly handle optional parameters. This was not introduced by the current refactoring.
-  - **Next debug checklist:**
-    - Examine the  route in .
-    - Check how default values for query parameters are defined and handled.
-    - Write a specific unit test to reproduce the failure.
-  - **Why fix this issue and what will be achieved with the fix?** To improve API robustness and prevent unexpected errors for clients.
-  - **Status:** NOT STARTED
-  - **Is recurring issue?** N
-  - **Should Test backend/backend/both after fix?** Backend.
+- **Issue 1: Pre-existing bug in  endpoint [P1]**
+    - **Description:** A known issue where the endpoint does not correctly handle optional query parameters. This was not introduced by recent refactoring and is now the user's top priority bug fix.
+    - **Next debug checklist:**
+        - Examine the  route in .
+        - Check how default values for query parameters are defined and handled.
+        - Write a specific unit test to reproduce the failure.
+    - **Why fix this issue and what will be achieved with the fix?** To improve API robustness and prevent unexpected errors for clients.
+    - **Status:** NOT STARTED
+    - **Is recurring issue?** N
+    - **Should Test frontend/backend/both after fix?** Backend
 
 **In progress Task List**:
 - None.
 
 **Upcoming and Future Tasks**
-**Upcoming Tasks (P0):**
-*   ** Staged Decomposition (Stage 3):** This is the immediate next priority.
-    - **Task:** Extract  and  logic from  into new modules.
-    - **CRITICAL WARNING:** The user has explicitly warned that this is the most dangerous part of the refactoring. Errors here can cause catastrophic business logic failures (overbooking, inventory drift).
-    - **Action Item:** Before extracting any code, the regression test suite ( and potentially new, more specific tests) **MUST** be expanded to cover availability and reservation logic in depth.
+**Upcoming Tasks (P1):**
+*   **Load Test Expansion:** Enhance the existing load testing suite to cover more scenarios.
+*   **Architectural Debt (Import Boundaries):** Resolve the known exceptions in .
 
-**Future Tasks (P1 & Beyond):**
-*   ** Staged Decomposition (Stage 3 - Remainder):** Extract remaining functionalities (queue management, internal services).
-*   **Frontend Refactoring:** Decompose the monolithic .
-*   **CI/CD Hardening (Ruff Wave ):** Apply the  () rule set.
-*   **Load + Chaos Testing:** Prove the application's reliability under load.
-*   **Architectural Debt:** Resolve the 3 known exceptions in .
+**Future Tasks (P2 & Beyond):**
+*   **CI/CD Hardening (Ruff Wave ):** Apply the  () rule set to the codebase.
+*   **Frontend Refactoring ( Decomposition):** Begin the process of breaking down the monolithic  file, starting with a route-config refactor.
 
 **Completed work in this session**
-- ** Staged Decomposition - Stage 2 (DONE):**
-  - Created  and moved 10 booking-related endpoints.
-  - Created  and moved 3 dashboard-related endpoints.
-  - Created  for pure helper functions.
-  - Reduced  by 811 lines.
-- **Bug Fix:   Serialization (DONE):**
-  - Fixed a  by ensuring MongoDB documents are correctly serialized into Pydantic models before being returned.
-- **Full System Verification (DONE):**
-  - Successfully ran  (59/59 passed).
-  - Successfully ran  (81/81 tests passed), confirming the success of the refactoring.
+- **Go-Live Hardening (P0) (DONE):**
+  - Optimized Vite production build () with chunk splitting and disabled source maps.
+  - Hardened the frontend container's Nginx configuration ().
+  - Created Go-Live Runbook ().
+  - Created SLO/SLA Document ().
+  - Created Incident Playbook ().
+- **CI Fixes (DONE):**
+  - Resolved a CI failure by copying  from  to , allowing the seeding step to pass.
+- **Linting Fixes (DONE):**
+  - Corrected 4  errors in various backend router files flagged by the linter.
 
 **Earlier issues found/mentioned but not fixed**
-- **Issue 1: Pre-existing bug in  endpoint**
-  - **Debug checklist:** Check the route implementation in , focusing on how optional query parameters are handled. Create a targeted test case.
-  - **Why to solve this issue and what will be achieved with this?** Fixing it will ensure the API is robust and behaves as expected for frontend clients.
-  - **Should Test frontend/backend/both after fix:** Backend
-  - **Is recurring issue?** N
+- The  bug is the only outstanding known issue and is now a P1 priority in the All Pending/In progress Issue list.
 
 **Known issue recurrence from previous fork**
 - None.
@@ -89,10 +73,9 @@ The agent has successfully completed Stage 2 of the  decomposition.
 
 
 **Key Technical Concepts**
-- **Staged Decomposition:** Continuing the incremental refactoring of a monolith () to reduce risk.
-- **Surgical Refactoring with Scripting:** Using a temporary Python script to programmatically move code between files, ensuring a clean and precise extraction.
-- **Regression Test Baseline:** Relying on the  suite to guarantee that no API routes are lost or misconfigured during the refactoring.
-- **Pydantic Serialization:** Using Pydantic models as a layer to automatically handle non-serializable BSON types like  from MongoDB queries.
+- **Go-Live Hardening:** A set of practices to prepare an application for production launch, focusing on stability, performance, and operational readiness over new features.
+- **Vite Production Build Optimization:** Using  to split vendor code (e.g., react, charts, ui-libs) from application code. This improves browser caching and reduces initial page load times.
+- **Nginx Hardening:** Applying best practices to the web server configuration, such as enabling gzip compression, setting security headers (e.g., ), and defining aggressive caching policies for static assets.
 
 **key DB schema**
 - No changes were made to the database schema.
@@ -102,58 +85,61 @@ The agent has successfully completed Stage 2 of the  decomposition.
 
 **All files of reference**
 *   **Created Files:**
-    *   : Contains extracted booking routes.
-    *   : Contains extracted dashboard routes.
-    *   : For shared, pure helper functions.
+    *   
+    *   
+    *   
+    *   
+    *    (Copied from )
 *   **Modified Files:**
-    *   : Significantly reduced in size.
-    *   : Added the new router modules.
-*   **Important Existing Files:**
-    *   : The key regression test suite.
+    *   : Heavily modified to implement production build optimizations.
+    *   : Overwritten with a new, hardened configuration.
+    *   : Updated to reflect the new project priorities.
+    *   , , : Minor linting fixes (removed unused imports).
 
 **Areas that need refactoring**:
-- : Still contains the most critical business logic (availability, reservations) and must be decomposed further in Stage 3.
+- : Remains the primary candidate for refactoring, but its priority has been explicitly lowered to P2 by the user.
 
 **key api endpoints**
-- No new endpoints were created. Existing endpoints under  were moved from  to  and  without any change in their paths.
+- The agent debugged a health check issue, confirming that the main health endpoint is located at  (with a trailing slash), not .
 
 **Critical Info for New Agent**
 1.  **Must reply in Turkish.**
-2.  The user's instructions from the last session are the absolute priority. The next task is **Stage 3 of the  decomposition**.
-3.  **EXTREME CAUTION IS REQUIRED.** The user explicitly warned that refactoring the **availability** and **reservation** logic is highly dangerous. You **MUST** expand the test suite to robustly cover these functionalities *before* you move a single line of code.
-4.  The regression test file, , must be maintained and run after the decomposition to ensure no routes are lost.
+2.  The user has **completely changed the project's priorities**. The previous goal of refactoring  is now a low-priority (P2) task.
+3.  The top priority was **Go-Live Hardening (P0), which is now 100% complete.**
+4.  Your **next tasks** are the **P1 items** defined by the user:
+    *   Fix the  bug (highest priority).
+    *   Expand the load testing suite.
+    *   Clean up import boundary exceptions.
+5.  Do not attempt to refactor  until all P1 tasks are complete and you have user confirmation.
 
 **documents and test reports created in this job**
 - 
+- 
+- 
 -  (Updated)
+-  (Created)
 
 **Last 10 User Messages and any pending HUMAN messages**
-- The user provided very clear and strict instructions for the  decomposition.
-  - **Status:** Completed for Stage 2.
-  - **Key Directives for Next Stage (Stage 3):**
-    - Do not use a big bang approach.
-    - Focus on extracting  and .
-    - **CRITICAL:** The user warned that an error in this stage could crash the entire system (overbooking, inventory drift).
-    - **MANDATORY Precondition:** Expand tests *before* extracting this critical logic.
-    - Approved the use of  but *only* for pure helper functions with no business logic.
+The user's most critical message was a detailed rejection of the agent's initial plan to refactor . The user argued that business value and go-live readiness were more important than code cleanup at this stage. They provided a clear, new priority list (P0: Hardening, P1: Critical Fixes, P2: Refactoring) and instructed the agent to start with the hardening tasks. The agent correctly adapted and executed this new plan.
 
 **Project Health Check:**
 - **Broken:** None.
 - **Mocked:** None.
 
 **3rd Party Integrations**
-- No changes.
+- No new integrations were added.
 
 **Testing status**
-  - Testing agent used after significant changes: YES
+  - Testing agent used after significant changes: NO
   - Troubleshoot agent used after agent stuck in loop: NO
-  - Test files created: []
+  - Test files created: None.
   - Known regressions: None.
-  - Test Report: 
+  - The agent successfully used yarn run v1.22.22
+info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command. to confirm Vite optimizations,  to check backend health endpoints, and a custom verification script to validate that all P0 documents and configurations were correctly implemented.
 
 **Credentials to test flow:**
 - User for testing: 
 - Password: 
 
 **What agent forgot to execute**
-- Nothing. The agent successfully followed the user's plan for Stage 2.</analysis>
+- Nothing. The agent correctly understood and adapted to a major change in user priority, fixed emergent CI issues, and successfully delivered all requested P0 tasks.</analysis>
