@@ -23,7 +23,7 @@ import pytest
 import httpx
 
 # Use the public API URL from environment
-API_URL = os.environ.get("VITE_BACKEND_URL", "https://ops-secret-dashboard.preview.emergentagent.com")
+API_URL = os.environ.get("VITE_BACKEND_URL", "https://pii-encryption-guard.preview.emergentagent.com")
 AUTH_CREDS = {"email": "demo@hotel.com", "password": "demo123"}
 
 

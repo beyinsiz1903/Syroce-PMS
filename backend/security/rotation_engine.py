@@ -391,7 +391,7 @@ class RotationEngine:
         versioned_paths = {v["secret_path"] for v in active_versions}
 
         # Get lifecycle rules
-        from security.pii_registry import SECRET_LIFECYCLE, SecretType
+        from security.pii_registry import SECRET_LIFECYCLE
 
         dashboard_items = []
 
