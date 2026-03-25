@@ -58,6 +58,13 @@ class HotelRunnerProvider:
         reservations = await provider.fetch_reservations()
     """
 
+    # Environment-specific base URLs
+    ENV_URLS = {
+        "mock": "http://localhost:9999",
+        "sandbox": "https://sandbox.hotelrunner.com",
+        "production": "https://app.hotelrunner.com",
+    }
+
     def __init__(
         self,
         token: str = "",
@@ -65,7 +72,8 @@ class HotelRunnerProvider:
         *,
         credentials: dict[str, str] | None = None,
         connection_id: str = "",
-        base_url: str = ep.BASE_URL,
+        base_url: str = "",
+        environment: str = "",
         max_retries: int = 3,
         max_pages: int = 50,
     ):
@@ -77,7 +85,8 @@ class HotelRunnerProvider:
             hr_id: HotelRunner Hotel ID
             credentials: Alternative — dict with token/hr_id keys
             connection_id: For logging/tracking
-            base_url: Override API base URL (for sandbox/mock)
+            base_url: Override API base URL (explicit)
+            environment: "mock" | "sandbox" | "production" — resolves base_url
             max_retries: Retry attempts for transient errors
             max_pages: Max pages for paginated endpoints
         """
@@ -88,7 +97,18 @@ class HotelRunnerProvider:
         self._token = token
         self._hr_id = hr_id
         self._connection_id = connection_id
-        self._client = HotelRunnerHttpClient(token, hr_id, base_url)
+        self._environment = environment or "production"
+
+        # Resolve base URL: explicit > environment > default
+        if base_url:
+            resolved_url = base_url
+        elif environment:
+            resolved_url = self.ENV_URLS.get(environment, ep.BASE_URL)
+        else:
+            resolved_url = ep.BASE_URL
+
+        self._base_url = resolved_url
+        self._client = HotelRunnerHttpClient(token, hr_id, resolved_url)
         self._retry = HotelRunnerRetryPolicy(max_retries=max_retries)
         self._paginator = HotelRunnerPaginator(max_pages=max_pages)
 

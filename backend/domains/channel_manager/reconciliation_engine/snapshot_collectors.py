@@ -40,7 +40,8 @@ async def collect_hotelrunner_snapshot(
         )
         return []
 
-    provider = HotelRunnerProvider(token=token, hr_id=hr_id)
+    environment = connection.get("environment", "production")
+    provider = HotelRunnerProvider(token=token, hr_id=hr_id, environment=environment)
     since = (datetime.now(UTC) - timedelta(hours=since_hours)).strftime("%Y-%m-%d")
 
     logger.info(

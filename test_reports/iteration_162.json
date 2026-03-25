@@ -1,0 +1,69 @@
+{
+  "summary": "HotelRunner Provider Parity Testing - All 15 tests passed. Mock server (localhost:9999) is running and responding correctly. Webhook endpoints accept reservations and process through ingest pipeline. Normalizer correctly parses HotelRunner API format.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "Ingest Pipeline",
+        "issue": "Webhooks result in 'pending_mapping' status because test-tenant-e2e lacks room mappings. This is expected behavior - not a bug.",
+        "priority": "INFO"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_hotelrunner_parity.py",
+    "/app/test_reports/pytest/pytest_hotelrunner_parity.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Mock server implementation is comprehensive with auth validation, error injection, rate limiting, and realistic data generation",
+    "Normalizer correctly handles both HotelRunner API format (firstname/lastname, checkin_date, address.email, rooms[].room_code, state) and simplified format",
+    "Ingest pipeline correctly processes through all 9 stages: duplicate detection, payload hash check, stale detection, normalization, mapping resolution, decision engine, concurrency control, and execution",
+    "Webhook endpoints properly validate tenant_id header and return appropriate error codes"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_hotelrunner_parity.py"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "N/A (backend only testing)"
+  },
+  "seed_data_creation": "None required - mock server generates test data automatically",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "HotelRunner mock server runs on port 9999 via supervisor (hr_mock service). Valid credentials: token=mock-hr-token-001, hr_id=HR-HOTEL-001. Webhook endpoints require X-Tenant-ID header. Room mappings for test-tenant-001 exist but test-tenant-e2e does not have mappings configured.",
+  "test_results": {
+    "total": 15,
+    "passed": 15,
+    "failed": 0,
+    "pass_rate": "100%",
+    "tests": [
+      {"name": "test_mock_server_health", "status": "PASSED"},
+      {"name": "test_bad_token_returns_401", "status": "PASSED"},
+      {"name": "test_valid_auth_returns_channels", "status": "PASSED"},
+      {"name": "test_get_rooms_returns_4_rooms", "status": "PASSED"},
+      {"name": "test_get_reservations_undelivered", "status": "PASSED"},
+      {"name": "test_ari_push_success", "status": "PASSED"},
+      {"name": "test_error_injection_returns_500", "status": "PASSED"},
+      {"name": "test_mock_reset_clears_state", "status": "PASSED"},
+      {"name": "test_webhook_new_reservation_accepted", "status": "PASSED"},
+      {"name": "test_webhook_modification_accepted", "status": "PASSED"},
+      {"name": "test_webhook_cancellation_accepted", "status": "PASSED"},
+      {"name": "test_webhook_missing_tenant_returns_400", "status": "PASSED"},
+      {"name": "test_ingest_creates_lineage", "status": "PASSED"},
+      {"name": "test_duplicate_webhook_detected", "status": "PASSED"},
+      {"name": "test_normalizer_handles_real_hr_format", "status": "PASSED"}
+    ]
+  },
+  "mocked_apis": {
+    "has_mocked_apis": true,
+    "mocked_apis_list": [
+      "http://localhost:9999 - Full HotelRunner API mock (auth, rooms, reservations, ARI push, delivery ACK, error injection)"
+    ]
+  }
+}

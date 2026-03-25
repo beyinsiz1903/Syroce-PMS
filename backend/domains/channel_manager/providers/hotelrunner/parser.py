@@ -92,9 +92,12 @@ def parse_reservations_response(data: dict[str, Any]) -> HotelRunnerReservationP
     reservations = []
     for r in reservations_raw:
         try:
-            guest = r.get("guest", r.get("address", {})) or {}
+            # guest can be a string (full name) or dict — handle both
+            guest_raw = r.get("guest", {})
+            guest = guest_raw if isinstance(guest_raw, dict) else {}
+            address = r.get("address", {}) or {}
             rooms = r.get("rooms", [])
-            first_room = rooms[0] if rooms else {}
+            first_room = rooms[0] if rooms and isinstance(rooms[0], dict) else {}
 
             reservations.append(HotelRunnerReservation(
                 reservation_id=str(r.get("reservation_id", "")),
@@ -102,14 +105,14 @@ def parse_reservations_response(data: dict[str, Any]) -> HotelRunnerReservationP
                 status=str(r.get("state", r.get("status", "confirmed"))),
                 guest_firstname=str(r.get("firstname", guest.get("first_name", ""))),
                 guest_lastname=str(r.get("lastname", guest.get("last_name", ""))),
-                guest_email=str((r.get("address") or {}).get("email", guest.get("email", ""))),
-                guest_phone=str((r.get("address") or {}).get("phone", guest.get("phone", ""))),
+                guest_email=str(address.get("email", guest.get("email", ""))),
+                guest_phone=str(address.get("phone", guest.get("phone", ""))),
                 check_in=str(r.get("checkin_date", r.get("check_in", ""))),
                 check_out=str(r.get("checkout_date", r.get("check_out", ""))),
-                room_type_code=str(first_room.get("inv_code", r.get("room_type", ""))),
-                rate_plan_code=str(first_room.get("rate_plan_code", r.get("rate_plan", ""))),
-                adults=int(first_room.get("total_adult", r.get("adults", 1)) or 1),
-                children=len(first_room.get("child_ages", [])) or int(r.get("children", 0)),
+                room_type_code=str(first_room.get("inv_code", first_room.get("room_code", r.get("room_type", "")))),
+                rate_plan_code=str(first_room.get("rate_plan_code", first_room.get("rate_code", r.get("rate_plan", "")))),
+                adults=int(first_room.get("total_adult", first_room.get("adults", r.get("adults", 1))) or 1),
+                children=len(first_room.get("child_ages", [])) or int(first_room.get("children", r.get("children", 0)) or 0),
                 total_amount=float(r.get("total", 0) or 0),
                 currency=str(r.get("currency", "TRY")),
                 channel=str(r.get("channel_display", r.get("channel", ""))),

@@ -653,14 +653,61 @@ class RotationEngine:
     async def _test_hotelrunner_credentials(
         self, credentials: dict[str, str], tenant_id: str,
     ) -> dict[str, Any]:
-        """Test HotelRunner credentials."""
+        """Test HotelRunner credentials with real API connectivity check."""
+        token = credentials.get("token", "")
+        hr_id = credentials.get("hr_id", "")
+
+        # Structural validation
+        if not token or len(token) < 5:
+            return {"success": False, "details": "HotelRunner token appears invalid (too short)"}
+        if not hr_id:
+            return {"success": False, "details": "HotelRunner HR ID (hotel ID) is missing"}
+
         try:
-            token = credentials.get("token", "")
-            if not token or len(token) < 10:
-                return {"success": False, "details": "HotelRunner token appears invalid (too short)"}
-            return {"success": True, "details": "HotelRunner token structural validation passed"}
+            from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
+
+            # Determine environment from credentials or tenant config
+            env = credentials.get("environment", "mock")
+            base_url = self._resolve_hr_base_url(env)
+
+            provider = HotelRunnerProvider(
+                token=token,
+                hr_id=hr_id,
+                base_url=base_url,
+            )
+            result = await provider.test_connection()
+
+            if result.success:
+                channel_count = 0
+                if result.data:
+                    channel_count = result.data.get("channel_count", 0)
+                return {
+                    "success": True,
+                    "details": f"HotelRunner API connectivity verified ({channel_count} channels)",
+                    "latency_ms": result.duration_ms,
+                    "environment": env,
+                }
+            return {
+                "success": False,
+                "details": f"HotelRunner connection test failed: {result.error}",
+                "latency_ms": result.duration_ms,
+                "environment": env,
+            }
+        except ImportError:
+            # Provider module not available — fall back to structural check
+            return {"success": True, "details": "HotelRunner provider not available — structural validation passed"}
         except Exception as e:
-            return {"success": False, "details": f"HotelRunner test failed: {e}"}
+            return {"success": False, "details": f"HotelRunner connectivity test failed: {e}"}
+
+    @staticmethod
+    def _resolve_hr_base_url(environment: str) -> str:
+        """Resolve HotelRunner base URL from environment name."""
+        urls = {
+            "mock": "http://localhost:9999",
+            "sandbox": "https://sandbox.hotelrunner.com",
+            "production": "https://app.hotelrunner.com",
+        }
+        return urls.get(environment, "http://localhost:9999")
 
     async def _log_audit(
         self,

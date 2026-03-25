@@ -30,6 +30,7 @@ class HRConnectionSetup(BaseModel):
     token: str
     hr_id: str
     property_name: str | None = None
+    environment: str = "mock"  # mock | sandbox | production
     auto_sync_reservations: bool = True
     auto_confirm_delivery: bool = False
     sync_interval_minutes: int = 15
@@ -71,6 +72,9 @@ async def _get_provider(tenant_id: str):
     if not conn:
         raise HTTPException(status_code=404, detail="HotelRunner baglantisi bulunamadi. Lutfen once baglanti kurun.")
 
+    # Resolve environment
+    environment = conn.get("environment", "mock")
+
     # Resolve credentials via secrets manager (with legacy fallback)
     sm = get_secrets_manager()
     property_id = conn.get("hr_id", conn.get("property_id", "default"))
@@ -89,7 +93,11 @@ async def _get_provider(tenant_id: str):
             raise HTTPException(status_code=502, detail="HotelRunner kimlik bilgileri bulunamadi")
 
     try:
-        return HotelRunnerProvider(token=creds["token"], hr_id=creds.get("hr_id", "")), conn
+        return HotelRunnerProvider(
+            token=creds["token"],
+            hr_id=creds.get("hr_id", ""),
+            environment=environment,
+        ), conn
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"HotelRunner kimlik bilgileri gecersiz: {exc}")
 
@@ -120,7 +128,11 @@ async def setup_connection(
     """Setup HotelRunner connection with credentials and test it."""
     from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
 
-    provider = HotelRunnerProvider(token=payload.token, hr_id=payload.hr_id)
+    provider = HotelRunnerProvider(
+        token=payload.token,
+        hr_id=payload.hr_id,
+        environment=payload.environment,
+    )
     test_result = await provider.test_connection()
 
     if not test_result.success:
@@ -143,6 +155,7 @@ async def setup_connection(
         "tenant_id": current_user.tenant_id,
         "hr_id": payload.hr_id,
         "credentials_ref": f"secrets_manager::hotelrunner::{payload.hr_id}",
+        "environment": payload.environment,
         "property_name": payload.property_name or "HotelRunner Property",
         "auto_sync_reservations": payload.auto_sync_reservations,
         "auto_confirm_delivery": payload.auto_confirm_delivery,
