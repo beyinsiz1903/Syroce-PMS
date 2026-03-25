@@ -1,115 +1,115 @@
 <analysis>**original_problem_statement:**
-The user intervened with a highly detailed, revised priority list focusing strictly on security, secret governance, and PII masking, explicitly overriding any frontend refactoring tasks (like  decomposition) until security is handled. 
-
+User intervened with a highly detailed priority list focusing strictly on security, secret governance, and PII masking. The user explicitly delayed frontend refactoring tasks () until security is handled. 
 **PRODUCT REQUIREMENTS (User's revised plan):**
-*   **P0 (Immediate):** AWS KMS integration, log + ops + payload masking, secret classification, and access audit trail.
-*   **P1:** API response masking (role-based), and Secret rotation scripts + rollback flows.
-*   **P2:** Selective at-rest DB encryption for critical PII (phone, email, passport, payment data).
-*   *Strict Rules:* Raw webhook/payload viewers must be masked by default and require high privilege + audit to unmask. Masking must be tenant-aware. No rotation without rollback.
+*   **P0 (Completed):** AWS KMS integration, log + ops + payload masking, secret classification, and access audit trail.
+*   **P1 (Current):** Secret rotation scripts + rollback flows. *Strict Flow Required:* Initiate (new secret) → Test (dry-run via real API call) → Activate → Keep old → Rollback (if problem). **CRITICAL RULE:** Never switch/activate without testing first. Ops panel needs visibility of active secrets, expiration/overdue flags, and rotation audit.
+*   **P2 (Upcoming):** Selective at-rest DB encryption for critical PII (phone, email, passport, payment data). Do not over-engineer; use hash index for search + transparent decrypt.
 
-**User's preferred language**: Turkish (You MUST respond in Turkish to the user).
+**User's preferred language**: Turkish (You MUST automatically detect the user's primary language from their messages inside the <trajectory> tag and INSTRUCT next agent to respond in the user's preferred language only. Yanıtlarda kesinlikle TÜRKÇE kullanın.)
 
-**what currently exists?**
-The application now has a robust PII Masking and Secret Governance system. The backend includes AWS KMS integration (), a Secret Classification API, and a centralized PII Registry. Role-based API response masking (Super Admin > Admin > Others) is actively running at the application layer (refactored away from middleware to prevent GZip conflicts).  and  have been updated to mask raw payloads by default. The log sanitizer was enhanced to avoid false positives (like UUIDs matching phone regex). 
+**what currently exists?** 
+A robust PII Masking and Secret Governance system. The backend includes AWS KMS integration, Secret Classification, and Application-layer PII Masking. The application now also has a strictly governed Secret Rotation API () that enforces a strict state machine ( →  → ), supports single-command rollback, and validates 3rd-party credentials (like Exely) before allowing activation.
 
 **Last working item**:
-- Last item agent was working: Implementing P0 and partial P1 requirements (AWS KMS integration, Secret Classification, Log/API masking, role-based visibility, and ops timeline masking).
-- Status: COMPLETED
-- Agent Testing Done: Y
-- Which testing method agent to use? NA
-- User Testing Done: N
+    - Last item agent was working: P1 Backend Implementation — Building the Secret Rotation Engine, Router, and Alerting triggers. Resolving tenant isolation proxy blocks for global system operations.
+    - Status: USER VERIFICATION PENDING
+    - Agent Testing Done: Y
+    - Which testing method agent to use? NA (Testing agent already used and passed 21/21 tests)
+    - User Testing Done: N
 
-**All Pending/In progress Issue list**:
-- None. All test failures (middleware conflicts and regex false positives) were fixed and verified.
+**All Pending/In progress Issue list**: 
+  - None. (6 lingering linting issues from a previous fork were successfully fixed and testing passed).
 
 **In progress Task List**:
-- None. The immediate P0 and masking parts of P1 are complete.
+  Task 1: P1 Frontend / Visibility (Ops Panel)
+     - Where to resume: The backend API is ready. Now, implement the Frontend Ops Panel visibility requested by the user: hangi secret aktif, ne zaman döndü, ne zaman dönecek, hangisi expired. Also verify the  (overdue flag) and  (on failure) visually on the frontend.
+     - What will be achieved with this? Full completion of P1 (both backend logic and frontend operator visibility).
+     - Status: NOT STARTED
+     - Should Test frontend/backend/both after fix? Both
+     - Blocked on something: None
 
 **Upcoming and Future Tasks**
-*   **Upcoming Tasks:**
-    *   **P1: Secret Rotation Scripts + Rollback Flow:** Implement the mechanism to rotate secrets safely, with a guaranteed rollback plan/flow (User explicitly requested: rotation yapıp rollback planı olmadan canlıya çıkma).
-    *   **P2: Selective At-Rest Encryption:** Implement DB-level selective encryption for critical PII fields (phone, email, identity/passport, payment metadata).
-*   **Future Tasks:**
-    *   **P3:  Decomposition:** Frontend component breakdown. (User explicitly stated this MUST wait until all security/PII tasks are done).
-    *   Legacy migration / cleanup jobs.
-    *   Motor -> pymongo async migration.
-    *   HMR guard decommission.
-    *   Vault evaluation (Only if customer/infra complexity requires it later; sticking to AWS KMS for now).
+    Upcoming Tasks:
+    - P2: Selective At-Rest DB Encryption (Priority P2): Implement DB-level selective encryption for critical PII fields (phone, email, identity/passport, payment metadata). Use a simple approach: encrypt fields, maintain hash index for searchability, transparan decrypt. DO NOT over-engineer.
+    
+    Future Tasks:
+    - P3:  Decomposition (Strictly AFTER all security/PII tasks are done).
+    - Legacy migration / cleanup jobs.
+    - Motor -> pymongo async migration.
+    - HMR guard decommission.
 
 **Completed work in this session**
-- AWS KMS Provider Integration:  (DONE)
-- PII Registry & Policy:  (DONE)
-- Role-based Application-layer PII Masking:  (DONE)
-- Secret Classification Router:  (DONE)
-- PII Audit Trail:  (DONE)
-- Raw Payload/Ops Masking: Masking integrated into  and  (DONE)
-- Server/Startup integration: Updated  and  to index audit tables and apply sanitizers.
+- Removed unused imports fixing 6 lint errors in , , , and  (DONE)
+- Secret Rotation Engine & State Machine:  (DONE)
+- Secret Rotation API Endpoints:  (DONE)
+- Alerting Triggers for Rotation:  (DONE)
 
 **Earlier issues found/mentioned but not fixed**
-- None.
+   - None
 
 **Known issue recurrence from previous fork**
-- None. 
+  - None
+  - Status: RESOLVED
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **Role-based Data Masking:** Dynamic scrubbing of PII data in API responses based on user roles (Super Admin sees all, Admin sees partial, No Role sees minimal).
-- **Application-Layer Masking vs Middleware:** Masking is done via Dependency Injection/Application layer rather than raw ASGI Middleware to prevent corrupting GZip compressed responses.
-- **Envelope Encryption Concept:** AWS KMS ready to be used as a master wrapper (KMS1 format) over local secrets.
+- **Strict Rotation State Machine:** Secrets cannot be blindly swapped. They start in , must be validated by real dummy/API calls to reach , and only then can be marked . The previous version is archived, allowing instant rollback.
+- **TenantAwareDBProxy Bypass:** Secret rotation is an infrastructure/ops level task. The agent had to bypass the tenant isolation proxy by using  instead of standard tenant-scoped  access to write versions globally.
 
 **key DB schema**
-- : {secret_path, action, timestamp (TTL 90 days), user_id}
+  - : {secret_path, version, status, payload, created_at, created_by, test_result}
+  - : {secret_path, version, action, timestamp, actor, details}
 
 **changes in tech stack**
-- Added AWS KMS capabilities.
+  - None
 
-**All files of reference**
--  (Defines what is PII and who can see it)
--  (Handles the transformation)
--  (Manages categories of secrets)
--  (Applies masking to raw event tracking)
+**All files of reference** 
+  -  (Core business logic for rotation/rollback)
+  -  (API layer for P1)
+  -  (Contains the DB proxy handling)
+  -  (Ops alerting channels)
 
-**Areas that need refactoring**:
--  (Still monolithic, explicitly delayed by user).
+**Areas that need refactoring**: 
+-  (Explicitly blocked by user until security tasks are done).
 
 **key api endpoints**
 - 
 - 
 - 
+- 
 
-**Critical Info for New Agent**
-1. **Language:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-2. The agent successfully pivoted to a PII Masking and KMS integration focus. Masking is active and 20/20 tests passed via the subagent. 
-3. **NEXT ACTION:** You must proceed to implement the **Secret Rotation Script and Rollback Flow (P1)** and **Selective DB At-Rest Encryption for critical fields (P2)** before attempting any frontend work.
-4. Masking was moved off ASGI middleware into the application layer (Dependency Injection) to avoid crashing GZip responses. Maintain this pattern for future masking modifications.
+**Critical Info for New Agent** 
+- **Language:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
+- **Tenant DB Proxy Issue:** When doing control-plane or global secret tasks, DO NOT use the standard  variable (which automatically injects tenant IDs). You must use  to access the raw database, otherwise you will get a .
+- **Workflow State:** The backend logic for P1 (Rotation) is 100% complete and tested. The next immediate step is to ensure the UI/Ops Panel reflects this rotation data (Dashboard/Visibility), and then move to **P2 (At-Rest DB Encryption)**. Do not proceed to P2 until the Ops panel UI for rotation is confirmed with the user.
 
-**documents and test reports created in this job**
--  (20/20 Passed)
--  (Updated)
+**documents and test reports created in this job** 
+  -  (21/21 Tests Passed)
+  -  (Updated with P1 completion status)
 
-**Last 10 User Messages and any pending HUMAN messages**
-- *User Message:* User provided a highly detailed list of security requirements prioritizing AWS KMS, Secret Classification, PII Masking (Log + API), Secret Rotation with Rollback, and At-Rest Encryption. User strictly deprioritized  refactoring.
-- *Sequential Progress:* The agent planned the tasks, created the PII registry, built the classification router, integrated AWS KMS placeholder logic, fixed GZip middleware errors by moving masking to the application level, ran python linters, successfully tested role-based masking via curl, invoked the testing agent (passed 100%), and finished the session.
-- *Pending Human Messages:* None.
+**Last 10 User Messages and any pending HUMAN messages** 
+ - *User Message:* The user thoroughly reviewed the plan, strictly confirmed P1 (Rotation) is the top priority, and outlined strict security bounds: MUST test before activation, MUST have rollback, MUST track expiration, MUST have a UI ops dashboard. Explicitly stated P2 comes *after* P1.
+ - *Agent Progress:* Agent built the backend engine, encountered and fixed a  due to DB proxy middleware, tested the full rotation cycle via shell (verifying failed states, empty credentials, and rollbacks), ran the testing subagent (21/21 success), updated the PRD, and called finish.
+ - *Pending Human Messages:* None.
 
 **Project Health Check:**
-- Broken: None
-- Mocked: None
+  - Broken: None
+  - Mocked: None
 
-**3rd Party Integrations**
-- AWS KMS (AWS credentials required via environment variables to activate full envelope encryption).
+**3rd Party Integrations** 
+  - AWS KMS (Encryption Provider)
 
 **Testing status**
-- Testing agent used after significant changes: YES
-- Troubleshoot agent used after agent stuck in loop: NO
-- Test files created: None explicitly created by main agent, but subagent validated. 
-- Known regressions: None.
+  - Testing agent used after significant changes: YES
+  - Troubleshoot agent used after agent stuck in loop: NO
+  - Test files created: None explicitly created by the main agent.
+  - Known regressions: None
 
 **Credentials to test flow:**
-- User: 
-- Password: 
+  - User:  
+  - Password: 
 
 **What agent forgot to execute**
-- The agent effectively handled P0 (KMS logic, Classification, Masking). It has not yet implemented the Rotation script + rollback flow (P1) or At-rest DB encryption (P2), which are the user's next explicit tasks.</analysis>
+- The agent built the full backend logic for Secret Rotation but did not build the **Frontend Ops Panel UI** requested by the user (Ops panelde şu görünmeli: hangi secret aktif, ne zaman döndü, ne zaman dönecek, hangisi expired). This should be addressed or confirmed before completely leaving P1.</analysis>

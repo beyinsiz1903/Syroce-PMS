@@ -17,7 +17,7 @@ import pytest
 import requests
 import yaml
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://security-pii-masking.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://ops-secret-dashboard.preview.emergentagent.com").rstrip("/")
 
 
 class TestHealthAndAuth:
