@@ -98,7 +98,7 @@ async def get_raw_payload(
     Essential for debugging mapping errors, validation failures, and provider bugs.
     PII fields are masked by default — unmask requires super_admin + audit trail.
     """
-    from security.pii_registry import mask_dict, scrub_text
+    from security.pii_registry import mask_dict
 
     doc = await db.webhook_raw_payloads.find_one(
         {"correlation_id": correlation_id},

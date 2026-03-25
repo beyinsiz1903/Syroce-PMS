@@ -7,7 +7,7 @@ and masking rules, providing role-based access control.
 """
 from typing import Any
 
-from security.pii_registry import PII_FIELDS, MaskLevel, mask_dict as pii_mask_dict
+from security.pii_registry import mask_dict as pii_mask_dict
 
 # Fields that should always be masked in output (kept for backward compat)
 _MASK_FIELDS = {

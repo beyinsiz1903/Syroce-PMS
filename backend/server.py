@@ -142,16 +142,10 @@ try:
 except Exception:
     pass
 
-# PII Masking Middleware — automatic response masking
-try:
-    from security.pii_masking_middleware import PIIMaskingMiddleware
-    # PII masking disabled at middleware level to avoid GZip conflicts.
-    # Masking is applied at the application layer via security/sensitive_output.py
-    # and security/pii_registry.py which are used by individual endpoints.
-    # app.add_middleware(PIIMaskingMiddleware)
-    logger.info("PII Masking module loaded (application-layer masking active)")
-except Exception as _pii_err:
-    logger.warning(f"PII Masking module load skipped: {_pii_err}")
+# PII masking disabled at middleware level to avoid GZip conflicts.
+# Masking is applied at the application layer via security/sensitive_output.py
+# and security/pii_registry.py which are used by individual endpoints.
+logger.info("PII Masking: application-layer masking active (middleware bypassed)")
 
 # ── Global exception handler for Exely provider errors ──────────────
 from fastapi import Request
