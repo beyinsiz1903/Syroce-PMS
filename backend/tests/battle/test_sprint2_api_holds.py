@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import pytest
 
-API_URL = os.environ.get("VITE_BACKEND_URL", "https://kms-vault-1.preview.emergentagent.com")
+API_URL = os.environ.get("VITE_BACKEND_URL", "https://drift-detection-mock.preview.emergentagent.com")
 
 # Use unique year range per test run to avoid date collisions
 _RUN_TAG = random.randint(2100, 9999)

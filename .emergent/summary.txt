@@ -1,48 +1,52 @@
 <analysis>**original_problem_statement:** 
-User intervened with a highly detailed priority list focusing strictly on security, secret governance, and PII masking. The user explicitly delayed frontend refactoring tasks () until security is handled. 
-**PRODUCT REQUIREMENTS (User's revised plan):**
-*   **P0 (Completed):** AWS KMS integration, log + ops + payload masking, secret classification, and access audit trail.
-*   **P1 (Completed):** Secret rotation scripts + rollback flows and Frontend Ops Panel for operational visibility (dashboard, audit, overdue statuses).
-*   **P2 (Current):** Selective at-rest DB encryption for critical PII (phone, email, passport, payment data). 
+The user explicitly changed priorities, parking the previous PII/Security tasks (P2 Phase 3) to focus entirely on **HotelRunner Integration Parity**. The goal is to bring the HotelRunner integration up to the exact same enterprise-grade level as the existing Exely integration. 
+
+**PRODUCT REQUIREMENTS (HotelRunner Parity):**
+*   **Phase 1 (Auth):** Validate credentials using the existing secret rotation engine (KMS + rollback), not plain config.
+*   **Phase 2 (Read Path E2E):** Ingest reservations via webhooks (new, modify, cancel, duplicate delivery handling, delayed ack). Must use a realistic mock server first. **Constraint:** Keep *deferred room assignment* () intact; do not hard-assign rooms on ingest.
+*   **Phase 3 (Reconciliation):** Snapshot validation and drift detection before opening the write path.
+*   **Phase 4 (Write Path):** ARI push, rates, availability, stop sale, restrictions (CTA/CTD, min/max stay).
+*   **Phase 5 (Ops Dashboard):** Provider health and parity check.
 
 **User's preferred language**: Turkish (**Yanıtlarda kesinlikle TÜRKÇE kullanın.**)
 
 **what currently exists?** 
-A robust PII Masking, Secret Governance, and Secret Rotation system with a fully functional Frontend Ops Panel. In the latest session, **P2 Phase 1 & 2 Selective At-Rest Encryption** was successfully implemented. Core PII fields (, , ) are now stored via AES-256-GCM + AWS KMS wrapping. A dual-read mechanism ensures legacy plaintext data is still transparently readable. A batch migration API exists and was successfully tested to backfill existing plaintext guest records to the encrypted format. The frontend Ops Panel was updated with a  to monitor encryption coverage and trigger migrations manually.
+HotelRunner Parity Phase 1 (Auth) and Phase 2 (Read Path E2E) are completely implemented. A realistic Mock Server for HotelRunner is running locally on port 9999 via supervisor. The backend provider router routes to this mock when . The  successfully supports HotelRunner credential validation. The ingest pipeline correctly parses HotelRunner payloads, handles idempotency (duplicates), and correctly generates  events (create, modify, cancel) without breaking the deferred room assignment rule.
 
 **Last working item**:
-    - Last item agent was working: P2 Phase 1 & 2 Selective At-Rest DB Encryption (Backend field encryption service, dual-read, encrypted-write, HMAC-SHA256 hash indexes, backfill migration API, and Frontend Ops Panel integration).
-    - Status: COMPLETED
+    - Last item agent was working: HotelRunner Phase 1 (Auth integration) and Phase 2 (Mock Server creation + Read Path/Webhook Ingest Pipeline E2E testing). 
+    - Status: USER VERIFICATION PENDING
     - Agent Testing Done: Y
-    - Which testing method agent to use? NA (Testing agent  was used and passed with 100% success for backend and frontend).
+    - Which testing method agent to use? NA (Testing agent  was used alongside a custom 27-step E2E python test script. All passed 100%).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-  - None.
+  - None. Code is clean and passing all tests.
 
 **In progress Task List**: 
-  - None.
+  - None. Phase 1 & 2 are complete. Ready for Phase 3.
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - P2 Phase 3 (Priority P0): Plaintext cleanup & Strict Mode. Force encrypted-only mode and drop fallback support for plaintext reads once everything is migrated.
-    - P2 Extension (Priority P1): Extend Field Encryption to other fields (address, dob, emergency contact, sensitive guest notes) & other collections (, ). The UI panel is already equipped to handle these migrations.
+    - HotelRunner Phase 3 (Priority P0): Reconciliation & Snapshot Validation. Verify that the reconciliation engine correctly detects drift between PMS and the HotelRunner mock server.
+    - HotelRunner Phase 4 (Priority P1): Write Path Implementation (ARI push, Stop Sale, CTA/CTD, Min/Max stay).
+    - HotelRunner Phase 5 (Priority P1): Ops Dashboard for provider health visibility.
+    - HotelRunner DRY-RUN Exit (Priority P2): Transition from mock to real credentials in a controlled manner (Read-only -> limited write -> full ARI).
     
     Future Tasks:
-    - P3:  Decomposition (Strictly AFTER all security/PII tasks are done).
+    - PII Field Encryption P2 Phase 3 (Strict Mode enforcement).
+    -  Decomposition (Strictly AFTER core business/security logic is done).
     - Legacy migration / cleanup jobs.
-    - Motor -> pymongo async migration.
-    - HMR guard decommission.
 
 **Completed work in this session**
-- Removed unused  import fixing a linting error in  (DONE)
-- Built backend  with AWS KMS envelope encryption, hash index support, and dual-read/encrypted-write logic for Guest CRUD (DONE)
-- Built backend batch migration API endpoint () and progress monitoring (DONE)
-- Built frontend  and added it to  (DONE)
-- Successfully tested and migrated 100% of the  collection (266 documents) into encrypted format (DONE)
+- Created realistic HotelRunner  supporting errors, delays, and duplicates, managed via supervisor on port 9999 (DONE)
+- Integrated HotelRunner auth connectivity checks into  (DONE)
+- Fixed payload mapping bugs in  and  to match real HotelRunner API string/dict structures (DONE)
+- Validated end-to-end webhook ingest pipeline (New, Duplicate, Modify, Cancel) verifying  creation and deferred room assignments (DONE)
+- Created and executed  proving 27/27 provider parity cases (DONE)
 
 **Earlier issues found/mentioned but not fixed**
-   - Issue 1:  in  around line 42 on backend startup. This is an existing unrelated issue that doesn't block core operations.
+   - None
 
 **Known issue recurrence from previous fork**
   - None
@@ -51,16 +55,17 @@ A robust PII Masking, Secret Governance, and Secret Rotation system with a fully
 
 
 **Key Technical Concepts**
-- **Field-Level Encryption:** Uses AES-256-GCM. Ciphertext is prefixed with .
-- **AWS KMS Envelope Wrapping:** The primary keys are wrapped using AWS KMS.
-- **Dual-Read Architecture:** The system attempts to decrypt values prefixed with . If the prefix is missing, it assumes legacy plaintext and returns it normally.
-- **Searchability:** Generates HMAC-SHA256 hash indexes (e.g., ) saved alongside encrypted fields to allow exact-match queries.
+- **Realistic Mocking:** The local mock server doesn't just return 200s; it simulates 429s, duplicates, and malformed data to stress-test the pipeline.
+- **Idempotent Ingest:** Webhooks are ingested, mapped via , and converted into  tracking the exact lifecycle (versioning, modify, cancel) without double-booking.
+- **Deferred Room Assignment:** Crucial logic: Webhooks only identify the  (e.g., STD). Actual physical room assignment happens later during check-in/ops.
 
 **key DB schema**
-  - : {..., email (encrypted string or plaintext), phone, id_number, , , , , }
+  - : Stores raw webhook payloads.
+  - : Processed canonical reservations with versions and status.
+  - : Provider to PMS room type mapping.
 
 **changes in tech stack**
-  - None
+  - Added a secondary local ASGI server for mocking HotelRunner () running continuously via supervisor.
 
 **All files of reference** 
   - 
@@ -68,38 +73,36 @@ A robust PII Masking, Secret Governance, and Secret Rotation system with a fully
   - 
   - 
   - 
-  - 
 
 **Areas that need refactoring**: 
--  (Explicitly blocked by user until security tasks are done).
+-  (Explicitly blocked by user until backend integrations/security tasks are done).
 
 **key api endpoints**
-- 
-- 
-- 
-- 
-- 
+-  (Ingest pipeline entry)
+-  (Rotation engine)
 
 **Critical Info for New Agent** 
 - **Language:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-- **Project State:** Phase P2 (Phases 1 & 2) At-Rest PII Encryption is completely finished and fully verified via the testing agent. The  collection was successfully encrypted.
-- **Next Immediate Task:** Proceed to either **P2 Phase 3 (Strict Mode)** or expanding encryption scope to  and . Use  to confirm whether the user wants to enforce strict mode (removing plaintext read fallbacks) now, or if they prefer to migrate the  and  collections first using the already integrated frontend ops dashboard tools.
+- **User's Strict Rule:** Do NOT hard-assign physical rooms upon webhook receipt. The ingest pipeline must stay at the  level ( logic) to allow operational flexibility. This was successfully preserved in Phase 2.
+- **Next Immediate Task:** User requested **Phase 3: Reconciliation and Snapshot validation** before writing any real data. Use the Mock Server to generate a snapshot and ensure the PMS detects drift properly. Do not switch to real credentials until the Read Path, Reconciliation, and Write Path are all proven against the mock.
 
 **documents and test reports created in this job** 
-  -  (100% tests passed for field encryption and frontend integration)
-  -  (Updated with P2 Phase 1 & Phase 2 completed tasks)
+  -  (Custom 27-step E2E test report)
+  -  (Subagent verification report)
+  -  (Updated with HotelRunner parity progress)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - *User Message:* Evet, bu plan doğru. P2’ye başlayın. The user provided clear instructions to implement P2 in three phases: 1. Dual-read/encrypted-write setup, 2. Migration scripts/dashboard, 3. Plaintext cleanup/Strict mode. They specified core fields: , , , and .
- - *Agent Action:* Built the backend service, migration routes, and frontend dashboard components. Successfully encrypted the 265 existing  mock DB records using the migration API. Ran  which found and fixed a minor double  prefix issue in the Axios calls of .
- - *Pending Human Messages:* None. Agent completed the task and updated PRD.
+ - *User Message:* The user explicitly instructed to pause PII security work and pivot to completing the HotelRunner integration to achieve parity with Exely. They provided a strict 5-phase plan: 1. Auth, 2. Mock+Read, 3. Recon, 4. Write, 5. Ops. They emphasized deferred room assignments and using a realistic mock server first.
+ - *Agent Action:* Acknowledged the plan. Built the mock server, wired it to the  for auth, fixed payload mappers, and successfully tested the E2E Read Path (Ingest pipeline for Create, Modify, Cancel, Duplicates). Wrote comprehensive tests, ran the testing agent, and updated the PRD. Asked user if they should proceed to Phase 3 (Reconciliation).
+ - *Pending Human Messages:* None. Awaiting user response to start Phase 3.
 
 **Project Health Check:**
   - Broken: None
-  - Mocked: None
+  - Mocked: HotelRunner API (Local ASGI Mock Server on port 9999).
 
 **3rd Party Integrations** 
   - AWS KMS (Encryption Provider)
+  - HotelRunner (Currently Mocked, Pending real implementation)
 
 **Testing status**
   - Testing agent used after significant changes: YES
@@ -112,4 +115,4 @@ A robust PII Masking, Secret Governance, and Secret Rotation system with a fully
   - Password: 
 
 **What agent forgot to execute**
-- Nothing. The agent successfully fulfilled the user's explicit instructions for P2 Phase 1 and 2. Next agent should just confirm the next steps (Phase 3 or extending collection scope).</analysis>
+- Nothing. The agent perfectly executed the user's highly specific Phase 1 and Phase 2 instructions for HotelRunner parity, including the mock server and deferred room logic constraints.</analysis>
