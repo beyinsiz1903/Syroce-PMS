@@ -1,63 +1,96 @@
 # Syroce PMS — Product Requirements Document
 
-## Problem Statement
-Hotel management system with significant technical debt requiring systematic refactoring.
+## Original Problem Statement
+Address significant technical debt in the Syroce Hotel PMS system. The primary focus is the staged decomposition of the monolithic `routers/pms.py` file to improve maintainability and reduce complexity, alongside hardening CI/CD, tenant isolation, and observability.
 
-## Architecture Overview
-- **Backend**: FastAPI + MongoDB
-- **Frontend**: Vite + React
-- **DB**: MongoDB (MONGO_URL from env)
+## User Personas
+- **Hotel Staff**: Front desk, housekeeping, management
+- **System Administrators**: DevOps, platform engineers
+- **Developers**: Maintaining and extending the PMS codebase
 
-## PMS Router Decomposition Map
+## Core Requirements
+1. **P0**: Staged decomposition of `pms.py` monolith
+2. **P1**: Load + chaos testing to prove reliability under stress
+3. **P1**: Frontend decomposition (`App.jsx`)
+4. **P2**: CI/CD hardening (Ruff UP rules, stricter linting)
+5. **P2**: Load + chaos testing expansion
 
-### Completed
-| Module | File | Routes | Stage |
-|--------|------|--------|-------|
-| Rooms & Companies | `pms_rooms.py` | 14 routes | Stage 1 |
-| Guests | `pms_guests.py` | Guest CRUD | Stage 1 |
-| Bookings | `pms_bookings.py` | 10 routes (CRUD, approve/reject, multi-room) | Stage 2 |
-| Dashboard | `pms_dashboard.py` | 3 routes (dashboard, alerts, alternatives) | Stage 2 |
-| Shared Helpers | `pms_shared.py` | `get_guest_name` (pure helper) | Stage 2 |
+## Architecture
+```
+/app/backend/routers/
+├── pms.py                  # 21 lines — backward-compat import only
+├── pms_availability.py     # 267 lines — Room blocks + availability (CRITICAL)
+├── pms_reservations.py     # 579 lines — Reservation details, search, mutations
+├── pms_room_details.py     # 213 lines — Room notes, minibar, enhanced details
+├── pms_room_queue.py       # 212 lines — Early arrival queue management
+├── pms_services.py         # 283 lines — Staff tasks, allotments, groups, setup
+├── pms_bookings.py         # 568 lines — Booking CRUD (Stage 2)
+├── pms_dashboard.py        # 276 lines — Dashboard endpoints (Stage 2)
+├── pms_rooms.py            # 611 lines — Room CRUD (pre-existing)
+├── pms_guests.py           # 164 lines — Guest CRUD (pre-existing)
+└── pms_shared.py           # 21 lines — Pure helper functions
+```
 
-### Remaining in pms.py (~1384 lines, 32 routes)
-| Domain | Routes | Stage |
-|--------|--------|-------|
-| Room Services | 2 | Stage 3 |
-| Room Blocks | 4 | Stage 3 |
-| Availability | 1 + helper | Stage 3 (CRITICAL) |
-| Staff Tasks | 3 | Stage 3 |
-| Allotment Contracts | 3 | Stage 3 |
-| Group Reservations | 2 | Stage 3 |
-| Setup Status | 1 | Stage 3 |
-| Room Details Enhanced | 3 + 2 models | Stage 3 |
-| Reservation Details | 8 + 4 models | Stage 3 |
-| Room Queue | 5 | Stage 3 |
+## What's Been Implemented
 
-## CI/CD Status
-- Pipeline hardened: `|| true` removed from critical steps
-- Ruff rules: W, C4 enabled; B008 ignored for FastAPI Depends
-- Node.js: 22 in CI
-- Security: pygments CVE documented in SECURITY_IGNORE_REGISTRY.md
+### Stage 1 (Pre-existing)
+- Room and guest modules extracted
+- CI/CD pipeline with sandbox regression gate
+- Tenant isolation middleware
+- Wire failure tracking
 
-## Regression Test
-- `test_pms_route_wiring.py`: 59 routes verified after each stage
-- `test_pms_decomposition_stage2.py`: 22 API integration tests
+### Stage 2 (Previous Session)
+- Extracted `pms_bookings.py` (10 booking routes)
+- Extracted `pms_dashboard.py` (3 dashboard routes)
+- Created `pms_shared.py` for pure helpers
+- Reduced pms.py from 2934 to 1384 lines
 
-## Test Credentials
-- Email: `demo@hotel.com`, Password: `demo123`
+### Stage 3 (Current Session — COMPLETE)
+- **Load + Chaos Testing Framework** (18 tests):
+  - Availability invariant tests (concurrent reads, booking impact)
+  - Booking integrity tests (double-booking prevention, count accuracy)
+  - Concurrent mutation tests (room blocks, staff tasks, dashboard load)
+- **Bug Fixes**:
+  - ObjectId serialization in `/api/pms/allotment-contracts` (POST)
+  - ObjectId serialization in `/api/pms/group-reservations` (POST)
+- **Sub-stage 3a**: Extracted `pms_services.py` (11 routes: room-services, staff-tasks, allotments, groups, setup)
+- **Sub-stage 3b**: Extracted `pms_room_queue.py` (5 queue routes)
+- **Sub-stage 3c**: Extracted `pms_room_details.py` (3 room detail routes + models)
+- **Sub-stage 3d**: Extracted `pms_reservations.py` (8 reservation routes + models)
+- **Sub-stage 3d-final**: Extracted `pms_availability.py` (5 routes: blocks + availability)
+- **pms.py reduced from 1384 to 21 lines** (backward-compat import only)
+- **Total: 116/116 tests pass** (59 route wiring + 39 functional + 18 load)
 
-## Backlog
+## Test Coverage
+- `/app/backend/tests/test_pms_route_wiring.py` — 59 route reachability tests
+- `/app/backend/tests/test_pms_decomposition_stage3.py` — 39 functional regression tests
+- `/app/backend/load_tests/` — 18 load/chaos tests
+- `/app/test_reports/iteration_155.json` — Full test report
 
-### P0 — Next
-- **Stage 3 Decomposition**: Extract reservations, availability (CRITICAL), queue, services
-  - Availability extraction needs expanded test coverage BEFORE extraction
-  - Risk: overbooking, inventory drift if done wrong
+## Prioritized Backlog
+
+### P0 (Next)
+- None — Stage 3 decomposition is complete
 
 ### P1
-- Frontend Refactoring: Monolithic `App.jsx` decomposition
-- Architectural Debt: 3 exceptions in `check_import_boundaries.py`
-- CI/CD Ruff Wave UP: pyupgrade rules
+- Frontend refactoring: Decompose monolithic `App.jsx`
+- CI/CD hardening: Apply `pyupgrade` (UP) Ruff rules
+- Fix pre-existing `room-move-history` endpoint bug (optional params handling)
 
 ### P2
-- Load & Chaos Testing
-- Pre-existing bugs: room-move-history optional param handling, _id projection missing in several reservation routes
+- Load + chaos testing expansion (Locust-based sustained load)
+- Resolve 3 known exceptions in `check_import_boundaries.py`
+- Architectural debt cleanup
+
+### P3
+- `pms_shared.py` governance: Monitor for scope creep (pure helpers only)
+- Performance optimization for availability queries under high concurrency
+
+## Constraints
+- `pms_shared.py`: ONLY pure helper functions. No business logic, no DB access, no state mutation.
+- All routes must be prefixed with `/api`
+- Room blocks and availability endpoints require `Idempotency-Key` header for POST operations
+- MongoDB `_id` must never leak into API responses
+
+## Credentials
+- Test user: `demo@hotel.com` / `demo123`
