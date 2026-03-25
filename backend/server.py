@@ -317,6 +317,14 @@ try:
 except Exception as _rot_err:
     logger.warning(f"Secret Rotation router skipped: {_rot_err}")
 
+# Field-Level Encryption — At-rest PII encryption ops
+try:
+    from security.field_encryption_router import router as field_enc_router
+    app.include_router(field_enc_router, tags=["Security — Field Encryption"])
+    logger.info("  ✅ Field Encryption router loaded")
+except Exception as _fenc_err:
+    logger.warning(f"Field Encryption router skipped: {_fenc_err}")
+
 
 # ── Lifecycle events ────────────────────────────────────────────────
 from startup import on_shutdown, on_startup  # noqa: E402

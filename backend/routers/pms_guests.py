@@ -1,6 +1,6 @@
 """
 PMS Guests Router — Extracted from routers/pms.py (Stage 1 decomposition)
-Guest CRUD and search.
+Guest CRUD and search with field-level PII encryption.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,6 +9,12 @@ from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import Guest, GuestCreate, User
+
+try:
+    from security.field_encryption import get_field_encryption_service
+    _fenc = get_field_encryption_service()
+except Exception:
+    _fenc = None
 
 try:
     from cache_manager import cached
@@ -20,6 +26,22 @@ except ImportError:
 
 router = APIRouter(prefix="/api", tags=["pms"])
 
+_GUEST_COLLECTION = "guests"
+
+
+def _encrypt_guest(doc: dict) -> dict:
+    """Encrypt PII fields before DB write."""
+    if _fenc:
+        return _fenc.encrypt_document(doc, collection=_GUEST_COLLECTION)
+    return doc
+
+
+def _decrypt_guest(doc: dict) -> dict:
+    """Decrypt PII fields after DB read."""
+    if _fenc and doc:
+        return _fenc.decrypt_document(doc, collection=_GUEST_COLLECTION)
+    return doc
+
 
 @router.post("/pms/guests", response_model=Guest)
 async def create_guest(
@@ -30,6 +52,7 @@ async def create_guest(
     guest = Guest(tenant_id=current_user.tenant_id, **guest_data.model_dump())
     guest_dict = guest.model_dump()
     guest_dict['created_at'] = guest_dict['created_at'].isoformat()
+    guest_dict = _encrypt_guest(guest_dict)
     await db.guests.insert_one(guest_dict)
     return guest
 
@@ -47,6 +70,8 @@ async def get_guests(
     # Map database fields to model fields
     guests = []
     for guest in guests_raw:
+        guest = _decrypt_guest(guest)
+
         # Combine first_name and last_name into name if they exist
         if 'first_name' in guest and 'last_name' in guest:
             guest['name'] = f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip()
@@ -78,22 +103,42 @@ async def search_guests(
 
     tenant_id = current_user.tenant_id
     regex = {"$regex": q, "$options": "i"}
-    query = {
-        "tenant_id": tenant_id,
-        "$or": [
+
+    # Build search conditions supporting both encrypted and plaintext fields
+    if _fenc:
+        encrypted_conditions = _fenc.build_search_query(
+            collection=_GUEST_COLLECTION,
+            search_fields=["email", "phone", "id_number", "passport_number"],
+            search_value=q,
+        )
+        name_conditions = [
             {"name": regex},
             {"first_name": regex},
             {"last_name": regex},
-            {"email": regex},
-            {"phone": regex},
-            {"id_number": regex},
-            {"passport_number": regex},
-        ],
-    }
+        ]
+        query = {
+            "tenant_id": tenant_id,
+            "$or": name_conditions + encrypted_conditions,
+        }
+    else:
+        query = {
+            "tenant_id": tenant_id,
+            "$or": [
+                {"name": regex},
+                {"first_name": regex},
+                {"last_name": regex},
+                {"email": regex},
+                {"phone": regex},
+                {"id_number": regex},
+                {"passport_number": regex},
+            ],
+        }
+
     guests_raw = await db.guests.find(query, {"_id": 0}).sort("name", 1).limit(limit).to_list(limit)
 
     results = []
     for g in guests_raw:
+        g = _decrypt_guest(g)
         if "first_name" in g and "last_name" in g:
             g["name"] = f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
         elif "name" not in g:
@@ -123,6 +168,7 @@ async def get_guest_by_id(
     )
     if not guest:
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
+    guest = _decrypt_guest(guest)
     if "first_name" in guest and "last_name" in guest:
         guest["name"] = f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip()
     elif "name" not in guest:
@@ -153,6 +199,10 @@ async def update_guest(
     update_fields = {k: v for k, v in data.items() if k in allowed}
     if not update_fields:
         raise HTTPException(status_code=400, detail="Guncellenecek alan bulunamadi")
+
+    # Encrypt PII fields in the update
+    update_fields = _encrypt_guest(update_fields)
+
     await db.guests.update_one(
         {"id": guest_id, "tenant_id": current_user.tenant_id},
         {"$set": update_fields},
@@ -160,4 +210,4 @@ async def update_guest(
     updated = await db.guests.find_one(
         {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
     )
-    return updated
+    return _decrypt_guest(updated)

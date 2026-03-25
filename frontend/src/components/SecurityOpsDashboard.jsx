@@ -11,6 +11,7 @@ import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
 import { RotationOpsPanel } from "./RotationOpsPanel";
+import { FieldEncryptionPanel } from "./FieldEncryptionPanel";
 
 function SecretHealthCard({ data }) {
   if (!data) return <Skeleton className="h-40 bg-zinc-800" />;
@@ -361,6 +362,9 @@ export function SecurityOpsDashboard() {
 
       {/* Secret Rotation Operations Panel */}
       <RotationOpsPanel />
+
+      {/* Field-Level Encryption Panel */}
+      <FieldEncryptionPanel />
     </div>
   );
 }

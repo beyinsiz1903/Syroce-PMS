@@ -1,0 +1,108 @@
+{
+  "summary": "Iteration 161: P2 At-Rest PII Field Encryption - Full E2E testing. Backend APIs all working correctly (status, config, progress, audit, ensure-indexes, migrate). Frontend FieldEncryptionPanel had a bug with double /api prefix in axios calls - FIXED. Panel now correctly displays encryption coverage: guests 100% (268/268), users 0% (0/154), bookings 0% (0/3100). Guest CRUD with encryption working: create, read, search, update all decrypt PII transparently.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Login page", "issues": ["i18n translation keys showing as raw keys (common.welcome, auth.signIn, etc.) - pre-existing issue"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/pytest_field_encryption_api.xml",
+    "/app/backend/tests/test_field_encryption_api.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "FIXED: FieldEncryptionPanel.jsx had double /api prefix in axios calls (/api/ops/... should be /ops/... since axios baseURL already includes /api)",
+    "Backend field_encryption.py correctly implements AES-256-GCM encryption with HMAC-SHA256 search hashes",
+    "Dual-read pattern working: encrypted values decrypted transparently, plaintext returned as-is",
+    "Hash indexes (_hash_email, _hash_phone, etc.) enable exact-match search on encrypted fields",
+    "Migration progress tracked in field_encryption_progress collection",
+    "Audit trail recorded in field_encryption_audit collection"
+  ],
+  "updated_files": [
+    "/app/frontend/src/components/FieldEncryptionPanel.jsx"
+  ],
+  "success_rate": {
+    "backend": "100% - 13 passed, 2 skipped (no non-admin user for access control tests)",
+    "frontend": "100% - All UI components render correctly after fix"
+  },
+  "test_credentials": "demo@hotel.com / demo123 (super_admin role)",
+  "seed_data_creation": "Created TEST_ prefixed guests for encryption testing",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 161 verified P2 At-Rest PII Field Encryption feature. Backend APIs tested: GET /api/ops/field-encryption/status (returns coverage per collection), GET /api/ops/field-encryption/config (returns encryption config), POST /api/ops/field-encryption/ensure-indexes (creates hash indexes), POST /api/ops/field-encryption/migrate/{collection} (migrates plaintext data), GET /api/ops/field-encryption/progress (migration progress), GET /api/ops/field-encryption/audit (audit trail). Guest CRUD tested: POST/GET/PUT /api/pms/guests with transparent encryption/decryption. Frontend FieldEncryptionPanel fixed and working - displays coverage bars, migrate buttons, audit trail. Current encryption status: guests 100% (268/268), users 0% (0/154), bookings 0% (0/3100), reservations 0% (0/0).",
+  "verified_features": {
+    "backend_apis": {
+      "encryption_status": {
+        "endpoint": "GET /api/ops/field-encryption/status",
+        "status": 200,
+        "collections": {
+          "guests": {"total": 268, "encrypted": 268, "coverage": "100%"},
+          "users": {"total": 154, "encrypted": 0, "coverage": "0%"},
+          "bookings": {"total": 3100, "encrypted": 0, "coverage": "0%"},
+          "reservations": {"total": 0, "encrypted": 0, "coverage": "0%"}
+        }
+      },
+      "encryption_config": {
+        "endpoint": "GET /api/ops/field-encryption/config",
+        "status": 200,
+        "guest_fields": ["email", "phone", "phone_number", "mobile", "id_number", "passport_number", "tc_kimlik", "address", "date_of_birth", "credit_card", "card_number", "iban"]
+      },
+      "ensure_indexes": {
+        "endpoint": "POST /api/ops/field-encryption/ensure-indexes",
+        "status": 200
+      },
+      "migration_progress": {
+        "endpoint": "GET /api/ops/field-encryption/progress",
+        "status": 200
+      },
+      "audit_trail": {
+        "endpoint": "GET /api/ops/field-encryption/audit",
+        "status": 200
+      },
+      "guest_crud": {
+        "create": "POST /api/pms/guests - encrypts PII on write",
+        "read": "GET /api/pms/guests - decrypts PII on read",
+        "search": "GET /api/pms/guests/search?q= - uses hash index for encrypted fields",
+        "update": "PUT /api/pms/guests/{id} - re-encrypts updated PII"
+      }
+    },
+    "frontend_panel": {
+      "component": "FieldEncryptionPanel.jsx",
+      "location": "/control-plane page (within SecurityOpsDashboard)",
+      "elements": {
+        "summary": "Shows overall coverage percentage and document count",
+        "coverage_bars": "Per-collection coverage with progress bars",
+        "migrate_buttons": "Appear for collections with unencrypted documents",
+        "index_button": "Creates hash indexes for searchable fields",
+        "refresh_button": "Reloads encryption status",
+        "audit_toggle": "Expands/collapses audit trail"
+      },
+      "data_testids": [
+        "field-encryption-panel",
+        "field-enc-summary",
+        "coverage-guests",
+        "coverage-users",
+        "coverage-bookings",
+        "coverage-reservations",
+        "migrate-users-btn",
+        "migrate-bookings-btn",
+        "ensure-indexes-btn",
+        "field-enc-refresh-btn",
+        "field-enc-audit-toggle"
+      ]
+    }
+  },
+  "bug_fixed": {
+    "file": "/app/frontend/src/components/FieldEncryptionPanel.jsx",
+    "issue": "Double /api prefix in axios calls causing 404 errors",
+    "root_cause": "axios.defaults.baseURL already includes /api suffix, but component was using /api/ops/... paths",
+    "fix": "Changed /api/ops/field-encryption/... to /ops/field-encryption/... in all axios calls"
+  },
+  "mocked_api_note": "No mocked APIs - all endpoints backed by real MongoDB with AES-256-GCM encryption"
+}
