@@ -42,6 +42,15 @@ Hotel Property Management System - full-stack application with React frontend an
   - Alert integration on rotation failure/rollback
   - Expiration tracking with overdue/warning dashboard
   - 8 new API endpoints, 21/21 tests passed
+- [x] **P1: Rotation Ops Panel Frontend (COMPLETED 2026-03-25)**
+  - Risk Summary Cards: overdue, warning, 7-day rollback, test failures, riskiest connector
+  - Rotation Dashboard table: status, connector, secret path, active version, last rotated, next due, age bar
+  - Audit Trail with expand/collapse (51 entries)
+  - Secret Detail Sheet: status overview, timeline, version history, action buttons
+  - Confirm dialogs for activate/rollback/test (safety controls)
+  - Column sorting (status, connector, age)
+  - All Turkish labels, dark theme, data-testid coverage
+  - Testing: iteration_160 — 100% backend + 100% frontend pass
 - [ ] P1: API response role-based masking (guest endpoints, export/report)
 - [ ] P2: At-rest encryption for critical PII fields (phone, email, passport)
 
@@ -89,6 +98,14 @@ Hotel Property Management System - full-stack application with React frontend an
   - Full audit trail: every rotation action logged with actor, timestamp, version
   - 8 new endpoints under /api/ops/secrets/rotation/
   - 21/21 tests passed (iteration 159)
+- **Rotation Ops Panel Frontend (2026-03-25):**
+  - Risk Summary Cards with 5 risk indicators
+  - Rotation Dashboard table with status, connector, age, due dates
+  - Audit Trail with 51+ entries and expand/collapse
+  - Secret Detail Sheet with version history and action buttons
+  - Confirm dialogs for critical operations (activate/rollback/test)
+  - Column sorting, refresh, Turkish localization
+  - Iteration 160: 100% backend + 100% frontend tests passed
 
 ## Key Files
 - Backend entry: `/app/backend/server.py`
@@ -108,6 +125,7 @@ Hotel Property Management System - full-stack application with React frontend an
   - PII Masking Context: `/app/backend/security/pii_masking_middleware.py`
   - **Rotation Engine: `/app/backend/security/rotation_engine.py`**
   - **Rotation Router: `/app/backend/security/rotation_router.py`**
+  - **Rotation Ops Panel: `/app/frontend/src/components/RotationOpsPanel.jsx`**
 
 ## DB Collections (Security)
 - `secret_rotation_versions` — Version history with encrypted payloads and status
