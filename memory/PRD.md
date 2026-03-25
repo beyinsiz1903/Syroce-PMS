@@ -8,20 +8,34 @@ Hotel Property Management System - full-stack application with React frontend an
 
 ## Project Priorities (User-Defined)
 
-### P0 - Go-Live Hardening ✅ COMPLETED
+### P0 - Go-Live Hardening COMPLETED
 - Vite production build optimized
 - Nginx hardened
 - Go-Live Runbook, SLO/SLA, Incident Playbook created
 
-### P1 - Critical Fixes & Improvements ✅ COMPLETED
+### P1 - Critical Fixes & Improvements COMPLETED
 - `room-move-history` endpoint bug fix — schema normalized to canonical fields
 - Load test suite expanded — multi-tenant, failure injection, retry storm, queue backlog, reconciliation
 - Import boundary violations resolved — 3/3 exceptions eliminated
 - CI orphan file guard fix — `create_test_user.py` moved to `scripts/`
 
-### P2 - Code Quality & Refactoring (BACKLOG)
-- Ruff UP rules
-- App.jsx decomposition
+### P2 - Code Quality & Hardening (IN PROGRESS)
+- [x] CI Load Test Integration — 11 curated load tests as CI hard gate
+- [x] Ruff UP Rules (safe wave) — UP006, UP012, UP015, UP017, UP024, UP034, UP041, UP045
+- [ ] Ruff UP Rules (wave 2) — UP035 (deprecated imports), UP042 (StrEnum)
+- [ ] App.jsx decomposition
+
+### P3 - Security & Compliance (UPCOMING)
+- [ ] AWS KMS / HashiCorp Vault integration
+- [ ] PII masking and stress testing
+
+### Backlog
+- Wire failure tracking into import bridge, outbox worker, ARI push engine
+- Legacy DB import migration (~264 imports)
+- Legacy collection cleanup (~489 collections)
+- Motor -> pymongo async migration
+- HMR guard decommission
+- Configure Slack webhook for production alerts
 
 ## Architecture
 - Frontend: React + Vite + Shadcn UI
@@ -35,9 +49,10 @@ Hotel Property Management System - full-stack application with React frontend an
 - Enterprise features (analytics, reports, revenue management)
 - Go-Live Hardening (P0) - completed
 - All P1 critical fixes and improvements - completed
-- Comprehensive load test suite (5 files covering 30+ scenarios)
+- Comprehensive load test suite (5 files, 32 tests, 11 CI-gated)
 - Clean import boundaries with zero violations
-- CI guards: orphan files + import boundaries
+- CI guards: orphan files + import boundaries + load tests
+- Ruff UP safe auto-fix across entire codebase
 
 ## Key Files
 - Backend entry: `/app/backend/server.py`
@@ -56,3 +71,5 @@ Hotel Property Management System - full-stack application with React frontend an
 - BookingAdapter moved to `integrations/booking_adapter.py` (canonical location)
 - Worker health exposed via `core/worker_health.py` facade (layer boundary)
 - Room move history uses canonical fields: from_room_number, to_room_number, moved_at
+- CI load tests use `@pytest.mark.ci_load` marker for selective execution
+- Ruff UP rules applied in safe wave first, noisy rules deferred
