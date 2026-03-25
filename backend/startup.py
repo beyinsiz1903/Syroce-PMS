@@ -47,6 +47,15 @@ async def on_startup(app):
         if os.environ.get("APP_ENV") in ("production", "staging"):
             raise  # Hard fail in production
 
+    # ── PII Audit indexes ───────────────────────────────────────────
+    try:
+        from security.pii_audit import get_pii_audit
+        pii_audit = get_pii_audit()
+        await pii_audit.ensure_indexes()
+        logger.info("PII audit indexes ensured")
+    except Exception as e:
+        logger.warning(f"PII audit index creation error: {e}")
+
     # ── Control Plane Startup Validation ────────────────────────────
     try:
         from controlplane.startup_validator import validate_startup

@@ -36,6 +36,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Attach PII sanitization filter to root logger
+try:
+    from security.log_sanitizer import SanitizedLogFilter
+    for handler in logging.root.handlers:
+        handler.addFilter(SanitizedLogFilter())
+    logger.info("Log sanitization filter attached to all handlers")
+except Exception:
+    pass
+
 # ── Core (single-instance DB, auth) ────────────────────────────────
 from core.database import client, db  # noqa: E402
 from core.helpers import (  # noqa: E402
@@ -132,6 +141,17 @@ try:
     app.add_middleware(RequestTracingMiddleware)
 except Exception:
     pass
+
+# PII Masking Middleware — automatic response masking
+try:
+    from security.pii_masking_middleware import PIIMaskingMiddleware
+    # PII masking disabled at middleware level to avoid GZip conflicts.
+    # Masking is applied at the application layer via security/sensitive_output.py
+    # and security/pii_registry.py which are used by individual endpoints.
+    # app.add_middleware(PIIMaskingMiddleware)
+    logger.info("PII Masking module loaded (application-layer masking active)")
+except Exception as _pii_err:
+    logger.warning(f"PII Masking module load skipped: {_pii_err}")
 
 # ── Global exception handler for Exely provider errors ──────────────
 from fastapi import Request
@@ -286,6 +306,14 @@ try:
     logger.info("  ✅ Wire Status router loaded")
 except Exception as _ws_err:
     logger.warning(f"Wire Status router skipped: {_ws_err}")
+
+# Security Classification & PII Management
+try:
+    from security.classification_router import router as classification_router
+    app.include_router(classification_router, tags=["Security — Classification & PII"])
+    logger.info("  ✅ Security Classification & PII router loaded")
+except Exception as _cls_err:
+    logger.warning(f"Security Classification router skipped: {_cls_err}")
 
 
 # ── Lifecycle events ────────────────────────────────────────────────

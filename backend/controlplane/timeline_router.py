@@ -96,14 +96,19 @@ async def get_raw_payload(
 
     This is the exact bytes/JSON that the OTA sent, stored at webhook entry.
     Essential for debugging mapping errors, validation failures, and provider bugs.
+    PII fields are masked by default — unmask requires super_admin + audit trail.
     """
+    from security.pii_registry import mask_dict, scrub_text
+
     doc = await db.webhook_raw_payloads.find_one(
         {"correlation_id": correlation_id},
         {"_id": 0},
     )
     if not doc:
         return {"error": "Raw payload not found", "correlation_id": correlation_id}
-    return doc
+
+    # Mask PII in raw payloads — ops context, no role-based unmask
+    return mask_dict(doc, user_role="", context="api")
 
 
 @router.get("/raw-payloads/by-external/{external_id}")
@@ -114,13 +119,18 @@ async def get_raw_payloads_by_external_id(
     """Retrieve all raw webhook payloads for a given OTA reservation ID.
 
     Useful when multiple webhooks arrive for the same reservation
-    (create, modify, cancel).
+    (create, modify, cancel). PII fields are masked.
     """
+    from security.pii_registry import mask_dict
+
     docs = await db.webhook_raw_payloads.find(
         {"external_id": external_id},
         {"_id": 0},
     ).sort("received_at", -1).to_list(limit)
-    return {"payloads": docs, "count": len(docs), "external_id": external_id}
+
+    # Mask PII in all raw payloads
+    masked_docs = [mask_dict(d, user_role="", context="api") for d in docs]
+    return {"payloads": masked_docs, "count": len(masked_docs), "external_id": external_id}
 
 
 # ── Catch-all route last ───────────────────────────────────────────
