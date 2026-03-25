@@ -1,121 +1,27 @@
-# CHANGELOG
+# Syroce PMS — Changelog
 
-## [2026-03-23] P1 Sandbox Simulation — Channel Manager Resilience Testing
+## [2026-02-25] Go-Live Hardening (P0)
+- Vite prod build optimized: chunk splitting (vendor-react 219KB, vendor-charts 406KB, vendor-ui 36KB), sourcemap off, es2020 target, 6.9MB total
+- Nginx container config hardened: gzip level 6, security headers, immutable asset caching, proxy buffering, dot-file blocking
+- Created Go-Live Runbook: 8-section operational deploy procedure with rollback matrix
+- Created SLO/SLA: 3-tier model with error budget policy and customer SLA tiers
+- Created Incident Playbook: SEV classification, response procedures, 5 scenario runbooks, post-mortem template
+- Fixed CI: Restored `create_test_user.py` to backend root (CI seed gate was failing)
+- Fixed 4 Ruff lint errors: unused imports in pms_bookings, pms_dashboard, pms_room_queue
 
-### Sandbox Simulation Framework
-- **New**: `/app/backend/channel_manager/application/sandbox_simulation/` — Full resilience test suite
-  - `provider_harness.py`: Synthetic data generators for HotelRunner and Exely providers
-  - `scenarios.py`: 5 resilience scenarios (duplicate delivery, delayed ack, retry storm, stale provider state, modify/cancel race)
-  - `engine.py`: Orchestrator with per-provider fixtures, result aggregation, cleanup
-- **New**: `/app/backend/channel_manager/interfaces/routers/sandbox_router.py` — API endpoints
-  - `POST /api/channel-manager/v2/sandbox/simulate` — Run full simulation
-  - `GET /api/channel-manager/v2/sandbox/results` — List recent results
-  - `GET /api/channel-manager/v2/sandbox/results/{run_id}` — Specific result
-  - `GET /api/channel-manager/v2/sandbox/timeline/{run_id}` — Event timeline
-  - `DELETE /api/channel-manager/v2/sandbox/cleanup/{run_id}` — Cleanup
+## [2026-02-25] pms.py Stage 3 Decomposition (P0)
+- Load & Chaos Testing Framework: 18 tests (availability, booking, mutation concurrency)
+- Fixed 2 ObjectId serialization bugs in allotment_contracts and group_reservations
+- Extracted: pms_services, pms_room_queue, pms_room_details, pms_reservations, pms_availability
+- pms.py reduced from 1384 to 21 lines (backward-compat placeholder)
+- 116/116 tests pass (59 wiring + 39 functional + 18 load)
 
-### HMR Guard Improvements
-- **Feature flag**: `VITE_HMR_GUARD_ENABLED` env var controls HMR reload guard activation
-- **Upstream compat check**: `scripts/check-vite-compat.js` — CI-ready script that detects Vite client changes
+## [Previous] Stage 2 Decomposition
+- Extracted pms_bookings.py (10 routes), pms_dashboard.py (3 routes)
+- Created pms_shared.py for pure helpers
+- pms.py reduced from 2934 to 1384 lines
 
-### Testing
-- 24/24 tests passed (9 unit + 15 API)
-- Both HotelRunner and Exely achieve 100% pass rate (10/10 scenarios)
-- All done criteria met: 0 double inventory, 0 inconsistent state, 0 oversell, reconciliation recovery, deterministic races
-
----
-
-## [2026-03-23] Notification Layer + Auto-Action + Unified Ops View Redesign
-
-### Notification Routing (Config-Driven)
-- **warning** → dashboard only (no external notification)
-- **critical** → dashboard + `ALERT_WEBHOOK_URL` (Slack-compatible webhook, no-op if absent)
-- **severe** → dashboard + `ALERT_WEBHOOK_URL` + `ESCALATION_WEBHOOK_URL` + auto-action trigger
-- Slack Block Kit formatted payload with severity emoji, provider details, runbook link
-
-### Auto-Action Engine
-- **New**: `/app/backend/controlplane/auto_actions.py`
-- Severe drift → triggers existing `ReconciliationEngine.reconcile()` with `trigger_source=auto_action` metadata
-- Guardrails: 15-min cooldown per tenant, eligibility check, single execution per provider/tenant, timeline logging
-- Failed auto-action fires new alert via `AlertingEngine`
-- Full audit trail in `cp_auto_actions` collection + `event_timeline`
-- **Endpoints**: `GET /api/ops/dashboard/auto-actions`, `GET /api/ops/dashboard/ops-kpis`
-
-### Unified Ops View Redesign — "Urunun Kalbi"
-- **Top Row**: Channel Health (alignment, freshness, providers) + Deploy Health (env success rates)
-- **Middle**: Live Drift Alerts (severity badges, auto-heal indicators, acknowledge, runbook links)
-- **Bottom**: KPI Dashboard — Sync Success, MTTR, Push SLA, Auto-Heal stats, DORA mini metrics, Drift Trend chart, DORA × Kanal Korelasyonu, summary footer
-- Every widget has drill-down support + data-testid attributes
-
-### Testing
-- 21/21 backend tests passed (ops-kpis, auto-actions, notification routing, guardrails)
-- 10/10 frontend elements verified, all interactions working
-
----
-
-## [2026-03-23] Drift Threshold Alerting
-
-### Drift Alerting Engine
-- **New**: `/app/backend/controlplane/drift_alerting.py` — threshold-based drift alert engine
-  - 3 severity tiers: warning (1+ drift/15min), critical (3+ room-night drift/15min), severe (post-recon drift)
-  - Alert payload: tenant, providers, drift_count, drift_nights, drift_or_stale, last_reconciliation_result, runbook_link
-  - Cooldown-aware firing (15 min cooldown per severity per tenant)
-  - Webhook relay via existing AlertingEngine
-  - Lifecycle: fire → persist → acknowledge
-- **Endpoints**:
-  - `GET /api/ops/dashboard/drift-alerts` — list with filters
-  - `GET /api/ops/dashboard/drift-alerts/summary` — severity overview
-  - `POST /api/ops/dashboard/drift-alerts/evaluate` — evaluate and fire
-  - `POST /api/ops/dashboard/drift-alerts/{id}/acknowledge` — acknowledge alert
-- **New runbook**: `inventory_drift_detected` — structured resolution for drift incidents
-- **Frontend**: `DriftAlertPanel` in UnifiedOpsView — top-priority alert block with severity badges, acknowledge buttons, runbook links
-
-### Testing
-- 15/15 backend tests passed (drift_alerting_api)
-- All frontend elements verified (DriftAlertPanel, evaluate button, toast notifications)
-
----
-
-## [2026-03-23] Inventory Ledger Alignment + DORA Metrics + Unified Ops View
-
-### Inventory Ledger Alignment (P0 — CRITICAL)
-- **BREAKING CHANGE**: `_detect_inventory_deltas()` in `inventory_sync_service.py` completely rewritten
-  - **Removed**: Old `db.rooms` count - `db.bookings` count computation
-  - **Added**: Reads exclusively from `room_type_inventory` materialized view
-  - **Added**: `_check_inventory_freshness()` method (fresh/recent/stale/empty)
-  - **Added**: Stale view → automatic reconciliation trigger (no fallback)
-  - **Added**: Source tagging on all availability changes (`source: "room_type_inventory"`)
-- **New**: `/app/backend/controlplane/inventory_alignment.py` — alignment computation service
-  - Returns: `alignment_status`, `drift_count`, `drift_nights`, `provider_breakdown`
-  - Writes drift events to `event_timeline` for auditability
-- **Endpoint**: `GET /api/ops/dashboard/inventory-alignment`
-
-### DORA Metrics
-- **New**: `/app/backend/controlplane/dora_metrics.py` — DORA metrics + correlation service
-  - 4 metrics: deployment_frequency, change_failure_rate, MTTR, lead_time
-  - Rating system: elite/high/medium/low/no_data
-  - Correlation layer: DORA × Channel Health cross-reference
-- **Endpoints**: `GET /api/ops/dashboard/dora-metrics`, `GET /api/ops/dashboard/dora-correlation`
-
-### Unified Ops View (Frontend)
-- **New**: `/app/frontend/src/components/UnifiedOpsView.jsx` — decision console
-  - 6 blocks: Alignment, Deploy Health, DORA, Provider Health, Correlation, Recon Queue
-  - Drill-down from each block, auto-refresh 60s
-- **Modified**: `/app/frontend/src/pages/ControlPlane.jsx` — "Ops Merkezi" tab (default)
-
-### Testing
-- 30/30 backend tests passed (12 inventory_ledger_alignment + 18 ops_dashboard)
-- 16/16 frontend elements verified
-- Regression test: confirms no fallback to booking-based computation
-
-### CI/CD Fix
-- Removed duplicate `VITE_BACKEND_URL` from `backend-test` env block in `ci-cd.yml`
-
----
-
-## [Previous Sessions] — CI/CD Hardening & Control Plane (P0 Complete)
-- Standardized CI/CD notifications with GitHub annotations and job summaries
-- Added deploy trend endpoint and Recharts visualization
-- Fixed `booking_availability` import path in `analytics_router.py`
-
-> **Note:** Historical references to `REACT_APP_BACKEND_URL` in older entries reflect the pre-Vite era.
+## [Previous] Stage 1
+- Room and guest modules extracted
+- CI/CD pipeline with sandbox regression gate
+- Tenant isolation middleware

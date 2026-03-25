@@ -9,11 +9,13 @@ Address significant technical debt in the Syroce Hotel PMS system. The primary f
 - **Developers**: Maintaining and extending the PMS codebase
 
 ## Core Requirements
-1. **P0**: Staged decomposition of `pms.py` monolith
-2. **P1**: Load + chaos testing to prove reliability under stress
-3. **P1**: Frontend decomposition (`App.jsx`)
-4. **P2**: CI/CD hardening (Ruff UP rules, stricter linting)
-5. **P2**: Load + chaos testing expansion
+1. **P0 (DONE)**: Staged decomposition of `pms.py` monolith
+2. **P0 (DONE)**: Load + chaos testing to prove reliability under stress
+3. **P0 (DONE)**: Go-Live Hardening (Vite prod build, Nginx, Runbook, SLO/SLA, Incident Playbook)
+4. **P1**: Frontend decomposition (`App.jsx`)
+5. **P1**: `room-move-history` bug fix
+6. **P2**: CI/CD hardening (Ruff UP rules, stricter linting)
+7. **P2**: Import boundary exceptions cleanup
 
 ## Architecture
 ```
@@ -45,21 +47,21 @@ Address significant technical debt in the Syroce Hotel PMS system. The primary f
 - Created `pms_shared.py` for pure helpers
 - Reduced pms.py from 2934 to 1384 lines
 
-### Stage 3 (Current Session — COMPLETE)
-- **Load + Chaos Testing Framework** (18 tests):
-  - Availability invariant tests (concurrent reads, booking impact)
-  - Booking integrity tests (double-booking prevention, count accuracy)
-  - Concurrent mutation tests (room blocks, staff tasks, dashboard load)
-- **Bug Fixes**:
-  - ObjectId serialization in `/api/pms/allotment-contracts` (POST)
-  - ObjectId serialization in `/api/pms/group-reservations` (POST)
-- **Sub-stage 3a**: Extracted `pms_services.py` (11 routes: room-services, staff-tasks, allotments, groups, setup)
-- **Sub-stage 3b**: Extracted `pms_room_queue.py` (5 queue routes)
-- **Sub-stage 3c**: Extracted `pms_room_details.py` (3 room detail routes + models)
-- **Sub-stage 3d**: Extracted `pms_reservations.py` (8 reservation routes + models)
-- **Sub-stage 3d-final**: Extracted `pms_availability.py` (5 routes: blocks + availability)
-- **pms.py reduced from 1384 to 21 lines** (backward-compat import only)
-- **Total: 116/116 tests pass** (59 route wiring + 39 functional + 18 load)
+### Stage 3 (Completed)
+- Load + Chaos Testing Framework (18 tests)
+- Bug Fixes (ObjectId serialization x2)
+- Full decomposition: pms_services, pms_room_queue, pms_room_details, pms_reservations, pms_availability
+- pms.py reduced from 1384 to 21 lines
+- 116/116 tests pass
+
+### Go-Live Hardening (Current Session — COMPLETE)
+- **Vite Prod Build Optimization**: chunk splitting (vendor-react, vendor-charts, vendor-ui), sourcemap disabled, es2020 target, CSS minification, build output 6.9MB
+- **Nginx Container Hardening**: gzip level 6, security headers (Permissions-Policy, X-Frame-Options, X-Content-Type-Options), immutable cache for hashed assets, proxy buffering, dot-file blocking
+- **Go-Live Runbook** (`/app/docs/procedures/GO_LIVE_RUNBOOK.md`): Pre-deploy checklist, DB backup, deploy process, post-deploy smoke test, rollback matrix, communication protocol
+- **SLO/SLA Definitions** (`/app/docs/SLO_SLA.md`): 3-tier SLO model (Critical 99.9%, Operational 99.5%, Auxiliary 99.0%), error budget policy, customer SLA tiers, response time targets
+- **Incident Playbook** (`/app/docs/procedures/INCIDENT_PLAYBOOK.md`): SEV-1 to SEV-4 classification, response procedures, common scenario runbooks, post-mortem template, escalation matrix
+- **CI Fix**: Restored `create_test_user.py` to `backend/` root (was missing from `_legacy/` move)
+- **Lint Cleanup**: Fixed 4 unused imports in pms_bookings, pms_dashboard, pms_room_queue
 
 ## Test Coverage
 - `/app/backend/tests/test_pms_route_wiring.py` — 59 route reachability tests
@@ -70,20 +72,20 @@ Address significant technical debt in the Syroce Hotel PMS system. The primary f
 ## Prioritized Backlog
 
 ### P0 (Next)
-- None — Stage 3 decomposition is complete
+- None — All P0 items complete
 
 ### P1
-- Frontend refactoring: Decompose monolithic `App.jsx`
-- CI/CD hardening: Apply `pyupgrade` (UP) Ruff rules
+- Frontend refactoring: Decompose monolithic `App.jsx` (2132 lines)
 - Fix pre-existing `room-move-history` endpoint bug (optional params handling)
+- Load test expansion
 
 ### P2
-- Load + chaos testing expansion (Locust-based sustained load)
+- CI/CD hardening: Apply `pyupgrade` (UP) Ruff rules
 - Resolve 3 known exceptions in `check_import_boundaries.py`
 - Architectural debt cleanup
 
 ### P3
-- `pms_shared.py` governance: Monitor for scope creep (pure helpers only)
+- `pms_shared.py` governance: Monitor for scope creep
 - Performance optimization for availability queries under high concurrency
 
 ## Constraints

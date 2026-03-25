@@ -120,5 +120,31 @@ export default defineConfig({
   },
   build: {
     outDir: 'build',
+    sourcemap: false,
+    minify: true,
+    target: 'es2020',
+    cssMinify: true,
+    chunkSizeWarningLimit: 500,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/') || id.includes('node_modules/react-router')) {
+            return 'vendor-react';
+          }
+          if (id.includes('node_modules/@tanstack')) {
+            return 'vendor-query';
+          }
+          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-')) {
+            return 'vendor-charts';
+          }
+          if (id.includes('node_modules/axios') || id.includes('node_modules/date-fns')) {
+            return 'vendor-ui';
+          }
+        },
+        assetFileNames: 'assets/[name]-[hash][extname]',
+        chunkFileNames: 'js/[name]-[hash].js',
+        entryFileNames: 'js/[name]-[hash].js',
+      },
+    },
   },
 });
