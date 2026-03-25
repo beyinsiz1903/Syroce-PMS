@@ -30,7 +30,6 @@ from models.schemas import (
     Guest,
     GuestCreate,
     RateOverrideLog,
-    RoomMoveHistory,
     User,
     _ensure_hotel_context,
 )
@@ -439,26 +438,31 @@ async def update_booking(
 @router.post("/pms/room-move-history")
 async def create_room_move_history(
     move_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    """Log room move history for audit trail"""
-    history = RoomMoveHistory(
-        tenant_id=current_user.tenant_id,
-        booking_id=move_data.get('booking_id'),
-        old_room=move_data.get('old_room'),
-        new_room=move_data.get('new_room'),
-        old_check_in=move_data.get('old_check_in'),
-        new_check_in=move_data.get('new_check_in'),
-        reason=move_data.get('reason'),
-        moved_by=move_data.get('moved_by', current_user.name)
-    )
+    """Log room move history for audit trail.
 
-    history_dict = history.model_dump()
-    history_dict['timestamp'] = history_dict['timestamp'].isoformat()
+    Normalises the incoming payload so that every record in
+    ``room_move_history`` uses the canonical field names consumed by
+    the reservation-detail reader (``from_room_number``,
+    ``to_room_number``, ``moved_at``).
+    """
+    record = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "booking_id": move_data.get("booking_id", ""),
+        "from_room_number": move_data.get("old_room"),
+        "to_room_number": move_data.get("new_room"),
+        "from_room_id": move_data.get("from_room_id"),
+        "to_room_id": move_data.get("to_room_id"),
+        "reason": move_data.get("reason", ""),
+        "moved_by": move_data.get("moved_by", current_user.name),
+        "moved_at": move_data.get("timestamp", datetime.now(timezone.utc).isoformat()),
+    }
 
-    await db.room_move_history.insert_one(history_dict)
+    await db.room_move_history.insert_one({**record})
 
-    return {"message": "Room move logged successfully", "history": history}
+    return {"message": "Room move logged successfully", "history": record}
 
 
 @router.post("/pms/bookings/multi-room", response_model=List[Booking])

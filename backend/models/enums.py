@@ -418,3 +418,17 @@ ROLE_PERMISSIONS = {
         Permission.VIEW_HK_BOARD
     ]
 }
+
+
+
+# ── Room Block enums (moved from domains.pms.room_block_models) ──
+
+class BlockType(str, Enum):
+    OUT_OF_ORDER = "out_of_order"
+    OUT_OF_SERVICE = "out_of_service"
+    MAINTENANCE = "maintenance"
+
+class BlockStatus(str, Enum):
+    ACTIVE = "active"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"

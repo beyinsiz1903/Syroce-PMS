@@ -1,21 +1,11 @@
 """
 Room Block Models - Out of Order / Out of Service / Maintenance
 """
-from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
-
-class BlockType(str, Enum):
-    OUT_OF_ORDER = "out_of_order"
-    OUT_OF_SERVICE = "out_of_service"
-    MAINTENANCE = "maintenance"
-
-class BlockStatus(str, Enum):
-    ACTIVE = "active"
-    CANCELLED = "cancelled"
-    EXPIRED = "expired"
+from models.enums import BlockStatus, BlockType
 
 class RoomBlock(BaseModel):
     id: str

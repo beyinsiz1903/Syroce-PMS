@@ -502,7 +502,7 @@ async def push_channel_availability(
     }
 
 
-from domains.pms.booking_adapter import BookingAdapter
+from integrations.booking_adapter import BookingAdapter
 
 
 @router.post("/channel-manager/update-rates")

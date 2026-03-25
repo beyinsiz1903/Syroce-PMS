@@ -37,11 +37,7 @@ BOUNDARY_RULES = [
 ]
 
 # Known exceptions: existing cross-boundary imports tracked for future cleanup
-KNOWN_EXCEPTIONS = frozenset({
-    ("domains/channel_manager/router.py", 30),  # imports BlockStatus from domains.pms
-    ("domains/revenue/analytics_router.py", 505),  # imports BookingAdapter from domains.pms
-    ("routers/system_health_normalized.py", 98),  # imports worker_runtime_service from workers
-})
+KNOWN_EXCEPTIONS = frozenset()
 
 DOMAIN_SELF_IMPORT = re.compile(r"from domains\.(\w+)")
 

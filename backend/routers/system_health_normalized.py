@@ -95,9 +95,9 @@ async def normalized_channel_manager(current_user: User = Depends(get_current_us
 async def normalized_workers(current_user: User = Depends(get_current_user)):
     """Normalized worker/queue health from real worker runtime."""
     try:
-        from workers.worker_runtime_service import worker_runtime_service
+        from core.worker_health import get_queue_health
         ctx = OperationContext.from_user(current_user)
-        result = await worker_runtime_service.get_queue_health(ctx)
+        result = await get_queue_health(ctx)
         data = result.data or {}
 
         health = data.get("health", "healthy")
