@@ -1,5 +1,30 @@
 # Syroce PMS — Changelog
 
+## [2026-03-25] AWS KMS + PII Masking + Secret Classification (P3 Security)
+- Implemented PII Registry with 31 field definitions across 4 categories (identity, contact, financial, authentication)
+  - Role-based masking: super_admin sees all, admin sees contact info, others see masked data
+  - Passwords ALWAYS masked regardless of role
+  - 4 masking levels: full, partial, hash, none
+- AWS KMS Envelope Encryption provider (`KMS1:` format)
+  - Uses KMS GenerateDataKey for envelope encryption
+  - AES-256-GCM local encryption with KMS-managed data keys
+  - Gracefully reports unavailable when AWS_KMS_KEY_ARN not configured
+- Secret Classification system with 7 types and lifecycle rules
+  - jwt_app, connector, webhook, encryption, third_party, database, internal
+  - Each type has rotation_max_days, rotation_warning_days, auto_rotation flags
+- Enhanced Log Sanitizer with SanitizedLogFilter
+  - Auto-attached to root logger handlers on startup
+  - Expanded regex patterns (email, phone, cards, JWT, AWS keys, MongoDB URIs, etc.)
+  - Fixed false positives: UUID patterns no longer matched as phone numbers
+- PII Access Audit trail (MongoDB collection: pii_access_audit, 180-day TTL)
+- PII Anomaly detection for excessive unmask patterns
+- 8 new API endpoints under /api/ops/:
+  - GET /api/ops/pii/policy, /audit, /anomalies, /metrics
+  - GET /api/ops/secrets/classification, /inventory
+  - GET /api/ops/kms/status
+- Raw webhook payload PII masking in timeline router
+- Testing: 20/20 tests passed (iteration_158)
+
 ## [2026-03-25] CI Load Test Integration + Ruff UP Auto-fix (P2)
 - Integrated 11 curated load tests into CI pipeline as a hard gate job
   - New `load-test` job in `ci-cd.yml` with MongoDB + Redis services
