@@ -1,70 +1,100 @@
 <analysis>**original_problem_statement:**
-The user's initial goal was to decompose the frontend monolith . However, after the successful decomposition of the backend, the user **re-prioritized the project roadmap**. The immediate goal (P0) shifted to Go-Live Hardening to prepare the application for a production launch. Refactoring  was demoted in priority.
+The user's initial goal was to address the P1 priority tasks established after the Go-Live Hardening phase. This involved fixing a critical bug, expanding the testing suite, and cleaning up architectural debt.
 
-**PRODUCT REQUIREMENTS (Revised by User):**
-1.  **P0 - Go-Live Hardening:**
-    *   Optimize the Vite production build and serve it via a hardened Nginx.
-    *   Create a  for deployment procedures.
-    *   Define  for monitoring and customer promises.
-    *   Create an  for handling production issues.
-2.  **P1 - Critical Fixes & Improvements:**
-    *   Fix the pre-existing  endpoint bug.
-    *   Expand the load testing suite.
-    *   Clean up architectural  exceptions.
-3.  **P2 - Code Quality & Refactoring:**
-    *   Apply stricter  rules.
-    *   Begin the  decomposition.
+**PRODUCT REQUIREMENTS (P1 Phase):**
+1.  **🔴  bug fix (IMMEDIATE):** Resolve an operational bug causing data inconsistency in the room move audit trail.
+2.  **🔴 Load test suite expansion (MOST CRITICAL):** Enhance the existing load tests to cover more realistic and stressful scenarios, including multi-tenancy and failure injection, to ensure the system is stable under pressure.
+3.  **🔴 Import boundary cleanup:** Fix known architectural violations to maintain code hygiene and prevent future drift.
+
+The user also reported and requested fixes for CI pipeline failures that occurred during the session.
 
 **User's preferred language**: Turkish
 
 **what currently exists?**
-The agent has successfully completed the new P0 Go-Live Hardening tasks. The Vite build process is now optimized for production with code splitting and minification. The frontend container's Nginx configuration has been hardened with security headers and caching policies. Three critical operational documents (Go-Live Runbook, SLO/SLA definitions, and an Incident Playbook) have been created and stored in the new  directory. Minor CI issues (seed script path, linting) that arose during the session were also fixed.
+All P0 and P1 tasks are now complete. The agent successfully addressed all three P1 items. The  bug was fixed by unifying the data schema used by two separate endpoints. The load testing suite was significantly expanded with new tests for multi-tenant load and failure injection (e.g., random errors, delays). All architectural import boundary violations were resolved by refactoring code into appropriate modules (, , ). A final, recurring CI linting issue was also identified and fixed. The completion and correctness of this work were verified by the testing agent, which reported 9/9 passing tests.
 
 **Last working item**:
-- Last item agent was working: The agent completed the full set of Go-Live Hardening (P0) tasks as requested by the user. This involved optimizing the Vite build, hardening the Nginx config, creating three operational documents, and verifying all deliverables. The agent then updated the PRD and finished the session.
+- Last item agent was working: Fixing a recurring CI linting error ( rule I001 for 
+
+                 _                 _
+                (_) ___  ___  _ __| |_
+                | |/ _/ / _ \/ '__  _/
+                | |\__ \/\_\/| |  | |_
+                |_|\___/\___/\_/   \_/
+
+      isort your imports, so you don't have to.
+
+                    VERSION 7.0.0
+
+
+Nothing to do: no files or paths have been passed in!
+
+Try one of the following:
+
+    `isort .` - sort all Python files, starting from the current directory, recursively.
+    `isort . --interactive` - Do the same, but ask before making any changes.
+    `isort . --check --diff` - Check to see if imports are correctly sorted within this project.
+    `isort --help` - In-depth information about isort's available command-line options.
+
+Visit https://pycqa.github.io/isort/ for complete information about how to use isort.) in . The error was caused by improper newline spacing between import groups (, , ). The agent fixed this by running  on the file, which automatically applied the correct formatting.
 - Status: COMPLETED
 - Agent Testing Done: Y
 - Which testing method agent to use? NA
 - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-- **Issue 1: Pre-existing bug in  endpoint [P1]**
-    - **Description:** A known issue where the endpoint does not correctly handle optional query parameters. This was not introduced by recent refactoring and is now the user's top priority bug fix.
-    - **Next debug checklist:**
-        - Examine the  route in .
-        - Check how default values for query parameters are defined and handled.
-        - Write a specific unit test to reproduce the failure.
-    - **Why fix this issue and what will be achieved with the fix?** To improve API robustness and prevent unexpected errors for clients.
-    - **Status:** NOT STARTED
-    - **Is recurring issue?** N
-    - **Should Test frontend/backend/both after fix?** Backend
+- None. All known issues, including the P1 tasks and subsequent CI failures, have been resolved.
 
 **In progress Task List**:
 - None.
 
 **Upcoming and Future Tasks**
-**Upcoming Tasks (P1):**
-*   **Load Test Expansion:** Enhance the existing load testing suite to cover more scenarios.
-*   **Architectural Debt (Import Boundaries):** Resolve the known exceptions in .
+**Upcoming Tasks (P2):**
+*   **CI/CD Hardening (Ruff Wave ):** Apply the  () rule set to the codebase for modernization.
+*   **Frontend Refactoring ( Decomposition):** Begin the process of breaking down the monolithic  file.
 
-**Future Tasks (P2 & Beyond):**
-*   **CI/CD Hardening (Ruff Wave ):** Apply the  () rule set to the codebase.
-*   **Frontend Refactoring ( Decomposition):** Begin the process of breaking down the monolithic  file, starting with a route-config refactor.
+**Enhancement Suggestion (from previous agent):**
+*   Integrate the newly expanded load tests into the CI/CD pipeline () to automatically catch performance regressions on every pull request.
 
 **Completed work in this session**
-- **Go-Live Hardening (P0) (DONE):**
-  - Optimized Vite production build () with chunk splitting and disabled source maps.
-  - Hardened the frontend container's Nginx configuration ().
-  - Created Go-Live Runbook ().
-  - Created SLO/SLA Document ().
-  - Created Incident Playbook ().
 - **CI Fixes (DONE):**
-  - Resolved a CI failure by copying  from  to , allowing the seeding step to pass.
-- **Linting Fixes (DONE):**
-  - Corrected 4  errors in various backend router files flagged by the linter.
+  - **Orphan File:** Fixed a CI failure by moving  from  to  and updating the path in .
+  - **Linting (
+
+                 _                 _
+                (_) ___  ___  _ __| |_
+                | |/ _/ / _ \/ '__  _/
+                | |\__ \/\_\/| |  | |_
+                |_|\___/\___/\_/   \_/
+
+      isort your imports, so you don't have to.
+
+                    VERSION 7.0.0
+
+
+Nothing to do: no files or paths have been passed in!
+
+Try one of the following:
+
+    `isort .` - sort all Python files, starting from the current directory, recursively.
+    `isort . --interactive` - Do the same, but ask before making any changes.
+    `isort . --check --diff` - Check to see if imports are correctly sorted within this project.
+    `isort --help` - In-depth information about isort's available command-line options.
+
+Visit https://pycqa.github.io/isort/ for complete information about how to use isort.):** Resolved a recurring import sorting error in  by running .
+- **P1 - Critical Fixes & Improvements (DONE & VERIFIED):**
+  - ** Bug Fix:** Unified the schema for the  collection, ensuring both  and  write consistent data (, , ).
+  - **Load Test Expansion:** Created two new load test suites:
+      - : Simulates concurrent operations from multiple tenants.
+      - : Tests system resilience by injecting random delays, errors, and network jitter.
+  - **Import Boundary Cleanup:** Resolved all 3 cross-domain import violations:
+      - Moved  enum to .
+      - Moved  to .
+      - Created  to break a direct  dependency.
+- **Testing:** Successfully ran , which confirmed all fixes with 9/9 tests passing.
 
 **Earlier issues found/mentioned but not fixed**
-- The  bug is the only outstanding known issue and is now a P1 priority in the All Pending/In progress Issue list.
+- None.
 
 **Known issue recurrence from previous fork**
 - None.
@@ -73,12 +103,35 @@ The agent has successfully completed the new P0 Go-Live Hardening tasks. The Vit
 
 
 **Key Technical Concepts**
-- **Go-Live Hardening:** A set of practices to prepare an application for production launch, focusing on stability, performance, and operational readiness over new features.
-- **Vite Production Build Optimization:** Using  to split vendor code (e.g., react, charts, ui-libs) from application code. This improves browser caching and reduces initial page load times.
-- **Nginx Hardening:** Applying best practices to the web server configuration, such as enabling gzip compression, setting security headers (e.g., ), and defining aggressive caching policies for static assets.
+- **Schema Unification:** Resolving data integrity issues by enforcing a single, canonical schema for related data across multiple API endpoints.
+- **Load Testing with Failure Injection:** Moving beyond simple performance tests to actively inject faults (delays, errors) to test the system's resilience and recovery mechanisms, simulating real-world adverse conditions.
+- **Architectural Boundaries (Hexagonal/Clean Architecture):** Using scripts () to enforce rules that prevent inner layers (domains) from depending on other inner layers, promoting modularity and maintainability.
+- **CI Hygiene:** The practice of maintaining a clean and reliable Continuous Integration pipeline by fixing orphan file and linting (
+
+                 _                 _
+                (_) ___  ___  _ __| |_
+                | |/ _/ / _ \/ '__  _/
+                | |\__ \/\_\/| |  | |_
+                |_|\___/\___/\_/   \_/
+
+      isort your imports, so you don't have to.
+
+                    VERSION 7.0.0
+
+
+Nothing to do: no files or paths have been passed in!
+
+Try one of the following:
+
+    `isort .` - sort all Python files, starting from the current directory, recursively.
+    `isort . --interactive` - Do the same, but ask before making any changes.
+    `isort . --check --diff` - Check to see if imports are correctly sorted within this project.
+    `isort --help` - In-depth information about isort's available command-line options.
+
+Visit https://pycqa.github.io/isort/ for complete information about how to use isort.) issues.
 
 **key DB schema**
-- No changes were made to the database schema.
+- No direct schema changes. However, the application-level schema for documents in the  collection was standardized.
 
 **changes in tech stack**
 - None.
@@ -89,57 +142,81 @@ The agent has successfully completed the new P0 Go-Live Hardening tasks. The Vit
     *   
     *   
     *   
-    *    (Copied from )
 *   **Modified Files:**
-    *   : Heavily modified to implement production build optimizations.
-    *   : Overwritten with a new, hardened configuration.
-    *   : Updated to reflect the new project priorities.
-    *   , , : Minor linting fixes (removed unused imports).
+    *    (Bug fix)
+    *    (Removed exceptions)
+    *    (Added  enum)
+    *    (Lint fix, removed enum)
+    *   Various router files to fix import paths.
+    *    (CI fix)
+    *    (Updated progress)
 
 **Areas that need refactoring**:
-- : Remains the primary candidate for refactoring, but its priority has been explicitly lowered to P2 by the user.
+- : Still the primary refactoring candidate, now a P2 task.
+- The re-export shim at  could be removed in a future cleanup task.
 
 **key api endpoints**
-- The agent debugged a health check issue, confirming that the main health endpoint is located at  (with a trailing slash), not .
+- ****: This endpoint was the target of the main bug fix. Its payload and the data it writes to MongoDB have been changed to be consistent with other parts of the system.
+- ****: Was used extensively for debugging and testing to obtain an auth token.
 
 **Critical Info for New Agent**
 1.  **Must reply in Turkish.**
-2.  The user has **completely changed the project's priorities**. The previous goal of refactoring  is now a low-priority (P2) task.
-3.  The top priority was **Go-Live Hardening (P0), which is now 100% complete.**
-4.  Your **next tasks** are the **P1 items** defined by the user:
-    *   Fix the  bug (highest priority).
-    *   Expand the load testing suite.
-    *   Clean up import boundary exceptions.
-5.  Do not attempt to refactor  until all P1 tasks are complete and you have user confirmation.
+2.  **All P1 tasks are 100% COMPLETE and verified.** The project is ready to move on to P2 tasks.
+3.  **The next priorities are P2 tasks:** first, apply stricter Ruff  rules, then begin the  decomposition.
+4.  You can propose the agent's suggestion to **integrate load tests into the CI pipeline** as an immediate next step before starting P2 work.
+5.  A key finding from the debugging session: the correct password for the  user is ****, not .
 
 **documents and test reports created in this job**
 - 
-- 
-- 
 -  (Updated)
--  (Created)
 
 **Last 10 User Messages and any pending HUMAN messages**
-The user's most critical message was a detailed rejection of the agent's initial plan to refactor . The user argued that business value and go-live readiness were more important than code cleanup at this stage. They provided a clear, new priority list (P0: Hardening, P1: Critical Fixes, P2: Refactoring) and instructed the agent to start with the hardening tasks. The agent correctly adapted and executed this new plan.
+- The user reported a CI failure (), which the agent fixed.
+- The user confirmed the fix was important and then provided a very clear, strict priority list for P1 tasks: 1.  bug, 2. Load test expansion, 3. Import boundary cleanup.
+- The user emphasized that stability under load is now the top priority over more refactoring.
+- After the agent completed all tasks, the user reported a final, recurring CI linting (
+
+                 _                 _
+                (_) ___  ___  _ __| |_
+                | |/ _/ / _ \/ '__  _/
+                | |\__ \/\_\/| |  | |_
+                |_|\___/\___/\_/   \_/
+
+      isort your imports, so you don't have to.
+
+                    VERSION 7.0.0
+
+
+Nothing to do: no files or paths have been passed in!
+
+Try one of the following:
+
+    `isort .` - sort all Python files, starting from the current directory, recursively.
+    `isort . --interactive` - Do the same, but ask before making any changes.
+    `isort . --check --diff` - Check to see if imports are correctly sorted within this project.
+    `isort --help` - In-depth information about isort's available command-line options.
+
+Visit https://pycqa.github.io/isort/ for complete information about how to use isort.) failure twice, which the agent then successfully resolved.
 
 **Project Health Check:**
-- **Broken:** None.
-- **Mocked:** None.
+- **Broken:** None
+- **Mocked:** None
 
 **3rd Party Integrations**
 - No new integrations were added.
 
 **Testing status**
-  - Testing agent used after significant changes: NO
+  - Testing agent used after significant changes: YES
   - Troubleshoot agent used after agent stuck in loop: NO
-  - Test files created: None.
+  - Test files created:
+      - 
+      - 
+      -  (created by testing agent)
   - Known regressions: None.
-  - The agent successfully used yarn run v1.22.22
-info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command. to confirm Vite optimizations,  to check backend health endpoints, and a custom verification script to validate that all P0 documents and configurations were correctly implemented.
 
 **Credentials to test flow:**
 - User for testing: 
 - Password: 
 
 **What agent forgot to execute**
-- Nothing. The agent correctly understood and adapted to a major change in user priority, fixed emergent CI issues, and successfully delivered all requested P0 tasks.</analysis>
+- Nothing. The agent methodically followed user priorities, completed all P1 tasks, and fixed emergent CI issues.</analysis>
