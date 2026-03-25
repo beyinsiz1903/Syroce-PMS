@@ -25,7 +25,7 @@ Hotel Property Management System - full-stack application with React frontend an
 - [ ] Ruff UP Rules (wave 2) — UP035 (deprecated imports), UP042 (StrEnum)
 - [ ] App.jsx decomposition
 
-### P3 - Security & Compliance (P0 ITEMS COMPLETED)
+### P3 - Security & Compliance
 - [x] AWS KMS envelope encryption provider
 - [x] Secret classification system (7 types with lifecycle rules)
 - [x] PII Registry (31 fields, 4 categories, role-based masking)
@@ -34,8 +34,15 @@ Hotel Property Management System - full-stack application with React frontend an
 - [x] PII access audit trail (MongoDB-backed, 180-day TTL)
 - [x] PII anomaly detection
 - [x] Secret inventory and classification API
+- [x] **P1: Secret Rotation + Rollback Flow (COMPLETED 2026-03-25)**
+  - Safe rotation: initiate → test → activate
+  - Version history with full audit trail
+  - Rollback to any previous version (single command)
+  - Connector-based dry-run testing (Exely, HotelRunner)
+  - Alert integration on rotation failure/rollback
+  - Expiration tracking with overdue/warning dashboard
+  - 8 new API endpoints, 21/21 tests passed
 - [ ] P1: API response role-based masking (guest endpoints, export/report)
-- [ ] P1: Rotation script + rollback flow
 - [ ] P2: At-rest encryption for critical PII fields (phone, email, passport)
 
 ### Backlog
@@ -72,6 +79,16 @@ Hotel Property Management System - full-stack application with React frontend an
   - PII audit trail with MongoDB indexes and 180-day TTL
   - PII anomaly detection for excessive unmask patterns
   - 8 new API endpoints for security operations
+- **Secret Rotation + Rollback System (P1 item, 2026-03-25):**
+  - Rotation Engine: initiate → dry-run test → activate → rollback
+  - Version management: auto-incrementing versions, status tracking (pending_test → test_passed → active → archived → rolled_back)
+  - Connector-specific testing: Exely (api_key + hotel_id), HotelRunner (token validation)
+  - Rollback: instant restore to any previous version
+  - Alert integration: fires on rotation failure (severity=high) and rollback (severity=warning)
+  - Expiration dashboard: overdue/warning/healthy status per secret
+  - Full audit trail: every rotation action logged with actor, timestamp, version
+  - 8 new endpoints under /api/ops/secrets/rotation/
+  - 21/21 tests passed (iteration 159)
 
 ## Key Files
 - Backend entry: `/app/backend/server.py`
@@ -89,6 +106,15 @@ Hotel Property Management System - full-stack application with React frontend an
   - Sensitive Output: `/app/backend/security/sensitive_output.py`
   - KMS Provider: `/app/backend/core/crypto/kms_provider.py`
   - PII Masking Context: `/app/backend/security/pii_masking_middleware.py`
+  - **Rotation Engine: `/app/backend/security/rotation_engine.py`**
+  - **Rotation Router: `/app/backend/security/rotation_router.py`**
+
+## DB Collections (Security)
+- `secret_rotation_versions` — Version history with encrypted payloads and status
+- `secret_rotation_audit` — Rotation audit trail (1-year TTL)
+- `secret_access_audit` — General secret access audit (90-day TTL)
+- `pii_access_audit` — PII field access audit (180-day TTL)
+- `_dev_secrets` — Live secret store (local dev backend)
 
 ## Test Credentials
 - Email: demo@hotel.com / Password: demo123
@@ -104,3 +130,6 @@ Hotel Property Management System - full-stack application with React frontend an
 - **Passwords are NEVER unmaskable regardless of role**
 - **AWS KMS envelope encryption (KMS1: format) for production key management**
 - **Log sanitization auto-attached to root logger via SanitizedLogFilter**
+- **Rotation uses system DB (`get_system_db()`) to bypass tenant isolation — ops-level operation**
+- **Activation writes live secret FIRST, then updates version status (transactional safety)**
+- **Version must pass test before activation — untested versions are blocked**
