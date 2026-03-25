@@ -6,7 +6,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://pii-encryption-guard.preview.emergentagent.com')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://kms-vault-1.preview.emergentagent.com')
 
 class TestAuth:
     """Authentication tests"""
