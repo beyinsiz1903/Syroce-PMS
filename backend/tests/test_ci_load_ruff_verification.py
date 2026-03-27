@@ -17,7 +17,7 @@ import pytest
 import requests
 import yaml
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://drift-detection-mock.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://parity-validate.preview.emergentagent.com").rstrip("/")
 
 
 class TestHealthAndAuth:

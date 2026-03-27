@@ -6,7 +6,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://drift-detection-mock.preview.emergentagent.com')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://parity-validate.preview.emergentagent.com')
 
 class TestAuth:
     """Authentication tests"""

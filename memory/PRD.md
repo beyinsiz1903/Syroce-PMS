@@ -69,6 +69,17 @@ Hotel Property Management System - full-stack application with React frontend an
   - Sync status, error rates, last operations
   - Deferred room assignment visibility
 
+### P5 - Production Deployment (COMPLETED 2026-03-27)
+- [x] Production deployment paketi hazirlandi
+  - docker-compose.production.yml (6 servis: mongo, redis, backend, worker, beat, nginx)
+  - Nginx reverse proxy (api.syroce.com, SSL/Let's Encrypt, rate limiting, security headers)
+  - deploy.sh (tek komutla kurulum: Docker, build, deploy, dogrulama)
+  - ssl-setup.sh (Let's Encrypt + otomatik yenileme cron)
+  - .env.production.example (template)
+  - DEPLOYMENT_GUIDE.md (Turkce adim adim rehber)
+- [x] Guvenlik: MongoDB/Redis sadece internal network, backend port disari acik degil
+- [x] HotelRunner endpoint'leri Nginx'te tanimli (callback GET + webhook POST)
+
 ### Backlog
 - App.jsx decomposition (after security tasks)
 - Legacy migration / cleanup jobs

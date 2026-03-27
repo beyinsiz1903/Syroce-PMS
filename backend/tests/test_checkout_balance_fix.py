@@ -18,7 +18,7 @@ pytestmark = pytest.mark.skipif(
     reason="VITE_BACKEND_URL not set - integration tests require a running server"
 )
 if not BASE_URL:
-    BASE_URL = "https://drift-detection-mock.preview.emergentagent.com"
+    BASE_URL = "https://parity-validate.preview.emergentagent.com"
 
 
 class TestCheckoutBalanceFix:
