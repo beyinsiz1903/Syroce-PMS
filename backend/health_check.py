@@ -12,7 +12,7 @@ from fastapi import APIRouter, Request, Response, status
 
 logger = logging.getLogger(__name__)
 
-health_router = APIRouter(prefix="/health", tags=["health"])
+health_router = APIRouter(prefix="/api/health", tags=["health"])
 
 async def check_mongodb(db) -> dict[str, Any]:
     """Check MongoDB connectivity and performance"""

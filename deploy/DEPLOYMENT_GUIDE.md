@@ -244,6 +244,9 @@ REACT_APP_BACKEND_URL=https://api.syroce.com
 | Health Check | `https://api.syroce.com/api/health/liveness` |
 | HotelRunner Callback | `https://api.syroce.com/api/integrations/hotelrunner/callback` |
 | HotelRunner Webhook | `https://api.syroce.com/api/integrations/hotelrunner/webhook` |
+| HR Internal: Reservations | `https://api.syroce.com/api/channel-manager/hotelrunner/webhooks/reservations` |
+| HR Internal: Modifications | `https://api.syroce.com/api/channel-manager/hotelrunner/webhooks/modifications` |
+| HR Internal: Cancellations | `https://api.syroce.com/api/channel-manager/hotelrunner/webhooks/cancellations` |
 | Frontend | `https://pms.syroce.com` |
 
 ---

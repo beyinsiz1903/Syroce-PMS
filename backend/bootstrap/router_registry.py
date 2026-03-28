@@ -173,6 +173,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.booking_holds", "router", ["Booking Holds"], None, None),
     # Room-Type Inventory — Phase C.1 read-only materialized view (ADR-003)
     ("routers.inventory", "router", ["Room-Type Inventory"], None, None),
+    # HotelRunner External Integration — Compatibility endpoints for HR panel
+    ("routers.hotelrunner_compat", "router", ["HotelRunner External Integration"], None, None),
 ]
 
 # Optional routers with special import paths

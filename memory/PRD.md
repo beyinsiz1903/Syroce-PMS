@@ -78,7 +78,16 @@ Hotel Property Management System - full-stack application with React frontend an
   - .env.production.example (template)
   - DEPLOYMENT_GUIDE.md (Turkce adim adim rehber)
 - [x] Guvenlik: MongoDB/Redis sadece internal network, backend port disari acik degil
-- [x] HotelRunner endpoint'leri Nginx'te tanimli (callback GET + webhook POST)
+- [x] HotelRunner endpoint'leri Nginx'te tanimli (callback GET + webhook POST + internal webhooks)
+
+### P5.1 - Route Uyumluluk & Production .env (COMPLETED 2026-03-28)
+- [x] Compatibility router: /api/integrations/hotelrunner/callback (GET) + /webhook (POST)
+- [x] Unified webhook dispatcher: payload'daki event_type/state'e gore create/modify/cancel routing
+- [x] Health endpoint prefix /health -> /api/health olarak duzeltildi (Dockerfile healthcheck uyumu)
+- [x] .env.production.example: APP_ENV=production, SECRETS_PROVIDER=env eklendi
+- [x] Nginx config: internal webhook endpoint'leri (/api/channel-manager/hotelrunner/webhooks/*) eklendi
+- [x] picomatch ReDoS guvenlik acigi duzeltildi (yarn resolution >=4.0.4)
+- [x] Tum 8 endpoint HTTP status dogrulamasi: 8/8 basarili
 
 ### Backlog
 - App.jsx decomposition (after security tasks)
