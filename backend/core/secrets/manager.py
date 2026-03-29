@@ -40,7 +40,7 @@ def _build_provider(config: SecretsConfig) -> SecretsProviderBase:
             vault_addr=os.environ.get("VAULT_ADDR", ""),
             vault_token=os.environ.get("VAULT_TOKEN", ""),
         )
-    elif config.provider == "local_dev":
+    elif config.provider in ("local_dev", "env"):
         from .local_provider import LocalDevSecretsProvider
         return LocalDevSecretsProvider(encryption_key=config.encryption_key)
     else:

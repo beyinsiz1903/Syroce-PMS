@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 logger = logging.getLogger("core.secrets.config")
 
-VALID_PROVIDERS = {"aws_secrets_manager", "local_dev", "vault"}
+VALID_PROVIDERS = {"aws_secrets_manager", "local_dev", "vault", "env"}
 PRODUCTION_ENVS = {"production", "staging"}
 
 
