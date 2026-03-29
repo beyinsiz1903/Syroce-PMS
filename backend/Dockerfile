@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+RUN pip install --no-cache-dir --prefix=/install --timeout=300 --retries=5 -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
 
 # Stage 2: Runtime
 FROM python:3.11-slim AS runtime
