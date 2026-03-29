@@ -7,7 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from celery_app import celery_app
-from server import Booking, BookingCreate, ChannelType, Guest, GuestCreate, OTAReservation, User, db, get_current_user
+from models.schemas import Booking, BookingCreate, Guest, GuestCreate, OTAReservation, User
+from models.enums import ChannelType
+from core.database import db
+from core.security import get_current_user
 
 
 class BookingCredentialManager:

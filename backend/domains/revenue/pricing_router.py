@@ -2,9 +2,11 @@
 Revenue / Pricing Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
+from __future__ import annotations
+
 import logging
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date as DateType, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -39,7 +41,7 @@ router = APIRouter(prefix="/api", tags=["Revenue / Pricing"])
 class RatePlanFilter(BaseModel):
     channel: ChannelType | None = None
     company_id: str | None = None
-    date: date | None = None
+    date: DateType | None = None
 
 
 class RatePlanCreate(BaseModel):
@@ -52,8 +54,8 @@ class RatePlanCreate(BaseModel):
     market_segment: MarketSegment | None = None
     channel_restrictions: list[ChannelType] = []
     company_ids: list[str] = []
-    valid_from: date | None = None
-    valid_to: date | None = None
+    valid_from: DateType | None = None
+    valid_to: DateType | None = None
     days_of_week: list[int] = []
     min_stay: int | None = None
     max_stay: int | None = None

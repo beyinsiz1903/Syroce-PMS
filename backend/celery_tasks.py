@@ -12,8 +12,17 @@ from typing import Any
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from celery_app import celery_app
-from integrations.booking import BookingAPIClient, BookingCredentialManager, BookingIntegrationLogger, BookingReservationMapper
-from server import ChannelType
+try:
+    from integrations.booking import BookingAPIClient, BookingCredentialManager, BookingIntegrationLogger, BookingReservationMapper
+    from models.enums import ChannelType
+except ImportError as e:
+    logger = __import__('logging').getLogger(__name__)
+    logger.warning(f"Optional booking integration not available: {e}")
+    BookingAPIClient = None
+    BookingCredentialManager = None
+    BookingIntegrationLogger = None
+    BookingReservationMapper = None
+    ChannelType = None
 
 logger = logging.getLogger(__name__)
 
