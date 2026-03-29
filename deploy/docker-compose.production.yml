@@ -1,5 +1,3 @@
-version: "3.9"
-
 x-backend-env: &backend-env
   MONGO_URL: mongodb://mongo:27017/${DB_NAME}
   DB_NAME: ${DB_NAME}
@@ -80,7 +78,7 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: ../backend
       dockerfile: Dockerfile
     <<: *restart-policy
     environment:
@@ -111,7 +109,7 @@ services:
 
   worker:
     build:
-      context: .
+      context: ..
       dockerfile: ./worker/Dockerfile
     <<: *restart-policy
     environment:
@@ -142,7 +140,7 @@ services:
 
   beat:
     build:
-      context: .
+      context: ..
       dockerfile: ./worker/Dockerfile
     <<: *restart-policy
     environment:
