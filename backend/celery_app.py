@@ -108,8 +108,12 @@ celery_app.conf.update(
     }
 )
 
-# Auto-discover tasks
-celery_app.autodiscover_tasks(['celery_tasks'])
+# Import tasks directly (celery_tasks is a module, not a package)
+try:
+    import celery_tasks  # noqa: F401
+except ImportError as e:
+    import logging
+    logging.getLogger(__name__).warning(f"celery_tasks import failed: {e}")
 
 if __name__ == '__main__':
     celery_app.start()
