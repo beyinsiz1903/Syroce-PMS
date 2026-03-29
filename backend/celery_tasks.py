@@ -12,6 +12,7 @@ from typing import Any
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from celery_app import celery_app
+
 try:
     from integrations.booking import BookingAPIClient, BookingCredentialManager, BookingIntegrationLogger, BookingReservationMapper
     from models.enums import ChannelType

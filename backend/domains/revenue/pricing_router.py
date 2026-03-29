@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, date as DateType, datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from datetime import date as DateType
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
