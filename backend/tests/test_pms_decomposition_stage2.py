@@ -15,7 +15,7 @@ import requests
 
 BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
-    BASE_URL = "https://hotelrunner-v2-ops.preview.emergentagent.com"
+    BASE_URL = "https://hotelrunner-ops.preview.emergentagent.com"
 
 
 @pytest.fixture(scope="module")

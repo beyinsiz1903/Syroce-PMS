@@ -344,18 +344,18 @@ async def get_ops_dashboard(
     Returns provider health, sync overview, failure visibility,
     recent events — all in one call.
     """
-    from core.tenant_db import set_tenant_context
-    # Override tenant context to match the requested tenant_id
-    # (middleware may have set a different tenant from JWT)
-    set_tenant_context(tenant_id)
-
-    from core.database import db as _db
     from channel_manager.connectors.hotelrunner_v2.feature_flags import get_flags
-    from channel_manager.connectors.hotelrunner_v2.metrics import get_summary, get_last_sync
+    from channel_manager.connectors.hotelrunner_v2.metrics import get_last_sync, get_summary
     from channel_manager.connectors.hotelrunner_v2.reconciliation import (
         get_recent_drifts,
         get_reconciliation_history,
     )
+    from core.database import db as _db
+    from core.tenant_db import set_tenant_context
+
+    # Override tenant context to match the requested tenant_id
+    # (middleware may have set a different tenant from JWT)
+    set_tenant_context(tenant_id)
 
     now_iso = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
 
