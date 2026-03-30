@@ -59,6 +59,7 @@ async def send_to_dlq(
 ) -> str:
     """Persist failed operation to dead letter queue for manual retry."""
     import uuid
+
     from core.database import db
 
     dlq_id = str(uuid.uuid4())

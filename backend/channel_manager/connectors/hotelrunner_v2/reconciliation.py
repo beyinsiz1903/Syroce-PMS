@@ -13,7 +13,6 @@ from typing import Any
 from core.database import db
 
 from .feature_flags import get_flags
-from .mapper import reservation_to_canonical
 from .metrics import record_metric
 
 logger = logging.getLogger("hrv2.reconciliation")

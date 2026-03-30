@@ -13,10 +13,10 @@ import uuid as _uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from .client import HRv2Client, HRv2Response
-from .endpoint_map import ENDPOINTS, get_path
+from .client import HRv2Client
+from .endpoint_map import get_path
 from .errors import HRv2AuthError, HRv2Error
-from .feature_flags import is_enabled, is_shadow_mode, is_write_enabled
+from .feature_flags import is_shadow_mode, is_write_enabled
 from .mapper import (
     ari_to_update_payload,
     compute_idempotency_key,
