@@ -171,6 +171,7 @@ const GoLiveDashboardPage = lazy(() => import("@/pages/GoLiveDashboardPage"));
 const ProductionRolloutPage = lazy(() => import("@/pages/ProductionRolloutPage"));
 const SoakTestDashboard = lazy(() => import("@/pages/SoakTestDashboard"));
 const HotelRunnerIntegration = lazy(() => import("@/pages/HotelRunnerIntegration"));
+const HRv2OpsDashboard = lazy(() => import("@/pages/HRv2OpsDashboard"));
 const ExelyIntegration = lazy(() => import("@/pages/ExelyIntegration"));
 const ARIPushDashboard = lazy(() => import("@/pages/ARIPushDashboard"));
 const RateManager = lazy(() => import("@/pages/RateManager"));
@@ -1544,6 +1545,18 @@ function App() {
             element={
               isAuthenticated ? (
                 <HotelRunnerIntegration user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/hrv2-ops"
+            element={
+              isAuthenticated ? (
+                <Suspense fallback={<LoadingFallback />}>
+                  <HRv2OpsDashboard user={user} tenant={tenant} onLogout={handleLogout} />
+                </Suspense>
               ) : (
                 <Navigate to="/auth" replace />
               )

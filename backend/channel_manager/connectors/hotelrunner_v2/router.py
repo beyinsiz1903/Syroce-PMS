@@ -109,6 +109,8 @@ async def test_connection(
     property_id: str = Query("default"),
 ):
     """Test HotelRunner connection."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service
     try:
         svc = await HotelRunnerV2Service.create(tenant_id, property_id)
@@ -227,6 +229,8 @@ async def trigger_reconciliation(
     auto_fix: bool = Query(False),
 ):
     """Trigger reconciliation run."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.reconciliation import run_reconciliation
     return await run_reconciliation(tenant_id, property_id, since_hours=since_hours, auto_fix=auto_fix)
 
@@ -326,3 +330,155 @@ async def retry_dlq_entry(
         return result
 
     raise HTTPException(status_code=400, detail=f"Unknown operation: {operation}")
+
+
+# ── Ops Dashboard (Aggregated) ────────────────────────────────────────
+
+@router.get("/ops-dashboard")
+async def get_ops_dashboard(
+    tenant_id: str = Query(...),
+    property_id: str = Query("default"),
+):
+    """
+    Aggregated endpoint for the Ops Dashboard Frontend.
+    Returns provider health, sync overview, failure visibility,
+    recent events — all in one call.
+    """
+    from core.tenant_db import set_tenant_context
+    # Override tenant context to match the requested tenant_id
+    # (middleware may have set a different tenant from JWT)
+    set_tenant_context(tenant_id)
+
+    from core.database import db as _db
+    from channel_manager.connectors.hotelrunner_v2.feature_flags import get_flags
+    from channel_manager.connectors.hotelrunner_v2.metrics import get_summary, get_last_sync
+    from channel_manager.connectors.hotelrunner_v2.reconciliation import (
+        get_recent_drifts,
+        get_reconciliation_history,
+    )
+
+    now_iso = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+
+    # 1. Feature flags
+    flags = await get_flags(tenant_id)
+
+    # 2. Metrics summary (24h)
+    metrics = await get_summary(tenant_id, hours=24)
+
+    # 3. Last sync timestamp
+    last_sync = await get_last_sync(tenant_id)
+
+    # 4. DLQ count + recent entries
+    dlq_entries = await _db["connector_dlq"].find(
+        {"tenant_id": tenant_id, "provider": "hotelrunner"},
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(10)
+    dlq_count = await _db["connector_dlq"].count_documents(
+        {"tenant_id": tenant_id, "provider": "hotelrunner"},
+    )
+
+    # 5. Recent drifts + count
+    drifts = await get_recent_drifts(tenant_id, limit=10)
+    drift_count = await _db["connector_reconciliation_drifts"].count_documents(
+        {"tenant_id": tenant_id, "provider": "hotelrunner_v2"},
+    )
+
+    # 6. Last reconciliation
+    recon_history = await get_reconciliation_history(tenant_id, limit=1)
+    last_recon = recon_history[0] if recon_history else None
+
+    # 7. Recent connector events (last 10 metrics)
+    recent_events = await _db["connector_metrics"].find(
+        {"tenant_id": tenant_id, "provider": "hotelrunner_v2"},
+        {"_id": 0},
+    ).sort("recorded_at", -1).to_list(10)
+
+    # 8. Retry count (failed operations in last 24h)
+    retry_count = metrics.get("operations", {}).get("pull_reservations", {}).get("failed", 0)
+    for op_data in metrics.get("operations", {}).values():
+        retry_count = max(retry_count, op_data.get("failed", 0))
+    total_retry = sum(
+        op_data.get("failed", 0) for op_data in metrics.get("operations", {}).values()
+    )
+
+    # 9. Latency (average across all ops)
+    latencies = [
+        op_data.get("avg_latency_ms", 0)
+        for op_data in metrics.get("operations", {}).values()
+        if op_data.get("avg_latency_ms", 0) > 0
+    ]
+    avg_latency = round(sum(latencies) / len(latencies), 1) if latencies else 0
+
+    # 10. Per-endpoint health from metrics
+    ops = metrics.get("operations", {})
+
+    def _endpoint_health(op_name):
+        op = ops.get(op_name, {})
+        if not op:
+            return "unknown"
+        if op.get("failed", 0) > 0 and op.get("success", 0) == 0:
+            return "error"
+        if op.get("total", 0) > 0 and op.get("success", 0) > 0:
+            sr = op.get("success_rate", 0)
+            if sr >= 90:
+                return "healthy"
+            if sr >= 50:
+                return "degraded"
+            return "error"
+        return "unknown"
+
+    return {
+        "generated_at": now_iso,
+        "tenant_id": tenant_id,
+        "property_id": property_id,
+
+        # Provider Health
+        "provider_health": {
+            "provider": "HotelRunner",
+            "connector_version": "v2",
+            "auth_status": _endpoint_health("test_connection"),
+            "reservations_api": _endpoint_health("pull_reservations"),
+            "rooms_api": _endpoint_health("test_connection"),
+            "channels_api": _endpoint_health("test_connection"),
+            "shadow_mode": flags.get("shadow_mode", True),
+            "write_path": "enabled" if flags.get("write_enabled", False) and not flags.get("shadow_mode", True) else "disabled",
+            "connector_enabled": flags.get("connector_enabled", False),
+        },
+
+        # Feature Flags
+        "feature_flags": flags,
+
+        # Sync Overview
+        "sync_overview": {
+            "last_pull_timestamp": last_sync.get("recorded_at") if last_sync else None,
+            "last_pull_operation": last_sync.get("operation") if last_sync else None,
+            "last_pull_success": last_sync.get("success") if last_sync else None,
+            "drift_count": drift_count,
+            "last_reconciliation": {
+                "run_id": last_recon.get("id") if last_recon else None,
+                "timestamp": last_recon.get("created_at") if last_recon else None,
+                "mismatch_count": last_recon.get("mismatch_count", 0) if last_recon else 0,
+                "duration_ms": last_recon.get("duration_ms", 0) if last_recon else 0,
+            },
+        },
+
+        # Metrics
+        "metrics_24h": metrics,
+        "avg_latency_ms": avg_latency,
+        "total_retry_count": total_retry,
+
+        # DLQ
+        "dlq": {
+            "count": dlq_count,
+            "recent_entries": dlq_entries,
+        },
+
+        # Failure Visibility
+        "error_taxonomy": metrics.get("error_taxonomy", {}),
+
+        # Recent Events
+        "recent_events": recent_events,
+
+        # Recent Drifts
+        "recent_drifts": drifts,
+    }

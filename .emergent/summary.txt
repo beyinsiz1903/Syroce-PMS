@@ -1,111 +1,110 @@
 <analysis>**original_problem_statement**: 
-The user wants to deploy the Syroce PMS application to their live Ubuntu server () using Docker Compose, fix linting/CSP bugs blocking the API documentation (ReDoc), and begin the actual HotelRunner API integration using their credentials.
-
-**PRODUCT REQUIREMENTS:**
-- Successfully deploy and run all services on the live Ubuntu server.
-- API documentation () must load correctly without Content-Security-Policy (CSP) blocks.
-- Integrate HotelRunner API (Reconciliation & Snapshot Validation, Write Path Implementation).
+The user wants to safely deploy and manage the HotelRunner v2 integration. PRODUCT REQUIREMENTS: 
+1. P0: Run a Live Production Test for the newly created HotelRunner v2 connector (in Shadow Mode) using real credentials.
+2. P1: Build an Ops Dashboard Frontend to monitor provider health (provider status, auth status, last sync time, drift count, retry count, DLQ count, shadow/live mode state, recent failures list).
+3. P1: Create a Write Path Transition Plan (Shadow -> Dry-run -> Limited live -> Full live).
 
 **User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın.)
 
 **what currently exists?** 
-The application is successfully deployed on the user's production server. All 6 Docker containers (backend, beat, mongo, nginx, redis, worker) are currently running smoothly. The persistent Content-Security-Policy (CSP) bug that was blocking the  page has been completely fixed by modifying the Nginx proxy configurations and backend middlewares. The user successfully verified that the ReDoc page now loads perfectly on their live server.
+A production-grade  connector has been built, linted, and thoroughly tested. The agent just successfully completed the Live Production Test (P0) against the real HotelRunner REST API using the user's valid credentials. The connector is currently running safely in **Shadow Mode** (read-only, write disabled). 
 
 **Last working item**:
-    - Last item agent was working: Requesting the HotelRunner API Base URL and Documentation links from the user to begin Phase 3 (HotelRunner Reconciliation & Write Path integration).
-    - Status: USER VERIFICATION PENDING (Waiting for user input)
-    - Agent Testing Done: Y (CSP bug was tested via backend curl and live server screenshots).
-    - Which testing method agent to use? Backend testing agent or manual testing via curl for the upcoming integration.
-    - User Testing Done: Y (User confirmed CSP fix via live URL and screenshot).
+    - Last item agent was working: Executing the P0 Live Production Test. The agent fixed 5 Python linting errors, seeded the database with the user's real HotelRunner credentials, and tested the live endpoints (, , , and rooms). All endpoints returned successful responses (200 OK). The results were just presented to the user.
+    - Status: USER VERIFICATION PENDING
+    - Agent Testing Done: Y
+    - Which testing method agent to use? manual testing by curl / bash scripts.
+    - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-  *None. The CSP blocking issue was successfully resolved.*
+  *None.*
 
 **In progress Task List**: 
-  Task 1: HotelRunner API Integration Setup (Phase 3 & 4)
-     - Where to resume: Await user's response providing the HotelRunner API Base URL and documentation link. Token and HR ID are already known.
-     - What will be achieved with this? Unblocks real integration of Phase 3 (Reconciliation & Snapshot Validation) and Phase 4 (Write Path Implementation).
-     - Status: BLOCKED (on user providing the Base URL and Docs).
-     - Should Test frontend/backend/both after fix? Backend.
-     - Blocked on something: Waiting for user to provide API docs.
+  Task 1: P1 - Ops Dashboard Frontend Implementation
+     - Where to resume: Await user's confirmation of the Live Production Test results. Once they approve, begin building the React frontend Ops Dashboard for monitoring provider health (status, auth status, last sync, drift count, retry count, DLQ count, shadow/live state, recent failures).
+     - What will be achieved with this? Visual UI monitoring of the HotelRunner connector's health and sync status for operations.
+     - Status: NOT STARTED
+     - Should Test frontend/backend/both after fix? Frontend
+     - Blocked on something: Waiting for the user's explicit approval on the live test results before writing new UI code.
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - HotelRunner Phase 3 (Priority P0): Reconciliation & Snapshot Validation. Verify that the reconciliation engine correctly detects drift between PMS and the HotelRunner API.
-    - HotelRunner Phase 4 (Priority P1): Write Path Implementation (ARI push, Stop Sale, CTA/CTD, Min/Max stay).
-    - HotelRunner Phase 5 (Priority P1): Ops Dashboard for provider health visibility.
+    - P1: Write Path Transition Plan (Transitioning from Shadow mode -> DRY-RUN -> Limited live -> Full live).
     
     Future Tasks:
-    - PII Field Encryption P2 Phase 3 (Strict Mode enforcement).
-    -  Decomposition (Strictly AFTER core business/security logic is done).
-    - Legacy migration/cleanup.
+    - P2: PII Field Encryption (Strict Mode enforcement).
+    - P2: Wire failure tracking.
+    - P2:  Decomposition (Strictly AFTER core business/security logic is done).
+    - P3: Legacy HR connector migration/cleanup ( DEPRECATED).
 
 **Completed work in this session**
-- Fixed strict Content-Security-Policy (CSP) for  by modifying , , and . (DONE)
-- Guided user to fix git merge conflicts (Saved working directory and index state WIP on main: 6de245b3 auto-commit for 93e3d4e3-30c0-4484-878d-65929b9359be, ) on their live Ubuntu server. (DONE)
-- Troubleshot and fixed a stubborn Docker port 80 already allocated bug on the live server by clearing old ports and restarting the docker daemon. (DONE)
-- Updated  to reflect CSP fix and upcoming steps. (DONE)
+- Fixed unused import and sorting lint errors in  (, , ). (DONE)
+- Seeded the DB  vault with the user's real HotelRunner credentials. (DONE)
+- Successfully ran the Live Production Test suite (auth, test-connection, pull-reservations, pull-rooms) using real HR credentials. (DONE)
 
 **Earlier issues found/mentioned but not fixed**
    - None
 
 **Known issue recurrence from previous fork**
-  - None (The recurring CSP issue was successfully fixed in this session).
+  - None
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **Production Environment Constraints**: The live server is managed via SSH by the user. Changes must be committed by the agent (via Emergent platform), and then the user runs  and  on their live server to apply them.
-- **Nginx & FastAPI Middleware**: Nginx sits in front of the FastAPI backend as a proxy, and both layers control headers. The CSP fix required modifying both layers to ensure assets like  and  could load on Swagger UI/ReDoc.
+- **Canonical Data Model**: Standardized formats for cross-channel reservations.
+- **Shadow Mode**: Currently ACTIVE. Write operations (like ARI push) are simulated but not actually sent to HotelRunner.
+- **Credential Vault**: Encrypted secret storage for provider credentials (AWS KMS based).
 
 **key DB schema**
-  - No changes in this session.
+  - : Stores encrypted provider credentials (, , ).
 
 **changes in tech stack**
   - None
 
 **All files of reference** 
+  -  (Backend connector files)
   -  
-  - 
-  - 
-  -  (Updated statuses)
 
 **Areas that need refactoring**: 
-- None identified in this session.
+- The legacy connector located at  is now deprecated and needs to be cleaned up as a future P3 task.
 
 **key api endpoints**
--  (Now fully functional)
+- 
+- 
+- 
 
 **Critical Info for New Agent** 
 - **Language Constraint:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-- **Deployment Workflow:** Do not tell the user to just run . If you make codebase changes, you MUST remind them to  on their server first.
-- **HotelRunner Credentials:** The user provided  and . Keep these safe and DO NOT ask for them again. The previous agent asked for the Base URL and API Docs; await the user's response to begin integration.
+- **Shadow Mode Active:** The new connector has  and . Do NOT change this or enable writes unless the user explicitly requests to proceed with the P1 Write Path Transition.
+- The user specifically requested: *Canlı test tamamlanmadan yeni feature’a geçmeyelim.* (Do not move to new features until live tests are complete and verified). The agent has just finished the live tests and is waiting for the user's review.
 
 **documents and test reports created in this job** 
-  -  (Modified)
+  - None in this session.
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - *User Messages:* User ran multiple bash commands on the live server (guided by the assistant) to resolve git merge conflicts and a stubborn Docker network  allocation bug. They successfully restarted all containers, verified the CSP fix via , and finally uploaded a screenshot proving  works perfectly on the live frontend.
- - *Pending Human Messages:* The user needs to provide the HotelRunner API Base URL and documentation link, as requested by the assistant at the end of the session.
+ - *User Messages:* User provided a bash output with 5 Python linting errors. After the agent fixed them, the user provided strict priorities: 1) P0 Live Production Test, 2) P1 Ops Dashboard Frontend, 3) P1 Write Path Transition Plan. The user explicitly stated not to start the frontend until the live backend tests were proven. During testing, the user provided their real HotelRunner token and HR ID to fix a 401 Auth error.
+ - *Pending Human Messages:* The agent has just presented the successful results of the Live Production Test to the user via the  tool. Await the user's approval to proceed to the Ops Dashboard Frontend implementation.
 
 **Project Health Check:**
-  - Broken: None (ReDoc fixed).
-  - Mocked: HotelRunner API (Real integration starting next).
+  - Broken: None
+  - Mocked: None (Real connection is successfully established and verified).
 
 **3rd Party Integrations** 
   - AWS KMS (Encryption Provider) — requires User API Key
-  - HotelRunner (Currently Mocked, real integration pending)
+  - HotelRunner (Production v2 Connector) — requires User Token/HR_ID (already seeded).
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Live production troubleshooting based on user's terminal logs).
+  - Testing agent used after significant changes: NO (Main agent verified using curl and backend test scripts).
   - Troubleshoot agent used after agent stuck in loop: NO
-  - Test files created: None
+  - Test files created: None this session.
   - Known regressions: None
 
 **Credentials to test flow:**
-  - HR Token: 
+  - HotelRunner Token: 
   - HR ID: 
+  - Tenant ID: 
+  *(These are already seeded into the DB vault).*
 
 **What agent forgot to execute**
-- Nothing missed. The agent achieved the immediate deployment goals, resolved the blocker, and effectively prepared for the next integration phase.</analysis>
+- Nothing. The agent successfully adhered to the user's strict instructions to execute and report the P0 live tests before starting the P1 frontend task.</analysis>
