@@ -82,10 +82,27 @@ class SecurityHeadersMiddleware:
         self.headers['X-DNS-Prefetch-Control'] = 'off'
         self.headers['X-Download-Options'] = 'noopen'
 
+    # Permissive CSP for API documentation routes (ReDoc, Swagger, OpenAPI)
+    DOC_CSP = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net blob:; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; "
+        "connect-src 'self' https://cdn.jsdelivr.net; "
+        "worker-src blob:; "
+        "frame-ancestors 'self'; "
+        "base-uri 'self'"
+    )
+    _DOC_PATHS = {"/api/docs", "/api/redoc", "/api/openapi.json"}
+
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':
             await self.app(scope, receive, send)
             return
+
+        path = scope.get('path', '')
+        is_doc_route = path in self._DOC_PATHS or path.rstrip('/') in self._DOC_PATHS
 
         async def send_wrapper(message):
             if message['type'] == 'http.response.start':
@@ -94,7 +111,15 @@ class SecurityHeadersMiddleware:
 
                 for header, value in self.headers.items():
                     h_bytes = header.lower().encode()
-                    if h_bytes not in existing_names:
+                    # For doc routes, override CSP with permissive version
+                    if is_doc_route and header == 'Content-Security-Policy':
+                        # Remove existing CSP if present
+                        existing_headers = [
+                            h for h in existing_headers
+                            if (h[0].lower() if isinstance(h[0], bytes) else h[0].lower().encode()) != b'content-security-policy'
+                        ]
+                        existing_headers.append((header.encode(), self.DOC_CSP.encode()))
+                    elif h_bytes not in existing_names:
                         existing_headers.append((header.encode(), value.encode()))
 
                 message['headers'] = existing_headers

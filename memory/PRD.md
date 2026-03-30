@@ -80,6 +80,13 @@ Hotel Property Management System - full-stack application with React frontend an
 - [x] Guvenlik: MongoDB/Redis sadece internal network, backend port disari acik degil
 - [x] HotelRunner endpoint'leri Nginx'te tanimli (callback GET + webhook POST + internal webhooks)
 
+### P5.2 - CSP Bug Fix (COMPLETED 2026-03-30)
+- [x] `/api/redoc` CSP hatası düzeltildi — ReDoc, Swagger ve OpenAPI JSON için permissive CSP
+- [x] `deploy/nginx/api.conf`: doc route'ları için özel location + `proxy_hide_header CSP` + permissive CSP eklendi
+- [x] `backend/infra/security_headers.py`: `SecurityHeadersMiddleware`'e doc route tespiti + permissive CSP override eklendi
+- [x] `infra/nginx/prod.conf`: Eski katı CSP güncellendi (CDN/font domain'leri eklendi)
+- [x] Test: Preview ortamda curl + screenshot doğrulaması başarılı
+
 ### P5.1 - Route Uyumluluk & Production .env (COMPLETED 2026-03-28)
 - [x] Compatibility router: /api/integrations/hotelrunner/callback (GET) + /webhook (POST)
 - [x] Unified webhook dispatcher: payload'daki event_type/state'e gore create/modify/cancel routing
