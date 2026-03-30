@@ -27,6 +27,13 @@ Ops endpoints:
   GET  /transition/plan      → full write path transition plan
   GET  /transition/status    → current phase + readiness
   GET  /transition/history   → transition log
+  POST /dry-run/ari-push     → dry-run ARI push (no real write)
+  POST /dry-run/confirm-delivery → dry-run confirm delivery
+  POST /dry-run/chain        → dry-run create/modify/cancel chain
+  POST /dry-run/simulate-failure → trigger failure scenario
+  GET  /dry-run/results      → dry-run execution history
+  GET  /dry-run/stats        → dry-run success rate & failure breakdown
+  GET  /dry-run/write-criteria → write enable criteria check
 """
 import logging
 from typing import Any
@@ -443,6 +450,13 @@ async def get_ops_dashboard(
     # 12. Transition phase
     phase_state = await get_current_phase(tenant_id)
 
+    # 13. Dry-run stats
+    from channel_manager.connectors.hotelrunner_v2.dry_run import get_dry_run_stats, check_write_enable_criteria
+    dry_run_stats = await get_dry_run_stats(tenant_id)
+
+    # 14. Write enable criteria
+    write_criteria = await check_write_enable_criteria(tenant_id)
+
     return {
         "generated_at": now_iso,
         "tenant_id": tenant_id,
@@ -506,6 +520,26 @@ async def get_ops_dashboard(
             "current_phase": phase_state.get("current_phase", "shadow"),
             "phase_started_at": phase_state.get("phase_started_at"),
             "phase_day": phase_state.get("phase_day", 0),
+        },
+
+        # Dry-Run Stats
+        "dry_run": {
+            "total_runs": dry_run_stats.get("total_runs", 0),
+            "success_rate": dry_run_stats.get("overall_success_rate", 0),
+            "total_success": dry_run_stats.get("total_success", 0),
+            "total_failed": dry_run_stats.get("total_failed", 0),
+            "failure_breakdown": dry_run_stats.get("failure_breakdown", {}),
+            "last_result": dry_run_stats.get("last_result"),
+            "last_chain": dry_run_stats.get("last_chain"),
+            "operations": dry_run_stats.get("operations", {}),
+        },
+
+        # Write Enable Criteria
+        "write_criteria": {
+            "all_met": write_criteria.get("all_criteria_met", False),
+            "met_count": write_criteria.get("met_count", 0),
+            "total_criteria": write_criteria.get("total_criteria", 0),
+            "criteria": write_criteria.get("criteria", []),
         },
     }
 
@@ -597,3 +631,134 @@ async def get_transition_history_endpoint(
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.transition import get_transition_history
     return await get_transition_history(tenant_id, limit=limit)
+
+
+# ── Dry-Run Write Path ────────────────────────────────────────────────
+
+@router.post("/dry-run/ari-push")
+async def dry_run_ari_push_endpoint(
+    tenant_id: str = Query(...),
+    property_id: str = Query("default"),
+    body: dict[str, Any] = Body(...),
+):
+    """
+    Dry-run ARI push: production path'in birebir kopyasi, side-effect yok.
+    Payload, outbox, verification — hepsi calisir. Gercek HTTP yok.
+    """
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.dry_run import dry_run_ari_push
+    return await dry_run_ari_push(
+        tenant_id, property_id,
+        inv_code=body.get("inv_code", ""),
+        start_date=body.get("start_date", ""),
+        end_date=body.get("end_date", ""),
+        availability=body.get("availability"),
+        price=body.get("price"),
+        stop_sale=body.get("stop_sale"),
+        min_stay=body.get("min_stay"),
+        cta=body.get("cta"),
+        ctd=body.get("ctd"),
+        days=body.get("days"),
+        channel_codes=body.get("channel_codes"),
+        simulate_failure=body.get("simulate_failure"),
+        verify=body.get("verify", True),
+    )
+
+
+@router.post("/dry-run/confirm-delivery")
+async def dry_run_confirm_delivery_endpoint(
+    tenant_id: str = Query(...),
+    property_id: str = Query("default"),
+    body: dict[str, Any] = Body(...),
+):
+    """Dry-run confirm delivery: NO-OP PUT, payload captured."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.dry_run import dry_run_confirm_delivery
+    return await dry_run_confirm_delivery(
+        tenant_id, property_id,
+        message_uid=body.get("message_uid", ""),
+        pms_number=body.get("pms_number"),
+        simulate_failure=body.get("simulate_failure"),
+    )
+
+
+@router.post("/dry-run/chain")
+async def dry_run_chain_endpoint(
+    tenant_id: str = Query(...),
+    property_id: str = Query("default"),
+    body: dict[str, Any] = Body(default={}),
+):
+    """
+    Tam create -> modify -> cancel zinciri calistir (dry-run).
+    Her adim icin ayri failure simulation belirlenebilir.
+    """
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.dry_run import dry_run_chain
+    return await dry_run_chain(
+        tenant_id, property_id,
+        simulate_failures=body.get("simulate_failures"),
+    )
+
+
+@router.post("/dry-run/simulate-failure")
+async def dry_run_simulate_failure_endpoint(
+    tenant_id: str = Query(...),
+    property_id: str = Query("default"),
+    body: dict[str, Any] = Body(...),
+):
+    """
+    Belirli bir failure senaryosu tetikle:
+    - timeout, validation_error, rate_limit
+    """
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.dry_run import dry_run_ari_push
+    failure_type = body.get("failure_type", "timeout")
+    return await dry_run_ari_push(
+        tenant_id, property_id,
+        inv_code=body.get("inv_code", "HR:FAIL-TEST"),
+        start_date=body.get("start_date", "2026-04-01"),
+        end_date=body.get("end_date", "2026-04-05"),
+        availability=body.get("availability", 5),
+        simulate_failure=failure_type,
+        verify=False,
+    )
+
+
+@router.get("/dry-run/results")
+async def get_dry_run_results_endpoint(
+    tenant_id: str = Query(...),
+    limit: int = Query(50),
+    operation: str | None = Query(None),
+):
+    """Dry-run execution history."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.dry_run import get_dry_run_results
+    results = await get_dry_run_results(tenant_id, limit=limit, operation=operation)
+    return {"results": results, "count": len(results)}
+
+
+@router.get("/dry-run/stats")
+async def get_dry_run_stats_endpoint(
+    tenant_id: str = Query(...),
+):
+    """Dry-run success rate, failure breakdown, chain status."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.dry_run import get_dry_run_stats
+    return await get_dry_run_stats(tenant_id)
+
+
+@router.get("/dry-run/write-criteria")
+async def get_write_criteria_endpoint(
+    tenant_id: str = Query(...),
+):
+    """Write enable criteria check — tum kriterler saglanmadan write acilmaz."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.dry_run import check_write_enable_criteria
+    return await check_write_enable_criteria(tenant_id)

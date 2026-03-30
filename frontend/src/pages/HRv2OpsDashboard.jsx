@@ -12,7 +12,8 @@ import {
   Server, Shield, ShieldAlert, Timer, Wifi, WifiOff, XCircle,
   Zap, TrendingUp, BarChart3, GitCompare, Radio, Play,
   Target, ArrowUpRight, ArrowDownRight, Minus, Calendar,
-  FileText, ChevronRight, Layers,
+  FileText, ChevronRight, Layers, FlaskConical, Link2, Ban,
+  CircleSlash, ShieldCheck,
 } from "lucide-react";
 
 const TENANT_ID = "syroce_default";
@@ -281,6 +282,9 @@ export default function HRv2OpsDashboard({ tenant }) {
   const [triggeringRecon, setTriggeringRecon] = useState(false);
   const [collectingSnapshot, setCollectingSnapshot] = useState(false);
   const [observationData, setObservationData] = useState(null);
+  const [runningDryRun, setRunningDryRun] = useState(false);
+  const [runningChain, setRunningChain] = useState(false);
+  const [runningFailSim, setRunningFailSim] = useState(null);
 
   const tenantId = tenant?.tenant_id || TENANT_ID;
 
@@ -372,6 +376,75 @@ export default function HRv2OpsDashboard({ tenant }) {
     }
   };
 
+  const handleDryRunAriPush = async () => {
+    setRunningDryRun(true);
+    try {
+      const res = await axios.post(`/channel/hotelrunner-v2/dry-run/ari-push`, {
+        inv_code: "HR:DR-TEST-101",
+        start_date: "2026-04-01",
+        end_date: "2026-04-05",
+        availability: 10,
+        price: 200.0,
+        verify: true,
+      }, { params: { tenant_id: tenantId, property_id: PROPERTY_ID } });
+      if (res.data?.success) {
+        toast.success("Dry-run ARI push basarili", {
+          description: `Correlation: ${res.data.correlation_id} | ${res.data.duration_ms}ms`,
+        });
+      } else {
+        toast.error("Dry-run ARI push basarisiz", {
+          description: res.data?.noop_response?.error || "",
+        });
+      }
+      fetchDashboard();
+    } catch (err) {
+      toast.error("Dry-run hatasi", { description: err.message });
+    } finally {
+      setRunningDryRun(false);
+    }
+  };
+
+  const handleDryRunChain = async () => {
+    setRunningChain(true);
+    try {
+      const res = await axios.post(`/channel/hotelrunner-v2/dry-run/chain`, {}, {
+        params: { tenant_id: tenantId, property_id: PROPERTY_ID },
+      });
+      if (res.data?.success) {
+        toast.success("Dry-run zincir tamamlandi", {
+          description: `${res.data.success_count}/${res.data.step_count} basarili | ${res.data.correlation_id}`,
+        });
+      } else {
+        toast.error("Dry-run zincir basarisiz", {
+          description: `${res.data?.failure_count || 0} adim basarisiz`,
+        });
+      }
+      fetchDashboard();
+    } catch (err) {
+      toast.error("Dry-run zincir hatasi", { description: err.message });
+    } finally {
+      setRunningChain(false);
+    }
+  };
+
+  const handleSimulateFailure = async (failureType) => {
+    setRunningFailSim(failureType);
+    try {
+      const res = await axios.post(`/channel/hotelrunner-v2/dry-run/simulate-failure`, {
+        failure_type: failureType,
+      }, { params: { tenant_id: tenantId, property_id: PROPERTY_ID } });
+      const label = { timeout: "Timeout", validation_error: "Validation Error", rate_limit: "Rate Limit" }[failureType] || failureType;
+      toast.info(`${label} simule edildi`, {
+        description: `Correlation: ${res.data?.correlation_id}`,
+      });
+      fetchDashboard();
+    } catch (err) {
+      toast.error("Simulasyon hatasi", { description: err.message });
+    } finally {
+      setRunningFailSim(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[80vh]" data-testid="ops-dashboard-loading">
@@ -393,6 +466,8 @@ export default function HRv2OpsDashboard({ tenant }) {
   const errTax = data?.error_taxonomy || {};
   const readiness = data?.readiness || {};
   const transition = data?.transition || {};
+  const dryRun = data?.dry_run || {};
+  const writeCriteria = data?.write_criteria || {};
   const obsReport = observationData || {};
   const obsAlerts = obsReport?.latest_snapshot?.alerts || {};
 
@@ -591,6 +666,215 @@ export default function HRv2OpsDashboard({ tenant }) {
                     ))}
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* ── Dry-Run Write Path ── */}
+            <Card data-testid="dry-run-panel" className="md:col-span-4 border-slate-100 shadow-sm">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FlaskConical className="w-4 h-4 text-indigo-500" />
+                    <CardTitle className="text-base font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
+                      Dry-Run Kontrol
+                    </CardTitle>
+                  </div>
+                  {dryRun.total_runs > 0 && (
+                    <Badge variant="outline" className="text-[10px] bg-indigo-50 text-indigo-600 border-indigo-200">
+                      {dryRun.total_runs} calisma
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Button
+                  data-testid="dry-run-ari-push-btn"
+                  onClick={handleDryRunAriPush}
+                  disabled={runningDryRun}
+                  className="w-full justify-start bg-indigo-600 hover:bg-indigo-700 text-white text-sm h-10"
+                >
+                  {runningDryRun ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                  Dry-Run ARI Push
+                </Button>
+                <Button
+                  data-testid="dry-run-chain-btn"
+                  onClick={handleDryRunChain}
+                  disabled={runningChain}
+                  variant="outline"
+                  className="w-full justify-start text-sm h-10 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                >
+                  {runningChain ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Link2 className="w-4 h-4 mr-2" />}
+                  Zincir Testi (Create/Modify/Cancel)
+                </Button>
+                <Separator />
+                <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Hata Simulasyonu</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { key: "timeout", label: "Timeout", icon: Clock },
+                    { key: "validation_error", label: "Validation", icon: Ban },
+                    { key: "rate_limit", label: "Rate Limit", icon: CircleSlash },
+                  ].map(({ key, label, icon: FIcon }) => (
+                    <Button
+                      key={key}
+                      data-testid={`simulate-${key}-btn`}
+                      onClick={() => handleSimulateFailure(key)}
+                      disabled={runningFailSim === key}
+                      variant="outline"
+                      size="sm"
+                      className="text-[11px] h-8 border-red-200 text-red-600 hover:bg-red-50"
+                    >
+                      {runningFailSim === key ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <FIcon className="w-3 h-3 mr-1" />}
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+                <Separator />
+                {/* Dry-run stats summary */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-600">Basari Orani</span>
+                    <span className={`font-semibold ${dryRun.success_rate >= 95 ? "text-emerald-600" : dryRun.success_rate >= 70 ? "text-amber-600" : "text-red-600"}`}>
+                      {dryRun.total_runs > 0 ? `%${dryRun.success_rate}` : "—"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-600">Basarili / Basarisiz</span>
+                    <span className="text-slate-700 font-medium">
+                      <span className="text-emerald-600">{dryRun.total_success || 0}</span>
+                      <span className="text-slate-400 mx-1">/</span>
+                      <span className="text-red-600">{dryRun.total_failed || 0}</span>
+                    </span>
+                  </div>
+                  {dryRun.last_chain && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-600">Son Zincir</span>
+                      <span className={`font-medium ${dryRun.last_chain.success ? "text-emerald-600" : "text-red-600"}`}>
+                        {dryRun.last_chain.success ? "Basarili" : "Basarisiz"} ({dryRun.last_chain.success_count}/{dryRun.last_chain.step_count})
+                      </span>
+                    </div>
+                  )}
+                  {dryRun.last_result && (
+                    <div className="mt-2 p-2 rounded-lg bg-slate-50 border border-slate-100">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-500">Son islem</span>
+                        <span className={`font-medium ${dryRun.last_result.success ? "text-emerald-600" : "text-red-600"}`}>
+                          {dryRun.last_result.operation} — {dryRun.last_result.success ? "OK" : "FAIL"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 mt-0.5">
+                        <span>{dryRun.last_result.correlation_id}</span>
+                        <span>{dryRun.last_result.duration_ms}ms</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ── Dry-Run Failure Breakdown ── */}
+            <Card data-testid="dry-run-failure-panel" className="md:col-span-4 border-slate-100 shadow-sm">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-red-500" />
+                  <CardTitle className="text-base font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
+                    Dry-Run Hata Dagilimi
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {Object.keys(dryRun.failure_breakdown || {}).length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <Shield className="w-8 h-8 text-emerald-400 mb-2" />
+                    <p className="text-sm font-medium text-emerald-700">Hata yok</p>
+                    <p className="text-xs text-slate-400 mt-1">Dry-run'da hata kaydedilmedi</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {Object.entries(dryRun.failure_breakdown).map(([cat, count]) => (
+                      <div key={cat} className="flex items-center justify-between p-2.5 rounded-lg bg-red-50/50 border border-red-100">
+                        <div className="flex items-center gap-2">
+                          <XCircle className="w-3.5 h-3.5 text-red-500" />
+                          <span className="text-sm text-red-700 font-medium">{cat || "unknown"}</span>
+                        </div>
+                        <Badge variant="outline" className="text-xs text-red-600 border-red-200 bg-red-50">{count}</Badge>
+                      </div>
+                    ))}
+                    {/* Dry-run per-operation breakdown */}
+                    {Object.keys(dryRun.operations || {}).length > 0 && (
+                      <>
+                        <Separator />
+                        <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Islem Bazli</p>
+                        {Object.entries(dryRun.operations).map(([op, opData]) => (
+                          <div key={op} className="flex items-center justify-between text-xs py-1">
+                            <span className="text-slate-600 font-medium">{op}</span>
+                            <span>
+                              <span className="text-emerald-600">{opData.success}</span>
+                              <span className="text-slate-400 mx-0.5">/</span>
+                              <span className="text-red-600">{opData.failed}</span>
+                              <span className="text-slate-400 ml-1">(%{opData.success_rate})</span>
+                            </span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* ── Write Enable Criteria ── */}
+            <Card data-testid="write-criteria-panel" className="md:col-span-4 border-slate-100 shadow-sm">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-slate-700" />
+                    <CardTitle className="text-base font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
+                      Write Acma Kriterleri
+                    </CardTitle>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] ${
+                      writeCriteria.all_met
+                        ? "text-emerald-600 border-emerald-200 bg-emerald-50"
+                        : "text-amber-600 border-amber-200 bg-amber-50"
+                    }`}
+                  >
+                    {writeCriteria.met_count ?? 0}/{writeCriteria.total_criteria ?? 0}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {(writeCriteria.criteria || []).length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <Target className="w-8 h-8 text-slate-300 mb-2" />
+                    <p className="text-sm text-slate-500">Kriter verisi yok</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {(writeCriteria.criteria || []).map((c) => (
+                      <div key={c.name} data-testid={`criteria-${c.name}`} className={`flex items-center justify-between p-2 rounded-lg border text-xs ${
+                        c.met
+                          ? "bg-emerald-50/50 border-emerald-100 text-emerald-700"
+                          : "bg-red-50/50 border-red-100 text-red-700"
+                      }`}>
+                        <div className="flex items-center gap-1.5">
+                          {c.met ? <CheckCircle2 className="w-3 h-3 text-emerald-500" /> : <XCircle className="w-3 h-3 text-red-500" />}
+                          <span className="font-medium">{c.label}</span>
+                        </div>
+                        <span className="font-semibold">{typeof c.current_value === 'number' ? c.current_value : c.current_value}</span>
+                      </div>
+                    ))}
+                    {writeCriteria.all_met && (
+                      <div className="mt-2 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-center">
+                        <p className="text-xs font-medium text-emerald-700">
+                          <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />
+                          Tum kriterler karsilandi — Write acilabilir
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
 

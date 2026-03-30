@@ -75,3 +75,9 @@ async def is_write_enabled(tenant_id: str) -> bool:
     """Quick check: are writes (ARI push) allowed?"""
     flags = await get_flags(tenant_id)
     return flags.get("write_enabled", False) and not flags.get("shadow_mode", True)
+
+
+async def is_dry_run_mode(tenant_id: str) -> bool:
+    """Quick check: is dry-run mode active?"""
+    flags = await get_flags(tenant_id)
+    return flags.get("dry_run_mode", False)
