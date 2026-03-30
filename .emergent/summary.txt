@@ -1,37 +1,39 @@
 <analysis>**original_problem_statement**: 
-The user wants to safely deploy and manage the HotelRunner v2 integration. PRODUCT REQUIREMENTS: 
-1. P0: Run a Live Production Test for the newly created HotelRunner v2 connector (in Shadow Mode) using real credentials. (Completed)
-2. P1: Build an Ops Dashboard Frontend to monitor provider health (provider status, auth status, last sync time, drift count, retry count, DLQ count, shadow/live mode state, recent failures list). (Completed)
-3. P1: Create a Write Path Transition Plan (Shadow -> Dry-run -> Limited live -> Full live).
+The user wants to safely deploy and manage the HotelRunner v2 integration. Current focus is shifting from building the ops dashboard to executing a strict transition path before enabling live writes. PRODUCT REQUIREMENTS:
+1. P0: 7-day Shadow Observation Plan (monitoring auth, latency, DLQ, drifts, ingest consistency, alerts).
+2. P1: Write Readiness Score (0-100) integrated into the Ops Dashboard.
+3. P1: Write Path Transition Plan detailing entry/exit/rollback for 4 phases (Shadow, Dry-run, Limited live, Full live).
+4. P1: Implement Dry-run Write Path (simulating writes, no real data pushed).
 
 **User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın.)
 
 **what currently exists?** 
-A production-grade  connector running safely in **Shadow Mode** (read-only, write disabled). A comprehensive Ops Dashboard Frontend is now built and fully functional, visualizing real-time metrics, provider health, sync status, and DLQ errors directly from the live API and database.
+A production-grade  connector running in **Shadow Mode** (read-only). The Ops Dashboard has been heavily upgraded to include a dynamic **Write Readiness Score (0-100)**, a **Transition Phase Tracker**, and manual **Snapshot/Observation tools** to monitor the 7-day shadow period.
 
 **Last working item**:
-    - Last item agent was working: Implementing the P1 Ops Dashboard Frontend. The agent created the aggregated backend endpoint (), built the React UI using Shadcn components, resolved a  caused by JWT tenant mismatch, and successfully tested the full flow using the Testing Agent.
+    - Last item agent was working: Implementing the Write Readiness Score algorithm, Shadow Observation metrics gathering, Transition phase tracking on the backend, and integrating these into the React Ops Dashboard UI.
     - Status: USER VERIFICATION PENDING
     - Agent Testing Done: Y
-    - Which testing method agent to use? testing_agent_v3_fork and screenshots
+    - Which testing method agent to use? testing_agent_v3_fork
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
   *None.*
 
 **In progress Task List**: 
-  Task 1: P1 - Write Path Transition Plan & Observation
-     - Where to resume: Wait for the user to verify the newly built Ops Dashboard. Once confirmed, propose and execute the next steps from the user's roadmap: 7-day shadow observation, followed by a dry-run write path.
-     - What will be achieved with this? Safely transitioning the live connector from read-only to write-enabled without causing production data corruption.
+  Task 1: P1 - Dry-run Write Path Implementation
+     - Where to resume: Wait for user feedback on the Write Readiness and Observation features. If approved, ask if they want to automate the 7-day observation with Celery beat as previously suggested, or move directly to building the Dry-run simulation logic.
+     - What will be achieved with this? Safely simulate writes and verify transaction integrity without actually mutating HotelRunner live data.
      - Status: NOT STARTED
      - Should Test frontend/backend/both after fix? Backend
-     - Blocked on something: Waiting for user verification of the Ops Dashboard.
+     - Blocked on something: Waiting for user verification and confirmation of the next step.
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - P1: 7-day shadow observation (Monitor auth stability, pull trends, drift count).
-    - P1: Dry-run write path (Controlled simulation before real write).
-    - P1: Limited live write (Single tenant/small scope).
+    - P1: Complete the 7-day shadow observation period.
+    - P1: Dry-run write path implementation (Controlled simulation before real write).
+    - P1: Limited live write execution (Single tenant/small scope).
+    - P1: Full live write execution.
     
     Future Tasks:
     - P2: PII Field Encryption (Strict Mode enforcement).
@@ -39,11 +41,13 @@ A production-grade  connector running safely in **Shadow Mode** (read-only, writ
     - P3: Legacy HR connector migration/cleanup ( DEPRECATED).
 
 **Completed work in this session**
-- Created  aggregated metrics endpoint in . (DONE)
-- Created  frontend page with StatusBadges, metrics panels, and sync overview. (DONE)
-- Added  route mapping in . (DONE)
-- Fixed  (500 Server Error) in the backend by explicitly setting the tenant context () for ops and testing endpoints. (DONE)
-- Executed  with 100% passing results for backend and frontend. (DONE)
+- Fixed import sorting lint issue in . (DONE)
+- Created  for shadow snapshots and alerts. (DONE)
+- Created  to calculate composite Write Readiness Score. (DONE)
+- Created  to map and serve the 4 transition phases. (DONE)
+- Updated  response and added specific endpoints for readiness, observation, and transition. (DONE)
+- Updated  to display a Readiness gauge, Transition steps, and Observation controls. (DONE)
+- Tested full flow successfully via  (iteration_164.json). (DONE)
 
 **Earlier issues found/mentioned but not fixed**
    - None
@@ -55,60 +59,61 @@ A production-grade  connector running safely in **Shadow Mode** (read-only, writ
 
 
 **Key Technical Concepts**
-- **Shadow Mode**: Currently ACTIVE. Write operations are simulated.
-- **Tenant Middleware**: System restricts cross-tenant DB queries (). Ops/Admin endpoints must explicitly manage tenant context to prevent .
-- **Aggregated Ops Metrics**: Unified response containing health, drifts, DLQ, and latency.
+- **Write Readiness Score**: A 0-100 composite score weighting drift rate (25%), error rate (25%), latency (20%), retry count (15%), and DLQ count (15%).
+- **Transition Phases**: Enforced strictly as  ->  ->  -> .
+- **Observation Snapshot**: Collects daily metrics into  database to satisfy the 7-day shadow observation requirement.
 
 **key DB schema**
-  - : Stores encrypted provider credentials.
-  -  / : Stores operational sync history and dead letters.
+  - : Used to store daily snapshots during the observation period.
 
 **changes in tech stack**
   - None
 
 **All files of reference** 
-  -  (Updated to add  and fix tenant context)
   -  (Created)
-  -  (Updated routing)
-  -  &  (Updated)
   -  (Created)
+  -  (Created)
+  -  (Updated)
+  -  (Updated)
+  -  (Updated)
+  -  (Updated)
 
 **Areas that need refactoring**: 
-- The legacy connector located at  is deprecated.
--  is getting very large (2100+ lines) and requires decomposition (P2).
+- Deprecated legacy connector at  (P3 cleanup).
+-  decomposition (P2).
 
 **key api endpoints**
+- 
 -  (NEW)
-- 
-- 
+-  (NEW)
+-  (NEW)
 
 **Critical Info for New Agent** 
 - **Language Constraint:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-- **Tenant Context Watch-out:** When querying tenant-scoped collections (, ) for the dashboard or system tasks, ensure  is used correctly, otherwise  will throw a 500 error. The agent fixed this for the Ops endpoints.
-- **DO NOT ENABLE WRITES:** The connector must remain in Shadow Mode (). The next step is a 7-day observation period as explicitly instructed by the user. Let the user drive the transition to Dry-run/Live.
+- **DO NOT ENABLE WRITES:** The connector must firmly remain in Shadow Mode (). The UI and backend now track the readiness score. Await user confirmation before attempting any implementation of the Dry-run phase.
+- Agent ended the previous session by suggesting a Celery beat job to automate snapshot collection for the 7-day observation. See what the user decides.
 
 **documents and test reports created in this job** 
-  - 
   - 
   -  (Updated)
   -  (Updated)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - *User Messages:* The user reviewed the Live Test results and gave the green light to build the Ops Dashboard, stating that seeing the data is the next critical priority. The user defined strict requirements for the dashboard (health panel, sync overview, failure visibility).
- - *Pending Human Messages:* The agent implemented the entire dashboard, fixed a backend tenant bug, tested it successfully, and finished the task. The agent is now waiting for the user to review the final dashboard and approve moving to the 7-day shadow observation phase.
+ - *User Messages:* User reported a lint error which the agent fixed. User then officially approved the Ops Dashboard and mandated the next priorities: 1) Shadow Observation Plan, 2) Transition Plan, 3) Dry-run implementation, with a strict requirement to add a Write Readiness Score to the dashboard.
+ - *Pending Human Messages:* The agent fully implemented the Readiness Score, Observation APIs, Transition tracking, updated the Dashboard UI, ran the testing agent with 100% success, and sent the completion message. Waiting for the user's response to the finished work.
 
 **Project Health Check:**
   - Broken: None
-  - Mocked: None (Real connection and live database are utilized).
+  - Mocked: None 
 
 **3rd Party Integrations** 
-  - AWS KMS (Encryption Provider) — requires User API Key
-  - HotelRunner (Production v2 Connector) — requires User Token/HR_ID (already seeded)
+  - AWS KMS (Encryption) — requires User API Key
+  - HotelRunner v2 — requires User Token
 
 **Testing status**
-  - Testing agent used after significant changes: YES (iteration_163.json - 100% pass)
-  - Troubleshoot agent used after agent stuck in loop: NO
-  - Test files created: None this session.
+  - Testing agent used after significant changes: YES (iteration_164.json)
+  - Troubleshoot agent used after agent stuck in loop: NO (Used testing agent instead of troubleshoot agent after browser crash during a screenshot attempt).
+  - Test files created: None this session
   - Known regressions: None
 
 **Credentials to test flow:**
@@ -116,4 +121,4 @@ A production-grade  connector running safely in **Shadow Mode** (read-only, writ
   - (Tracked in )
 
 **What agent forgot to execute**
-- Nothing. The agent successfully built and tested the requested dashboard.</analysis>
+- Nothing. The agent fulfilled the required sequence and successfully added the Write Readiness Score and observation modules.</analysis>
