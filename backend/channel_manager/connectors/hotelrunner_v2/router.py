@@ -19,6 +19,14 @@ Ops endpoints:
   PUT  /flags             → update feature flags
   GET  /metrics           → metrics summary
   GET  /dlq               → dead letter queue entries
+  GET  /readiness-score   → write readiness score (0-100)
+  POST /observation/snapshot → collect daily observation snapshot
+  GET  /observation/history  → observation snapshots (7 days)
+  GET  /observation/report   → daily observation report
+  GET  /observation/thresholds → alert threshold definitions
+  GET  /transition/plan      → full write path transition plan
+  GET  /transition/status    → current phase + readiness
+  GET  /transition/history   → transition log
 """
 import logging
 from typing import Any
@@ -342,14 +350,16 @@ async def get_ops_dashboard(
     """
     Aggregated endpoint for the Ops Dashboard Frontend.
     Returns provider health, sync overview, failure visibility,
-    recent events — all in one call.
+    recent events, readiness score — all in one call.
     """
     from channel_manager.connectors.hotelrunner_v2.feature_flags import get_flags
     from channel_manager.connectors.hotelrunner_v2.metrics import get_last_sync, get_summary
+    from channel_manager.connectors.hotelrunner_v2.readiness import calculate_readiness_score
     from channel_manager.connectors.hotelrunner_v2.reconciliation import (
         get_recent_drifts,
         get_reconciliation_history,
     )
+    from channel_manager.connectors.hotelrunner_v2.transition import get_current_phase
     from core.database import db as _db
     from core.tenant_db import set_tenant_context
 
@@ -427,6 +437,12 @@ async def get_ops_dashboard(
             return "error"
         return "unknown"
 
+    # 11. Write Readiness Score
+    readiness = await calculate_readiness_score(tenant_id)
+
+    # 12. Transition phase
+    phase_state = await get_current_phase(tenant_id)
+
     return {
         "generated_at": now_iso,
         "tenant_id": tenant_id,
@@ -481,4 +497,103 @@ async def get_ops_dashboard(
 
         # Recent Drifts
         "recent_drifts": drifts,
+
+        # Write Readiness Score
+        "readiness": readiness,
+
+        # Transition Phase
+        "transition": {
+            "current_phase": phase_state.get("current_phase", "shadow"),
+            "phase_started_at": phase_state.get("phase_started_at"),
+            "phase_day": phase_state.get("phase_day", 0),
+        },
     }
+
+
+# ── Write Readiness Score ─────────────────────────────────────────────
+
+@router.get("/readiness-score")
+async def get_readiness_score(
+    tenant_id: str = Query(...),
+    hours: int = Query(24),
+):
+    """Calculate the Write Readiness Score (0-100)."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.readiness import calculate_readiness_score
+    return await calculate_readiness_score(tenant_id, hours=hours)
+
+
+# ── Shadow Observation ─────────────────────────────────────────────────
+
+@router.post("/observation/snapshot")
+async def collect_observation_snapshot(
+    tenant_id: str = Query(...),
+):
+    """Collect a daily observation snapshot (metrics, alerts, consistency)."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.observation import collect_daily_snapshot
+    return await collect_daily_snapshot(tenant_id)
+
+
+@router.get("/observation/history")
+async def get_observation_history_endpoint(
+    tenant_id: str = Query(...),
+    days: int = Query(7),
+):
+    """Get observation snapshot history (last N days)."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.observation import get_observation_history
+    return await get_observation_history(tenant_id, days=days)
+
+
+@router.get("/observation/report")
+async def get_observation_report(
+    tenant_id: str = Query(...),
+):
+    """Generate a daily observation report with trends."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.observation import generate_daily_report
+    return await generate_daily_report(tenant_id)
+
+
+@router.get("/observation/thresholds")
+async def get_alert_thresholds_endpoint():
+    """Return alert threshold definitions."""
+    from channel_manager.connectors.hotelrunner_v2.observation import get_alert_thresholds
+    return await get_alert_thresholds()
+
+
+# ── Transition Plan ─────────────────────────────────────────────────
+
+@router.get("/transition/plan")
+async def get_transition_plan_endpoint():
+    """Get the full write path transition plan."""
+    from channel_manager.connectors.hotelrunner_v2.transition import get_transition_plan
+    return await get_transition_plan()
+
+
+@router.get("/transition/status")
+async def get_transition_status(
+    tenant_id: str = Query(...),
+):
+    """Get current transition phase + readiness for next phase."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.transition import get_phase_status
+    return await get_phase_status(tenant_id)
+
+
+@router.get("/transition/history")
+async def get_transition_history_endpoint(
+    tenant_id: str = Query(...),
+    limit: int = Query(20),
+):
+    """Get transition history log."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.transition import get_transition_history
+    return await get_transition_history(tenant_id, limit=limit)

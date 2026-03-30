@@ -26,6 +26,8 @@ _DEFAULTS = {
     "connector_enabled": False,
     "shadow_mode": True,
     "write_enabled": False,
+    "dry_run_mode": False,
+    "limited_scope": False,
     "reconciliation_enabled": True,
     "auto_fix_enabled": False,
 }

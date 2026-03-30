@@ -11,6 +11,8 @@ import {
   Database, Eye, Gauge, Inbox, Loader2, PlugZap, RefreshCw,
   Server, Shield, ShieldAlert, Timer, Wifi, WifiOff, XCircle,
   Zap, TrendingUp, BarChart3, GitCompare, Radio, Play,
+  Target, ArrowUpRight, ArrowDownRight, Minus, Calendar,
+  FileText, ChevronRight, Layers,
 } from "lucide-react";
 
 const TENANT_ID = "syroce_default";
@@ -115,21 +117,185 @@ function formatDateTime(iso) {
   }
 }
 
+// ── Write Readiness Score Gauge ──────────────────────────────────
+function ReadinessGauge({ score, verdict, verdictLabel, components }) {
+  const getScoreColor = (s) => {
+    if (s >= 90) return { ring: "text-emerald-500", bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" };
+    if (s >= 70) return { ring: "text-amber-500", bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" };
+    if (s >= 50) return { ring: "text-orange-500", bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200" };
+    return { ring: "text-red-500", bg: "bg-red-50", text: "text-red-700", border: "border-red-200" };
+  };
+
+  const colors = getScoreColor(score);
+  const circumference = 2 * Math.PI * 54;
+  const strokeDashoffset = circumference - (score / 100) * circumference;
+
+  const componentLabels = {
+    drift: "Drift",
+    error_rate: "Hata Orani",
+    retry: "Retry",
+    dlq: "DLQ",
+    latency: "Latency",
+  };
+
+  return (
+    <div data-testid="readiness-gauge" className="flex flex-col items-center">
+      {/* Circular gauge */}
+      <div className="relative w-36 h-36 mb-4">
+        <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
+          <circle cx="60" cy="60" r="54" fill="none" strokeWidth="8" className="stroke-slate-100" />
+          <circle
+            cx="60" cy="60" r="54" fill="none" strokeWidth="8"
+            className={colors.ring}
+            strokeLinecap="round"
+            style={{
+              strokeDasharray: circumference,
+              strokeDashoffset,
+              transition: "stroke-dashoffset 1s ease-in-out",
+            }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className={`text-3xl font-bold ${colors.text}`} style={{ fontFamily: "Manrope, sans-serif" }}>
+            {score}
+          </span>
+          <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">/ 100</span>
+        </div>
+      </div>
+
+      {/* Verdict */}
+      <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border ${colors.bg} ${colors.text} ${colors.border}`}>
+        <Target className="w-3 h-3" />
+        {verdictLabel}
+      </div>
+
+      {/* Component breakdown */}
+      {components && (
+        <div className="w-full mt-4 space-y-2">
+          {Object.entries(components).map(([key, comp]) => {
+            const barColor = comp.score >= 80 ? "bg-emerald-500" : comp.score >= 50 ? "bg-amber-500" : "bg-red-500";
+            return (
+              <div key={key} data-testid={`readiness-component-${key}`} className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-600 font-medium">{componentLabels[key] || key}</span>
+                  <span className="text-slate-500">{comp.score}<span className="text-slate-400">/100</span></span>
+                </div>
+                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${barColor}`}
+                    style={{ width: `${comp.score}%`, transition: "width 0.8s ease-in-out" }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                  <span>{comp.raw_value} {comp.unit}</span>
+                  <span>agirlik: %{Math.round(comp.weight * 100)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Transition Phase Indicator ──────────────────────────────────
+function TransitionPhaseBar({ currentPhase, phaseDef }) {
+  const phases = [
+    { key: "shadow", label: "Shadow", icon: Eye },
+    { key: "dry_run", label: "Dry-Run", icon: FileText },
+    { key: "limited_live", label: "Limited", icon: Layers },
+    { key: "full_live", label: "Full Live", icon: Zap },
+  ];
+  const currentIdx = phases.findIndex(p => p.key === currentPhase);
+
+  return (
+    <div data-testid="transition-phase-bar" className="w-full">
+      <div className="flex items-center justify-between gap-1">
+        {phases.map((p, i) => {
+          const isActive = i === currentIdx;
+          const isPast = i < currentIdx;
+          const Icon = p.icon;
+          return (
+            <div key={p.key} className="flex items-center gap-1 flex-1">
+              <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all flex-1 justify-center ${
+                isActive
+                  ? "bg-slate-900 text-white shadow-md"
+                  : isPast
+                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                  : "bg-slate-50 text-slate-400 border border-slate-100"
+              }`}>
+                <Icon className="w-3 h-3" />
+                <span className="hidden sm:inline">{p.label}</span>
+              </div>
+              {i < phases.length - 1 && (
+                <ChevronRight className={`w-3.5 h-3.5 shrink-0 ${isPast ? "text-emerald-400" : "text-slate-200"}`} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Alert Badge ──────────────────────────────────
+function AlertItem({ name, alert }) {
+  const labels = {
+    drift_count_24h: "Drift (24s)",
+    retry_count_24h: "Retry (24s)",
+    dlq_count: "DLQ",
+    error_rate_pct: "Hata Orani",
+    avg_latency_ms: "Ort. Latency",
+    auth_failure_count: "Auth Hatasi",
+    duplicate_ingest_count: "Tekrar Ingest",
+    stale_reservation_count: "Stale Rez.",
+  };
+  const statusColors = {
+    ok: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    warn: "bg-amber-50 text-amber-700 border-amber-200",
+    critical: "bg-red-50 text-red-700 border-red-200",
+  };
+  const statusIcons = {
+    ok: <CheckCircle2 className="w-3 h-3 text-emerald-500" />,
+    warn: <AlertTriangle className="w-3 h-3 text-amber-500" />,
+    critical: <XCircle className="w-3 h-3 text-red-500" />,
+  };
+
+  return (
+    <div data-testid={`alert-${name}`} className={`flex items-center justify-between p-2 rounded-lg border text-xs ${statusColors[alert.status] || statusColors.ok}`}>
+      <div className="flex items-center gap-1.5">
+        {statusIcons[alert.status]}
+        <span className="font-medium">{labels[name] || name}</span>
+      </div>
+      <span className="font-semibold">{alert.value}</span>
+    </div>
+  );
+}
+
 export default function HRv2OpsDashboard({ tenant }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [triggeringRecon, setTriggeringRecon] = useState(false);
+  const [collectingSnapshot, setCollectingSnapshot] = useState(false);
+  const [observationData, setObservationData] = useState(null);
 
   const tenantId = tenant?.tenant_id || TENANT_ID;
 
   const fetchDashboard = useCallback(async (showToast = false) => {
     try {
-      const res = await axios.get(`/channel/hotelrunner-v2/ops-dashboard`, {
-        params: { tenant_id: tenantId, property_id: PROPERTY_ID },
-      });
-      setData(res.data);
+      const [dashRes, obsRes] = await Promise.all([
+        axios.get(`/channel/hotelrunner-v2/ops-dashboard`, {
+          params: { tenant_id: tenantId, property_id: PROPERTY_ID },
+        }),
+        axios.get(`/channel/hotelrunner-v2/observation/report`, {
+          params: { tenant_id: tenantId },
+        }).catch(() => ({ data: null })),
+      ]);
+      setData(dashRes.data);
+      setObservationData(obsRes.data);
       if (showToast) toast.success("Dashboard yenilendi");
     } catch (err) {
       console.error("Ops dashboard fetch error:", err);
@@ -188,6 +354,24 @@ export default function HRv2OpsDashboard({ tenant }) {
     }
   };
 
+  const handleCollectSnapshot = async () => {
+    setCollectingSnapshot(true);
+    try {
+      const res = await axios.post(`/channel/hotelrunner-v2/observation/snapshot`, null, {
+        params: { tenant_id: tenantId },
+      });
+      const alerts = res.data?.alert_summary;
+      toast.success("Gunluk snapshot toplandi", {
+        description: alerts ? `${alerts.critical_count} critical, ${alerts.warn_count} warn` : "",
+      });
+      fetchDashboard();
+    } catch (err) {
+      toast.error("Snapshot toplama hatasi", { description: err.message });
+    } finally {
+      setCollectingSnapshot(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[80vh]" data-testid="ops-dashboard-loading">
@@ -207,6 +391,10 @@ export default function HRv2OpsDashboard({ tenant }) {
   const events = data?.recent_events || [];
   const drifts = data?.recent_drifts || [];
   const errTax = data?.error_taxonomy || {};
+  const readiness = data?.readiness || {};
+  const transition = data?.transition || {};
+  const obsReport = observationData || {};
+  const obsAlerts = obsReport?.latest_snapshot?.alerts || {};
 
   return (
     <TooltipProvider>
@@ -259,6 +447,41 @@ export default function HRv2OpsDashboard({ tenant }) {
           {/* === BENTO GRID === */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
 
+            {/* ── Transition Phase Bar ── */}
+            <Card data-testid="transition-phase-panel" className="md:col-span-12 border-slate-100 shadow-sm">
+              <CardContent className="py-4 px-5">
+                <div className="flex items-center gap-3 mb-3">
+                  <Layers className="w-4 h-4 text-slate-500" />
+                  <p className="text-sm font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
+                    Write Path Gecis Durumu
+                  </p>
+                  <Badge variant="outline" className="text-[10px] bg-slate-50 ml-auto">
+                    Gun {transition.phase_day || 0}
+                  </Badge>
+                </div>
+                <TransitionPhaseBar currentPhase={transition.current_phase || "shadow"} />
+              </CardContent>
+            </Card>
+
+            {/* ── Write Readiness Score ── */}
+            <Card data-testid="readiness-score-panel" className="md:col-span-4 border-slate-100 shadow-sm">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Target className="w-4 h-4 text-[#C09D63]" />
+                  <CardTitle className="text-base font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
+                    Write Readiness Score
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <ReadinessGauge
+                  score={readiness.overall_score ?? 0}
+                  verdict={readiness.verdict}
+                  verdictLabel={readiness.verdict_label || "—"}
+                  components={readiness.components}
+                />
+              </CardContent>
+            </Card>
             {/* ── Provider Health Panel ── */}
             <Card data-testid="provider-health-panel" className="md:col-span-8 border-slate-100 shadow-sm">
               <CardHeader className="pb-3">
@@ -342,6 +565,16 @@ export default function HRv2OpsDashboard({ tenant }) {
                 >
                   <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
                   Provider Durumu Yenile
+                </Button>
+                <Button
+                  data-testid="collect-snapshot-btn"
+                  onClick={handleCollectSnapshot}
+                  disabled={collectingSnapshot}
+                  variant="outline"
+                  className="w-full justify-start text-sm h-10 border-[#C09D63]/30 text-[#C09D63] hover:bg-[#C09D63]/5"
+                >
+                  {collectingSnapshot ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Calendar className="w-4 h-4 mr-2" />}
+                  Gunluk Snapshot Topla
                 </Button>
                 <Separator />
                 {/* Feature Flags Summary */}
@@ -574,6 +807,133 @@ export default function HRv2OpsDashboard({ tenant }) {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* ── Shadow Observation Alerts ── */}
+            <Card data-testid="observation-alerts-panel" className="md:col-span-6 border-slate-100 shadow-sm">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    <CardTitle className="text-base font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
+                      Alert Durumu
+                    </CardTitle>
+                  </div>
+                  {obsReport?.latest_snapshot?.alert_summary && (
+                    <div className="flex items-center gap-1.5">
+                      {obsReport.latest_snapshot.alert_summary.critical_count > 0 && (
+                        <Badge variant="outline" className="text-[10px] text-red-600 border-red-200 bg-red-50">
+                          {obsReport.latest_snapshot.alert_summary.critical_count} critical
+                        </Badge>
+                      )}
+                      {obsReport.latest_snapshot.alert_summary.warn_count > 0 && (
+                        <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200 bg-amber-50">
+                          {obsReport.latest_snapshot.alert_summary.warn_count} warn
+                        </Badge>
+                      )}
+                      {obsReport.latest_snapshot.alert_summary.critical_count === 0 && obsReport.latest_snapshot.alert_summary.warn_count === 0 && (
+                        <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200 bg-emerald-50">
+                          Temiz
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                {Object.keys(obsAlerts).length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <Calendar className="w-8 h-8 text-slate-300 mb-2" />
+                    <p className="text-sm text-slate-500">Henuz snapshot verisi yok</p>
+                    <p className="text-xs text-slate-400 mt-1">Ilk snapshot'i toplamak icin "Gunluk Snapshot Topla" butonunu kullanin</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {Object.entries(obsAlerts).map(([name, alert]) => (
+                      <AlertItem key={name} name={name} alert={alert} />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* ── Observation History (7 Days) ── */}
+            <Card data-testid="observation-history-panel" className="md:col-span-6 border-slate-100 shadow-sm">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-slate-500" />
+                    <CardTitle className="text-base font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
+                      Gozlem Gecmisi
+                    </CardTitle>
+                  </div>
+                  {obsReport?.observation_day > 0 && (
+                    <Badge variant="outline" className="text-[10px] bg-slate-50">
+                      Gun {obsReport.observation_day} / {obsReport.observation_target || 7}
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                {(!obsReport?.history_summary || obsReport.history_summary.length === 0) ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <BarChart3 className="w-8 h-8 text-slate-300 mb-2" />
+                    <p className="text-sm text-slate-500">Henuz gozlem verisi yok</p>
+                    <p className="text-xs text-slate-400 mt-1">7 gunluk gozlem sureci baslatilmadi</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs" data-testid="observation-history-table">
+                      <thead>
+                        <tr className="border-b border-slate-100">
+                          <th className="text-left py-2 px-2 font-medium text-slate-500">Gun</th>
+                          <th className="text-right py-2 px-2 font-medium text-slate-500">Islem</th>
+                          <th className="text-right py-2 px-2 font-medium text-slate-500">Hata %</th>
+                          <th className="text-right py-2 px-2 font-medium text-slate-500">Drift</th>
+                          <th className="text-right py-2 px-2 font-medium text-slate-500">Latency</th>
+                          <th className="text-right py-2 px-2 font-medium text-slate-500">Alert</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {obsReport.history_summary.map((row, i) => (
+                          <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50">
+                            <td className="py-2 px-2 font-medium text-slate-700">{row.day}</td>
+                            <td className="py-2 px-2 text-right text-slate-600">{row.total_ops}</td>
+                            <td className="py-2 px-2 text-right">
+                              <span className={row.error_rate > 5 ? "text-red-600" : "text-emerald-600"}>
+                                %{row.error_rate}
+                              </span>
+                            </td>
+                            <td className="py-2 px-2 text-right">
+                              <span className={row.drift_count > 0 ? "text-amber-600" : "text-emerald-600"}>
+                                {row.drift_count}
+                              </span>
+                            </td>
+                            <td className="py-2 px-2 text-right text-slate-600">{row.avg_latency}ms</td>
+                            <td className="py-2 px-2 text-right">
+                              {row.alerts_critical > 0 ? (
+                                <span className="text-red-600 font-medium">{row.alerts_critical}C</span>
+                              ) : row.alerts_warn > 0 ? (
+                                <span className="text-amber-600">{row.alerts_warn}W</span>
+                              ) : (
+                                <span className="text-emerald-600">OK</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {obsReport.observation_complete && (
+                      <div className="mt-3 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-center">
+                        <p className="text-xs font-medium text-emerald-700">
+                          <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />
+                          7 gunluk gozlem tamamlandi
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
