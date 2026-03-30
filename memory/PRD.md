@@ -83,6 +83,27 @@ New page: `/hrv2-ops` -> `frontend/src/pages/HRv2OpsDashboard.jsx`
 | GET | /api/channel/hotelrunner-v2/transition/status | Current phase + readiness |
 | GET | /api/channel/hotelrunner-v2/transition/history | Transition log entries |
 
+### Phase 7 — P1 Dry-Run Write Path [2026-03-30]
+
+**New Backend Module:**
+- `dry_run.py` — Full dry-run write engine: production-identical path, NO-OP external calls, failure simulation, chain test, write enable criteria
+
+**New API Endpoints:**
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/channel/hotelrunner-v2/dry-run/ari-push | Dry-run ARI push (NO-OP) |
+| POST | /api/channel/hotelrunner-v2/dry-run/confirm-delivery | Dry-run confirm delivery |
+| POST | /api/channel/hotelrunner-v2/dry-run/chain | Create/Modify/Cancel chain |
+| POST | /api/channel/hotelrunner-v2/dry-run/simulate-failure | Failure scenario trigger |
+| GET | /api/channel/hotelrunner-v2/dry-run/results | Execution history |
+| GET | /api/channel/hotelrunner-v2/dry-run/stats | Success rate & failure breakdown |
+| GET | /api/channel/hotelrunner-v2/dry-run/write-criteria | Write enable criteria check |
+
+**Frontend Updates:**
+- Dry-Run Kontrol panel (ARI Push, Chain Test, Failure Simulation buttons)
+- Dry-Run Hata Dagilimi panel (failure breakdown by category)
+- Write Acma Kriterleri panel (6 criteria: readiness>=90, drift<5, dry-run rate>=95%, DLQ=0, retry<5, chain success)
+
 ## API Endpoints (v2 Connector)
 
 | Method | Path | Description |
@@ -112,6 +133,13 @@ New page: `/hrv2-ops` -> `frontend/src/pages/HRv2OpsDashboard.jsx`
 | GET | /api/channel/hotelrunner-v2/transition/plan | Transition plan |
 | GET | /api/channel/hotelrunner-v2/transition/status | Phase status |
 | GET | /api/channel/hotelrunner-v2/transition/history | Transition log |
+| POST | /api/channel/hotelrunner-v2/dry-run/ari-push | Dry-run ARI push |
+| POST | /api/channel/hotelrunner-v2/dry-run/confirm-delivery | Dry-run confirm delivery |
+| POST | /api/channel/hotelrunner-v2/dry-run/chain | Create/modify/cancel chain |
+| POST | /api/channel/hotelrunner-v2/dry-run/simulate-failure | Failure simulation |
+| GET | /api/channel/hotelrunner-v2/dry-run/results | Dry-run history |
+| GET | /api/channel/hotelrunner-v2/dry-run/stats | Success rate & breakdown |
+| GET | /api/channel/hotelrunner-v2/dry-run/write-criteria | Write enable criteria |
 
 ## Upcoming Tasks
 
@@ -120,11 +148,20 @@ New page: `/hrv2-ops` -> `frontend/src/pages/HRv2OpsDashboard.jsx`
 - Monitor auth stability, pull trends, drift count
 - Alert thresholds active (drift, error, retry, DLQ, latency, auth, duplicates, stale)
 - 7-day goal: zero critical alerts, readiness score >= 80
+- NEXT: Automate with Celery beat
 
-### P1 — Dry-Run Write Path (AFTER Shadow)
-- Simulate write operations, transaction verification
-- No real writes — verify correctness first
-- Requires shadow exit criteria met
+### P1 — Dry-Run Write Path (COMPLETED)
+- Simulated write pipeline with NO-OP external calls
+- Transaction verification (read-only)
+- Failure simulation (timeout, validation_error, rate_limit)
+- Create/Modify/Cancel chain test
+- Write Enable Criteria (6 criteria: readiness>=90, drift<5, dry-run rate>=95%, DLQ=0, retry<5, chain success)
+- Dashboard integration: success rate, failure breakdown, last result, correlation trace
+
+### P1 — Shadow Automation (NEXT)
+- Celery beat ile gunluk snapshot otomasyonu
+- Drift trend izleme
+- Readiness score history
 
 ### P2 — PII Phase 3: Strict Mode Enforcement
 ### P2 — Wire failure tracking

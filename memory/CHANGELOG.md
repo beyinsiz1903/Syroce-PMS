@@ -1,5 +1,19 @@
 # Changelog
 
+## [2026-03-30] P1 Dry-Run Write Path
+- Created `dry_run.py` — Full dry-run write engine with production-identical pipeline, NO-OP external calls
+- Supported operations: ARI push, confirm delivery, create/modify/cancel chain
+- Failure simulation: timeout, validation_error, rate_limit
+- Payload consistency check, transaction verification (read-only with HR API fallback)
+- Write Enable Criteria: 6 conditions (readiness>=90, drift<5, dry-run rate>=95%, DLQ=0, retry<5, chain success)
+- Added 7 new endpoints: dry-run/ari-push, dry-run/confirm-delivery, dry-run/chain, dry-run/simulate-failure, dry-run/results, dry-run/stats, dry-run/write-criteria
+- Updated ops-dashboard endpoint to include dry_run stats and write_criteria
+- Frontend: Dry-Run Kontrol panel (ARI Push, Chain Test, 3 failure simulation buttons)
+- Frontend: Dry-Run Hata Dagilimi panel (failure breakdown by category + per-operation)
+- Frontend: Write Acma Kriterleri panel (6 criteria with met/not-met indicators)
+- Added is_dry_run_mode() to feature_flags
+- Testing: 14/14 backend, 100% frontend (iteration 165)
+
 ## [2026-03-30] P1 Shadow Observation & Write Path Plan
 - Created `observation.py` — Daily snapshot collection, alert thresholds (8 metrics: drift, retry, DLQ, error rate, latency, auth, duplicate, stale), ingest consistency checks, daily report generation
 - Created `readiness.py` — Write Readiness Score (0-100) with 5 weighted components: drift(25%), error_rate(25%), retry(15%), dlq(15%), latency(20%)
