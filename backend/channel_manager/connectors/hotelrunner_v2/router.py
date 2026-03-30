@@ -124,7 +124,11 @@ async def pull_reservations(
     tenant_id: str = Query(...),
     property_id: str = Query("default"),
     undelivered: bool = Query(True),
-    from_date: str | None = Query(None),
+    from_date: str | None = Query(None, description="YYYY-MM-DD (max 30 days before)"),
+    from_last_update_date: str | None = Query(None, description="YYYY-MM-DD"),
+    modified: bool | None = Query(None, description="Only modified reservations"),
+    booked: bool | None = Query(None, description="Only new reservations"),
+    reservation_number: str | None = Query(None, description="Specific HR or channel code"),
 ):
     """Pull reservations from HotelRunner."""
     from channel_manager.connectors.hotelrunner_v2.feature_flags import is_enabled
@@ -133,7 +137,37 @@ async def pull_reservations(
 
     from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service
     svc = await HotelRunnerV2Service.create(tenant_id, property_id)
-    return await svc.pull_reservations(undelivered=undelivered, from_date=from_date)
+    return await svc.pull_reservations(
+        undelivered=undelivered, from_date=from_date,
+        from_last_update_date=from_last_update_date,
+        modified=modified, booked=booked,
+        reservation_number=reservation_number,
+    )
+
+
+@router.post("/confirm-delivery")
+async def confirm_delivery(
+    tenant_id: str = Query(...),
+    property_id: str = Query("default"),
+    message_uid: str = Query(..., description="message_uid from reservation"),
+    pms_number: str | None = Query(None),
+):
+    """Confirm reservation delivery to HotelRunner."""
+    from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service
+    svc = await HotelRunnerV2Service.create(tenant_id, property_id)
+    return await svc.confirm_delivery(message_uid, pms_number=pms_number)
+
+
+@router.get("/verify-transaction/{transaction_id}")
+async def verify_transaction(
+    transaction_id: str,
+    tenant_id: str = Query(...),
+    property_id: str = Query("default"),
+):
+    """Check ARI push transaction status via HotelRunner."""
+    from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service
+    svc = await HotelRunnerV2Service.create(tenant_id, property_id)
+    return await svc.verify_transaction(transaction_id)
 
 
 @router.post("/ingest")
@@ -168,16 +202,18 @@ async def push_ari(
     from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service
     svc = await HotelRunnerV2Service.create(tenant_id, property_id)
     return await svc.push_ari(
-        room_code=body.get("room_code", ""),
+        inv_code=body.get("inv_code") or body.get("room_code", ""),
         start_date=body.get("start_date", ""),
         end_date=body.get("end_date", ""),
         availability=body.get("availability"),
         price=body.get("price"),
         stop_sale=body.get("stop_sale"),
         min_stay=body.get("min_stay"),
-        max_stay=body.get("max_stay"),
         cta=body.get("cta"),
         ctd=body.get("ctd"),
+        days=body.get("days"),
+        channel_codes=body.get("channel_codes"),
+        verify=body.get("verify", True),
     )
 
 

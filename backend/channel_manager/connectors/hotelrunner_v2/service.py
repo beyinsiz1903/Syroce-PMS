@@ -5,13 +5,7 @@ HotelRunner v2 — Service (Business Logic Orchestration)
 The ONLY public entry point for all HotelRunner v2 operations.
 Orchestrates: client → mapper → pipeline → outbox → metrics.
 
-Responsibilities:
-  1. Credential resolution via SecretManager (never plaintext)
-  2. Reservation ingest (webhook/pull) with full pipeline
-  3. ARI push (availability, rate, restriction) via outbox
-  4. Connection testing
-  5. Shadow mode enforcement
-  6. Metrics recording
+Endpoint paths from endpoint_map.py (v1/v2 mixed, per HR docs).
 """
 import logging
 import time
@@ -20,10 +14,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .client import HRv2Client, HRv2Response
+from .endpoint_map import ENDPOINTS, get_path
 from .errors import HRv2AuthError, HRv2Error
 from .feature_flags import is_enabled, is_shadow_mode, is_write_enabled
 from .mapper import (
-    ari_to_daterange_payload,
+    ari_to_update_payload,
     compute_idempotency_key,
     compute_payload_hash,
     detect_event_type,
@@ -34,14 +29,6 @@ from .metrics import record_metric
 from .retry import HRv2RetryPolicy, send_to_dlq
 
 logger = logging.getLogger("hrv2.service")
-
-# API paths (matching HotelRunner REST API structure)
-EP_CHANNELS = "/api/v1/apps/infos/channels"
-EP_ROOMS = "/api/v2/apps/rooms"
-EP_RESERVATIONS = "/api/v2/apps/reservations"
-EP_ROOMS_DAILY = "/api/v2/apps/rooms/daily"
-EP_ROOMS_DATERANGE = "/api/v2/apps/rooms/~"
-EP_RESERVATIONS_ACK = "/api/v2/apps/reservations/~"
 
 # Environment URL map
 ENV_URLS = {
@@ -59,7 +46,7 @@ class HotelRunnerV2Service:
         svc = await HotelRunnerV2Service.create(tenant_id, property_id)
         result = await svc.test_connection()
         reservations = await svc.pull_reservations()
-        await svc.push_ari(room_code, start, end, availability=5)
+        await svc.push_ari("HR:1", "2026-05-01", "2026-05-05", availability=5)
     """
 
     def __init__(
@@ -128,7 +115,13 @@ class HotelRunnerV2Service:
         corr_id = str(_uuid.uuid4())[:12]
         steps: list[dict] = []
 
-        for name, path in [("auth", EP_CHANNELS), ("rooms", EP_ROOMS), ("reservations", EP_RESERVATIONS)]:
+        test_endpoints = [
+            ("auth", get_path("channels_list")),
+            ("rooms", get_path("rooms_list")),
+            ("reservations", get_path("reservations_list")),
+        ]
+
+        for name, path in test_endpoints:
             step_start = time.time()
             try:
                 resp = await self._client.get(path, params={"per_page": "1"}, correlation_id=corr_id)
@@ -170,17 +163,30 @@ class HotelRunnerV2Service:
         *,
         undelivered: bool = True,
         from_date: str | None = None,
+        from_last_update_date: str | None = None,
+        modified: bool | None = None,
+        booked: bool | None = None,
+        reservation_number: str | None = None,
         per_page: int = 50,
         max_pages: int = 20,
     ) -> dict[str, Any]:
         """
         Pull reservations from HotelRunner.
-        Returns raw + canonical reservations.
+        GET /api/v2/apps/reservations
+
+        Params from HR docs:
+        - undelivered: true (default) returns only new/undelivered
+        - from_date: YYYY-MM-DD (max 30 days before)
+        - from_last_update_date: YYYY-MM-DD
+        - modified: true for modified-only
+        - booked: true for new-only
+        - reservation_number: specific reservation
         """
         start = time.time()
         corr_id = str(_uuid.uuid4())[:12]
         all_raw: list[dict] = []
         page = 1
+        ep = get_path("reservations_list")
 
         while page <= max_pages:
             params: dict[str, str] = {
@@ -190,15 +196,28 @@ class HotelRunnerV2Service:
             }
             if from_date:
                 params["from_date"] = from_date
+            if from_last_update_date:
+                params["from_last_update_date"] = from_last_update_date
+            if modified is not None:
+                params["modified"] = str(modified).lower()
+            if booked is not None:
+                params["booked"] = str(booked).lower()
+            if reservation_number:
+                params["reservation_number"] = reservation_number
 
             try:
                 async def _call(p=params):
-                    return await self._client.get(EP_RESERVATIONS, params=p, correlation_id=corr_id)
+                    return await self._client.get(ep, params=p, correlation_id=corr_id)
 
                 resp = await self._retry.execute(_call, context=f"pull page={page}")
             except HRv2Error as e:
                 logger.error("[HRv2] pull failed page=%d: %s", page, e)
-                break
+                await record_metric(
+                    self._tenant_id, "pull_reservations",
+                    success=False, duration_ms=int((time.time() - start) * 1000),
+                    error_category=e.category, correlation_id=corr_id,
+                )
+                return {"success": False, "error": str(e), "correlation_id": corr_id}
 
             if not resp.success:
                 logger.error("[HRv2] pull error page=%d: %s", page, resp.error)
@@ -218,7 +237,7 @@ class HotelRunnerV2Service:
             try:
                 canonical_list.append(reservation_to_canonical(raw))
             except Exception as e:
-                logger.warning("[HRv2] normalize error: %s", e)
+                logger.warning("[HRv2] normalize error: %s (hr_number=%s)", e, raw.get("hr_number"))
 
         duration_ms = int((time.time() - start) * 1000)
         await record_metric(
@@ -333,7 +352,7 @@ class HotelRunnerV2Service:
 
     async def push_ari(
         self,
-        room_code: str,
+        inv_code: str,
         start_date: str,
         end_date: str,
         *,
@@ -341,14 +360,19 @@ class HotelRunnerV2Service:
         price: float | None = None,
         stop_sale: bool | None = None,
         min_stay: int | None = None,
-        max_stay: int | None = None,
         cta: bool | None = None,
         ctd: bool | None = None,
+        days: list[int] | None = None,
+        channel_codes: list[str] | None = None,
+        verify: bool = True,
         correlation_id: str = "",
     ) -> dict[str, Any]:
         """
         Push ARI update to HotelRunner.
+        PUT /api/v2/apps/rooms/~
+
         Respects shadow mode and write flags.
+        Optional verify step via transaction_details.
         """
         corr_id = correlation_id or str(_uuid.uuid4())[:12]
         start = time.time()
@@ -359,12 +383,12 @@ class HotelRunnerV2Service:
 
         if shadow or not write_ok:
             duration_ms = int((time.time() - start) * 1000)
-            logger.info("[HRv2 SHADOW] ARI push skipped: room=%s %s→%s (shadow=%s, write=%s)",
-                        room_code, start_date, end_date, shadow, write_ok)
+            logger.info("[HRv2 SHADOW] ARI push skipped: inv=%s %s→%s (shadow=%s, write=%s)",
+                        inv_code, start_date, end_date, shadow, write_ok)
             await record_metric(
                 self._tenant_id, "ari_push_shadow",
                 success=True, duration_ms=duration_ms, correlation_id=corr_id,
-                metadata={"room_code": room_code, "shadow": True},
+                metadata={"inv_code": inv_code, "shadow": True},
             )
             return {
                 "success": True,
@@ -373,32 +397,42 @@ class HotelRunnerV2Service:
                 "correlation_id": corr_id,
             }
 
-        form_data = ari_to_daterange_payload(
-            room_code, start_date, end_date,
+        form_data = ari_to_update_payload(
+            inv_code, start_date, end_date,
             availability=availability, price=price, stop_sale=stop_sale,
-            min_stay=min_stay, max_stay=max_stay, cta=cta, ctd=ctd,
+            min_stay=min_stay, cta=cta, ctd=ctd,
+            days=days, channel_codes=channel_codes,
         )
+
+        ep = get_path("rooms_update")
 
         try:
             async def _call():
-                return await self._client.put(EP_ROOMS_DATERANGE, form_data=form_data, correlation_id=corr_id)
+                return await self._client.put(ep, form_data=form_data, correlation_id=corr_id)
 
-            resp = await self._retry.execute(_call, context=f"ARI {room_code}")
+            resp = await self._retry.execute(_call, context=f"ARI {inv_code}")
             duration_ms = int((time.time() - start) * 1000)
 
             await record_metric(
                 self._tenant_id, "ari_push",
                 success=resp.success, duration_ms=duration_ms, correlation_id=corr_id,
-                metadata={"room_code": room_code},
+                metadata={"inv_code": inv_code},
             )
 
             if resp.success:
                 # Store in outbox for audit
                 await self._store_outbox(corr_id, "ari_push", form_data, resp.data)
 
+                # Verify step (check transaction status)
+                transaction_id = resp.data.get("transaction_id")
+                verification = None
+                if verify and transaction_id:
+                    verification = await self.verify_transaction(transaction_id, correlation_id=corr_id)
+
             return {
                 "success": resp.success,
                 "data": resp.data,
+                "verification": verification if resp.success and verify else None,
                 "error": resp.error if not resp.success else None,
                 "duration_ms": duration_ms,
                 "correlation_id": corr_id,
@@ -425,17 +459,54 @@ class HotelRunnerV2Service:
                 "duration_ms": duration_ms,
             }
 
+    # ── Transaction Verification ──────────────────────────────────────
+
+    async def verify_transaction(self, transaction_id: str, *, correlation_id: str = "") -> dict[str, Any]:
+        """
+        Verify ARI push result via GET /api/v1/apps/infos/transaction_details
+
+        Returns transaction status with per-channel breakdown.
+        """
+        corr_id = correlation_id or str(_uuid.uuid4())[:12]
+        ep = get_path("transaction_details")
+
+        try:
+            resp = await self._client.get(
+                ep,
+                params={"transaction_id": transaction_id},
+                correlation_id=corr_id,
+            )
+            if resp.success and "transaction" in resp.data:
+                txn = resp.data["transaction"]
+                counts = txn.get("counts", {})
+                return {
+                    "transaction_id": txn.get("id", transaction_id),
+                    "succeeded": counts.get("succeeded", 0),
+                    "failed": counts.get("failed", 0),
+                    "in_progress": counts.get("in_progress", 0),
+                    "details": txn.get("details", []),
+                    "verified": True,
+                }
+            return {"transaction_id": transaction_id, "verified": False, "error": resp.error}
+        except HRv2Error as e:
+            logger.warning("[HRv2] verify transaction %s failed: %s", transaction_id, e)
+            return {"transaction_id": transaction_id, "verified": False, "error": str(e)}
+
     # ── Confirm Delivery ──────────────────────────────────────────────
 
     async def confirm_delivery(self, message_uid: str, pms_number: str | None = None) -> dict[str, Any]:
-        """Acknowledge reservation delivery to HotelRunner."""
+        """
+        Acknowledge reservation delivery to HotelRunner.
+        PUT /api/v2/apps/reservations/~
+        """
+        ep = get_path("reservations_confirm")
         params: dict[str, str] = {"message_uid": message_uid}
         if pms_number:
             params["pms_number"] = pms_number
 
         try:
             async def _call():
-                return await self._client.put(EP_RESERVATIONS_ACK, params=params)
+                return await self._client.put(ep, params=params)
 
             resp = await self._retry.execute(_call, context=f"ack {message_uid}")
             return {"success": resp.success, "data": resp.data, "error": resp.error}
@@ -445,11 +516,15 @@ class HotelRunnerV2Service:
     # ── Fetch Channels / Rooms ────────────────────────────────────────
 
     async def fetch_channels(self) -> dict[str, Any]:
-        resp = await self._client.get(EP_CHANNELS)
+        resp = await self._client.get(get_path("channels_list"))
         return {"success": resp.success, "data": resp.data, "error": resp.error}
 
     async def fetch_rooms(self) -> dict[str, Any]:
-        resp = await self._client.get(EP_ROOMS)
+        """
+        Fetch room list. Returns rooms with update permissions:
+        availability_update, restrictions_update, price_update flags.
+        """
+        resp = await self._client.get(get_path("rooms_list"))
         return {"success": resp.success, "data": resp.data, "error": resp.error}
 
     # ── Outbox (audit trail) ──────────────────────────────────────────
