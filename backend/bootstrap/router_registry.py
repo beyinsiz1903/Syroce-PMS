@@ -175,6 +175,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.inventory", "router", ["Room-Type Inventory"], None, None),
     # HotelRunner External Integration — Compatibility endpoints for HR panel
     ("routers.hotelrunner_compat", "router", ["HotelRunner External Integration"], None, None),
+    # HotelRunner v2 Connector — Production-grade adapter
+    ("channel_manager.connectors.hotelrunner_v2.router", "router", ["HotelRunner v2 Connector"], None, None),
 ]
 
 # Optional routers with special import paths

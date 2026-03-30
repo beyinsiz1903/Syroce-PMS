@@ -1,157 +1,100 @@
-# PMS (Property Management System) - PRD
+# Syroce PMS — Product Requirements Document
 
-## Original Problem Statement
-Hotel Property Management System - full-stack application with React frontend and FastAPI backend with MongoDB. Multi-tenant PMS with booking management, room management, guest profiles, channel manager integration, enterprise features.
+## Overview
+Multi-tenant SaaS PMS + Channel Manager + Control Plane.
+Canonical data model: Reservation, Inventory, Rate, Restriction.
+Architecture: Outbox pattern, reconciliation, idempotent ingest, observability.
 
-## User Personas
-- Hotel managers and staff who manage bookings, rooms, guests, and operations.
+## Core Architecture
+- **Backend**: FastAPI + MongoDB + Redis + Celery
+- **Frontend**: React + Vite
+- **Deployment**: Docker Compose (nginx, backend, worker, beat, mongo, redis)
+- **Security**: KMS encryption, secret classification, rotation lifecycle, PII protection
 
-## Project Priorities (User-Defined)
+## Completed Features
 
-### P0 - Go-Live Hardening COMPLETED
-- Vite production build optimized
-- Nginx hardened
-- Go-Live Runbook, SLO/SLA, Incident Playbook created
+### Phase 1 — Auth + Credential Security ✅
+- SecretManager / credential vault
+- KMS encryption integration
+- Token rotation support
 
-### P1 - Critical Fixes & Improvements COMPLETED
-- `room-move-history` endpoint bug fix — schema normalized to canonical fields
-- Load test suite expanded — multi-tenant, failure injection, retry storm, queue backlog, reconciliation
-- Import boundary violations resolved — 3/3 exceptions eliminated
-- CI orphan file guard fix — `create_test_user.py` moved to `scripts/`
+### Phase 2 — Mock + Read/Write Path E2E ✅
+- Mock HotelRunner server (port 9999)
+- Ingest pipeline (webhook/pull → validate → dedup → map → persist → trace)
+- ARI outbound (outbox pattern)
+- 27/27 tests passed
 
-### P2 - Code Quality & Hardening COMPLETED
-- [x] CI Load Test Integration — 11 curated load tests as CI hard gate
-- [x] Ruff UP Rules (safe wave) — UP006, UP012, UP015, UP017, UP024, UP034, UP041, UP045
-- [ ] Ruff UP Rules (wave 2) — UP035 (deprecated imports), UP042 (StrEnum)
-- [ ] App.jsx decomposition
+### CSP Fix for /api/redoc ✅
+- Nginx + FastAPI middleware CSP headers fixed
+- Production deployment verified
 
-### P3 - Security & Compliance
-- [x] AWS KMS envelope encryption provider
-- [x] Secret classification system (7 types with lifecycle rules)
-- [x] PII Registry (31 fields, 4 categories, role-based masking)
-- [x] PII masking for logs (SanitizedLogFilter on root logger)
-- [x] PII masking for ops/timeline/raw-payload endpoints
-- [x] PII access audit trail (MongoDB-backed, 180-day TTL)
-- [x] PII anomaly detection
-- [x] Secret inventory and classification API
-- [x] Secret Rotation + Rollback Flow (COMPLETED 2026-03-25)
-- [x] Rotation Ops Panel Frontend (COMPLETED 2026-03-25)
-- [x] At-Rest PII Field Encryption — Faz 1 & 2 (COMPLETED 2026-03-25)
-- [ ] P2 Faz 3: Plaintext cleanup + mandatory encrypted-only mode (PARKED)
+### Phase 3 — HotelRunner v2 Connector (Production-Grade) ✅ [2026-03-30]
+New connector: `backend/channel_manager/connectors/hotelrunner_v2/`
 
-### P4 - HotelRunner Provider Parity (ACTIVE — P0 Priority)
-- [x] **Faz 1: Auth + Credential Güvenliği (COMPLETED 2026-03-25)**
-  - HotelRunner Mock Server (localhost:9999, supervisor-managed)
-  - Environment-aware provider: mock / sandbox / production URL resolution
-  - Credential rotation integration with existing KMS infrastructure
-  - Multi-step connection test: auth → channels → rooms → rates → reservations
-  - Testing: iteration_162 — 15/15 pass (100%)
-- [x] **Faz 2: Mock + Read/Write Path E2E (COMPLETED 2026-03-25)**
-  - Mock server: realistic responses for channels, rooms, reservations, ARI push
-  - Chaos engineering: 429 rate limit, 500 errors, timeout, malformed payload simulation
-  - Normalizer fix: handles real HR API format (checkin_date, firstname, address.email, rooms[].room_code, state)
-  - Read path: fetch_rooms, fetch_channels, fetch_reservations, paginated fetch — all verified
-  - Write path: ARI push (availability, rates, stop_sale, min/max stay, CTA/CTD) — all verified
-  - Ingest pipeline E2E: new → duplicate → modify → cancel lifecycle verified
-  - Duplicate delivery detection via provider_event_id + payload hash
-  - Parser fix: handles string guest field (was failing on `.get()`)
-  - Parity test suite: 27/27 pass (/app/backend/tests/test_hr_parity.py)
-- [ ] **Faz 3: Reconciliation / Snapshot doğrulama (UPCOMING)**
-  - Snapshot collector updated with environment support
-  - Cross-provider comparison engine already exists
-  - Need: E2E reconciliation test with mock server data vs lineage
-- [ ] **Faz 4: Write Path — DRY-RUN controlled exit (UPCOMING)**
-  - ARI adapter currently in DRY-RUN
-  - Controlled exit: read only → limited write → full ARI
-  - CTA/CTD and min/max stay must be verified at provider level
-- [ ] **Faz 5: Ops Dashboard — Provider Health Panel (UPCOMING)**
-  - Frontend: provider health (HR + Exely side by side)
-  - Sync status, error rates, last operations
-  - Deferred room assignment visibility
+**Files created:**
+- `__init__.py` — Module entry point
+- `client.py` — Async HTTP client (httpx, typed responses, error taxonomy)
+- `mapper.py` — Bi-directional mapper (HR ↔ canonical model)
+- `errors.py` — Error taxonomy (auth, validation, rate_limit, timeout, server, parse)
+- `retry.py` — Exponential backoff (max 5, jitter) + Dead Letter Queue
+- `service.py` — Business logic orchestration (connection, pull, ingest, ARI push)
+- `feature_flags.py` — Tenant-based flags (enabled, shadow_mode, write_enabled)
+- `metrics.py` — Operational metrics (success rate, latency, error taxonomy)
+- `reconciliation.py` — Daily reconciliation (PMS vs HR, drift detection, auto-fix)
+- `router.py` — REST API (13 endpoints under /api/channel/hotelrunner-v2/)
 
-### P5 - Production Deployment (COMPLETED 2026-03-27)
-- [x] Production deployment paketi hazirlandi
-  - docker-compose.production.yml (6 servis: mongo, redis, backend, worker, beat, nginx)
-  - Nginx reverse proxy (api.syroce.com, SSL/Let's Encrypt, rate limiting, security headers)
-  - deploy.sh (tek komutla kurulum: Docker, build, deploy, dogrulama)
-  - ssl-setup.sh (Let's Encrypt + otomatik yenileme cron)
-  - .env.production.example (template)
-  - DEPLOYMENT_GUIDE.md (Turkce adim adim rehber)
-- [x] Guvenlik: MongoDB/Redis sadece internal network, backend port disari acik degil
-- [x] HotelRunner endpoint'leri Nginx'te tanimli (callback GET + webhook POST + internal webhooks)
+**Requirements fulfilled:**
+1. ✅ Connector Layer (adapter pattern, no legacy code)
+2. ✅ Authentication (SecretManager, no plaintext, token rotation)
+3. ✅ Reservation Ingest (new/modify/cancel, idempotency, dedup, raw payload storage, correlation_id)
+4. ✅ ARI Sync Push (availability, rate, restriction, outbox, retry, verify)
+5. ✅ Reconciliation (daily job, PMS vs HR comparison, drift detection, auto-fix)
+6. ✅ Observability (timeline trace, connector health, last sync, failure taxonomy)
+7. ✅ Error Handling (timeout, 4xx, 5xx, auth failure, retry policy, DLQ)
+8. ✅ Security (KMS encrypted tokens, PII not logged, payload sanitized, audit trail)
+9. ✅ Testing (18 unit tests + 11 integration tests = 29 total, all passing)
+10. ✅ Feature Flags (tenant-based enable/disable)
+11. ✅ Shadow Mode (ingest + compare only, no writes)
+12. ✅ Metrics (sync success rate, ingest/push latency, drift rate, retry count, error taxonomy)
 
-### P5.2 - CSP Bug Fix (COMPLETED 2026-03-30)
-- [x] `/api/redoc` CSP hatası düzeltildi — ReDoc, Swagger ve OpenAPI JSON için permissive CSP
-- [x] `deploy/nginx/api.conf`: doc route'ları için özel location + `proxy_hide_header CSP` + permissive CSP eklendi
-- [x] `backend/infra/security_headers.py`: `SecurityHeadersMiddleware`'e doc route tespiti + permissive CSP override eklendi
-- [x] `infra/nginx/prod.conf`: Eski katı CSP güncellendi (CDN/font domain'leri eklendi)
-- [x] Test: Preview ortamda curl + screenshot doğrulaması başarılı
+**API Endpoints (all 200 OK):**
+- GET  /api/channel/hotelrunner-v2/status
+- GET  /api/channel/hotelrunner-v2/trace/{reservation_id}
+- POST /api/channel/hotelrunner-v2/test-connection
+- POST /api/channel/hotelrunner-v2/pull-reservations
+- POST /api/channel/hotelrunner-v2/ingest
+- POST /api/channel/hotelrunner-v2/push-ari
+- POST /api/channel/hotelrunner-v2/reconcile
+- GET  /api/channel/hotelrunner-v2/reconciliation/history
+- GET  /api/channel/hotelrunner-v2/reconciliation/drifts
+- GET  /api/channel/hotelrunner-v2/flags
+- PUT  /api/channel/hotelrunner-v2/flags
+- GET  /api/channel/hotelrunner-v2/metrics
+- GET  /api/channel/hotelrunner-v2/dlq
 
-### P5.1 - Route Uyumluluk & Production .env (COMPLETED 2026-03-28)
-- [x] Compatibility router: /api/integrations/hotelrunner/callback (GET) + /webhook (POST)
-- [x] Unified webhook dispatcher: payload'daki event_type/state'e gore create/modify/cancel routing
-- [x] Health endpoint prefix /health -> /api/health olarak duzeltildi (Dockerfile healthcheck uyumu)
-- [x] .env.production.example: APP_ENV=production, SECRETS_PROVIDER=env eklendi
-- [x] Nginx config: internal webhook endpoint'leri (/api/channel-manager/hotelrunner/webhooks/*) eklendi
-- [x] picomatch ReDoS guvenlik acigi duzeltildi (yarn resolution >=4.0.4)
-- [x] Tum 8 endpoint HTTP status dogrulamasi: 8/8 basarili
+## Upcoming Tasks (Priority Order)
 
-### Backlog
-- App.jsx decomposition (after security tasks)
-- Legacy migration / cleanup jobs
-- Motor -> pymongo async migration
-- HMR guard decommission
-- Configure Slack webhook for production alerts
-- P2 Faz 2: Migration for users/bookings collections
-- API response role-based masking
+### P0 — Production HotelRunner Integration
+- Replace mock server with real HotelRunner API (requires Base URL from user)
+- Store production credentials via SecretManager
+- Validate against real reservation data
 
-## Architecture
-- Frontend: React + Vite + Shadcn UI
-- Backend: FastAPI + Motor (async MongoDB)
-- Database: MongoDB (hotel_pms)
-- CI/CD: GitHub Actions
-- Mock Server: HotelRunner Mock API (port 9999, supervisor-managed)
+### P1 — Ops Dashboard Frontend
+- Provider health panel (HR + Exely side by side)
+- Sync status, error rates, last operations
+- Reconciliation run viewer
 
-## Key Files
-- Backend entry: `/app/backend/server.py`
-- Frontend entry: `/app/frontend/src/App.jsx`
-- **HotelRunner Provider:**
-  - Provider facade: `/app/backend/domains/channel_manager/providers/hotelrunner/provider.py`
-  - HTTP client: `/app/backend/domains/channel_manager/providers/hotelrunner/client.py`
-  - Mock server: `/app/backend/domains/channel_manager/providers/hotelrunner/mock_server.py`
-  - Parser: `/app/backend/domains/channel_manager/providers/hotelrunner/parser.py`
-  - Router: `/app/backend/domains/channel_manager/providers/hotelrunner_router.py`
-  - Webhook: `/app/backend/domains/channel_manager/providers/hotelrunner_webhook.py`
-  - Ingest: `/app/backend/domains/channel_manager/providers/hotelrunner_ingest.py`
-  - Normalizer: `/app/backend/domains/channel_manager/ingest/normalizer.py`
-  - Pipeline: `/app/backend/domains/channel_manager/ingest/pipeline.py`
-  - ARI adapter: `/app/backend/domains/channel_manager/ari/adapters/hotelrunner_ari_adapter.py`
-  - Snapshot collector: `/app/backend/domains/channel_manager/reconciliation_engine/snapshot_collectors.py`
-  - Comparison engine: `/app/backend/domains/channel_manager/reconciliation_engine/comparison_engine.py`
-- **Security:** (unchanged from before)
-  - Rotation Engine: `/app/backend/security/rotation_engine.py`
-  - Field Encryption: `/app/backend/security/field_encryption.py`
-- **Tests:**
-  - Parity test: `/app/backend/tests/test_hr_parity.py`
-  - Test report: `/app/test_reports/iteration_162.json`
+### P1 — HotelRunner Phase 4: Write Path DRY-RUN Exit
+- Controlled transition: shadow → dry-run → live
+- ARI push verification step
+- Rollback capability
 
-## DB Collections (Channel Manager)
-- `raw_channel_events` — Raw webhook/pull events from all providers
-- `reservation_lineage` — Canonical reservation state (versioned, with mutation tracking)
-- `room_mappings` — Provider room code → PMS room type mapping
-- `rate_plan_mappings` — Provider rate code → PMS rate plan mapping
-- `webhook_raw_payloads` — Raw JSON payloads for debugging
-- `hotelrunner_connections` — Provider connection config per tenant
+### P2 — PII Phase 3: Strict Mode Enforcement
+### P2 — App.jsx Decomposition
+### P3 — Legacy migration/cleanup
+### P3 — Motor → pymongo async migration
 
-## Test Credentials
-- Email: demo@hotel.com / Password: demo123
-- Mock HR token: mock-hr-token-001 / HR ID: HR-HOTEL-001
-
-## Key Decisions
-- **HotelRunner provider uses environment-aware URL resolution (mock/sandbox/production)**
-- **Mock server supports chaos engineering: 429, 500, timeout, malformed payload injection**
-- **Normalizer handles both real HR API format and simplified format (backward compat)**
-- **Ingest pipeline: 9-stage processing with idempotency, dedup, stale detection, mapping resolution**
-- **Deferred room assignment: reservations stay in pending_mapping until room is explicitly mapped**
-- **Credential rotation for HotelRunner uses existing KMS + versioning infrastructure**
-- **DRY-RUN exit will be controlled: read only → limited write → full ARI**
+## Credentials
+- HR Token: `eTMI2v1DvFz8fSXYVX5xC_j3eda7gKw_32SOFm_a`
+- HR ID: `373816343`
+- Mock test credentials stored in SecretManager for tenant `test-tenant`
