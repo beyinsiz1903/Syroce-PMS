@@ -1,5 +1,21 @@
 # Changelog
 
+## [2026-03-31] P1 Shadow Automation (Celery Beat)
+- Created `shadow_automation.py` — Full automation engine for shadow observation period
+- 6-hourly tasks: provider health snapshot, sync metrics, drift, DLQ/retry, readiness score recalculation, automatic dry-run chain test, alert generation
+- Daily summary: 24h trend report (readiness/drift/latency/failure trends, score delta vs previous day, chain test summary, alert count)
+- Alert rules: readiness_low (<70, critical), readiness_warn (70-85, warn), drift_high (>=5, critical), dlq_nonempty (>0, critical), auth_failure (>0, critical), dry_run_chain_fail (critical)
+- Retention: raw snapshots 30 days, daily summaries 90 days, alerts 60 days (weekly cleanup via Celery Beat)
+- Celery Beat schedules: hrv2-shadow-snapshot (6h), hrv2-daily-summary (00:00 UTC), hrv2-retention-cleanup (Sun 05:00 UTC)
+- 6 new API endpoints: automation/status, automation/trigger, automation/trends, automation/alerts, automation/alerts/acknowledge, automation/daily-summaries
+- Updated ops-dashboard to include automation.status and automation.trends
+- Frontend: Shadow Otomasyon panel (status, schedule, active alerts, last snapshot/summary, retention info)
+- Frontend: Manuel Snapshot Tetikle button with toast notification
+- Frontend: 4 trend panels (Readiness, Drift, Latency, Failure) with color-coded bar charts and tooltips
+- Supervisor config: Redis, Celery Worker (concurrency=2), Celery Beat
+- Testing: 14/14 backend, 5/5 frontend panels verified (iteration 166)
+
+
 ## [2026-03-30] P1 Dry-Run Write Path
 - Created `dry_run.py` — Full dry-run write engine with production-identical pipeline, NO-OP external calls
 - Supported operations: ARI push, confirm delivery, create/modify/cancel chain

@@ -158,10 +158,28 @@ New page: `/hrv2-ops` -> `frontend/src/pages/HRv2OpsDashboard.jsx`
 - Write Enable Criteria (6 criteria: readiness>=90, drift<5, dry-run rate>=95%, DLQ=0, retry<5, chain success)
 - Dashboard integration: success rate, failure breakdown, last result, correlation trace
 
-### P1 — Shadow Automation (NEXT)
-- Celery beat ile gunluk snapshot otomasyonu
-- Drift trend izleme
-- Readiness score history
+### P1 — Shadow Automation (Celery Beat) ✅
+- 6-hourly periodic snapshots: provider health, sync metrics, drift, DLQ/retry, readiness score, dry-run chain, alert generation
+- Daily summary: 24h trends (readiness/drift/latency/failure), score change, alert counts, chain test results
+- Alert rules: readiness_low, readiness_warn, drift_high, dlq_nonempty, auth_failure, dry_run_chain_fail
+- Retention: snapshots 30d, summaries 90d, alerts 60d
+- Celery Beat: 3 schedules (6h snapshot, daily summary, weekly cleanup)
+- Dashboard: Shadow Otomasyon panel, 4 trend panels (readiness/drift/latency/failure), manual trigger
+- 6 new automation API endpoints + ops-dashboard integration
+- Redis + Celery Worker + Beat via Supervisor
+
+### P1 — 7-Day Shadow Observation (IN PROGRESS)
+- Automated via Celery Beat (6h snapshots collecting data)
+- Dashboard shows observation day count and history
+- Pending: Wait for 7 days of data collection before evaluating write readiness
+
+### P1 — Limited Live Write (UPCOMING)
+- Single tenant / small scope live write execution
+- Requires: Readiness score stable ≥90, dry-run chain ≥95%, DLQ=0, drift<5
+
+### P1 — Full Live Write (UPCOMING)
+- Full live write execution across all tenants
+- Requires: Successful limited live period + all 6 write criteria green
 
 ### P2 — PII Phase 3: Strict Mode Enforcement
 ### P2 — Wire failure tracking
