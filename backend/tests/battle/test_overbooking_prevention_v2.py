@@ -30,7 +30,7 @@ import httpx
 import pytest
 
 # Use public URL from environment
-API_URL = os.environ.get("VITE_BACKEND_URL", "https://reservation-panel.preview.emergentagent.com").rstrip("/")
+API_URL = os.environ.get("VITE_BACKEND_URL", "https://virtual-rooms-6.preview.emergentagent.com").rstrip("/")
 
 # Use unique year range per test run to avoid date collisions
 _RUN_TAG = random.randint(2100, 9999)
