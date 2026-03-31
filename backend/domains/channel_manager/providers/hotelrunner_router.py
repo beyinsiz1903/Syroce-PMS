@@ -191,12 +191,13 @@ async def setup_connection(
     )
 
     await _log_sync(current_user.tenant_id, "connection", "success",
-                     duration_ms=test_result["duration_ms"], user_name=current_user.name)
+                     duration_ms=test_result.duration_ms, user_name=current_user.name)
 
+    channels = (test_result.data or {}).get("channels", [])
     return {
         "message": "HotelRunner baglantisi basariyla kuruldu",
         "connected": True,
-        "channels": test_result["channels"],
+        "channels": channels,
         "connection_id": connection["id"],
     }
 
