@@ -451,7 +451,7 @@ async def get_ops_dashboard(
     phase_state = await get_current_phase(tenant_id)
 
     # 13. Dry-run stats
-    from channel_manager.connectors.hotelrunner_v2.dry_run import get_dry_run_stats, check_write_enable_criteria
+    from channel_manager.connectors.hotelrunner_v2.dry_run import check_write_enable_criteria, get_dry_run_stats
     dry_run_stats = await get_dry_run_stats(tenant_id)
 
     # 14. Write enable criteria

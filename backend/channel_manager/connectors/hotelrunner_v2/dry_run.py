@@ -23,8 +23,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from core.database import db
+
 from .errors import (
-    HRv2Error,
     HRv2RateLimitError,
     HRv2TimeoutError,
     HRv2ValidationError,

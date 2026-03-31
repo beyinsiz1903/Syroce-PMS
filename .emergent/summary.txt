@@ -4,14 +4,15 @@ The user wants to safely deploy and manage the HotelRunner v2 integration. Curre
 2. P1: Write Readiness Score (0-100) integrated into the Ops Dashboard.
 3. P1: Implement Dry-run Write Path (simulating writes, no real data pushed but full internal pipeline execution).
 4. P1: Write Path Transition Plan detailing entry/exit/rollback for 4 phases (Shadow, Dry-run, Limited live, Full live).
+5. P1: Shadow Automation (Celery beat) - 6-hour snapshots, daily summaries, alerting thresholds, and trend visualization on the dashboard.
 
 **User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın.)
 
 **what currently exists?** 
-A production-grade  connector running in **Shadow Mode** (read-only). The Ops Dashboard has been upgraded to include a dynamic Write Readiness Score, Transition Phase Tracker, Observation controls, and newly added **Dry-Run Control Panels** and **Write Enable Criteria** monitoring.
+A production-grade  connector running in **Shadow Mode** (read-only). The Ops Dashboard includes a dynamic Write Readiness Score, Transition Phase Tracker, Dry-Run Controls, and Write Enable Criteria. **Newly added:** Celery Beat-powered Shadow Automation that automatically takes system health/metrics snapshots every 6 hours, generates daily summaries, and visualizes readiness, drift, latency, and failure trends directly on the React Dashboard.
 
 **Last working item**:
-    - Last item agent was working: Implementing the Dry-Run Write Path. This involved creating a simulated write pipeline (NO-OP on external API calls but real outbox/transaction logic), failure simulation (timeout, rate_limit, validation), and integrating the Dry-Run controls & Write Enable Criteria into the React Ops Dashboard UI.
+    - Last item agent was working: Implementing Shadow Automation via Celery Beat, mapping new automated snapshot/trend endpoints to the backend router, and updating  with real-time trend charts and automation status.
     - Status: USER VERIFICATION PENDING
     - Agent Testing Done: Y
     - Which testing method agent to use? testing_agent_v3_fork
@@ -25,22 +26,23 @@ A production-grade  connector running in **Shadow Mode** (read-only). The Ops Da
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - P1: Shadow Automation (Celery beat) - Automating the 7-day shadow snapshot collection. *(User explicitly requested this as the IMMEDIATE NEXT STEP after Dry-run)*.
-    - P1: Complete the 7-day shadow observation period.
-    - P1: Limited live write execution (Single tenant/small scope).
+    - P1: Complete the 7-day shadow observation period (System is currently collecting automated snapshots).
+    - P1: Limited live write execution (Single tenant/small scope) - *Only after criteria are met and 7 days pass.*
     - P1: Full live write execution.
     
     Future Tasks:
     - P2: PII Field Encryption (Strict Mode enforcement).
+    - P2: Wire failure tracking.
     - P2:  Decomposition (Strictly AFTER core business/security logic is done).
     - P3: Legacy HR connector migration/cleanup ( DEPRECATED).
 
 **Completed work in this session**
-- Created  to handle NO-OP write simulations and failure mockings. (DONE)
-- Added 7 new dry-run API endpoints in  (ari-push, confirm-delivery, chain, simulate-failure, results, stats, write-criteria). (DONE)
-- Added  to . (DONE)
-- Updated  to include Dry-Run Kontrol, Dry-Run Hata Dağılımı, and Write Açma Kriterleri panels. (DONE)
-- Tested full backend and frontend flow successfully via  (iteration_165.json - 14/14 APIs passed, UI verified). (DONE)
+- Created  for automation logic (snapshot, summary, alerts, retention). (DONE)
+- Configured Celery Beat schedule in  and tasks in . (DONE)
+- Added new trend and automation API endpoints in . (DONE)
+- Added Shadow Otomasyon and Trendler (Readiness, Drift, Latency, Failure) panels to . (DONE)
+- Ensured Redis daemonized setup in supervisor. (DONE)
+- Tested full backend and frontend flow successfully via  (iteration_166.json - 14/14 APIs passed, 5 UI panels verified, 100% success). (DONE)
 
 **Earlier issues found/mentioned but not fixed**
    - None
@@ -52,16 +54,16 @@ A production-grade  connector running in **Shadow Mode** (read-only). The Ops Da
 
 
 **Key Technical Concepts**
-- **Dry-Run Write Path**: Production-identical pipeline where only the external API call to HotelRunner is NO-OP/mocked. DB state, outbox pattern, and retries operate natively.
-- **Write Enable Criteria**: 6 strict conditions that MUST be met to exit shadow mode (Score >= 90, Drift < 5, Dry-run success >= 95%, DLQ = 0, Retries stable, >=1 successful chain).
+- **Shadow Automation**: Celery Beat runs every 6 hours to capture provider health, sync metrics, drift, DLQ, and readiness score, storing them for 30 days. Daily summaries are stored for 90 days.
 - **Write Readiness Score**: A 0-100 composite score weighting drift rate, error rate, latency, retry count, and DLQ count.
+- **Dry-Run Write Path**: Production-identical pipeline where only the external API call to HotelRunner is NO-OP/mocked. DB state, outbox pattern, and retries operate natively.
 
 **key DB schema**
   - : Used to store daily snapshots during the observation period.
   - : Dead letter queue for connector retries.
 
 **changes in tech stack**
-  - None
+  - Redis + Celery Beat are now actively running as part of the core infrastructure under Supervisor for automation scheduling.
 
 **All files of reference** 
   -  (Created)
@@ -69,7 +71,7 @@ A production-grade  connector running in **Shadow Mode** (read-only). The Ops Da
   -  (Updated)
   -  (Updated)
   -  (Updated)
-  -  (Updated)
+  -  (Created)
 
 **Areas that need refactoring**: 
 - Deprecated legacy connector at  (P3 cleanup).
@@ -80,23 +82,21 @@ A production-grade  connector running in **Shadow Mode** (read-only). The Ops Da
 -  (NEW)
 -  (NEW)
 -  (NEW)
--  (NEW)
--  (NEW)
 
 **Critical Info for New Agent** 
 - **Language Constraint:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-- **IMMEDIATE NEXT STEP:** User explicitly requested to build the **Shadow Automation (Celery beat)** next, now that the dry-run path is finished. The agent previously suggested automating the dry-run chain test after each snapshot to keep the readiness score active; propose this explicitly.
-- **DO NOT ENABLE WRITES:** The connector must firmly remain in Shadow Mode (). Live writes will ONLY be enabled when the 6 criteria outlined in the Write Enable Panel are green.
-- **Dry-run design:** Dry-run external calls are NO-OP by design, this is the core feature, not a missing implementation. 
+- **DO NOT ENABLE WRITES:** The connector must firmly remain in Shadow Mode (). The system is now collecting the 7-day shadow data automatically. Live writes will ONLY be enabled when the 6 criteria outlined in the Write Enable Panel are green and 7 days pass.
+- **Automation is Active:** Celery beat is up and running in the background collecting metrics.
 
 **documents and test reports created in this job** 
   - 
   -  (Updated)
   -  (Updated)
+  -  (Updated)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - *User Messages:* User officially approved the Write Readiness Score, Shadow Observation metrics, and Transition Phase Tracker. User then mandated the exact priority: 1) Dry-Run Write Path (P1), and 2) Shadow Automation (Celery beat). User strictly defined the 6 criteria to exit shadow mode (which the agent mapped into the UI) and enforced that the dry-run must be identical to production but without side effects.
- - *Pending Human Messages:* The agent fully implemented the Dry-Run architecture, updated the Dashboard UI, ran the testing agent with 100% success, and called finish. Waiting for the user's response to the finished work.
+ - *User Messages:* User approved the Dry-Run implementation. Explicitly requested Shadow Automation via Celery Beat (not APScheduler/cron). Dictated a 6-hour snapshot interval, daily summaries, 30-day/90-day retention limits, threshold alerts (drift, DLQ, score drops), and UI trend charts. Confirmed that enabling Limited live write is the next step *after* observing 7 days of data.
+ - *Pending Human Messages:* The agent implemented the entire Celery Beat automation suite, updated the React dashboard with the trend charts, fully validated with the testing subagent (0 bugs), and finished. Awaiting the user's validation of the dashboard and next directions.
 
 **Project Health Check:**
   - Broken: None
@@ -107,7 +107,7 @@ A production-grade  connector running in **Shadow Mode** (read-only). The Ops Da
   - HotelRunner v2 — requires User Token
 
 **Testing status**
-  - Testing agent used after significant changes: YES (iteration_165.json)
+  - Testing agent used after significant changes: YES (iteration_166.json)
   - Troubleshoot agent used after agent stuck in loop: NO 
   - Test files created: None this session
   - Known regressions: None
@@ -117,4 +117,4 @@ A production-grade  connector running in **Shadow Mode** (read-only). The Ops Da
   - (Tracked in )
 
 **What agent forgot to execute**
-- Nothing. The agent fulfilled the required sequence and successfully added the entire dry-run write path and criteria checks.</analysis>
+- Nothing. Everything requested in the prompt (automation, retention, UI updates, alerts) was successfully delivered and tested.</analysis>
