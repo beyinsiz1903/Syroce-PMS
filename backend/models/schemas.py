@@ -172,6 +172,9 @@ class Room(BaseModel):
     bed_type: str | None = None
     images: list[str] = []  # stored paths/urls
 
+    # Virtual room (for no-show bookings)
+    is_virtual: bool = False
+
     # Soft delete
     is_active: bool = True
     deleted_at: str | None = None

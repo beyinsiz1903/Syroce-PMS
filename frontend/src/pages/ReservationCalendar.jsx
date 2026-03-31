@@ -6,7 +6,7 @@ import Layout from '@/components/Layout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { X, Calendar as CalendarIcon, User, MapPin, ArrowRight } from 'lucide-react';
+import { X, Calendar as CalendarIcon, User, MapPin, ArrowRight, Ban } from 'lucide-react';
 
 import {
   CalendarHeader,
@@ -846,7 +846,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                 <div>
                   <h3 className="font-semibold text-gray-800 text-sm" data-testid="unassigned-panel-title">Atanmamis Rezervasyonlar</h3>
                   <p className="text-xs text-gray-500">
-                    {bookings.filter(b => !b.room_id && b.status !== 'cancelled').length} aktif rezervasyon
+                    {bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out').length} aktif rezervasyon
                   </p>
                 </div>
               </div>
@@ -855,7 +855,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               </Button>
             </div>
             <div className="p-4 space-y-3">
-              {bookings.filter(b => !b.room_id && b.status !== 'cancelled').length === 0 ? (
+              {bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out').length === 0 ? (
                 <div className="text-center py-12 text-gray-400" data-testid="no-unassigned-msg">
                   <CalendarIcon className="w-10 h-10 mx-auto mb-3 opacity-40" />
                   <p className="text-sm font-medium">Atanmamis rezervasyon yok</p>
@@ -863,7 +863,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                 </div>
               ) : (
                 bookings
-                  .filter(b => !b.room_id && b.status !== 'cancelled')
+                  .filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out')
                   .sort((a, b) => new Date(a.check_in) - new Date(b.check_in))
                   .map((booking, idx) => {
                     const checkIn = booking.check_in ? new Date(booking.check_in).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) : '-';
@@ -878,20 +878,23 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                       checked_in: 'Iceride',
                       no_show: 'Gelmedi',
                     };
+                    const isNoShow = booking.status === 'no_show';
                     return (
                       <div
                         key={booking.id || idx}
-                        className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
+                        className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow"
                         data-testid={`unassigned-item-${idx}`}
-                        onClick={() => {
-                          if (booking.id) {
-                            setDetailModalBookingId(booking.id);
-                            setShowDetailModal(true);
-                          }
-                        }}
                       >
                         <div className="flex items-start justify-between mb-2">
-                          <div className="flex items-center gap-2">
+                          <div
+                            className="flex items-center gap-2 cursor-pointer flex-1"
+                            onClick={() => {
+                              if (booking.id) {
+                                setDetailModalBookingId(booking.id);
+                                setShowDetailModal(true);
+                              }
+                            }}
+                          >
                             <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
                               <User className="w-3.5 h-3.5 text-gray-500" />
                             </div>
@@ -921,6 +924,57 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                           )}
                           {booking.total_amount > 0 && (
                             <span className="font-medium text-gray-700">{booking.total_amount} TL</span>
+                          )}
+                        </div>
+                        {/* No-Show / Virtual Room Button */}
+                        <div className="mt-3 flex gap-2">
+                          {!isNoShow && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs h-7 border-amber-300 text-amber-700 hover:bg-amber-50"
+                              data-testid={`no-show-btn-${idx}`}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  await axios.post('/pms/bookings/no-show-virtual', {
+                                    booking_id: booking.id,
+                                    charge_first_night: false,
+                                  });
+                                  toast.success('No-show islemi tamamlandi, sanal odaya atandi');
+                                  loadCalendarData();
+                                } catch (err) {
+                                  toast.error(err.response?.data?.detail || 'No-show islemi basarisiz');
+                                }
+                              }}
+                            >
+                              <Ban className="w-3 h-3 mr-1" />
+                              No-Show (Sanal Odaya Ata)
+                            </Button>
+                          )}
+                          {isNoShow && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs h-7 border-gray-300 text-gray-600 hover:bg-gray-50"
+                              data-testid={`assign-virtual-btn-${idx}`}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  await axios.post('/pms/bookings/no-show-virtual', {
+                                    booking_id: booking.id,
+                                    charge_first_night: false,
+                                  });
+                                  toast.success('Sanal odaya atandi');
+                                  loadCalendarData();
+                                } catch (err) {
+                                  toast.error(err.response?.data?.detail || 'Atama basarisiz');
+                                }
+                              }}
+                            >
+                              <MapPin className="w-3 h-3 mr-1" />
+                              Sanal Odaya Ata
+                            </Button>
                           )}
                         </div>
                       </div>

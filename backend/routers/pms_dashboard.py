@@ -42,9 +42,12 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
         if cached_data:
             return cached_data
 
-    # Fallback: Ultra-fast aggregation
+    # Fallback: Ultra-fast aggregation — exclude virtual rooms
     pipeline = [
-        {'$match': {'tenant_id': current_user.tenant_id}},
+        {'$match': {
+            'tenant_id': current_user.tenant_id,
+            '$or': [{'is_virtual': False}, {'is_virtual': {'$exists': False}}],
+        }},
         {'$group': {
             '_id': None,
             'total_rooms': {'$sum': 1},

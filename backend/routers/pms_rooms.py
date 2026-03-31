@@ -136,23 +136,25 @@ async def get_rooms(
     room_type: str | None = None,
     view: str | None = None,
     amenity: str | None = None,
+    include_virtual: bool = False,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
 ):
     """Get rooms with pagination - Optimized for large properties (550+ rooms)"""
 
     # For small queries with filters, skip cache
-    use_cache = (offset == 0 and not status and not room_type and not view and not amenity and limit >= 100)
+    use_cache = (offset == 0 and not status and not room_type and not view and not amenity and not include_virtual and limit >= 100)
 
     # Try Redis cache first (FASTEST!) - only for full list
     if use_cache:
         try:
             from redis_cache import redis_cache
             if redis_cache:
-                cache_key = f"rooms:{current_user.tenant_id}:limit{limit}"
+                cache_key = f"rooms:{current_user.tenant_id}:limit{limit}:nv"
                 cached = redis_cache.get(cache_key)
                 if cached:
-                    return cached
+                    # Filter virtual from cached data
+                    return [r for r in cached if not r.get('is_virtual')]
         except Exception:
             pass
 
@@ -164,6 +166,9 @@ async def get_rooms(
                 # Process cached data quickly
                 rooms = []
                 for room in cached_data[:limit]:  # Apply limit to cached data
+                    # Skip virtual rooms
+                    if room.get('is_virtual'):
+                        continue
                     # Ensure tenant_id is present
                     if 'tenant_id' not in room:
                         room['tenant_id'] = current_user.tenant_id
@@ -186,9 +191,13 @@ async def get_rooms(
 
     # Build query with filters
     # Backward compatible: old room docs may not have is_active field.
+    active_cond = {'$or': [{'is_active': True}, {'is_active': {'$exists': False}}]}
+    base_conds = [active_cond]
+    if not include_virtual:
+        base_conds.append({'$or': [{'is_virtual': False}, {'is_virtual': {'$exists': False}}]})
     query = {
         'tenant_id': current_user.tenant_id,
-        '$or': [{'is_active': True}, {'is_active': {'$exists': False}}],
+        '$and': base_conds,
     }
     if status:
         query['status'] = status
@@ -200,7 +209,7 @@ async def get_rooms(
         query['amenities'] = amenity
 
     # Fallback: Ultra-minimal projection with pagination
-    projection = {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1, 'status': 1, 'floor': 1, 'capacity': 1, 'max_occupancy': 1, 'base_price': 1, 'tenant_id': 1, 'amenities': 1, 'view': 1, 'bed_type': 1, 'images': 1}
+    projection = {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1, 'status': 1, 'floor': 1, 'capacity': 1, 'max_occupancy': 1, 'base_price': 1, 'tenant_id': 1, 'amenities': 1, 'view': 1, 'bed_type': 1, 'images': 1, 'is_virtual': 1}
     rooms_raw = await db.rooms.find(query, projection).skip(offset).limit(limit).to_list(limit)
 
     # Fix field mapping
@@ -609,3 +618,156 @@ async def get_pms_companies(
 
     companies = await db.companies.find(query, {'_id': 0}).to_list(1000)
     return companies
+
+
+# ── Virtual Rooms ──
+
+VIRTUAL_ROOM_PREFIX = "V-"
+
+ROOM_TYPE_VIRTUAL_MAP = {
+    "Standard": "V-STD",
+    "standard": "V-STD",
+    "Deluxe": "V-DLX",
+    "Superior": "V-SUP",
+    "Suite": "V-STE",
+    "Junior Suite": "V-JST",
+    "Family": "V-FAM",
+}
+
+
+@router.post("/pms/rooms/virtual/seed")
+async def seed_virtual_rooms(
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_module("pms")),
+):
+    """Create one virtual room per room type for no-show assignments."""
+    tenant_id = current_user.tenant_id
+
+    # Get unique room types from existing rooms
+    pipeline = [
+        {"$match": {"tenant_id": tenant_id, "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]}},
+        {"$group": {"_id": "$room_type"}},
+    ]
+    type_docs = await db.rooms.aggregate(pipeline).to_list(50)
+    room_types = [t["_id"] for t in type_docs if t["_id"]]
+
+    created = []
+    skipped = []
+    for rt in room_types:
+        vnum = ROOM_TYPE_VIRTUAL_MAP.get(rt, f"V-{rt[:3].upper()}")
+        exists = await db.rooms.find_one(
+            {"tenant_id": tenant_id, "room_number": vnum, "is_virtual": True},
+        )
+        if exists:
+            skipped.append(vnum)
+            continue
+
+        room_doc = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "room_number": vnum,
+            "room_type": rt,
+            "floor": 0,
+            "capacity": 99,
+            "base_price": 0,
+            "status": "available",
+            "amenities": [],
+            "is_virtual": True,
+            "is_active": True,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        await db.rooms.insert_one({**room_doc})
+        created.append(vnum)
+
+    return {"created": created, "skipped": skipped, "total": len(created)}
+
+
+@router.get("/pms/rooms/virtual")
+async def get_virtual_rooms(
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_module("pms")),
+):
+    """List all virtual rooms for this tenant."""
+    rooms = await db.rooms.find(
+        {"tenant_id": current_user.tenant_id, "is_virtual": True},
+        {"_id": 0},
+    ).to_list(50)
+    return rooms
+
+
+class NoShowVirtualRequest(BaseModel):
+    booking_id: str
+    charge_first_night: bool = False
+
+
+@router.post("/pms/bookings/no-show-virtual")
+async def no_show_to_virtual_room(
+    req: NoShowVirtualRequest,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_module("pms")),
+):
+    """Mark booking as no-show and assign to virtual room of matching type."""
+    tenant_id = current_user.tenant_id
+    booking = await db.bookings.find_one(
+        {"id": req.booking_id, "tenant_id": tenant_id}, {"_id": 0}
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+
+    if booking.get("status") not in ("confirmed", "guaranteed", "no_show"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bu durumdaki rezervasyona no-show islemi yapilamaz: {booking.get('status')}",
+        )
+
+    room_type = booking.get("room_type", "Standard")
+    vnum = ROOM_TYPE_VIRTUAL_MAP.get(room_type, f"V-{room_type[:3].upper()}")
+
+    # Find or create virtual room
+    virtual_room = await db.rooms.find_one(
+        {"tenant_id": tenant_id, "room_number": vnum, "is_virtual": True},
+        {"_id": 0},
+    )
+    if not virtual_room:
+        virtual_room = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "room_number": vnum,
+            "room_type": room_type,
+            "floor": 0,
+            "capacity": 99,
+            "base_price": 0,
+            "status": "available",
+            "amenities": [],
+            "is_virtual": True,
+            "is_active": True,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        await db.rooms.insert_one({**virtual_room})
+
+    # Release previously assigned room if any
+    old_room_id = booking.get("room_id")
+    if old_room_id:
+        await db.rooms.update_one(
+            {"id": old_room_id},
+            {"$set": {"status": "available", "current_booking_id": None}},
+        )
+
+    # Update booking
+    update_fields = {
+        "room_id": virtual_room["id"],
+        "status": "no_show",
+        "no_show_at": datetime.now(UTC).isoformat(),
+        "no_show_processed_by": current_user.name,
+    }
+    await db.bookings.update_one(
+        {"id": req.booking_id},
+        {"$set": update_fields},
+    )
+
+    return {
+        "message": "No-show islemi tamamlandi ve sanal odaya atandi",
+        "booking_id": req.booking_id,
+        "virtual_room": vnum,
+        "virtual_room_id": virtual_room["id"],
+    }

@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import Layout from '@/components/Layout';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowUpRight, CalendarDays, Grid3X3, Ban } from 'lucide-react';
+import { ArrowUpRight, CalendarDays, Grid3X3, Ban, Eye, CheckCircle2 } from 'lucide-react';
 
 import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
@@ -38,6 +38,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
 
   const [roomValues, setRoomValues] = useState({});
   const [expandedRoomTypes, setExpandedRoomTypes] = useState(new Set());
+  const [pushProviders, setPushProviders] = useState([]);
 
   const [gridRoomType, setGridRoomType] = useState('all');
   const [gridRatePlan, setGridRatePlan] = useState('all');
@@ -69,6 +70,12 @@ const RateManager = ({ user, tenant, onLogout }) => {
   }, [startDate, endDate]);
 
   useEffect(() => { fetchGrid(); }, [fetchGrid]);
+
+  useEffect(() => {
+    axios.get(`${API}/api/channel-manager/rate-manager/push-providers`, { headers })
+      .then(res => setPushProviders(res.data?.providers || []))
+      .catch(() => {});
+  }, []);
 
   const roomTypeTree = useMemo(() => {
     const map = new Map();
@@ -246,10 +253,28 @@ const RateManager = ({ user, tenant, onLogout }) => {
               Tum oda tiplerini ayni anda goruntuleyin ve tek seferde guncelleyin
             </p>
           </div>
-          <Badge className="bg-green-600 text-white" data-testid="exely-push-badge">
-            <ArrowUpRight className="w-3 h-3 mr-1" />
-            Exely Push Aktif
-          </Badge>
+          <div className="flex items-center gap-2" data-testid="push-provider-badges">
+            {pushProviders.length > 0 ? pushProviders.map(p => {
+              const modeConfig = {
+                live: { className: 'bg-green-600 text-white', icon: <CheckCircle2 className="w-3 h-3 mr-1" />, label: 'Push Aktif' },
+                shadow: { className: 'bg-amber-500 text-white', icon: <Eye className="w-3 h-3 mr-1" />, label: 'Shadow Mode' },
+                inactive: { className: 'bg-gray-400 text-white', icon: null, label: 'Inaktif' },
+                read_only: { className: 'bg-blue-500 text-white', icon: <Eye className="w-3 h-3 mr-1" />, label: 'Salt Okunur' },
+              };
+              const cfg = modeConfig[p.mode] || modeConfig.inactive;
+              return (
+                <Badge key={p.slug} className={cfg.className} data-testid={`push-badge-${p.slug}`}>
+                  {cfg.icon}
+                  {p.name}: {cfg.label}
+                </Badge>
+              );
+            }) : (
+              <Badge className="bg-green-600 text-white" data-testid="exely-push-badge">
+                <ArrowUpRight className="w-3 h-3 mr-1" />
+                Exely Push Aktif
+              </Badge>
+            )}
+          </div>
         </div>
 
         <Tabs value={activeView} onValueChange={setActiveView}>

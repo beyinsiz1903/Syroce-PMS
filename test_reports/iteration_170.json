@@ -1,0 +1,66 @@
+{
+  "iteration": 170,
+  "date": "2026-03-31",
+  "summary": "Tested virtual rooms exclusion, push providers endpoint, and dashboard room count. Fixed cache_warmer.py to exclude virtual rooms from dashboard cache. All 9 backend tests passed, frontend tests verified.",
+  "features_tested": [
+    "GET /api/pms/rooms excludes virtual rooms by default (returns 30 rooms)",
+    "GET /api/pms/rooms?include_virtual=true includes virtual rooms (returns 36 rooms)",
+    "GET /api/pms/rooms/virtual lists all 6 virtual rooms (V-STD, V-DLX, V-SUP, V-STE, V-JST, V-FAM)",
+    "POST /api/pms/bookings/no-show-virtual endpoint exists and validates booking",
+    "GET /api/channel-manager/rate-manager/push-providers returns Exely (live) and HotelRunner (shadow)",
+    "Dashboard shows 30 rooms (excluding virtual rooms) after fix",
+    "Calendar shows 30 rooms (excluding virtual rooms)",
+    "Rate Manager page shows both Exely and HotelRunner badges with correct status"
+  ],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Auth page",
+        "issues": ["i18n translation keys showing as raw text (common.welcome, auth.signIn, common.email, etc.) - pre-existing issue"]
+      }
+    ]
+  },
+  "test_results": {
+    "test_rooms_default_excludes_virtual": "PASSED - No virtual rooms in default list",
+    "test_rooms_with_include_virtual_true": "PASSED - Virtual rooms included with flag",
+    "test_rooms_count_difference": "PASSED - 36 with virtual > 30 without",
+    "test_get_virtual_rooms": "PASSED - 6 virtual rooms returned",
+    "test_no_show_virtual_endpoint_exists": "PASSED - Endpoint returns 404 for invalid booking",
+    "test_get_push_providers": "PASSED - Exely (live) and HotelRunner (shadow) returned",
+    "test_push_providers_modes": "PASSED - Valid modes for all providers",
+    "test_dashboard_room_count": "PASSED - Dashboard shows 30 rooms",
+    "test_calendar_rooms_no_virtual": "PASSED - No V- prefixed rooms in calendar"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_virtual_rooms_rate_manager.py",
+    "/app/test_reports/pytest/pytest_virtual_rooms_rate_manager.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/cache_warmer.py - Fixed warm_dashboard_cache to exclude virtual rooms"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "100%"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123"
+  },
+  "seed_data_creation": "None - used existing virtual rooms (V-STD, V-DLX, V-SUP, V-STE, V-JST, V-FAM)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Virtual rooms feature is fully functional. 6 virtual rooms exist (V-STD, V-DLX, V-SUP, V-STE, V-JST, V-FAM). Dashboard and calendar correctly exclude virtual rooms (30 rooms shown). Rate Manager shows both Exely (live) and HotelRunner (shadow) provider badges. The cache_warmer.py was fixed to exclude virtual rooms from dashboard cache.",
+  "bug_fix_applied": {
+    "file": "/app/backend/cache_warmer.py",
+    "issue": "warm_dashboard_cache was not excluding virtual rooms, causing dashboard to show 36 rooms instead of 30",
+    "fix": "Added is_virtual filter to the aggregation pipeline in warm_dashboard_cache function"
+  }
+}

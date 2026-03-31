@@ -979,3 +979,60 @@ async def update_stop_sale_schedule(
         raise HTTPException(status_code=404, detail="Zamanlayici bulunamadi")
 
     return {"message": "Zamanlayici guncellendi"}
+
+
+@router.get("/push-providers")
+async def get_push_providers(current_user: User = Depends(get_current_user)):
+    """Get push status for all channel providers (Exely, HotelRunner, etc.)."""
+    tenant_id = current_user.tenant_id
+    providers = []
+
+    # 1. Exely status — check exely_connections for active connection
+    exely_conn = await db.exely_connections.find_one(
+        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
+    )
+    exely_active = bool(exely_conn)
+    providers.append({
+        "name": "Exely",
+        "slug": "exely",
+        "push_active": exely_active,
+        "mode": "live" if exely_active else "inactive",
+    })
+
+    # 2. HotelRunner v2 status — check connector_feature_flags
+    hr_flags = await db.connector_feature_flags.find_one(
+        {"tenant_id": tenant_id, "provider": "hotelrunner_v2"}, {"_id": 0}
+    )
+    if not hr_flags:
+        # Fallback: check for any hotelrunner flag
+        hr_flags = await db.connector_feature_flags.find_one(
+            {"provider": "hotelrunner_v2"}, {"_id": 0}
+        )
+    hr_conn = await db.hotelrunner_connections.find_one(
+        {"tenant_id": tenant_id}, {"_id": 0}
+    )
+
+    if hr_flags and hr_flags.get("connector_enabled"):
+        hr_shadow = hr_flags.get("shadow_mode", True)
+        hr_write = hr_flags.get("write_enabled", False) and not hr_shadow
+        if hr_shadow:
+            hr_mode = "shadow"
+        elif hr_write:
+            hr_mode = "live"
+        else:
+            hr_mode = "read_only"
+    elif hr_conn:
+        hr_mode = "shadow"
+        hr_write = False
+    else:
+        hr_mode = "inactive"
+        hr_write = False
+
+    providers.append({
+        "name": "HotelRunner",
+        "slug": "hotelrunner",
+        "push_active": hr_write,
+        "mode": hr_mode,
+    })
+
+    return {"providers": providers}

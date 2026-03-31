@@ -27,7 +27,7 @@ const CalendarHeader = ({
   onShowUnassigned,
 }) => {
   const navigate = useNavigate();
-  const unassignedCount = bookings.filter(b => !b.room_id && b.status !== 'cancelled').length;
+  const unassignedCount = bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out').length;
   const [showDatePicker, setShowDatePicker] = useState(false);
   const datePickerRef = useRef(null);
 

@@ -34,14 +34,17 @@ class CacheWarmer:
         try:
             projection = {
                 '_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1,
-                'status': 1, 'floor': 1, 'capacity': 1, 'base_price': 1, 'max_occupancy': 1, 'tenant_id': 1
+                'status': 1, 'floor': 1, 'capacity': 1, 'base_price': 1, 'max_occupancy': 1, 'tenant_id': 1, 'is_virtual': 1
             }
             # First, check total count
             total_rooms = await self.db.rooms.count_documents({})
             print(f"  🔍 Total rooms in DB: {total_rooms}")
 
-            # Try without tenant filter if none found
-            rooms = await self.db.rooms.find({}, projection).limit(100).to_list(100)
+            # Try without tenant filter if none found — exclude virtual rooms
+            rooms = await self.db.rooms.find(
+                {'$or': [{'is_virtual': False}, {'is_virtual': {'$exists': False}}]},
+                projection,
+            ).limit(100).to_list(100)
 
             if rooms and len(rooms) > 0:
                 # Cache for all tenants found
@@ -101,9 +104,12 @@ class CacheWarmer:
     async def warm_dashboard_cache(self, tenant_id: str):
         """Pre-warm dashboard cache"""
         try:
-            # Room stats
+            # Room stats — exclude virtual rooms
             pipeline = [
-                {'$match': {'tenant_id': tenant_id}},
+                {'$match': {
+                    'tenant_id': tenant_id,
+                    '$or': [{'is_virtual': False}, {'is_virtual': {'$exists': False}}],
+                }},
                 {'$group': {
                     '_id': None,
                     'total_rooms': {'$sum': 1},
