@@ -30,7 +30,7 @@ class HRConnectionSetup(BaseModel):
     token: str
     hr_id: str
     property_name: str | None = None
-    environment: str = "mock"  # mock | sandbox | production
+    environment: str = "production"  # production | sandbox | mock
     auto_sync_reservations: bool = True
     auto_confirm_delivery: bool = False
     sync_interval_minutes: int = 15
@@ -128,14 +128,25 @@ async def setup_connection(
     """Setup HotelRunner connection with credentials and test it."""
     from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
 
+    logger.info(
+        "[HR-CONNECT] env=%s hr_id=%s token=%s...%s",
+        payload.environment, payload.hr_id,
+        payload.token[:4] if len(payload.token) > 8 else "****",
+        payload.token[-4:] if len(payload.token) > 8 else "****",
+    )
+
     provider = HotelRunnerProvider(
         token=payload.token,
         hr_id=payload.hr_id,
         environment=payload.environment,
     )
+
+    logger.info("[HR-CONNECT] target_url=%s", provider._base_url)
+
     test_result = await provider.test_connection()
 
     if not test_result.success:
+        logger.error("[HR-CONNECT] FAILED: %s (env=%s, url=%s)", test_result.error, payload.environment, provider._base_url)
         raise HTTPException(status_code=400, detail=f"HotelRunner baglanti hatasi: {test_result.error}")
 
     result_data = test_result.data or {}
