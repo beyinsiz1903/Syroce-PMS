@@ -20,7 +20,7 @@ import requests
 
 # API URLs
 MOCK_SERVER_URL = "http://localhost:9999"
-API_URL = os.environ.get("VITE_BACKEND_URL", "https://transition-phase.preview.emergentagent.com")
+API_URL = os.environ.get("VITE_BACKEND_URL", "https://hotelrunner-e2e-mock.preview.emergentagent.com")
 
 # Mock server credentials
 MOCK_TOKEN = "mock-hr-token-001"
