@@ -1,17 +1,32 @@
 # Test Credentials
 
-## Hotel Admin (super_admin)
-- **Email:** demo@hotel.com
-- **Password:** demo123
-- **Role:** super_admin
-- **Tenant:** Syroce Demo Hotel (044f122b-87b5-480a-88b4-b9534b0c8c90)
+## Frontend Login
+- Email: demo@hotel.com
+- Password: demo123
+- Role: super_admin
 
-## Dashboard Access
-- **URL:** /hrv2-ops
-- **Tenant ID used in API:** syroce_default
+## Mock Server (HotelRunner)
+- URL: http://localhost:9999
+- Token: mock-hr-token-001
+- HR ID: HR-HOTEL-001
+- Valid tokens: mock-hr-token-001, test-token-valid
+- Valid HR IDs: HR-HOTEL-001, HR-HOTEL-002
 
-## Auth Flow (for Playwright)
-1. Navigate to app
-2. Use JS fetch to call `/api/auth/login` with credentials above
-3. Set `localStorage.token`, `localStorage.user`, `localStorage.tenant`
-4. Navigate to `/hrv2-ops`
+## Test Tenant Configuration
+- tenant_id: test-tenant
+- property_id: default
+- Provider: hotelrunner
+- Environment: mock
+- Feature flags: connector_enabled=true, shadow_mode=true, write_enabled=false
+
+## Room Mappings (test-tenant)
+- DLX -> pms-dlx-001 (Deluxe Oda)
+- STD -> pms-std-001 (Standard Oda)
+- SUI -> pms-sui-001 (Suite)
+- FAM -> pms-fam-001 (Aile Odasi)
+
+## Rate Plan Mappings (test-tenant)
+- BAR -> pms-bar-001 (Best Available Rate)
+- PROMO -> pms-promo-001 (Promosyon)
+- RACK -> pms-rack-001 (Rack Rate)
+- NONREF -> pms-nonref-001 (Non-Refundable)
