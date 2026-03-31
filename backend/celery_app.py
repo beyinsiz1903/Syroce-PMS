@@ -105,6 +105,24 @@ celery_app.conf.update(
             'task': 'celery_tasks.database_health_check_task',
             'schedule': crontab(minute='*/5'),
         },
+
+        # HRv2 Shadow Automation — 6 saatte bir snapshot
+        'hrv2-shadow-snapshot': {
+            'task': 'celery_tasks.hrv2_shadow_snapshot_task',
+            'schedule': crontab(minute=0, hour='*/6'),
+        },
+
+        # HRv2 Shadow Automation — Gunluk ozet (00:00 UTC)
+        'hrv2-daily-summary': {
+            'task': 'celery_tasks.hrv2_daily_summary_task',
+            'schedule': crontab(hour=0, minute=0),
+        },
+
+        # HRv2 Shadow Automation — Retention cleanup (Pazar 05:00 UTC)
+        'hrv2-retention-cleanup': {
+            'task': 'celery_tasks.hrv2_retention_cleanup_task',
+            'schedule': crontab(day_of_week=0, hour=5, minute=0),
+        },
     }
 )
 

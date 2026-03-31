@@ -1015,3 +1015,74 @@ async def _database_health_check_async():
             'error': str(e),
             'timestamp': datetime.now(UTC).isoformat()
         }
+
+
+
+# ============= HRv2 SHADOW AUTOMATION TASKS =============
+
+@celery_app.task(name='celery_tasks.hrv2_shadow_snapshot_task')
+def hrv2_shadow_snapshot_task():
+    """Run 6-hourly shadow automation snapshot for HRv2 connector."""
+    return asyncio.run(_hrv2_shadow_snapshot_async())
+
+async def _hrv2_shadow_snapshot_async():
+    """Async HRv2 shadow snapshot."""
+    try:
+        from channel_manager.connectors.hotelrunner_v2.shadow_automation import (
+            DEFAULT_TENANT,
+            run_periodic_snapshot,
+        )
+        result = await run_periodic_snapshot(DEFAULT_TENANT)
+        logger.info("HRv2 shadow snapshot completed: readiness=%s", result.get("readiness", {}).get("overall_score"))
+        return {
+            'success': True,
+            'readiness_score': result.get("readiness", {}).get("overall_score"),
+            'alerts_generated': result.get("alerts_generated", 0),
+            'timestamp': datetime.now(UTC).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"HRv2 shadow snapshot failed: {e}")
+        return {'success': False, 'error': str(e)}
+
+
+@celery_app.task(name='celery_tasks.hrv2_daily_summary_task')
+def hrv2_daily_summary_task():
+    """Generate daily summary for HRv2 shadow automation."""
+    return asyncio.run(_hrv2_daily_summary_async())
+
+async def _hrv2_daily_summary_async():
+    """Async HRv2 daily summary."""
+    try:
+        from channel_manager.connectors.hotelrunner_v2.shadow_automation import (
+            DEFAULT_TENANT,
+            generate_daily_summary,
+        )
+        result = await generate_daily_summary(DEFAULT_TENANT)
+        logger.info("HRv2 daily summary generated: score=%s", result.get("readiness", {}).get("current_score"))
+        return {
+            'success': True,
+            'summary_date': result.get("summary_date"),
+            'readiness_score': result.get("readiness", {}).get("current_score"),
+            'score_change': result.get("readiness", {}).get("change"),
+            'timestamp': datetime.now(UTC).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"HRv2 daily summary failed: {e}")
+        return {'success': False, 'error': str(e)}
+
+
+@celery_app.task(name='celery_tasks.hrv2_retention_cleanup_task')
+def hrv2_retention_cleanup_task():
+    """Clean up old shadow automation data per retention policy."""
+    return asyncio.run(_hrv2_retention_cleanup_async())
+
+async def _hrv2_retention_cleanup_async():
+    """Async HRv2 retention cleanup."""
+    try:
+        from channel_manager.connectors.hotelrunner_v2.shadow_automation import cleanup_old_data
+        result = await cleanup_old_data()
+        logger.info("HRv2 retention cleanup: %s", result)
+        return {'success': True, **result}
+    except Exception as e:
+        logger.error(f"HRv2 retention cleanup failed: {e}")
+        return {'success': False, 'error': str(e)}

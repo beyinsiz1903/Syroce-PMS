@@ -285,6 +285,7 @@ export default function HRv2OpsDashboard({ tenant }) {
   const [runningDryRun, setRunningDryRun] = useState(false);
   const [runningChain, setRunningChain] = useState(false);
   const [runningFailSim, setRunningFailSim] = useState(null);
+  const [triggeringAutoSnapshot, setTriggeringAutoSnapshot] = useState(false);
 
   const tenantId = tenant?.tenant_id || TENANT_ID;
 
@@ -445,6 +446,26 @@ export default function HRv2OpsDashboard({ tenant }) {
     }
   };
 
+  const handleTriggerAutoSnapshot = async () => {
+    setTriggeringAutoSnapshot(true);
+    try {
+      const res = await axios.post(`/channel/hotelrunner-v2/automation/trigger`, null, {
+        params: { tenant_id: tenantId },
+      });
+      const score = res.data?.readiness?.overall_score;
+      const alerts = res.data?.alerts_generated || 0;
+      const chainOk = res.data?.dry_run_chain?.success;
+      toast.success("Otomasyon snapshot tamamlandi", {
+        description: `Readiness: ${score} | Chain: ${chainOk ? "OK" : "FAIL"} | Alert: ${alerts}`,
+      });
+      fetchDashboard();
+    } catch (err) {
+      toast.error("Otomasyon snapshot hatasi", { description: err.message });
+    } finally {
+      setTriggeringAutoSnapshot(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[80vh]" data-testid="ops-dashboard-loading">
@@ -470,6 +491,9 @@ export default function HRv2OpsDashboard({ tenant }) {
   const writeCriteria = data?.write_criteria || {};
   const obsReport = observationData || {};
   const obsAlerts = obsReport?.latest_snapshot?.alerts || {};
+  const automation = data?.automation || {};
+  const autoStatus = automation?.status || {};
+  const autoTrends = automation?.trends || {};
 
   return (
     <TooltipProvider>
@@ -1218,6 +1242,296 @@ export default function HRv2OpsDashboard({ tenant }) {
                         </p>
                       </div>
                     )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* ── Shadow Automation Status ── */}
+            <Card data-testid="automation-status-panel" className="md:col-span-4 border-slate-100 shadow-sm">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Radio className="w-4 h-4 text-teal-500" />
+                    <CardTitle className="text-base font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
+                      Shadow Otomasyon
+                    </CardTitle>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] text-teal-600 border-teal-200 bg-teal-50">
+                    Aktif
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Button
+                  data-testid="trigger-auto-snapshot-btn"
+                  onClick={handleTriggerAutoSnapshot}
+                  disabled={triggeringAutoSnapshot}
+                  className="w-full justify-start bg-teal-600 hover:bg-teal-700 text-white text-sm h-10"
+                >
+                  {triggeringAutoSnapshot ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Zap className="w-4 h-4 mr-2" />}
+                  Manuel Snapshot Tetikle
+                </Button>
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Snapshot Periyodu</span>
+                    <span className="text-slate-700 font-medium">6 saat</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Gunluk Ozet</span>
+                    <span className="text-slate-700 font-medium">00:00 UTC</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Son 24s Snapshot</span>
+                    <span className="text-slate-700 font-semibold">{autoStatus.snapshots_24h ?? 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Aktif Alert</span>
+                    <span className={`font-semibold ${(autoStatus.active_alerts || 0) > 0 ? "text-red-600" : "text-emerald-600"}`}>
+                      {autoStatus.active_alerts ?? 0}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Alert (24s)</span>
+                    <span className={`font-semibold ${(autoStatus.alerts_24h || 0) > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                      {autoStatus.alerts_24h ?? 0}
+                    </span>
+                  </div>
+                </div>
+                <Separator />
+                {autoStatus.last_snapshot ? (
+                  <div className="p-2.5 rounded-lg bg-teal-50/50 border border-teal-100">
+                    <p className="text-[11px] text-teal-700 font-medium">Son Snapshot</p>
+                    <div className="flex items-center justify-between text-[10px] text-teal-600 mt-1">
+                      <span>Readiness: {autoStatus.last_snapshot.readiness_score ?? "—"}</span>
+                      <span>Chain: {autoStatus.last_snapshot.chain_success === true ? "OK" : autoStatus.last_snapshot.chain_success === false ? "FAIL" : "—"}</span>
+                    </div>
+                    <p className="text-[10px] text-teal-500 mt-0.5">{formatDateTime(autoStatus.last_snapshot.created_at)}</p>
+                  </div>
+                ) : (
+                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-center">
+                    <p className="text-xs text-slate-400">Henuz snapshot yok</p>
+                  </div>
+                )}
+                {autoStatus.last_daily_summary && (
+                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                    <p className="text-[11px] text-slate-600 font-medium">Son Gunluk Ozet</p>
+                    <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1">
+                      <span>Tarih: {autoStatus.last_daily_summary.date}</span>
+                      <span>
+                        Score: {autoStatus.last_daily_summary.readiness_score ?? "—"}
+                        {autoStatus.last_daily_summary.score_change != null && (
+                          <span className={autoStatus.last_daily_summary.score_change > 0 ? "text-emerald-600 ml-1" : autoStatus.last_daily_summary.score_change < 0 ? "text-red-600 ml-1" : "text-slate-400 ml-1"}>
+                            ({autoStatus.last_daily_summary.score_change > 0 ? "+" : ""}{autoStatus.last_daily_summary.score_change})
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                <div className="space-y-1.5 pt-1">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide font-medium">Retention</p>
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-slate-500">Ham snapshot</span>
+                    <span className="text-slate-600">30 gun</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-slate-500">Gunluk ozetler</span>
+                    <span className="text-slate-600">90 gun</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ── Trend Panels (Readiness, Drift, Latency, Failure) ── */}
+            <Card data-testid="trend-readiness-panel" className="md:col-span-4 border-slate-100 shadow-sm">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <Target className="w-4 h-4 text-emerald-500" />
+                  <CardTitle className="text-sm font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
+                    Readiness Trend
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {(autoTrends.readiness_trend || []).length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-6 text-center">
+                    <TrendingUp className="w-6 h-6 text-slate-300 mb-1" />
+                    <p className="text-xs text-slate-400">Veri bekleniyor</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-end gap-1 h-24">
+                      {(autoTrends.readiness_trend || []).map((p, i) => {
+                        const h = Math.max(4, (p.score / 100) * 100);
+                        const color = p.score >= 90 ? "bg-emerald-400" : p.score >= 70 ? "bg-amber-400" : "bg-red-400";
+                        return (
+                          <Tooltip key={i}>
+                            <TooltipTrigger asChild>
+                              <div
+                                data-testid={`readiness-bar-${i}`}
+                                className={`flex-1 rounded-t-sm ${color} transition-all hover:opacity-80 cursor-pointer`}
+                                style={{ height: `${h}%`, minWidth: "6px" }}
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="text-xs">
+                              <p className="font-medium">{p.time}</p>
+                              <p>Score: {p.score}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <span>{(autoTrends.readiness_trend || [])[0]?.time || ""}</span>
+                      <span>{(autoTrends.readiness_trend || []).at(-1)?.time || ""}</span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card data-testid="trend-drift-panel" className="md:col-span-4 border-slate-100 shadow-sm">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <GitCompare className="w-4 h-4 text-amber-500" />
+                  <CardTitle className="text-sm font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
+                    Drift Trend
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {(autoTrends.drift_trend || []).length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-6 text-center">
+                    <TrendingUp className="w-6 h-6 text-slate-300 mb-1" />
+                    <p className="text-xs text-slate-400">Veri bekleniyor</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-end gap-1 h-24">
+                      {(autoTrends.drift_trend || []).map((p, i) => {
+                        const maxDrift = Math.max(1, ...autoTrends.drift_trend.map(x => x.count));
+                        const h = Math.max(4, (p.count / maxDrift) * 100);
+                        const color = p.count === 0 ? "bg-emerald-400" : p.count < 5 ? "bg-amber-400" : "bg-red-400";
+                        return (
+                          <Tooltip key={i}>
+                            <TooltipTrigger asChild>
+                              <div
+                                data-testid={`drift-bar-${i}`}
+                                className={`flex-1 rounded-t-sm ${color} transition-all hover:opacity-80 cursor-pointer`}
+                                style={{ height: `${h}%`, minWidth: "6px" }}
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="text-xs">
+                              <p className="font-medium">{p.time}</p>
+                              <p>Drift: {p.count}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <span>{(autoTrends.drift_trend || [])[0]?.time || ""}</span>
+                      <span>{(autoTrends.drift_trend || []).at(-1)?.time || ""}</span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* ── Latency Trend ── */}
+            <Card data-testid="trend-latency-panel" className="md:col-span-6 border-slate-100 shadow-sm">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <Timer className="w-4 h-4 text-blue-500" />
+                  <CardTitle className="text-sm font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
+                    Latency Trend
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {(autoTrends.latency_trend || []).length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-6 text-center">
+                    <TrendingUp className="w-6 h-6 text-slate-300 mb-1" />
+                    <p className="text-xs text-slate-400">Veri bekleniyor</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-end gap-1 h-24">
+                      {(autoTrends.latency_trend || []).map((p, i) => {
+                        const maxLat = Math.max(1, ...autoTrends.latency_trend.map(x => x.avg_ms));
+                        const h = Math.max(4, (p.avg_ms / maxLat) * 100);
+                        const color = p.avg_ms <= 1000 ? "bg-blue-400" : p.avg_ms <= 3000 ? "bg-amber-400" : "bg-red-400";
+                        return (
+                          <Tooltip key={i}>
+                            <TooltipTrigger asChild>
+                              <div
+                                data-testid={`latency-bar-${i}`}
+                                className={`flex-1 rounded-t-sm ${color} transition-all hover:opacity-80 cursor-pointer`}
+                                style={{ height: `${h}%`, minWidth: "6px" }}
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="text-xs">
+                              <p className="font-medium">{p.time}</p>
+                              <p>Latency: {p.avg_ms}ms</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <span>{(autoTrends.latency_trend || [])[0]?.time || ""}</span>
+                      <span>{(autoTrends.latency_trend || []).at(-1)?.time || ""}</span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* ── Failure Trend ── */}
+            <Card data-testid="trend-failure-panel" className="md:col-span-6 border-slate-100 shadow-sm">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-red-500" />
+                  <CardTitle className="text-sm font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
+                    Failure Trend
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {(autoTrends.failure_trend || []).length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-6 text-center">
+                    <TrendingUp className="w-6 h-6 text-slate-300 mb-1" />
+                    <p className="text-xs text-slate-400">Veri bekleniyor</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-end gap-1 h-24">
+                      {(autoTrends.failure_trend || []).map((p, i) => {
+                        const maxRate = Math.max(1, ...autoTrends.failure_trend.map(x => x.error_rate));
+                        const h = maxRate > 0 ? Math.max(4, (p.error_rate / maxRate) * 100) : 4;
+                        const color = p.error_rate === 0 ? "bg-emerald-400" : p.error_rate < 5 ? "bg-amber-400" : "bg-red-400";
+                        return (
+                          <Tooltip key={i}>
+                            <TooltipTrigger asChild>
+                              <div
+                                data-testid={`failure-bar-${i}`}
+                                className={`flex-1 rounded-t-sm ${color} transition-all hover:opacity-80 cursor-pointer`}
+                                style={{ height: `${h}%`, minWidth: "6px" }}
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="text-xs">
+                              <p className="font-medium">{p.time}</p>
+                              <p>Hata: %{p.error_rate} ({p.fail_count} adet)</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <span>{(autoTrends.failure_trend || [])[0]?.time || ""}</span>
+                      <span>{(autoTrends.failure_trend || []).at(-1)?.time || ""}</span>
+                    </div>
                   </div>
                 )}
               </CardContent>

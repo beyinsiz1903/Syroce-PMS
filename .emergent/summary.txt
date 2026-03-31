@@ -1,17 +1,17 @@
 <analysis>**original_problem_statement**: 
-The user wants to safely deploy and manage the HotelRunner v2 integration. Current focus is shifting from building the ops dashboard to executing a strict transition path before enabling live writes. PRODUCT REQUIREMENTS:
+The user wants to safely deploy and manage the HotelRunner v2 integration. Current focus is executing a strict transition path before enabling live writes. PRODUCT REQUIREMENTS:
 1. P0: 7-day Shadow Observation Plan (monitoring auth, latency, DLQ, drifts, ingest consistency, alerts).
 2. P1: Write Readiness Score (0-100) integrated into the Ops Dashboard.
-3. P1: Write Path Transition Plan detailing entry/exit/rollback for 4 phases (Shadow, Dry-run, Limited live, Full live).
-4. P1: Implement Dry-run Write Path (simulating writes, no real data pushed).
+3. P1: Implement Dry-run Write Path (simulating writes, no real data pushed but full internal pipeline execution).
+4. P1: Write Path Transition Plan detailing entry/exit/rollback for 4 phases (Shadow, Dry-run, Limited live, Full live).
 
 **User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın.)
 
 **what currently exists?** 
-A production-grade  connector running in **Shadow Mode** (read-only). The Ops Dashboard has been heavily upgraded to include a dynamic **Write Readiness Score (0-100)**, a **Transition Phase Tracker**, and manual **Snapshot/Observation tools** to monitor the 7-day shadow period.
+A production-grade  connector running in **Shadow Mode** (read-only). The Ops Dashboard has been upgraded to include a dynamic Write Readiness Score, Transition Phase Tracker, Observation controls, and newly added **Dry-Run Control Panels** and **Write Enable Criteria** monitoring.
 
 **Last working item**:
-    - Last item agent was working: Implementing the Write Readiness Score algorithm, Shadow Observation metrics gathering, Transition phase tracking on the backend, and integrating these into the React Ops Dashboard UI.
+    - Last item agent was working: Implementing the Dry-Run Write Path. This involved creating a simulated write pipeline (NO-OP on external API calls but real outbox/transaction logic), failure simulation (timeout, rate_limit, validation), and integrating the Dry-Run controls & Write Enable Criteria into the React Ops Dashboard UI.
     - Status: USER VERIFICATION PENDING
     - Agent Testing Done: Y
     - Which testing method agent to use? testing_agent_v3_fork
@@ -21,17 +21,12 @@ A production-grade  connector running in **Shadow Mode** (read-only). The Ops Da
   *None.*
 
 **In progress Task List**: 
-  Task 1: P1 - Dry-run Write Path Implementation
-     - Where to resume: Wait for user feedback on the Write Readiness and Observation features. If approved, ask if they want to automate the 7-day observation with Celery beat as previously suggested, or move directly to building the Dry-run simulation logic.
-     - What will be achieved with this? Safely simulate writes and verify transaction integrity without actually mutating HotelRunner live data.
-     - Status: NOT STARTED
-     - Should Test frontend/backend/both after fix? Backend
-     - Blocked on something: Waiting for user verification and confirmation of the next step.
+  *None.*
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
+    - P1: Shadow Automation (Celery beat) - Automating the 7-day shadow snapshot collection. *(User explicitly requested this as the IMMEDIATE NEXT STEP after Dry-run)*.
     - P1: Complete the 7-day shadow observation period.
-    - P1: Dry-run write path implementation (Controlled simulation before real write).
     - P1: Limited live write execution (Single tenant/small scope).
     - P1: Full live write execution.
     
@@ -41,13 +36,11 @@ A production-grade  connector running in **Shadow Mode** (read-only). The Ops Da
     - P3: Legacy HR connector migration/cleanup ( DEPRECATED).
 
 **Completed work in this session**
-- Fixed import sorting lint issue in . (DONE)
-- Created  for shadow snapshots and alerts. (DONE)
-- Created  to calculate composite Write Readiness Score. (DONE)
-- Created  to map and serve the 4 transition phases. (DONE)
-- Updated  response and added specific endpoints for readiness, observation, and transition. (DONE)
-- Updated  to display a Readiness gauge, Transition steps, and Observation controls. (DONE)
-- Tested full flow successfully via  (iteration_164.json). (DONE)
+- Created  to handle NO-OP write simulations and failure mockings. (DONE)
+- Added 7 new dry-run API endpoints in  (ari-push, confirm-delivery, chain, simulate-failure, results, stats, write-criteria). (DONE)
+- Added  to . (DONE)
+- Updated  to include Dry-Run Kontrol, Dry-Run Hata Dağılımı, and Write Açma Kriterleri panels. (DONE)
+- Tested full backend and frontend flow successfully via  (iteration_165.json - 14/14 APIs passed, UI verified). (DONE)
 
 **Earlier issues found/mentioned but not fixed**
    - None
@@ -59,20 +52,20 @@ A production-grade  connector running in **Shadow Mode** (read-only). The Ops Da
 
 
 **Key Technical Concepts**
-- **Write Readiness Score**: A 0-100 composite score weighting drift rate (25%), error rate (25%), latency (20%), retry count (15%), and DLQ count (15%).
-- **Transition Phases**: Enforced strictly as  ->  ->  -> .
-- **Observation Snapshot**: Collects daily metrics into  database to satisfy the 7-day shadow observation requirement.
+- **Dry-Run Write Path**: Production-identical pipeline where only the external API call to HotelRunner is NO-OP/mocked. DB state, outbox pattern, and retries operate natively.
+- **Write Enable Criteria**: 6 strict conditions that MUST be met to exit shadow mode (Score >= 90, Drift < 5, Dry-run success >= 95%, DLQ = 0, Retries stable, >=1 successful chain).
+- **Write Readiness Score**: A 0-100 composite score weighting drift rate, error rate, latency, retry count, and DLQ count.
 
 **key DB schema**
   - : Used to store daily snapshots during the observation period.
+  - : Dead letter queue for connector retries.
 
 **changes in tech stack**
   - None
 
 **All files of reference** 
   -  (Created)
-  -  (Created)
-  -  (Created)
+  -  (Updated)
   -  (Updated)
   -  (Updated)
   -  (Updated)
@@ -87,11 +80,14 @@ A production-grade  connector running in **Shadow Mode** (read-only). The Ops Da
 -  (NEW)
 -  (NEW)
 -  (NEW)
+-  (NEW)
+-  (NEW)
 
 **Critical Info for New Agent** 
 - **Language Constraint:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-- **DO NOT ENABLE WRITES:** The connector must firmly remain in Shadow Mode (). The UI and backend now track the readiness score. Await user confirmation before attempting any implementation of the Dry-run phase.
-- Agent ended the previous session by suggesting a Celery beat job to automate snapshot collection for the 7-day observation. See what the user decides.
+- **IMMEDIATE NEXT STEP:** User explicitly requested to build the **Shadow Automation (Celery beat)** next, now that the dry-run path is finished. The agent previously suggested automating the dry-run chain test after each snapshot to keep the readiness score active; propose this explicitly.
+- **DO NOT ENABLE WRITES:** The connector must firmly remain in Shadow Mode (). Live writes will ONLY be enabled when the 6 criteria outlined in the Write Enable Panel are green.
+- **Dry-run design:** Dry-run external calls are NO-OP by design, this is the core feature, not a missing implementation. 
 
 **documents and test reports created in this job** 
   - 
@@ -99,20 +95,20 @@ A production-grade  connector running in **Shadow Mode** (read-only). The Ops Da
   -  (Updated)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - *User Messages:* User reported a lint error which the agent fixed. User then officially approved the Ops Dashboard and mandated the next priorities: 1) Shadow Observation Plan, 2) Transition Plan, 3) Dry-run implementation, with a strict requirement to add a Write Readiness Score to the dashboard.
- - *Pending Human Messages:* The agent fully implemented the Readiness Score, Observation APIs, Transition tracking, updated the Dashboard UI, ran the testing agent with 100% success, and sent the completion message. Waiting for the user's response to the finished work.
+ - *User Messages:* User officially approved the Write Readiness Score, Shadow Observation metrics, and Transition Phase Tracker. User then mandated the exact priority: 1) Dry-Run Write Path (P1), and 2) Shadow Automation (Celery beat). User strictly defined the 6 criteria to exit shadow mode (which the agent mapped into the UI) and enforced that the dry-run must be identical to production but without side effects.
+ - *Pending Human Messages:* The agent fully implemented the Dry-Run architecture, updated the Dashboard UI, ran the testing agent with 100% success, and called finish. Waiting for the user's response to the finished work.
 
 **Project Health Check:**
   - Broken: None
-  - Mocked: None 
+  - Mocked: External API calls exclusively during  mode (Expected behavior).
 
 **3rd Party Integrations** 
   - AWS KMS (Encryption) — requires User API Key
   - HotelRunner v2 — requires User Token
 
 **Testing status**
-  - Testing agent used after significant changes: YES (iteration_164.json)
-  - Troubleshoot agent used after agent stuck in loop: NO (Used testing agent instead of troubleshoot agent after browser crash during a screenshot attempt).
+  - Testing agent used after significant changes: YES (iteration_165.json)
+  - Troubleshoot agent used after agent stuck in loop: NO 
   - Test files created: None this session
   - Known regressions: None
 
@@ -121,4 +117,4 @@ A production-grade  connector running in **Shadow Mode** (read-only). The Ops Da
   - (Tracked in )
 
 **What agent forgot to execute**
-- Nothing. The agent fulfilled the required sequence and successfully added the Write Readiness Score and observation modules.</analysis>
+- Nothing. The agent fulfilled the required sequence and successfully added the entire dry-run write path and criteria checks.</analysis>

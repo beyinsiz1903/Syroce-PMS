@@ -457,6 +457,11 @@ async def get_ops_dashboard(
     # 14. Write enable criteria
     write_criteria = await check_write_enable_criteria(tenant_id)
 
+    # 15. Shadow Automation status + trends
+    from channel_manager.connectors.hotelrunner_v2.shadow_automation import get_automation_status, get_trend_data
+    automation_status = await get_automation_status(tenant_id)
+    automation_trends = await get_trend_data(tenant_id, hours=168)
+
     return {
         "generated_at": now_iso,
         "tenant_id": tenant_id,
@@ -540,6 +545,18 @@ async def get_ops_dashboard(
             "met_count": write_criteria.get("met_count", 0),
             "total_criteria": write_criteria.get("total_criteria", 0),
             "criteria": write_criteria.get("criteria", []),
+        },
+
+        # Shadow Automation
+        "automation": {
+            "status": automation_status,
+            "trends": {
+                "readiness_trend": automation_trends.get("readiness_trend", []),
+                "drift_trend": automation_trends.get("drift_trend", []),
+                "latency_trend": automation_trends.get("latency_trend", []),
+                "failure_trend": automation_trends.get("failure_trend", []),
+                "data_points": automation_trends.get("data_points", 0),
+            },
         },
     }
 
@@ -762,3 +779,83 @@ async def get_write_criteria_endpoint(
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.dry_run import check_write_enable_criteria
     return await check_write_enable_criteria(tenant_id)
+
+
+
+# ── Shadow Automation ──────────────────────────────────────────────────
+
+@router.get("/automation/status")
+async def get_automation_status_endpoint(
+    tenant_id: str = Query(...),
+):
+    """Shadow automation durumu ve son aktivite."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.shadow_automation import get_automation_status
+    return await get_automation_status(tenant_id)
+
+
+@router.post("/automation/trigger")
+async def trigger_snapshot_endpoint(
+    tenant_id: str = Query(...),
+):
+    """Manuel olarak 6-saatlik snapshot tetikle."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.shadow_automation import run_periodic_snapshot
+    return await run_periodic_snapshot(tenant_id)
+
+
+@router.get("/automation/trends")
+async def get_trend_data_endpoint(
+    tenant_id: str = Query(...),
+    hours: int = Query(168, description="Trend periyodu (saat)"),
+):
+    """Dashboard trend paneli verisi (readiness, drift, latency, failure)."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.shadow_automation import get_trend_data
+    return await get_trend_data(tenant_id, hours=hours)
+
+
+@router.get("/automation/alerts")
+async def get_automation_alerts_endpoint(
+    tenant_id: str = Query(...),
+    limit: int = Query(50),
+    severity: str | None = Query(None, description="critical veya warn"),
+):
+    """Otomasyon alert gecmisi."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.shadow_automation import get_alert_history
+    alerts = await get_alert_history(tenant_id, limit=limit, severity=severity)
+    return {"alerts": alerts, "count": len(alerts)}
+
+
+@router.post("/automation/alerts/acknowledge")
+async def acknowledge_alert_endpoint(
+    tenant_id: str = Query(...),
+    body: dict[str, Any] = Body(...),
+):
+    """Alert'i onayla (acknowledge)."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.shadow_automation import acknowledge_alert
+    return await acknowledge_alert(
+        tenant_id,
+        rule_id=body.get("rule_id", ""),
+        snapshot_time=body.get("snapshot_time", ""),
+    )
+
+
+@router.get("/automation/daily-summaries")
+async def get_daily_summaries_endpoint(
+    tenant_id: str = Query(...),
+    limit: int = Query(30),
+):
+    """Gunluk ozet gecmisi."""
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+    from channel_manager.connectors.hotelrunner_v2.shadow_automation import get_daily_summaries
+    summaries = await get_daily_summaries(tenant_id, limit=limit)
+    return {"summaries": summaries, "count": len(summaries)}
