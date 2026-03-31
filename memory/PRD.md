@@ -96,6 +96,19 @@ Full sentetik test akisi via mock server (34/34 PASSED)
 - These were leftovers from automated testing (testing agent bulk create/delete tests)
 - Calendar now shows only 30 real rooms (Standard:8, Deluxe:8, Superior:6, Suite:4, Family:2, Junior Suite:2)
 
+### Bug Fix — Orphaned Test Bookings Cleanup [2026-03-31]
+- Removed 138 test/fake unassigned bookings (TestGuest*, ParseTest*, TenantTest*, AutoImport*, source=ota_sandbox)
+- "113 atanmamis oda" indicator reduced to "3 atanmamis oda" (3 real no-show bookings remain)
+- Database relational integrity restored
+
+### Feature — Unassigned Bookings Panel [2026-03-31]
+- "Atanmamis oda" button in calendar header is now clickable
+- Opens a slide-in panel from the right showing all unassigned active reservations
+- Panel shows guest name, booking ID, dates, room type, status, and amount
+- Clicking a booking in the panel opens the Reservation Detail Modal
+- Panel closes via X button or backdrop click
+- Files: CalendarHeader.jsx, ReservationCalendar.jsx
+
 ## Upcoming Tasks
 
 ### P1 — 7-Day Shadow Observation (IN PROGRESS)
