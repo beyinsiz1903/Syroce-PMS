@@ -14,7 +14,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://hotelrunner-connect.preview.emergentagent.com")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://room-mapper-9.preview.emergentagent.com")
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
