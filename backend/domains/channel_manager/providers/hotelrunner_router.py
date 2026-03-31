@@ -513,12 +513,54 @@ class HRRoomMapping(BaseModel):
     sync_restrictions: bool = True
 
 
+@router.get("/pms-room-types")
+async def get_pms_room_types(current_user: User = Depends(get_current_user)):
+    """Get distinct PMS room types for mapping dropdown."""
+    types = await db.rooms.distinct("room_type", {"tenant_id": current_user.tenant_id})
+    return {"room_types": [t for t in types if t]}
+
+
+@router.get("/cached-rooms")
+async def get_cached_hr_rooms(current_user: User = Depends(get_current_user)):
+    """Get cached HotelRunner rooms from last fetch."""
+    conn = await db.hotelrunner_connections.find_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"_id": 0, "cached_rooms": 1, "rooms_fetched_at": 1},
+    )
+    if not conn:
+        return {"rooms": [], "fetched_at": None}
+    return {
+        "rooms": conn.get("cached_rooms", []),
+        "fetched_at": conn.get("rooms_fetched_at"),
+    }
+
+
 @router.post("/room-mappings")
 async def create_room_mapping(
     payload: HRRoomMapping,
     current_user: User = Depends(get_current_user),
 ):
-    """Create a PMS ↔ HotelRunner room mapping."""
+    """Create a PMS <> HotelRunner room mapping."""
+    existing = await db.hotelrunner_room_mappings.find_one({
+        "tenant_id": current_user.tenant_id,
+        "hr_inv_code": payload.hr_inv_code,
+        "hr_rate_code": payload.hr_rate_code,
+    })
+    if existing:
+        await db.hotelrunner_room_mappings.update_one(
+            {"_id": existing["_id"]},
+            {"$set": {
+                "pms_room_type": payload.pms_room_type,
+                "hr_room_name": payload.hr_room_name,
+                "sync_availability": payload.sync_availability,
+                "sync_price": payload.sync_price,
+                "sync_restrictions": payload.sync_restrictions,
+                "updated_at": datetime.now(UTC).isoformat(),
+                "updated_by": current_user.name,
+            }},
+        )
+        return {"message": "Oda eslemesi guncellendi", "mapping_id": existing.get("id")}
+
     mapping = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
@@ -535,12 +577,60 @@ async def create_room_mapping(
 
     await db.hotelrunner_room_mappings.insert_one(mapping)
     mapping.pop("_id", None)
-    return {"message": "Oda eslesmesi olusturuldu", "mapping": mapping}
+    return {"message": "Oda eslemesi olusturuldu", "mapping": mapping}
+
+
+@router.post("/room-mappings/bulk")
+async def bulk_create_room_mappings(
+    mappings_data: list[HRRoomMapping],
+    current_user: User = Depends(get_current_user),
+):
+    """Create or update multiple room mappings at once."""
+    created = 0
+    updated = 0
+    for m in mappings_data:
+        existing = await db.hotelrunner_room_mappings.find_one({
+            "tenant_id": current_user.tenant_id,
+            "hr_inv_code": m.hr_inv_code,
+            "hr_rate_code": m.hr_rate_code,
+        })
+        if existing:
+            await db.hotelrunner_room_mappings.update_one(
+                {"_id": existing["_id"]},
+                {"$set": {
+                    "pms_room_type": m.pms_room_type,
+                    "hr_room_name": m.hr_room_name,
+                    "sync_availability": m.sync_availability,
+                    "sync_price": m.sync_price,
+                    "sync_restrictions": m.sync_restrictions,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                    "updated_by": current_user.name,
+                }},
+            )
+            updated += 1
+        else:
+            doc = {
+                "id": str(uuid.uuid4()),
+                "tenant_id": current_user.tenant_id,
+                "pms_room_type": m.pms_room_type,
+                "hr_inv_code": m.hr_inv_code,
+                "hr_rate_code": m.hr_rate_code,
+                "hr_room_name": m.hr_room_name,
+                "sync_availability": m.sync_availability,
+                "sync_price": m.sync_price,
+                "sync_restrictions": m.sync_restrictions,
+                "created_at": datetime.now(UTC).isoformat(),
+                "created_by": current_user.name,
+            }
+            await db.hotelrunner_room_mappings.insert_one(doc)
+            created += 1
+
+    return {"message": f"{created} yeni, {updated} guncellenen esleme", "created": created, "updated": updated}
 
 
 @router.get("/room-mappings")
 async def get_room_mappings(current_user: User = Depends(get_current_user)):
-    """Get all PMS ↔ HotelRunner room mappings."""
+    """Get all PMS <> HotelRunner room mappings."""
     mappings = await db.hotelrunner_room_mappings.find(
         {"tenant_id": current_user.tenant_id},
         {"_id": 0},

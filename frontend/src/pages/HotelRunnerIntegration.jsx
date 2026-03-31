@@ -12,7 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import {
   Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink,
   Building2, ArrowDownUp, CalendarCheck, Clock, Activity,
-  AlertTriangle, Loader2
+  AlertTriangle, Loader2, Save, Trash2, Plus, Check
 } from 'lucide-react';
 
 const API = import.meta.env.VITE_BACKEND_URL;
@@ -26,6 +26,10 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
   const [mappings, setMappings] = useState([]);
   const [syncLogs, setSyncLogs] = useState([]);
   const [channels, setChannels] = useState([]);
+  const [pmsRoomTypes, setPmsRoomTypes] = useState([]);
+  const [mappingDraft, setMappingDraft] = useState({});
+  const [savingMapping, setSavingMapping] = useState(null);
+  const [newPmsType, setNewPmsType] = useState('');
 
   const [connectForm, setConnectForm] = useState({
     token: '', hr_id: '', property_name: '',
@@ -44,16 +48,22 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
   const fetchAll = useCallback(async () => {
     if (!connection?.connected) return;
     try {
-      const [roomsRes, mappingsRes, logsRes, localRes] = await Promise.all([
+      const [roomsRes, mappingsRes, logsRes, localRes, pmsTypesRes, cachedRoomsRes] = await Promise.all([
         axios.get(`${API}/api/channel-manager/hotelrunner/room-mappings`, { headers }).catch(() => ({ data: { mappings: [] } })),
         axios.get(`${API}/api/channel-manager/hotelrunner/sync-logs?limit=20`, { headers }).catch(() => ({ data: { logs: [] } })),
         axios.get(`${API}/api/channel-manager/hotelrunner/reservations/local`, { headers }).catch(() => ({ data: { reservations: [] } })),
         axios.get(`${API}/api/channel-manager/hotelrunner/channels/connected`, { headers }).catch(() => ({ data: { channels: [] } })),
+        axios.get(`${API}/api/channel-manager/hotelrunner/pms-room-types`, { headers }).catch(() => ({ data: { room_types: [] } })),
+        axios.get(`${API}/api/channel-manager/hotelrunner/cached-rooms`, { headers }).catch(() => ({ data: { rooms: [] } })),
       ]);
       setMappings(roomsRes.data.mappings || []);
       setSyncLogs(logsRes.data.logs || []);
       setReservations(localRes.data.reservations || []);
       setChannels(mappingsRes.data.channels || []);
+      setPmsRoomTypes(pmsTypesRes.data.room_types || []);
+      if (cachedRoomsRes.data.rooms?.length > 0 && rooms.length === 0) {
+        setRooms(cachedRoomsRes.data.rooms);
+      }
     } catch (e) { console.error(e); }
   }, [connection?.connected]);
 
@@ -114,6 +124,102 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
     } catch (e) { toast.error(e.response?.data?.detail || 'Senkronizasyon hatasi'); }
     finally { setLoading(false); }
   };
+
+  const handleSaveMapping = async (room) => {
+    const key = room.inv_code;
+    const draft = mappingDraft[key];
+    const pmsType = draft?.pms_room_type;
+    if (!pmsType) {
+      toast.error('Lutfen bir PMS oda tipi secin');
+      return;
+    }
+    setSavingMapping(key);
+    try {
+      await axios.post(`${API}/api/channel-manager/hotelrunner/room-mappings`, {
+        pms_room_type: pmsType,
+        hr_inv_code: room.inv_code,
+        hr_rate_code: room.rate_code,
+        hr_room_name: room.name,
+        sync_availability: draft?.sync_availability ?? true,
+        sync_price: draft?.sync_price ?? true,
+        sync_restrictions: draft?.sync_restrictions ?? true,
+      }, { headers });
+      toast.success(`${room.name} → ${pmsType} eslendi`);
+      fetchAll();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Esleme hatasi'); }
+    finally { setSavingMapping(null); }
+  };
+
+  const handleDeleteMapping = async (mappingId) => {
+    try {
+      await axios.delete(`${API}/api/channel-manager/hotelrunner/room-mappings/${mappingId}`, { headers });
+      toast.success('Esleme silindi');
+      fetchAll();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Silme hatasi'); }
+  };
+
+  const handleSaveAllMappings = async () => {
+    const toSave = rooms.filter(r => {
+      const d = mappingDraft[r.inv_code];
+      return d?.pms_room_type;
+    });
+    if (toSave.length === 0) {
+      toast.error('Kaydedilecek esleme yok. Her oda icin PMS tipi secin.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const payload = toSave.map(r => {
+        const d = mappingDraft[r.inv_code];
+        return {
+          pms_room_type: d.pms_room_type,
+          hr_inv_code: r.inv_code,
+          hr_rate_code: r.rate_code,
+          hr_room_name: r.name,
+          sync_availability: d.sync_availability ?? true,
+          sync_price: d.sync_price ?? true,
+          sync_restrictions: d.sync_restrictions ?? true,
+        };
+      });
+      const { data } = await axios.post(`${API}/api/channel-manager/hotelrunner/room-mappings/bulk`, payload, { headers });
+      toast.success(data.message);
+      fetchAll();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Toplu esleme hatasi'); }
+    finally { setLoading(false); }
+  };
+
+  const updateDraft = (invCode, field, value) => {
+    setMappingDraft(prev => ({
+      ...prev,
+      [invCode]: { ...prev[invCode], [field]: value },
+    }));
+  };
+
+  const getMappingForRoom = (invCode, rateCode) =>
+    mappings.find(m => m.hr_inv_code === invCode && m.hr_rate_code === rateCode);
+
+  const allRoomTypes = [...new Set([
+    ...pmsRoomTypes,
+    ...mappings.map(m => m.pms_room_type),
+  ])].filter(Boolean);
+
+  useEffect(() => {
+    if (mappings.length > 0 && rooms.length > 0) {
+      const initial = {};
+      for (const room of rooms) {
+        const m = getMappingForRoom(room.inv_code, room.rate_code);
+        if (m) {
+          initial[room.inv_code] = {
+            pms_room_type: m.pms_room_type,
+            sync_availability: m.sync_availability,
+            sync_price: m.sync_price,
+            sync_restrictions: m.sync_restrictions,
+          };
+        }
+      }
+      setMappingDraft(prev => ({ ...initial, ...prev }));
+    }
+  }, [mappings, rooms]);
 
   const isConnected = connection?.connected;
 
@@ -351,47 +457,194 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
           {/* Mappings Tab */}
           <TabsContent value="mappings" className="space-y-4 mt-4">
             <Card>
-              <CardHeader>
-                <CardTitle>Oda Eslemeleri</CardTitle>
-                <CardDescription>PMS oda tipleri ile HotelRunner oda/fiyat planlarini esleyin</CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Oda Eslemeleri</CardTitle>
+                  <CardDescription>HotelRunner oda tiplerini PMS oda tiplerinizle eslestirin</CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  {rooms.length > 0 && (
+                    <Button
+                      data-testid="hr-save-all-mappings-btn"
+                      onClick={handleSaveAllMappings}
+                      disabled={loading}
+                    >
+                      {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                      Tum Eslemeleri Kaydet
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
-                {mappings.length === 0 ? (
+                {rooms.length === 0 ? (
                   <div className="text-center py-8">
                     <ArrowDownUp className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                    <p className="text-sm text-slate-500">Henuz oda eslemesi yok</p>
-                    <p className="text-xs text-slate-400 mt-1">Credential'lar geldiginde odalar cekilip eslenecek</p>
+                    <p className="text-sm text-slate-500">Henuz HotelRunner odasi cekilmedi</p>
+                    <p className="text-xs text-slate-400 mt-1">Oncelikle "Odalar" sekmesinden odalari cekin</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-4"
+                      onClick={() => { setActiveTab('rooms'); }}
+                    >
+                      <Building2 className="w-4 h-4 mr-1" /> Odalar Sekmesine Git
+                    </Button>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm" data-testid="hr-mappings-table">
-                      <thead>
-                        <tr className="border-b text-left text-slate-500">
-                          <th className="pb-2 pr-4">PMS Oda Tipi</th>
-                          <th className="pb-2 pr-4">HR Inv Code</th>
-                          <th className="pb-2 pr-4">HR Rate Code</th>
-                          <th className="pb-2 pr-4">HR Oda Adi</th>
-                          <th className="pb-2">Sync</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {mappings.map((m, i) => (
-                          <tr key={i} className="border-b last:border-0">
-                            <td className="py-2 pr-4 font-medium">{m.pms_room_type}</td>
-                            <td className="py-2 pr-4 font-mono text-xs">{m.hr_inv_code}</td>
-                            <td className="py-2 pr-4 font-mono text-xs">{m.hr_rate_code}</td>
-                            <td className="py-2 pr-4">{m.hr_room_name}</td>
-                            <td className="py-2">
-                              <div className="flex gap-1">
-                                {m.sync_availability && <Badge variant="secondary" className="text-xs">A</Badge>}
-                                {m.sync_price && <Badge variant="secondary" className="text-xs">R</Badge>}
-                                {m.sync_restrictions && <Badge variant="secondary" className="text-xs">I</Badge>}
-                              </div>
-                            </td>
+                  <div className="space-y-4">
+                    {/* New PMS type input */}
+                    <div className="flex items-end gap-2 p-3 bg-slate-50 rounded-lg border border-dashed">
+                      <div className="flex-1">
+                        <Label className="text-xs text-slate-500">Yeni PMS Oda Tipi Ekle</Label>
+                        <Input
+                          data-testid="new-pms-type-input"
+                          placeholder="Ornek: Deluxe Oda, Suite, Standart..."
+                          value={newPmsType}
+                          onChange={e => setNewPmsType(e.target.value)}
+                          className="mt-1"
+                        />
+                      </div>
+                      <Button
+                        data-testid="add-pms-type-btn"
+                        variant="outline"
+                        size="sm"
+                        disabled={!newPmsType.trim()}
+                        onClick={() => {
+                          const val = newPmsType.trim();
+                          if (val && !allRoomTypes.includes(val)) {
+                            setPmsRoomTypes(prev => [...prev, val]);
+                            toast.success(`"${val}" PMS oda tipi eklendi`);
+                          }
+                          setNewPmsType('');
+                        }}
+                      >
+                        <Plus className="w-4 h-4 mr-1" /> Ekle
+                      </Button>
+                    </div>
+
+                    {/* Mapping table */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm" data-testid="hr-mapping-table">
+                        <thead>
+                          <tr className="border-b text-left text-slate-500">
+                            <th className="pb-2 pr-3">HR Oda Adi</th>
+                            <th className="pb-2 pr-3">Inv / Rate Code</th>
+                            <th className="pb-2 pr-3 min-w-[200px]">PMS Oda Tipi</th>
+                            <th className="pb-2 pr-2 text-center">Musaitlik</th>
+                            <th className="pb-2 pr-2 text-center">Fiyat</th>
+                            <th className="pb-2 pr-2 text-center">Kisitlama</th>
+                            <th className="pb-2 text-center">Islem</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {rooms.map((room) => {
+                            const existingMapping = getMappingForRoom(room.inv_code, room.rate_code);
+                            const draft = mappingDraft[room.inv_code] || {};
+                            const isMapped = !!existingMapping;
+
+                            return (
+                              <tr
+                                key={room.inv_code}
+                                className={`border-b last:border-0 ${isMapped ? 'bg-emerald-50/50' : ''}`}
+                                data-testid={`mapping-row-${room.inv_code}`}
+                              >
+                                <td className="py-3 pr-3">
+                                  <div className="font-medium">{room.name}</div>
+                                  <div className="text-xs text-slate-400">{room.pricing_type} &middot; {room.adult_capacity}A/{room.room_capacity}T</div>
+                                </td>
+                                <td className="py-3 pr-3">
+                                  <div className="font-mono text-xs">{room.inv_code}</div>
+                                  <div className="font-mono text-xs text-slate-400">{room.rate_code}</div>
+                                </td>
+                                <td className="py-3 pr-3">
+                                  <select
+                                    data-testid={`pms-type-select-${room.inv_code}`}
+                                    className="w-full border rounded-md px-2 py-1.5 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    value={draft.pms_room_type || ''}
+                                    onChange={e => updateDraft(room.inv_code, 'pms_room_type', e.target.value)}
+                                  >
+                                    <option value="">-- PMS Tipi Sec --</option>
+                                    {allRoomTypes.map(t => (
+                                      <option key={t} value={t}>{t}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="py-3 pr-2 text-center">
+                                  <Switch
+                                    data-testid={`sync-avail-${room.inv_code}`}
+                                    checked={draft.sync_availability ?? true}
+                                    onCheckedChange={v => updateDraft(room.inv_code, 'sync_availability', v)}
+                                  />
+                                </td>
+                                <td className="py-3 pr-2 text-center">
+                                  <Switch
+                                    data-testid={`sync-price-${room.inv_code}`}
+                                    checked={draft.sync_price ?? true}
+                                    onCheckedChange={v => updateDraft(room.inv_code, 'sync_price', v)}
+                                  />
+                                </td>
+                                <td className="py-3 pr-2 text-center">
+                                  <Switch
+                                    data-testid={`sync-restrict-${room.inv_code}`}
+                                    checked={draft.sync_restrictions ?? true}
+                                    onCheckedChange={v => updateDraft(room.inv_code, 'sync_restrictions', v)}
+                                  />
+                                </td>
+                                <td className="py-3 text-center">
+                                  <div className="flex items-center justify-center gap-1">
+                                    {isMapped ? (
+                                      <>
+                                        <Badge className="bg-emerald-600 text-xs gap-1" data-testid={`mapped-badge-${room.inv_code}`}>
+                                          <Check className="w-3 h-3" /> Eslendi
+                                        </Badge>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                                          data-testid={`delete-mapping-${room.inv_code}`}
+                                          onClick={() => handleDeleteMapping(existingMapping.id)}
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </Button>
+                                      </>
+                                    ) : (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={!draft.pms_room_type || savingMapping === room.inv_code}
+                                        data-testid={`save-mapping-${room.inv_code}`}
+                                        onClick={() => handleSaveMapping(room)}
+                                      >
+                                        {savingMapping === room.inv_code
+                                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          : <Save className="w-3.5 h-3.5 mr-1" />}
+                                        Kaydet
+                                      </Button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Summary */}
+                    <div className="flex items-center justify-between pt-2 border-t text-sm text-slate-500">
+                      <span>{rooms.length} HR oda, {mappings.length} esleme yapildi</span>
+                      {mappings.length > 0 && rooms.length > mappings.length && (
+                        <Badge variant="outline" className="text-amber-600 border-amber-300">
+                          <AlertTriangle className="w-3 h-3 mr-1" />
+                          {rooms.length - mappings.length} oda henuz eslenmedi
+                        </Badge>
+                      )}
+                      {mappings.length > 0 && mappings.length >= rooms.length && (
+                        <Badge className="bg-emerald-600">
+                          <CheckCircle className="w-3 h-3 mr-1" /> Tum odalar eslendi
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 )}
               </CardContent>
