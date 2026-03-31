@@ -84,84 +84,17 @@ New page: `/hrv2-ops` -> `frontend/src/pages/HRv2OpsDashboard.jsx`
 - Redis + Celery Worker + Beat via Supervisor
 
 ### Phase 9 — E2E Reservation Test Suite [2026-03-31]
-Full sentetik test akisi via mock server (34/34 PASSED):
-
-**Altyapi:**
-- Mock credentials stored for test-tenant (isolated from prod namespace)
-- Room mappings (DLX, STD, SUI, FAM) and rate plan mappings (BAR, PROMO, RACK, NONREF) created
-- Feature flags: connector_enabled=true, shadow_mode=true, write_enabled=false
-
-**Test Zincirleri:**
-- Connection Test (auth -> channels -> rooms -> reservations)
-- Pull Reservations (with date/status filters)
-- Ingest Chain: New -> Modify -> Cancel (full pipeline)
-- Duplicate Rejection (same provider_event_id skip)
-- Stale Update Rejection (same payload_hash skip)
-- Trace Timeline (5+ raw events per reservation)
-- Confirm Delivery (idempotent ACK)
-- Dry-Run ARI Push (mode=dry_run, success)
-- Dry-Run Chain (create->modify->cancel, all steps pass)
-- Failure Simulation (timeout, rate_limit, validation_error -> correct error_category tracking)
-- Dry-Run Stats (39 runs, 74.4% success rate)
-- Write Criteria (3/6 met)
-- Ops Dashboard (all panels populated)
-- Observation Snapshot + Automation Trigger
-- Final Safety: shadow_mode=true, write_enabled=false
-
-**Test Command:**
-```bash
-cd /app/backend && python -m pytest tests/test_e2e_reservation_flow.py -v --tb=short
-```
-
-## API Endpoints (v2 Connector)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/channel/hotelrunner-v2/status | Connector health + metrics |
-| GET | /api/channel/hotelrunner-v2/ops-dashboard | Aggregated ops dashboard |
-| GET | /api/channel/hotelrunner-v2/trace/{id} | Reservation timeline trace |
-| POST | /api/channel/hotelrunner-v2/test-connection | Connection smoke test |
-| POST | /api/channel/hotelrunner-v2/pull-reservations | Pull reservations |
-| POST | /api/channel/hotelrunner-v2/ingest | Ingest single reservation |
-| POST | /api/channel/hotelrunner-v2/push-ari | ARI push (with verification) |
-| POST | /api/channel/hotelrunner-v2/confirm-delivery | Confirm delivery to HR |
-| GET | /api/channel/hotelrunner-v2/verify-transaction/{id} | Verify ARI transaction |
-| POST | /api/channel/hotelrunner-v2/reconcile | Trigger reconciliation |
-| GET | /api/channel/hotelrunner-v2/reconciliation/history | Past runs |
-| GET | /api/channel/hotelrunner-v2/reconciliation/drifts | Recent drifts |
-| GET | /api/channel/hotelrunner-v2/flags | Get feature flags |
-| PUT | /api/channel/hotelrunner-v2/flags | Update feature flags |
-| GET | /api/channel/hotelrunner-v2/metrics | Metrics summary |
-| GET | /api/channel/hotelrunner-v2/dlq | Dead letter queue |
-| POST | /api/channel/hotelrunner-v2/dlq/{id}/retry | Retry DLQ entry |
-| GET | /api/channel/hotelrunner-v2/readiness-score | Write Readiness Score |
-| POST | /api/channel/hotelrunner-v2/observation/snapshot | Collect snapshot |
-| GET | /api/channel/hotelrunner-v2/observation/history | Observation history |
-| GET | /api/channel/hotelrunner-v2/observation/report | Daily report |
-| GET | /api/channel/hotelrunner-v2/observation/thresholds | Alert thresholds |
-| GET | /api/channel/hotelrunner-v2/transition/plan | Transition plan |
-| GET | /api/channel/hotelrunner-v2/transition/status | Phase status |
-| GET | /api/channel/hotelrunner-v2/transition/history | Transition log |
-| POST | /api/channel/hotelrunner-v2/dry-run/ari-push | Dry-run ARI push |
-| POST | /api/channel/hotelrunner-v2/dry-run/confirm-delivery | Dry-run confirm delivery |
-| POST | /api/channel/hotelrunner-v2/dry-run/chain | Create/modify/cancel chain |
-| POST | /api/channel/hotelrunner-v2/dry-run/simulate-failure | Failure simulation |
-| GET | /api/channel/hotelrunner-v2/dry-run/results | Dry-run history |
-| GET | /api/channel/hotelrunner-v2/dry-run/stats | Success rate & breakdown |
-| GET | /api/channel/hotelrunner-v2/dry-run/write-criteria | Write enable criteria |
-| GET | /api/channel/hotelrunner-v2/automation/status | Automation status |
-| POST | /api/channel/hotelrunner-v2/automation/trigger | Manual snapshot trigger |
-| GET | /api/channel/hotelrunner-v2/automation/trends | Trend data |
-| GET | /api/channel/hotelrunner-v2/automation/alerts | Alert history |
-| POST | /api/channel/hotelrunner-v2/automation/alerts/acknowledge | Alert ACK |
-| GET | /api/channel/hotelrunner-v2/automation/daily-summaries | Daily summaries |
+Full sentetik test akisi via mock server (34/34 PASSED)
 
 ### Phase 10 — Room Mapping UI [2026-03-31]
-- Full Eşlemeler tab: HotelRunner rooms ↔ PMS room types mapping
+- Full Eslemeler tab: HotelRunner rooms <-> PMS room types mapping
 - Backend: GET /pms-room-types, GET /cached-rooms, POST /room-mappings/bulk
-- Upsert logic, bulk save, delete, new PMS type creation
-- Visual: Green "Eşlendi" badge, amber unmapped warning, summary bar
 - 9/9 pytest tests passing
+
+### Bug Fix — Test Room Data Cleanup [2026-03-31]
+- Removed 78 test rooms (TEST999, TEST_*, BULK_*, DELTEST_*, UPD_*) from MongoDB
+- These were leftovers from automated testing (testing agent bulk create/delete tests)
+- Calendar now shows only 30 real rooms (Standard:8, Deluxe:8, Superior:6, Suite:4, Family:2, Junior Suite:2)
 
 ## Upcoming Tasks
 
