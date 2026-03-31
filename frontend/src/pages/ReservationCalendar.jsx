@@ -6,7 +6,7 @@ import Layout from '@/components/Layout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { X } from 'lucide-react';
+import { X, Calendar as CalendarIcon, User, MapPin, ArrowRight } from 'lucide-react';
 
 import {
   CalendarHeader,
@@ -64,6 +64,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [folioPanelId, setFolioPanelId] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [detailModalBookingId, setDetailModalBookingId] = useState(null);
+  const [showUnassignedPanel, setShowUnassignedPanel] = useState(false);
 
   // Drag & Drop
   const [draggingBooking, setDraggingBooking] = useState(null);
@@ -621,6 +622,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             });
             setShowNewBookingDialog(true);
           }}
+          onShowUnassigned={() => setShowUnassignedPanel(true)}
         />
 
         <CalendarOccupancy
@@ -825,6 +827,109 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             allBookings={bookings}
           />
         </Suspense>
+      )}
+
+      {/* Unassigned Bookings Panel */}
+      {showUnassignedPanel && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/40 z-50 transition-opacity"
+            onClick={() => setShowUnassignedPanel(false)}
+            data-testid="unassigned-panel-backdrop"
+          />
+          <div className="fixed top-0 right-0 h-full w-[520px] max-w-[90vw] bg-white z-50 shadow-2xl overflow-y-auto animate-in slide-in-from-right" data-testid="unassigned-panel">
+            <div className="sticky top-0 z-10 bg-white border-b px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center">
+                  <CalendarIcon className="w-4 h-4 text-orange-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-800 text-sm" data-testid="unassigned-panel-title">Atanmamis Rezervasyonlar</h3>
+                  <p className="text-xs text-gray-500">
+                    {bookings.filter(b => !b.room_id && b.status !== 'cancelled').length} aktif rezervasyon
+                  </p>
+                </div>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setShowUnassignedPanel(false)} className="h-8 w-8 p-0" data-testid="close-unassigned-panel-btn">
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="p-4 space-y-3">
+              {bookings.filter(b => !b.room_id && b.status !== 'cancelled').length === 0 ? (
+                <div className="text-center py-12 text-gray-400" data-testid="no-unassigned-msg">
+                  <CalendarIcon className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                  <p className="text-sm font-medium">Atanmamis rezervasyon yok</p>
+                  <p className="text-xs mt-1">Tum rezervasyonlar odalara atanmis</p>
+                </div>
+              ) : (
+                bookings
+                  .filter(b => !b.room_id && b.status !== 'cancelled')
+                  .sort((a, b) => new Date(a.check_in) - new Date(b.check_in))
+                  .map((booking, idx) => {
+                    const checkIn = booking.check_in ? new Date(booking.check_in).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) : '-';
+                    const checkOut = booking.check_out ? new Date(booking.check_out).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) : '-';
+                    const statusColors = {
+                      confirmed: 'bg-blue-100 text-blue-700',
+                      checked_in: 'bg-green-100 text-green-700',
+                      no_show: 'bg-amber-100 text-amber-700',
+                    };
+                    const statusLabels = {
+                      confirmed: 'Onaylandi',
+                      checked_in: 'Iceride',
+                      no_show: 'Gelmedi',
+                    };
+                    return (
+                      <div
+                        key={booking.id || idx}
+                        className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
+                        data-testid={`unassigned-item-${idx}`}
+                        onClick={() => {
+                          if (booking.id) {
+                            setDetailModalBookingId(booking.id);
+                            setShowDetailModal(true);
+                          }
+                        }}
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
+                              <User className="w-3.5 h-3.5 text-gray-500" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-gray-800" data-testid={`unassigned-guest-${idx}`}>
+                                {booking.guest_name || 'Bilinmeyen Misafir'}
+                              </p>
+                              <p className="text-xs text-gray-400">{booking.id || ''}</p>
+                            </div>
+                          </div>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[booking.status] || 'bg-gray-100 text-gray-600'}`} data-testid={`unassigned-status-${idx}`}>
+                            {statusLabels[booking.status] || booking.status}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-gray-500 mt-2">
+                          <div className="flex items-center gap-1">
+                            <CalendarIcon className="w-3 h-3" />
+                            <span>{checkIn}</span>
+                            <ArrowRight className="w-3 h-3 mx-0.5" />
+                            <span>{checkOut}</span>
+                          </div>
+                          {booking.room_type && (
+                            <div className="flex items-center gap-1">
+                              <MapPin className="w-3 h-3" />
+                              <span>{booking.room_type}</span>
+                            </div>
+                          )}
+                          {booking.total_amount > 0 && (
+                            <span className="font-medium text-gray-700">{booking.total_amount} TL</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+          </div>
+        </>
       )}
     </Layout>
   );

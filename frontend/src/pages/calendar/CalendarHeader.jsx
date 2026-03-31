@@ -24,6 +24,7 @@ const CalendarHeader = ({
   onToggleAI,
   onShowFindRoomDialog,
   onShowNewBookingDialog,
+  onShowUnassigned,
 }) => {
   const navigate = useNavigate();
   const unassignedCount = bookings.filter(b => !b.room_id && b.status !== 'cancelled').length;
@@ -54,8 +55,9 @@ const CalendarHeader = ({
           {unassignedCount > 0 && (
             <Button
               variant="outline"
-              className="border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 font-medium text-sm px-3 py-2 rounded-md"
+              className="border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 font-medium text-sm px-3 py-2 rounded-md cursor-pointer"
               data-testid="unassigned-count-btn"
+              onClick={() => onShowUnassigned?.()}
             >
               {unassignedCount} atanmamis oda
             </Button>
