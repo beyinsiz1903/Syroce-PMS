@@ -51,19 +51,6 @@ New connector: `backend/channel_manager/connectors/hotelrunner_v2/`
 ### Phase 5 — P1 Ops Dashboard Frontend [2026-03-30]
 New page: `/hrv2-ops` -> `frontend/src/pages/HRv2OpsDashboard.jsx`
 
-**Panels:**
-1. Transition Phase Bar — 4-phase progress: Shadow -> Dry-Run -> Limited -> Full Live
-2. Write Readiness Score — 0-100 circular gauge with component breakdown
-3. Provider Health Panel
-4. Operational Actions
-5. Sync Overview
-6. Failure Visibility
-7. Recent Events
-8. Recent Drifts
-9. Operations Breakdown
-10. Shadow Observation Alerts
-11. Observation History
-
 ### Phase 6 — P1 Shadow Observation & Write Path Plan [2026-03-30]
 - `observation.py` — Daily snapshot collection, alert thresholds, ingest consistency
 - `readiness.py` — Write Readiness Score (0-100) weighted composite
@@ -71,17 +58,9 @@ New page: `/hrv2-ops` -> `frontend/src/pages/HRv2OpsDashboard.jsx`
 
 ### Phase 7 — P1 Dry-Run Write Path [2026-03-30]
 - `dry_run.py` — Full dry-run write engine: production-identical path, NO-OP external calls
-- Failure simulation (timeout, validation_error, rate_limit)
-- Create/Modify/Cancel chain test
-- Write Enable Criteria (6 criteria)
 
 ### Phase 8 — P1 Shadow Automation (Celery Beat) [2026-03-30]
-- 6-hourly periodic snapshots
-- Daily summary generation
-- Alert rules (readiness_low, drift_high, dlq_nonempty, auth_failure, dry_run_chain_fail)
-- Retention: snapshots 30d, summaries 90d, alerts 60d
-- Dashboard: Shadow Otomasyon panel, 4 trend panels
-- Redis + Celery Worker + Beat via Supervisor
+- 6-hourly periodic snapshots, daily summaries, alert rules, Redis + Celery
 
 ### Phase 9 — E2E Reservation Test Suite [2026-03-31]
 Full sentetik test akisi via mock server (34/34 PASSED)
@@ -89,25 +68,33 @@ Full sentetik test akisi via mock server (34/34 PASSED)
 ### Phase 10 — Room Mapping UI [2026-03-31]
 - Full Eslemeler tab: HotelRunner rooms <-> PMS room types mapping
 - Backend: GET /pms-room-types, GET /cached-rooms, POST /room-mappings/bulk
-- 9/9 pytest tests passing
 
-### Bug Fix — Test Room Data Cleanup [2026-03-31]
-- Removed 78 test rooms (TEST999, TEST_*, BULK_*, DELTEST_*, UPD_*) from MongoDB
-- These were leftovers from automated testing (testing agent bulk create/delete tests)
-- Calendar now shows only 30 real rooms (Standard:8, Deluxe:8, Superior:6, Suite:4, Family:2, Junior Suite:2)
-
-### Bug Fix — Orphaned Test Bookings Cleanup [2026-03-31]
-- Removed 138 test/fake unassigned bookings (TestGuest*, ParseTest*, TenantTest*, AutoImport*, source=ota_sandbox)
-- "113 atanmamis oda" indicator reduced to "3 atanmamis oda" (3 real no-show bookings remain)
-- Database relational integrity restored
+### Bug Fix — Test Room & Booking Cleanup [2026-03-31]
+- Removed 78 test rooms and 138 fake bookings from MongoDB
+- Calendar shows only 30 real rooms
 
 ### Feature — Unassigned Bookings Panel [2026-03-31]
 - "Atanmamis oda" button in calendar header is now clickable
-- Opens a slide-in panel from the right showing all unassigned active reservations
-- Panel shows guest name, booking ID, dates, room type, status, and amount
-- Clicking a booking in the panel opens the Reservation Detail Modal
-- Panel closes via X button or backdrop click
-- Files: CalendarHeader.jsx, ReservationCalendar.jsx
+- Opens a slide-in panel showing all unassigned active reservations
+- Clicking a booking opens the Reservation Detail Modal
+
+### Feature — Virtual Room System + No-Show Management [2026-04-01]
+- Created 6 virtual rooms (V-STD, V-DLX, V-SUP, V-STE, V-JST, V-FAM), one per room type
+- Virtual rooms excluded from calendar, dashboard stats, and cache by default
+- API: `POST /api/pms/bookings/no-show-virtual` — marks booking as no-show and assigns to virtual room
+- API: `GET /api/pms/rooms/virtual` — lists virtual rooms
+- API: `POST /api/pms/rooms/virtual/seed` — creates virtual rooms for all room types
+- API: `GET /api/pms/rooms?include_virtual=true` — includes virtual rooms in listing
+- No-Show button added to unassigned bookings panel (marks as no-show + assigns to virtual room)
+- Night audit: confirmed-unassigned bookings do NOT block day close (only checked_in without room blocks)
+
+### Feature — Rate Manager Provider Push Status [2026-04-01]
+- API: `GET /api/channel-manager/rate-manager/push-providers` — returns all channel provider statuses
+- Rate Manager page now shows badges for each provider with mode status:
+  - Exely: Push Aktif (green) / Inaktif (gray)
+  - HotelRunner: Shadow Mode (amber) / Push Aktif (green) / Inaktif (gray)
+- Replaced old single "Exely Push Aktif" badge with dynamic multi-provider badges
+- All 9 backend tests passed (iteration 170)
 
 ## Upcoming Tasks
 
@@ -124,6 +111,7 @@ Full sentetik test akisi via mock server (34/34 PASSED)
 - Full live write execution across all tenants
 - Requires: Successful limited live period + all 6 write criteria green
 
+### P2 — "Otomatik Esle" (Auto-Map) Feature Enhancement
 ### P2 — PII Phase 3: Strict Mode Enforcement
 ### P2 — Wire failure tracking
 ### P2 — App.jsx Decomposition (2100+ lines)
