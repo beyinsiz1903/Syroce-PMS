@@ -156,6 +156,13 @@ cd /app/backend && python -m pytest tests/test_e2e_reservation_flow.py -v --tb=s
 | POST | /api/channel/hotelrunner-v2/automation/alerts/acknowledge | Alert ACK |
 | GET | /api/channel/hotelrunner-v2/automation/daily-summaries | Daily summaries |
 
+### Phase 10 — Room Mapping UI [2026-03-31]
+- Full Eşlemeler tab: HotelRunner rooms ↔ PMS room types mapping
+- Backend: GET /pms-room-types, GET /cached-rooms, POST /room-mappings/bulk
+- Upsert logic, bulk save, delete, new PMS type creation
+- Visual: Green "Eşlendi" badge, amber unmapped warning, summary bar
+- 9/9 pytest tests passing
+
 ## Upcoming Tasks
 
 ### P1 — 7-Day Shadow Observation (IN PROGRESS)
