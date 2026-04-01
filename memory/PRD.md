@@ -157,6 +157,26 @@ Full sentetik test akisi via mock server (34/34 PASSED)
 - **Fix**: Rewrote `_soap_envelope()` in `soap_builder.py` to use attribute-based Security header per WSDL schema. Updated default endpoint URL to `/api/PMSConnect.svc`. Updated credentials in secrets manager and `exely_connections` collection.
 - **Result**: All SOAP calls now return HTTP 200 successfully. 3 room types + 5 rate plans discovered from live API.
 
+### Feature — Separate Rate Manager Screens for Exely & HotelRunner [2026-04-01]
+- Created separate rate/availability management screens for each channel manager
+- **Exely Rate Manager** (`/rate-manager`): 3 room types (Standart, Deluxe, Suite), 5 rate plans, Push Aktif
+- **HotelRunner Rate Manager** (`/hr-rate-manager`): 4 room types (Corner Süit, Standart Oda, Deluxe Oda, Default room type), 1 rate plan (Ana fiyat), Shadow Mode
+- Backend: New router `/api/channel-manager/hr-rate-manager/` with grid, bulk-update, stop-sale, pricing-settings endpoints
+- Uses separate MongoDB collections: `hr_rate_calendar`, `hr_pricing_settings`, `hr_stop_sale_schedules`
+- Shared UI components (BulkUpdatePanel, CalendarGridView, StopSalePanel with configurable apiPrefix)
+- All 21 backend + all frontend tests passed (iteration 173)
+
+**Files Created:**
+- `/app/backend/domains/channel_manager/hr_rate_manager_router.py`
+- `/app/frontend/src/pages/HRRateManager.jsx`
+
+**Files Modified:**
+- `/app/frontend/src/pages/rate-manager/StopSalePanel.jsx` — Added `apiPrefix` prop
+- `/app/frontend/src/pages/RateManager.jsx` — Updated title to "Exely - Fiyat ve Musaitlik"
+- `/app/frontend/src/config/navItems.jsx` — Split nav entries for Exely and HotelRunner
+- `/app/frontend/src/App.jsx` — Added `/hr-rate-manager` route
+- `/app/backend/bootstrap/router_registry.py` — Registered HR rate manager router
+
 ## Upcoming Tasks
 
 ### P1 — 7-Day Shadow Observation (IN PROGRESS)
@@ -173,6 +193,7 @@ Full sentetik test akisi via mock server (34/34 PASSED)
 - Requires: Successful limited live period + all 6 write criteria green
 
 ### P2 — "Otomatik Esle" (Auto-Map) Feature Enhancement
+### P2 — Add remaining 3 PMS room types to Exely mappings (Superior, Junior Suite, Family)
 ### P2 — PII Phase 3: Strict Mode Enforcement
 ### P2 — Wire failure tracking
 ### P2 — App.jsx Decomposition (2100+ lines)
@@ -182,3 +203,4 @@ Full sentetik test akisi via mock server (34/34 PASSED)
 - Exely API 500 error RESOLVED (2026-04-01) — was caused by wrong SOAP Security header format + invalid credentials
 - HotelRunner v2 connector running in Shadow Mode (write_enabled=false)
 - PMS has 6 room types but only 3 mapped to Exely (Superior, Junior Suite, Family not yet mapped)
+- Two separate Rate Manager screens: Exely at /rate-manager, HotelRunner at /hr-rate-manager
