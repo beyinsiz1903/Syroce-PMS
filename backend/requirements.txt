@@ -1,6 +1,6 @@
 aiodataloader==0.2.1
 aiohappyeyeballs==2.6.1
-aiohttp==3.13.3
+aiohttp==3.13.5
 aioredis==2.0.1
 aiosignal==1.4.0
 amqp==5.3.1
@@ -71,6 +71,7 @@ hf-xet==1.2.0
 holidays==0.93
 httpcore==1.0.9
 httplib2==0.31.2
+httptools==0.7.1
 httpx==0.28.1
 huggingface_hub==1.4.1
 humanize==4.15.0
@@ -101,7 +102,7 @@ msgpack==1.1.2
 multidict==6.7.1
 mypy==1.18.2
 mypy_extensions==1.1.0
-nltk==3.9.3
+nltk==3.9.4
 numpy==2.3.4
 oauthlib==3.3.1
 openai==1.99.9
@@ -136,7 +137,7 @@ pydantic_core==2.41.5
 pydyf==0.12.1
 pyee==13.0.1
 pyflakes==3.4.0
-Pygments==2.19.2
+Pygments==2.20.0
 PyJWT==2.12.1
 pymongo==4.8.0
 pyotp==2.9.0
@@ -198,7 +199,6 @@ tzlocal==5.3.1
 uritemplate==4.2.0
 urllib3==2.6.3
 uvicorn==0.25.0
-httptools==0.7.1
 uvloop==0.22.1
 vine==5.1.0
 watchfiles==1.1.1

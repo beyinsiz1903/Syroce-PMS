@@ -39,6 +39,12 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - Fixed F401 unused imports in wire_failure_router.py
 - Fixed no-empty catch blocks in App.jsx
 
+### Security Vulnerability Fixes (Feb 2026)
+- Upgraded aiohttp 3.13.3 → 3.13.5 (CVE-2026-22815 — memory exhaustion)
+- Upgraded nltk 3.9.3 → 3.9.4 (3 CVEs — recursion DoS, XSS, unauthenticated shutdown)
+- Upgraded pygments 2.19.2 → 2.20.0 (CVE-2026-4539 — regex complexity)
+- pip-audit now reports zero known vulnerabilities
+
 ## Prioritized Backlog
 
 ### P0 (Critical)
