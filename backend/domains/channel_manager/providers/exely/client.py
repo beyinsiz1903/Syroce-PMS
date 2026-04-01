@@ -25,7 +25,7 @@ from .errors import (
 
 logger = logging.getLogger("exely.client")
 
-EXELY_DEFAULT_URL = "https://pmsconnect.test.hopenapi.com/Api/PMSConnect.svc"
+EXELY_DEFAULT_URL = "https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc"
 SOAP_CONTENT_TYPE = "text/xml; charset=utf-8"
 _TIMEOUT = httpx.Timeout(30.0, connect=5.0)
 

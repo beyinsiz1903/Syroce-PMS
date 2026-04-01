@@ -151,6 +151,12 @@ Full sentetik test akisi via mock server (34/34 PASSED)
 - Fixed import ordering (I001)
 - Fixed 3x set comprehension (C401) — `set(... for ...)` -> `{... for ...}`
 
+### Bug Fix — Exely 500 Error Root Cause & Fix [2026-04-01]
+- **Root Cause**: SOAP Security header format was wrong. Code used full WSSE (oasis) headers but WSDL requires simple attribute-based `<Security Username="..." Password="..." />` in the PMSConnect namespace.
+- **Additional Issue**: Stored credentials were invalid (`test_invalid_user`/`test_pass`/`hotel_code=12345`). Updated with real Exely credentials (`PMSConnect.501694`/`hotel_code=501694`).
+- **Fix**: Rewrote `_soap_envelope()` in `soap_builder.py` to use attribute-based Security header per WSDL schema. Updated default endpoint URL to `/api/PMSConnect.svc`. Updated credentials in secrets manager and `exely_connections` collection.
+- **Result**: All SOAP calls now return HTTP 200 successfully. 3 room types + 5 rate plans discovered from live API.
+
 ## Upcoming Tasks
 
 ### P1 — 7-Day Shadow Observation (IN PROGRESS)
@@ -173,6 +179,6 @@ Full sentetik test akisi via mock server (34/34 PASSED)
 ### P3 — Legacy HR connector migration/cleanup
 
 ## Notes
-- Exely API (hopenapi.com) returning 500 errors as of 2026-04-01 — may be temporary
+- Exely API 500 error RESOLVED (2026-04-01) — was caused by wrong SOAP Security header format + invalid credentials
 - HotelRunner v2 connector running in Shadow Mode (write_enabled=false)
 - PMS has 6 room types but only 3 mapped to Exely (Superior, Junior Suite, Family not yet mapped)
