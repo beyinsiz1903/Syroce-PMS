@@ -192,15 +192,30 @@ Full sentetik test akisi via mock server (34/34 PASSED)
 - Full live write execution across all tenants
 - Requires: Successful limited live period + all 6 write criteria green
 
-### P2 — "Otomatik Esle" (Auto-Map) Feature Enhancement
-### P2 — Add remaining 3 PMS room types to Exely mappings (Superior, Junior Suite, Family)
-### P2 — PII Phase 3: Strict Mode Enforcement
-### P2 — Wire failure tracking
-### P2 — App.jsx Decomposition (2100+ lines)
-### P3 — Legacy HR connector migration/cleanup
+### P2 — "Otomatik Esle" (Auto-Map) Feature Enhancement — DONE (2026-04-01)
+- Backend: auto_map_router.py with suggest/apply/status endpoints
+- Frontend: Otomatik Esle button + dialog on Exely and HotelRunner mapping tabs
+- Name similarity matching with confidence levels (high/medium/low)
+- Mapping status progress bar showing completion percentage
+
+### P2 — Add remaining 3 PMS room types to Exely mappings — PARTIALLY DONE
+- Status bar shows 3/6 Exely (%50) and 4/6 HotelRunner (%66.7) mapped
+- Unmapped PMS types (Family, Junior Suite, Superior) clearly shown in UI
+- Provider doesn't have matching room types; user must create them in Exely panel first
+
+### P2 — Wire Failure Tracking — DONE (2026-04-01)
+- Backend: wire_failure_router.py with summary/recent/trend endpoints
+- Frontend: WireFailureDashboard.jsx at /wire-failures
+- Aggregates data from: ari_hard_fail_log, exely_sync_logs, connector_outbox, cp_failures, cm_reconciliation_issues, observability_errors
+- Trend chart, health status, provider filters
+
+### P2 — PII Phase 3: Strict Mode Enforcement (UPCOMING)
+### P2 — App.jsx Decomposition (2100+ lines) (UPCOMING)
+### P3 — Legacy HR connector migration/cleanup (UPCOMING)
 
 ## Notes
 - Exely API 500 error RESOLVED (2026-04-01) — was caused by wrong SOAP Security header format + invalid credentials
 - HotelRunner v2 connector running in Shadow Mode (write_enabled=false)
 - PMS has 6 room types but only 3 mapped to Exely (Superior, Junior Suite, Family not yet mapped)
 - Two separate Rate Manager screens: Exely at /rate-manager, HotelRunner at /hr-rate-manager
+- Auto-Map and Wire Failure features added (2026-04-01), all tests passed (iteration_174.json)
