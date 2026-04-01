@@ -17,7 +17,7 @@ import pytest
 import requests
 import yaml
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://rate-manager-debug.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://soap-header-fix.preview.emergentagent.com").rstrip("/")
 
 
 class TestHealthAndAuth:

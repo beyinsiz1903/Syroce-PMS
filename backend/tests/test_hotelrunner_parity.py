@@ -20,7 +20,7 @@ import requests
 
 # API URLs
 MOCK_SERVER_URL = "http://localhost:9999"
-API_URL = os.environ.get("VITE_BACKEND_URL", "https://rate-manager-debug.preview.emergentagent.com")
+API_URL = os.environ.get("VITE_BACKEND_URL", "https://soap-header-fix.preview.emergentagent.com")
 
 # Mock server credentials
 MOCK_TOKEN = "mock-hr-token-001"

@@ -176,6 +176,7 @@ const HRv2OpsDashboard = lazy(() => import("@/pages/HRv2OpsDashboard"));
 const ExelyIntegration = lazy(() => import("@/pages/ExelyIntegration"));
 const ARIPushDashboard = lazy(() => import("@/pages/ARIPushDashboard"));
 const RateManager = lazy(() => import("@/pages/RateManager"));
+const HRRateManager = lazy(() => import("@/pages/HRRateManager"));
 const DataModelDashboard = lazy(() => import("@/pages/DataModelDashboard"));
 const LockdownDashboard = lazy(() => import("@/pages/LockdownDashboard"));
 const OperatorIncidentPanel = lazy(() => import("@/pages/OperatorIncidentPanel"));
@@ -1588,6 +1589,16 @@ function App() {
             element={
               isAuthenticated ? (
                 <RateManager user={user} tenant={tenant} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/hr-rate-manager"
+            element={
+              isAuthenticated ? (
+                <HRRateManager user={user} tenant={tenant} onLogout={handleLogout} />
               ) : (
                 <Navigate to="/auth" replace />
               )

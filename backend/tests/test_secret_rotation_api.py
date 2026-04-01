@@ -22,7 +22,7 @@ import string
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://rate-manager-debug.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://soap-header-fix.preview.emergentagent.com").rstrip("/")
 
 
 def random_suffix():

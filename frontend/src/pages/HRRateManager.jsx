@@ -4,15 +4,16 @@ import { toast } from 'sonner';
 import Layout from '@/components/Layout';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowUpRight, CalendarDays, Grid3X3, Ban, Eye, CheckCircle2 } from 'lucide-react';
+import { Grid3X3, CalendarDays, Ban, Eye, CheckCircle2 } from 'lucide-react';
 
 import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
 import { StopSalePanel } from './rate-manager/StopSalePanel';
 
 const API = import.meta.env.VITE_BACKEND_URL;
+const HR_API_PREFIX = '/api/channel-manager/hr-rate-manager';
 
-const RateManager = ({ user, tenant, onLogout }) => {
+const HRRateManager = ({ user, tenant, onLogout }) => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeView, setActiveView] = useState('bulk');
@@ -55,7 +56,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
     setLoading(true);
     try {
       const { data } = await axios.get(
-        `${API}/api/channel-manager/rate-manager/grid?start_date=${startDate}&end_date=${endDate}`,
+        `${API}${HR_API_PREFIX}/grid?start_date=${startDate}&end_date=${endDate}`,
         { headers }
       );
       setGrid(data.grid || []);
@@ -64,7 +65,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
       if (data.pricing_settings) setPricingSettings(data.pricing_settings);
       if (data.currency) setCurrency(data.currency);
     } catch {
-      toast.error('Veriler yuklenemedi');
+      toast.error('HotelRunner verileri yuklenemedi');
     }
     setLoading(false);
   }, [startDate, endDate]);
@@ -72,7 +73,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
   useEffect(() => { fetchGrid(); }, [fetchGrid]);
 
   useEffect(() => {
-    axios.get(`${API}/api/channel-manager/rate-manager/push-providers`, { headers })
+    axios.get(`${API}${HR_API_PREFIX}/push-providers`, { headers })
       .then(res => setPushProviders(res.data?.providers || []))
       .catch(() => {});
   }, []);
@@ -84,7 +85,6 @@ const RateManager = ({ user, tenant, onLogout }) => {
     return Array.from(map.values());
   }, [roomTypes, ratePlans]);
 
-  // Selection helpers
   const getDefaultValues = () => ({ rate: '', availability: '', min_stay: '', max_stay: '', stop_sell: false, cta: false, ctd: false });
 
   const updateRoomValue = (roomTypeCode, field, value) => {
@@ -155,7 +155,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
     const newType = current === 'per_person' ? 'per_room' : 'per_person';
     setPricingSettings(prev => ({ ...prev, [roomTypeCode]: newType }));
     try {
-      await axios.put(`${API}/api/channel-manager/rate-manager/pricing-settings`, { settings: [{ room_type_code: roomTypeCode, pricing_type: newType }] }, { headers });
+      await axios.put(`${API}${HR_API_PREFIX}/pricing-settings`, { settings: [{ room_type_code: roomTypeCode, pricing_type: newType }] }, { headers });
       toast.success(`${newType === 'per_room' ? 'Oda bazli' : 'Kisi bazli'} fiyatlandirma ayarlandi`);
     } catch {
       setPricingSettings(prev => ({ ...prev, [roomTypeCode]: current }));
@@ -201,23 +201,20 @@ const RateManager = ({ user, tenant, onLogout }) => {
         };
       });
 
-      const { data } = await axios.post(`${API}/api/channel-manager/rate-manager/bulk-grid-update`,
+      const { data } = await axios.post(`${API}${HR_API_PREFIX}/bulk-grid-update`,
         { per_room_values: perRoomValues, start_date: dateFrom, end_date: dateTo, selected_days: allDays ? null : Array.from(selectedDays), update_fields: Array.from(enabledFields) },
         { headers }
       );
 
-      if (data.all_pushed) { toast.success(`${data.saved} kayit guncellendi ve Exely'ye gonderildi`); }
-      else {
-        toast.success(`${data.saved} kayit guncellendi`);
-        const failed = data.push_results?.filter(r => !r.success) || [];
-        if (failed.length > 0) { toast.warning(`${failed.length} Exely push hatasi olustu`); }
+      toast.success(`${data.saved} kayit guncellendi`);
+      if (data.background_push) {
+        toast.info('HotelRunner push arka planda gonderiliyor');
       }
       fetchGrid();
     } catch (e) { toast.error(e.response?.data?.detail || 'Guncelleme hatasi'); }
     setSaving(false);
   };
 
-  // Grid helpers
   const filteredGrid = grid.filter(row => {
     if (gridRoomType !== 'all' && row.room_type_code !== gridRoomType) return false;
     if (gridRatePlan !== 'all' && row.rate_plan_code !== gridRatePlan) return false;
@@ -242,18 +239,18 @@ const RateManager = ({ user, tenant, onLogout }) => {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rate_manager">
-      <div className="p-4 md:p-6 space-y-4" data-testid="rate-manager-page">
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="hr_rate_manager">
+      <div className="p-4 md:p-6 space-y-4" data-testid="hr-rate-manager-page">
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold" style={{ fontFamily: 'Space Grotesk' }}>
-              Exely - Fiyat ve Musaitlik
+              HotelRunner - Fiyat ve Musaitlik
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              Exely oda tiplerini goruntuleyin ve tek seferde guncelleyin
+              HotelRunner oda tiplerini goruntuleyin ve tek seferde guncelleyin
             </p>
           </div>
-          <div className="flex items-center gap-2" data-testid="push-provider-badges">
+          <div className="flex items-center gap-2" data-testid="hr-push-provider-badges">
             {pushProviders.length > 0 ? pushProviders.map(p => {
               const modeConfig = {
                 live: { className: 'bg-green-600 text-white', icon: <CheckCircle2 className="w-3 h-3 mr-1" />, label: 'Push Aktif' },
@@ -263,15 +260,15 @@ const RateManager = ({ user, tenant, onLogout }) => {
               };
               const cfg = modeConfig[p.mode] || modeConfig.inactive;
               return (
-                <Badge key={p.slug} className={cfg.className} data-testid={`push-badge-${p.slug}`}>
+                <Badge key={p.slug} className={cfg.className} data-testid={`hr-push-badge-${p.slug}`}>
                   {cfg.icon}
                   {p.name}: {cfg.label}
                 </Badge>
               );
             }) : (
-              <Badge className="bg-green-600 text-white" data-testid="exely-push-badge">
-                <ArrowUpRight className="w-3 h-3 mr-1" />
-                Exely Push Aktif
+              <Badge className="bg-amber-500 text-white" data-testid="hr-push-badge-default">
+                <Eye className="w-3 h-3 mr-1" />
+                HotelRunner: Shadow Mode
               </Badge>
             )}
           </div>
@@ -279,13 +276,13 @@ const RateManager = ({ user, tenant, onLogout }) => {
 
         <Tabs value={activeView} onValueChange={setActiveView}>
           <TabsList className="grid w-full grid-cols-3 max-w-md">
-            <TabsTrigger value="bulk" data-testid="bulk-tab">
+            <TabsTrigger value="bulk" data-testid="hr-bulk-tab">
               <Grid3X3 className="w-4 h-4 mr-1.5" /> Toplu Guncelle
             </TabsTrigger>
-            <TabsTrigger value="grid" data-testid="grid-tab">
+            <TabsTrigger value="grid" data-testid="hr-grid-tab">
               <CalendarDays className="w-4 h-4 mr-1.5" /> Takvim Gorunumu
             </TabsTrigger>
-            <TabsTrigger value="stop-sale" data-testid="stop-sale-tab">
+            <TabsTrigger value="stop-sale" data-testid="hr-stop-sale-tab">
               <Ban className="w-4 h-4 mr-1.5" /> Stop Sale
             </TabsTrigger>
           </TabsList>
@@ -323,6 +320,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
               ratePlans={ratePlans}
               fetchGrid={fetchGrid}
               loading={loading}
+              apiPrefix={HR_API_PREFIX}
             />
           </TabsContent>
         </Tabs>
@@ -331,4 +329,4 @@ const RateManager = ({ user, tenant, onLogout }) => {
   );
 };
 
-export default RateManager;
+export default HRRateManager;

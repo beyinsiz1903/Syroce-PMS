@@ -126,6 +126,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.channel_manager.ari.router", "router", ["ARI Push Engine"], None, None),
     # Rate Manager — Fiyat/Müsaitlik/Kısıtlama Yönetimi
     ("domains.channel_manager.rate_manager_router", "router", ["Rate Manager"], None, None),
+    # HR Rate Manager — HotelRunner Fiyat/Müsaitlik Yönetimi
+    ("domains.channel_manager.hr_rate_manager_router", "router", ["HR Rate Manager"], None, None),
     # Channel Manager — Unified Data Model
     ("domains.channel_manager.model_router", "router", ["Channel Manager — Data Model"], None, None),
     # Reservation Ingest Pipeline

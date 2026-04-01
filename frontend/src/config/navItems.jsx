@@ -235,8 +235,17 @@ export const NAV_ITEMS = [
   },
   {
     key: "rate_manager",
-    label: "Fiyat ve Musaitlik",
+    label: "Exely - Fiyat ve Musaitlik",
     path: "/rate-manager",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+    navGroup: "channels",
+  },
+  {
+    key: "hr_rate_manager",
+    label: "HotelRunner - Fiyat ve Musaitlik",
+    path: "/hr-rate-manager",
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",

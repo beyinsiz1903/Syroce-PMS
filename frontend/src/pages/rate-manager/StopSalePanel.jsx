@@ -25,7 +25,7 @@ const CATEGORY_STYLE = {
   season: { icon: Sun, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', label: 'Sezon' },
 };
 
-export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parentLoading }) => {
+export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parentLoading, apiPrefix = '/api/channel-manager/rate-manager' }) => {
   const token = localStorage.getItem('token');
   const headers = { Authorization: `Bearer ${token}` };
 
@@ -66,7 +66,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
     setLoadingActive(true);
     try {
       const { data } = await axios.get(
-        `${API}/api/channel-manager/rate-manager/stop-sale-summary?start_date=${today}&end_date=${nextMonth}`,
+        `${API}${apiPrefix}/stop-sale-summary?start_date=${today}&end_date=${nextMonth}`,
         { headers }
       );
       setActiveStopSales(data.stops || []);
@@ -88,7 +88,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
   const loadHolidays = useCallback(async () => {
     setLoadingHolidays(true);
     try {
-      const { data } = await axios.get(`${API}/api/channel-manager/rate-manager/holidays`, { headers });
+      const { data } = await axios.get(`${API}${apiPrefix}/holidays`, { headers });
       setHolidays(data.holidays || []);
     } catch {
       console.error('Tatil verileri yuklenemedi');
@@ -99,7 +99,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
   const loadSchedules = useCallback(async () => {
     setLoadingSchedules(true);
     try {
-      const { data } = await axios.get(`${API}/api/channel-manager/rate-manager/stop-sale-schedules`, { headers });
+      const { data } = await axios.get(`${API}${apiPrefix}/stop-sale-schedules`, { headers });
       setSchedules(data.schedules || []);
     } catch {
       console.error('Zamanlayicilar yuklenemedi');
@@ -162,7 +162,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       }));
 
       const { data } = await axios.post(
-        `${API}/api/channel-manager/rate-manager/bulk-grid-update`,
+        `${API}${apiPrefix}/bulk-grid-update`,
         {
           per_room_values: perRoomValues,
           start_date: dateFrom,
@@ -227,7 +227,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
 
     setSavingSchedule(true);
     try {
-      await axios.post(`${API}/api/channel-manager/rate-manager/stop-sale-schedules`, {
+      await axios.post(`${API}${apiPrefix}/stop-sale-schedules`, {
         name,
         holiday_key: selectedHoliday !== 'manual' ? selectedHoliday : null,
         start_date: dateFrom,
@@ -249,7 +249,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
   const deleteSchedule = async (scheduleId, removeStopSale) => {
     try {
       await axios.delete(
-        `${API}/api/channel-manager/rate-manager/stop-sale-schedules/${scheduleId}?remove_stop_sale=${removeStopSale}`,
+        `${API}${apiPrefix}/stop-sale-schedules/${scheduleId}?remove_stop_sale=${removeStopSale}`,
         { headers }
       );
       toast.success(removeStopSale ? 'Zamanlayici silindi ve stop sale kaldirildi' : 'Zamanlayici silindi');
