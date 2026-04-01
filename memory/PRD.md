@@ -140,6 +140,17 @@ Full sentetik test akisi via mock server (34/34 PASSED)
 - `/app/frontend/src/pages/NoShowAnalytics.jsx` — Redesigned with 4 tabs
 - All 24 backend + frontend tests passed (iteration 172)
 
+### Bug Fix — Exely Connection Restore [2026-04-01]
+- Exely connection was accidentally disconnected on 2026-03-30 during HotelRunner v2 setup
+- Connection reactivated (`is_active: true`)
+- `room_types` and `rate_plans` restored from existing `exely_room_mappings` data
+- 3 room types (Standart, Deluxe, Suite) + 3 rate plans restored
+- Rate Manager page now shows room types correctly
+
+### Bug Fix — pms_analytics.py Lint Errors [2026-04-01]
+- Fixed import ordering (I001)
+- Fixed 3x set comprehension (C401) — `set(... for ...)` -> `{... for ...}`
+
 ## Upcoming Tasks
 
 ### P1 — 7-Day Shadow Observation (IN PROGRESS)
@@ -160,3 +171,8 @@ Full sentetik test akisi via mock server (34/34 PASSED)
 ### P2 — Wire failure tracking
 ### P2 — App.jsx Decomposition (2100+ lines)
 ### P3 — Legacy HR connector migration/cleanup
+
+## Notes
+- Exely API (hopenapi.com) returning 500 errors as of 2026-04-01 — may be temporary
+- HotelRunner v2 connector running in Shadow Mode (write_enabled=false)
+- PMS has 6 room types but only 3 mapped to Exely (Superior, Junior Suite, Family not yet mapped)
