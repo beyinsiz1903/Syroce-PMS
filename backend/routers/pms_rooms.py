@@ -698,6 +698,7 @@ async def get_virtual_rooms(
 class NoShowVirtualRequest(BaseModel):
     booking_id: str
     charge_first_night: bool = False
+    no_show_reason: str | None = None  # misafir_gelmedi, iptal_gec_islendi, overbooking
 
 
 @router.post("/pms/bookings/no-show-virtual")
@@ -754,11 +755,15 @@ async def no_show_to_virtual_room(
         )
 
     # Update booking
+    VALID_REASONS = {"misafir_gelmedi", "iptal_gec_islendi", "overbooking"}
+    reason = req.no_show_reason if req.no_show_reason in VALID_REASONS else "misafir_gelmedi"
+
     update_fields = {
         "room_id": virtual_room["id"],
         "status": "no_show",
         "no_show_at": datetime.now(UTC).isoformat(),
         "no_show_processed_by": current_user.name,
+        "no_show_reason": reason,
     }
     await db.bookings.update_one(
         {"id": req.booking_id},
@@ -770,4 +775,5 @@ async def no_show_to_virtual_room(
         "booking_id": req.booking_id,
         "virtual_room": vnum,
         "virtual_room_id": virtual_room["id"],
+        "no_show_reason": reason,
     }

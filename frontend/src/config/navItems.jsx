@@ -166,6 +166,15 @@ export const NAV_ITEMS = [
     group: "core",
     navGroup: "reservations",
   },
+  {
+    key: "no_show_analytics",
+    label: "No-Show Analitik",
+    path: "/no-show-analytics",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "core",
+    navGroup: "reservations",
+  },
 
   // ──── FINANCE GROUP ────────────────────────────────
   {

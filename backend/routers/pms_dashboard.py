@@ -2,9 +2,9 @@
 PMS Dashboard Router — Extracted from routers/pms.py (Stage 2 decomposition)
 Dashboard overview, operational alerts, room alternatives.
 """
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from core.database import db
 from core.security import get_current_user
@@ -275,4 +275,107 @@ async def get_room_alternatives(room_number: str, current_user: User = Depends(g
         "target_room_type": target_room.get("room_type"),
         "same_type": alternatives,
         "other_type": other_alternatives
+    }
+
+
+NO_SHOW_REASON_LABELS = {
+    "misafir_gelmedi": "Misafir Gelmedi",
+    "iptal_gec_islendi": "Iptal Gec Islendi",
+    "overbooking": "Overbooking",
+}
+
+
+@router.get("/pms/no-show-analytics")
+async def get_no_show_analytics(
+    days: int = Query(default=30, ge=1, le=365),
+    current_user: User = Depends(get_current_user),
+):
+    """No-show analytics: daily counts, by room type, by channel."""
+    tenant_id = current_user.tenant_id
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
+
+    no_shows = await db.bookings.find(
+        {
+            "tenant_id": tenant_id,
+            "status": "no_show",
+            "no_show_at": {"$gte": cutoff},
+        },
+        {
+            "_id": 0,
+            "id": 1,
+            "no_show_at": 1,
+            "no_show_reason": 1,
+            "room_type": 1,
+            "source_channel": 1,
+            "channel": 1,
+            "total_amount": 1,
+            "guest_name": 1,
+        },
+    ).to_list(5000)
+
+    # --- Daily counts ---
+    daily_map: dict[str, int] = {}
+    for b in no_shows:
+        day = (b.get("no_show_at") or "")[:10]
+        if day:
+            daily_map[day] = daily_map.get(day, 0) + 1
+    daily = [{"date": d, "count": c} for d, c in sorted(daily_map.items())]
+
+    # --- By room type ---
+    rt_map: dict[str, dict] = {}
+    for b in no_shows:
+        rt = b.get("room_type") or "Bilinmiyor"
+        if rt not in rt_map:
+            rt_map[rt] = {"room_type": rt, "count": 0, "revenue_loss": 0}
+        rt_map[rt]["count"] += 1
+        rt_map[rt]["revenue_loss"] += b.get("total_amount") or 0
+    by_room_type = sorted(rt_map.values(), key=lambda x: -x["count"])
+
+    # --- By channel ---
+    ch_map: dict[str, dict] = {}
+    for b in no_shows:
+        ch = b.get("source_channel") or b.get("channel") or "direct"
+        if ch not in ch_map:
+            ch_map[ch] = {"channel": ch, "count": 0, "revenue_loss": 0}
+        ch_map[ch]["count"] += 1
+        ch_map[ch]["revenue_loss"] += b.get("total_amount") or 0
+    by_channel = sorted(ch_map.values(), key=lambda x: -x["count"])
+
+    # --- By reason ---
+    reason_map: dict[str, int] = {}
+    for b in no_shows:
+        reason = b.get("no_show_reason") or "belirtilmemis"
+        reason_map[reason] = reason_map.get(reason, 0) + 1
+    by_reason = [
+        {"reason": r, "label": NO_SHOW_REASON_LABELS.get(r, r), "count": c}
+        for r, c in sorted(reason_map.items(), key=lambda x: -x[1])
+    ]
+
+    total_revenue_loss = sum(b.get("total_amount") or 0 for b in no_shows)
+
+    # Recent no-shows (last 10)
+    recent = sorted(no_shows, key=lambda x: x.get("no_show_at", ""), reverse=True)[:10]
+    recent_list = [
+        {
+            "id": b.get("id"),
+            "guest_name": b.get("guest_name") or "Bilinmiyor",
+            "room_type": b.get("room_type") or "-",
+            "channel": b.get("source_channel") or b.get("channel") or "direct",
+            "reason": b.get("no_show_reason") or "belirtilmemis",
+            "reason_label": NO_SHOW_REASON_LABELS.get(b.get("no_show_reason", ""), b.get("no_show_reason") or "Belirtilmemis"),
+            "amount": b.get("total_amount") or 0,
+            "date": (b.get("no_show_at") or "")[:10],
+        }
+        for b in recent
+    ]
+
+    return {
+        "total_no_shows": len(no_shows),
+        "total_revenue_loss": round(total_revenue_loss, 2),
+        "period_days": days,
+        "daily": daily,
+        "by_room_type": by_room_type,
+        "by_channel": by_channel,
+        "by_reason": by_reason,
+        "recent": recent_list,
     }

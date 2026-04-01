@@ -6,7 +6,10 @@ import Layout from '@/components/Layout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { X, Calendar as CalendarIcon, User, MapPin, ArrowRight, Ban } from 'lucide-react';
+import { X, Calendar as CalendarIcon, User, MapPin, ArrowRight, Ban, ChevronDown } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 
 import {
   CalendarHeader,
@@ -65,6 +68,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [detailModalBookingId, setDetailModalBookingId] = useState(null);
   const [showUnassignedPanel, setShowUnassignedPanel] = useState(false);
+
+  // No-Show Reason Dialog
+  const [showNoShowDialog, setShowNoShowDialog] = useState(false);
+  const [noShowBookingId, setNoShowBookingId] = useState(null);
+  const [noShowReason, setNoShowReason] = useState('misafir_gelmedi');
+  const [noShowProcessing, setNoShowProcessing] = useState(false);
 
   // Drag & Drop
   const [draggingBooking, setDraggingBooking] = useState(null);
@@ -549,6 +558,28 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
   };
 
+  // ─── No-Show Handler ────────────────────────────────────────
+  const handleNoShowConfirm = async () => {
+    if (!noShowBookingId) return;
+    setNoShowProcessing(true);
+    try {
+      await axios.post('/pms/bookings/no-show-virtual', {
+        booking_id: noShowBookingId,
+        charge_first_night: false,
+        no_show_reason: noShowReason,
+      });
+      toast.success('No-show islemi tamamlandi, sanal odaya atandi');
+      setShowNoShowDialog(false);
+      setNoShowBookingId(null);
+      setNoShowReason('misafir_gelmedi');
+      loadCalendarData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'No-show islemi basarisiz');
+    } finally {
+      setNoShowProcessing(false);
+    }
+  };
+
   // ─── Toggle Handlers ──────────────────────────────────────
   const toggleAIMode = () => {
     const newState = !showAIPanel;
@@ -934,18 +965,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                               variant="outline"
                               className="text-xs h-7 border-amber-300 text-amber-700 hover:bg-amber-50"
                               data-testid={`no-show-btn-${idx}`}
-                              onClick={async (e) => {
+                              onClick={(e) => {
                                 e.stopPropagation();
-                                try {
-                                  await axios.post('/pms/bookings/no-show-virtual', {
-                                    booking_id: booking.id,
-                                    charge_first_night: false,
-                                  });
-                                  toast.success('No-show islemi tamamlandi, sanal odaya atandi');
-                                  loadCalendarData();
-                                } catch (err) {
-                                  toast.error(err.response?.data?.detail || 'No-show islemi basarisiz');
-                                }
+                                setNoShowBookingId(booking.id);
+                                setNoShowReason('misafir_gelmedi');
+                                setShowNoShowDialog(true);
                               }}
                             >
                               <Ban className="w-3 h-3 mr-1" />
@@ -985,6 +1009,50 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           </div>
         </>
       )}
+
+      {/* No-Show Reason Dialog */}
+      <Dialog open={showNoShowDialog} onOpenChange={(open) => { if (!open) { setShowNoShowDialog(false); setNoShowBookingId(null); } }}>
+        <DialogContent className="sm:max-w-md" data-testid="noshow-reason-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Ban className="w-4 h-4 text-amber-600" />
+              No-Show Sebebi
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-gray-500">
+              Rezervasyonu no-show olarak isaretlemek ve sanal odaya atamak icin bir sebep secin.
+            </p>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Sebep</Label>
+              <Select value={noShowReason} onValueChange={setNoShowReason}>
+                <SelectTrigger data-testid="noshow-reason-select">
+                  <SelectValue placeholder="Sebep secin..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="misafir_gelmedi">Misafir Gelmedi</SelectItem>
+                  <SelectItem value="iptal_gec_islendi">Iptal Edildi ama Gec Islendi</SelectItem>
+                  <SelectItem value="overbooking">Overbooking</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => { setShowNoShowDialog(false); setNoShowBookingId(null); }} data-testid="noshow-cancel-btn">
+              Vazgec
+            </Button>
+            <Button
+              size="sm"
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={handleNoShowConfirm}
+              disabled={noShowProcessing}
+              data-testid="noshow-confirm-btn"
+            >
+              {noShowProcessing ? 'Isleniyor...' : 'No-Show Onayla'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 };

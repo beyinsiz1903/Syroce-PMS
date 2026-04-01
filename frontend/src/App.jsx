@@ -51,6 +51,7 @@ const ReportBuilder = lazy(() => import("@/pages/ReportBuilder"));
 const PmsLiteLanding = lazy(() => import("@/pages/PmsLiteLanding"));
 const AdminLeads = lazy(() => import("@/pages/AdminLeads"));
 const GovernancePanel = lazy(() => import("@/pages/GovernancePanel"));
+const NoShowAnalytics = lazy(() => import("@/pages/NoShowAnalytics"));
 const OfficialGuestList = lazy(() => import("@/pages/OfficialGuestList"));
 const MobileDashboard = lazy(() => import("@/pages/MobileDashboard"));
 const MobileHousekeeping = lazy(() => import("@/pages/MobileHousekeeping"));
@@ -2061,6 +2062,7 @@ function App() {
           <Route path="/staff-management" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><StaffManagement user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
           <Route path="/guest-journey" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><GuestJourney user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
           <Route path="/arrival-list" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><ArrivalList user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
+          <Route path="/no-show-analytics" element={isAuthenticated ? <Suspense fallback={<LoadingFallback />}><NoShowAnalytics user={user} tenant={tenant} onLogout={handleLogout} /></Suspense> : <Navigate to="/auth" replace />} />
           <Route
             path="/ai-whatsapp-concierge"
             element={
