@@ -2,9 +2,9 @@
 PMS Advanced Analytics Router
 Channel Loss Analysis, Overbooking Heatmap, Rule Engine (Light), No-Show Prediction (Basic)
 """
-from datetime import UTC, datetime, timedelta
-from collections import defaultdict
 import uuid
+from collections import defaultdict
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -103,7 +103,7 @@ async def get_channel_loss_analytics(
             ch_trend[day][ch] += 1
 
     trend_dates = sorted(ch_trend.keys())
-    all_channels = sorted(set(ch for d in ch_trend.values() for ch in d.keys()))
+    all_channels = sorted({ch for d in ch_trend.values() for ch in d.keys()})
     trend_data = []
     for d in trend_dates:
         entry = {"date": d}
@@ -112,7 +112,7 @@ async def get_channel_loss_analytics(
         trend_data.append(entry)
 
     # --- Data quality / confidence ---
-    data_days = len(set((b.get("no_show_at") or "")[:10] for b in no_shows if b.get("no_show_at")))
+    data_days = len({(b.get("no_show_at") or "")[:10] for b in no_shows if b.get("no_show_at")})
     total_data_points = len(no_shows)
 
     if total_data_points < 5:
@@ -260,7 +260,7 @@ async def get_overbooking_heatmap(
 
     # --- Data quality ---
     total_ob = len(overbookings)
-    data_days = len(set((b.get("no_show_at") or "")[:10] for b in overbookings if b.get("no_show_at")))
+    data_days = len({(b.get("no_show_at") or "")[:10] for b in overbookings if b.get("no_show_at")})
 
     if total_ob < 3:
         confidence = "low"
