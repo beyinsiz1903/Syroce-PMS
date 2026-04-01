@@ -208,8 +208,7 @@
     "marketplace": "Маркетплейс",
     "admin_tenants": "Управление отелями",
     "admin_module_report": "Отчёт модулей",
-    "admin_leads": "Лиды",
-    "revenue_autopilot": "Автопилот доходов"
+    "admin_leads": "Лиды"
   },
   "auth": {
     "signIn": "Войдите в свою учетную запись или создайте новую",

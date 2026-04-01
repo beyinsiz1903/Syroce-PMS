@@ -208,8 +208,7 @@
     "marketplace": "السوق",
     "admin_tenants": "إدارة الفنادق",
     "admin_module_report": "تقرير الوحدات",
-    "admin_leads": "العملاء المحتملون",
-    "revenue_autopilot": "الطيار الآلي للإيرادات"
+    "admin_leads": "العملاء المحتملون"
   },
   "auth": {
     "signIn": "تسجيل الدخول إلى حسابك أو إنشاء حساب جديد",

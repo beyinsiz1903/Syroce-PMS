@@ -208,8 +208,7 @@
     "marketplace": "Marketplace",
     "admin_tenants": "Gestion des hôtels",
     "admin_module_report": "Rapport de modules",
-    "admin_leads": "Prospects",
-    "revenue_autopilot": "Autopilote revenus"
+    "admin_leads": "Prospects"
   },
   "auth": {
     "signIn": "Connectez-vous à votre compte ou créez-en un nouveau",
