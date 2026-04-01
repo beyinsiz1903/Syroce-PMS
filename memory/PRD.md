@@ -8,7 +8,7 @@ Multi-tenant SaaS PMS + Channel Manager for boutique hotels. Integrates with Exe
 - **Frontend**: React (Vite) + Shadcn/UI + TailwindCSS
 - **Auth**: JWT-based (demo@hotel.com / demo123)
 - **Database**: MongoDB (MONGO_URL from .env)
-- **i18n**: i18next (TR/EN/AR/RU/IT/FR/ES/DE)
+- **i18n**: i18next (TR/EN/AR/RU/IT/FR/ES/DE/PT/ZH) — 10 dil, tümü %100 anahtar kapsamı
 
 ## Key Integrations
 - **Exely**: Live Push (SOAP API) — credentials in DB
@@ -50,6 +50,14 @@ Multi-tenant SaaS PMS + Channel Manager for boutique hotels. Integrates with Exe
   - Deprecation warnings added to all v1 modules
   - v2 connector remains the active implementation
 
+### i18n Internationalization Fix (Complete — 2026-04-01)
+- **Root cause**: Dynamic `import("./i18n")` in `index.jsx` caused async loading — translations not ready when App rendered
+- **Fix**: Changed to synchronous `import "@/i18n"` in `index.jsx`
+- Added `pt` (Portuguese) and `zh` (Chinese) to `i18n.jsx` resources
+- Completed missing translations for `ar`, `de`, `es`, `fr`, `it`, `ru` (each was ~54% complete, now 100%)
+- Added core translations for `pt` and `zh` (common, nav, auth, dashboard, reports, settings, folio, pms — was 0% translated, now ~33% with English fallback for less-seen sections)
+- All 10 locale files now have 1640/1640 keys (100% key coverage)
+
 ## Pending / Upcoming Tasks
 
 ### P1 — HotelRunner Live Transition
@@ -82,6 +90,9 @@ Multi-tenant SaaS PMS + Channel Manager for boutique hotels. Integrates with Exe
 - `pii_strict_mode_config` — Strict mode on/off, whitelisted paths
 - `pii_strict_violations` — Violation/event log (90-day TTL)
 - `exely_room_mappings`, `hotelrunner_room_mappings` — Channel mappings
+├── config/
+│   ├── axiosConfig.js (HTTP client setup)
+│   └── navItems.jsx (sidebar navigation)
 - `exely_connections` — Exely connection config
 
 ## File Structure (Key Files)
@@ -91,9 +102,8 @@ Multi-tenant SaaS PMS + Channel Manager for boutique hotels. Integrates with Exe
 ├── routes/
 │   ├── routeDefinitions.jsx (all lazy imports + route configs)
 │   └── ProtectedRoute.jsx (auth wrapper components)
-├── config/
-│   ├── axiosConfig.js (HTTP client setup)
-│   └── navItems.jsx (sidebar navigation)
+├── i18n.jsx (10 languages: en, tr, ar, de, es, fr, it, ru, pt, zh)
+├── locales/ (10 JSON files, all 1640 keys complete)
 ├── pages/
 │   ├── PIIStrictModeDashboard.jsx
 │   ├── WireFailureDashboard.jsx
