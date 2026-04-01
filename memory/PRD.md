@@ -96,6 +96,18 @@ Full sentetik test akisi via mock server (34/34 PASSED)
 - Replaced old single "Exely Push Aktif" badge with dynamic multi-provider badges
 - All 9 backend tests passed (iteration 170)
 
+### Feature — No-Show Reason + Analytics [2026-04-01]
+- `POST /api/pms/bookings/no-show-virtual` now accepts `no_show_reason` field (misafir_gelmedi, iptal_gec_islendi, overbooking)
+- API: `GET /api/pms/no-show-analytics?days=30` — returns daily counts, room type breakdown, channel breakdown, reason breakdown, revenue loss, recent records
+- New page: `/no-show-analytics` -> `frontend/src/pages/NoShowAnalytics.jsx`
+  - Summary cards: total no-shows, revenue loss, daily average, per-booking average loss
+  - Charts: reason distribution, room type distribution, channel distribution, daily trend
+  - Recent no-show records table
+  - Period selector (7/30/90/365 days)
+- No-Show reason dialog added to calendar unassigned panel (3 selectable reasons before marking no-show)
+- Navigation: Sidebar > Rezervasyon > No-Show Analitik
+- All 12 backend + frontend tests passed (iteration 171)
+
 ## Upcoming Tasks
 
 ### P1 — 7-Day Shadow Observation (IN PROGRESS)
