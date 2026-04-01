@@ -8,12 +8,14 @@ Removal target: Next major release.
 
 Supports both XML/OTA endpoints (inventory, rates) and REST/JSON endpoints (reservations).
 """
-import warnings; warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
 import logging
 import time
 import uuid as _uuid
+import warnings
 from datetime import UTC, datetime
 from typing import Any
+
+warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
 
 import httpx
 

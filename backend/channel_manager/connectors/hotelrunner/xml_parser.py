@@ -8,12 +8,14 @@ Contract hardening:
   - Unexpected enum values: fallback to 'unknown'
   - Raw payload audit with masking, truncation, correlation_id
 """
-import warnings; warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
 import hashlib
 import logging
 import uuid
+import warnings
 from typing import Any
 from xml.etree import ElementTree as ET
+
+warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
 
 from .contract_errors import (
     InvalidXmlError,

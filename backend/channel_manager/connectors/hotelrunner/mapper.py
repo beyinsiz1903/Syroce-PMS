@@ -6,8 +6,10 @@ Supports:
   - REST/JSON reservation payloads → CanonicalReservation
   - Canonical inventory/rates → HotelRunner push format
 """
-import warnings; warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
+import warnings
 from typing import Any
+
+warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
 
 from ...domain.models.canonical import (
     CanonicalGuest,

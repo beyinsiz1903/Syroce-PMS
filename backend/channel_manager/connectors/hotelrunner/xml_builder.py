@@ -7,10 +7,12 @@ Supported message types:
   - OTA_ReadRQ (reservation pull)
   - OTA_NotifReportRQ (acknowledgement)
 """
-import warnings; warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
+import warnings
 from datetime import UTC, datetime
 from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
+
+warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
 
 
 def _xml_header(message_type: str, hr_id: str, timestamp: str | None = None) -> Element:

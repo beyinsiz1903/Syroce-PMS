@@ -43,11 +43,11 @@ function App() {
           setUser(freshUser);
           let parsedTenant = null;
           if (storedTenant && storedTenant !== "null") {
-            try { parsedTenant = JSON.parse(storedTenant); } catch {}
+            try { parsedTenant = JSON.parse(storedTenant); } catch { /* ignore parse error */ }
           }
           let parsedModules = null;
           if (storedModules) {
-            try { parsedModules = JSON.parse(storedModules); setModules(parsedModules); } catch {}
+            try { parsedModules = JSON.parse(storedModules); setModules(parsedModules); } catch { /* ignore parse error */ }
           }
           setTenant(parsedTenant ? (parsedModules ? { ...parsedTenant, modules: parsedModules } : parsedTenant) : null);
           setIsAuthenticated(true);
@@ -79,7 +79,7 @@ function App() {
         const res = await axios.get("/subscription/current");
         const tenantModules = res.data?.modules || null;
         if (tenantModules) { localStorage.setItem("modules", JSON.stringify(tenantModules)); setModules(tenantModules); }
-      } catch {}
+      } catch { /* ignore fetch error */ }
     };
 
     axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;

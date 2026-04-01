@@ -6,8 +6,7 @@ ARI push hatalari, sync hatalari, DLQ kayitlarini takip eder.
 import logging
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Query
 
 from core.database import db
 from core.security import get_current_user

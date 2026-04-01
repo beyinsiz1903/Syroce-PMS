@@ -2,8 +2,10 @@
 HotelRunner Authentication Manager.
 Handles token-based auth with hr_id for all HotelRunner API calls.
 """
-import warnings; warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
+import warnings
 from typing import Any
+
+warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
 
 
 class HotelRunnerAuth:

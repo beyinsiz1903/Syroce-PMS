@@ -4,8 +4,10 @@ Provider Contract Error Classes — Typed error hierarchy for XML builder/parser
 Covers: invalid_xml, missing_required_field, schema_mismatch,
         provider_error_response, unknown_response_format.
 """
-import warnings; warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
+import warnings
 from typing import Any
+
+warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
 
 
 class ProviderContractError(Exception):

@@ -4,8 +4,10 @@ Environment Configuration for HotelRunner Connector.
 Supports: sandbox, mock, production environments.
 Each environment defines its own base URLs, timeouts, and feature flags.
 """
-import warnings; warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
+import warnings
 from typing import Any
+
+warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
 
 from pydantic import BaseModel
 
