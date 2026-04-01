@@ -1,12 +1,10 @@
 # Test Credentials
 
-## Hotel Admin (Demo)
+## Hotel Login
 - Email: demo@hotel.com
 - Password: demo123
+- Login page: /auth
+- Test IDs: data-testid="hotel-login-email", data-testid="hotel-login-password", data-testid="hotel-login-btn"
 
-## API URL
-- Preview: https://revenue-insight-17.preview.emergentagent.com
-- Backend prefix: /api
-
-## Mock HotelRunner Server
-- URL: http://localhost:9999
+## Mock Server
+- HotelRunner Mock: http://localhost:9999

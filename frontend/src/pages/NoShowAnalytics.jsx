@@ -628,9 +628,9 @@ const RuleEngineTab = () => {
           <CardTitle className="text-sm font-semibold text-gray-700">Tetikleme Gecmisi</CardTitle>
         </CardHeader>
         <CardContent>
-          {history.length > 0 ? (
+          {history.filter(h => h.rule_name).length > 0 ? (
             <div className="space-y-1.5 max-h-60 overflow-y-auto">
-              {history.map((h, i) => (
+              {history.filter(h => h.rule_name).map((h, i) => (
                 <div key={h.id || i} className="flex items-center gap-3 text-xs p-2 rounded hover:bg-gray-50" data-testid={`history-row-${i}`}>
                   <Zap className="w-3 h-3 text-amber-500 flex-shrink-0" />
                   <span className="text-gray-500 w-24 flex-shrink-0">{(h.triggered_at || '').slice(0, 10)}</span>

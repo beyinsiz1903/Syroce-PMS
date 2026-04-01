@@ -90,23 +90,55 @@ Full sentetik test akisi via mock server (34/34 PASSED)
 
 ### Feature — Rate Manager Provider Push Status [2026-04-01]
 - API: `GET /api/channel-manager/rate-manager/push-providers` — returns all channel provider statuses
-- Rate Manager page now shows badges for each provider with mode status:
-  - Exely: Push Aktif (green) / Inaktif (gray)
-  - HotelRunner: Shadow Mode (amber) / Push Aktif (green) / Inaktif (gray)
-- Replaced old single "Exely Push Aktif" badge with dynamic multi-provider badges
+- Rate Manager page now shows badges for each provider with mode status
 - All 9 backend tests passed (iteration 170)
 
 ### Feature — No-Show Reason + Analytics [2026-04-01]
-- `POST /api/pms/bookings/no-show-virtual` now accepts `no_show_reason` field (misafir_gelmedi, iptal_gec_islendi, overbooking)
+- `POST /api/pms/bookings/no-show-virtual` now accepts `no_show_reason` field
 - API: `GET /api/pms/no-show-analytics?days=30` — returns daily counts, room type breakdown, channel breakdown, reason breakdown, revenue loss, recent records
 - New page: `/no-show-analytics` -> `frontend/src/pages/NoShowAnalytics.jsx`
-  - Summary cards: total no-shows, revenue loss, daily average, per-booking average loss
-  - Charts: reason distribution, room type distribution, channel distribution, daily trend
-  - Recent no-show records table
-  - Period selector (7/30/90/365 days)
-- No-Show reason dialog added to calendar unassigned panel (3 selectable reasons before marking no-show)
-- Navigation: Sidebar > Rezervasyon > No-Show Analitik
+- No-Show reason dialog added to calendar unassigned panel
 - All 12 backend + frontend tests passed (iteration 171)
+
+### Feature — Advanced No-Show & Revenue Analytics [2026-04-01]
+**4 new analytics tabs added to No-Show Analytics page:**
+
+#### 1. Channel Loss Analytics (FULL)
+- API: `GET /api/pms/channel-loss-analytics?days=30`
+- Kanal bazli: no-show count, total loss, avg loss, no-show rate (%)
+- Top 3 worst channels with detailed cards
+- Channel trend over time (stacked bar chart)
+- Data quality/confidence indicator
+
+#### 2. Overbooking Heatmap (FULL)
+- API: `GET /api/pms/overbooking-heatmap?days=90`
+- Date-based color-coded heatmap grid
+- Top 5 riskiest days (peak days)
+- Weekly pattern (weekend vs weekday)
+- Channel contribution overlay
+- Data quality/confidence indicator
+
+#### 3. Rule Engine (LIGHT)
+- APIs: `GET/POST /api/pms/alert-rules`, `DELETE/PATCH .../toggle`, `POST .../evaluate`, `GET .../history`
+- Alert/suggestion mode only (Shadow Mode — no automatic writes)
+- CRUD for rules with metrics: overbooking_count, noshow_count, noshow_rate
+- Actions: rate_dusur, prepaid_zorunlu, kanal_kapat, manuel_inceleme
+- Trigger history tracking
+- Evaluation against current data
+
+#### 4. No-Show Prediction (BASIC)
+- API: `GET /api/pms/noshow-prediction?days_ahead=7`
+- Rule-based prediction: risk score (0-100)
+- Risk levels: Low/Medium/High
+- Factors: channel rate, day-of-week pattern, amount
+- Historical rates by channel and day-of-week
+- Data quality/confidence indicator
+- Future ML-ready feature store design
+
+**Files Created:**
+- `/app/backend/routers/pms_analytics.py` — 4 new API endpoints
+- `/app/frontend/src/pages/NoShowAnalytics.jsx` — Redesigned with 4 tabs
+- All 24 backend + frontend tests passed (iteration 172)
 
 ## Upcoming Tasks
 

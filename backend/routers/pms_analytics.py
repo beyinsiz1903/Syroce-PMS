@@ -492,7 +492,7 @@ async def get_alert_history(
 ):
     """Get alert trigger history."""
     history = await db.alert_history.find(
-        {"tenant_id": current_user.tenant_id},
+        {"tenant_id": current_user.tenant_id, "rule_name": {"$exists": True}},
         {"_id": 0},
     ).sort("triggered_at", -1).to_list(limit)
     return {"history": history}
