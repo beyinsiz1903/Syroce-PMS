@@ -23,7 +23,7 @@ import pytest_asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 
-API_BASE = "https://locale-translate.preview.emergentagent.com/api/channel/hotelrunner-v2"
+API_BASE = "https://pms-channel-clean.preview.emergentagent.com/api/channel/hotelrunner-v2"
 MOCK_BASE = "http://localhost:9999"
 TENANT_ID = "test-tenant"
 PROPERTY_ID = "default"

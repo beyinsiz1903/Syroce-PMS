@@ -21,7 +21,7 @@ import pytest
 import httpx
 
 # Use public URL from environment
-BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://locale-translate.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://pms-channel-clean.preview.emergentagent.com").rstrip("/")
 AUTH_CREDS = {"email": "demo@hotel.com", "password": "demo123"}
 
 # Use unique year range per run to avoid collisions
