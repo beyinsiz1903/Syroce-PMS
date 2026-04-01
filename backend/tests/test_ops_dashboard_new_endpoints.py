@@ -14,7 +14,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://pms-channel-clean.preview.emergentagent.com")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://pms-channel-mgr.preview.emergentagent.com")
 
 
 class TestInventoryAlignmentEndpoint:
