@@ -501,6 +501,15 @@ export const NAV_ITEMS = [
     navGroup: "infrastructure",
   },
   {
+    key: "pii_strict_mode",
+    label: "PII Strict Mode",
+    path: "/pii-strict-mode",
+    moduleKey: "advanced_analytics",
+    tier: "enterprise",
+    group: "enterprise",
+    navGroup: "infrastructure",
+  },
+  {
     key: "production_golive",
     label: "Production Go-Live",
     path: "/production-golive",

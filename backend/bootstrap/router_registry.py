@@ -132,6 +132,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.channel_manager.auto_map_router", "router", ["Auto-Map"], None, None),
     # Wire Failure Tracking — Hata Takip
     ("domains.channel_manager.wire_failure_router", "router", ["Wire Failure Tracking"], None, None),
+    # PII Strict Mode — Zorunlu PII Maskeleme
+    ("security.pii_strict_mode_router", "router", ["Security — PII Strict Mode"], None, None),
     # Channel Manager — Unified Data Model
     ("domains.channel_manager.model_router", "router", ["Channel Manager — Data Model"], None, None),
     # Reservation Ingest Pipeline

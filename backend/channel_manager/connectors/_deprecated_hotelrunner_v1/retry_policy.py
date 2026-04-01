@@ -1,7 +1,6 @@
 """
 HotelRunner Retry Policy - Exponential backoff with jitter for failed requests.
 """
-import warnings; warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
 import asyncio
 import logging
 import random

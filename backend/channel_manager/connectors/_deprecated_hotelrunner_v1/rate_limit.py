@@ -2,7 +2,6 @@
 HotelRunner Rate Limiter - Token bucket algorithm for API rate limiting.
 Prevents hitting HotelRunner's API rate limits by throttling outgoing requests.
 """
-import warnings; warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
 import asyncio
 import time
 

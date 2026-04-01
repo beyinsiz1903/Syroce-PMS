@@ -2,7 +2,6 @@
 HotelRunner Connector Errors - Typed exceptions for the connector layer.
 Every error maps to a specific recovery strategy.
 """
-import warnings; warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
 
 
 class ConnectorError(Exception):
