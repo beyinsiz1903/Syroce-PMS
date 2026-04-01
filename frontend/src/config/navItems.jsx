@@ -252,6 +252,15 @@ export const NAV_ITEMS = [
     navGroup: "channels",
   },
   {
+    key: "wire_failures",
+    label: "Wire Failure Takibi",
+    path: "/wire-failures",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+    navGroup: "channels",
+  },
+  {
     key: "ari_push",
     label: "ARI Push Engine",
     path: "/ari-push",

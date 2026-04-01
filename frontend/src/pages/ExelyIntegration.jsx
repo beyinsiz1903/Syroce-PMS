@@ -9,10 +9,12 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink,
   Building2, ArrowDownUp, CalendarCheck, Activity,
-  AlertTriangle, Loader2, Search, Download, ExternalLink, FlaskConical
+  AlertTriangle, Loader2, Search, Download, ExternalLink, FlaskConical,
+  Wand2, Trash2
 } from 'lucide-react';
 import TestBookingVerification from '@/components/TestBookingVerification';
 
@@ -28,6 +30,10 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
   const [mappings, setMappings] = useState([]);
   const [syncLogs, setSyncLogs] = useState([]);
   const [syncStatus, setSyncStatus] = useState(null);
+  const [autoMapOpen, setAutoMapOpen] = useState(false);
+  const [autoMapSuggestions, setAutoMapSuggestions] = useState(null);
+  const [autoMapLoading, setAutoMapLoading] = useState(false);
+  const [mappingStatus, setMappingStatus] = useState(null);
 
   const [connectForm, setConnectForm] = useState({
     username: '', password: '', hotel_code: '', endpoint_url: '',
@@ -63,6 +69,57 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
 
   useEffect(() => { fetchConnection(); }, [fetchConnection]);
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const fetchMappingStatus = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/api/channel-manager/auto-map/status/exely`, { headers });
+      setMappingStatus(data);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { if (connection?.connected) fetchMappingStatus(); }, [connection?.connected]);
+
+  const handleAutoMapSuggest = async () => {
+    setAutoMapLoading(true);
+    try {
+      const { data } = await axios.post(`${API}/api/channel-manager/auto-map/suggest`, { provider: 'exely' }, { headers });
+      setAutoMapSuggestions(data);
+      setAutoMapOpen(true);
+    } catch (e) { toast.error(e.response?.data?.detail || 'Otomatik esleme onerisi alinamadi'); }
+    finally { setAutoMapLoading(false); }
+  };
+
+  const handleAutoMapApply = async (selectedSuggestions) => {
+    if (!selectedSuggestions?.length) return;
+    setAutoMapLoading(true);
+    try {
+      const payload = {
+        provider: 'exely',
+        mappings: selectedSuggestions.map(s => ({
+          pms_room_type: s.pms_room_type,
+          provider_room_code: s.provider_room_code,
+          provider_room_name: s.provider_room_name,
+          provider_rate_plan_code: s.provider_rate_plan_code,
+          provider_rate_plan_name: s.provider_rate_plan_name,
+        })),
+      };
+      const { data } = await axios.post(`${API}/api/channel-manager/auto-map/apply`, payload, { headers });
+      toast.success(data.message);
+      setAutoMapOpen(false);
+      fetchAll();
+      fetchMappingStatus();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Esleme uygulanamadi'); }
+    finally { setAutoMapLoading(false); }
+  };
+
+  const handleDeleteMapping = async (mappingId) => {
+    try {
+      await axios.delete(`${API}/api/channel-manager/exely/room-mappings/${mappingId}`, { headers });
+      toast.success('Esleme silindi');
+      fetchAll();
+      fetchMappingStatus();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Silme hatasi'); }
+  };
 
   const handleConnect = async () => {
     if (!connectForm.username || !connectForm.password || !connectForm.hotel_code) {
@@ -453,10 +510,55 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
 
           {/* Mappings Tab */}
           <TabsContent value="mappings" className="space-y-4 mt-4">
+            {/* Mapping Status Bar */}
+            {mappingStatus && (
+              <Card data-testid="exely-mapping-status">
+                <CardContent className="py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="text-sm">
+                        <span className="font-medium">Esleme Durumu:</span>{' '}
+                        <span className="text-emerald-600 font-bold">{mappingStatus.mapped_count}</span>
+                        <span className="text-slate-400"> / {mappingStatus.total_pms_types} PMS oda tipi</span>
+                      </div>
+                      <div className="w-32 bg-slate-200 rounded-full h-2">
+                        <div
+                          className="h-2 rounded-full transition-all"
+                          style={{
+                            width: `${mappingStatus.completion_pct}%`,
+                            backgroundColor: mappingStatus.completion_pct === 100 ? '#22c55e' : mappingStatus.completion_pct >= 50 ? '#f59e0b' : '#ef4444',
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs text-slate-500">%{mappingStatus.completion_pct}</span>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAutoMapSuggest}
+                      disabled={autoMapLoading}
+                      data-testid="exely-auto-map-btn"
+                    >
+                      {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Wand2 className="w-4 h-4 mr-1" />}
+                      Otomatik Esle
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card>
-              <CardHeader>
-                <CardTitle>Oda Eslemeleri</CardTitle>
-                <CardDescription>PMS oda tipleri ile Exely oda/fiyat planlarini esleyin</CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Oda Eslemeleri</CardTitle>
+                  <CardDescription>PMS oda tipleri ile Exely oda/fiyat planlarini esleyin</CardDescription>
+                </div>
+                {!mappingStatus && (
+                  <Button variant="outline" size="sm" onClick={handleAutoMapSuggest} disabled={autoMapLoading} data-testid="exely-auto-map-btn-alt">
+                    {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Wand2 className="w-4 h-4 mr-1" />}
+                    Otomatik Esle
+                  </Button>
+                )}
               </CardHeader>
               <CardContent>
                 {mappings.length === 0 ? (
@@ -474,22 +576,28 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                           <th className="pb-2 pr-4">Exely Oda Kodu</th>
                           <th className="pb-2 pr-4">Exely Rate Plan</th>
                           <th className="pb-2 pr-4">Exely Oda Adi</th>
-                          <th className="pb-2">Sync</th>
+                          <th className="pb-2 pr-4">Sync</th>
+                          <th className="pb-2 text-right">Islem</th>
                         </tr>
                       </thead>
                       <tbody>
                         {mappings.map((m, i) => (
-                          <tr key={i} className="border-b last:border-0">
+                          <tr key={m.id || i} className="border-b last:border-0" data-testid={`exely-mapping-row-${i}`}>
                             <td className="py-2 pr-4 font-medium">{m.pms_room_type}</td>
                             <td className="py-2 pr-4 font-mono text-xs">{m.exely_room_code}</td>
                             <td className="py-2 pr-4 font-mono text-xs">{m.exely_rate_plan_code}</td>
                             <td className="py-2 pr-4">{m.exely_room_name}</td>
-                            <td className="py-2">
+                            <td className="py-2 pr-4">
                               <div className="flex gap-1">
                                 {m.sync_availability && <Badge variant="secondary" className="text-xs">A</Badge>}
                                 {m.sync_price && <Badge variant="secondary" className="text-xs">R</Badge>}
                                 {m.sync_restrictions && <Badge variant="secondary" className="text-xs">I</Badge>}
                               </div>
+                            </td>
+                            <td className="py-2 text-right">
+                              <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 h-7 w-7 p-0" onClick={() => handleDeleteMapping(m.id)} data-testid={`exely-delete-mapping-${i}`}>
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
                             </td>
                           </tr>
                         ))}
@@ -497,8 +605,99 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                     </table>
                   </div>
                 )}
+
+                {/* Unmapped PMS Types Warning */}
+                {mappingStatus && mappingStatus.unmapped_count > 0 && (
+                  <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg" data-testid="exely-unmapped-warning">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-amber-800">{mappingStatus.unmapped_count} PMS oda tipi eslenmemis</p>
+                        <p className="text-xs text-amber-600 mt-1">
+                          Eslenmemis oda tipleri Exely'ye fiyat/musaitlik push edilemez. Provider'da karsilik gelen oda tipleri yoksa, Exely panelinden oda tipi olusturun.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
+
+            {/* Auto-Map Dialog */}
+            <Dialog open={autoMapOpen} onOpenChange={setAutoMapOpen}>
+              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2"><Wand2 className="w-5 h-5" /> Otomatik Esleme Onerileri</DialogTitle>
+                </DialogHeader>
+                {autoMapSuggestions && (
+                  <div className="space-y-4 mt-2">
+                    {autoMapSuggestions.suggestions.length > 0 ? (
+                      <>
+                        <p className="text-sm text-slate-600">Isim benzerligine gore eslesme onerileri:</p>
+                        <div className="space-y-2">
+                          {autoMapSuggestions.suggestions.map((s, i) => (
+                            <div key={i} className="flex items-center justify-between p-3 bg-slate-50 border rounded-lg" data-testid={`auto-map-suggestion-${i}`}>
+                              <div className="flex items-center gap-3">
+                                <div>
+                                  <p className="font-medium text-sm">{s.pms_room_name}</p>
+                                  <p className="text-xs text-slate-500">PMS ({s.pms_room_count} oda)</p>
+                                </div>
+                                <ArrowDownUp className="w-4 h-4 text-slate-400" />
+                                <div>
+                                  <p className="font-medium text-sm">{s.provider_room_name}</p>
+                                  <p className="text-xs text-slate-500">Exely ({s.provider_room_code})</p>
+                                </div>
+                              </div>
+                              <Badge className={s.confidence === 'high' ? 'bg-emerald-100 text-emerald-800' : s.confidence === 'medium' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'}>
+                                %{Math.round(s.similarity_score * 100)}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                        <Button className="w-full" onClick={() => handleAutoMapApply(autoMapSuggestions.suggestions)} disabled={autoMapLoading} data-testid="auto-map-apply-btn">
+                          {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
+                          Tum Onerileri Uygula ({autoMapSuggestions.suggestions.length})
+                        </Button>
+                      </>
+                    ) : (
+                      <div className="text-center py-4">
+                        <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                        <p className="text-sm text-slate-600">Otomatik eslestirilecek yeni oda tipi bulunamadi.</p>
+                      </div>
+                    )}
+
+                    {/* Unmapped PMS types */}
+                    {autoMapSuggestions.unmapped_pms_types?.length > 0 && (
+                      <div className="border-t pt-4">
+                        <p className="text-sm font-medium text-amber-700 mb-2">Eslenmemis PMS Oda Tipleri (Provider'da karsiligi yok):</p>
+                        <div className="flex flex-wrap gap-2">
+                          {autoMapSuggestions.unmapped_pms_types.map((t, i) => (
+                            <Badge key={i} variant="outline" className="bg-amber-50 border-amber-300 text-amber-700" data-testid={`unmapped-pms-${i}`}>
+                              <AlertTriangle className="w-3 h-3 mr-1" /> {t.name} ({t.room_count} oda)
+                            </Badge>
+                          ))}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-2">Bu oda tiplerini Exely panelinden olusturup tekrar esleme yapabilirsiniz.</p>
+                      </div>
+                    )}
+
+                    {/* Unmapped provider rooms */}
+                    {autoMapSuggestions.unmapped_provider_rooms?.length > 0 && (
+                      <div className="border-t pt-4">
+                        <p className="text-sm font-medium text-blue-700 mb-2">Eslenmemis Provider Odalari:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {autoMapSuggestions.unmapped_provider_rooms.map((r, i) => (
+                            <Badge key={i} variant="outline" className="bg-blue-50 border-blue-300 text-blue-700">
+                              {r.name} ({r.code})
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           {/* Logs Tab */}

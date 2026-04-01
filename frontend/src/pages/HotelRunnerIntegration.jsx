@@ -9,10 +9,11 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink,
   Building2, ArrowDownUp, CalendarCheck, Clock, Activity,
-  AlertTriangle, Loader2, Save, Trash2, Plus, Check
+  AlertTriangle, Loader2, Save, Trash2, Plus, Check, Wand2
 } from 'lucide-react';
 
 const API = import.meta.env.VITE_BACKEND_URL;
@@ -30,6 +31,10 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
   const [mappingDraft, setMappingDraft] = useState({});
   const [savingMapping, setSavingMapping] = useState(null);
   const [newPmsType, setNewPmsType] = useState('');
+  const [autoMapOpen, setAutoMapOpen] = useState(false);
+  const [autoMapSuggestions, setAutoMapSuggestions] = useState(null);
+  const [autoMapLoading, setAutoMapLoading] = useState(false);
+  const [mappingStatus, setMappingStatus] = useState(null);
 
   const [connectForm, setConnectForm] = useState({
     token: '', hr_id: '', property_name: '',
@@ -69,6 +74,48 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
 
   useEffect(() => { fetchConnection(); }, [fetchConnection]);
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const fetchMappingStatus = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/api/channel-manager/auto-map/status/hotelrunner`, { headers });
+      setMappingStatus(data);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { if (connection?.connected) fetchMappingStatus(); }, [connection?.connected]);
+
+  const handleAutoMapSuggest = async () => {
+    setAutoMapLoading(true);
+    try {
+      const { data } = await axios.post(`${API}/api/channel-manager/auto-map/suggest`, { provider: 'hotelrunner' }, { headers });
+      setAutoMapSuggestions(data);
+      setAutoMapOpen(true);
+    } catch (e) { toast.error(e.response?.data?.detail || 'Otomatik esleme onerisi alinamadi'); }
+    finally { setAutoMapLoading(false); }
+  };
+
+  const handleAutoMapApply = async (selectedSuggestions) => {
+    if (!selectedSuggestions?.length) return;
+    setAutoMapLoading(true);
+    try {
+      const payload = {
+        provider: 'hotelrunner',
+        mappings: selectedSuggestions.map(s => ({
+          pms_room_type: s.pms_room_type,
+          provider_room_code: s.provider_room_code,
+          provider_room_name: s.provider_room_name,
+          provider_rate_plan_code: s.provider_rate_plan_code,
+          provider_rate_plan_name: s.provider_rate_plan_name,
+        })),
+      };
+      const { data } = await axios.post(`${API}/api/channel-manager/auto-map/apply`, payload, { headers });
+      toast.success(data.message);
+      setAutoMapOpen(false);
+      fetchAll();
+      fetchMappingStatus();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Esleme uygulanamadi'); }
+    finally { setAutoMapLoading(false); }
+  };
 
   const handleConnect = async () => {
     if (!connectForm.token || !connectForm.hr_id) {
@@ -456,6 +503,37 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
 
           {/* Mappings Tab */}
           <TabsContent value="mappings" className="space-y-4 mt-4">
+            {/* Mapping Status Bar */}
+            {mappingStatus && (
+              <Card data-testid="hr-mapping-status">
+                <CardContent className="py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="text-sm">
+                        <span className="font-medium">Esleme Durumu:</span>{' '}
+                        <span className="text-emerald-600 font-bold">{mappingStatus.mapped_count}</span>
+                        <span className="text-slate-400"> / {mappingStatus.total_pms_types} PMS oda tipi</span>
+                      </div>
+                      <div className="w-32 bg-slate-200 rounded-full h-2">
+                        <div
+                          className="h-2 rounded-full transition-all"
+                          style={{
+                            width: `${mappingStatus.completion_pct}%`,
+                            backgroundColor: mappingStatus.completion_pct === 100 ? '#22c55e' : mappingStatus.completion_pct >= 50 ? '#f59e0b' : '#ef4444',
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs text-slate-500">%{mappingStatus.completion_pct}</span>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={handleAutoMapSuggest} disabled={autoMapLoading} data-testid="hr-auto-map-btn">
+                      {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Wand2 className="w-4 h-4 mr-1" />}
+                      Otomatik Esle
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
@@ -649,6 +727,79 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                 )}
               </CardContent>
             </Card>
+
+            {/* Auto-Map Dialog */}
+            <Dialog open={autoMapOpen} onOpenChange={setAutoMapOpen}>
+              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2"><Wand2 className="w-5 h-5" /> Otomatik Esleme Onerileri</DialogTitle>
+                </DialogHeader>
+                {autoMapSuggestions && (
+                  <div className="space-y-4 mt-2">
+                    {autoMapSuggestions.suggestions.length > 0 ? (
+                      <>
+                        <p className="text-sm text-slate-600">Isim benzerligine gore eslesme onerileri:</p>
+                        <div className="space-y-2">
+                          {autoMapSuggestions.suggestions.map((s, i) => (
+                            <div key={i} className="flex items-center justify-between p-3 bg-slate-50 border rounded-lg" data-testid={`hr-auto-map-suggestion-${i}`}>
+                              <div className="flex items-center gap-3">
+                                <div>
+                                  <p className="font-medium text-sm">{s.pms_room_name}</p>
+                                  <p className="text-xs text-slate-500">PMS ({s.pms_room_count} oda)</p>
+                                </div>
+                                <ArrowDownUp className="w-4 h-4 text-slate-400" />
+                                <div>
+                                  <p className="font-medium text-sm">{s.provider_room_name}</p>
+                                  <p className="text-xs text-slate-500">HotelRunner ({s.provider_room_code})</p>
+                                </div>
+                              </div>
+                              <Badge className={s.confidence === 'high' ? 'bg-emerald-100 text-emerald-800' : s.confidence === 'medium' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'}>
+                                %{Math.round(s.similarity_score * 100)}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                        <Button className="w-full" onClick={() => handleAutoMapApply(autoMapSuggestions.suggestions)} disabled={autoMapLoading} data-testid="hr-auto-map-apply-btn">
+                          {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
+                          Tum Onerileri Uygula ({autoMapSuggestions.suggestions.length})
+                        </Button>
+                      </>
+                    ) : (
+                      <div className="text-center py-4">
+                        <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                        <p className="text-sm text-slate-600">Otomatik eslestirilecek yeni oda tipi bulunamadi.</p>
+                      </div>
+                    )}
+
+                    {autoMapSuggestions.unmapped_pms_types?.length > 0 && (
+                      <div className="border-t pt-4">
+                        <p className="text-sm font-medium text-amber-700 mb-2">Eslenmemis PMS Oda Tipleri (Provider'da karsiligi yok):</p>
+                        <div className="flex flex-wrap gap-2">
+                          {autoMapSuggestions.unmapped_pms_types.map((t, i) => (
+                            <Badge key={i} variant="outline" className="bg-amber-50 border-amber-300 text-amber-700" data-testid={`hr-unmapped-pms-${i}`}>
+                              <AlertTriangle className="w-3 h-3 mr-1" /> {t.name} ({t.room_count} oda)
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {autoMapSuggestions.unmapped_provider_rooms?.length > 0 && (
+                      <div className="border-t pt-4">
+                        <p className="text-sm font-medium text-blue-700 mb-2">Eslenmemis Provider Odalari:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {autoMapSuggestions.unmapped_provider_rooms.map((r, i) => (
+                            <Badge key={i} variant="outline" className="bg-blue-50 border-blue-300 text-blue-700">
+                              {r.name} ({r.code})
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           {/* Logs Tab */}

@@ -128,6 +128,10 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.channel_manager.rate_manager_router", "router", ["Rate Manager"], None, None),
     # HR Rate Manager — HotelRunner Fiyat/Müsaitlik Yönetimi
     ("domains.channel_manager.hr_rate_manager_router", "router", ["HR Rate Manager"], None, None),
+    # Auto-Map — Otomatik Oda Esleme
+    ("domains.channel_manager.auto_map_router", "router", ["Auto-Map"], None, None),
+    # Wire Failure Tracking — Hata Takip
+    ("domains.channel_manager.wire_failure_router", "router", ["Wire Failure Tracking"], None, None),
     # Channel Manager — Unified Data Model
     ("domains.channel_manager.model_router", "router", ["Channel Manager — Data Model"], None, None),
     # Reservation Ingest Pipeline
