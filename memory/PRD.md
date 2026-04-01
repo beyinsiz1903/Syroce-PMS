@@ -1,126 +1,88 @@
 # Syroce PMS — Product Requirements Document
 
 ## Original Problem Statement
-Multi-tenant SaaS PMS + Channel Manager for boutique hotels. Integrates with Exely (Live Push) and HotelRunner (Shadow Mode). Turkish-language responses required.
+Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant isolation, PII strict mode tracking, and comprehensive multi-language support.
 
-## Core Architecture
-- **Backend**: FastAPI + MongoDB (Motor async driver)
-- **Frontend**: React (Vite) + Shadcn/UI + TailwindCSS
-- **Auth**: JWT-based (demo@hotel.com / demo123)
-- **Database**: MongoDB (MONGO_URL from .env)
-- **i18n**: i18next (TR/EN/AR/RU/IT/FR/ES/DE/PT/ZH) — 10 dil, tümü %100 anahtar kapsamı
+## User Personas
+- **Hotel Admin**: Manages operations, bookings, billing, staff
+- **Front Desk Agent**: Handles check-in/out, guest requests
+- **Housekeeping Manager**: Room status, task assignment
+- **Revenue Manager**: Pricing, forecasts, channel distribution
+- **Guest**: Online check-in, portal access, feedback
 
-## Key Integrations
-- **Exely**: Live Push (SOAP API) — credentials in DB
-- **HotelRunner v2**: Shadow Mode (write_enabled=false) — user token active
-- **AWS KMS**: Encryption — requires user API key
+## Core Requirements
+1. Multi-tenant hotel PMS with full operational modules
+2. Channel Manager (HotelRunner v2, Exely SOAP)
+3. PII Strict Mode + Encryption tracking
+4. Comprehensive i18n (10 languages)
+5. Role-based access control
+6. AI-powered analytics & predictions
 
-## Completed Features
+## Architecture
+```
+/app
+├── backend/
+│   ├── security/ (pii_strict_mode, encryption)
+│   ├── channel_manager/connectors/
+│   │   ├── hotelrunner_v2/ (ACTIVE - Shadow Mode)
+│   │   └── _deprecated_hotelrunner_v1/ (backup)
+├── frontend/
+│   └── src/
+│       ├── i18n.jsx (static import, 10 langs)
+│       ├── locales/ (10 synced JSON files, 1640 keys each)
+│       ├── App.jsx (Router v6 orchestrator)
+│       └── routes/
+```
 
-### Phase 1 — Core PMS (Complete)
-- Room management, reservations, guest profiles, folio/billing
-- Dashboard with operational metrics, reports
-- Night audit, housekeeping, staff management
-- Multi-property support, loyalty program
+## What's Been Implemented
 
-### Phase 2 — Channel Manager (Complete)
-- Exely integration (Live Push mode)
-- HotelRunner v2 integration (Shadow Mode)
-- ARI push dashboard, rate manager, mapping manager
-- Auto-Map feature for room type matching
-- Wire Failure Dashboard for sync error tracking
+### Phase 1-5: Core PMS (DONE)
+- Full PMS with 88+ modules
+- 865+ API endpoints
+- Dashboard, Calendar, Folio, Housekeeping, Reports
+- Auth with JWT, role-based access
+- Invoice & E-Fatura system
+- POS, F&B Suite, Loyalty Program
+- Channel Manager (HotelRunner v2 + Exely)
 
-### Phase 3 — Security & Infrastructure (Complete)
-- PII Registry, masking middleware, audit logging
-- Field-level encryption (guests at 99.6% coverage)
-- Tenant isolation, security center, GDPR compliance
-- **PII Strict Mode Enforcement** (2026-04-01)
-  - DB-backed toggle for global PII masking
-  - Violation tracking and reporting dashboard
-  - Encryption coverage monitoring per collection
-  - Whitelist management for exempt paths
+### i18n System (DONE - April 2026)
+- **Static import fix**: Changed dynamic `import("./i18n")` to static `import "@/i18n"` in index.jsx
+- **10 languages fully synchronized**: en, tr, ar, de, es, fr, it, ru, pt, zh
+- **1640 keys each**, all matching
+- **PT and ZH**: Completed native translations (was ~67% English fallback, now <4% — only universal terms like PMS, GDS, Excel, PDF)
+- **Extra key cleanup**: Removed orphan `navKeys.revenue_autopilot` from ar, de, es, fr, it, ru
 
-### Refactoring (Complete — 2026-04-01)
-- **App.jsx Decomposition**: 2170 → 229 lines
-  - Routes: `/app/frontend/src/routes/routeDefinitions.jsx`
-  - Auth wrappers: `/app/frontend/src/routes/ProtectedRoute.jsx`
-  - Axios config: `/app/frontend/src/config/axiosConfig.js`
-- **Legacy HR Connector Cleanup**:
-  - Original files backed up to `_deprecated_hotelrunner_v1/`
-  - Deprecation warnings added to all v1 modules
-  - v2 connector remains the active implementation
+### Security (DONE)
+- PII Strict Mode middleware/router
+- Encryption status tracking (guests: 99.6%)
 
-### i18n Internationalization Fix (Complete — 2026-04-01)
-- **Root cause**: Dynamic `import("./i18n")` in `index.jsx` caused async loading — translations not ready when App rendered
-- **Fix**: Changed to synchronous `import "@/i18n"` in `index.jsx`
-- Added `pt` (Portuguese) and `zh` (Chinese) to `i18n.jsx` resources
-- Completed missing translations for `ar`, `de`, `es`, `fr`, `it`, `ru` (each was ~54% complete, now 100%)
-- Added core translations for `pt` and `zh` (common, nav, auth, dashboard, reports, settings, folio, pms — was 0% translated, now ~33% with English fallback for less-seen sections)
-- All 10 locale files now have 1640/1640 keys (100% key coverage)
+### Channel Manager (IN PROGRESS)
+- HotelRunner v2: Shadow Mode active (`write_enabled=false`)
+- **DO NOT ENABLE WRITES** until 7-day observation period complete
 
-## Pending / Upcoming Tasks
+## Prioritized Backlog
 
-### P1 — HotelRunner Live Transition
-1. Complete 7-day shadow observation period
-2. Limited live write (single tenant/small scope)
-3. Full live write execution
+### P1 (Critical)
+- [ ] Complete 7-day HotelRunner v2 shadow observation
+- [ ] Limited live write execution (single tenant, after criteria met)
+- [ ] Full live write execution
 
-### P3 — UI Enhancements
-- Rate Manager quick toggle (Exely ↔ HotelRunner)
+### P2 (Important)
+- [ ] Data Encryption: Encrypt `users` and `bookings` collections to 100%
 
-### P2 — Remaining
-- PII Field Encryption extended to users, bookings, reservations collections
-
-### P3 — Cleanup
-- Final removal of legacy HR v1 connector (after v2 confirmed stable)
+### P3 (Nice to Have)
+- [ ] Quick toggle button for rate manager (Exely/HotelRunner)
+- [ ] Remove legacy HR v1 connector after full transition verification
 
 ## Key API Endpoints
-- `POST /api/auth/login` — JWT login
-- `GET /api/security/pii-strict-mode/config` — PII config
-- `POST /api/security/pii-strict-mode/toggle` — Enable/disable strict mode
-- `GET /api/security/pii-strict-mode/summary` — Violation summary
-- `GET /api/security/pii-strict-mode/violations` — Violation log
-- `GET /api/security/pii-strict-mode/encryption-status` — Encryption coverage
-- `GET /api/security/pii-strict-mode/policy` — PII policy registry
-- `GET /api/channel-manager/auto-map/suggest` — Auto-map suggestions
-- `POST /api/channel-manager/auto-map/apply` — Apply mappings
-- `GET /api/channel-manager/wire-failures/summary` — Wire failure stats
+- `GET /api/security/pii/strict-mode/config`
+- `GET /api/security/pii/strict-mode/violations`
+- `GET /api/security/encryption/status`
 
-## Key DB Collections
-- `pii_strict_mode_config` — Strict mode on/off, whitelisted paths
-- `pii_strict_violations` — Violation/event log (90-day TTL)
-- `exely_room_mappings`, `hotelrunner_room_mappings` — Channel mappings
-├── config/
-│   ├── axiosConfig.js (HTTP client setup)
-│   └── navItems.jsx (sidebar navigation)
-- `exely_connections` — Exely connection config
+## 3rd Party Integrations
+- AWS KMS (Encryption) — requires User API Key
+- HotelRunner v2 — Active (Shadow Mode)
+- Exely (SOAP API) — requires Provider credentials
 
-## File Structure (Key Files)
-```
-/app/frontend/src/
-├── App.jsx (229 lines — orchestrator)
-├── routes/
-│   ├── routeDefinitions.jsx (all lazy imports + route configs)
-│   └── ProtectedRoute.jsx (auth wrapper components)
-├── i18n.jsx (10 languages: en, tr, ar, de, es, fr, it, ru, pt, zh)
-├── locales/ (10 JSON files, all 1640 keys complete)
-├── pages/
-│   ├── PIIStrictModeDashboard.jsx
-│   ├── WireFailureDashboard.jsx
-│   ├── ExelyIntegration.jsx
-│   └── HotelRunnerIntegration.jsx
-/app/backend/
-├── security/
-│   ├── pii_strict_mode.py (service)
-│   ├── pii_strict_mode_router.py (API)
-│   ├── pii_registry.py
-│   ├── field_encryption.py
-│   └── pii_audit.py
-├── domains/channel_manager/
-│   ├── auto_map_router.py
-│   └── wire_failure_router.py
-├── channel_manager/connectors/
-│   ├── hotelrunner/ (DEPRECATED — v1, warnings added)
-│   ├── _deprecated_hotelrunner_v1/ (backup)
-│   └── hotelrunner_v2/ (ACTIVE)
-```
+## Test Credentials
+- Frontend: `demo@hotel.com` / `demo123`
