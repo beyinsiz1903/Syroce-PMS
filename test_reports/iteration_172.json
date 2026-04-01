@@ -1,0 +1,147 @@
+{
+  "iteration": 172,
+  "date": "2026-04-01",
+  "summary": "Tested 4 new No-Show Analytics features: Channel Loss Analytics, Overbooking Heatmap, Rule Engine, and No-Show Prediction. All 24 backend API tests passed. Frontend UI verified - all 4 tabs render correctly with proper data display, tab navigation works, period selectors functional.",
+  "features_tested": [
+    "GET /api/pms/channel-loss-analytics - Returns channel breakdown, top3 worst, trend data, data quality",
+    "GET /api/pms/channel-loss-analytics?days=7/30/90 - Period selector works correctly",
+    "GET /api/pms/overbooking-heatmap - Returns heatmap data, peak days, weekly pattern, channel overlay",
+    "GET /api/pms/overbooking-heatmap?days=30/90 - Period selector works correctly",
+    "GET /api/pms/alert-rules - Lists all alert rules (2 existing rules found)",
+    "POST /api/pms/alert-rules - Creates new alert rule with all fields",
+    "DELETE /api/pms/alert-rules/{rule_id} - Deletes rule, returns 404 for non-existent",
+    "PATCH /api/pms/alert-rules/{rule_id}/toggle - Toggles rule active/inactive state",
+    "POST /api/pms/alert-rules/evaluate - Evaluates rules against metrics, returns alerts",
+    "GET /api/pms/alert-rules/history - Returns trigger history",
+    "GET /api/pms/noshow-prediction - Returns predictions with risk scores 0-100",
+    "GET /api/pms/noshow-prediction?days_ahead=7/14 - Days ahead selector works",
+    "Frontend: /no-show-analytics page loads with 4 tabs",
+    "Frontend: Tab navigation (Kanal Loss, Overbooking Heatmap, Kural Motoru, Tahmin) works",
+    "Frontend: Channel Loss tab shows summary cards, top 3 worst, detail table, trend chart",
+    "Frontend: Heatmap tab shows heatmap grid, peak days, weekly pattern, data quality warning",
+    "Frontend: Rule Engine tab shows rules list, add/delete/toggle buttons, evaluate button",
+    "Frontend: Prediction tab shows risk summary cards, predictions table, historical rates",
+    "Frontend: Data quality banner displays on each tab with appropriate confidence level",
+    "Frontend: Period select works on Channel Loss and Heatmap tabs"
+  ],
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/pms/alert-rules/history",
+        "issue": "Returns mixed alert types (observability alerts + rule engine alerts) from same collection. Frontend expects rule_name field but observability alerts have alert_type/title/message instead."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "RuleEngineTab - Tetikleme Gecmisi",
+        "issue": "Shows empty rows with just 'deger:' text when history contains observability alerts (which lack rule_name field). Should either filter to only show rule engine alerts or handle different alert types gracefully.",
+        "selector": "[data-testid='trigger-history-card']",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Auth page",
+        "issues": ["i18n translation keys showing as raw text (common.welcome, auth.signIn, etc.) - pre-existing issue from iteration 170/171"]
+      }
+    ]
+  },
+  "test_results": {
+    "backend": {
+      "test_channel_loss_default_30_days": "PASSED - 25 no-shows, 7500 TL loss, 2 channels",
+      "test_channel_loss_7_days": "PASSED - Period filter works",
+      "test_channel_loss_90_days": "PASSED - Period filter works",
+      "test_channel_loss_top3_worst_structure": "PASSED - Direct, Exely channels",
+      "test_channel_loss_channel_detail_structure": "PASSED - All fields present",
+      "test_heatmap_default_90_days": "PASSED - 0 overbookings (low confidence)",
+      "test_heatmap_30_days": "PASSED - Period filter works",
+      "test_heatmap_weekly_pattern_structure": "PASSED - 7 days, 2 weekend days",
+      "test_heatmap_peak_days_structure": "PASSED - Top 5 days",
+      "test_heatmap_data_quality": "PASSED - Low confidence due to no overbooking data",
+      "test_list_rules": "PASSED - 2 rules found",
+      "test_create_rule": "PASSED - Rule created with all fields",
+      "test_toggle_rule": "PASSED - Toggle on/off works",
+      "test_delete_rule": "PASSED - Delete and verify 404",
+      "test_delete_nonexistent_rule": "PASSED - Returns 404",
+      "test_evaluate_rules": "PASSED - 2 rules evaluated, 0 alerts (metrics below thresholds)",
+      "test_get_alert_history": "PASSED - History returned (mixed alert types)",
+      "test_prediction_default_7_days": "PASSED - 5 upcoming bookings",
+      "test_prediction_14_days": "PASSED - Days ahead filter works",
+      "test_prediction_summary_structure": "PASSED - 0 high, 0 medium, 5 low risk",
+      "test_prediction_item_structure": "PASSED - All fields present, risk_score 0-100",
+      "test_prediction_historical_rates": "PASSED - Channel and day-of-week rates",
+      "test_prediction_data_quality": "PASSED - High confidence (835 historical bookings)",
+      "test_cleanup_test_rules": "PASSED - Cleaned up TEST_ prefixed rules"
+    },
+    "frontend": {
+      "page_loads": "PASSED - No-Show Analytics page renders",
+      "4_tabs_present": "PASSED - Kanal Loss, Overbooking Heatmap, Kural Motoru, Tahmin",
+      "channel_loss_tab": "PASSED - Summary cards, top 3 worst, detail table, trend chart",
+      "heatmap_tab": "PASSED - Heatmap grid, peak days, weekly pattern, data quality warning",
+      "rules_engine_tab": "PASSED - Rules list, add/delete/toggle, evaluate button",
+      "prediction_tab": "PASSED - Risk summary, predictions table, historical rates",
+      "data_quality_banners": "PASSED - Displayed on all tabs",
+      "period_selector": "PASSED - Works on Channel Loss and Heatmap tabs",
+      "tab_navigation": "PASSED - All tabs clickable and switch content"
+    }
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_pms_analytics_4features.py",
+    "/app/test_reports/pytest/pytest_pms_analytics_4features.xml"
+  ],
+  "action_items": [
+    "MINOR: Fix Tetikleme Gecmisi (Trigger History) display in Rules Engine tab - currently shows empty rows for observability alerts that lack rule_name field. Either filter to only show rule engine alerts or handle different alert types."
+  ],
+  "critical_code_review_comments": [
+    "All 4 new features are fully functional with proper data quality indicators",
+    "Rule Engine operates in Shadow Mode (alert/suggestion only, no automatic writes) - this is correct behavior",
+    "No overbooking data exists in the system, so Heatmap shows low confidence warning - expected",
+    "Prediction shows 5 upcoming bookings all with low risk (scores 18-26) - all from Direct channel",
+    "Channel Loss shows Exely with 44.4% no-show rate (4 out of 9 bookings) vs Direct 2.6% (21 out of 808)"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_pms_analytics_4features.py - Created comprehensive test file for all 4 features"
+  ],
+  "success_rate": {
+    "backend": "100% (24/24 tests passed)",
+    "frontend": "100% (all UI elements verified)"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123"
+  },
+  "seed_data_creation": "None - used existing data (25 no-shows, 2 alert rules, 5 upcoming bookings)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "No-Show Analytics 4-feature page is fully functional. Channel Loss shows 7,500 TL loss from 25 no-shows (Direct: 21, Exely: 4). Overbooking Heatmap shows 0 overbookings (low confidence). Rule Engine has 2 pre-existing rules (Yuksek Overbooking, No-Show Orani Yuksek) - neither triggered because metrics are below thresholds. Prediction shows 5 upcoming bookings all low risk. Minor UI issue: Trigger History shows empty rows for non-rule-engine alerts.",
+  "data_summary": {
+    "channel_loss": {
+      "total_no_shows": 25,
+      "total_loss": "7,500 TL",
+      "channels": {
+        "Direct": {"no_shows": 21, "loss": "6,450 TL", "rate": "2.6%"},
+        "Exely": {"no_shows": 4, "loss": "1,050 TL", "rate": "44.4%"}
+      }
+    },
+    "overbooking": {
+      "total": 0,
+      "confidence": "low"
+    },
+    "rules": {
+      "count": 2,
+      "names": ["Yuksek Overbooking", "No-Show Orani Yuksek"],
+      "alerts_triggered": 0
+    },
+    "prediction": {
+      "upcoming_bookings": 5,
+      "high_risk": 0,
+      "medium_risk": 0,
+      "low_risk": 5,
+      "confidence": "high (835 historical bookings)"
+    }
+  }
+}

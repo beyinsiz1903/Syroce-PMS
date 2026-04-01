@@ -5,7 +5,7 @@
 - Password: demo123
 
 ## API URL
-- Preview: https://virtual-rooms-6.preview.emergentagent.com
+- Preview: https://revenue-insight-17.preview.emergentagent.com
 - Backend prefix: /api
 
 ## Mock HotelRunner Server
