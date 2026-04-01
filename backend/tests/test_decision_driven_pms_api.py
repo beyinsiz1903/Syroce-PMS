@@ -9,7 +9,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://revenue-insight-17.preview.emergentagent.com')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://rule-alerts.preview.emergentagent.com')
 
 
 class TestLogin:
