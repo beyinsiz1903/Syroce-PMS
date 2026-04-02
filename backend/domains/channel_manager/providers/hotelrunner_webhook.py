@@ -460,7 +460,13 @@ class ReservationPullScheduler:
         hr_id: str,
         safety_window_minutes: int = 5,
     ) -> dict[str, Any]:
-        """Pull UNDELIVERED reservations for a specific tenant, then confirm delivery (fire)."""
+        """Pull reservations for a specific tenant.
+
+        Two-phase strategy:
+          Phase A — fetch undelivered reservations → process → fire (confirm delivery)
+          Phase B — fetch ALL reservations → diff against DB → import missing ones
+                    (catches push-failed reservations that HR no longer marks undelivered)
+        """
         from core.tenant_db import set_tenant_context
         set_tenant_context(tenant_id)
 
@@ -470,7 +476,7 @@ class ReservationPullScheduler:
 
         pull_start = datetime.now(UTC)
 
-        # ── Phase 1: Fetch undelivered reservations ──────────────────
+        # ── Phase A: Fetch UNDELIVERED reservations ──────────────────
         all_reservations = []
         page = 1
         total_pages = 1
@@ -493,18 +499,12 @@ class ReservationPullScheduler:
             total_pages = result["data"].get("pages", 1)
             page += 1
 
-        if not all_reservations:
-            logger.info(f"[PULL] Tenant {tenant_id}: no undelivered reservations")
-            await _log_pull(tenant_id, "success", 0)
-            return {"success": True, "fetched": 0, "processed": 0, "fired": 0, "pages": total_pages}
-
-        # ── Phase 2: Explode multi-room & process through ingest pipeline ─
+        # Process undelivered + fire
         processed = 0
         fire_uids = []
 
         for res in all_reservations:
             try:
-                # Explode multi-room reservations into per-room payloads
                 sub_reservations = explode_multi_room_reservation(res)
                 rooms_count = len(res.get("rooms", []) or [])
                 if rooms_count > 1:
@@ -523,14 +523,13 @@ class ReservationPullScheduler:
                     except Exception as e:
                         logger.error(f"[PULL] Error processing sub-reservation {sub_res.get('hr_number')}: {e}")
 
-                # Collect message_uid for fire confirmation (once per parent reservation)
                 msg_uid = res.get("message_uid") or res.get("ruid") or res.get("uid")
                 if msg_uid:
                     fire_uids.append(msg_uid)
             except Exception as e:
                 logger.error(f"[PULL] Error processing reservation: {e}")
 
-        # ── Phase 3: Confirm delivery (fire) for processed reservations ──
+        # Fire (confirm delivery) for undelivered reservations
         fired = 0
         for uid in fire_uids:
             try:
@@ -543,7 +542,81 @@ class ReservationPullScheduler:
             except Exception as e:
                 logger.error(f"[PULL] Fire error for uid={uid}: {e}")
 
-        # ── Phase 4: Update cursor ──────────────────────────────────
+        # ── Phase B: Catch-up — fetch ALL reservations, import missing ─
+        catchup_imported = 0
+        try:
+            all_page = 1
+            all_total_pages = 1
+            known_ext_ids = set()
+
+            # Gather already-imported external_reservation_ids
+            async for doc in db.imported_reservations.find(
+                {"tenant_id": tenant_id, "provider": "hotelrunner"},
+                {"_id": 0, "external_reservation_id": 1},
+            ):
+                known_ext_ids.add(doc.get("external_reservation_id", ""))
+
+            while all_page <= all_total_pages:
+                result = await provider.get_reservations(
+                    undelivered=False,
+                    per_page=50,
+                    page=all_page,
+                )
+                if not result["success"]:
+                    break
+
+                page_reservations = result["data"].get("reservations", [])
+                all_total_pages = result["data"].get("pages", 1)
+
+                for res in page_reservations:
+                    hr_number = res.get("hr_number", "")
+                    rooms = res.get("rooms") or []
+                    # Check if ANY sub-reservation from this parent is missing
+                    if len(rooms) <= 1:
+                        if hr_number not in known_ext_ids:
+                            sub_reservations = explode_multi_room_reservation(res)
+                            for sub_res in sub_reservations:
+                                try:
+                                    await _persist_and_process(
+                                        tenant_id, _resolve_property_id(sub_res),
+                                        sub_res, "reservation_catchup",
+                                    )
+                                    catchup_imported += 1
+                                except Exception as e:
+                                    if "duplicate" not in str(e).lower():
+                                        logger.error(f"[PULL-CATCHUP] Error: {e}")
+                    else:
+                        # Multi-room: check each suffix
+                        any_missing = False
+                        for idx in range(len(rooms)):
+                            suffix_id = f"{hr_number}-{idx}" if idx > 0 else hr_number
+                            if suffix_id not in known_ext_ids:
+                                any_missing = True
+                                break
+
+                        if any_missing:
+                            sub_reservations = explode_multi_room_reservation(res)
+                            for sub_res in sub_reservations:
+                                sub_ext = sub_res.get("hr_number", "")
+                                if sub_ext not in known_ext_ids:
+                                    try:
+                                        await _persist_and_process(
+                                            tenant_id, _resolve_property_id(sub_res),
+                                            sub_res, "reservation_catchup",
+                                        )
+                                        catchup_imported += 1
+                                    except Exception as e:
+                                        if "duplicate" not in str(e).lower():
+                                            logger.error(f"[PULL-CATCHUP] Error: {e}")
+
+                all_page += 1
+
+            if catchup_imported > 0:
+                logger.info(f"[PULL-CATCHUP] Tenant {tenant_id}: {catchup_imported} missing reservations imported")
+        except Exception as e:
+            logger.error(f"[PULL-CATCHUP] Error during catch-up pull: {e}")
+
+        # ── Update cursor ──────────────────────────────────────────
         await db.hotelrunner_pull_cursors.update_one(
             {"tenant_id": tenant_id},
             {"$set": {
@@ -552,20 +625,22 @@ class ReservationPullScheduler:
                 "reservations_fetched": len(all_reservations),
                 "reservations_processed": processed,
                 "reservations_fired": fired,
+                "catchup_imported": catchup_imported,
                 "pages_fetched": total_pages,
             }},
             upsert=True,
         )
 
         duration_ms = int((datetime.now(UTC) - pull_start).total_seconds() * 1000)
-        await _log_pull(tenant_id, "success", processed, duration_ms=duration_ms)
+        await _log_pull(tenant_id, "success", processed + catchup_imported, duration_ms=duration_ms)
 
-        logger.info(f"[PULL] Tenant {tenant_id}: fetched {len(all_reservations)}, processed {processed}, fired {fired}")
+        logger.info(f"[PULL] Tenant {tenant_id}: fetched {len(all_reservations)}, processed {processed}, fired {fired}, catchup {catchup_imported}")
         return {
             "success": True,
             "fetched": len(all_reservations),
             "processed": processed,
             "fired": fired,
+            "catchup_imported": catchup_imported,
             "pages": total_pages,
         }
 
