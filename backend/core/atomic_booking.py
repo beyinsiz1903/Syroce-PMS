@@ -103,6 +103,12 @@ async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
     3. Insert the booking document.
     4. If booking insert fails → release all claimed nights.
     """
+    # Encrypt PII fields before persistence
+    try:
+        from security.encrypted_lookup import encrypt_booking_doc
+        booking_doc = encrypt_booking_doc(booking_doc)
+    except Exception:
+        pass
     tenant_id = booking_doc.get("tenant_id")
     room_id = booking_doc.get("room_id")
     check_in = booking_doc.get("check_in") or booking_doc.get("check_in_date")

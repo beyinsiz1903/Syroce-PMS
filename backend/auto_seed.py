@@ -24,6 +24,17 @@ def _uuid():
     return str(uuid.uuid4())
 
 
+def _encrypt_doc(doc: dict, collection: str) -> dict:
+    """Encrypt PII fields if field encryption service is available."""
+    try:
+        from security.field_encryption import get_field_encryption_service
+        svc = get_field_encryption_service()
+        return svc.encrypt_document(doc, collection=collection)
+    except Exception:
+        return doc
+
+
+
 async def auto_seed_if_empty(db):
     """Main entry point: seeds demo data only when users collection is empty."""
     user_count = await db.users.count_documents({})
@@ -100,6 +111,7 @@ async def auto_seed_if_empty(db):
         "hashed_password": pwd_context.hash(DEMO_PASSWORD),
         "created_at": _now().isoformat(),
     }
+    admin_user = _encrypt_doc(admin_user, "users")
     await db.users.insert_one(admin_user)
 
     # Extra staff users
@@ -110,7 +122,7 @@ async def auto_seed_if_empty(db):
         {"name": "Sales Manager", "email": "sales@hotel.com", "role": "sales"},
     ]
     for su in staff_users:
-        await db.users.insert_one({
+        staff_doc = {
             "id": _uuid(),
             "tenant_id": tenant_id,
             "agency_id": None,
@@ -123,7 +135,9 @@ async def auto_seed_if_empty(db):
             "email_verified_at": _now().isoformat(),
             "hashed_password": pwd_context.hash("staff123"),
             "created_at": _now().isoformat(),
-        })
+        }
+        staff_doc = _encrypt_doc(staff_doc, "users")
+        await db.users.insert_one(staff_doc)
 
     # ── 3. Rooms (30 oda) ─────────────────────────────────
     room_configs = [
@@ -207,6 +221,7 @@ async def auto_seed_if_empty(db):
         }
         guests.append(guest)
 
+    guests = [_encrypt_doc(g, "guests") for g in guests]
     await db.guests.insert_many(guests)
 
     # ── 5. Bookings (45 booking) ──────────────────────────
@@ -332,6 +347,7 @@ async def auto_seed_if_empty(db):
             "created_at": (_now() - timedelta(days=random.randint(0, 30))).isoformat(),
         })
 
+    bookings = [_encrypt_doc(b, "bookings") for b in bookings]
     await db.bookings.insert_many(bookings)
 
     # Update occupied room statuses in DB

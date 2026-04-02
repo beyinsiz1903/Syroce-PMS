@@ -28,6 +28,11 @@ from models.schemas import (
     User,
     UserLogin,
 )
+from security.encrypted_lookup import (
+    build_user_email_query,
+    decrypt_user_doc,
+    encrypt_user_doc,
+)
 
 try:
     from cache_manager import cached
@@ -74,7 +79,7 @@ async def setup_make_super_admin(request: MakeSuperAdminRequest):
 
     # Update ALL users with this email to super_admin (all tenants)
     result = await db.users.update_many(
-        {"email": request.email},
+        build_user_email_query(request.email),
         {"$set": {"role": "super_admin"}}
     )
 
@@ -134,12 +139,12 @@ async def quick_make_super_admin(
 
     # Try exact match first
     result = await db.users.update_many(
-        {"email": email},
+        build_user_email_query(email),
         {"$set": {"role": "super_admin"}}
     )
 
     if result.matched_count == 0:
-        # Try case-insensitive
+        # Try case-insensitive (only for plaintext emails)
         result = await db.users.update_many(
             {"email": {"$regex": f"^{email}$", "$options": "i"}},
             {"$set": {"role": "super_admin"}}
@@ -181,7 +186,7 @@ async def list_all_users_for_debug(secret: str = "DEBUG_2024"):
 
 @router.post("/auth/register", response_model=TokenResponse)
 async def register_tenant(data: TenantRegister):
-    existing = await db.users.find_one({'email': data.email})
+    existing = await db.users.find_one(build_user_email_query(data.email))
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -208,6 +213,7 @@ async def register_tenant(data: TenantRegister):
     user_dict = user.model_dump()
     user_dict['hashed_password'] = hash_password(data.password)
     user_dict['created_at'] = user_dict['created_at'].isoformat()
+    user_dict = encrypt_user_doc(user_dict)
     await db.users.insert_one(user_dict)
 
     token = create_token(user.id, tenant.id)
@@ -215,7 +221,7 @@ async def register_tenant(data: TenantRegister):
 
 @router.post("/auth/register-guest", response_model=TokenResponse)
 async def register_guest(data: GuestRegister):
-    existing = await db.users.find_one({'email': data.email})
+    existing = await db.users.find_one(build_user_email_query(data.email))
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -229,6 +235,7 @@ async def register_guest(data: GuestRegister):
     user_dict = user.model_dump()
     user_dict['hashed_password'] = hash_password(data.password)
     user_dict['created_at'] = user_dict['created_at'].isoformat()
+    user_dict = encrypt_user_doc(user_dict)
     await db.users.insert_one(user_dict)
 
     prefs = NotificationPreferences(user_id=user.id)
@@ -250,14 +257,15 @@ async def login(data: UserLogin):
     if cached:
         return TokenResponse(**cached)
 
-    user_doc = await db.users.find_one({'email': data.email})
+    user_doc = await db.users.find_one(build_user_email_query(data.email))
     if user_doc:
         user_doc.pop('_id', None)
+        user_doc = decrypt_user_doc(user_doc)
         if 'id' not in user_doc:
             import uuid
             user_doc['id'] = str(uuid.uuid4())
             await db.users.update_one(
-                {'email': data.email},
+                build_user_email_query(data.email),
                 {'$set': {'id': user_doc['id']}}
             )
 
@@ -454,7 +462,7 @@ class ResetPasswordRequest(BaseModel):
 async def request_verification_code(data: EmailVerificationRequest):
     """E-posta doğrulama kodu gönder"""
     # E-posta daha önce kullanılmış mı kontrol et
-    existing = await db.users.find_one({'email': data.email})
+    existing = await db.users.find_one(build_user_email_query(data.email))
     if existing:
         raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kayıtlı")
 
@@ -512,7 +520,7 @@ async def verify_email_and_register(data: VerifyCodeRequest):
         raise HTTPException(status_code=400, detail="Doğrulama kodu süresi dolmuş. Lütfen yeni kod isteyin")
 
     # E-posta zaten kullanılmış mı kontrol et (tekrar)
-    existing = await db.users.find_one({'email': data.email})
+    existing = await db.users.find_one(build_user_email_query(data.email))
     if existing:
         raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kayıtlı")
 
@@ -545,6 +553,7 @@ async def verify_email_and_register(data: VerifyCodeRequest):
         user_dict['created_at'] = user_dict['created_at'].isoformat()
         user_dict['email_verified'] = True
         user_dict['email_verified_at'] = datetime.now(UTC).isoformat()
+        user_dict = encrypt_user_doc(user_dict)
         await db.users.insert_one(user_dict)
 
         # Doğrulama kaydını sil
@@ -572,6 +581,7 @@ async def verify_email_and_register(data: VerifyCodeRequest):
         user_dict['created_at'] = user_dict['created_at'].isoformat()
         user_dict['email_verified'] = True
         user_dict['email_verified_at'] = datetime.now(UTC).isoformat()
+        user_dict = encrypt_user_doc(user_dict)
         await db.users.insert_one(user_dict)
 
         prefs = NotificationPreferences(user_id=user.id)
@@ -591,7 +601,7 @@ async def verify_email_and_register(data: VerifyCodeRequest):
 async def forgot_password(data: ForgotPasswordRequest):
     """Şifre sıfırlama kodu gönder"""
     # Kullanıcı var mı kontrol et
-    user = await db.users.find_one({'email': data.email})
+    user = await db.users.find_one(build_user_email_query(data.email))
     if not user:
         # Güvenlik için başarılı mesajı döndür (e-posta enumeration saldırısını önle)
         return {
@@ -649,14 +659,14 @@ async def reset_password(data: ResetPasswordRequest):
         raise HTTPException(status_code=400, detail="Sıfırlama kodu süresi dolmuş. Lütfen yeni kod isteyin")
 
     # Kullanıcıyı bul
-    user = await db.users.find_one({'email': data.email})
+    user = await db.users.find_one(build_user_email_query(data.email))
     if not user:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
 
     # Şifreyi güncelle
     new_hashed_password = hash_password(data.new_password)
     await db.users.update_one(
-        {'email': data.email},
+        build_user_email_query(data.email),
         {
             '$set': {
                 'hashed_password': new_hashed_password,

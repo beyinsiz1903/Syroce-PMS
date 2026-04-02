@@ -54,6 +54,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     """Decode JWT token and return the authenticated User."""
     # Import here to avoid circular imports with schemas
     from models.schemas import User
+    from security.encrypted_lookup import decrypt_user_doc
 
     try:
         token = credentials.credentials
@@ -69,6 +70,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
         if not user_doc:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+        user_doc = decrypt_user_doc(user_doc)
 
         if 'id' not in user_doc:
             user_doc['id'] = user_doc.get('user_id', user_id)

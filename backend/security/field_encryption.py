@@ -264,6 +264,11 @@ class FieldEncryptionService:
                     elif doc.get(k) != v:
                         final_update[k] = v
 
+                # Always mark as processed even if no PII fields had data
+                if "_enc_version" not in final_update:
+                    final_update["_enc_version"] = 1
+                    final_update["_encrypted_at"] = datetime.now(UTC).isoformat()
+
                 if final_update:
                     await col.update_one({"_id": doc_id}, {"$set": final_update})
                 processed += 1

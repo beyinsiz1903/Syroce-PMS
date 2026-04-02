@@ -14,6 +14,13 @@ from core.database import db
 from core.helpers import create_audit_log, require_module
 from core.security import get_current_user
 from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
+
+try:
+    from security.encrypted_lookup import decrypt_booking_doc
+    _decrypt_booking = decrypt_booking_doc
+except Exception:
+    def _decrypt_booking(doc):
+        return doc
 from models.enums import (
     BookingStatus,
     CancellationPolicyType,

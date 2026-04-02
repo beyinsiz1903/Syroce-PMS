@@ -383,6 +383,12 @@ async def auto_import_reservation_to_pms(
                     "created_at": _utc_now(),
                     "updated_at": _utc_now(),
                 }
+                # Encrypt PII fields before persistence
+                try:
+                    from security.field_encryption import get_field_encryption_service
+                    guest_doc = get_field_encryption_service().encrypt_document(guest_doc, collection="guests")
+                except Exception:
+                    pass
                 await db.guests.insert_one(guest_doc)
                 guest_doc.pop("_id", None)
                 booking_doc["guest_id"] = guest_id

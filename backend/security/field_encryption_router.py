@@ -79,6 +79,42 @@ async def trigger_migration(
     return {"status": "ok", "migration": result}
 
 
+@router.post("/migrate-all")
+async def trigger_migration_all(
+    batch_size: int = 100,
+    user: User = Depends(_require_ops_role),
+):
+    """Trigger encryption migration for ALL configured collections."""
+    svc = get_field_encryption_service()
+    collections = list(svc.get_config()["collections"].keys())
+
+    await system_db["field_encryption_audit"].insert_one({
+        "action": "migration_all_triggered",
+        "collections": collections,
+        "actor": user.email,
+        "actor_role": user.role,
+        "batch_size": batch_size,
+        "timestamp": datetime.now(UTC).isoformat(),
+    })
+
+    results = {}
+    for col_name in collections:
+        results[col_name] = await svc.migrate_collection(
+            system_db,
+            col_name,
+            batch_size=batch_size,
+        )
+
+    # Ensure hash indexes exist
+    indexes = await svc.ensure_hash_indexes(system_db)
+
+    return {
+        "status": "ok",
+        "migrations": results,
+        "indexes_created": indexes,
+    }
+
+
 @router.get("/progress")
 async def get_migration_progress(user: User = Depends(_require_ops_role)):
     """Return migration progress for all collections."""

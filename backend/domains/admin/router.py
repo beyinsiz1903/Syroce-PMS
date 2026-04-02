@@ -22,8 +22,21 @@ require_super_admin = require_super_admin_guard()
 from domains.admin.subscription_models import PLAN_MODULE_DEFAULTS, SUBSCRIPTION_PLANS, SubscriptionTier, get_all_module_keys, get_feature_comparison, get_plan_default_modules
 from models.enums import UserRole
 from models.schemas import Tenant, TenantRegister, UpdateUserRoleRequest, User
+from security.encrypted_lookup import (
+    build_user_email_query,
+    decrypt_user_doc,
+    encrypt_user_doc,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _svc_enc():
+    try:
+        from security.field_encryption import get_field_encryption_service
+        return get_field_encryption_service()
+    except Exception:
+        return None
 
 ROLES_BY_TIER = {
     "basic": ["admin", "front_desk", "housekeeping"],
@@ -210,7 +223,7 @@ async def create_tenant(
         raise HTTPException(status_code=400, detail="Bu email adresi ile kayıtlı bir otel zaten var")
 
     # Also check if user email is taken
-    existing_user = await db.users.find_one({"email": payload.email})
+    existing_user = await db.users.find_one(build_user_email_query(payload.email))
     if existing_user:
         raise HTTPException(status_code=400, detail="Bu email adresi zaten bir kullanıcı tarafından kullanılıyor")
 
@@ -267,6 +280,7 @@ async def create_tenant(
     user_dict['created_at'] = user_dict['created_at'].isoformat()
     # Rename password_hash to hashed_password for login compatibility
     user_dict['hashed_password'] = user_dict.pop('password_hash', hashed_password)
+    user_dict = encrypt_user_doc(user_dict)
     await db.users.insert_one(user_dict)
 
     return {
@@ -293,13 +307,22 @@ async def list_all_users(
 
     query = {}
     if email_filter:
-        query['email'] = {'$regex': email_filter, '$options': 'i'}
+        svc = _svc_enc()
+        if svc:
+            email_hash = svc.compute_search_hash(email_filter)
+            query['$or'] = [
+                {'_hash_email': email_hash},
+                {'email': {'$regex': email_filter, '$options': 'i'}},
+            ]
+        else:
+            query['email'] = {'$regex': email_filter, '$options': 'i'}
     if role_filter:
         query['role'] = role_filter
     if tenant_id_filter:
         query['tenant_id'] = tenant_id_filter
 
-    users = await db.users.find(query, {'_id': 0, 'hashed_password': 0, 'password_hash': 0}).to_list(100)
+    users_raw = await db.users.find(query, {'_id': 0, 'hashed_password': 0, 'password_hash': 0}).to_list(100)
+    users = [decrypt_user_doc(u) for u in users_raw]
 
     return {
         "users": users,
@@ -610,10 +633,11 @@ async def admin_list_tenant_team(
     if not tenant:
         raise HTTPException(status_code=404, detail="Otel bulunamadı")
 
-    users = await db.users.find(
+    users_raw = await db.users.find(
         {"tenant_id": tenant_id},
         {"_id": 0, "hashed_password": 0, "password_hash": 0, "password": 0},
     ).to_list(200)
+    users = [decrypt_user_doc(u) for u in users_raw]
 
     return {"users": users, "count": len(users), "tenant_id": tenant_id}
 
@@ -629,7 +653,7 @@ async def admin_add_tenant_team_member(
     if not tenant:
         raise HTTPException(status_code=404, detail="Otel bulunamadı")
 
-    existing = await db.users.find_one({"email": payload.email})
+    existing = await db.users.find_one(build_user_email_query(payload.email))
     if existing:
         raise HTTPException(status_code=400, detail="Bu email adresi zaten kayıtlı")
 
@@ -658,6 +682,7 @@ async def admin_add_tenant_team_member(
         "hashed_password": hashed,
         "created_at": datetime.now(UTC).isoformat(),
     }
+    new_user = encrypt_user_doc(new_user)
     await db.users.insert_one(new_user)
 
     return {
@@ -1069,10 +1094,11 @@ async def list_hotel_team(current_user: User = Depends(get_current_user)):
     if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
         raise HTTPException(status_code=403, detail="Sadece yöneticiler ekip üyelerini görebilir")
 
-    users = await db.users.find(
+    users_raw = await db.users.find(
         {"tenant_id": current_user.tenant_id},
         {"_id": 0, "hashed_password": 0, "password_hash": 0, "password": 0}
     ).to_list(200)
+    users = [decrypt_user_doc(u) for u in users_raw]
 
     # Get tier info
     tenant = await db.tenants.find_one({"id": current_user.tenant_id})
@@ -1135,7 +1161,7 @@ async def add_team_member(
         )
 
     # Check duplicate email
-    existing = await db.users.find_one({"email": payload.email})
+    existing = await db.users.find_one(build_user_email_query(payload.email))
     if existing:
         raise HTTPException(status_code=400, detail="Bu email adresi zaten kayıtlı")
 
@@ -1151,6 +1177,7 @@ async def add_team_member(
         "hashed_password": hashed,
         "created_at": datetime.now(UTC).isoformat(),
     }
+    new_user = encrypt_user_doc(new_user)
     await db.users.insert_one(new_user)
 
     return {
