@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## 2026-04-02 - Calendar Occupancy Fix & Compact UI
+### Fixed
+- **Critical Bug: Occupancy counter excluded unassigned reservations** — Room type header rows (e.g., Deluxe 0/8) now count both assigned and unassigned bookings. Previously, unassigned bookings (room_id=null) were excluded because the filter required a matching room object.
+- **Root Cause**: `CalendarGrid.jsx` occupancy filter only looked at bookings with a valid `room_id` that matched a room in the room list. Unassigned bookings (room_id=null) were filtered out.
+
+### Changed
+- **Compact calendar grid**: Cell width 96px → 72px, booking bar height 46px → 30px, room row height 52px → 38px, room label width 128px → 112px
+- **Bold reservation names**: Guest names on booking bars use `font-extrabold` (font-weight: 800)
+- **Three-state occupancy dots**: Green (empty), orange (partially occupied), red (full) — was binary green/red
+- **Smaller UI elements**: Date header text, A/D/S status badges, and group/AI indicators all reduced in size
+
+### Verified
+- Testing agent iteration_178: 100% pass rate (10/10 tests)
+- Deluxe correctly shows 3/8 on dates with 3 unassigned bookings (was 0/8)
+- Suite correctly shows 1/4 on dates with 1 unassigned booking (was 0/4)
+- Drag & drop still functional (13 draggable elements confirmed)
+
+## 2026-04-02 - HotelRunner Sync Improvements
+### Added
+- **30-second HR polling**: Pull scheduler interval decreased from 5 min to 30 sec
+- **Unassigned room imports**: OTA bookings arrive as unassigned (room_id=None) for manual blocking
+- **Import notifications**: notification_events_service.emit() on successful import
+- **Catch-up pull**: Fetches all recent reservations (not just undelivered) to prevent missed bookings
+
+
+# CHANGELOG
+
 ## 2026-03-31 - HotelRunner Oda Esleme (Room Mapping) UI
 ### Added
 - **Eslemeler Tab**: Full room mapping UI - HotelRunner odalarini PMS oda tiplerine esleme

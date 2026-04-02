@@ -80,6 +80,19 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - **Feature: Guest auto-creation** — Import bridge now creates guest records when importing OTA reservations (with duplicate detection by email/phone)
 - **End-to-end verified**: Webhook → Pipeline → Import Bridge → Atomic Booking → Guest Creation
 
+### HotelRunner Sync & Calendar Improvements (Apr 2026)
+- **Feature: 30-second polling** — HR pull scheduler interval decreased from 5 min to 30 sec
+- **Feature: Unassigned room imports** — OTA bookings now arrive as unassigned (room_id=None) for manual blocking
+- **Feature: Import notifications** — notification_events_service.emit() fires on successful reservation import
+- **Feature: Catch-up pull** — Scheduler fetches all recent reservations (not just undelivered) to prevent dropped bookings during HR push failures
+
+### Calendar Occupancy Fix & Compact UI (Apr 2026)
+- **Bug Fix: Occupancy counter excluded unassigned bookings** — Room type header (X/Y indicator) now counts both assigned and unassigned bookings for accurate occupancy display
+- **UI: Compact calendar grid** — Cell width reduced from 96px to 72px, booking bar height from 46px to 30px, room rows from 52px to 38px
+- **UI: Bold reservation names** — Guest names on booking bars now use font-extrabold (font-weight: 800)
+- **UI: Three-state occupancy indicator** — Green (empty), orange (partial), red (full) dot colors in room type header
+
+
 ## Prioritized Backlog
 
 ### P1 (High)
@@ -91,6 +104,7 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 ### P3 (Low)
 - Rate Manager quick toggle (Exely/HotelRunner)
 - Legacy HR v1 connector removal (after full verification)
+- Channel Manager Dashboard — recent reservations, failed imports, connection health metrics
 
 ## Key API Endpoints
 - GET /api/security/pii/strict-mode/config
@@ -110,3 +124,4 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 ## Critical Constraints
 - All responses in Turkish
 - Database was wiped clean for fresh testing (Apr 2026)
+- Latest test report: /app/test_reports/iteration_178.json
