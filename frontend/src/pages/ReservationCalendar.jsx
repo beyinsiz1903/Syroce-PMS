@@ -668,16 +668,20 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           <div className="flex items-center justify-between text-xs text-gray-500">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#22c55e' }}></div>
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#16a34a' }}></div>
                 <span>Iceride (Check-in)</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#ef4444' }}></div>
-                <span>Gecmis / Check-out</span>
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#f97316' }}></div>
+                <span>Bugun Gelis</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#9ca3af' }}></div>
-                <span>Gelecek (C/in yapilmamis)</span>
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#2563eb' }}></div>
+                <span>Onaylanmis</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#f87171' }}></div>
+                <span>Gecmis / Check-out</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-green-500"></div>

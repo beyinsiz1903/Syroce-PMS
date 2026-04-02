@@ -103,13 +103,13 @@ export const calculateBookingSpan = (booking, startDate, daysToShow) => {
 // Status color mapping
 export const getStatusColor = (status) => {
   const colors = {
-    confirmed: 'bg-blue-500',
-    checked_in: 'bg-green-500',
-    checked_out: 'bg-gray-400',
+    confirmed: 'bg-blue-600',
+    checked_in: 'bg-green-600',
+    checked_out: 'bg-slate-400',
     cancelled: 'bg-red-500',
-    guaranteed: 'bg-purple-500'
+    guaranteed: 'bg-cyan-600'
   };
-  return colors[status] || 'bg-gray-500';
+  return colors[status] || 'bg-blue-500';
 };
 
 // Market segment color
@@ -179,14 +179,26 @@ export const getOTAInfo = (channel) => {
 };
 
 // Status-based booking color for calendar bars
-// green = checked_in (in-house), red = checked_out / past, gray = future (not checked in yet)
+// blue = confirmed, green = checked_in (in-house), red tint = checked_out, teal = guaranteed
 export const getBookingStatusColor = (booking) => {
   const status = booking.status;
   const today = new Date().toISOString().slice(0, 10);
+  const checkIn = toDateStringUTC(booking.check_in);
   const checkOut = toDateStringUTC(booking.check_out);
-  if (status === 'checked_in') return { bg: '#22c55e', border: '#16a34a' };
-  if (status === 'checked_out' || checkOut <= today) return { bg: '#ef4444', border: '#dc2626' };
-  return { bg: '#9ca3af', border: '#6b7280' };
+  // In-house: vibrant green
+  if (status === 'checked_in') return { bg: '#16a34a', border: '#15803d' };
+  // Departed: muted slate
+  if (status === 'checked_out') return { bg: '#94a3b8', border: '#64748b' };
+  // Past but not checked out: soft red
+  if (checkOut <= today) return { bg: '#f87171', border: '#ef4444' };
+  // Guaranteed: vivid teal
+  if (status === 'guaranteed') return { bg: '#0891b2', border: '#0e7490' };
+  // Arriving today: vivid orange
+  if (checkIn === today && status === 'confirmed') return { bg: '#f97316', border: '#ea580c' };
+  // Confirmed future: vibrant blue
+  if (status === 'confirmed') return { bg: '#2563eb', border: '#1d4ed8' };
+  // Default: blue
+  return { bg: '#3b82f6', border: '#2563eb' };
 };
 
 // Source-based booking card color mapping (legacy, kept for compatibility)

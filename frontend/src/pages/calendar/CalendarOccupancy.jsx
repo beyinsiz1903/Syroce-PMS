@@ -25,7 +25,7 @@ const CalendarOccupancy = ({ dateRange, getOccupancyForDate, showDeluxePanel, on
             const occ = getOccupancyForDate(date);
             return (
               <div key={idx} className="flex-1 text-center">
-                <span className={`text-[10px] font-bold ${occ >= 50 ? 'text-orange-600' : occ > 0 ? 'text-blue-500' : 'text-gray-400'}`}>
+                <span className={`text-[10px] font-bold ${occ >= 80 ? 'text-red-600' : occ >= 50 ? 'text-orange-600' : occ > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
                   {occ > 0 ? occ : '0'}
                 </span>
               </div>
@@ -36,8 +36,8 @@ const CalendarOccupancy = ({ dateRange, getOccupancyForDate, showDeluxePanel, on
         <svg className="w-full" style={{ height: '60px', marginTop: '20px' }} viewBox={`0 0 ${dateRange.length * 100} 60`} preserveAspectRatio="none">
           <defs>
             <linearGradient id="occGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#60A5FA" stopOpacity="0.3" />
-              <stop offset="100%" stopColor="#60A5FA" stopOpacity="0.05" />
+              <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.35" />
+              <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.05" />
             </linearGradient>
           </defs>
           {/* Area fill */}
@@ -80,7 +80,7 @@ const CalendarOccupancy = ({ dateRange, getOccupancyForDate, showDeluxePanel, on
               return path;
             })()}
             fill="none"
-            stroke="#60A5FA"
+            stroke="#3b82f6"
             strokeWidth="2.5"
           />
         </svg>

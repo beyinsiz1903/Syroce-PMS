@@ -132,7 +132,7 @@ const CalendarGrid = ({
                 <div
                   key={idx}
                   className={`${CELL_CLS} flex-shrink-0 py-1 border-r text-center ${
-                    today ? 'bg-blue-50 border-blue-200' : past ? 'bg-gray-200/70 border-gray-300' : weekend ? 'bg-orange-50 border-gray-200' : 'bg-white border-gray-200'
+                    today ? 'bg-blue-50 border-blue-200' : past ? 'bg-gray-100/60 border-gray-200' : weekend ? 'bg-orange-50 border-gray-200' : 'bg-white border-gray-200'
                   }`}
                   data-testid={`date-header-${dayNum}`}
                 >
@@ -205,7 +205,7 @@ const CalendarGrid = ({
                           <div
                             key={idx}
                             className={`${CELL_CLS} flex-shrink-0 px-0.5 py-1 border-r text-center text-[9px] ${
-                              past ? 'bg-gray-200/50 border-gray-300' : weekend ? 'bg-amber-100/60 border-amber-200' : 'bg-amber-50 border-amber-200'
+                              past ? 'bg-gray-100/70 border-gray-200' : weekend ? 'bg-blue-100/50 border-blue-200' : 'bg-blue-50/80 border-blue-200'
                             }`}
                           >
                             <div className={`font-medium truncate ${past ? 'text-gray-400' : 'text-gray-700'}`}>
@@ -323,12 +323,12 @@ const CalendarGrid = ({
                               <div
                                 key={idx}
                                 className={`${CELL_CLS} flex-shrink-0 border-r border-gray-100 relative cursor-pointer transition-all ${
-                                  past ? 'bg-gray-200/60' : isToday(date) ? 'bg-blue-50/60' : isWeekend(date) ? 'bg-orange-50/50' : 'bg-white hover:bg-gray-50'
+                                  past ? 'bg-gray-100/50' : isToday(date) ? 'bg-blue-50/60' : isWeekend(date) ? 'bg-orange-50/30' : 'bg-white hover:bg-gray-50'
                                 } ${isDragOver ? 'bg-emerald-50 ring-1 ring-emerald-400' : ''}
                                 ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''}`}
                                 style={{
                                   height: `${CELL_H}px`, minHeight: `${CELL_H}px`, overflow: 'visible',
-                                  ...(past && !roomBlock ? { backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 8px, rgba(0,0,0,0.03) 8px, rgba(0,0,0,0.03) 9px)' } : {})
+                                  ...(past && !roomBlock ? { backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 8px, rgba(0,0,0,0.02) 8px, rgba(0,0,0,0.02) 9px)' } : {})
                                 }}
                                 onClick={() => !booking && !roomBlock && onCellClick(room.id, date)}
                                 onDragOver={(e) => onDragOver(e, room.id, date)}
