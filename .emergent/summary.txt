@@ -1,25 +1,26 @@
-<analysis>**original_problem_statement**: Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant isolation, PII strict mode tracking, and comprehensive multi-language support. User requested taking HotelRunner out of shadow mode to enable live automatic reservation sync and data mapping into the PMS. PRODUCT REQUIREMENTS: Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant isolation, PII strict mode tracking, and comprehensive multi-language support.
+<analysis>**original_problem_statement**: Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant isolation, PII strict mode tracking, and comprehensive multi-language support. User reported a critical issue where reservations created in HotelRunner (visible on the HR dashboard) were not dropping into the PMS after taking the system out of shadow mode. PRODUCT REQUIREMENTS: Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant isolation, PII strict mode tracking, and comprehensive multi-language support.
 
 **User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın. User explicitly requires all responses in Turkish.)
 
 **what currently exists?** 
-A fully functional Multi-tenant SaaS PMS + Channel Manager. HotelRunner v2 connector is now LIVE (Shadow mode disabled, writes enabled). Room and Rate Plan mappings are configured. The ingest pipeline correctly normalizes data, respects PII Strict Mode, processes imports without double-claiming, atomically creates PMS bookings and guest records, and fires outbox events. The database has been cleanly wiped (0 test bookings, 0 test guests) so the user has an empty calendar for manual live testing. 
+A fully functional Multi-tenant SaaS PMS + Channel Manager with HotelRunner v2 connector LIVE. A critical bug preventing multi-room reservations from syncing has been resolved. The ingest pipeline now correctly explodes multi-room bookings from a single HotelRunner reservation into distinct, individual PMS bookings, assigns them to separate available rooms without collision, and atomically locks the room-nights. A full manual resync was run, successfully mapping all 7 of the user's test reservations into the DB.
 
 **Last working item**: 
-    - Last item agent was working: Transitioning HotelRunner out of shadow mode, debugging and fixing the automatic ingest pipeline to handle  requirements, resolving an import double-claim bug, correctly mapping PMS data (room type, channel, external IDs), and resetting the database to a clean slate. 
-    - Status: USER VERIFICATION PENDING (User replied devam, implying they are ready for the next feature or they are manually testing in the background).
-    - Agent Testing Done: Y (Agent self-tested via bash python scripts, full end-to-end webhook to DB booking creation verified).
-    - Which testing method agent to use? NA (Testing for this component is complete).
+    - Last item agent was working: Debugging the missing HotelRunner reservations. The agent identified two major issues: 1)  was only parsing the first room () of multi-room reservations, dropping the rest. 2) The room assignment logic in  was reusing the same available room ID for concurrent bookings of the same room type, causing atomic lock unique-constraint failures. The agent fixed both, added a  endpoint to force-fetch delivered reservations, and successfully re-imported all 7 test bookings.
+    - Status: USER VERIFICATION PENDING
+    - Agent Testing Done: Y (Agent extensively tested via python DB scripts, confirming 7/7 bookings were created, totals matched exactly 25,300 TRY, and distinct rooms like 123, 124, 103, 101 were assigned).
+    - Which testing method agent to use? NA (Testing for this bug fix is complete on the backend).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-  *None. All ingest pipeline bugs (Tenant Context missing, import double-claim, mapping errors) were resolved.*
+  *None. The multi-room sync issue and room assignment collision bug have been resolved.*
 
 **In progress Task List**: 
   *None.*
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
+    - P1: Document the newly added  manual trigger endpoint in / (Main agent missed this before pausing).
     - P2: Complete Data Encryption - Encrypt the  and  collections to 100% (currently 0%,  is at 99.6%).
     - P3: Add a quick toggle button at the top of the rate manager pages to easily switch between Exely and HotelRunner screens.
     
@@ -28,12 +29,10 @@ A fully functional Multi-tenant SaaS PMS + Channel Manager. HotelRunner v2 conne
     - Enhancement/Backlog: Channel Manager Dashboard to view recent reservations, failed imports, and connection health metrics.
 
 **Completed work in this session**
-- Disabled Shadow Mode for HotelRunner v2 ( write_enabled=true). (DONE)
-- Created Room Type and Rate Plan mappings between HotelRunner provider codes and internal PMS codes. (DONE)
-- Fixed P0  bugs by injecting  context into , , and . (DONE)
-- Fixed race condition / double-claim issue in  and . (DONE)
-- Corrected reservation payload mappings (mapped  correctly, set , mapped , and generated  record on import). (DONE)
-- Cleaned the database of all test pipeline events and bookings to provide a clean test environment. (DONE)
+- Fixed multi-room reservation parsing in  and  to explode single HR reservations into multiple pipeline events using suffixes (e.g., ). (DONE)
+- Fixed  room assignment logic to select distinct available rooms for concurrent bookings of the same type, preventing  collisions. (DONE)
+- Created a manual  endpoint to bypass the undelivered flag and force-fetch all HR reservations. (DONE)
+- Cleaned the DB and executed the full resync, successfully mapping 7 out of 7 reservations into the PMS. (DONE)
 
 **Earlier issues found/mentioned but not fixed**
    *None*
@@ -47,59 +46,58 @@ A fully functional Multi-tenant SaaS PMS + Channel Manager. HotelRunner v2 conne
 
 
 **Key Technical Concepts**
-- Import Bridge Service: Asynchronous conversion of OTA reservations (lineage) into canonical PMS bookings.
-- Outbox Pattern: Atomic event dispatching upon successful booking creations ().
-- PII Strict Mode / Tenant Isolation: Enforced at database query levels requiring  context for all operations.
+- **Multi-room Explosion**: Webhook and pull schedulers now break down multi-room OTA arrays into distinct pipeline events before normalization.
+- **Atomic Booking Room Locking**:  enforces overbooking prevention. The bridge service now properly iterates through distinct available rooms instead of defaulting to the first match.
 
 **key DB schema**
   - , : Crosswalk tables for OTAs.
-  - : State machine tracking of ingest status (, , ).
+  - : State machine tracking of ingest status.
   - , : Canonical PMS collections.
+  - : Stores unique night-date locks per room.
 
 **changes in tech stack**
   - None
 
 **All files of reference** 
+  -  (Multi-room explosion logic, resync endpoint added)
+  -  (Room amount normalization mapping fixed)
+  -  (Room assignment collision fix)
   - 
-  -  (Tenant context fixes)
-  -  (Tenant context fixes)
-  -  (Tenant context, mapping fixes, atomic fixes)
-  -  (Concurrency double-claim fix)
-  -  (Updated with progress)
 
 **Areas that need refactoring**: 
   - None currently.
 
 **key api endpoints**
 -  (Webhook intake)
+-  (Full manual resync added in this session)
 
 **Critical Info for New Agent** 
 - **Language Constraint:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-- **HotelRunner is Live:** Do not turn Shadow Mode back on. The user is actively testing live synchronization.
-- **Database Cleanliness:** The user explicitly requested an empty calendar for testing. Do not create test records in the database without cleaning them up immediately after your tests.
-- **Current State:** The user simply said devam (continue) at the end of the last session. You should start by presenting the remaining tasks (e.g., Data Encryption, Dashboard, or Toggle Buttons) and ask them what they want to tackle next using .
+- **Data State:** The database currently holds exactly 7 correct, live bookings from the manual resync. **DO NOT wipe the DB**; the user needs to log into the frontend to visually verify these 7 bookings.
+- **Pending User Input:** The agent just sent an  message confirming the success of the 7 bookings. Wait for the user's response to confirm they see it in the UI before moving to the next task (like Data Encryption or UI toggles).
 
 **documents and test reports created in this job** 
-  -  (Updated)
+  -  (Update pending by next agent)
   -  (Unchanged, holds valid credentials)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - *User:* hotelrunner ı shadow moddan çıkaralım normal akışa çevirelim rezervasyonlar düşsün... (Requested taking HR out of shadow mode). (Completed)
- - *Agent:* (Analyzed, mapped data, tested flow, encountered and fixed 5 bugs related to strict tenant mode, race conditions, and missing data mapping). (Completed)
- - *Agent:* (Cleaned DB, restarted server, ran linters, updated PRD, used finish tool). (Completed)
- - *User:* devam (Continue). -> **Pending Action**: Present the next prioritized tasks to the user and ask what they would like to focus on next.
+ - *User:* hotelrunner ekranına fiyat ve müsaitlikler hatasız gitti ama hotelrunner dan oluşturduğum rezervasyonlar pms e düşmedi (Reported HR reservations not dropping to PMS).
+ - *Agent:* (Investigated, found only 1 booking).
+ - *User:* (Shared screenshot of HR Dashboard showing 7 distinct reservation lines).
+ - *Agent:* (Analyzed image, realized HR multi-room bookings were being swallowed by  normalizer limitation. Fixed normalizer, fixed DB atomic room collision, created full resync endpoint. Cleared DB, ran resync, verified 7/7 success).
+ - *Agent:* (Sent  to inform user of the 7 successfully synced bookings and ask for next steps). -> **Pending Action**: Await user confirmation.
 
 **Project Health Check:**
   - Broken: None
-  - Mocked: Legacy HotelRunner server mapped to localhost port 9999.
+  - Mocked: Legacy HotelRunner server mapped to localhost port 9999 (but LIVE v2 integration is actively working).
 
 **3rd Party Integrations** 
   - AWS KMS (Encryption) — requires User API Key
-  - HotelRunner v2 — User Token active (stored in Secrets Manager)
+  - HotelRunner v2 — User Token active (LIVE)
   - Exely (SOAP API) — Requires Provider credentials
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Agent performed deep verification via python/bash scripts directly on the DB/Server logs).
+  - Testing agent used after significant changes: NO (Agent performed deep verification via python scripts directly on the DB).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None
   - Known regressions: None.
@@ -108,4 +106,4 @@ A fully functional Multi-tenant SaaS PMS + Channel Manager. HotelRunner v2 conne
   - Available in 
 
 **What agent forgot to execute**
-None. The agent successfully fulfilled the user's request.</analysis>
+The agent did not use the  tool to update  or  with the details of the critical multi-room parsing fix and the newly added  endpoint. The next agent should ensure documentation is updated after the user confirms the fix.</analysis>
