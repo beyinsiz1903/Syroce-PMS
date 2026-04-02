@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import Layout from '@/components/Layout';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Grid3X3, CalendarDays, Ban, Eye, CheckCircle2 } from 'lucide-react';
+import { Grid3X3, CalendarDays, Ban, Eye, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
@@ -185,6 +185,18 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
     });
     if (!hasAnyValue) { toast.error('Lutfen en az bir oda tipi icin deger girin'); return; }
 
+    // Check permission warnings before push
+    if (enabledFields.has('availability')) {
+      const noAvailPerms = selectedRoomCodes.filter(code => {
+        const rt = roomTypes.find(r => r.code === code);
+        return rt && rt.availability_update === false;
+      });
+      if (noAvailPerms.length > 0) {
+        const names = noAvailPerms.map(code => roomTypes.find(r => r.code === code)?.name || code).join(', ');
+        toast.warning(`Dikkat: ${names} icin HotelRunner musaitlik guncelleme izni yok. Fiyat gidecek ama musaitlik HotelRunner tarafindan reddedilecek.`, { duration: 8000 });
+      }
+    }
+
     setSaving(true);
     try {
       const perRoomValues = selectedRoomCodes.map(rtCode => {
@@ -210,9 +222,23 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
       if (data.background_push) {
         toast.info('HotelRunner push arka planda gonderiliyor');
       }
+      if (data.permission_warnings && data.permission_warnings.length > 0) {
+        data.permission_warnings.forEach(w => toast.warning(w, { duration: 10000 }));
+      }
       fetchGrid();
     } catch (e) { toast.error(e.response?.data?.detail || 'Guncelleme hatasi'); }
     setSaving(false);
+  };
+
+  const handleRemoveRoomType = async (invCode, roomName) => {
+    if (!window.confirm(`"${roomName}" oda tipini kaldirmak istediginize emin misiniz? Bu islem geri alinamaz.`)) return;
+    try {
+      await axios.delete(`${API}${HR_API_PREFIX}/room-types/${invCode}`, { headers });
+      toast.success(`"${roomName}" oda tipi kaldirildi`);
+      fetchGrid();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Oda tipi kaldirilamadi');
+    }
   };
 
   const filteredGrid = grid.filter(row => {
@@ -301,6 +327,7 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
               currencySymbol={currencySymbol} currency={currency}
               totalSelectedRoomTypes={totalSelectedRoomTypes} totalSelectedPlans={totalSelectedPlans}
               saving={saving} handleBulkUpdate={handleBulkUpdate} handleReset={handleReset} loading={loading}
+              handleRemoveRoomType={handleRemoveRoomType}
             />
           </TabsContent>
 

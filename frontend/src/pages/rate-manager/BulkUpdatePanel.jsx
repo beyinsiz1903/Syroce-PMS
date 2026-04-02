@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp } from 'lucide-react';
+import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, Trash2, AlertTriangle } from 'lucide-react';
 import { DAYS, UPDATE_FIELDS } from './constants';
 import { ChannelList } from './ChannelList';
 
@@ -19,6 +19,7 @@ export const BulkUpdatePanel = ({
   pricingSettings, getPricingLabel, togglePricingType, currencySymbol, currency,
   totalSelectedRoomTypes, totalSelectedPlans,
   saving, handleBulkUpdate, handleReset, loading,
+  handleRemoveRoomType,
 }) => (
   <div>
     <div className="flex flex-col lg:flex-row gap-4" data-testid="bulk-update-layout">
@@ -121,6 +122,7 @@ export const BulkUpdatePanel = ({
                 toggleRoomType={toggleRoomType} toggleRatePlan={toggleRatePlan}
                 pricingSettings={pricingSettings} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType}
                 currencySymbol={currencySymbol} currency={currency}
+                handleRemoveRoomType={handleRemoveRoomType}
               />
             )}
           </CardContent>
@@ -165,6 +167,7 @@ const RoomTypeList = ({
   roomTypeTree, enabledFields, selections, roomValues, updateRoomValue, getDefaultValues,
   expandedRoomTypes, toggleExpanded, isRoomTypeSelected, isRoomTypeFullySelected, isRatePlanSelected,
   toggleRoomType, toggleRatePlan, pricingSettings, getPricingLabel, togglePricingType, currencySymbol, currency,
+  handleRemoveRoomType,
 }) => (
   <div className="overflow-x-auto" data-testid="room-type-list">
     {/* Table Header */}
@@ -197,13 +200,35 @@ const RoomTypeList = ({
               <div className="flex items-center gap-2">
                 <Checkbox checked={isRoomTypeFullySelected(rt.code)} onCheckedChange={() => toggleRoomType(rt.code)} data-testid={`room-type-check-${rt.code}`} />
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm text-gray-900">{rt.name}</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-sm text-gray-900">{rt.name}</span>
+                    {rt.availability_update === false && (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium" title="HotelRunner bu oda tipi icin musaitlik guncellemeye izin vermiyor">
+                        <AlertTriangle className="w-2.5 h-2.5" /> Musaitlik kapali
+                      </span>
+                    )}
+                    {rt.price_update === false && (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium" title="HotelRunner bu oda tipi icin fiyat guncellemeye izin vermiyor">
+                        <AlertTriangle className="w-2.5 h-2.5" /> Fiyat kapali
+                      </span>
+                    )}
+                  </div>
                   <button onClick={(e) => togglePricingType(rt.code, e)}
                     className={`text-xs italic cursor-pointer hover:underline transition-colors ${(pricingSettings[rt.code] || 'per_person') === 'per_room' ? 'text-blue-600' : 'text-orange-600'}`}
                     data-testid={`pricing-type-toggle-${rt.code}`}>
                     {getPricingLabel(rt.code)}
                   </button>
                 </div>
+                {handleRemoveRoomType && (
+                  <button
+                    onClick={() => handleRemoveRoomType(rt.code, rt.name)}
+                    className="text-gray-300 hover:text-red-500 p-0.5 transition-colors"
+                    title="Bu oda tipini kaldir"
+                    data-testid={`remove-room-type-${rt.code}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 {rt.plans.length > 0 && (
                   <button onClick={() => toggleExpanded(rt.code)} className="text-gray-400 hover:text-gray-600 p-0.5" data-testid={`expand-toggle-${rt.code}`}>
                     {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}

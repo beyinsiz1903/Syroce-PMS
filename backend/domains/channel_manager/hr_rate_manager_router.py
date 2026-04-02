@@ -87,7 +87,17 @@ def _extract_room_types_and_rate_plans(cached_rooms: list) -> tuple[list, list]:
                 "name": name,
                 "capacity": room.get("room_capacity"),
                 "pricing_type": room.get("pricing_type", "guest_based"),
+                "availability_update": room.get("availability_update", True),
+                "price_update": room.get("price_update", True),
+                "restrictions_update": room.get("restrictions_update", True),
             }
+        elif inv_code:
+            # Merge permission flags: if ANY rate plan for this room type
+            # has the flag true, mark it true
+            existing = room_types_map[inv_code]
+            existing["availability_update"] = existing["availability_update"] or room.get("availability_update", True)
+            existing["price_update"] = existing["price_update"] or room.get("price_update", True)
+            existing["restrictions_update"] = existing["restrictions_update"] or room.get("restrictions_update", True)
 
         if rp_id and rp_id not in rate_plans_map:
             rate_plans_map[rp_id] = {
@@ -348,9 +358,25 @@ async def hr_bulk_grid_update(
     total_room_types_set = set()
     bulk_ops = []
     push_tasks = []
+    pushed_room_types = set()  # Deduplicate: only push once per room type
 
     # Get HR provider for push
     provider, _ = await _get_hr_provider(tenant_id)
+
+    # Build room type permission map from cached_rooms
+    rt_permissions = {}
+    if conn:
+        cached_rooms = conn.get("cached_rooms", [])
+        for room in cached_rooms:
+            ic = room.get("inv_code", "")
+            if ic and ic not in rt_permissions:
+                rt_permissions[ic] = {
+                    "availability_update": room.get("availability_update", True),
+                    "price_update": room.get("price_update", True),
+                    "restrictions_update": room.get("restrictions_update", True),
+                }
+
+    permission_warnings = []
 
     for rt_code, rp_code in pairs:
         total_room_types_set.add(rt_code)
@@ -411,12 +437,28 @@ async def hr_bulk_grid_update(
             saved += 1
             d += timedelta(days=1)
 
-        # Push to HotelRunner (shadow mode — logged but not sent if write_enabled=false)
-        if provider:
+        # Push to HotelRunner — deduplicate per room type
+        if provider and rt_code not in pushed_room_types:
+            pushed_room_types.add(rt_code)
+
+            # Check permission flags from cached_rooms
+            perms = rt_permissions.get(rt_code, {})
             push_rate = v_rate if "rate" in update_fields else None
             push_avail = v_avail if "availability" in update_fields else None
             push_stop = v_stop if "stop_sell" in update_fields else None
             push_min = v_min if "min_stay" in update_fields else None
+
+            # Warn about permission issues
+            if push_avail is not None and not perms.get("availability_update", True):
+                permission_warnings.append(
+                    f"{rt_code}: HotelRunner bu oda tipi icin musaitlik guncellemesine izin vermiyor (availability_update=false)"
+                )
+                logger.warning("[HR-BULK-UPDATE] availability_update=false for %s — availability will be skipped by HR", rt_code)
+            if push_rate is not None and not perms.get("price_update", True):
+                permission_warnings.append(
+                    f"{rt_code}: HotelRunner bu oda tipi icin fiyat guncellemesine izin vermiyor (price_update=false)"
+                )
+                logger.warning("[HR-BULK-UPDATE] price_update=false for %s — price will be skipped by HR", rt_code)
 
             async def _push(rt=rt_code, rate=push_rate, avail=push_avail, stop=push_stop, minstay=push_min):
                 try:
@@ -457,8 +499,11 @@ async def hr_bulk_grid_update(
         "all_pushed": False,
         "background_push": len(push_tasks) > 0,
         "total_room_types": len(total_room_types_set),
+        "permission_warnings": permission_warnings,
         "message": f"{saved} kayıt güncellendi" + (
             f", {len(push_tasks)} HotelRunner push arka planda gönderiliyor" if push_tasks else ""
+        ) + (
+            f" | UYARI: {len(permission_warnings)} izin sorunu tespit edildi" if permission_warnings else ""
         ),
     }
 
@@ -847,4 +892,50 @@ async def get_hr_push_providers(current_user: User = Depends(get_current_user)):
             "push_active": hr_write,
             "mode": hr_mode,
         }]
+    }
+
+
+# ── Room Type Management (remove from cached_rooms) ──────────────
+
+
+@router.delete("/room-types/{inv_code}")
+async def remove_hr_room_type(
+    inv_code: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Remove a room type from cached_rooms (hides from rate manager)."""
+    tenant_id = current_user.tenant_id
+
+    conn = await db.hotelrunner_connections.find_one(
+        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0, "cached_rooms": 1}
+    )
+    if not conn:
+        raise HTTPException(status_code=404, detail="HotelRunner baglantisi bulunamadi")
+
+    cached_rooms = conn.get("cached_rooms", [])
+    original_count = len(cached_rooms)
+    filtered_rooms = [r for r in cached_rooms if r.get("inv_code") != inv_code]
+
+    if len(filtered_rooms) == original_count:
+        raise HTTPException(status_code=404, detail=f"Oda tipi bulunamadi: {inv_code}")
+
+    removed_count = original_count - len(filtered_rooms)
+
+    await db.hotelrunner_connections.update_one(
+        {"tenant_id": tenant_id, "is_active": True},
+        {"$set": {"cached_rooms": filtered_rooms}},
+    )
+
+    # Also clean up related calendar data
+    await db.hr_rate_calendar.delete_many({
+        "tenant_id": tenant_id,
+        "room_type_code": inv_code,
+    })
+
+    logger.info("[HR-ROOM-TYPE] Removed inv_code=%s from cached_rooms (%d entries removed)", inv_code, removed_count)
+
+    return {
+        "message": f"Oda tipi '{inv_code}' basariyla kaldirildi ({removed_count} kayit silindi)",
+        "removed_inv_code": inv_code,
+        "removed_count": removed_count,
     }
