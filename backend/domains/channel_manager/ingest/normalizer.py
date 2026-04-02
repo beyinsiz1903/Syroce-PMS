@@ -85,8 +85,8 @@ def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
 
     # Room/rate: from rooms array or direct fields
     room_type = _safe_str(
-        first_room.get("room_code")
-        or first_room.get("inv_code")
+        first_room.get("inv_code")
+        or first_room.get("room_code")
         or payload.get("room_type", "")
     )
     rate_plan = _safe_str(
@@ -96,8 +96,21 @@ def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
     # Occupancy: from first room or direct fields
-    adults = int(first_room.get("adults") or payload.get("adults", 1) or 1)
-    children = int(first_room.get("children") or payload.get("children", 0) or 0)
+    adults = int(first_room.get("total_adult") or first_room.get("adults") or payload.get("adults", 1) or 1)
+    children = len(first_room.get("child_ages", [])) or int(first_room.get("children") or payload.get("children", 0) or 0)
+
+    # Total: prefer room-level price for exploded sub-reservations, then reservation total
+    room_price = float(first_room.get("price", 0) or 0)
+    reservation_total = float(payload.get("total", 0.0) or 0.0)
+    # If this payload was exploded from a multi-room reservation (has _exploded_from),
+    # use the per-room price. Otherwise use the reservation total.
+    if payload.get("_exploded_from") and room_price > 0:
+        total_amount = room_price
+    elif room_price > 0 and len(rooms) == 1:
+        # Single room after explosion — use room price
+        total_amount = room_price
+    else:
+        total_amount = reservation_total
 
     # Status: state > status
     hr_status = _safe_str(payload.get("state") or payload.get("status", "confirmed")).lower()
@@ -132,7 +145,7 @@ def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
         "room_type_code": room_type,
         "rate_plan_code": rate_plan,
         "currency": _safe_str(payload.get("currency", "TRY")),
-        "total_amount": float(payload.get("total", 0.0) or 0.0),
+        "total_amount": total_amount,
         "status": canonical_status,
         "provider_last_modified_at": last_mod,
         "source_system": _safe_str(payload.get("channel") or payload.get("channel_display", "")),

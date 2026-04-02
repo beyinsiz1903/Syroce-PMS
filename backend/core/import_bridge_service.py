@@ -390,8 +390,12 @@ async def auto_import_reservation_to_pms(
         # Assign room_id only if we have a specific room (not just type)
         # For OTA imports, room assignment may happen later
         if room_id:
-            # Try to find an available room of this type
-            available_room = await db.rooms.find_one(
+            # Find an available room of this type that is NOT already locked for the requested dates
+            check_in_str = booking_doc.get("check_in", "")
+            check_out_str = booking_doc.get("check_out", "")
+
+            # Get all rooms of this type
+            candidate_rooms = await db.rooms.find(
                 {
                     "tenant_id": tenant_id,
                     "room_type": room_id,
@@ -399,10 +403,38 @@ async def auto_import_reservation_to_pms(
                     "is_active": True,
                 },
                 {"_id": 0, "id": 1, "room_number": 1},
-            )
-            if available_room:
-                booking_doc["room_id"] = available_room["id"]
-                booking_doc["room_number"] = available_room.get("room_number", "")
+            ).to_list(100)
+
+            assigned_room = None
+            if candidate_rooms and check_in_str and check_out_str:
+                # Check which rooms are free for the requested dates
+                from core.atomic_booking import _night_dates
+                try:
+                    nights = _night_dates(check_in_str, check_out_str)
+                except Exception:
+                    nights = []
+
+                for candidate in candidate_rooms:
+                    if not nights:
+                        # No dates to check, assign first available
+                        assigned_room = candidate
+                        break
+                    # Check if any night is already locked for this room
+                    lock_count = await db.room_night_locks.count_documents({
+                        "tenant_id": tenant_id,
+                        "room_id": candidate["id"],
+                        "night_date": {"$in": nights},
+                    })
+                    if lock_count == 0:
+                        assigned_room = candidate
+                        break
+            elif candidate_rooms:
+                # No date info, just pick first available room
+                assigned_room = candidate_rooms[0]
+
+            if assigned_room:
+                booking_doc["room_id"] = assigned_room["id"]
+                booking_doc["room_number"] = assigned_room.get("room_number", "")
 
         # ── 6. Create booking via atomic core ────────────────────
         try:

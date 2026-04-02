@@ -77,6 +77,53 @@ router = APIRouter(
 )
 
 
+# ── Multi-room Reservation Exploder ───────────────────────────────────
+
+def explode_multi_room_reservation(raw_reservation: dict[str, Any]) -> list[dict[str, Any]]:
+    """Explode a HotelRunner reservation with multiple rooms into per-room payloads.
+
+    HotelRunner sends multi-room bookings as one reservation object with a `rooms` array.
+    Each room becomes a separate PMS booking. Sub-reservation numbering follows HR convention:
+      rooms[0] → hr_number (original)
+      rooms[1] → hr_number-1
+      rooms[2] → hr_number-2
+      ...
+
+    If the reservation has 0 or 1 rooms, returns it as-is (list of 1).
+    """
+    rooms = raw_reservation.get("rooms", [])
+    if not rooms or not isinstance(rooms, list) or len(rooms) <= 1:
+        return [raw_reservation]
+
+    hr_number = str(raw_reservation.get("hr_number", ""))
+    exploded = []
+
+    for idx, room in enumerate(rooms):
+        if not isinstance(room, dict):
+            continue
+
+        sub_hr = hr_number if idx == 0 else f"{hr_number}-{idx}"
+
+        sub_payload = {
+            **raw_reservation,
+            "hr_number": sub_hr,
+            "rooms": [room],
+            "total": float(room.get("price", 0) or 0),
+            "_exploded_from": hr_number,
+            "_room_index": idx,
+        }
+
+        # Use room-level dates if available, fallback to reservation-level
+        if room.get("checkin_date"):
+            sub_payload["checkin_date"] = room["checkin_date"]
+        if room.get("checkout_date"):
+            sub_payload["checkout_date"] = room["checkout_date"]
+
+        exploded.append(sub_payload)
+
+    return exploded if exploded else [raw_reservation]
+
+
 # ── Webhook Raw Event Persistence ─────────────────────────────────────
 
 async def _persist_and_process(
@@ -163,10 +210,17 @@ async def _process_webhook_batch(
     tenant_id: str, property_id: str, reservations: list, event_type: str,
     source_ip: str = "system",
 ):
-    """Background task: process webhook reservations through ingest pipeline."""
+    """Background task: process webhook reservations through ingest pipeline.
+    Multi-room reservations are exploded into per-room pipeline events.
+    """
     for res in reservations:
         try:
-            await _persist_and_process(tenant_id, property_id, res, event_type, source_ip)
+            sub_reservations = explode_multi_room_reservation(res)
+            for sub_res in sub_reservations:
+                try:
+                    await _persist_and_process(tenant_id, property_id, sub_res, event_type, source_ip)
+                except Exception as e:
+                    logger.error(f"[WEBHOOK] Error processing sub-reservation {sub_res.get('hr_number')}: {e}")
         except Exception as e:
             logger.error(f"[WEBHOOK] Error processing {event_type}: {e}")
 
@@ -443,19 +497,32 @@ class ReservationPullScheduler:
             await _log_pull(tenant_id, "success", 0)
             return {"success": True, "fetched": 0, "processed": 0, "fired": 0, "pages": total_pages}
 
-        # ── Phase 2: Process through unified ingest pipeline ─────────
+        # ── Phase 2: Explode multi-room & process through ingest pipeline ─
         processed = 0
         fire_uids = []
 
         for res in all_reservations:
             try:
-                await _persist_and_process(
-                    tenant_id, _resolve_property_id(res),
-                    res, "reservation_pull",
-                )
-                processed += 1
+                # Explode multi-room reservations into per-room payloads
+                sub_reservations = explode_multi_room_reservation(res)
+                rooms_count = len(res.get("rooms", []) or [])
+                if rooms_count > 1:
+                    logger.info(
+                        f"[PULL] Multi-room reservation {res.get('hr_number')}: "
+                        f"{rooms_count} rooms → {len(sub_reservations)} sub-reservations"
+                    )
 
-                # Collect message_uid for fire confirmation
+                for sub_res in sub_reservations:
+                    try:
+                        await _persist_and_process(
+                            tenant_id, _resolve_property_id(sub_res),
+                            sub_res, "reservation_pull",
+                        )
+                        processed += 1
+                    except Exception as e:
+                        logger.error(f"[PULL] Error processing sub-reservation {sub_res.get('hr_number')}: {e}")
+
+                # Collect message_uid for fire confirmation (once per parent reservation)
                 msg_uid = res.get("message_uid") or res.get("ruid") or res.get("uid")
                 if msg_uid:
                     fire_uids.append(msg_uid)
@@ -614,3 +681,86 @@ async def stop_scheduler(current_user: User = Depends(get_current_user)):
     """Stop the scheduled pull job."""
     await pull_scheduler.stop()
     return {"message": "Scheduler durduruldu"}
+
+
+
+@router.post("/sync/reservations/full-resync")
+async def full_resync(
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+):
+    """Full resync: fetch ALL reservations (including already delivered) and re-import.
+    Multi-room reservations are properly exploded into per-room bookings.
+    Deduplication prevents double imports of already-imported reservations.
+    """
+    conn = await db.hotelrunner_connections.find_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"_id": 0},
+    )
+    if not conn:
+        raise HTTPException(status_code=404, detail="HotelRunner baglantisi bulunamadi")
+
+    hr_id = conn.get("hr_id", conn.get("property_id", "default"))
+    from core.secrets import get_secrets_manager
+    sm = get_secrets_manager()
+    creds = await sm.get_provider_credentials(current_user.tenant_id, "hotelrunner", hr_id)
+
+    if not creds or not creds.get("token"):
+        fallback = await db.hotelrunner_connections.find_one(
+            {"tenant_id": current_user.tenant_id, "is_active": True},
+            {"_id": 0, "token": 1, "hr_id": 1},
+        )
+        if fallback and fallback.get("token"):
+            creds = {"token": fallback["token"], "hr_id": fallback.get("hr_id", hr_id)}
+        else:
+            raise HTTPException(status_code=502, detail="HotelRunner kimlik bilgileri bulunamadi")
+
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(current_user.tenant_id)
+    from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
+    provider = HotelRunnerProvider(token=creds["token"], hr_id=creds.get("hr_id", hr_id))
+
+    # Fetch ALL reservations (not just undelivered)
+    all_reservations = []
+    page = 1
+    total_pages = 1
+    while page <= total_pages:
+        result = await provider.get_reservations(
+            undelivered=False, per_page=50, page=page,
+        )
+        if not result["success"]:
+            raise HTTPException(status_code=502, detail=f"Rezervasyon cekme hatasi: {result.get('error')}")
+        page_reservations = result["data"].get("reservations", [])
+        all_reservations.extend(page_reservations)
+        total_pages = result["data"].get("pages", 1)
+        page += 1
+
+    # Explode multi-room and process
+    processed = 0
+    skipped = 0
+    errors = 0
+    for res in all_reservations:
+        sub_reservations = explode_multi_room_reservation(res)
+        for sub_res in sub_reservations:
+            try:
+                await _persist_and_process(
+                    current_user.tenant_id, _resolve_property_id(sub_res),
+                    sub_res, "reservation_pull",
+                )
+                processed += 1
+            except Exception as e:
+                err_msg = str(e)
+                if "duplicate" in err_msg.lower() or "already" in err_msg.lower():
+                    skipped += 1
+                else:
+                    errors += 1
+                    logger.error(f"[RESYNC] Error: {e}")
+
+    return {
+        "message": f"Full resync tamamlandi: {processed} islendi, {skipped} atlandı (zaten var), {errors} hata",
+        "success": True,
+        "fetched": len(all_reservations),
+        "processed": processed,
+        "skipped": skipped,
+        "errors": errors,
+    }
