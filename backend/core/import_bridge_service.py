@@ -171,39 +171,53 @@ async def create_import_record(
 
 async def auto_import_reservation_to_pms(
     imported_reservation_id: str,
+    pre_claimed_record: dict | None = None,
 ) -> tuple[bool, str]:
     """
     Attempt to auto-import an imported reservation into PMS.
+
+    Args:
+        imported_reservation_id: The ID of the imported_reservation record.
+        pre_claimed_record: If provided, skip atomic claim (already claimed by caller).
 
     Returns:
         (success, message) tuple
     """
     now_str = _utc_now()
 
-    # ── 1. Atomic claim ──────────────────────────────────────────
-    record = await db[COLL_IMPORTED].find_one_and_update(
-        {
-            "id": imported_reservation_id,
-            "import_status": {"$in": [STATUS_PENDING, STATUS_RETRY]},
-            "$or": [
-                {"next_retry_at": None},
-                {"next_retry_at": {"$lte": now_str}},
-            ],
-        },
-        {
-            "$set": {
-                "import_status": STATUS_PROCESSING,
-                "updated_at": now_str,
+    if pre_claimed_record:
+        # Record already claimed by caller (e.g., import_retry_worker)
+        record = pre_claimed_record
+    else:
+        # ── 1. Atomic claim ──────────────────────────────────────────
+        record = await db[COLL_IMPORTED].find_one_and_update(
+            {
+                "id": imported_reservation_id,
+                "import_status": {"$in": [STATUS_PENDING, STATUS_RETRY]},
+                "$or": [
+                    {"next_retry_at": None},
+                    {"next_retry_at": {"$lte": now_str}},
+                ],
             },
-        },
-        return_document=ReturnDocument.AFTER,
-        projection={"_id": 0},
-    )
+            {
+                "$set": {
+                    "import_status": STATUS_PROCESSING,
+                    "updated_at": now_str,
+                },
+            },
+            return_document=ReturnDocument.AFTER,
+            projection={"_id": 0},
+        )
 
     if not record:
         return False, "Record not claimable (already processing, imported, or not due for retry)"
 
     tenant_id = record["tenant_id"]
+
+    # Ensure tenant context is set for strict mode
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+
     provider = record.get("provider", "")
     ext_res_id = record["external_reservation_id"]
     correlation_id = record.get("correlation_id", str(uuid.uuid4()))
@@ -297,6 +311,8 @@ async def auto_import_reservation_to_pms(
 
         # ── 5. Build booking document ────────────────────────────
         booking_id = str(uuid.uuid4())
+        # Use PMS room type name from mapping, not provider code
+        pms_room_type = room_id if room_id else room_type
         booking_doc = {
             "id": booking_id,
             "tenant_id": tenant_id,
@@ -306,7 +322,7 @@ async def auto_import_reservation_to_pms(
             "guest_phone": record.get("guest_phone", ""),
             "check_in": record["arrival_date"],
             "check_out": record["departure_date"],
-            "room_type": room_type,
+            "room_type": pms_room_type,
             "room_type_id": room_id,
             "rate_plan_id": rate_plan_id,
             "rate_plan_code": rate_code,
@@ -316,6 +332,8 @@ async def auto_import_reservation_to_pms(
             "currency": record.get("currency", "TRY"),
             "status": "confirmed",
             "booking_source": "ota_import",
+            "channel": record.get("source_system", "") or provider,
+            "external_reservation_id": ext_res_id,
             "source": {
                 "provider": provider,
                 "external_reservation_id": ext_res_id,
@@ -325,6 +343,49 @@ async def auto_import_reservation_to_pms(
             "created_at": _utc_now(),
             "updated_at": _utc_now(),
         }
+
+        # ── 5b. Create/find guest record ─────────────────────────
+        guest_name = record.get("guest_name", "")
+        guest_parts = guest_name.split(" ", 1) if guest_name else ["", ""]
+        guest_first = guest_parts[0]
+        guest_last = guest_parts[1] if len(guest_parts) > 1 else ""
+        guest_email = record.get("guest_email", "")
+        guest_phone = record.get("guest_phone", "")
+
+        if guest_name:
+            # Try to find existing guest by email or phone
+            guest_query = {"tenant_id": tenant_id}
+            if guest_email:
+                guest_query["email"] = guest_email
+            elif guest_phone:
+                guest_query["phone"] = guest_phone
+            else:
+                guest_query["first_name"] = guest_first
+                guest_query["last_name"] = guest_last
+
+            existing_guest = await db.guests.find_one(guest_query, {"_id": 0, "id": 1})
+            if existing_guest:
+                booking_doc["guest_id"] = existing_guest["id"]
+            else:
+                guest_id = str(uuid.uuid4())
+                guest_doc = {
+                    "id": guest_id,
+                    "tenant_id": tenant_id,
+                    "first_name": guest_first,
+                    "last_name": guest_last,
+                    "email": guest_email,
+                    "phone": guest_phone,
+                    "nationality": "",
+                    "vip_status": False,
+                    "tags": [],
+                    "notes": "",
+                    "source": f"ota_import:{provider}",
+                    "created_at": _utc_now(),
+                    "updated_at": _utc_now(),
+                }
+                await db.guests.insert_one(guest_doc)
+                guest_doc.pop("_id", None)
+                booking_doc["guest_id"] = guest_id
 
         # Assign room_id only if we have a specific room (not just type)
         # For OTA imports, room assignment may happen later

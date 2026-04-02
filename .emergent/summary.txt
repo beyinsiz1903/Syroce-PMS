@@ -1,38 +1,39 @@
-<analysis>**original_problem_statement**: Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant isolation, PII strict mode tracking, and comprehensive multi-language support. User requested fixing backend security vulnerabilities, followed by resolving HotelRunner integration bugs and background schedulers. PRODUCT REQUIREMENTS: Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant isolation, PII strict mode tracking, and comprehensive multi-language support.
+<analysis>**original_problem_statement**: Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant isolation, PII strict mode tracking, and comprehensive multi-language support. User requested taking HotelRunner out of shadow mode to enable live automatic reservation sync and data mapping into the PMS. PRODUCT REQUIREMENTS: Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant isolation, PII strict mode tracking, and comprehensive multi-language support.
 
-**User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın.)
+**User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın. User explicitly requires all responses in Turkish.)
 
 **what currently exists?** 
-A robust Multi-tenant SaaS PMS + Channel Manager. The HotelRunner v2 connector is running safely in shadow mode. Background schedulers actively pull reservations from HotelRunner and Exely. PII strict mode is enforced across tenant databases. The Exely background worker sync logic has been fixed to use the correct tenant context. The database ( collections including bookings, guests, folios, events, etc.) has been completely wiped clean for the user to perform fresh tests, and all rooms have been reset to 'available'.
+A fully functional Multi-tenant SaaS PMS + Channel Manager. HotelRunner v2 connector is now LIVE (Shadow mode disabled, writes enabled). Room and Rate Plan mappings are configured. The ingest pipeline correctly normalizes data, respects PII Strict Mode, processes imports without double-claiming, atomically creates PMS bookings and guest records, and fires outbox events. The database has been cleanly wiped (0 test bookings, 0 test guests) so the user has an empty calendar for manual live testing. 
 
 **Last working item**: 
-    - Last item agent was working: Wiping out all test/fake bookings, guests, folios, payments, and reservation data from the database to give the user a clean calendar for new tests. Resetting all 50 rooms to  status. The user is now proceeding to manually test the reservation sync.
-    - Status: USER VERIFICATION PENDING
-    - Agent Testing Done: Y (Verified via DB queries that collections are empty and rooms are reset)
-    - Which testing method agent to use? NA (Backend data wipe completed via bash scripts)
-    - User Testing Done: N (User is preparing to send reservations to test the clean calendar state)
+    - Last item agent was working: Transitioning HotelRunner out of shadow mode, debugging and fixing the automatic ingest pipeline to handle  requirements, resolving an import double-claim bug, correctly mapping PMS data (room type, channel, external IDs), and resetting the database to a clean slate. 
+    - Status: USER VERIFICATION PENDING (User replied devam, implying they are ready for the next feature or they are manually testing in the background).
+    - Agent Testing Done: Y (Agent self-tested via bash python scripts, full end-to-end webhook to DB booking creation verified).
+    - Which testing method agent to use? NA (Testing for this component is complete).
+    - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-  *None. The P0  Exely pull worker issue was successfully resolved.*
+  *None. All ingest pipeline bugs (Tenant Context missing, import double-claim, mapping errors) were resolved.*
 
 **In progress Task List**: 
   *None.*
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - P1: Complete the 7-day shadow observation period (HotelRunner v2 Connector currently in Shadow Mode).
-    - P1: Limited live write execution (Single tenant/small scope) - *Only after criteria are met and 7 days pass.*
-    - P1: Full live write execution.
+    - P2: Complete Data Encryption - Encrypt the  and  collections to 100% (currently 0%,  is at 99.6%).
     - P3: Add a quick toggle button at the top of the rate manager pages to easily switch between Exely and HotelRunner screens.
     
     Future Tasks:
-    - P2: Complete Data Encryption - Encrypt the  and  collections to 100% (currently 0%,  is at 99.6%).
     - P3: Complete removal/deletion of legacy HR connector once transition is 100% verified.
+    - Enhancement/Backlog: Channel Manager Dashboard to view recent reservations, failed imports, and connection health metrics.
 
 **Completed work in this session**
-- Fixed P0  bug in Exely Pull Worker by adding  to the worker loops in . (DONE)
-- Deleted 67,576 test records (bookings, guests, folios, event timelines, channel manager logs) across the DB for a clean testing slate. (DONE)
-- Reset all 50 rooms' statuses to . (DONE)
+- Disabled Shadow Mode for HotelRunner v2 ( write_enabled=true). (DONE)
+- Created Room Type and Rate Plan mappings between HotelRunner provider codes and internal PMS codes. (DONE)
+- Fixed P0  bugs by injecting  context into , , and . (DONE)
+- Fixed race condition / double-claim issue in  and . (DONE)
+- Corrected reservation payload mappings (mapped  correctly, set , mapped , and generated  record on import). (DONE)
+- Cleaned the database of all test pipeline events and bookings to provide a clean test environment. (DONE)
 
 **Earlier issues found/mentioned but not fixed**
    *None*
@@ -46,47 +47,51 @@ A robust Multi-tenant SaaS PMS + Channel Manager. The HotelRunner v2 connector i
 
 
 **Key Technical Concepts**
-- PII Strict Mode / Tenant Isolation: Backend middleware/router logic to track encryption violations and enforce tenant data boundaries.
-- Shadow Mode Execution: Safely running API calls without executing state-mutating requests (writes disabled for HR v2).
-- Scheduled Pull Workers: Async workers running on startup to fetch undelivered reservations from OTAs.
+- Import Bridge Service: Asynchronous conversion of OTA reservations (lineage) into canonical PMS bookings.
+- Outbox Pattern: Atomic event dispatching upon successful booking creations ().
+- PII Strict Mode / Tenant Isolation: Enforced at database query levels requiring  context for all operations.
 
 **key DB schema**
-  - , , : Central collections with strict tenant mode enabled.
-  - : Connection tokens are stored securely in AWS Secrets Manager.
+  - , : Crosswalk tables for OTAs.
+  - : State machine tracking of ingest status (, , ).
+  - , : Canonical PMS collections.
 
 **changes in tech stack**
   - None
 
 **All files of reference** 
-  -  (Updated to inject tenant context to bypass strict mode errors)
-  -  (Updated)
+  - 
+  -  (Tenant context fixes)
+  -  (Tenant context fixes)
+  -  (Tenant context, mapping fixes, atomic fixes)
+  -  (Concurrency double-claim fix)
+  -  (Updated with progress)
 
 **Areas that need refactoring**: 
-  - None at the moment.
+  - None currently.
 
 **key api endpoints**
-- 
-- 
+-  (Webhook intake)
 
 **Critical Info for New Agent** 
 - **Language Constraint:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-- **DO NOT ENABLE WRITES FOR HOTELRUNNER:** The HotelRunner v2 connector must firmly remain in Shadow Mode ().
-- **Database State:** The database was intentionally completely wiped of all reservations, guests, folios, and sync logs in the last step. The rooms were all set to . This was done per the user's request so they can test pushing fresh reservations. Expect the system state to be empty of transactional data.
+- **HotelRunner is Live:** Do not turn Shadow Mode back on. The user is actively testing live synchronization.
+- **Database Cleanliness:** The user explicitly requested an empty calendar for testing. Do not create test records in the database without cleaning them up immediately after your tests.
+- **Current State:** The user simply said devam (continue) at the end of the last session. You should start by presenting the remaining tasks (e.g., Data Encryption, Dashboard, or Toggle Buttons) and ask them what they want to tackle next using .
 
 **documents and test reports created in this job** 
   -  (Updated)
+  -  (Unchanged, holds valid credentials)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - *User:* Asked to use  tool to confirm plan. (Completed)
- - *Agent:* Sent plan. (Completed)
- - *User:* p0 düzelt (Requested to fix the P0 STRICT_TENANT_MODE bug). (Completed)
- - *Agent:* Investigated worker logs, injected tenant context into Exely worker, verified bug fix via logs, and finished task. (Completed)
- - *User:* tüm test rezervasyonlarını sahte rezervasyonları falan sil rezervasyon ekleyerek ben göndermeye çalışayım temiz bir takvim olsun. (Requested deleting all test/fake reservations to test with a clean calendar). (Completed)
- - *Agent:* Ran python bash scripts to wipe 67,500+ records from  DB and reset all rooms to . Informed user it is ready for testing. (User verification pending)
+ - *User:* hotelrunner ı shadow moddan çıkaralım normal akışa çevirelim rezervasyonlar düşsün... (Requested taking HR out of shadow mode). (Completed)
+ - *Agent:* (Analyzed, mapped data, tested flow, encountered and fixed 5 bugs related to strict tenant mode, race conditions, and missing data mapping). (Completed)
+ - *Agent:* (Cleaned DB, restarted server, ran linters, updated PRD, used finish tool). (Completed)
+ - *User:* devam (Continue). -> **Pending Action**: Present the next prioritized tasks to the user and ask what they would like to focus on next.
 
 **Project Health Check:**
   - Broken: None
-  - Mocked: HotelRunner Connected to production but Shadow Mode enabled.
+  - Mocked: Legacy HotelRunner server mapped to localhost port 9999.
 
 **3rd Party Integrations** 
   - AWS KMS (Encryption) — requires User API Key
@@ -94,14 +99,13 @@ A robust Multi-tenant SaaS PMS + Channel Manager. The HotelRunner v2 connector i
   - Exely (SOAP API) — Requires Provider credentials
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Manual testing via DB queries and supervisor log verification).
+  - Testing agent used after significant changes: NO (Agent performed deep verification via python/bash scripts directly on the DB/Server logs).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None
   - Known regressions: None.
 
 **Credentials to test flow:**
-  - Frontend login:  / 
-  - Exely API Credentials: Saved in 
+  - Available in 
 
 **What agent forgot to execute**
-None. Agent successfully fulfilled all user requests and cleared the database for fresh testing.</analysis>
+None. The agent successfully fulfilled the user's request.</analysis>

@@ -6,7 +6,7 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 ## Architecture
 - **Backend:** FastAPI + MongoDB (MONGO_URL from .env)
 - **Frontend:** React + i18n (10 locales, 1640 keys each)
-- **Channel Manager:** HotelRunner v2 (Shadow Mode), Exely (SOAP)
+- **Channel Manager:** HotelRunner v2 (LIVE MODE), Exely (SOAP)
 - **Security:** PII Strict Mode, AWS KMS encryption
 
 ## What's Been Implemented
@@ -24,7 +24,7 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - Static imports for guaranteed translation availability
 
 ### Channel Manager
-- HotelRunner v2 connector (Shadow Mode — write_enabled=false)
+- HotelRunner v2 connector (LIVE MODE — shadow_mode=false, write_enabled=true)
 - HotelRunner v1 deprecated (warnings added to all files)
 - Exely SOAP API integration
 - Wire failure tracking system
@@ -57,17 +57,33 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - **Feature: Permission warnings** — Shows toast warnings when pushing to room types with restricted permissions
 
 ### Exely Pull Worker Tenant Context Fix (Apr 2026)
-- **Bug Fix: STRICT_TENANT_MODE blocking background worker** — `exely_pull_worker.py` was accessing tenant-scoped collections (`guests`, `bookings`, `rooms`, `notifications`) without setting tenant context. Added `set_tenant_context(tenant_id)` / `clear_tenant_context()` in the worker loop. Guest imports, booking creation, and delivery confirmations now work correctly in background pulls.
+- **Bug Fix: STRICT_TENANT_MODE blocking background worker** — `exely_pull_worker.py` was accessing tenant-scoped collections without setting tenant context. Fixed with `set_tenant_context(tenant_id)` / `clear_tenant_context()`.
+
+### HotelRunner Shadow Mode → Live Mode Transition (Apr 2026)
+- **Shadow Mode Disabled** — `connector_feature_flags` updated: `shadow_mode=false`, `write_enabled=true`, `connector_enabled=true`
+- **Room Type Mappings Created** — 3 HotelRunner rooms mapped to PMS:
+  - HR:1271567 (Corner Süit) → Suite
+  - HR:1271568 (Standart Oda) → Standard
+  - HR:1271569 (Deluxe Oda) → Deluxe
+- **Rate Plan Mappings Created** — All 3 HR rooms mapped with Ana Fiyat rate
+- **Bug Fix: STRICT_TENANT_MODE in ingest pipeline** — Added `set_tenant_context(tenant_id)` to:
+  - `pipeline.py:process_event()` — Main pipeline entry
+  - `pipeline.py:_trigger_import_bridge()` — Import bridge trigger
+  - `hotelrunner_webhook.py:_persist_and_process()` — Webhook handler
+  - `hotelrunner_webhook.py:pull_for_tenant()` — Pull scheduler
+  - `import_bridge_service.py:auto_import_reservation_to_pms()` — Auto-import function
+- **Bug Fix: Double-claim race condition** — Import retry worker was claiming record then `auto_import_reservation_to_pms` re-claimed it, causing failure. Added `pre_claimed_record` parameter to bypass second claim.
+- **Bug Fix: Booking fields missing** — Import bridge now stores:
+  - `room_type`: PMS room type name (not provider code)
+  - `channel`: Source system (e.g., booking.com)
+  - `external_reservation_id`: Provider's reservation number
+- **Feature: Guest auto-creation** — Import bridge now creates guest records when importing OTA reservations (with duplicate detection by email/phone)
+- **End-to-end verified**: Webhook → Pipeline → Import Bridge → Atomic Booking → Guest Creation
 
 ## Prioritized Backlog
 
-### P0 (Critical)
-- ~~Exely Pull Worker STRICT_TENANT_MODE error~~ ✅ FIXED (Apr 2026)
-
 ### P1 (High)
-- Complete 7-day shadow observation for HotelRunner v2
-- Limited live write execution (single tenant)
-- Full live write execution
+- None critical at this time
 
 ### P2 (Medium)
 - Encrypt users and bookings collections to 100%
@@ -82,13 +98,15 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - GET /api/security/encryption/status
 - POST /api/channel-manager/hotelrunner/sync/reservations/pull (manual pull)
 - GET /api/channel-manager/hotelrunner/sync/status
+- POST /api/channel-manager/hotelrunner/webhooks/reservations (webhook receiver)
 - DELETE /api/channel-manager/hr-rate-manager/room-types/{inv_code}
+- GET /api/channel/hotelrunner-v2/flags (feature flags)
 
 ## 3rd Party Integrations
 - AWS KMS (Encryption) — requires User API Key
-- HotelRunner v2 — User Token active
+- HotelRunner v2 — User Token active, LIVE MODE
 - Exely (SOAP) — Provider credentials required
 
 ## Critical Constraints
-- HotelRunner v2 MUST remain in Shadow Mode (write_enabled=false)
 - All responses in Turkish
+- Database was wiped clean for fresh testing (Apr 2026)

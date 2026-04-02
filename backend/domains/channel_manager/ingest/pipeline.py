@@ -100,6 +100,10 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
     correlation_id = event.get("correlation_id", "")
     ext_res_id = event.get("external_reservation_id", "")
 
+    # Ensure tenant context is set for strict mode
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+
     try:
         # ── Stage 2: Duplicate Detection ──────────────────────────
         provider_event_id = event.get("provider_event_id", "")
@@ -602,6 +606,9 @@ async def _trigger_import_bridge(
     DATA-001: After a new lineage record is created, classify and enqueue
     for PMS booking import.
     """
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+
     from core.import_bridge_service import create_import_record
     from core.import_decision import check_already_imported, classify_for_import
 

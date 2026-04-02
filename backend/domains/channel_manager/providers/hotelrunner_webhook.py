@@ -89,6 +89,9 @@ async def _persist_and_process(
       1. webhook_received — raw payload stored
       2. (normalized, deduplicated, validated — written by pipeline.process_event)
     """
+    from core.tenant_db import set_tenant_context
+    set_tenant_context(tenant_id)
+
     t_start = datetime.now(UTC)
     correlation_id = str(uuid.uuid4())
     identity = extract_hotelrunner_identity(payload)
@@ -403,6 +406,9 @@ class ReservationPullScheduler:
         safety_window_minutes: int = 5,
     ) -> dict[str, Any]:
         """Pull UNDELIVERED reservations for a specific tenant, then confirm delivery (fire)."""
+        from core.tenant_db import set_tenant_context
+        set_tenant_context(tenant_id)
+
         from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
 
         provider = HotelRunnerProvider(token=token, hr_id=hr_id)

@@ -186,7 +186,9 @@ class ImportRetryWorker:
         tenant_id = record.get("tenant_id", "")
 
         with tenant_context(tenant_id) if tenant_id else _nullcontext():
-            success, message = await auto_import_reservation_to_pms(record_id)
+            success, message = await auto_import_reservation_to_pms(
+                record_id, pre_claimed_record=record
+            )
 
             if success:
                 self._processed_count += 1
