@@ -56,10 +56,13 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - **Feature: Push deduplication** — Prevents duplicate HotelRunner push for same room type
 - **Feature: Permission warnings** — Shows toast warnings when pushing to room types with restricted permissions
 
+### Exely Pull Worker Tenant Context Fix (Apr 2026)
+- **Bug Fix: STRICT_TENANT_MODE blocking background worker** — `exely_pull_worker.py` was accessing tenant-scoped collections (`guests`, `bookings`, `rooms`, `notifications`) without setting tenant context. Added `set_tenant_context(tenant_id)` / `clear_tenant_context()` in the worker loop. Guest imports, booking creation, and delivery confirmations now work correctly in background pulls.
+
 ## Prioritized Backlog
 
 ### P0 (Critical)
-- None currently
+- ~~Exely Pull Worker STRICT_TENANT_MODE error~~ ✅ FIXED (Apr 2026)
 
 ### P1 (High)
 - Complete 7-day shadow observation for HotelRunner v2

@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from core.database import db
+from core.tenant_db import clear_tenant_context, set_tenant_context
 from domains.channel_manager.credential_vault import get_decrypted_credentials
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
 from domains.channel_manager.providers.exely.auto_import import auto_import_pending
@@ -75,8 +76,9 @@ class ExelyPullScheduler:
         ).to_list(100)
 
         for conn in connections:
+            tenant_id = conn.get("tenant_id", "")
             try:
-                tenant_id = conn["tenant_id"]
+                set_tenant_context(tenant_id)
                 hotel_code = conn["hotel_code"]
                 endpoint_url = conn.get("endpoint_url", "")
 
@@ -95,7 +97,9 @@ class ExelyPullScheduler:
                     safety_window_minutes=safety_window_minutes,
                 )
             except Exception as e:
-                logger.error(f"[EXELY-PULL] Error for tenant {conn.get('tenant_id', '?')}: {e}")
+                logger.error(f"[EXELY-PULL] Error for tenant {tenant_id or '?'}: {e}")
+            finally:
+                clear_tenant_context()
 
     async def pull_for_tenant(
         self,
@@ -106,6 +110,7 @@ class ExelyPullScheduler:
         endpoint_url: str = "",
         safety_window_minutes: int = 5,
     ) -> dict[str, Any]:
+        set_tenant_context(tenant_id)
         provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
         if endpoint_url:
             provider_kwargs["endpoint_url"] = endpoint_url
