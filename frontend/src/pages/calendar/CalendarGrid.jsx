@@ -165,9 +165,9 @@ const CalendarGrid = ({
               return (
                 <div key={roomType}>
                   {/* Room Type Header */}
-                  <div className="bg-amber-50 border-b border-amber-200">
+                  <div className="bg-blue-50/70 border-b border-blue-200">
                     <div className="flex">
-                      <div className="w-28 flex-shrink-0 px-2 py-1.5 border-r border-amber-200 flex items-center">
+                      <div className="w-28 flex-shrink-0 px-2 py-1.5 border-r border-blue-200 flex items-center">
                         <span className="font-bold text-xs text-gray-800" data-testid={`room-type-${roomType}`}>
                           {roomType} ^
                         </span>
@@ -228,14 +228,14 @@ const CalendarGrid = ({
                     const { lanes, maxLane } = computeUnassignedLanes(unassignedForType);
                     const rowHeight = (maxLane + 1) * LANE_H + 6;
                     return (
-                      <div className="flex border-b border-dashed border-amber-300 bg-amber-50/30">
-                        <div className="w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 bg-amber-50/60" style={{ height: `${rowHeight}px` }}>
+                      <div className="flex border-b border-dashed border-blue-200 bg-blue-50/20">
+                        <div className="w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 bg-blue-50/40" style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-1">
-                            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></div>
-                            <div className="font-bold text-[9px] text-amber-700">Atanmamis</div>
+                            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
+                            <div className="font-bold text-[9px] text-blue-700">Atanmamis</div>
                           </div>
                           {unassignedForType.length > 1 && (
-                            <div className="text-[8px] text-amber-500 ml-3">{unassignedForType.length} rez.</div>
+                            <div className="text-[8px] text-blue-500 ml-3">{unassignedForType.length} rez.</div>
                           )}
                         </div>
                         <div className="flex relative" style={{ width: `${daysToShow * CELL_W}px`, height: `${rowHeight}px` }}>
@@ -245,7 +245,7 @@ const CalendarGrid = ({
                               <div
                                 key={idx}
                                 className={`${CELL_CLS} flex-shrink-0 border-r border-b relative ${
-                                  weekend ? 'bg-amber-50/40 border-amber-100' : 'bg-amber-50/10 border-amber-100'
+                                  weekend ? 'bg-blue-50/30 border-blue-100' : 'bg-blue-50/10 border-blue-100'
                                 } ${isToday(date) ? 'bg-blue-50/40' : ''}`}
                                 style={{ height: `${rowHeight}px`, minHeight: `${rowHeight}px` }}
                               />

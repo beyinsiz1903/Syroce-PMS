@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 2026-04-02 - Calendar Vibrant Color Update
+### Changed
+- **Booking bar colors completely revamped**: Gray (#9ca3af) replaced with vibrant status-based colors:
+  - **Blue (#2563eb)** → Confirmed future reservations
+  - **Orange (#f97316)** → Today's arrivals
+  - **Green (#16a34a)** → Checked-in (in-house) guests
+  - **Teal (#0891b2)** → Guaranteed reservations
+  - **Light red (#f87171)** → Past (not checked out)
+  - **Slate (#94a3b8)** → Checked out/departed
+- **Room type header background**: Amber/yellow → Blue-tinted (bg-blue-50)
+- **Unassigned row styling**: Amber → Blue-tinted with blue pulse dot
+- **Legend updated**: Now shows 4 color labels (Iceride, Bugun Gelis, Onaylanmis, Gecmis/Check-out)
+- **Past date cells**: Lighter background (gray-100 instead of gray-200)
+- **Occupancy chart gradient**: Updated to #3b82f6 blue
+
+### Verified
+- Testing agent iteration_179: 100% pass rate
+
 ## 2026-04-02 - Calendar Occupancy Fix & Compact UI
 ### Fixed
 - **Critical Bug: Occupancy counter excluded unassigned reservations** — Room type header rows (e.g., Deluxe 0/8) now count both assigned and unassigned bookings. Previously, unassigned bookings (room_id=null) were excluded because the filter required a matching room object.

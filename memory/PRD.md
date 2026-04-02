@@ -86,6 +86,12 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - **Feature: Import notifications** — notification_events_service.emit() fires on successful reservation import
 - **Feature: Catch-up pull** — Scheduler fetches all recent reservations (not just undelivered) to prevent dropped bookings during HR push failures
 
+### Calendar Vibrant Color Update (Apr 2026)
+- **UI: Vibrant booking bar colors** — Gray (#9ca3af) replaced with status-based colors: Blue (confirmed), Orange (today arrivals), Green (checked-in), Teal (guaranteed), Light red (past)
+- **UI: Blue-tinted room type headers** — Replaced amber/yellow backgrounds with blue-50 tones
+- **UI: Updated legend** — Now shows 4 statuses: Iceride, Bugun Gelis, Onaylanmis, Gecmis/Check-out
+- **UI: Lighter past dates** — Reduced gray intensity from gray-200 to gray-100
+
 ### Calendar Occupancy Fix & Compact UI (Apr 2026)
 - **Bug Fix: Occupancy counter excluded unassigned bookings** — Room type header (X/Y indicator) now counts both assigned and unassigned bookings for accurate occupancy display
 - **UI: Compact calendar grid** — Cell width reduced from 96px to 72px, booking bar height from 46px to 30px, room rows from 52px to 38px
@@ -124,4 +130,4 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 ## Critical Constraints
 - All responses in Turkish
 - Database was wiped clean for fresh testing (Apr 2026)
-- Latest test report: /app/test_reports/iteration_178.json
+- Latest test report: /app/test_reports/iteration_179.json
