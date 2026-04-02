@@ -387,14 +387,15 @@ class ReservationPullScheduler:
         self._running = False
         self._task = None
 
-    async def start(self, interval_minutes: int = 15, safety_window_minutes: int = 5):
-        """Start the scheduled pull loop."""
+    async def start(self, interval_minutes: int = 15, safety_window_minutes: int = 5, interval_seconds: int | None = None):
+        """Start the scheduled pull loop. interval_seconds overrides interval_minutes if provided."""
         if self._running:
             logger.warning("[PULL] Scheduler already running")
             return
         self._running = True
-        self._task = asyncio.create_task(self._run_loop(interval_minutes, safety_window_minutes))
-        logger.info(f"[PULL] Scheduler started: every {interval_minutes}min, safety window {safety_window_minutes}min")
+        sleep_seconds = interval_seconds if interval_seconds is not None else interval_minutes * 60
+        self._task = asyncio.create_task(self._run_loop(sleep_seconds, safety_window_minutes))
+        logger.info(f"[PULL] Scheduler started: every {sleep_seconds}s, safety window {safety_window_minutes}min")
 
     async def stop(self):
         """Stop the scheduled pull loop."""
@@ -407,7 +408,7 @@ class ReservationPullScheduler:
     def is_running(self) -> bool:
         return self._running
 
-    async def _run_loop(self, interval_minutes: int, safety_window_minutes: int):
+    async def _run_loop(self, sleep_seconds: int, safety_window_minutes: int):
         while self._running:
             try:
                 await self._pull_all_tenants(safety_window_minutes)
@@ -416,7 +417,7 @@ class ReservationPullScheduler:
             except Exception as e:
                 logger.error(f"[PULL] Loop error: {e}")
 
-            await asyncio.sleep(interval_minutes * 60)
+            await asyncio.sleep(sleep_seconds)
 
     async def _pull_all_tenants(self, safety_window_minutes: int):
         """Pull reservations for all active HotelRunner connections."""

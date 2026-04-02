@@ -508,10 +508,9 @@ async def on_startup(app):
         )
         if active_hr:
             from domains.channel_manager.providers.hotelrunner_webhook import pull_scheduler as hr_pull_scheduler
-            interval = 5  # 5 minutes — more aggressive than default to catch undelivered quickly
-            await hr_pull_scheduler.start(interval_minutes=interval, safety_window_minutes=2)
+            await hr_pull_scheduler.start(interval_seconds=30, safety_window_minutes=2)
             app.state.hr_pull_scheduler = hr_pull_scheduler
-            print(f"✅ HotelRunner Pull Scheduler started ({interval}min interval, undelivered + fire)")
+            print("✅ HotelRunner Pull Scheduler started (30s interval, undelivered + fire)")
         else:
             print("ℹ️ No active HotelRunner connections with auto_sync; pull scheduler not started")
     except Exception as e:

@@ -388,53 +388,8 @@ async def auto_import_reservation_to_pms(
                 booking_doc["guest_id"] = guest_id
 
         # Assign room_id only if we have a specific room (not just type)
-        # For OTA imports, room assignment may happen later
-        if room_id:
-            # Find an available room of this type that is NOT already locked for the requested dates
-            check_in_str = booking_doc.get("check_in", "")
-            check_out_str = booking_doc.get("check_out", "")
-
-            # Get all rooms of this type
-            candidate_rooms = await db.rooms.find(
-                {
-                    "tenant_id": tenant_id,
-                    "room_type": room_id,
-                    "status": {"$in": ["available", "clean", "inspected"]},
-                    "is_active": True,
-                },
-                {"_id": 0, "id": 1, "room_number": 1},
-            ).to_list(100)
-
-            assigned_room = None
-            if candidate_rooms and check_in_str and check_out_str:
-                # Check which rooms are free for the requested dates
-                from core.atomic_booking import _night_dates
-                try:
-                    nights = _night_dates(check_in_str, check_out_str)
-                except Exception:
-                    nights = []
-
-                for candidate in candidate_rooms:
-                    if not nights:
-                        # No dates to check, assign first available
-                        assigned_room = candidate
-                        break
-                    # Check if any night is already locked for this room
-                    lock_count = await db.room_night_locks.count_documents({
-                        "tenant_id": tenant_id,
-                        "room_id": candidate["id"],
-                        "night_date": {"$in": nights},
-                    })
-                    if lock_count == 0:
-                        assigned_room = candidate
-                        break
-            elif candidate_rooms:
-                # No date info, just pick first available room
-                assigned_room = candidate_rooms[0]
-
-            if assigned_room:
-                booking_doc["room_id"] = assigned_room["id"]
-                booking_doc["room_number"] = assigned_room.get("room_number", "")
+        # OTA imports should NOT auto-assign rooms — user wants manual placement
+        # Reservations arrive as "unassigned" and user places them on the calendar
 
         # ── 6. Create booking via atomic core ────────────────────
         try:
@@ -501,6 +456,47 @@ async def auto_import_reservation_to_pms(
             "timestamp": imported_at,
             "performed_by": "import_bridge_service",
         })
+
+        # ── 9b. In-app notification for new OTA reservation ──────
+        try:
+            guest_name = booking_doc.get("guest_name", "Misafir")
+            check_in = booking_doc.get("check_in", "")
+            check_out = booking_doc.get("check_out", "")
+            room_type_label = booking_doc.get("room_type", "")
+            channel = booking_doc.get("channel", provider)
+            total = booking_doc.get("total_amount", 0)
+            currency = booking_doc.get("currency", "TRY")
+
+            notif_title = f"Yeni Rezervasyon: {guest_name}"
+            notif_message = (
+                f"{channel} kanalından yeni rezervasyon geldi. "
+                f"Giriş: {check_in}, Çıkış: {check_out}, "
+                f"Oda Tipi: {room_type_label}, "
+                f"Tutar: {total} {currency}"
+            )
+
+            await db.notifications.insert_one({
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "user_id": None,  # System-wide — visible to all users
+                "type": "reservation",
+                "title": notif_title,
+                "message": notif_message,
+                "priority": "high",
+                "read": False,
+                "action_url": f"/reservations?booking_id={booking_id}",
+                "metadata": {
+                    "booking_id": booking_id,
+                    "provider": provider,
+                    "external_reservation_id": ext_res_id,
+                    "guest_name": guest_name,
+                    "channel": channel,
+                },
+                "created_at": imported_at,
+            })
+            logger.info("Notification created for OTA import: booking=%s", booking_id)
+        except Exception as e:
+            logger.warning("Failed to create notification for import %s: %s", imported_reservation_id, e)
 
         # ── 10. Enqueue outbox event for confirmation ────────────
         try:
