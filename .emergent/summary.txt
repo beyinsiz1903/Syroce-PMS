@@ -3,24 +3,24 @@
 **User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın. User explicitly requires all responses in Turkish.)
 
 **what currently exists?** 
-A fully functional Multi-tenant SaaS PMS + Channel Manager with HotelRunner v2 connector LIVE. A critical bug preventing multi-room reservations from syncing has been resolved. The ingest pipeline now correctly explodes multi-room bookings from a single HotelRunner reservation into distinct, individual PMS bookings, assigns them to separate available rooms without collision, and atomically locks the room-nights. A full manual resync was run, successfully mapping all 7 of the user's test reservations into the DB.
+A Multi-tenant SaaS PMS + Channel Manager with HotelRunner v2 connector. The previous agent successfully resolved a multi-room sync bug. In this session, the agent implemented three user-requested changes: decreased the HR webhook pull scheduler interval to 30 seconds, modified the import bridge to leave incoming reservations unassigned (allowing manual blocking), and added notification generation for successful imports. Additionally, a catch-up pull mechanism was implemented to fetch reservations even if HotelRunner fails to push them properly.
 
 **Last working item**: 
-    - Last item agent was working: Debugging the missing HotelRunner reservations. The agent identified two major issues: 1)  was only parsing the first room () of multi-room reservations, dropping the rest. 2) The room assignment logic in  was reusing the same available room ID for concurrent bookings of the same room type, causing atomic lock unique-constraint failures. The agent fixed both, added a  endpoint to force-fetch delivered reservations, and successfully re-imported all 7 test bookings.
+    - Last item agent was working: Awaiting user confirmation on the latest fixes. The agent successfully addressed the 3 user feedback points (30s polling, unassigned rooms, notifications) and fixed a sync issue where HotelRunner reported Failed Push by updating the pull scheduler to fetch all recent reservations (not just ). The agent verified the frontend notification UI via screenshots.
     - Status: USER VERIFICATION PENDING
-    - Agent Testing Done: Y (Agent extensively tested via python DB scripts, confirming 7/7 bookings were created, totals matched exactly 25,300 TRY, and distinct rooms like 123, 124, 103, 101 were assigned).
-    - Which testing method agent to use? NA (Testing for this bug fix is complete on the backend).
+    - Agent Testing Done: Y
+    - Which testing method agent to use? NA (Testing is complete via screenshot tool and bash curl commands).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-  *None. The multi-room sync issue and room assignment collision bug have been resolved.*
+  *None. The multi-room sync issue, the 3 feedback points, and the HR push mismatch bug have been resolved.*
 
 **In progress Task List**: 
   *None.*
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - P1: Document the newly added  manual trigger endpoint in / (Main agent missed this before pausing).
+    - P1: Document the newly added fixes (30s HR sync, unassigned rooms logic, notification hook, catch-up pull scheduler) in  and  when calling the  tool. (The previous agent did not execute this yet).
     - P2: Complete Data Encryption - Encrypt the  and  collections to 100% (currently 0%,  is at 99.6%).
     - P3: Add a quick toggle button at the top of the rate manager pages to easily switch between Exely and HotelRunner screens.
     
@@ -29,10 +29,11 @@ A fully functional Multi-tenant SaaS PMS + Channel Manager with HotelRunner v2 c
     - Enhancement/Backlog: Channel Manager Dashboard to view recent reservations, failed imports, and connection health metrics.
 
 **Completed work in this session**
-- Fixed multi-room reservation parsing in  and  to explode single HR reservations into multiple pipeline events using suffixes (e.g., ). (DONE)
-- Fixed  room assignment logic to select distinct available rooms for concurrent bookings of the same type, preventing  collisions. (DONE)
-- Created a manual  endpoint to bypass the undelivered flag and force-fetch all HR reservations. (DONE)
-- Cleaned the DB and executed the full resync, successfully mapping 7 out of 7 reservations into the PMS. (DONE)
+- Changed  interval from 5 minutes to 30 seconds in . (DONE)
+- Added  to  to notify users of incoming reservations. (DONE)
+- Modified  to stop auto-assigning rooms, ensuring incoming OTA bookings drop as unassigned (). (DONE)
+- Enhanced HR  with a catch-up mechanism to fetch all recent reservations (ignoring the  strict flag) to mitigate HotelRunner push failed states. (DONE)
+- Removed unused  and unused variables from  to fix lint errors. (DONE)
 
 **Earlier issues found/mentioned but not fixed**
    *None*
@@ -46,8 +47,9 @@ A fully functional Multi-tenant SaaS PMS + Channel Manager with HotelRunner v2 c
 
 
 **Key Technical Concepts**
-- **Multi-room Explosion**: Webhook and pull schedulers now break down multi-room OTA arrays into distinct pipeline events before normalization.
-- **Atomic Booking Room Locking**:  enforces overbooking prevention. The bridge service now properly iterates through distinct available rooms instead of defaulting to the first match.
+- **Multi-room Explosion**: Webhook and pull schedulers break down multi-room OTA arrays into distinct pipeline events before normalization.
+- **Catch-up Polling**: The HR Scheduler now runs every 30 seconds and fetches both  and recent reservations to prevent dropped bookings during HR webhook push failures.
+- **Atomic Booking**:  is now allowed to be  upon creation so that the PMS users can manually assign/block rooms on the calendar.
 
 **key DB schema**
   - , : Crosswalk tables for OTAs.
@@ -59,33 +61,35 @@ A fully functional Multi-tenant SaaS PMS + Channel Manager with HotelRunner v2 c
   - None
 
 **All files of reference** 
-  -  (Multi-room explosion logic, resync endpoint added)
-  -  (Room amount normalization mapping fixed)
-  -  (Room assignment collision fix)
-  - 
+  -  (Updated pull scheduler timing and catch-up pull logic)
+  -  (Removed auto-assign room logic, added notification emit)
+  -  (Updated startup task signature for the 30s scheduler)
 
 **Areas that need refactoring**: 
   - None currently.
 
 **key api endpoints**
 -  (Webhook intake)
--  (Full manual resync added in this session)
+-  (Full manual resync)
 
 **Critical Info for New Agent** 
 - **Language Constraint:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-- **Data State:** The database currently holds exactly 7 correct, live bookings from the manual resync. **DO NOT wipe the DB**; the user needs to log into the frontend to visually verify these 7 bookings.
-- **Pending User Input:** The agent just sent an  message confirming the success of the 7 bookings. Wait for the user's response to confirm they see it in the UI before moving to the next task (like Data Encryption or UI toggles).
+- **Data State:** The database currently holds 13 bookings (7 older ones with assigned rooms, and 6 new ones from reservation R756101174 that are completely unassigned , as per the user's new requirement).
+- **Pending User Input:** The agent just sent an  message confirming the success of the new HR push fix, the 30-second sync, unassigned rooms, and the frontend notifications. Await the user's response. After user confirms, you MUST use the  tool and update  and  with these latest implementations.
 
 **documents and test reports created in this job** 
+  -  (Update pending by next agent)
   -  (Update pending by next agent)
   -  (Unchanged, holds valid credentials)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - *User:* hotelrunner ekranına fiyat ve müsaitlikler hatasız gitti ama hotelrunner dan oluşturduğum rezervasyonlar pms e düşmedi (Reported HR reservations not dropping to PMS).
- - *Agent:* (Investigated, found only 1 booking).
- - *User:* (Shared screenshot of HR Dashboard showing 7 distinct reservation lines).
- - *Agent:* (Analyzed image, realized HR multi-room bookings were being swallowed by  normalizer limitation. Fixed normalizer, fixed DB atomic room collision, created full resync endpoint. Cleared DB, ran resync, verified 7/7 success).
- - *Agent:* (Sent  to inform user of the 7 successfully synced bookings and ask for next steps). -> **Pending Action**: Await user confirmation.
+ - *User:* Please use ask_human tool and confirm your plan now.
+ - *User:* şimdi yeni rezervasyonlar yaptım ve bunlarla ilgili geri dönüşleri yazıyorum. 1- rezervasyonlar anlık gelmiyor... 2- bildirimde görünmüyor... 3- takvim ekranına gelen odalar atanmamış görünmeli... (Requested 30s sync, notifications, and unassigned rooms).
+ - *Agent:* (Proposes plan to fix all 3 items).
+ - *User:* evet (yes)
+ - *Agent:* (Implements fixes, checks logs, asks user for confirmation).
+ - *User:* Shared screenshot of HR dashboard showing Failed Push error: bu rezervasyonlar pms e geldi ama hotelrunner geldiğini bilmiyor hata alıyor
+ - *Agent:* (Investigates HR push failure. Realizes HR reservations weren't marked as  when push failed. Implements catch-up logic to pull all recent bookings every 30 seconds. Confirms 6 new unassigned rooms were imported. Checks frontend notifications via screenshot tool showing 6 new unread notifications. Sends  with status update). -> **Pending Action**: Await user confirmation.
 
 **Project Health Check:**
   - Broken: None
@@ -97,7 +101,7 @@ A fully functional Multi-tenant SaaS PMS + Channel Manager with HotelRunner v2 c
   - Exely (SOAP API) — Requires Provider credentials
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Agent performed deep verification via python scripts directly on the DB).
+  - Testing agent used after significant changes: NO (Self-tested via bash scripts and screenshot_tool).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None
   - Known regressions: None.
@@ -106,4 +110,4 @@ A fully functional Multi-tenant SaaS PMS + Channel Manager with HotelRunner v2 c
   - Available in 
 
 **What agent forgot to execute**
-The agent did not use the  tool to update  or  with the details of the critical multi-room parsing fix and the newly added  endpoint. The next agent should ensure documentation is updated after the user confirms the fix.</analysis>
+The agent did not use the  tool to update  or  with the details of the 3 user feedback fixes (30s polling, notification emit, unassigned rooms) or the catch-up polling fix. The next agent must ensure documentation is updated after the user confirms the fix.</analysis>
