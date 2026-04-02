@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 2026-04-02 - P2 Field Encryption Complete (users + bookings + guests)
+### Added
+- **Hash-based email lookups**: Auth login, register, forgot-password all use `build_user_email_query()` for dual-read (hash + plaintext) queries
+- **`/api/ops/field-encryption/migrate-all`**: New endpoint to encrypt all configured collections at once
+- **Auto-encryption on insert**: `auto_seed.py`, `atomic_booking.py`, `import_bridge_service.py`, `auth.py`, `admin/router.py` now encrypt PII fields before DB writes
+- **`encrypted_lookup.py`**: New helper module with `build_user_email_query`, `encrypt_user_doc`, `decrypt_user_doc`, `encrypt_booking_doc`, `decrypt_booking_doc`
+
+### Changed
+- **`field_encryption.py` — `migrate_collection()`**: Now always sets `_enc_version=1` on processed documents, even when PII fields are empty
+- **`core/security.py` — `get_current_user()`**: Now decrypts user document after DB read
+- **`domains/admin/router.py`**: Admin user list and team list now decrypt user docs; create user encrypts before insert
+
+### Encryption Status
+- `guests`: 1/1 (100%), `users`: 158/158 (100%), `bookings`: 13/13 (100%)
+
+### Verified
+- Testing agent iteration_180: 100% pass rate (9/9 tests)
+
+
 ## 2026-04-02 - Calendar Vibrant Color Update
 ### Changed
 - **Booking bar colors completely revamped**: Gray (#9ca3af) replaced with vibrant status-based colors:
