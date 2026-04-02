@@ -370,14 +370,30 @@ class ReservationPullScheduler:
 
         for conn in connections:
             try:
+                tenant_id = conn["tenant_id"]
+                hr_id = conn.get("hr_id", conn.get("property_id", "default"))
+
+                # Resolve credentials via secrets manager (same as _get_provider)
+                from core.secrets import get_secrets_manager
+                sm = get_secrets_manager()
+                creds = await sm.get_provider_credentials(tenant_id, "hotelrunner", hr_id)
+
+                if not creds or not creds.get("token"):
+                    # Fallback: legacy plaintext token in connection doc
+                    if conn.get("token"):
+                        creds = {"token": conn["token"], "hr_id": hr_id}
+                    else:
+                        logger.error(f"[PULL] No credentials for tenant {tenant_id} — skipping")
+                        continue
+
                 await self.pull_for_tenant(
-                    tenant_id=conn["tenant_id"],
-                    token=conn["token"],
-                    hr_id=conn["hr_id"],
+                    tenant_id=tenant_id,
+                    token=creds["token"],
+                    hr_id=creds.get("hr_id", hr_id),
                     safety_window_minutes=safety_window_minutes,
                 )
             except Exception as e:
-                logger.error(f"[PULL] Error for tenant {conn['tenant_id']}: {e}")
+                logger.error(f"[PULL] Error for tenant {conn.get('tenant_id', '?')}: {e}")
 
     async def pull_for_tenant(
         self,
@@ -386,52 +402,45 @@ class ReservationPullScheduler:
         hr_id: str,
         safety_window_minutes: int = 5,
     ) -> dict[str, Any]:
-        """Pull reservations for a specific tenant."""
+        """Pull UNDELIVERED reservations for a specific tenant, then confirm delivery (fire)."""
         from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
 
         provider = HotelRunnerProvider(token=token, hr_id=hr_id)
 
-        # Get cursor: last pull time - safety window
-        cursor_doc = await db.hotelrunner_pull_cursors.find_one(
-            {"tenant_id": tenant_id},
-            {"_id": 0},
-        )
-
-        if cursor_doc and cursor_doc.get("last_pull_at"):
-            last_pull = datetime.fromisoformat(cursor_doc["last_pull_at"])
-            fetch_from = last_pull - timedelta(minutes=safety_window_minutes)
-        else:
-            fetch_from = datetime.now(UTC) - timedelta(days=7)
-
-        from_date = fetch_from.strftime("%Y-%m-%d")
         pull_start = datetime.now(UTC)
 
-        # Fetch from HotelRunner
-        result = await provider.get_reservations(
-            undelivered=False,
-            from_date=from_date,
-            per_page=10,
-            page=1,
-        )
+        # ── Phase 1: Fetch undelivered reservations ──────────────────
+        all_reservations = []
+        page = 1
+        total_pages = 1
 
-        if not result["success"]:
-            logger.error(f"[PULL] Failed for tenant {tenant_id}: {result.get('error')}")
-            await _log_pull(tenant_id, "failed", 0, result.get("error"))
-            return {"success": False, "error": result.get("error")}
-
-        all_reservations = result["data"].get("reservations", [])
-        total_pages = result["data"].get("pages", 1)
-
-        # Fetch remaining pages
-        for page in range(2, total_pages + 1):
-            page_result = await provider.get_reservations(
-                undelivered=False, from_date=from_date, per_page=10, page=page,
+        while page <= total_pages:
+            result = await provider.get_reservations(
+                undelivered=True,
+                per_page=50,
+                page=page,
             )
-            if page_result["success"]:
-                all_reservations.extend(page_result["data"].get("reservations", []))
+            if not result["success"]:
+                logger.error(f"[PULL] Failed for tenant {tenant_id} page {page}: {result.get('error')}")
+                if page == 1:
+                    await _log_pull(tenant_id, "failed", 0, result.get("error"))
+                    return {"success": False, "error": result.get("error")}
+                break
 
-        # Process through unified ingest pipeline
+            page_reservations = result["data"].get("reservations", [])
+            all_reservations.extend(page_reservations)
+            total_pages = result["data"].get("pages", 1)
+            page += 1
+
+        if not all_reservations:
+            logger.info(f"[PULL] Tenant {tenant_id}: no undelivered reservations")
+            await _log_pull(tenant_id, "success", 0)
+            return {"success": True, "fetched": 0, "processed": 0, "fired": 0, "pages": total_pages}
+
+        # ── Phase 2: Process through unified ingest pipeline ─────────
         processed = 0
+        fire_uids = []
+
         for res in all_reservations:
             try:
                 await _persist_and_process(
@@ -439,18 +448,36 @@ class ReservationPullScheduler:
                     res, "reservation_pull",
                 )
                 processed += 1
+
+                # Collect message_uid for fire confirmation
+                msg_uid = res.get("message_uid") or res.get("ruid") or res.get("uid")
+                if msg_uid:
+                    fire_uids.append(msg_uid)
             except Exception as e:
                 logger.error(f"[PULL] Error processing reservation: {e}")
 
-        # Update cursor
+        # ── Phase 3: Confirm delivery (fire) for processed reservations ──
+        fired = 0
+        for uid in fire_uids:
+            try:
+                fire_result = await provider.confirm_delivery(message_uid=uid)
+                if fire_result.success:
+                    fired += 1
+                    logger.info(f"[PULL] Fired reservation uid={uid}")
+                else:
+                    logger.warning(f"[PULL] Fire failed for uid={uid}: {fire_result.error}")
+            except Exception as e:
+                logger.error(f"[PULL] Fire error for uid={uid}: {e}")
+
+        # ── Phase 4: Update cursor ──────────────────────────────────
         await db.hotelrunner_pull_cursors.update_one(
             {"tenant_id": tenant_id},
             {"$set": {
                 "tenant_id": tenant_id,
                 "last_pull_at": pull_start.isoformat(),
-                "last_fetch_from": from_date,
                 "reservations_fetched": len(all_reservations),
                 "reservations_processed": processed,
+                "reservations_fired": fired,
                 "pages_fetched": total_pages,
             }},
             upsert=True,
@@ -459,13 +486,13 @@ class ReservationPullScheduler:
         duration_ms = int((datetime.now(UTC) - pull_start).total_seconds() * 1000)
         await _log_pull(tenant_id, "success", processed, duration_ms=duration_ms)
 
-        logger.info(f"[PULL] Tenant {tenant_id}: fetched {len(all_reservations)}, processed {processed}")
+        logger.info(f"[PULL] Tenant {tenant_id}: fetched {len(all_reservations)}, processed {processed}, fired {fired}")
         return {
             "success": True,
             "fetched": len(all_reservations),
             "processed": processed,
+            "fired": fired,
             "pages": total_pages,
-            "from_date": from_date,
         }
 
 
@@ -501,10 +528,27 @@ async def manual_pull(
     if not conn:
         raise HTTPException(status_code=404, detail="HotelRunner baglantisi bulunamadi")
 
+    # Resolve credentials via secrets manager
+    hr_id = conn.get("hr_id", conn.get("property_id", "default"))
+    from core.secrets import get_secrets_manager
+    sm = get_secrets_manager()
+    creds = await sm.get_provider_credentials(current_user.tenant_id, "hotelrunner", hr_id)
+
+    if not creds or not creds.get("token"):
+        # Fallback: legacy plaintext token in connection doc
+        fallback = await db.hotelrunner_connections.find_one(
+            {"tenant_id": current_user.tenant_id, "is_active": True},
+            {"_id": 0, "token": 1, "hr_id": 1},
+        )
+        if fallback and fallback.get("token"):
+            creds = {"token": fallback["token"], "hr_id": fallback.get("hr_id", hr_id)}
+        else:
+            raise HTTPException(status_code=502, detail="HotelRunner kimlik bilgileri bulunamadi")
+
     result = await pull_scheduler.pull_for_tenant(
         tenant_id=current_user.tenant_id,
-        token=conn["token"],
-        hr_id=conn["hr_id"],
+        token=creds["token"],
+        hr_id=creds.get("hr_id", hr_id),
         safety_window_minutes=5,
     )
 
@@ -512,7 +556,7 @@ async def manual_pull(
         raise HTTPException(status_code=502, detail=f"Pull hatasi: {result.get('error')}")
 
     return {
-        "message": f"{result['processed']} rezervasyon islendi ({result['fetched']} cekildi)",
+        "message": f"{result['processed']} rezervasyon islendi ({result['fetched']} cekildi, {result.get('fired', 0)} onaylandi)",
         **result,
     }
 

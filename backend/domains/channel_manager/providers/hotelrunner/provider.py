@@ -475,7 +475,7 @@ class HotelRunnerProvider:
         message_uid: str,
         pms_number: str | None = None,
     ) -> ProviderResult:
-        """Confirm reservation delivery to HotelRunner."""
+        """Confirm reservation delivery to HotelRunner via /reservations/fire."""
         start = time.time()
         try:
             params: dict[str, str] = {"message_uid": message_uid}
@@ -483,7 +483,7 @@ class HotelRunnerProvider:
                 params["pms_number"] = pms_number
 
             async def _call():
-                return await self._client.put(ep.RESERVATIONS_ACK, params=params)
+                return await self._client.put(ep.RESERVATIONS_FIRE, params=params)
 
             result = await self._retry.execute(_call)
             duration_ms = int((time.time() - start) * 1000)
