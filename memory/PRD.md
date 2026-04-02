@@ -45,6 +45,17 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - Upgraded pygments 2.19.2 → 2.20.0 (CVE-2026-4539 — regex complexity)
 - pip-audit now reports zero known vulnerabilities
 
+### HotelRunner Reservation Pull & Rate Manager Fixes (Apr 2026)
+- **Bug Fix: Pull Scheduler `undelivered=False` → `True`** — Now correctly fetches only undelivered reservations
+- **Bug Fix: Fire confirmation (delivery ACK) was never sent** — After processing, `PUT /reservations/fire?message_uid=XXX` is now called
+- **Bug Fix: `confirm_delivery` used wrong endpoint** — Changed from `RESERVATIONS_ACK` to `RESERVATIONS_FIRE`
+- **Bug Fix: Pull Scheduler not auto-started at startup** — Now starts automatically with 5-min interval
+- **Bug Fix: Pull Scheduler used raw `conn["token"]`** — Now resolves credentials via Secrets Manager
+- **Feature: "Default room type" removal** — Added `DELETE /api/channel-manager/hr-rate-manager/room-types/{inv_code}` endpoint
+- **Feature: Permission flags exposed** — `availability_update`, `price_update`, `restrictions_update` shown in Rate Manager UI with warning badges
+- **Feature: Push deduplication** — Prevents duplicate HotelRunner push for same room type
+- **Feature: Permission warnings** — Shows toast warnings when pushing to room types with restricted permissions
+
 ## Prioritized Backlog
 
 ### P0 (Critical)
@@ -66,6 +77,9 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - GET /api/security/pii/strict-mode/config
 - GET /api/security/pii/strict-mode/violations
 - GET /api/security/encryption/status
+- POST /api/channel-manager/hotelrunner/sync/reservations/pull (manual pull)
+- GET /api/channel-manager/hotelrunner/sync/status
+- DELETE /api/channel-manager/hr-rate-manager/room-types/{inv_code}
 
 ## 3rd Party Integrations
 - AWS KMS (Encryption) — requires User API Key
