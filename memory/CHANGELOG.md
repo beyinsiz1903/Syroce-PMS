@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## 2026-04-03 - BUG FIX: HotelRunner Global Cancellation Not Syncing
+
+### Issue
+When a user cancelled an entire reservation (all rooms) or cancelled additional rooms on HotelRunner, the cancellation was NOT being synced to the PMS. New reservations and name changes synced fine, but cancellations were silently dropped.
+
+### Root Cause (Two-Part)
+1. **Per-room effective state logic was too conservative**: Phase B's effective state calculation only checked room-level `state` field. For global cancellations, HR marks the top-level as cancelled (`next_states=['cancel']`) but does NOT update individual room states. Since room states remained "confirmed", the code kept them as confirmed.
+2. **Poisoned timestamp problem**: The previous (buggy) sync cycle correctly updated `provider_updated_at` (from other changes like name/room type) but failed to apply the cancellation. This meant subsequent sync cycles saw `timestamp_changed=False` and skipped the reservation entirely.
+
+### Fix — Three-Tier Per-Room State Logic
+New algorithm in Phase B catch-up (`hotelrunner_webhook.py`):
+1. Detect **new room-level cancellations** (rooms HR explicitly marks as cancelled that our DB still has as confirmed)
+2. For each sub-room:
+   - `_room_cancelled=True` → always "canceled"
+   - Exploded room + top-level cancelled + **new partial cancel detected** → "confirmed" (respect room-level markers)
+   - Exploded room + top-level cancelled + **no new room cancels** + **timestamp changed** → "canceled" (global cancel)
+   - Exploded room + top-level cancelled + **no new room cancels** + **timestamp same** → keep stored status (avoid re-cancelling old partial cancels)
+
+### Data Fix
+Cleared `provider_updated_at` for non-cancelled rooms in 4 affected reservations (R881632298, R635472908, R676063586, R756101174) to force re-processing with corrected code. 17 rooms total were correctly updated to "cancelled" status.
+
+### Verification
+- R881632298: All 7 rooms → cancelled ✓
+- R635472908: All 5 rooms → cancelled ✓
+- R676063586: Both rooms → cancelled ✓
+- R756101174: All 6 rooms → cancelled ✓
+- R014235376: Rooms 0-1 cancelled, rooms 2-5 confirmed (partial cancel PRESERVED) ✓
+- 17 cancellation notifications generated correctly
+- Next Phase B cycle: `updated 0` (stable, no re-processing)
+
+---
+
+
 ## 2026-04-03 - BUG FIX: HotelRunner Multi-Room Reservation Cancellation & Calendar Display
 
 ### Issues Fixed

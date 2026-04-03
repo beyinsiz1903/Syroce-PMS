@@ -642,32 +642,33 @@ class ReservationPullScheduler:
 
                         sub_reservations = explode_multi_room_reservation(res)
 
+                        # ── Detect NEW room-level cancellations ──
+                        # If HR explicitly marks NEW rooms as cancelled (rooms that our DB
+                        # still has as confirmed), this is a PARTIAL cancel → only cancel
+                        # those specific rooms.
+                        # If NO new room-level cancels exist but top-level is cancelled,
+                        # this is a GLOBAL cancel → cancel ALL rooms.
+                        newly_room_cancelled = set()
+                        for _sr in sub_reservations:
+                            _sr_ext = _sr.get("hr_number", "")
+                            if _sr.get("_room_cancelled") and known_ext_status.get(_sr_ext, "confirmed") != "cancelled":
+                                newly_room_cancelled.add(_sr_ext)
+                        has_new_room_cancels = len(newly_room_cancelled) > 0
+
                         for sub_res in sub_reservations:
                             sub_ext = sub_res.get("hr_number", "")
-
-                            # Per-room effective state: use room-level state if available,
-                            # otherwise fall back to top-level effective state
-                            # This prevents a single room cancellation from marking ALL rooms as cancelled
                             sub_room_cancelled = sub_res.get("_room_cancelled", False)
-                            if sub_room_cancelled:
-                                sub_effective_state = "canceled"
-                            elif sub_res.get("_exploded_from"):
-                                # This is an exploded sub-reservation from a multi-room booking
-                                # Only use top-level effective_state if the room itself is cancelled
-                                # Otherwise keep the room's own state (confirmed)
-                                room_data = (sub_res.get("rooms") or [{}])[0] if sub_res.get("rooms") else {}
-                                room_state_val = (room_data.get("state") or "").lower()
-                                if room_state_val in ("cancelled", "canceled"):
-                                    sub_effective_state = "canceled"
-                                else:
-                                    # Room not cancelled — use room's own state or "confirmed"
-                                    sub_effective_state = room_state_val if room_state_val else "confirmed"
-                            else:
-                                # Single-room reservation — use top-level effective state
-                                sub_effective_state = effective_state
+                            is_exploded = bool(sub_res.get("_exploded_from"))
 
                             if sub_ext not in known_ext_ids:
                                 # ── New reservation: import ──
+                                # For new imports, use top-level effective state when no room-level cancel
+                                if sub_room_cancelled:
+                                    sub_res["state"] = "cancelled"
+                                elif effective_state == "canceled" and not has_new_room_cancels:
+                                    sub_res["state"] = "cancelled"
+                                    sub_res["_room_cancelled"] = True
+
                                 try:
                                     await _persist_and_process(
                                         tenant_id, _resolve_property_id(sub_res),
@@ -681,11 +682,41 @@ class ReservationPullScheduler:
                                 # ── Existing reservation: check for modifications/cancellations ──
                                 stored_updated = known_ext_updated.get(sub_ext, "")
                                 stored_status = known_ext_status.get(sub_ext, "confirmed")
+                                timestamp_changed = hr_updated_at and hr_updated_at > stored_updated
+
+                                # Per-room effective state — three-tier logic:
+                                # 1. Explicit room-level cancel → always cancelled
+                                # 2. Exploded room in cancelled reservation:
+                                #    a. New partial cancel detected → only cancel marked rooms
+                                #    b. No new room cancels + timestamp changed → global cancel
+                                #    c. No new room cancels + timestamp same → keep stored status
+                                # 3. Single-room / non-cancelled → use top-level state
+                                if sub_room_cancelled:
+                                    sub_effective_state = "canceled"
+                                elif is_exploded and effective_state == "canceled":
+                                    if has_new_room_cancels:
+                                        # Partial cancel: HR marked specific rooms as cancelled
+                                        # This room is NOT explicitly marked → keep confirmed
+                                        sub_effective_state = "confirmed"
+                                    elif timestamp_changed:
+                                        # Global cancel: no new room-level cancels but
+                                        # timestamp changed → all remaining rooms cancelled
+                                        sub_effective_state = "canceled"
+                                    else:
+                                        # No new changes → keep stored status
+                                        sub_effective_state = {"cancelled": "canceled"}.get(stored_status, stored_status)
+                                else:
+                                    sub_effective_state = effective_state
+
+                                logger.info(
+                                    f"[PULL-PHASE-B] {sub_ext}: sub_effective={sub_effective_state}, "
+                                    f"room_cancelled={sub_room_cancelled}, top_effective={effective_state}, "
+                                    f"ts_changed={timestamp_changed}, new_partial={has_new_room_cancels}"
+                                )
 
                                 # Map HR effective state to PMS status for comparison
                                 hr_status_check = {"canceled": "cancelled", "cancelled": "cancelled", "no_show": "no_show"}.get(sub_effective_state, sub_effective_state)
                                 state_changed = hr_status_check != stored_status
-                                timestamp_changed = hr_updated_at and hr_updated_at > stored_updated
 
                                 if state_changed or timestamp_changed:
                                     try:

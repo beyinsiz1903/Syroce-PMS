@@ -54,6 +54,7 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - Per-room cancellation detection for multi-room reservations
 - Modification/cancellation notification sync from Phase B pull
 - room_type_id matching for calendar display of OTA imports
+- Three-tier global/partial cancellation detection (Apr 2026): new room-cancel detection, timestamp-gated global cancel, stored-status preservation for old partial cancels
 
 ## Prioritized Backlog
 
