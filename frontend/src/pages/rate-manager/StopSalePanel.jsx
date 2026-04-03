@@ -26,6 +26,7 @@ const CATEGORY_STYLE = {
 };
 
 export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parentLoading, apiPrefix = '/api/channel-manager/rate-manager' }) => {
+  const isHotelRunner = apiPrefix.includes('hr-rate-manager');
   const token = localStorage.getItem('token');
   const headers = { Authorization: `Bearer ${token}` };
 
@@ -179,7 +180,10 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
         toast.success(`${data.saved} kayit icin satis acildi`);
       }
       if (data.background_push) {
-        toast.info('Exely guncellemesi arka planda gonderiliyor...');
+        toast.info(isHotelRunner ? 'HotelRunner guncellemesi arka planda gonderiliyor...' : 'Exely guncellemesi arka planda gonderiliyor...');
+      }
+      if (data.provider_warning) {
+        toast.error(data.provider_warning, { duration: 8000 });
       }
 
       loadActiveStopSales();
@@ -513,7 +517,10 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
             {/* Warning */}
             <div className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
               <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span>Stop sale islemleri Exely uzerinden tum kanallara anlik yansitilir.</span>
+              <span>{isHotelRunner
+                ? 'Stop sale islemleri HotelRunner uzerinden tum kanallara anlik yansitilir.'
+                : 'Stop sale islemleri Exely uzerinden tum kanallara anlik yansitilir.'
+              }</span>
             </div>
           </CardContent>
         </Card>

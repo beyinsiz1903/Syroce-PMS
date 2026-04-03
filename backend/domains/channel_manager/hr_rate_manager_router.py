@@ -114,7 +114,8 @@ async def _get_hr_provider(tenant_id: str):
     try:
         provider, conn = await _get_provider(tenant_id)
         return provider, conn
-    except Exception:
+    except Exception as exc:
+        logger.warning("[HR-RATE-MGR] Provider alinamadi tenant=%s: %s", tenant_id, exc)
         return None, None
 
 
@@ -483,27 +484,41 @@ async def hr_bulk_grid_update(
         await db.hr_rate_calendar.bulk_write(bulk_ops, ordered=False)
 
     push_results = []
+    provider_warning = None
+    if not provider and len(pairs) > 0:
+        provider_warning = "HotelRunner kimlik bilgileri alinamadi — veriler yerel olarak kaydedildi ancak HotelRunner'a gonderilemedi"
+        logger.warning("[HR-BULK-UPDATE] Provider is None, skipping push for tenant=%s", tenant_id)
+
     if push_tasks:
-        async def _background_push(tasks):
-            try:
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                success = sum(1 for r in results if isinstance(r, dict) and r.get("success"))
-                logger.info("[HR-BULK-UPDATE] Background push done: %s/%s", success, len(results))
-            except Exception as e:
-                logger.error("[HR-BULK-UPDATE] Background push failed: %s", e)
-        asyncio.create_task(_background_push(push_tasks))
+        try:
+            results = await asyncio.gather(*push_tasks, return_exceptions=True)
+            for r in results:
+                if isinstance(r, dict):
+                    push_results.append(r)
+                else:
+                    push_results.append({"success": False, "error": str(r)})
+            success_count = sum(1 for r in push_results if r.get("success"))
+            logger.info("[HR-BULK-UPDATE] Push done: %s/%s successful", success_count, len(push_results))
+        except Exception as e:
+            logger.error("[HR-BULK-UPDATE] Push failed: %s", e)
+            push_results.append({"success": False, "error": str(e)})
+
+    all_pushed = len(push_results) > 0 and all(r.get("success") for r in push_results)
 
     return {
         "saved": saved,
         "push_results": push_results,
-        "all_pushed": False,
+        "all_pushed": all_pushed,
         "background_push": len(push_tasks) > 0,
         "total_room_types": len(total_room_types_set),
         "permission_warnings": permission_warnings,
+        "provider_warning": provider_warning,
         "message": f"{saved} kayıt güncellendi" + (
-            f", {len(push_tasks)} HotelRunner push arka planda gönderiliyor" if push_tasks else ""
+            f", {len(push_tasks)} HotelRunner push gönderildi" if push_tasks else ""
         ) + (
             f" | UYARI: {len(permission_warnings)} izin sorunu tespit edildi" if permission_warnings else ""
+        ) + (
+            f" | {provider_warning}" if provider_warning else ""
         ),
     }
 

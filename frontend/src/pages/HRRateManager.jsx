@@ -219,8 +219,18 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
       );
 
       toast.success(`${data.saved} kayit guncellendi`);
-      if (data.background_push) {
-        toast.info('HotelRunner push arka planda gonderiliyor');
+      if (data.all_pushed) {
+        toast.success('HotelRunner push basarili');
+      } else if (data.background_push) {
+        const failed = data.push_results?.filter(r => !r.success) || [];
+        if (failed.length > 0) {
+          toast.warning(`${failed.length} HotelRunner push hatasi olustu`);
+        } else {
+          toast.info('HotelRunner push gonderildi');
+        }
+      }
+      if (data.provider_warning) {
+        toast.error(data.provider_warning, { duration: 8000 });
       }
       if (data.permission_warnings && data.permission_warnings.length > 0) {
         data.permission_warnings.forEach(w => toast.warning(w, { duration: 10000 }));
