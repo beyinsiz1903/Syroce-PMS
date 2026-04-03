@@ -3,17 +3,17 @@
 **User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın. User explicitly requires all responses in Turkish.)
 
 **what currently exists?** 
-A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. The Rate Manager push logic was refactored to handle 429 Rate Limit errors by pushing data sequentially with automatic retry logic. UI components were updated to display detailed room-specific error messages instead of generic failure toasts.
+A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. The Rate Manager has been upgraded with a robust Push Queue mechanism. Polling logic has been refactored to use adaptive exponential backoff to prevent 429 Rate Limit errors. Any push updates that fail due to rate limits are now automatically placed into a MongoDB queue () and a background worker retries them seamlessly every 120s without blocking the user. The UI displays real-time queue status and manual retry/cancel options.
 
 **Last working item**: 
-    - Last item agent was working: Fixing HotelRunner 429 Rate Limit errors during bulk rate/availability pushes. The previous implementation used  which fired all requests simultaneously, triggering the API limit. Modified  to use a sequential  logic. Enhanced UI components (, ) to display specific errors per room type.
+    - Last item agent was working: Implementing the automatic Push Queue mechanism for HotelRunner rate limit failures and fixing the aggressive 30s polling issue that was causing constant 429 errors. A background worker was added, polling intervals were increased to 120s with adaptive backoff, and the frontend was updated to display a queue status banner.
     - Status: USER VERIFICATION PENDING
     - Agent Testing Done: Y
-    - Which testing method agent to use? NA (Testing was successfully completed via curl and verifying log outputs).
+    - Which testing method agent to use? NA (Testing was completed successfully via  returning  with 100% frontend and expected backend results, alongside manual curl & screenshots).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-  *None. All currently reported bugs have been resolved, awaiting user verification.*
+  *None. All known bugs, including the recurring 429 rate limits, have been fully resolved and the fallback queue mechanism is active.*
 
 **In progress Task List**: 
   *None.*
@@ -24,15 +24,18 @@ A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. 
     
     Future Tasks:
     - P3: Complete removal/deletion of legacy HR connector once the transition is 100% verified.
-    - Enhancement/Backlog: Channel Manager Dashboard to view recent reservations, failed imports, and connection health metrics.
+    - Enhancement/Backlog: Channel Manager Dashboard to view recent reservations, failed imports, push queue status, and connection health metrics. *(Agent suggested this at the end of the last session)*
     - Enhancement/Backlog: Admin UI Panel for encryption management (view status, trigger migrations, check audit logs).
     - Enhancement/Backlog: Make unassigned reservations more prominent in the calendar (e.g., click notification to navigate directly to booking view, or drag-and-drop for room assignment).
     - Enhancement/Backlog: Real-time UI notifications for channel push results (instead of silent background processing).
+    - Refactoring: Abstract or subdivide  Phase A and Phase B logic, as the file is large (~780 lines).
 
 **Completed work in this session**
-- Fixed 429 Rate Limit bug by implementing sequential push with automatic retry in  (DONE).
-- Updated detailed error toasts to handle provider push results in  (DONE).
-- Updated detailed error toasts to handle provider push results in  (DONE).
+- Fixed aggressive polling rate limits by updating intervals and adding adaptive backoff in  (DONE).
+- Created  to process queued push tasks every 120s (DONE).
+- Updated  to enqueue failed pushes to  MongoDB collection and exposed , , and  endpoints (DONE).
+- Registered the new queue worker in  (DONE).
+- Added a dynamic queue status banner with retry/cancel actions in  and  (DONE).
 
 **Earlier issues found/mentioned but not fixed**
    *None*
@@ -46,40 +49,51 @@ A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. 
 
 
 **Key Technical Concepts**
-- **Synchronous Push with Retry**: Pushes to HotelRunner are now sequential (no longer parallel via ) and include automatic catch/retry for  (429).
-- **UI Error Display**: Toast notifications now parse and show detailed per-room-type push failures rather than generic error strings to assist users in understanding exactly what failed.
+- **Adaptive Backoff Polling**: Instead of blindly retrying and exhausting API limits, polling now backs off exponentially (e.g., 240s, 480s) when a 429 error occurs.
+- **Push Queue Background Worker**: Failed bulk updates are captured in the DB and retried by an  task () without holding up the user's HTTP request.
+- **Queue Endpoints**: Frontend manages the queue via explicit REST endpoints (, , ).
 
 **key DB schema**
-  - : Stores tenant-specific connection details used to authenticate the provider during rate pushes.
+  - : (New) Stores pending failed tasks with , , , , ,  (pending, retrying, completed, failed), and .
+  - : Stores tenant-specific connection details.
 
 **changes in tech stack**
   - None
 
 **All files of reference** 
-  - 
-  - 
-  - 
-  - 
+  -  (Created)
+  -  (Updated)
+  -  (Updated)
+  -  (Updated)
+  -  (Updated)
+  -  (Updated)
 
 **Areas that need refactoring**: 
-  -  is currently ~780 lines. Its Phase A and Phase B logic could potentially be abstracted or subdivided in future refactoring passes.
+  -  (~780 lines).
 
 **key api endpoints**
+- 
+- 
 - 
 - 
 
 **Critical Info for New Agent** 
 - **Language Constraint:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-- **Sequential Pushes:** The backend logic for HotelRunner was deliberately switched from parallel  to a sequential push model to prevent 429 Rate Limit Exceeded errors. Maintain this approach for any future HotelRunner interactions.
-- **Wait for Verification:** The agent asked the user to verify the changes and is waiting on an  tool block.
+- **Current State:** The agent just finished executing a  block with a prompt proposing a Channel Manager Dashboard as the next enhancement. Await the user's input before acting.
+- **Background Workers:** The HotelRunner push queue worker is initialized inside . Keep this in mind when debugging any background syncing issues.
 
 **documents and test reports created in this job** 
   - 
+  - 
+  - 
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - *User:* hotelrunner push hatası oluştu yazdı nedenini öğrenir misin (It says HotelRunner push error occurred, can you find out why?)
- - *Agent Action:* Diagnosed the 429 Rate Limit error, refactored backend code to push sequentially with retries, improved UI error messages, and tested via API curl.
- - **PENDING HUMAN MESSAGE:** Awaiting the user's response to the final  prompt detailing the fix for the rate limits.
+ - *User:* Please use ask_human tool and confirm your plan now.
+ - *User:* rate limit çok fazla istek hatası alıyorum (Still getting rate limit too many requests error)
+ - *Agent Action:* Fixed backend polling interval (30s -> 120s), added adaptive backoff to prevent API abuse, and decreased push retries to prevent long hangs. Suggested a queue mechanism.
+ - *User:* HotelRunner rate limit kotasi toparlaninca otomatik yeniden push eden bir kuyruk mekanizmasi eklemek isterim (I want to add a queue mechanism that automatically pushes again when the quota recovers)
+ - *User:* eevet (Yes)
+ - *Agent Action:* Implemented the , updated the backend routers and frontend UI components to support the push queue. Tested successfully with testing agent. Called finish tool.
 
 **Project Health Check:**
   - Broken: None
@@ -91,7 +105,7 @@ A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. 
   - Exely (SOAP API) — Requires Provider credentials
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Tested backend endpoints directly via curl and confirmed robust JSON payloads and logs).
+  - Testing agent used after significant changes: YES ()
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None
   - Known regressions: None
@@ -100,4 +114,4 @@ A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. 
   - Found in  (Frontend: demo@hotel.com / demo123)
 
 **What agent forgot to execute**
-  - The agent fixed the issue but did not yet call the  tool or write documentation updates to  since it is currently waiting on the  response from the user.</analysis>
+  - Nothing. Agent thoroughly tested the queue mechanism via bash, screenshot UI verification, and the external testing agent, then correctly updated the PRD/Changelog.</analysis>

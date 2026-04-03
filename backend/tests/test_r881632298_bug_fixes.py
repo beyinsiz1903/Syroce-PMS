@@ -11,7 +11,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://rate-limit-resolved.preview.emergentagent.com')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://pms-channel-queue.preview.emergentagent.com')
 
 
 class TestR881632298BugFixes:
