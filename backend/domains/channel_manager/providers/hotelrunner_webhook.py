@@ -711,8 +711,6 @@ async def _sync_reservation_update(
 
     Returns True if booking was updated.
     """
-    from domains.channel_manager.ingest.normalizer import extract_hotelrunner_identity
-
     # Find the booking by external_reservation_id
     booking = await db.bookings.find_one(
         {"tenant_id": tenant_id, "external_reservation_id": ext_reservation_id},
