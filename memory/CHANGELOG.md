@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## 2026-04-03 - FEATURE: HotelRunner Push Kuyruk Mekanizmasi (Otomatik Retry)
+
+### Ozellik
+Rate limit'e takilan push islemleri artik otomatik olarak kuyruklaniyor ve API toparlaninca yeniden gonderiliyor.
+
+### Yeni Backend Bilesenler
+- `hr_push_queue_worker.py`: Arka plan worker — 120 saniyede bir kuyruktaki gorevleri isler
+  - `enqueue_failed_push()`: Basarisiz push'u kuyruğa ekler (duplicate merge destegi)
+  - `get_queue_status()`: Tenant bazli kuyruk istatistikleri
+  - `HRPushQueueWorker`: Adaptive backoff ile calisir
+- MongoDB collection: `hr_push_queue`
+
+### Yeni API Endpoint'leri
+- `GET /api/channel-manager/hr-rate-manager/queue-status`: Kuyruk durumu (pending, retrying, completed, failed)
+- `POST /api/channel-manager/hr-rate-manager/queue-retry`: Kuyruktaki gorevleri hemen yeniden dene
+- `DELETE /api/channel-manager/hr-rate-manager/queue-clear`: Tamamlanan gorevleri temizle
+- `DELETE /api/channel-manager/hr-rate-manager/queue-cancel/{item_id}`: Belirli bir gorevi iptal et
+
+### Frontend Degisiklikler
+- `HRRateManager.jsx`: Sari kuyruk banner'i (bekleyen push sayisi + "Simdi Dene" butonu)
+- `StopSalePanel.jsx`: Kuyruk toast mesajlari
+- 30 saniyede bir kuyruk durumu polling
+
+### Akis
+1. Push rate limit'e takilir → kuyruğa eklenir
+2. Kalan room type'lar direkt kuyruğa eklenir (API'ye tekrar vurmaz)
+3. Worker 120s'de bir kuyruğu kontrol eder
+4. API toparlaninca push basarili olur → "completed" olarak isaretlenir
+5. Rate limit devam ederse → adaptive backoff (240s, 480s...)
+
+### Test Sonuclari
+- Backend: 7/9 passed (2 timeout beklenen — rate limit aktif)
+- Frontend: 100%
+
+---
+
 ## 2026-04-03 - BUG FIX: HotelRunner Rate Limit (429) Kapsamli Duzeltme
 
 ### Issue

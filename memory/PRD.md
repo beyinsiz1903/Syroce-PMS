@@ -53,6 +53,7 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - Auto-un-cancel guard: cancelled reservations never auto-revert to confirmed
 - effective_state uses only state field + cancel_reason (not next_states)
 - Rate limit aware push with 30s-capped retry and fail-fast polling (fix Apr 2026)
+- **Push Retry Queue**: Automatic retry mechanism for failed pushes — enqueue, background worker, adaptive backoff, UI banner with retry button (Apr 2026)
 
 ### Calendar Vibrant Color Update (Apr 2026)
 - Vibrant booking bar colors by status
