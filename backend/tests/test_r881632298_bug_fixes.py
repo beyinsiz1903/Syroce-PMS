@@ -11,7 +11,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://multi-tenant-pms-4.preview.emergentagent.com')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://hr-connector-debug.preview.emergentagent.com')
 
 
 class TestR881632298BugFixes:

@@ -17,10 +17,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from core.database import db
 from core.security import get_current_user
 from domains.channel_manager.providers.hotelrunner_shared import (
-    _timeline_append,
-    explode_multi_room_reservation,
     _persist_and_process,
     _resolve_property_id,
+    _timeline_append,
+    explode_multi_room_reservation,
 )
 from models.schemas import User
 
