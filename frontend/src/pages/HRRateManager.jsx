@@ -223,10 +223,15 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
         toast.success('HotelRunner push basarili');
       } else if (data.background_push) {
         const failed = data.push_results?.filter(r => !r.success) || [];
+        const succeeded = data.push_results?.filter(r => r.success) || [];
+        if (succeeded.length > 0) {
+          toast.success(`${succeeded.length} oda tipi HotelRunner'a basariyla gonderildi`);
+        }
         if (failed.length > 0) {
-          toast.warning(`${failed.length} HotelRunner push hatasi olustu`);
-        } else {
-          toast.info('HotelRunner push gonderildi');
+          failed.forEach(f => {
+            const errMsg = f.error?.includes('Rate limit') ? 'Rate limit (cok fazla istek)' : (f.error || 'Bilinmeyen hata');
+            toast.error(`${f.room_type_code || 'Oda tipi'}: ${errMsg}`, { duration: 8000 });
+          });
         }
       }
       if (data.provider_warning) {

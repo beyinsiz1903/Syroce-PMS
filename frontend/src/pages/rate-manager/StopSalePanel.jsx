@@ -179,8 +179,20 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       } else {
         toast.success(`${data.saved} kayit icin satis acildi`);
       }
-      if (data.background_push) {
-        toast.info(isHotelRunner ? 'HotelRunner guncellemesi arka planda gonderiliyor...' : 'Exely guncellemesi arka planda gonderiliyor...');
+      if (data.all_pushed) {
+        toast.success(isHotelRunner ? 'HotelRunner push basarili' : 'Exely push basarili');
+      } else if (data.background_push) {
+        const failed = data.push_results?.filter(r => !r.success) || [];
+        const succeeded = data.push_results?.filter(r => r.success) || [];
+        if (succeeded.length > 0) {
+          toast.success(`${succeeded.length} oda tipi ${isHotelRunner ? 'HotelRunner' : 'Exely'}'a basariyla gonderildi`);
+        }
+        if (failed.length > 0) {
+          failed.forEach(f => {
+            const errMsg = f.error?.includes('Rate limit') ? 'Rate limit (cok fazla istek)' : (f.error || 'Bilinmeyen hata');
+            toast.error(`${f.room_type_code || 'Oda tipi'}: ${errMsg}`, { duration: 8000 });
+          });
+        }
       }
       if (data.provider_warning) {
         toast.error(data.provider_warning, { duration: 8000 });

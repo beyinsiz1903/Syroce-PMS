@@ -22,7 +22,7 @@ import requests
 import uuid
 from datetime import datetime
 
-BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://hr-connector-debug.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://stop-sale-fix.preview.emergentagent.com").rstrip("/")
 
 # Test credentials
 ADMIN_EMAIL = "demo@hotel.com"

@@ -14,11 +14,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from pymongo import UpdateOne
 
+from domains.channel_manager.providers.hotelrunner.errors import HotelRunnerRateLimitError
+
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
 
 logger = logging.getLogger(__name__)
+
+# ── Rate-limit aware push helper ────────────────────────────────
+MAX_RETRIES = 3
+INITIAL_BACKOFF = 2.0  # seconds
 
 router = APIRouter(prefix="/api/channel-manager/hr-rate-manager", tags=["HR Rate Manager"])
 
@@ -117,6 +123,43 @@ async def _get_hr_provider(tenant_id: str):
     except Exception as exc:
         logger.warning("[HR-RATE-MGR] Provider alinamadi tenant=%s: %s", tenant_id, exc)
         return None, None
+
+
+async def _push_with_retry(
+    provider, rt_code: str, start_date: str, end_date: str,
+    *, rate=None, avail=None, stop=None, minstay=None,
+) -> dict:
+    """Push ARI update to HotelRunner with retry on rate-limit (429)."""
+    update_data = {"inv_code": rt_code, "start_date": start_date, "end_date": end_date}
+    if avail is not None:
+        update_data["availability"] = int(avail)
+    if rate is not None:
+        update_data["price"] = float(rate)
+    if stop is not None:
+        update_data["stop_sale"] = 1 if stop else 0
+    if minstay is not None:
+        update_data["min_stay"] = int(minstay)
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            result = await provider.update_room(**update_data)
+            return {"room_type_code": rt_code, "success": result.get("success", False), "error": result.get("error")}
+        except HotelRunnerRateLimitError as e:
+            wait = min(e.retry_after_seconds, INITIAL_BACKOFF * (2 ** attempt))
+            logger.warning(
+                "[HR-BULK-UPDATE] Rate limit for %s (attempt %d/%d), waiting %.1fs",
+                rt_code, attempt + 1, MAX_RETRIES, wait,
+            )
+            if attempt < MAX_RETRIES - 1:
+                await asyncio.sleep(wait)
+            else:
+                logger.error("[HR-BULK-UPDATE] Rate limit exhausted for %s after %d attempts", rt_code, MAX_RETRIES)
+                return {"room_type_code": rt_code, "success": False, "error": f"Rate limit: {e}"}
+        except Exception as e:
+            logger.error("[HR-BULK-UPDATE] push error for %s: %s", rt_code, e)
+            return {"room_type_code": rt_code, "success": False, "error": str(e)}
+
+    return {"room_type_code": rt_code, "success": False, "error": "Max retries exceeded"}
 
 
 # ── Grid Endpoint ────────────────────────────────────────────────
@@ -461,24 +504,13 @@ async def hr_bulk_grid_update(
                 )
                 logger.warning("[HR-BULK-UPDATE] price_update=false for %s — price will be skipped by HR", rt_code)
 
-            async def _push(rt=rt_code, rate=push_rate, avail=push_avail, stop=push_stop, minstay=push_min):
-                try:
-                    update_data = {"inv_code": rt, "start_date": request.start_date, "end_date": request.end_date}
-                    if avail is not None:
-                        update_data["availability"] = int(avail)
-                    if rate is not None:
-                        update_data["price"] = float(rate)
-                    if stop is not None:
-                        update_data["stop_sale"] = 1 if stop else 0
-                    if minstay is not None:
-                        update_data["min_stay"] = int(minstay)
-                    result = await provider.update_room(**update_data)
-                    return {"room_type_code": rt, "success": result.get("success", False), "error": result.get("error")}
-                except Exception as e:
-                    logger.error("[HR-BULK-UPDATE] push error: %s", e)
-                    return {"room_type_code": rt, "success": False, "error": str(e)}
-
-            push_tasks.append(_push())
+            push_tasks.append({
+                "rt": rt_code,
+                "rate": push_rate,
+                "avail": push_avail,
+                "stop": push_stop,
+                "minstay": push_min,
+            })
 
     if bulk_ops:
         await db.hr_rate_calendar.bulk_write(bulk_ops, ordered=False)
@@ -490,18 +522,23 @@ async def hr_bulk_grid_update(
         logger.warning("[HR-BULK-UPDATE] Provider is None, skipping push for tenant=%s", tenant_id)
 
     if push_tasks:
-        try:
-            results = await asyncio.gather(*push_tasks, return_exceptions=True)
-            for r in results:
-                if isinstance(r, dict):
-                    push_results.append(r)
-                else:
-                    push_results.append({"success": False, "error": str(r)})
-            success_count = sum(1 for r in push_results if r.get("success"))
-            logger.info("[HR-BULK-UPDATE] Push done: %s/%s successful", success_count, len(push_results))
-        except Exception as e:
-            logger.error("[HR-BULK-UPDATE] Push failed: %s", e)
-            push_results.append({"success": False, "error": str(e)})
+        for task_info in push_tasks:
+            rt = task_info["rt"]
+            result = await _push_with_retry(
+                provider, rt,
+                request.start_date, request.end_date,
+                rate=task_info["rate"],
+                avail=task_info["avail"],
+                stop=task_info["stop"],
+                minstay=task_info["minstay"],
+            )
+            push_results.append(result)
+            # Small delay between sequential pushes to avoid rate limiting
+            if len(push_tasks) > 1:
+                await asyncio.sleep(0.5)
+
+        success_count = sum(1 for r in push_results if r.get("success"))
+        logger.info("[HR-BULK-UPDATE] Push done: %s/%s successful", success_count, len(push_results))
 
     all_pushed = len(push_results) > 0 and all(r.get("success") for r in push_results)
 
