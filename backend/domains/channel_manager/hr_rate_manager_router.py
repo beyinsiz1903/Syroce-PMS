@@ -16,7 +16,7 @@ from pymongo import UpdateOne
 
 from core.database import db
 from core.security import get_current_user
-from domains.channel_manager.hr_push_queue_worker import enqueue_failed_push, get_queue_status, clear_completed
+from domains.channel_manager.hr_push_queue_worker import clear_completed, enqueue_failed_push, get_queue_status
 from domains.channel_manager.providers.hotelrunner.errors import HotelRunnerRateLimitError
 from models.schemas import User
 
