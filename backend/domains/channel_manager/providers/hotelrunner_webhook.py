@@ -386,6 +386,7 @@ class ReservationPullScheduler:
     def __init__(self):
         self._running = False
         self._task = None
+        self._cycle_count = 0  # Track cycles for Phase B scheduling
 
     async def start(self, interval_minutes: int = 15, safety_window_minutes: int = 5, interval_seconds: int | None = None):
         """Start the scheduled pull loop. interval_seconds overrides interval_minutes if provided."""
@@ -421,6 +422,7 @@ class ReservationPullScheduler:
 
     async def _pull_all_tenants(self, safety_window_minutes: int):
         """Pull reservations for all active HotelRunner connections."""
+        self._cycle_count += 1
         connections = await db.hotelrunner_connections.find(
             {"is_active": True, "auto_sync_reservations": True},
             {"_id": 0},
@@ -505,6 +507,10 @@ class ReservationPullScheduler:
 
         for res in all_reservations:
             try:
+                hr_state_phase_a = res.get("state", "unknown")
+                hr_number_phase_a = res.get("hr_number", "?")
+                logger.info(f"[PULL-PHASE-A] Processing {hr_number_phase_a}: state={hr_state_phase_a}")
+
                 sub_reservations = explode_multi_room_reservation(res)
                 rooms_count = len(res.get("rooms", []) or [])
                 if rooms_count > 1:
@@ -543,78 +549,105 @@ class ReservationPullScheduler:
                 logger.error(f"[PULL] Fire error for uid={uid}: {e}")
 
         # ── Phase B: Catch-up — fetch ALL reservations, import missing + sync updates ─
+        # Run Phase B every 3rd cycle to avoid rate-limiting (Phase A+B = 2 calls per cycle)
         catchup_imported = 0
         catchup_updated = 0
-        try:
-            all_page = 1
-            all_total_pages = 1
-            known_ext_ids = set()
-            known_ext_updated = {}  # ext_id → provider_updated_at stored in DB
+        run_phase_b = (pull_scheduler._cycle_count % 3 == 0)
+        if not run_phase_b:
+            logger.debug(f"[PULL] Skipping Phase B (cycle {pull_scheduler._cycle_count}, runs every 3rd)")
+        else:
+            # Wait 10 seconds between Phase A and Phase B to avoid rate limiting
+            await asyncio.sleep(10)
+            logger.info(f"[PULL] Running Phase B catch-up (cycle {pull_scheduler._cycle_count})")
 
-            # Gather already-imported external_reservation_ids with their last known update time
-            async for doc in db.imported_reservations.find(
-                {"tenant_id": tenant_id, "provider": "hotelrunner"},
-                {"_id": 0, "external_reservation_id": 1, "provider_updated_at": 1, "created_at": 1},
-            ):
-                ext_id = doc.get("external_reservation_id", "")
-                known_ext_ids.add(ext_id)
-                known_ext_updated[ext_id] = doc.get("provider_updated_at") or doc.get("created_at", "")
+        if run_phase_b:
+            try:
+                all_page = 1
+                all_total_pages = 1
+                known_ext_ids = set()
+                known_ext_updated = {}  # ext_id → provider_updated_at stored in DB
 
-            while all_page <= all_total_pages:
-                result = await provider.get_reservations(
-                    undelivered=False,
-                    per_page=50,
-                    page=all_page,
-                )
-                if not result["success"]:
-                    break
+                # Gather already-imported external_reservation_ids with their last known update time and status
+                known_ext_status = {}  # ext_id → booking status stored in DB
+                async for doc in db.imported_reservations.find(
+                    {"tenant_id": tenant_id, "provider": "hotelrunner"},
+                    {"_id": 0, "external_reservation_id": 1, "provider_updated_at": 1, "created_at": 1},
+                ):
+                    ext_id = doc.get("external_reservation_id", "")
+                    known_ext_ids.add(ext_id)
+                    known_ext_updated[ext_id] = doc.get("provider_updated_at") or doc.get("created_at", "")
 
-                page_reservations = result["data"].get("reservations", [])
-                all_total_pages = result["data"].get("pages", 1)
+                # Also gather current booking statuses for state-change detection
+                async for bdoc in db.bookings.find(
+                    {"tenant_id": tenant_id, "external_reservation_id": {"$exists": True, "$ne": ""}},
+                    {"_id": 0, "external_reservation_id": 1, "status": 1},
+                ):
+                    known_ext_status[bdoc.get("external_reservation_id", "")] = bdoc.get("status", "confirmed")
 
-                for res in page_reservations:
-                    hr_number = res.get("hr_number", "")
-                    rooms = res.get("rooms") or []
-                    hr_updated_at = res.get("updated_at", "")
-                    hr_state = res.get("state", "confirmed")
+                while all_page <= all_total_pages:
+                    result = await provider.get_reservations(
+                        undelivered=False,
+                        per_page=50,
+                        page=all_page,
+                    )
+                    if not result["success"]:
+                        break
 
-                    sub_reservations = explode_multi_room_reservation(res)
+                    page_reservations = result["data"].get("reservations", [])
+                    all_total_pages = result["data"].get("pages", 1)
 
-                    for sub_res in sub_reservations:
-                        sub_ext = sub_res.get("hr_number", "")
+                    for res in page_reservations:
+                        hr_number = res.get("hr_number", "")
+                        rooms = res.get("rooms") or []
+                        hr_updated_at = res.get("updated_at", "")
+                        hr_state = res.get("state", "confirmed")
+                        logger.info(f"[PULL-PHASE-B] {hr_number}: state={hr_state}, updated_at={hr_updated_at}, modified={res.get('modified', 'N/A')}")
 
-                        if sub_ext not in known_ext_ids:
-                            # ── New reservation: import ──
-                            try:
-                                await _persist_and_process(
-                                    tenant_id, _resolve_property_id(sub_res),
-                                    sub_res, "reservation_catchup",
-                                )
-                                catchup_imported += 1
-                            except Exception as e:
-                                if "duplicate" not in str(e).lower():
-                                    logger.error(f"[PULL-CATCHUP] Error: {e}")
-                        else:
-                            # ── Existing reservation: check for modifications/cancellations ──
-                            stored_updated = known_ext_updated.get(sub_ext, "")
-                            if hr_updated_at and hr_updated_at > stored_updated:
+                        sub_reservations = explode_multi_room_reservation(res)
+
+                        for sub_res in sub_reservations:
+                            sub_ext = sub_res.get("hr_number", "")
+
+                            if sub_ext not in known_ext_ids:
+                                # ── New reservation: import ──
                                 try:
-                                    updated = await _sync_reservation_update(
-                                        tenant_id, sub_ext, sub_res, hr_state, hr_updated_at,
+                                    await _persist_and_process(
+                                        tenant_id, _resolve_property_id(sub_res),
+                                        sub_res, "reservation_catchup",
                                     )
-                                    if updated:
-                                        catchup_updated += 1
+                                    catchup_imported += 1
                                 except Exception as e:
-                                    logger.error(f"[PULL-SYNC] Error updating {sub_ext}: {e}")
+                                    if "duplicate" not in str(e).lower():
+                                        logger.error(f"[PULL-CATCHUP] Error: {e}")
+                            else:
+                                # ── Existing reservation: check for modifications/cancellations ──
+                                stored_updated = known_ext_updated.get(sub_ext, "")
+                                stored_status = known_ext_status.get(sub_ext, "confirmed")
 
-                all_page += 1
+                                # Map HR state to PMS status for comparison
+                                hr_status_check = {"canceled": "cancelled", "cancelled": "cancelled", "no_show": "no_show"}.get(hr_state, hr_state)
+                                state_changed = hr_status_check != stored_status
+                                timestamp_changed = hr_updated_at and hr_updated_at > stored_updated
 
-            if catchup_imported > 0:
-                logger.info(f"[PULL-CATCHUP] Tenant {tenant_id}: {catchup_imported} missing reservations imported")
-            if catchup_updated > 0:
-                logger.info(f"[PULL-SYNC] Tenant {tenant_id}: {catchup_updated} reservations updated")
-        except Exception as e:
-            logger.error(f"[PULL-CATCHUP] Error during catch-up pull: {e}")
+                                if state_changed or timestamp_changed:
+                                    try:
+                                        updated = await _sync_reservation_update(
+                                            tenant_id, sub_ext, sub_res, hr_state, hr_updated_at,
+                                        )
+                                        if updated:
+                                            catchup_updated += 1
+                                            logger.info(f"[PULL-SYNC] {sub_ext}: state_changed={state_changed} (hr={hr_status_check}, stored={stored_status}), ts_changed={timestamp_changed}")
+                                    except Exception as e:
+                                        logger.error(f"[PULL-SYNC] Error updating {sub_ext}: {e}")
+
+                    all_page += 1
+
+                if catchup_imported > 0:
+                    logger.info(f"[PULL-CATCHUP] Tenant {tenant_id}: {catchup_imported} missing reservations imported")
+                if catchup_updated > 0:
+                    logger.info(f"[PULL-SYNC] Tenant {tenant_id}: {catchup_updated} reservations updated")
+            except Exception as e:
+                logger.error(f"[PULL-CATCHUP] Error during catch-up pull: {e}")
 
         # ── Update cursor ──────────────────────────────────────────
         await db.hotelrunner_pull_cursors.update_one(

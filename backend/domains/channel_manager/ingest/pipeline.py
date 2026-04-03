@@ -344,6 +344,11 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
             if existing_lineage:
                 lineage_id = await _cancel_lineage(existing_lineage, canonical)
                 result.lineage_id = lineage_id
+                # Also propagate cancellation to bookings and imported_reservations
+                try:
+                    await _propagate_cancellation_to_booking(tenant_id, ext_res_id)
+                except Exception as e:
+                    logger.warning("[%s] Booking cancellation propagation failed: %s", event["id"], e)
             else:
                 case_id = await _create_recon_case(
                     tenant_id, property_id, provider,
@@ -591,6 +596,27 @@ async def _cancel_lineage(existing: dict, canonical: dict) -> str:
     existing["last_seen_at"] = now
     existing["last_synced_at"] = now
     return await repo.upsert_reservation_lineage(existing)
+
+
+
+async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) -> None:
+    """Propagate cancellation from lineage to bookings and imported_reservations collections."""
+    from core.database import db
+    now = _now()
+
+    # Update booking status to cancelled
+    result = await db.bookings.update_one(
+        {"tenant_id": tenant_id, "external_reservation_id": ext_res_id},
+        {"$set": {"status": "cancelled", "updated_at": now, "cancelled_at": now}},
+    )
+    if result.modified_count > 0:
+        logger.info("[CANCEL-PROPAGATE] Booking %s cancelled", ext_res_id)
+
+    # Update imported_reservations
+    await db.imported_reservations.update_one(
+        {"tenant_id": tenant_id, "external_reservation_id": ext_res_id},
+        {"$set": {"status": "cancelled", "updated_at": now}},
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════
