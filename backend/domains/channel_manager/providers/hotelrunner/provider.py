@@ -401,18 +401,21 @@ class HotelRunnerProvider:
         payload: dict[str, Any],
         room_mapping: dict[str, Any] | None = None,
     ) -> ProviderResult:
-        """Push daily inventory update via PUT /rooms/daily."""
+        """Push daily inventory update via PUT /rooms/daily.
+
+        HotelRunner v2 REST API expects parameters as query params.
+        """
         start = time.time()
         try:
             if room_mapping:
-                form_data = map_ari_delta_to_daily_payload(payload, room_mapping)
+                query_params = map_ari_delta_to_daily_payload(payload, room_mapping)
             else:
-                form_data = payload
+                query_params = payload
 
-            validate_inventory_payload(form_data)
+            validate_inventory_payload(query_params)
 
             async def _call():
-                return await self._client.put(ep.ROOMS_DAILY, form_data=form_data)
+                return await self._client.put(ep.ROOMS_DAILY, params=query_params)
 
             result = await self._retry.execute(_call)
             duration_ms = int((time.time() - start) * 1000)
@@ -437,18 +440,21 @@ class HotelRunnerProvider:
         payload: dict[str, Any],
         room_mapping: dict[str, Any] | None = None,
     ) -> ProviderResult:
-        """Push date range inventory update via PUT /rooms/~."""
+        """Push date range inventory update via PUT /rooms/~.
+
+        HotelRunner v2 REST API expects parameters as query params.
+        """
         start = time.time()
         try:
             if room_mapping:
-                form_data = map_ari_delta_to_daterange_payload(payload, room_mapping)
+                query_params = map_ari_delta_to_daterange_payload(payload, room_mapping)
             else:
-                form_data = payload
+                query_params = payload
 
-            validate_inventory_payload(form_data)
+            validate_inventory_payload(query_params)
 
             async def _call():
-                return await self._client.put(ep.ROOMS_DATERANGE, form_data=form_data)
+                return await self._client.put(ep.ROOMS_DATERANGE, params=query_params)
 
             result = await self._retry.execute(_call)
             duration_ms = int((time.time() - start) * 1000)
@@ -583,20 +589,20 @@ class HotelRunnerProvider:
         return {"success": True, "count": len(all_reservations), "reservations": all_reservations}
 
     async def update_room(self, **kwargs) -> dict[str, Any]:
-        """Legacy: ARI push via PUT /rooms/~."""
-        form_data = {}
+        """Legacy: ARI push via PUT /rooms/~.
+
+        HotelRunner v2 REST API expects ALL parameters as query params,
+        not form/body data.
+        """
+        query_params = {}
         for key in ("inv_code", "start_date", "end_date"):
             if key in kwargs:
-                form_data[key] = str(kwargs[key])
+                query_params[key] = str(kwargs[key])
         for key in ("availability", "price", "stop_sale", "min_stay", "cta", "ctd"):
             if key in kwargs and kwargs[key] is not None:
-                form_data[key] = str(kwargs[key])
-        if "days" in kwargs and kwargs["days"] is not None:
-            form_data["days[]"] = [str(d) for d in kwargs["days"]]
-        if "channel_codes" in kwargs and kwargs["channel_codes"] is not None:
-            form_data["channel_codes[]"] = kwargs["channel_codes"]
+                query_params[key] = str(kwargs[key])
 
-        result = await self._client.put(ep.ROOMS_DATERANGE, form_data=form_data)
+        result = await self._client.put(ep.ROOMS_DATERANGE, params=query_params)
         if result.success:
             return {"success": True, "data": result.data, "duration_ms": result.duration_ms}
         return {"success": False, "error": result.error, "duration_ms": result.duration_ms}

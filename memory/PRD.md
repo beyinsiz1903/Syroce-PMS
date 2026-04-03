@@ -28,23 +28,17 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - HotelRunner v1 deprecated (warnings added to all files)
 - Exely SOAP API integration
 - Wire failure tracking system
+- ARI Push (availability, rate, min_stay, stop_sell) working via query params
 
 ### Security & PII — Field Encryption (100% Complete)
 - PII Strict Mode middleware/router
 - **Guest collection: 100% encrypted** (email, phone, id_number, passport, address, etc.)
 - **Users collection: 100% encrypted** (email, phone)
 - **Bookings collection: 100% encrypted** (guest_email, guest_phone, billing_address, billing_tax_number)
-- **Reservations collection: 0 documents** (encrypted on insert)
-- Hash-based search indexes for encrypted fields (_hash_email, _hash_phone, etc.)
+- Hash-based search indexes for encrypted fields
 - Dual-read pattern: auth/search works with both encrypted and plaintext data
-- Auto-encryption on new inserts (auth register, admin create, OTA import, seed data)
+- Auto-encryption on new inserts
 - AES-256-GCM with HMAC-SHA256 search hashes
-
-### Calendar Vibrant Color Update (Apr 2026)
-- Vibrant booking bar colors (Blue, Orange, Green, Teal, Red) by status
-- Blue-tinted room type headers
-- Updated legend and lighter past dates
-- Compact grid with bold reservation names and three-state occupancy dots
 
 ### HotelRunner Live Integration
 - Shadow Mode disabled, Live Mode active
@@ -52,37 +46,37 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - 30-second polling, unassigned imports, notifications
 - End-to-end verified webhook pipeline
 - Per-room cancellation detection for multi-room reservations
-- Modification/cancellation notification sync from Phase B pull
-- room_type_id matching for calendar display of OTA imports
-- Three-tier global/partial cancellation detection (Apr 2026): new room-cancel detection, timestamp-gated global cancel, stored-status preservation for old partial cancels
+- ARI push via query params (fix Apr 2026)
+- Three-tier global/partial cancellation detection
+
+### Calendar Vibrant Color Update (Apr 2026)
+- Vibrant booking bar colors by status
+- Blue-tinted room type headers
+- Compact grid with bold reservation names and three-state occupancy dots
 
 ## Prioritized Backlog
 
 ### P1 (High)
 - None critical at this time
 
-### P2 (Medium)
-- ~~Encrypt users and bookings collections to 100%~~ DONE
-
 ### P3 (Low)
 - Rate Manager quick toggle (Exely/HotelRunner)
 - Legacy HR v1 connector removal (after full verification)
 - Channel Manager Dashboard — recent reservations, failed imports, connection health metrics
 - Admin UI Panel for encryption management (view status, trigger migrations, check audit logs)
+- Make unassigned reservations more prominent in calendar
 
 ## Completed Refactoring
-- ~~hotelrunner_webhook.py monolith split~~ DONE (Apr 2026) — Split 1162-line file into hotelrunner_shared.py + hotelrunner_webhook.py + hotelrunner_sync.py
+- hotelrunner_webhook.py monolith split DONE (Apr 2026)
 
 ## Key API Endpoints
-- GET /api/security/pii/strict-mode/config
-- GET /api/security/pii/strict-mode/violations
-- GET /api/ops/field-encryption/status
-- POST /api/ops/field-encryption/migrate-all
-- POST /api/ops/field-encryption/migrate/{collection_name}
-- GET /api/ops/field-encryption/progress
+- POST /api/channel-manager/hr-rate-manager/bulk-grid-update
+- GET /api/channel-manager/hr-rate-manager/grid
 - POST /api/channel-manager/hotelrunner/sync/reservations/pull
 - GET /api/channel-manager/hotelrunner/sync/status
 - POST /api/channel-manager/hotelrunner/webhooks/reservations
+- GET /api/security/pii/strict-mode/config
+- GET /api/ops/field-encryption/status
 
 ## 3rd Party Integrations
 - AWS KMS (Encryption) — optional for production key management
@@ -91,4 +85,5 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 
 ## Critical Constraints
 - All responses in Turkish
-- Latest test report: /app/test_reports/iteration_181.json
+- Latest test report: /app/test_reports/iteration_182.json
+- Latest bug fix: ARI push form_data to query_params (Apr 2026)

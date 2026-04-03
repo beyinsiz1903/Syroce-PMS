@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## 2026-04-03 - BUG FIX: HotelRunner ARI Push 403 Error (Availability/Rate Update)
+
+### Issue
+HotelRunner'a müsaitlik (availability), fiyat (rate), min_stay gibi ARI güncellemeleri gönderildiğinde tüm push'lar 403 Access Denied hatası alıyordu.
+
+### Root Cause
+HotelRunner v2 REST API, ARI update parametrelerini (inv_code, availability, price, start_date, end_date, min_stay, stop_sale) **query parameters** olarak bekliyor. Bizim `update_room()`, `push_daily_inventory()`, `push_date_range_inventory()` metotları bu parametreleri **form data (request body)** olarak gönderiyordu. HotelRunner body'deki parametreleri tanımayıp 403/404 döndürüyordu.
+
+### Fix
+- `provider.py` — `update_room()`: `form_data=form_data` → `params=query_params`
+- `provider.py` — `push_daily_inventory()`: `form_data=form_data` → `params=query_params`
+- `provider.py` — `push_date_range_inventory()`: `form_data=form_data` → `params=query_params`
+
+### Verified
+- `PUT /api/v2/apps/rooms/~ -> 200` (transaction_id döndü)
+- Corner Süit (HR:1271567) availability=5 push OK
+- Standart Oda (HR:1271568) rate+availability+min_stay push OK
+- Background push done: 1/1 (100% success)
+
+---
+
 ## 2026-04-03 - REFACTORING: hotelrunner_webhook.py Module Split
 
 ### Motivation
