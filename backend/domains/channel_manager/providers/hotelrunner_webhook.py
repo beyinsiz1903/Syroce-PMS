@@ -598,7 +598,6 @@ class ReservationPullScheduler:
 
                     for res in page_reservations:
                         hr_number = res.get("hr_number", "")
-                        rooms = res.get("rooms") or []
                         hr_updated_at = res.get("updated_at", "")
                         hr_state = res.get("state", "confirmed")
                         hr_next_states = res.get("next_states") or []
@@ -724,7 +723,6 @@ async def _sync_reservation_update(
         return False
 
     # Extract normalized data from HR payload
-    identity = extract_hotelrunner_identity(hr_payload)
     rooms = hr_payload.get("rooms") or []
     room = rooms[0] if rooms else {}
 
@@ -750,7 +748,6 @@ async def _sync_reservation_update(
     # Room type change
     if room:
         hr_room_code = room.get("inv_code") or room.get("code") or ""
-        stored_room_code = booking.get("source", {}).get("provider_room_code", "") or ""
         # Also check via room_mappings to resolve PMS room type name
         if hr_room_code:
             room_mapping = await db.room_mappings.find_one(

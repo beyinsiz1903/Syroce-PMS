@@ -332,7 +332,7 @@ class TestSecurityModules:
         """Check CORS headers are present"""
         response = requests.options(
             f"{BASE_URL}/api/auth/login",
-            headers={"Origin": "https://hotelrunner-bridge.preview.emergentagent.com"}
+            headers={"Origin": "https://pms-channel-sync.preview.emergentagent.com"}
         )
         # CORS headers should be present
         if "access-control-allow-origin" in response.headers:
