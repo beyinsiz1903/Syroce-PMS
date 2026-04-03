@@ -506,26 +506,13 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Exely Pull Scheduler init warning: {e}")
 
-    # ── HotelRunner Pull Scheduler (auto-start) ──────────────────────
-    try:
-        active_hr = await _raw_db.hotelrunner_connections.find_one(
-            {"is_active": True, "auto_sync_reservations": True}, {"_id": 1}
-        )
-        if active_hr:
-            from domains.channel_manager.providers.hotelrunner_sync import pull_scheduler as hr_pull_scheduler
-            await hr_pull_scheduler.start(interval_seconds=120, safety_window_minutes=2)
-            app.state.hr_pull_scheduler = hr_pull_scheduler
-            print("✅ HotelRunner Pull Scheduler started (120s interval, undelivered + fire)")
-
-            # Start push queue worker
-            from domains.channel_manager.hr_push_queue_worker import push_queue_worker
-            await push_queue_worker.start(interval_seconds=120)
-            app.state.hr_push_queue_worker = push_queue_worker
-            print("✅ HotelRunner Push Queue Worker started (120s interval)")
-        else:
-            print("ℹ️ No active HotelRunner connections with auto_sync; pull scheduler not started")
-    except Exception as e:
-        logger.warning(f"HotelRunner Pull Scheduler init warning: {e}")
+    # ── HotelRunner: Otomatik polling DEVRE DISI ──────────────────────
+    # Kullanici istegi: Surekli otomatik polling rate limit'e neden oluyor.
+    # Sistem artik sadece event-driven (booking olustugunda outbox uzerinden push)
+    # ve manuel senkronizasyon ile calisiyor.
+    # Manuel pull: POST /api/channel-manager/hotelrunner/sync/reservations/pull
+    # Manuel queue retry: POST /api/channel-manager/hr-rate-manager/queue-retry
+    print("ℹ️ HotelRunner otomatik polling devre disi — sadece event-driven + manuel senkronizasyon aktif")
 
     # ── Cockpit Snapshot Worker ────────────────────────────────────────
     try:

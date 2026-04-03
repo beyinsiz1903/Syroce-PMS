@@ -89,11 +89,8 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
 
   useEffect(() => { fetchQueueStatus(); }, [fetchQueueStatus]);
 
-  // Poll queue status every 30 seconds
-  useEffect(() => {
-    const interval = setInterval(fetchQueueStatus, 30000);
-    return () => clearInterval(interval);
-  }, [fetchQueueStatus]);
+  // Kuyruk durumu sadece sayfa yuklendiginde ve islem sonrasinda guncellenir
+  // Otomatik polling devre disi — rate limit'i onlemek icin
 
   const handleRetryQueue = async () => {
     setRetryingQueue(true);
@@ -262,7 +259,7 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
           toast.success(`${succeeded.length} oda tipi HotelRunner'a basariyla gonderildi`);
         }
         if (data.queued_count > 0) {
-          toast.info(`${data.queued_count} push kuyruga eklendi — otomatik denenecek`, { duration: 10000 });
+          toast.info(`${data.queued_count} push kuyruga eklendi — "Simdi Dene" ile gonderebilirsiniz`, { duration: 10000 });
           fetchQueueStatus();
         } else if (data.rate_limit_hit) {
           toast.warning('HotelRunner rate limit: Veriler yerel olarak kaydedildi.', { duration: 12000 });
@@ -363,7 +360,7 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
                   {queueStatus.total_in_queue} push kuyrukta bekliyor
                 </p>
                 <p className="text-xs text-amber-600">
-                  Rate limit toparlaninca otomatik olarak gonderilecek
+                  Manuel olarak "Simdi Dene" butonuyla gonderebilirsiniz
                   {queueStatus.failed > 0 && ` | ${queueStatus.failed} basarisiz`}
                 </p>
               </div>

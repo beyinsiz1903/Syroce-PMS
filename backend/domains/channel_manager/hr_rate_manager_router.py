@@ -538,9 +538,9 @@ async def hr_bulk_grid_update(
                     tenant_id, rt, request.start_date, request.end_date,
                     rate=task_info["rate"], avail=task_info["avail"],
                     stop=task_info["stop"], minstay=task_info["minstay"],
-                    error="Rate limit — kuyruga eklendi",
+                    error="Rate limit — kuyruga eklendi (manuel deneyin)",
                 )
-                push_results.append({"room_type_code": rt, "success": False, "error": "Kuyruga eklendi (otomatik denenecek)", "queued": True})
+                push_results.append({"room_type_code": rt, "success": False, "error": "Kuyruga eklendi (manuel deneyin)", "queued": True})
                 queued_count += 1
                 continue
 
@@ -582,7 +582,7 @@ async def hr_bulk_grid_update(
         success_count_msg = sum(1 for r in push_results if r.get("success"))
         msg += f", {success_count_msg}/{len(push_tasks)} HotelRunner push başarılı"
     if queued_items > 0:
-        msg += f" | {queued_items} push kuyruga eklendi (otomatik denenecek)"
+        msg += f" | {queued_items} push kuyruga eklendi (manuel deneyin)"
     elif rate_limit_failed:
         msg += " | Rate limit: Veriler yerel olarak kaydedildi."
     if permission_warnings:
