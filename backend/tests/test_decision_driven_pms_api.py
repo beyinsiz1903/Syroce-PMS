@@ -9,7 +9,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://hotelrunner-v2.preview.emergentagent.com')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://hotel-sync-hub-1.preview.emergentagent.com')
 
 
 class TestLogin:

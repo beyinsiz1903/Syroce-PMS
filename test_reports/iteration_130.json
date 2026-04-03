@@ -78,7 +78,7 @@
       "result": "200 OK - returns access_token"
     },
     "frontend_app": {
-      "url": "https://hotelrunner-v2.preview.emergentagent.com",
+      "url": "https://hotel-sync-hub-1.preview.emergentagent.com",
       "landing_page": "Loads correctly with Giriş Yap button",
       "dashboard": "Loads correctly after login at /app/dashboard"
     }
