@@ -149,6 +149,7 @@ async def create_import_record(
         "total_amount": lineage.get("total_amount", 0.0),
         "currency": lineage.get("currency", "TRY"),
         "source_system": lineage.get("source_system", ""),
+        "provider_updated_at": lineage.get("provider_last_modified_at", "") or lineage.get("provider_updated_at", ""),
         "created_at": now,
         "updated_at": now,
     }

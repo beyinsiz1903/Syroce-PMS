@@ -113,17 +113,21 @@ def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
         total_amount = reservation_total
 
     # Status: state > status
-    hr_status = _safe_str(payload.get("state") or payload.get("status", "confirmed")).lower()
-    status_map = {
-        "confirmed": "confirmed",
-        "new": "confirmed",
-        "modified": "modified",
-        "cancelled": "cancelled",
-        "canceled": "cancelled",
-        "no_show": "cancelled",
-        "pending": "pending",
-    }
-    canonical_status = status_map.get(hr_status, "confirmed")
+    # For exploded sub-reservations, check room-level cancellation first
+    if payload.get("_room_cancelled"):
+        canonical_status = "cancelled"
+    else:
+        hr_status = _safe_str(payload.get("state") or payload.get("status", "confirmed")).lower()
+        status_map = {
+            "confirmed": "confirmed",
+            "new": "confirmed",
+            "modified": "modified",
+            "cancelled": "cancelled",
+            "canceled": "cancelled",
+            "no_show": "cancelled",
+            "pending": "pending",
+        }
+        canonical_status = status_map.get(hr_status, "confirmed")
 
     # Last modified
     last_mod = _safe_str(

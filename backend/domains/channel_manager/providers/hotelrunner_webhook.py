@@ -89,6 +89,9 @@ def explode_multi_room_reservation(raw_reservation: dict[str, Any]) -> list[dict
       rooms[2] → hr_number-2
       ...
 
+    Per-room state: Each room may have its own cancellation status.
+    The room-level state overrides the top-level state for that specific sub-reservation.
+
     If the reservation has 0 or 1 rooms, returns it as-is (list of 1).
     """
     rooms = raw_reservation.get("rooms", [])
@@ -118,6 +121,28 @@ def explode_multi_room_reservation(raw_reservation: dict[str, Any]) -> list[dict
             sub_payload["checkin_date"] = room["checkin_date"]
         if room.get("checkout_date"):
             sub_payload["checkout_date"] = room["checkout_date"]
+
+        # Per-room state override: if the room has its own state, use it
+        # This is critical for multi-room reservations where only some rooms are cancelled
+        room_state = (room.get("state") or "").lower()
+        room_status = (room.get("status") or "").lower()
+        room_cancel_reason = room.get("cancel_reason") or ""
+        room_next_states = room.get("next_states") or []
+
+        if room_state in ("cancelled", "canceled"):
+            sub_payload["state"] = "cancelled"
+            sub_payload["_room_cancelled"] = True
+        elif room_status in ("cancelled", "canceled"):
+            sub_payload["state"] = "cancelled"
+            sub_payload["_room_cancelled"] = True
+        elif room_cancel_reason or "cancel" in room_next_states:
+            sub_payload["state"] = "cancelled"
+            sub_payload["_room_cancelled"] = True
+            if room_cancel_reason:
+                sub_payload["cancel_reason"] = room_cancel_reason
+        else:
+            # Room is NOT cancelled — ensure top-level cancel markers don't leak
+            sub_payload["_room_cancelled"] = False
 
         exploded.append(sub_payload)
 
@@ -620,6 +645,27 @@ class ReservationPullScheduler:
                         for sub_res in sub_reservations:
                             sub_ext = sub_res.get("hr_number", "")
 
+                            # Per-room effective state: use room-level state if available,
+                            # otherwise fall back to top-level effective state
+                            # This prevents a single room cancellation from marking ALL rooms as cancelled
+                            sub_room_cancelled = sub_res.get("_room_cancelled", False)
+                            if sub_room_cancelled:
+                                sub_effective_state = "canceled"
+                            elif sub_res.get("_exploded_from"):
+                                # This is an exploded sub-reservation from a multi-room booking
+                                # Only use top-level effective_state if the room itself is cancelled
+                                # Otherwise keep the room's own state (confirmed)
+                                room_data = (sub_res.get("rooms") or [{}])[0] if sub_res.get("rooms") else {}
+                                room_state_val = (room_data.get("state") or "").lower()
+                                if room_state_val in ("cancelled", "canceled"):
+                                    sub_effective_state = "canceled"
+                                else:
+                                    # Room not cancelled — use room's own state or "confirmed"
+                                    sub_effective_state = room_state_val if room_state_val else "confirmed"
+                            else:
+                                # Single-room reservation — use top-level effective state
+                                sub_effective_state = effective_state
+
                             if sub_ext not in known_ext_ids:
                                 # ── New reservation: import ──
                                 try:
@@ -630,21 +676,21 @@ class ReservationPullScheduler:
                                     catchup_imported += 1
                                 except Exception as e:
                                     if "duplicate" not in str(e).lower():
-                                        logger.error(f"[PULL-CATCHUP] Error: {e}")
+                                        logger.error(f"[PULL-CATCHUP] Error importing {sub_ext}: {e}")
                             else:
                                 # ── Existing reservation: check for modifications/cancellations ──
                                 stored_updated = known_ext_updated.get(sub_ext, "")
                                 stored_status = known_ext_status.get(sub_ext, "confirmed")
 
                                 # Map HR effective state to PMS status for comparison
-                                hr_status_check = {"canceled": "cancelled", "cancelled": "cancelled", "no_show": "no_show"}.get(effective_state, effective_state)
+                                hr_status_check = {"canceled": "cancelled", "cancelled": "cancelled", "no_show": "no_show"}.get(sub_effective_state, sub_effective_state)
                                 state_changed = hr_status_check != stored_status
                                 timestamp_changed = hr_updated_at and hr_updated_at > stored_updated
 
                                 if state_changed or timestamp_changed:
                                     try:
                                         updated = await _sync_reservation_update(
-                                            tenant_id, sub_ext, sub_res, effective_state, hr_updated_at,
+                                            tenant_id, sub_ext, sub_res, sub_effective_state, hr_updated_at,
                                         )
                                         if updated:
                                             catchup_updated += 1
@@ -847,6 +893,42 @@ async def _sync_reservation_update(
     )
 
     logger.info(f"[PULL-SYNC] {ext_reservation_id}: updated fields={list(updates.keys())}")
+
+    # Create notifications for important changes
+    try:
+        notification_messages = []
+        if "status" in updates and updates["status"] == "cancelled":
+            notification_messages.append(
+                f"Rezervasyon İptali: {guest_name_hr or booking.get('guest_name', '')}, "
+                f"{ext_reservation_id}, "
+                f"Giriş: {booking.get('check_in', '')}, Çıkış: {booking.get('check_out', '')}"
+            )
+        if "guest_name" in updates:
+            notification_messages.append(
+                f"Misafir Adı Değişikliği: {booking.get('guest_name', '')} → {updates['guest_name']}, "
+                f"{ext_reservation_id}"
+            )
+        if "check_in" in updates or "check_out" in updates:
+            notification_messages.append(
+                f"Tarih Değişikliği: {ext_reservation_id}, "
+                f"Giriş: {updates.get('check_in', booking.get('check_in', ''))}, "
+                f"Çıkış: {updates.get('check_out', booking.get('check_out', ''))}"
+            )
+
+        for msg in notification_messages:
+            await db.notifications.insert_one({
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "type": "reservation_update",
+                "message": msg,
+                "booking_id": booking.get("id", ""),
+                "external_reservation_id": ext_reservation_id,
+                "is_read": False,
+                "created_at": datetime.now(UTC).isoformat(),
+            })
+    except Exception as e:
+        logger.error(f"[PULL-SYNC] Notification creation error for {ext_reservation_id}: {e}")
+
     return True
 
 

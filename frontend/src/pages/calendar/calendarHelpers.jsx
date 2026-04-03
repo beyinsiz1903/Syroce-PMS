@@ -258,11 +258,14 @@ export const getHeatmapColor = (intensity) => {
 export const getUnassignedBookingsForType = (roomType, bookings, dateRange) => {
   const rangeStart = dateRange.length > 0 ? toDateStringUTC(dateRange[0]) : '';
   const rangeEnd = dateRange.length > 0 ? toDateStringUTC(dateRange[dateRange.length - 1]) : '';
+  const rtLower = roomType.toLowerCase();
   return bookings.filter(booking => {
     if (booking.status === 'cancelled' || booking.status === 'checked_out' || booking.status === 'no_show') return false;
     if (booking.room_id) return false;
+    // Match by room_type OR room_type_id (OTA imports may use provider room names)
     const bType = (booking.room_type || '').toLowerCase();
-    if (bType !== roomType.toLowerCase()) return false;
+    const bTypeId = (booking.room_type_id || '').toLowerCase();
+    if (bType !== rtLower && bTypeId !== rtLower) return false;
     if (rangeStart && rangeEnd) {
       const checkIn = toDateStringUTC(booking.check_in);
       const checkOut = toDateStringUTC(booking.check_out);
