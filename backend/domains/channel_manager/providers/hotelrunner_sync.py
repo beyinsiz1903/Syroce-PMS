@@ -302,7 +302,10 @@ async def _run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
             hr_cancel_reason = res.get("cancel_reason") or ""
 
             effective_state = hr_state
-            if "cancel" in hr_next_states or hr_cancel_reason:
+            # Only use explicit state or cancel_reason for cancellation detection.
+            # next_states=['cancel'] means "cancel is an available ACTION", NOT that
+            # the reservation IS cancelled. HR sends this for ALL confirmed reservations.
+            if hr_state in ("cancelled", "canceled") or hr_cancel_reason:
                 effective_state = "canceled"
 
             logger.info(
@@ -370,6 +373,12 @@ async def _run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
 
                     hr_status_check = {"canceled": "cancelled", "cancelled": "cancelled", "no_show": "no_show"}.get(sub_effective_state, sub_effective_state)
                     state_changed = hr_status_check != stored_status
+
+                    # SAFETY: Never auto-un-cancel a reservation.
+                    # HR returns state=confirmed for both active AND cancelled reservations,
+                    # so we can't reliably detect un-cancellation. Keep cancelled status.
+                    if stored_status == "cancelled" and hr_status_check != "cancelled":
+                        state_changed = False
 
                     if state_changed or timestamp_changed:
                         try:

@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## 2026-04-03 - BUG FIX: HotelRunner Yeni Rezervasyonlar Sisteme Düşmüyor (R379692424)
+
+### Issue
+Kullanıcı HotelRunner'dan 12 odalık yeni bir rezervasyon oluşturdu (R379692424) ama PMS'e hiç düşmedi. Phase B catchup yeni rezervasyonları "Cancellation without existing reservation" olarak işleyip atlıyordu.
+
+### Root Cause
+HotelRunner API, TÜM onaylı (confirmed) rezervasyonlarda `next_states=['cancel']` döndürüyor. Bu alan "iptal mevcut bir eylem" anlamına geliyor, "rezervasyon iptal edildi" anlamına DEĞİL. Fakat `_run_phase_b()` içindeki `effective_state` hesaplaması `'cancel' in next_states` kontrolünü iptal göstergesi olarak kullanıyordu. Bu da TÜM yeni rezervasyonları "iptal edilmiş" olarak işaretliyordu.
+
+Akış:
+1. `effective_state = "canceled"` (yanlış - tüm reservasyonlar için)
+2. Yeni rezervasyonlar `sub_res["state"] = "cancelled"` ile işaretleniyordu
+3. Pipeline bunu "Cancellation without existing reservation" olarak işledi → booking oluşturmadı
+4. Ama `raw_channel_events`'te "processed" olarak kaydetti → sonraki çevrimlerde DUPLICATE olarak atlandı
+
+### Fix (3 parça)
+1. **`hotelrunner_sync.py` — `effective_state` hesaplama**: `'cancel' in next_states` kaldırıldı. Sadece `state='cancelled'/'canceled'` veya `cancel_reason` non-empty → `effective_state='canceled'`
+2. **`hotelrunner_sync.py` — Otomatik geri alma yasağı**: Phase B update mantığına guard eklendi: eğer stored_status='cancelled' ve HR 'confirmed' diyorsa, state_changed=False yapılıyor (auto-un-cancel engelleniyor)
+3. **Veri temizliği**: R379692424 için 72 raw_channel_events + 72 webhook_raw_payloads + 168 event_timeline + 12 reconciliation_cases silindi. Sonraki catchup çevrimi 12 rezervasyonu doğru olarak "confirmed" import etti.
+
+### Regression Fix
+Yeni effective_state mantığı, daha önce iptal edilmiş R881632298/R635472908/R676063586 rezervasyonlarını yanlışlıkla "confirmed" yaptı (HR state=confirmed döndürdüğü için). Auto-un-cancel guard'ı eklendikten sonra bu regresyon durduruldu ve veriler geri yüklendi.
+
+### Verified
+- R379692424: 12 booking → confirmed ✓
+- R881632298: 7 booking → cancelled ✓ (regresyon düzeltildi)
+- R635472908: 5 booking → cancelled ✓ (regresyon düzeltildi)
+- R676063586: 2 booking → cancelled ✓ (regresyon düzeltildi)
+- R014235376: 2 cancelled + 4 confirmed ✓ (partial cancel korundu)
+- Phase B sonraki çevrim: updated 0 (stabil) ✓
+
+---
+
 ## 2026-04-03 - BUG FIX: HotelRunner ARI Push 403 Error (Availability/Rate Update)
 
 ### Issue

@@ -48,6 +48,8 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - Per-room cancellation detection for multi-room reservations
 - ARI push via query params (fix Apr 2026)
 - Three-tier global/partial cancellation detection
+- Auto-un-cancel guard: cancelled reservations never auto-revert to confirmed
+- effective_state uses only state field + cancel_reason (not next_states)
 
 ### Calendar Vibrant Color Update (Apr 2026)
 - Vibrant booking bar colors by status
@@ -86,4 +88,4 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 ## Critical Constraints
 - All responses in Turkish
 - Latest test report: /app/test_reports/iteration_182.json
-- Latest bug fix: ARI push form_data to query_params (Apr 2026)
+- Latest bug fix: Phase B catchup next_states cancellation false positive + auto-un-cancel guard (Apr 2026)
