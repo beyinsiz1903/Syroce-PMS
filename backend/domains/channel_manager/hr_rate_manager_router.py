@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from pymongo import UpdateOne
 
 from domains.channel_manager.providers.hotelrunner.errors import HotelRunnerRateLimitError
+from domains.channel_manager.hr_push_queue_worker import enqueue_failed_push, get_queue_status, clear_completed
 
 from core.database import db
 from core.security import get_current_user
@@ -527,13 +528,21 @@ async def hr_bulk_grid_update(
 
     if push_tasks:
         rate_limited = False
+        queued_count = 0
         for task_info in push_tasks:
             rt = task_info["rt"]
-            # If a previous push was rate-limited, wait longer before the next one
+
+            # If rate-limited: enqueue remaining tasks directly instead of hitting the API
             if rate_limited:
-                logger.info("[HR-BULK-UPDATE] Previous push was rate-limited, waiting 60s before next room type")
-                await asyncio.sleep(60)
-                rate_limited = False  # Reset — give it another chance
+                await enqueue_failed_push(
+                    tenant_id, rt, request.start_date, request.end_date,
+                    rate=task_info["rate"], avail=task_info["avail"],
+                    stop=task_info["stop"], minstay=task_info["minstay"],
+                    error="Rate limit — kuyruga eklendi",
+                )
+                push_results.append({"room_type_code": rt, "success": False, "error": "Kuyruga eklendi (otomatik denenecek)", "queued": True})
+                queued_count += 1
+                continue
 
             result = await _push_with_retry(
                 provider, rt,
@@ -545,26 +554,37 @@ async def hr_bulk_grid_update(
             )
             push_results.append(result)
 
-            # Detect rate limit failure to trigger extended wait
+            # Detect rate limit failure → enqueue this failed task and flag remaining
             if not result.get("success") and "rate limit" in str(result.get("error", "")).lower():
                 rate_limited = True
+                await enqueue_failed_push(
+                    tenant_id, rt, request.start_date, request.end_date,
+                    rate=task_info["rate"], avail=task_info["avail"],
+                    stop=task_info["stop"], minstay=task_info["minstay"],
+                    error=result.get("error", ""),
+                )
+                queued_count += 1
+                result["queued"] = True
 
             # Respect rate limits: wait between sequential pushes
             if len(push_tasks) > 1 and not rate_limited:
                 await asyncio.sleep(INTER_PUSH_DELAY)
 
         success_count = sum(1 for r in push_results if r.get("success"))
-        logger.info("[HR-BULK-UPDATE] Push done: %s/%s successful", success_count, len(push_results))
+        logger.info("[HR-BULK-UPDATE] Push done: %s/%s successful, %s queued", success_count, len(push_results), queued_count)
 
     all_pushed = len(push_results) > 0 and all(r.get("success") for r in push_results)
-    rate_limit_failed = any("rate limit" in str(r.get("error", "")).lower() for r in push_results if not r.get("success"))
+    rate_limit_failed = any("rate limit" in str(r.get("error", "")).lower() or r.get("queued") for r in push_results if not r.get("success"))
+    queued_items = sum(1 for r in push_results if r.get("queued"))
 
     msg = f"{saved} kayıt güncellendi"
     if push_tasks:
         success_count_msg = sum(1 for r in push_results if r.get("success"))
         msg += f", {success_count_msg}/{len(push_tasks)} HotelRunner push başarılı"
-    if rate_limit_failed:
-        msg += " | Rate limit: Veriler yerel olarak kaydedildi. HotelRunner çok fazla istek nedeniyle bazı güncellemeleri reddetti. Birkaç dakika bekleyip tekrar deneyin."
+    if queued_items > 0:
+        msg += f" | {queued_items} push kuyruga eklendi (otomatik denenecek)"
+    elif rate_limit_failed:
+        msg += " | Rate limit: Veriler yerel olarak kaydedildi."
     if permission_warnings:
         msg += f" | UYARI: {len(permission_warnings)} izin sorunu tespit edildi"
     if provider_warning:
@@ -575,6 +595,7 @@ async def hr_bulk_grid_update(
         "push_results": push_results,
         "all_pushed": all_pushed,
         "rate_limit_hit": rate_limit_failed,
+        "queued_count": queued_items,
         "background_push": len(push_tasks) > 0,
         "total_room_types": len(total_room_types_set),
         "permission_warnings": permission_warnings,
@@ -1014,3 +1035,51 @@ async def remove_hr_room_type(
         "removed_inv_code": inv_code,
         "removed_count": removed_count,
     }
+
+
+# ── Push Queue Endpoints ──────────────────────────────────────────
+
+
+@router.get("/queue-status")
+async def get_hr_queue_status(current_user: User = Depends(get_current_user)):
+    """Kuyruk durumunu döndürür — bekleyen, başarılı ve başarısız push'lar."""
+    tenant_id = current_user.tenant_id
+    status = await get_queue_status(tenant_id)
+    return status
+
+
+@router.post("/queue-retry")
+async def retry_queue_items(current_user: User = Depends(get_current_user)):
+    """Kuyruktaki tüm bekleyen push'ları hemen tekrar dene."""
+    from domains.channel_manager.hr_push_queue_worker import push_queue_worker
+    tenant_id = current_user.tenant_id
+
+    # Reset rate limit counter to allow immediate retry
+    push_queue_worker._consecutive_rate_limits = 0
+
+    # Run queue processing for this tenant
+    await push_queue_worker._process_tenant_queue(tenant_id)
+
+    status = await get_queue_status(tenant_id)
+    return {
+        "message": "Kuyruk isleme alindi",
+        **status,
+    }
+
+
+@router.delete("/queue-clear")
+async def clear_queue(current_user: User = Depends(get_current_user)):
+    """Tamamlanan kuyruk öğelerini temizle."""
+    tenant_id = current_user.tenant_id
+    deleted = await clear_completed(tenant_id)
+    return {"message": f"{deleted} tamamlanan kayit temizlendi", "deleted": deleted}
+
+
+@router.delete("/queue-cancel/{item_id}")
+async def cancel_queue_item(item_id: str, current_user: User = Depends(get_current_user)):
+    """Kuyruktaki belirli bir push görevini iptal et."""
+    tenant_id = current_user.tenant_id
+    result = await db.hr_push_queue.delete_one({"id": item_id, "tenant_id": tenant_id, "status": {"$in": ["pending", "retrying"]}})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Kuyruk ogesi bulunamadi veya zaten tamamlanmis")
+    return {"message": "Kuyruk ogesi iptal edildi"}

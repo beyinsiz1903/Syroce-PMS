@@ -515,7 +515,13 @@ async def on_startup(app):
             from domains.channel_manager.providers.hotelrunner_sync import pull_scheduler as hr_pull_scheduler
             await hr_pull_scheduler.start(interval_seconds=120, safety_window_minutes=2)
             app.state.hr_pull_scheduler = hr_pull_scheduler
-            print("✅ HotelRunner Pull Scheduler started (30s interval, undelivered + fire)")
+            print("✅ HotelRunner Pull Scheduler started (120s interval, undelivered + fire)")
+
+            # Start push queue worker
+            from domains.channel_manager.hr_push_queue_worker import push_queue_worker
+            await push_queue_worker.start(interval_seconds=120)
+            app.state.hr_push_queue_worker = push_queue_worker
+            print("✅ HotelRunner Push Queue Worker started (120s interval)")
         else:
             print("ℹ️ No active HotelRunner connections with auto_sync; pull scheduler not started")
     except Exception as e:

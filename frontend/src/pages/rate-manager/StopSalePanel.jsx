@@ -187,8 +187,10 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
         if (succeeded.length > 0) {
           toast.success(`${succeeded.length} oda tipi ${isHotelRunner ? 'HotelRunner' : 'Exely'}'a basariyla gonderildi`);
         }
-        if (data.rate_limit_hit) {
-          toast.warning('HotelRunner rate limit: Veriler yerel olarak kaydedildi. Birkac dakika bekleyip tekrar deneyin.', { duration: 12000 });
+        if (data.queued_count > 0) {
+          toast.info(`${data.queued_count} push kuyruga eklendi — otomatik denenecek`, { duration: 10000 });
+        } else if (data.rate_limit_hit) {
+          toast.warning('HotelRunner rate limit: Veriler yerel olarak kaydedildi.', { duration: 12000 });
         } else if (failed.length > 0) {
           failed.forEach(f => {
             toast.error(`${f.room_type_code || 'Oda tipi'}: ${f.error || 'Bilinmeyen hata'}`, { duration: 8000 });

@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import Layout from '@/components/Layout';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Grid3X3, CalendarDays, Ban, Eye, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Grid3X3, CalendarDays, Ban, Eye, CheckCircle2, AlertTriangle, RefreshCw, Clock, Loader2 } from 'lucide-react';
 
 import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
@@ -23,6 +23,8 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
   const [grid, setGrid] = useState([]);
   const [pricingSettings, setPricingSettings] = useState({});
   const [currency, setCurrency] = useState('TRY');
+  const [queueStatus, setQueueStatus] = useState(null);
+  const [retryingQueue, setRetryingQueue] = useState(false);
 
   const CURRENCY_SYMBOLS = { TRY: '\u20BA', USD: '$', EUR: '\u20AC', GBP: '\u00A3', RUB: '\u20BD' };
   const currencySymbol = CURRENCY_SYMBOLS[currency] || currency;
@@ -77,6 +79,38 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
       .then(res => setPushProviders(res.data?.providers || []))
       .catch(() => {});
   }, []);
+
+  const fetchQueueStatus = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}${HR_API_PREFIX}/queue-status`, { headers });
+      setQueueStatus(data);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchQueueStatus(); }, [fetchQueueStatus]);
+
+  // Poll queue status every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(fetchQueueStatus, 30000);
+    return () => clearInterval(interval);
+  }, [fetchQueueStatus]);
+
+  const handleRetryQueue = async () => {
+    setRetryingQueue(true);
+    try {
+      const { data } = await axios.post(`${API}${HR_API_PREFIX}/queue-retry`, {}, { headers });
+      setQueueStatus(data);
+      if (data.pending === 0 && data.retrying === 0) {
+        toast.success('Kuyruktaki tum push islemleri basariyla tamamlandi');
+        fetchGrid();
+      } else if (data.pending > 0 || data.retrying > 0) {
+        toast.warning(`${data.total_in_queue} push hala kuyrukta — rate limit devam ediyor`);
+      }
+    } catch {
+      toast.error('Kuyruk yeniden deneme basarisiz');
+    }
+    setRetryingQueue(false);
+  };
 
   const roomTypeTree = useMemo(() => {
     const map = new Map();
@@ -227,8 +261,11 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
         if (succeeded.length > 0) {
           toast.success(`${succeeded.length} oda tipi HotelRunner'a basariyla gonderildi`);
         }
-        if (data.rate_limit_hit) {
-          toast.warning('HotelRunner rate limit: Veriler yerel olarak kaydedildi. Birkac dakika bekleyip tekrar deneyin.', { duration: 12000 });
+        if (data.queued_count > 0) {
+          toast.info(`${data.queued_count} push kuyruga eklendi — otomatik denenecek`, { duration: 10000 });
+          fetchQueueStatus();
+        } else if (data.rate_limit_hit) {
+          toast.warning('HotelRunner rate limit: Veriler yerel olarak kaydedildi.', { duration: 12000 });
         } else if (failed.length > 0) {
           failed.forEach(f => {
             toast.error(`${f.room_type_code || 'Oda tipi'}: ${f.error || 'Bilinmeyen hata'}`, { duration: 8000 });
@@ -315,6 +352,33 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
             )}
           </div>
         </div>
+
+        {/* Push Queue Status Banner */}
+        {queueStatus && queueStatus.total_in_queue > 0 && (
+          <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-4 py-3" data-testid="hr-queue-banner">
+            <div className="flex items-center gap-3">
+              <Clock className="w-5 h-5 text-amber-600 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-amber-800">
+                  {queueStatus.total_in_queue} push kuyrukta bekliyor
+                </p>
+                <p className="text-xs text-amber-600">
+                  Rate limit toparlaninca otomatik olarak gonderilecek
+                  {queueStatus.failed > 0 && ` | ${queueStatus.failed} basarisiz`}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleRetryQueue}
+              disabled={retryingQueue}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-md transition-colors disabled:opacity-50"
+              data-testid="hr-queue-retry-btn"
+            >
+              {retryingQueue ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              {retryingQueue ? 'Deneniyor...' : 'Simdi Dene'}
+            </button>
+          </div>
+        )}
 
         <Tabs value={activeView} onValueChange={setActiveView}>
           <TabsList className="grid w-full grid-cols-3 max-w-md">
