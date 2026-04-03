@@ -24,7 +24,9 @@ logger = logging.getLogger(__name__)
 
 # ── Rate-limit aware push helper ────────────────────────────────
 MAX_RETRIES = 3
-INITIAL_BACKOFF = 2.0  # seconds
+INITIAL_BACKOFF = 5.0   # seconds — base backoff before exponential growth
+MAX_PUSH_WAIT = 30.0    # seconds — max wait per retry for user-facing operations
+INTER_PUSH_DELAY = 2.0  # seconds between sequential room-type pushes
 
 router = APIRouter(prefix="/api/channel-manager/hr-rate-manager", tags=["HR Rate Manager"])
 
@@ -145,10 +147,12 @@ async def _push_with_retry(
             result = await provider.update_room(**update_data)
             return {"room_type_code": rt_code, "success": result.get("success", False), "error": result.get("error")}
         except HotelRunnerRateLimitError as e:
-            wait = min(e.retry_after_seconds, INITIAL_BACKOFF * (2 ** attempt))
+            # Respect server's Retry-After but cap for user-facing operations
+            exponential = INITIAL_BACKOFF * (2 ** attempt)
+            wait = min(max(e.retry_after_seconds, exponential), MAX_PUSH_WAIT)
             logger.warning(
-                "[HR-BULK-UPDATE] Rate limit for %s (attempt %d/%d), waiting %.1fs",
-                rt_code, attempt + 1, MAX_RETRIES, wait,
+                "[HR-BULK-UPDATE] Rate limit for %s (attempt %d/%d), waiting %.1fs (server asked %ds)",
+                rt_code, attempt + 1, MAX_RETRIES, wait, e.retry_after_seconds,
             )
             if attempt < MAX_RETRIES - 1:
                 await asyncio.sleep(wait)
@@ -522,8 +526,15 @@ async def hr_bulk_grid_update(
         logger.warning("[HR-BULK-UPDATE] Provider is None, skipping push for tenant=%s", tenant_id)
 
     if push_tasks:
+        rate_limited = False
         for task_info in push_tasks:
             rt = task_info["rt"]
+            # If a previous push was rate-limited, wait longer before the next one
+            if rate_limited:
+                logger.info("[HR-BULK-UPDATE] Previous push was rate-limited, waiting 60s before next room type")
+                await asyncio.sleep(60)
+                rate_limited = False  # Reset — give it another chance
+
             result = await _push_with_retry(
                 provider, rt,
                 request.start_date, request.end_date,
@@ -533,30 +544,42 @@ async def hr_bulk_grid_update(
                 minstay=task_info["minstay"],
             )
             push_results.append(result)
-            # Small delay between sequential pushes to avoid rate limiting
-            if len(push_tasks) > 1:
-                await asyncio.sleep(0.5)
+
+            # Detect rate limit failure to trigger extended wait
+            if not result.get("success") and "rate limit" in str(result.get("error", "")).lower():
+                rate_limited = True
+
+            # Respect rate limits: wait between sequential pushes
+            if len(push_tasks) > 1 and not rate_limited:
+                await asyncio.sleep(INTER_PUSH_DELAY)
 
         success_count = sum(1 for r in push_results if r.get("success"))
         logger.info("[HR-BULK-UPDATE] Push done: %s/%s successful", success_count, len(push_results))
 
     all_pushed = len(push_results) > 0 and all(r.get("success") for r in push_results)
+    rate_limit_failed = any("rate limit" in str(r.get("error", "")).lower() for r in push_results if not r.get("success"))
+
+    msg = f"{saved} kayıt güncellendi"
+    if push_tasks:
+        success_count_msg = sum(1 for r in push_results if r.get("success"))
+        msg += f", {success_count_msg}/{len(push_tasks)} HotelRunner push başarılı"
+    if rate_limit_failed:
+        msg += " | Rate limit: Veriler yerel olarak kaydedildi. HotelRunner çok fazla istek nedeniyle bazı güncellemeleri reddetti. Birkaç dakika bekleyip tekrar deneyin."
+    if permission_warnings:
+        msg += f" | UYARI: {len(permission_warnings)} izin sorunu tespit edildi"
+    if provider_warning:
+        msg += f" | {provider_warning}"
 
     return {
         "saved": saved,
         "push_results": push_results,
         "all_pushed": all_pushed,
+        "rate_limit_hit": rate_limit_failed,
         "background_push": len(push_tasks) > 0,
         "total_room_types": len(total_room_types_set),
         "permission_warnings": permission_warnings,
         "provider_warning": provider_warning,
-        "message": f"{saved} kayıt güncellendi" + (
-            f", {len(push_tasks)} HotelRunner push gönderildi" if push_tasks else ""
-        ) + (
-            f" | UYARI: {len(permission_warnings)} izin sorunu tespit edildi" if permission_warnings else ""
-        ) + (
-            f" | {provider_warning}" if provider_warning else ""
-        ),
+        "message": msg,
     }
 
 

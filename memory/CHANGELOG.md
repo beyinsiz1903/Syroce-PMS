@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## 2026-04-03 - BUG FIX: HotelRunner Rate Limit (429) Kapsamli Duzeltme
+
+### Issue
+Kullanici HotelRunner rate manager'dan fiyat/musaitlik gonderdigi zaman surekli "cok fazla istek" (429) hatasi aliyordu. Push islemleri basarisiz oluyordu.
+
+### Root Cause (3 katmanli)
+1. **Polling cok sik (30 saniye)**: `startup.py`'da `interval_seconds=30` ile reservation polling yapiliyordu. HotelRunner API bu sikliga izin vermiyor.
+2. **Push backoff hesaplamasi hatali**: `_push_with_retry` fonksiyonu `min(retry_after, backoff)` kullaniyordu. Sunucu "60 saniye bekle" derken kod 2 saniye bekliyordu — rate limit asla toparlanamiyordu.
+3. **Polling retry'lari cok uzun bekliyordu**: Reservation polling'de 429 alinca 3 retry × 60s = 3 dakika bos bekliyordu, rate limit kotasini daha da tuketiyordu.
+
+### Fix (5 parcali)
+1. **startup.py**: Polling interval 30s → 120s (4x azaltma)
+2. **hotelrunner_sync.py**: Adaptive backoff — 429 alindigi zaman backoff katlanarak artiyor (240s, 480s, 960s...)
+3. **hotelrunner_sync.py**: Polling icin max_retries=0, fail fast — scheduler backoff'a birak
+4. **hotelrunner_sync.py**: Phase B (full catchup) rate limit altinda devre disi
+5. **hr_rate_manager_router.py**: Push backoff duzeltildi — max 30s cap, 3 retry, akilli rate-limit algilama
+
+### UI Iyilestirmeler
+- `HRRateManager.jsx` + `StopSalePanel.jsx`: Rate limit durumunda kullaniciya aciklayici Turkce uyari gosteriliyor
+- Yeni `rate_limit_hit` flag'i ile frontend'de rate limit durumu dogrudan algilanabiliyor
+
+### Verified
+- Backend loglarinda adaptive backoff calisiyorr (429 → 240s bekleme)
+- Push API hizli yanit donuyor (timeout yok)
+- Veriler yerel veritabanina kaydediliyor, push basarisiz olsa bile veri kaybi yok
+
+---
+
 ## 2026-04-03 - BUG FIX: HotelRunner Rate Manager Push Hatalari
 
 ### Issue

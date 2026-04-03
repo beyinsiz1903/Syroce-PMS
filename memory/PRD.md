@@ -29,6 +29,7 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - Exely SOAP API integration
 - Wire failure tracking system
 - ARI Push (availability, rate, min_stay, stop_sell) working via query params
+- **Rate limit protection**: Adaptive backoff for polling, capped retry for pushes, fail-fast strategy
 
 ### Security & PII — Field Encryption (100% Complete)
 - PII Strict Mode middleware/router
@@ -43,13 +44,15 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 ### HotelRunner Live Integration
 - Shadow Mode disabled, Live Mode active
 - Room/rate mappings created
-- 30-second polling, unassigned imports, notifications
+- 120-second polling with adaptive backoff (was 30s)
+- Unassigned imports, notifications
 - End-to-end verified webhook pipeline
 - Per-room cancellation detection for multi-room reservations
 - ARI push via query params (fix Apr 2026)
 - Three-tier global/partial cancellation detection
 - Auto-un-cancel guard: cancelled reservations never auto-revert to confirmed
 - effective_state uses only state field + cancel_reason (not next_states)
+- Rate limit aware push with 30s-capped retry and fail-fast polling (fix Apr 2026)
 
 ### Calendar Vibrant Color Update (Apr 2026)
 - Vibrant booking bar colors by status
@@ -88,4 +91,4 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 ## Critical Constraints
 - All responses in Turkish
 - Latest test report: /app/test_reports/iteration_182.json
-- Latest bug fix: Phase B catchup next_states cancellation false positive + auto-un-cancel guard (Apr 2026)
+- Latest bug fix: HotelRunner 429 Rate Limit kapsamli duzeltme — adaptive backoff + fail-fast polling + capped push retry (Apr 2026)

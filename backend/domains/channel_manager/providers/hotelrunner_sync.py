@@ -38,12 +38,15 @@ class ReservationPullScheduler:
     """
     Cursor-based scheduled reservation pull from HotelRunner.
     Runs every N minutes, fetches reservations updated since last cursor - safety window.
+    Backs off automatically when rate-limited (429).
     """
 
     def __init__(self):
         self._running = False
         self._task = None
         self._cycle_count = 0
+        self._consecutive_rate_limits = 0
+        self._base_interval = 120  # default seconds
 
     async def start(self, interval_minutes: int = 15, safety_window_minutes: int = 5, interval_seconds: int | None = None):
         """Start the scheduled pull loop. interval_seconds overrides interval_minutes if provided."""
@@ -52,6 +55,7 @@ class ReservationPullScheduler:
             return
         self._running = True
         sleep_seconds = interval_seconds if interval_seconds is not None else interval_minutes * 60
+        self._base_interval = sleep_seconds
         self._task = asyncio.create_task(self._run_loop(sleep_seconds, safety_window_minutes))
         logger.info(f"[PULL] Scheduler started: every {sleep_seconds}s, safety window {safety_window_minutes}min")
 
@@ -75,7 +79,17 @@ class ReservationPullScheduler:
             except Exception as e:
                 logger.error(f"[PULL] Loop error: {e}")
 
-            await asyncio.sleep(sleep_seconds)
+            # Adaptive backoff: if rate-limited, wait progressively longer
+            if self._consecutive_rate_limits > 0:
+                backoff_multiplier = min(2 ** self._consecutive_rate_limits, 16)  # max 16x
+                actual_sleep = self._base_interval * backoff_multiplier
+                logger.warning(
+                    "[PULL] Rate-limit backoff active: sleeping %ds (base=%ds, consecutive_429=%d)",
+                    actual_sleep, self._base_interval, self._consecutive_rate_limits,
+                )
+                await asyncio.sleep(actual_sleep)
+            else:
+                await asyncio.sleep(sleep_seconds)
 
     async def _pull_all_tenants(self, safety_window_minutes: int):
         """Pull reservations for all active HotelRunner connections."""
@@ -116,6 +130,7 @@ class ReservationPullScheduler:
         token: str,
         hr_id: str,
         safety_window_minutes: int = 5,
+        is_manual: bool = False,
     ) -> dict[str, Any]:
         """Pull reservations for a specific tenant.
 
@@ -128,7 +143,10 @@ class ReservationPullScheduler:
 
         from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
 
-        provider = HotelRunnerProvider(token=token, hr_id=hr_id)
+        # Scheduled polling: fail fast (0 retries) to let adaptive backoff handle recovery
+        # Manual pull: normal retries (3) since user is waiting
+        retries = 3 if is_manual else 0
+        provider = HotelRunnerProvider(token=token, hr_id=hr_id, max_retries=retries)
         pull_start = datetime.now(UTC)
 
         # ── Phase A: Fetch UNDELIVERED reservations ──────────────
@@ -143,16 +161,28 @@ class ReservationPullScheduler:
                 page=page,
             )
             if not result["success"]:
-                logger.error(f"[PULL] Failed for tenant {tenant_id} page {page}: {result.get('error')}")
+                error_msg = result.get("error", "")
+                logger.error(f"[PULL] Failed for tenant {tenant_id} page {page}: {error_msg}")
+                # Track rate limit hits for adaptive backoff
+                if "429" in str(error_msg) or "rate limit" in str(error_msg).lower():
+                    self._consecutive_rate_limits += 1
+                    logger.warning(
+                        "[PULL] Rate limit detected (consecutive: %d) — will back off on next cycle",
+                        self._consecutive_rate_limits,
+                    )
                 if page == 1:
-                    await _log_pull(tenant_id, "failed", 0, result.get("error"))
-                    return {"success": False, "error": result.get("error")}
+                    await _log_pull(tenant_id, "failed", 0, error_msg)
+                    return {"success": False, "error": error_msg}
                 break
 
             page_reservations = result["data"].get("reservations", [])
             all_reservations.extend(page_reservations)
             total_pages = result["data"].get("pages", 1)
             page += 1
+
+        # Reset rate limit counter on successful fetch
+        if all_reservations or page > 1:
+            self._consecutive_rate_limits = 0
 
         # Process undelivered + fire
         processed = 0
@@ -204,7 +234,12 @@ class ReservationPullScheduler:
         # ── Phase B: Catch-up — fetch ALL reservations, import missing + sync updates ─
         catchup_imported = 0
         catchup_updated = 0
-        run_phase_b = (self._cycle_count % 3 == 0)
+        # Skip Phase B if rate-limited recently to reduce API pressure
+        if self._consecutive_rate_limits > 0:
+            run_phase_b = False
+            logger.info("[PULL] Skipping Phase B — rate limit backoff active (consecutive: %d)", self._consecutive_rate_limits)
+        else:
+            run_phase_b = (self._cycle_count % 3 == 0)
         if not run_phase_b:
             logger.debug(f"[PULL] Skipping Phase B (cycle {self._cycle_count}, runs every 3rd)")
         else:
@@ -647,6 +682,7 @@ async def manual_pull(
         token=creds["token"],
         hr_id=creds.get("hr_id", hr_id),
         safety_window_minutes=5,
+        is_manual=True,
     )
 
     if not result["success"]:

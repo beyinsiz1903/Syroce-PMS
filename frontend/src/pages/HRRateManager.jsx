@@ -227,10 +227,11 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
         if (succeeded.length > 0) {
           toast.success(`${succeeded.length} oda tipi HotelRunner'a basariyla gonderildi`);
         }
-        if (failed.length > 0) {
+        if (data.rate_limit_hit) {
+          toast.warning('HotelRunner rate limit: Veriler yerel olarak kaydedildi. Birkac dakika bekleyip tekrar deneyin.', { duration: 12000 });
+        } else if (failed.length > 0) {
           failed.forEach(f => {
-            const errMsg = f.error?.includes('Rate limit') ? 'Rate limit (cok fazla istek)' : (f.error || 'Bilinmeyen hata');
-            toast.error(`${f.room_type_code || 'Oda tipi'}: ${errMsg}`, { duration: 8000 });
+            toast.error(`${f.room_type_code || 'Oda tipi'}: ${f.error || 'Bilinmeyen hata'}`, { duration: 8000 });
           });
         }
       }
