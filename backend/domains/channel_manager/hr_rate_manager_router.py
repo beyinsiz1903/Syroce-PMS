@@ -2,6 +2,7 @@
 HotelRunner Rate Manager Router — Fiyat, Müsaitlik, Min Konaklama Yönetimi
 HotelRunner üzerinden ayarla → HR API'ye push et → OTA'lara yansısın.
 """
+import asyncio
 import logging
 import uuid
 from collections import defaultdict
@@ -17,12 +18,12 @@ from core.database import db
 from core.security import get_current_user
 from domains.channel_manager.hr_push_queue_worker import (
     clear_completed,
+    clear_cooldown,
     enqueue_failed_push,
     get_cooldown_remaining,
     get_queue_status,
     reset_auto_retry,
     schedule_auto_retry,
-    start_background_batch_push,
 )
 from domains.channel_manager.providers.hotelrunner.errors import HotelRunnerRateLimitError
 from models.schemas import User
@@ -513,102 +514,63 @@ async def hr_bulk_grid_update(
     if bulk_ops:
         await db.hr_rate_calendar.bulk_write(bulk_ops, ordered=False)
 
-    push_results = []
     provider_warning = None
     if not provider and len(pairs) > 0:
         provider_warning = "HotelRunner kimlik bilgileri alinamadi — veriler yerel olarak kaydedildi ancak HotelRunner'a gonderilemedi"
         logger.warning("[HR-BULK-UPDATE] Provider is None, skipping push for tenant=%s", tenant_id)
 
-    batch_mode = False
     if push_tasks and provider:
-        # Smart Batch Push: 2+ oda tipi → arka plan (rate limit koruması)
-        # 1 oda tipi → senkron deneme (hızlı yanıt)
-        if len(push_tasks) >= 2:
-            # ── Background Batch Push ──
-            batch_mode = True
-            cooldown = get_cooldown_remaining(tenant_id)
-            retry_after = max(0, cooldown) if cooldown > 0 else 0
-
-            for task_info in push_tasks:
+        # ── Arka planda sıralı gönder, hemen yanıt dön ──
+        # Exely tarzı: UI hemen döner. Arka planda sıralı push (2s arayla).
+        # Sadece gerçek 429 rate limit alanlar kuyruğa eklenir.
+        async def _background_push(tasks, prov, t_id, s_date, e_date):
+            await asyncio.sleep(0.2)  # HTTP yanıtı dönmesini bekle
+            success_count = 0
+            for i, task_info in enumerate(tasks):
                 rt = task_info["rt"]
-                await enqueue_failed_push(
-                    tenant_id, rt, request.start_date, request.end_date,
-                    rate=task_info["rate"], avail=task_info["avail"],
-                    stop=task_info["stop"], minstay=task_info["minstay"],
-                    error="Arka planda gonderiliyor",
-                    retry_after_seconds=retry_after,
-                )
-                push_results.append({"room_type_code": rt, "success": False, "queued": True, "error": "Arka planda gonderiliyor"})
-
-            # Start background batch push immediately (if not in cooldown)
-            if cooldown <= 0:
-                await start_background_batch_push(tenant_id)
-            else:
-                await schedule_auto_retry(tenant_id, cooldown + 2)
-
-            logger.info("[HR-BATCH] %d push tasks queued for background batch push (tenant=%s)", len(push_tasks), tenant_id)
-        else:
-            # ── Single Room Type: Synchronous Push ──
-            rate_limited = False
-            queued_count = 0
-            rate_limit_retry_after = 65
-            for task_info in push_tasks:
-                rt = task_info["rt"]
-
-                if rate_limited:
-                    await enqueue_failed_push(
-                        tenant_id, rt, request.start_date, request.end_date,
-                        rate=task_info["rate"], avail=task_info["avail"],
-                        stop=task_info["stop"], minstay=task_info["minstay"],
-                        error="Rate limit — otomatik gonderilecek",
-                        retry_after_seconds=rate_limit_retry_after,
+                try:
+                    result = await _push_with_retry(
+                        prov, rt, s_date, e_date,
+                        rate=task_info["rate"],
+                        avail=task_info["avail"],
+                        stop=task_info["stop"],
+                        minstay=task_info["minstay"],
                     )
-                    push_results.append({"room_type_code": rt, "success": False, "error": "Kuyruga eklendi (otomatik gonderilecek)", "queued": True})
-                    queued_count += 1
-                    continue
+                    if result.get("success"):
+                        clear_cooldown(t_id)
+                        reset_auto_retry(t_id)
+                        success_count += 1
+                    elif "rate limit" in str(result.get("error", "")).lower():
+                        # Rate limit → kalan push'ları da dahil kuyruğa ekle
+                        retry_secs = result.get("retry_after_seconds", 65)
+                        for remaining in tasks[i:]:
+                            await enqueue_failed_push(
+                                t_id, remaining["rt"], s_date, e_date,
+                                rate=remaining["rate"], avail=remaining["avail"],
+                                stop=remaining["stop"], minstay=remaining["minstay"],
+                                error=result.get("error", ""),
+                                retry_after_seconds=retry_secs,
+                            )
+                        await schedule_auto_retry(t_id, retry_secs + 5)
+                        logger.warning("[HR-BULK-UPDATE] Rate limit at %s — %d remaining queued for retry", rt, len(tasks) - i)
+                        break
+                except Exception as e:
+                    logger.error("[HR-BULK-UPDATE] Background push error for %s: %s", rt, e)
 
-                result = await _push_with_retry(
-                    provider, rt,
-                    request.start_date, request.end_date,
-                    rate=task_info["rate"],
-                    avail=task_info["avail"],
-                    stop=task_info["stop"],
-                    minstay=task_info["minstay"],
-                )
-                push_results.append(result)
+                # Kısa ara ile rate limit'e takılmayı engelle
+                if i < len(tasks) - 1:
+                    await asyncio.sleep(2)
 
-                if not result.get("success") and "rate limit" in str(result.get("error", "")).lower():
-                    rate_limited = True
-                    rate_limit_retry_after = result.get("retry_after_seconds", 65)
-                    await enqueue_failed_push(
-                        tenant_id, rt, request.start_date, request.end_date,
-                        rate=task_info["rate"], avail=task_info["avail"],
-                        stop=task_info["stop"], minstay=task_info["minstay"],
-                        error=result.get("error", ""),
-                        retry_after_seconds=rate_limit_retry_after,
-                    )
-                    queued_count += 1
-                    result["queued"] = True
+            logger.info("[HR-BULK-UPDATE] Background push done: %d/%d successful (tenant=%s)", success_count, len(tasks), t_id)
 
-            if rate_limited and queued_count > 0:
-                await schedule_auto_retry(tenant_id, rate_limit_retry_after + 5)
-
-    all_pushed = len(push_results) > 0 and all(r.get("success") for r in push_results)
-    rate_limit_failed = any("rate limit" in str(r.get("error", "")).lower() or r.get("queued") for r in push_results if not r.get("success"))
-    queued_items = sum(1 for r in push_results if r.get("queued"))
-
-    cooldown_remaining = get_cooldown_remaining(tenant_id)
+        asyncio.create_task(_background_push(
+            push_tasks, provider, tenant_id,
+            request.start_date, request.end_date,
+        ))
 
     msg = f"{saved} kayıt güncellendi"
-    if batch_mode:
-        msg += f", {len(push_tasks)} push arka planda gönderiliyor"
-    elif push_tasks:
-        success_count_msg = sum(1 for r in push_results if r.get("success"))
-        msg += f", {success_count_msg}/{len(push_tasks)} HotelRunner push başarılı"
-        if queued_items > 0:
-            msg += f" | {queued_items} push kuyruga eklendi — ~{cooldown_remaining}sn sonra otomatik gonderilecek"
-        elif rate_limit_failed:
-            msg += " | Rate limit: Veriler yerel olarak kaydedildi."
+    if push_tasks and provider:
+        msg += f", {len(push_tasks)} HotelRunner push arka planda gönderiliyor"
     if permission_warnings:
         msg += f" | UYARI: {len(permission_warnings)} izin sorunu tespit edildi"
     if provider_warning:
@@ -616,13 +578,9 @@ async def hr_bulk_grid_update(
 
     return {
         "saved": saved,
-        "push_results": push_results,
-        "all_pushed": all_pushed,
-        "rate_limit_hit": rate_limit_failed,
-        "queued_count": queued_items,
-        "cooldown_remaining": cooldown_remaining,
+        "push_results": [],
+        "all_pushed": False,
         "background_push": len(push_tasks) > 0,
-        "batch_mode": batch_mode,
         "total_room_types": len(total_room_types_set),
         "permission_warnings": permission_warnings,
         "provider_warning": provider_warning,

@@ -283,30 +283,8 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
       );
 
       toast.success(`${data.saved} kayit guncellendi`);
-      if (data.all_pushed) {
-        toast.success('HotelRunner push basarili');
-      } else if (data.batch_mode) {
-        // Smart Batch Push — tum pushlar arka planda
-        toast.info(`${data.queued_count} push arka planda gonderiliyor — rate limit korumasiyla sirayla islenecek`, { duration: 8000 });
-        fetchQueueStatus();
-      } else if (data.background_push) {
-        const failed = data.push_results?.filter(r => !r.success) || [];
-        const succeeded = data.push_results?.filter(r => r.success) || [];
-        if (succeeded.length > 0) {
-          toast.success(`${succeeded.length} oda tipi HotelRunner'a basariyla gonderildi`);
-        }
-        if (data.queued_count > 0) {
-          const cd = data.cooldown_remaining || 65;
-          setCooldownSeconds(cd);
-          toast.info(`${data.queued_count} push kuyruga eklendi — ~${cd}sn sonra otomatik gonderilecek`, { duration: 10000 });
-          fetchQueueStatus();
-        } else if (data.rate_limit_hit) {
-          toast.warning('HotelRunner rate limit: Veriler yerel olarak kaydedildi.', { duration: 12000 });
-        } else if (failed.length > 0) {
-          failed.forEach(f => {
-            toast.error(`${f.room_type_code || 'Oda tipi'}: ${f.error || 'Bilinmeyen hata'}`, { duration: 8000 });
-          });
-        }
+      if (data.background_push) {
+        toast.success(`${data.total_room_types} oda tipi HotelRunner'a arka planda gonderiliyor`);
       }
       if (data.provider_warning) {
         toast.error(data.provider_warning, { duration: 8000 });

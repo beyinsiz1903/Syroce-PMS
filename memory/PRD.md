@@ -61,12 +61,12 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
   - UI'da countdown timer gösterilir
   - "Şimdi Dene" butonu cooldown sırasında devre dışı
   - Cooldown bitmeden API'ye istek gitmez (gereksiz 429'ları önler)
-- **Smart Batch Push** (Apr 2026): 2+ oda tipi güncellemesinde TÜM push'lar arka plana alınır
-  - Kullanıcı anında yanıt alır (0 saniye bekleme)
-  - Push'lar rate limit'e uygun 13sn aralıklarla sırayla gönderilir
-  - UI'da "Gönderiliyor..." banner'ı gösterilir (mavi tema, spinner)
-  - Her 5sn'de queue status otomatik poll edilir
-  - 1 oda tipi güncellemesi hala senkron (hızlı yanıt)
+- **Background Push (Exely tarzı)** (Apr 2026): Tüm push'lar arka planda gönderilir
+  - Kullanıcı anında yanıt alır (~0.15 saniye)
+  - Push'lar arka planda sıralı olarak 2sn aralıklarla denenir (Exely ile aynı mantık)
+  - HİÇ denenmeden kuyruğa atma kaldırıldı — önce gerçek push denenir
+  - Sadece gerçek 429 rate limit alanlar kuyruğa eklenir ve otomatik retry planlanır
+  - Rate limit alınca kalan push'lar da kuyruğa eklenir (gereksiz 429 önlenir)
 - **Otomatik Polling Devre Disi**: Surekli 120s polling yerine event-driven + manuel senkronizasyon mimarisi (Apr 2026). Booking olusturuldugunda outbox uzerinden otomatik push, diger zamanlarda sadece kullanici tetikli islemler.
 
 ### Calendar Vibrant Color Update (Apr 2026)
@@ -109,4 +109,4 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 ## Critical Constraints
 - All responses in Turkish
 - Latest test report: /app/test_reports/iteration_184.json
-- Latest change: HotelRunner Rate Limit Cooldown & Auto-Retry System — cooldown timer, progressive backoff, otomatik retry (Apr 2026)
+- Latest change: HotelRunner push mekanizması Exely tarzına çevrildi — arka plan sıralı push, preemptive kuyruk kaldırıldı (Apr 2026)
