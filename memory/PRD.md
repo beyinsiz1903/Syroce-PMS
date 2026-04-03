@@ -51,6 +51,9 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - Room/rate mappings created
 - 30-second polling, unassigned imports, notifications
 - End-to-end verified webhook pipeline
+- Per-room cancellation detection for multi-room reservations
+- Modification/cancellation notification sync from Phase B pull
+- room_type_id matching for calendar display of OTA imports
 
 ## Prioritized Backlog
 
@@ -64,6 +67,7 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - Rate Manager quick toggle (Exely/HotelRunner)
 - Legacy HR v1 connector removal (after full verification)
 - Channel Manager Dashboard — recent reservations, failed imports, connection health metrics
+- Admin UI Panel for encryption management (view status, trigger migrations, check audit logs)
 
 ## Key API Endpoints
 - GET /api/security/pii/strict-mode/config
@@ -83,4 +87,4 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 
 ## Critical Constraints
 - All responses in Turkish
-- Latest test report: /app/test_reports/iteration_180.json
+- Latest test report: /app/test_reports/iteration_181.json

@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## 2026-04-03 - BUG FIX: HotelRunner Multi-Room Reservation Cancellation & Calendar Display
+
+### Issues Fixed
+1. **Multi-room partial cancellation spreading to ALL rooms**: When one room in a multi-room HR reservation was cancelled, Phase B was applying `effective_state=canceled` (from top-level `next_states=['cancel']`) to ALL sub-reservations, causing all 7 rooms to be incorrectly marked as cancelled.
+2. **OTA bookings not appearing on reservation calendar**: Calendar's `getUnassignedBookingsForType` was matching by `room_type` only. OTA imports have HR display names (`Corner Süit`, `Deluxe Oda`) in `room_type`, while the calendar uses PMS names (`Suite`, `Deluxe`). The `room_type_id` field had the correct PMS mapping but wasn't being used.
+3. **Modification notifications not being created**: Name changes, date changes, and cancellation updates from Phase B sync weren't generating in-app notifications.
+
+### Root Causes
+- `explode_multi_room_reservation()` didn't propagate per-room state (state, next_states, cancel_reason) from the room object
+- Phase B used top-level `effective_state` for ALL sub-reservations instead of calculating per-room state
+- `getUnassignedBookingsForType()` only compared `booking.room_type` with `roomType`, ignoring `room_type_id`
+- `_sync_reservation_update` didn't create notifications for changes
+
+### Changes
+- **`hotelrunner_webhook.py` — `explode_multi_room_reservation()`**: Added per-room cancellation detection via `_room_cancelled` flag (checks room `state`, `status`, `cancel_reason`, `next_states`)
+- **`hotelrunner_webhook.py` — Phase B pull loop**: Per-sub-reservation `sub_effective_state` calculation instead of blanket top-level state
+- **`hotelrunner_webhook.py` — `_sync_reservation_update()`**: Added notification creation for status changes, guest name changes, and date changes
+- **`normalizer.py` — `normalize_hotelrunner()`**: Added `_room_cancelled` flag check before status mapping
+- **`import_bridge_service.py` — `create_import_record()`**: Added `provider_updated_at` field for accurate timestamp comparison in Phase B
+- **`calendarHelpers.jsx` — `getUnassignedBookingsForType()`**: Added `room_type_id` matching alongside `room_type`
+- **DB fix**: Restored 6 wrongly-cancelled R881632298 bookings to "confirmed" status (R881632298-1 remains correctly cancelled)
+- **Lint fixes**: Removed 3 unused variable assignments and 1 unused import in `hotelrunner_webhook.py`
+
+### Testing
+- All 6 pytest tests passed (backend)
+- Frontend calendar verified: 19 "murat sutay" booking elements visible, 4 "Atanmamis" rows present
+- Test report: `/app/test_reports/iteration_181.json`
+
+
+
 ## 2026-04-03 - BUG FIX: HotelRunner Reservation Import Failure (Empty Email Unique Index)
 ### Root Cause
 - `guests` collection had a global unique index on `email` field (`email_1`)
