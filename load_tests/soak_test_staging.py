@@ -27,8 +27,6 @@ Uzun soak (12h):
     --html=test_reports/soak_12h_report.html
 """
 import json
-import random
-import time
 import resource
 import os
 from datetime import datetime

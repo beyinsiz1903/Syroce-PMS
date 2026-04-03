@@ -3,9 +3,7 @@ Locust Load Test — Combined PMS Scenarios
 Provides Python-based load testing for operational scenarios.
 Run: locust -f load_tests/locust_pms.py --headless -u 50 -r 5 -t 60s --host http://localhost:8001
 """
-import json
-import random
-from locust import HttpUser, task, between, tag, events
+from locust import HttpUser, task, between, tag
 
 
 class PMSUser(HttpUser):

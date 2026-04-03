@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import subprocess, os, sys
+import subprocess
+import os
 
 target = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
 

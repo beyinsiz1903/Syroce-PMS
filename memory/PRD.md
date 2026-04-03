@@ -54,6 +54,13 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - effective_state uses only state field + cancel_reason (not next_states)
 - Rate limit aware push with 30s-capped retry and fail-fast polling (fix Apr 2026)
 - **Push Retry Queue**: Automatic retry mechanism for failed pushes — enqueue, background worker, adaptive backoff, UI banner with retry button (Apr 2026)
+- **Rate Limit Cooldown & Auto-Retry System** (Apr 2026): 429 hatası alındığında:
+  - Veriler yerel olarak kaydedilir
+  - Push kuyruğa eklenir ve Retry-After süresine göre cooldown başlar
+  - Otomatik retry planlanır (progressive backoff ile max 5 deneme)
+  - UI'da countdown timer gösterilir
+  - "Şimdi Dene" butonu cooldown sırasında devre dışı
+  - Cooldown bitmeden API'ye istek gitmez (gereksiz 429'ları önler)
 - **Otomatik Polling Devre Disi**: Surekli 120s polling yerine event-driven + manuel senkronizasyon mimarisi (Apr 2026). Booking olusturuldugunda outbox uzerinden otomatik push, diger zamanlarda sadece kullanici tetikli islemler.
 
 ### Calendar Vibrant Color Update (Apr 2026)
@@ -79,6 +86,9 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 ## Key API Endpoints
 - POST /api/channel-manager/hr-rate-manager/bulk-grid-update
 - GET /api/channel-manager/hr-rate-manager/grid
+- GET /api/channel-manager/hr-rate-manager/queue-status
+- POST /api/channel-manager/hr-rate-manager/queue-retry
+- DELETE /api/channel-manager/hr-rate-manager/queue-cancel/{item_id}
 - POST /api/channel-manager/hotelrunner/sync/reservations/pull
 - GET /api/channel-manager/hotelrunner/sync/status
 - POST /api/channel-manager/hotelrunner/webhooks/reservations
@@ -93,4 +103,4 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 ## Critical Constraints
 - All responses in Turkish
 - Latest test report: /app/test_reports/iteration_184.json
-- Latest change: HotelRunner otomatik polling devre disi — event-driven + manuel senkronizasyon (Apr 2026)
+- Latest change: HotelRunner Rate Limit Cooldown & Auto-Retry System — cooldown timer, progressive backoff, otomatik retry (Apr 2026)

@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Layout from '@/components/Layout';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Grid3X3, CalendarDays, Ban, Eye, CheckCircle2, AlertTriangle, RefreshCw, Clock, Loader2 } from 'lucide-react';
+import { Grid3X3, CalendarDays, Ban, Eye, CheckCircle2, AlertTriangle, RefreshCw, Clock, Loader2, Timer } from 'lucide-react';
 
 import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
@@ -25,6 +25,8 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
   const [currency, setCurrency] = useState('TRY');
   const [queueStatus, setQueueStatus] = useState(null);
   const [retryingQueue, setRetryingQueue] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const cooldownTimerRef = useRef(null);
 
   const CURRENCY_SYMBOLS = { TRY: '\u20BA', USD: '$', EUR: '\u20AC', GBP: '\u00A3', RUB: '\u20BD' };
   const currencySymbol = CURRENCY_SYMBOLS[currency] || currency;
@@ -84,24 +86,51 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
     try {
       const { data } = await axios.get(`${API}${HR_API_PREFIX}/queue-status`, { headers });
       setQueueStatus(data);
+      // Sync cooldown from server
+      if (data.cooldown_remaining > 0) {
+        setCooldownSeconds(data.cooldown_remaining);
+      }
     } catch { /* ignore */ }
   }, []);
 
   useEffect(() => { fetchQueueStatus(); }, [fetchQueueStatus]);
 
+  // Countdown timer effect
+  useEffect(() => {
+    if (cooldownSeconds <= 0) {
+      if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+      return;
+    }
+    cooldownTimerRef.current = setInterval(() => {
+      setCooldownSeconds(prev => {
+        if (prev <= 1) {
+          clearInterval(cooldownTimerRef.current);
+          // Auto-refresh queue status when cooldown expires
+          fetchQueueStatus();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => { if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current); };
+  }, [cooldownSeconds > 0]);
+
   // Kuyruk durumu sadece sayfa yuklendiginde ve islem sonrasinda guncellenir
-  // Otomatik polling devre disi — rate limit'i onlemek icin
 
   const handleRetryQueue = async () => {
     setRetryingQueue(true);
     try {
       const { data } = await axios.post(`${API}${HR_API_PREFIX}/queue-retry`, {}, { headers });
       setQueueStatus(data);
-      if (data.pending === 0 && data.retrying === 0) {
+      if (data.cooldown_remaining > 0) {
+        setCooldownSeconds(data.cooldown_remaining);
+        toast.info(`Rate limit aktif — ${data.cooldown_remaining} saniye sonra otomatik gonderilecek`, { duration: 8000 });
+      } else if (data.pending === 0 && data.retrying === 0) {
         toast.success('Kuyruktaki tum push islemleri basariyla tamamlandi');
+        setCooldownSeconds(0);
         fetchGrid();
       } else if (data.pending > 0 || data.retrying > 0) {
-        toast.warning(`${data.total_in_queue} push hala kuyrukta — rate limit devam ediyor`);
+        toast.warning(`${data.total_in_queue} push hala kuyrukta`);
       }
     } catch {
       toast.error('Kuyruk yeniden deneme basarisiz');
@@ -259,7 +288,9 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
           toast.success(`${succeeded.length} oda tipi HotelRunner'a basariyla gonderildi`);
         }
         if (data.queued_count > 0) {
-          toast.info(`${data.queued_count} push kuyruga eklendi — "Simdi Dene" ile gonderebilirsiniz`, { duration: 10000 });
+          const cd = data.cooldown_remaining || 65;
+          setCooldownSeconds(cd);
+          toast.info(`${data.queued_count} push kuyruga eklendi — ~${cd}sn sonra otomatik gonderilecek`, { duration: 10000 });
           fetchQueueStatus();
         } else if (data.rate_limit_hit) {
           toast.warning('HotelRunner rate limit: Veriler yerel olarak kaydedildi.', { duration: 12000 });
@@ -354,26 +385,42 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
         {queueStatus && queueStatus.total_in_queue > 0 && (
           <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-4 py-3" data-testid="hr-queue-banner">
             <div className="flex items-center gap-3">
-              <Clock className="w-5 h-5 text-amber-600 flex-shrink-0" />
+              {cooldownSeconds > 0 ? (
+                <Timer className="w-5 h-5 text-amber-600 flex-shrink-0" />
+              ) : (
+                <Clock className="w-5 h-5 text-amber-600 flex-shrink-0" />
+              )}
               <div>
                 <p className="text-sm font-medium text-amber-800">
                   {queueStatus.total_in_queue} push kuyrukta bekliyor
                 </p>
                 <p className="text-xs text-amber-600">
-                  Manuel olarak "Simdi Dene" butonuyla gonderebilirsiniz
+                  {cooldownSeconds > 0
+                    ? `Rate limit aktif — ${cooldownSeconds}sn sonra otomatik gonderilecek${queueStatus.auto_retry_count > 0 ? ` (deneme ${queueStatus.auto_retry_count}/${queueStatus.max_auto_retries})` : ''}`
+                    : queueStatus.auto_retry_scheduled
+                      ? 'Otomatik gonderim planlanmis — bekleniyor...'
+                      : 'Gondermek icin "Simdi Dene" butonuna basin'
+                  }
                   {queueStatus.failed > 0 && ` | ${queueStatus.failed} basarisiz`}
                 </p>
               </div>
             </div>
-            <button
-              onClick={handleRetryQueue}
-              disabled={retryingQueue}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-md transition-colors disabled:opacity-50"
-              data-testid="hr-queue-retry-btn"
-            >
-              {retryingQueue ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-              {retryingQueue ? 'Deneniyor...' : 'Simdi Dene'}
-            </button>
+            <div className="flex items-center gap-2">
+              {cooldownSeconds > 0 && (
+                <span className="text-xs font-mono font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded" data-testid="hr-queue-countdown">
+                  {Math.floor(cooldownSeconds / 60)}:{String(cooldownSeconds % 60).padStart(2, '0')}
+                </span>
+              )}
+              <button
+                onClick={handleRetryQueue}
+                disabled={retryingQueue || cooldownSeconds > 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                data-testid="hr-queue-retry-btn"
+              >
+                {retryingQueue ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                {retryingQueue ? 'Deneniyor...' : cooldownSeconds > 0 ? 'Bekleniyor...' : 'Simdi Dene'}
+              </button>
+            </div>
           </div>
         )}
 

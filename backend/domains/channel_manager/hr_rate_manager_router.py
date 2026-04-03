@@ -16,7 +16,14 @@ from pymongo import UpdateOne
 
 from core.database import db
 from core.security import get_current_user
-from domains.channel_manager.hr_push_queue_worker import clear_completed, enqueue_failed_push, get_queue_status
+from domains.channel_manager.hr_push_queue_worker import (
+    clear_completed,
+    enqueue_failed_push,
+    get_cooldown_remaining,
+    get_queue_status,
+    reset_auto_retry,
+    schedule_auto_retry,
+)
 from domains.channel_manager.providers.hotelrunner.errors import HotelRunnerRateLimitError
 from models.schemas import User
 
@@ -147,7 +154,7 @@ async def _push_with_retry(
         return {"room_type_code": rt_code, "success": result.get("success", False), "error": result.get("error")}
     except HotelRunnerRateLimitError as e:
         logger.warning("[HR-BULK-UPDATE] Rate limit for %s — hemen kuyruga ekleniyor (server: %ds)", rt_code, e.retry_after_seconds)
-        return {"room_type_code": rt_code, "success": False, "error": f"Rate limit: {e}"}
+        return {"room_type_code": rt_code, "success": False, "error": f"Rate limit: {e}", "retry_after_seconds": e.retry_after_seconds}
     except Exception as e:
         logger.error("[HR-BULK-UPDATE] push error for %s: %s", rt_code, e)
         return {"room_type_code": rt_code, "success": False, "error": str(e)}
@@ -515,6 +522,7 @@ async def hr_bulk_grid_update(
     if push_tasks:
         rate_limited = False
         queued_count = 0
+        rate_limit_retry_after = 65  # default cooldown seconds
         for task_info in push_tasks:
             rt = task_info["rt"]
 
@@ -524,9 +532,10 @@ async def hr_bulk_grid_update(
                     tenant_id, rt, request.start_date, request.end_date,
                     rate=task_info["rate"], avail=task_info["avail"],
                     stop=task_info["stop"], minstay=task_info["minstay"],
-                    error="Rate limit — kuyruga eklendi (manuel deneyin)",
+                    error="Rate limit — otomatik gonderilecek",
+                    retry_after_seconds=rate_limit_retry_after,
                 )
-                push_results.append({"room_type_code": rt, "success": False, "error": "Kuyruga eklendi (manuel deneyin)", "queued": True})
+                push_results.append({"room_type_code": rt, "success": False, "error": "Kuyruga eklendi (otomatik gonderilecek)", "queued": True})
                 queued_count += 1
                 continue
 
@@ -543,11 +552,13 @@ async def hr_bulk_grid_update(
             # Detect rate limit failure → enqueue this failed task and flag remaining
             if not result.get("success") and "rate limit" in str(result.get("error", "")).lower():
                 rate_limited = True
+                rate_limit_retry_after = result.get("retry_after_seconds", 65)
                 await enqueue_failed_push(
                     tenant_id, rt, request.start_date, request.end_date,
                     rate=task_info["rate"], avail=task_info["avail"],
                     stop=task_info["stop"], minstay=task_info["minstay"],
                     error=result.get("error", ""),
+                    retry_after_seconds=rate_limit_retry_after,
                 )
                 queued_count += 1
                 result["queued"] = True
@@ -559,16 +570,23 @@ async def hr_bulk_grid_update(
         success_count = sum(1 for r in push_results if r.get("success"))
         logger.info("[HR-BULK-UPDATE] Push done: %s/%s successful, %s queued", success_count, len(push_results), queued_count)
 
+        # Schedule auto-retry if any items were queued due to rate limit
+        if queued_count > 0 and rate_limited:
+            await schedule_auto_retry(tenant_id, rate_limit_retry_after + 5)
+
     all_pushed = len(push_results) > 0 and all(r.get("success") for r in push_results)
     rate_limit_failed = any("rate limit" in str(r.get("error", "")).lower() or r.get("queued") for r in push_results if not r.get("success"))
     queued_items = sum(1 for r in push_results if r.get("queued"))
+
+    # Get cooldown info for response
+    cooldown_remaining = get_cooldown_remaining(tenant_id)
 
     msg = f"{saved} kayıt güncellendi"
     if push_tasks:
         success_count_msg = sum(1 for r in push_results if r.get("success"))
         msg += f", {success_count_msg}/{len(push_tasks)} HotelRunner push başarılı"
     if queued_items > 0:
-        msg += f" | {queued_items} push kuyruga eklendi (manuel deneyin)"
+        msg += f" | {queued_items} push kuyruga eklendi — ~{cooldown_remaining}sn sonra otomatik gonderilecek"
     elif rate_limit_failed:
         msg += " | Rate limit: Veriler yerel olarak kaydedildi."
     if permission_warnings:
@@ -582,6 +600,7 @@ async def hr_bulk_grid_update(
         "all_pushed": all_pushed,
         "rate_limit_hit": rate_limit_failed,
         "queued_count": queued_items,
+        "cooldown_remaining": cooldown_remaining,
         "background_push": len(push_tasks) > 0,
         "total_room_types": len(total_room_types_set),
         "permission_warnings": permission_warnings,
@@ -1036,19 +1055,36 @@ async def get_hr_queue_status(current_user: User = Depends(get_current_user)):
 
 @router.post("/queue-retry")
 async def retry_queue_items(current_user: User = Depends(get_current_user)):
-    """Kuyruktaki tüm bekleyen push'ları hemen tekrar dene."""
+    """Kuyruktaki tüm bekleyen push'ları tekrar dene — cooldown kontrolü ile."""
     from domains.channel_manager.hr_push_queue_worker import push_queue_worker
+
     tenant_id = current_user.tenant_id
+
+    # Check cooldown
+    cooldown = get_cooldown_remaining(tenant_id)
+    if cooldown > 0:
+        status = await get_queue_status(tenant_id)
+        # Schedule auto-retry if not already scheduled
+        if not status.get("auto_retry_scheduled"):
+            await schedule_auto_retry(tenant_id, cooldown + 2)
+        return {
+            "message": f"Rate limit aktif — {cooldown} saniye sonra otomatik gonderilecek",
+            "cooldown_remaining": cooldown,
+            "auto_retry_scheduled": True,
+            **status,
+        }
 
     # Reset rate limit counter to allow immediate retry
     push_queue_worker._consecutive_rate_limits = 0
+    reset_auto_retry(tenant_id)
 
     # Run queue processing for this tenant
     await push_queue_worker._process_tenant_queue(tenant_id)
 
     status = await get_queue_status(tenant_id)
     return {
-        "message": "Kuyruk isleme alindi",
+        "message": "Kuyruk isleme alindi" if status["total_in_queue"] == 0 else f"{status['total_in_queue']} push hala kuyrukta",
+        "cooldown_remaining": status.get("cooldown_remaining", 0),
         **status,
     }
 

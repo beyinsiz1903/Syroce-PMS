@@ -14,7 +14,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://event-driven-sync.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://fail-fast-sync.preview.emergentagent.com").rstrip("/")
 
 
 class TestHRPushQueueAPI:

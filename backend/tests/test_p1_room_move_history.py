@@ -22,7 +22,7 @@ import requests
 BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
     # Fallback for local testing
-    BASE_URL = "https://event-driven-sync.preview.emergentagent.com"
+    BASE_URL = "https://fail-fast-sync.preview.emergentagent.com"
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
