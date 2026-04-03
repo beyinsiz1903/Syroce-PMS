@@ -601,7 +601,20 @@ class ReservationPullScheduler:
                         rooms = res.get("rooms") or []
                         hr_updated_at = res.get("updated_at", "")
                         hr_state = res.get("state", "confirmed")
-                        logger.info(f"[PULL-PHASE-B] {hr_number}: state={hr_state}, updated_at={hr_updated_at}, modified={res.get('modified', 'N/A')}")
+                        hr_next_states = res.get("next_states") or []
+                        hr_cancel_reason = res.get("cancel_reason") or ""
+
+                        # Derive effective state: if next_states contains 'cancel' or cancel_reason exists,
+                        # treat as cancellation even if state is still 'confirmed'
+                        effective_state = hr_state
+                        if "cancel" in hr_next_states or hr_cancel_reason:
+                            effective_state = "canceled"
+
+                        logger.info(
+                            f"[PULL-PHASE-B] {hr_number}: state={hr_state}, effective={effective_state}, "
+                            f"next_states={hr_next_states}, cancel_reason={hr_cancel_reason}, "
+                            f"updated_at={hr_updated_at}"
+                        )
 
                         sub_reservations = explode_multi_room_reservation(res)
 
@@ -624,15 +637,15 @@ class ReservationPullScheduler:
                                 stored_updated = known_ext_updated.get(sub_ext, "")
                                 stored_status = known_ext_status.get(sub_ext, "confirmed")
 
-                                # Map HR state to PMS status for comparison
-                                hr_status_check = {"canceled": "cancelled", "cancelled": "cancelled", "no_show": "no_show"}.get(hr_state, hr_state)
+                                # Map HR effective state to PMS status for comparison
+                                hr_status_check = {"canceled": "cancelled", "cancelled": "cancelled", "no_show": "no_show"}.get(effective_state, effective_state)
                                 state_changed = hr_status_check != stored_status
                                 timestamp_changed = hr_updated_at and hr_updated_at > stored_updated
 
                                 if state_changed or timestamp_changed:
                                     try:
                                         updated = await _sync_reservation_update(
-                                            tenant_id, sub_ext, sub_res, hr_state, hr_updated_at,
+                                            tenant_id, sub_ext, sub_res, effective_state, hr_updated_at,
                                         )
                                         if updated:
                                             catchup_updated += 1
@@ -776,6 +789,11 @@ async def _sync_reservation_update(
     if mapped_status != booking.get("status", ""):
         updates["status"] = mapped_status
         logger.info(f"[PULL-SYNC] {ext_reservation_id}: status '{booking.get('status')}' → '{mapped_status}'")
+        if mapped_status == "cancelled":
+            updates["cancelled_at"] = datetime.now(UTC).isoformat()
+            cancel_reason = hr_payload.get("cancel_reason") or "Provider cancellation"
+            updates["cancellation_reason"] = cancel_reason
+            logger.info(f"[PULL-SYNC] {ext_reservation_id}: cancellation_reason='{cancel_reason}'")
 
     if not updates:
         return False
@@ -790,13 +808,16 @@ async def _sync_reservation_update(
     )
 
     # Update imported_reservations record with new provider timestamp
+    imported_update = {
+        "provider_updated_at": hr_updated_at,
+        "updated_at": datetime.now(UTC).isoformat(),
+        "guest_name": guest_name_hr if "guest_name" in updates else booking.get("guest_name", ""),
+    }
+    if "status" in updates:
+        imported_update["status"] = updates["status"]
     await db.imported_reservations.update_one(
         {"tenant_id": tenant_id, "external_reservation_id": ext_reservation_id},
-        {"$set": {
-            "provider_updated_at": hr_updated_at,
-            "updated_at": datetime.now(UTC).isoformat(),
-            "guest_name": guest_name_hr if "guest_name" in updates else booking.get("guest_name", ""),
-        }},
+        {"$set": imported_update},
     )
 
     # Update guest record if name changed
