@@ -19,7 +19,7 @@ from core.database import db
 logger = logging.getLogger(__name__)
 
 QUEUE_CHECK_INTERVAL = 120  # seconds between queue checks
-INTER_PUSH_DELAY = 3.0     # seconds between individual pushes
+INTER_PUSH_DELAY = 13.0    # seconds between individual pushes (5 req/min limit → 12s min)
 MAX_QUEUE_RETRIES = 10      # max retries before marking as permanently failed
 DEFAULT_RATE_LIMIT_COOLDOWN = 65  # seconds — default cooldown when 429 hits (slightly > Retry-After)
 MAX_AUTO_RETRIES = 5        # max consecutive auto-retries before stopping
@@ -28,6 +28,7 @@ MAX_AUTO_RETRIES = 5        # max consecutive auto-retries before stopping
 _tenant_cooldowns: dict[str, str] = {}  # tenant_id -> ISO datetime when cooldown expires
 _auto_retry_tasks: dict[str, asyncio.Task] = {}  # tenant_id -> running auto-retry task
 _auto_retry_counts: dict[str, int] = {}  # tenant_id -> consecutive auto-retry count
+_batch_push_tasks: dict[str, asyncio.Task] = {}  # tenant_id -> running background batch push
 
 
 def get_cooldown_remaining(tenant_id: str) -> int:
@@ -166,6 +167,36 @@ async def schedule_auto_retry(tenant_id: str, delay_seconds: int):
     _auto_retry_tasks[tenant_id] = task
 
 
+
+async def start_background_batch_push(tenant_id: str):
+    """Start background batch push for all pending queue items.
+    
+    Processes items one by one with 13-second delays to respect
+    HotelRunner's 5 req/min rate limit. Runs as async background task.
+    """
+    # Cancel existing batch push for this tenant
+    existing = _batch_push_tasks.get(tenant_id)
+    if existing and not existing.done():
+        logger.info("[HR-BATCH] Batch push already running for tenant %s — merging", tenant_id)
+        return  # Let the existing batch handle it
+
+    async def _batch_process():
+        logger.info("[HR-BATCH] Background batch push starting for tenant %s", tenant_id)
+        # Small delay to let the HTTP response return first
+        await asyncio.sleep(1)
+        await push_queue_worker._process_tenant_queue(tenant_id)
+        _batch_push_tasks.pop(tenant_id, None)
+        logger.info("[HR-BATCH] Background batch push completed for tenant %s", tenant_id)
+
+    task = asyncio.create_task(_batch_process())
+    _batch_push_tasks[tenant_id] = task
+
+
+def is_batch_push_running(tenant_id: str) -> bool:
+    """Check if a background batch push is currently running for a tenant."""
+    task = _batch_push_tasks.get(tenant_id)
+    return task is not None and not task.done()
+
 async def get_queue_status(tenant_id: str) -> dict:
     """Get queue statistics for a tenant."""
     pending = await db.hr_push_queue.count_documents({"tenant_id": tenant_id, "status": "pending"})
@@ -199,6 +230,7 @@ async def get_queue_status(tenant_id: str) -> dict:
         "auto_retry_scheduled": has_auto_retry,
         "auto_retry_count": _auto_retry_counts.get(tenant_id, 0),
         "max_auto_retries": MAX_AUTO_RETRIES,
+        "batch_push_active": is_batch_push_running(tenant_id),
     }
 
 

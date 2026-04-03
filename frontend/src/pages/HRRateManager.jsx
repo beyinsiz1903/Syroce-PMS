@@ -105,7 +105,6 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
       setCooldownSeconds(prev => {
         if (prev <= 1) {
           clearInterval(cooldownTimerRef.current);
-          // Auto-refresh queue status when cooldown expires
           fetchQueueStatus();
           return 0;
         }
@@ -115,7 +114,12 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
     return () => { if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current); };
   }, [cooldownSeconds > 0]);
 
-  // Kuyruk durumu sadece sayfa yuklendiginde ve islem sonrasinda guncellenir
+  // Auto-poll queue status when batch push is active
+  useEffect(() => {
+    if (!queueStatus?.batch_push_active) return;
+    const interval = setInterval(() => { fetchQueueStatus(); }, 5000);
+    return () => clearInterval(interval);
+  }, [queueStatus?.batch_push_active, fetchQueueStatus]);
 
   const handleRetryQueue = async () => {
     setRetryingQueue(true);
@@ -281,6 +285,10 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
       toast.success(`${data.saved} kayit guncellendi`);
       if (data.all_pushed) {
         toast.success('HotelRunner push basarili');
+      } else if (data.batch_mode) {
+        // Smart Batch Push — tum pushlar arka planda
+        toast.info(`${data.queued_count} push arka planda gonderiliyor — rate limit korumasiyla sirayla islenecek`, { duration: 8000 });
+        fetchQueueStatus();
       } else if (data.background_push) {
         const failed = data.push_results?.filter(r => !r.success) || [];
         const succeeded = data.push_results?.filter(r => r.success) || [];
@@ -383,23 +391,30 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
 
         {/* Push Queue Status Banner */}
         {queueStatus && queueStatus.total_in_queue > 0 && (
-          <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-4 py-3" data-testid="hr-queue-banner">
+          <div className={`flex items-center justify-between rounded-lg px-4 py-3 ${queueStatus.batch_push_active ? 'bg-blue-50 border border-blue-200' : 'bg-amber-50 border border-amber-200'}`} data-testid="hr-queue-banner">
             <div className="flex items-center gap-3">
-              {cooldownSeconds > 0 ? (
+              {queueStatus.batch_push_active ? (
+                <Loader2 className="w-5 h-5 text-blue-600 flex-shrink-0 animate-spin" />
+              ) : cooldownSeconds > 0 ? (
                 <Timer className="w-5 h-5 text-amber-600 flex-shrink-0" />
               ) : (
                 <Clock className="w-5 h-5 text-amber-600 flex-shrink-0" />
               )}
               <div>
-                <p className="text-sm font-medium text-amber-800">
-                  {queueStatus.total_in_queue} push kuyrukta bekliyor
+                <p className={`text-sm font-medium ${queueStatus.batch_push_active ? 'text-blue-800' : 'text-amber-800'}`}>
+                  {queueStatus.batch_push_active
+                    ? `${queueStatus.total_in_queue} push gonderiliyor...`
+                    : `${queueStatus.total_in_queue} push kuyrukta bekliyor`
+                  }
                 </p>
-                <p className="text-xs text-amber-600">
-                  {cooldownSeconds > 0
-                    ? `Rate limit aktif — ${cooldownSeconds}sn sonra otomatik gonderilecek${queueStatus.auto_retry_count > 0 ? ` (deneme ${queueStatus.auto_retry_count}/${queueStatus.max_auto_retries})` : ''}`
-                    : queueStatus.auto_retry_scheduled
-                      ? 'Otomatik gonderim planlanmis — bekleniyor...'
-                      : 'Gondermek icin "Simdi Dene" butonuna basin'
+                <p className={`text-xs ${queueStatus.batch_push_active ? 'text-blue-600' : 'text-amber-600'}`}>
+                  {queueStatus.batch_push_active
+                    ? 'Rate limit korumasiyla sirayla isleniyor — sayfa acik kalsin'
+                    : cooldownSeconds > 0
+                      ? `Rate limit aktif — ${cooldownSeconds}sn sonra otomatik gonderilecek${queueStatus.auto_retry_count > 0 ? ` (deneme ${queueStatus.auto_retry_count}/${queueStatus.max_auto_retries})` : ''}`
+                      : queueStatus.auto_retry_scheduled
+                        ? 'Otomatik gonderim planlanmis — bekleniyor...'
+                        : 'Gondermek icin "Simdi Dene" butonuna basin'
                   }
                   {queueStatus.failed > 0 && ` | ${queueStatus.failed} basarisiz`}
                 </p>
@@ -413,12 +428,12 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
               )}
               <button
                 onClick={handleRetryQueue}
-                disabled={retryingQueue || cooldownSeconds > 0}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={retryingQueue || cooldownSeconds > 0 || queueStatus.batch_push_active}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${queueStatus.batch_push_active ? 'text-blue-700 bg-blue-100' : 'text-amber-700 bg-amber-100 hover:bg-amber-200'}`}
                 data-testid="hr-queue-retry-btn"
               >
-                {retryingQueue ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                {retryingQueue ? 'Deneniyor...' : cooldownSeconds > 0 ? 'Bekleniyor...' : 'Simdi Dene'}
+                {retryingQueue || queueStatus.batch_push_active ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                {queueStatus.batch_push_active ? 'Gonderiliyor...' : retryingQueue ? 'Deneniyor...' : cooldownSeconds > 0 ? 'Bekleniyor...' : 'Simdi Dene'}
               </button>
             </div>
           </div>

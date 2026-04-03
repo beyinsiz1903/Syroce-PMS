@@ -61,6 +61,12 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
   - UI'da countdown timer gösterilir
   - "Şimdi Dene" butonu cooldown sırasında devre dışı
   - Cooldown bitmeden API'ye istek gitmez (gereksiz 429'ları önler)
+- **Smart Batch Push** (Apr 2026): 2+ oda tipi güncellemesinde TÜM push'lar arka plana alınır
+  - Kullanıcı anında yanıt alır (0 saniye bekleme)
+  - Push'lar rate limit'e uygun 13sn aralıklarla sırayla gönderilir
+  - UI'da "Gönderiliyor..." banner'ı gösterilir (mavi tema, spinner)
+  - Her 5sn'de queue status otomatik poll edilir
+  - 1 oda tipi güncellemesi hala senkron (hızlı yanıt)
 - **Otomatik Polling Devre Disi**: Surekli 120s polling yerine event-driven + manuel senkronizasyon mimarisi (Apr 2026). Booking olusturuldugunda outbox uzerinden otomatik push, diger zamanlarda sadece kullanici tetikli islemler.
 
 ### Calendar Vibrant Color Update (Apr 2026)
