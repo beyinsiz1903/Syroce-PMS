@@ -54,6 +54,7 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - effective_state uses only state field + cancel_reason (not next_states)
 - Rate limit aware push with 30s-capped retry and fail-fast polling (fix Apr 2026)
 - **Push Retry Queue**: Automatic retry mechanism for failed pushes — enqueue, background worker, adaptive backoff, UI banner with retry button (Apr 2026)
+- **Otomatik Polling Devre Disi**: Surekli 120s polling yerine event-driven + manuel senkronizasyon mimarisi (Apr 2026). Booking olusturuldugunda outbox uzerinden otomatik push, diger zamanlarda sadece kullanici tetikli islemler.
 
 ### Calendar Vibrant Color Update (Apr 2026)
 - Vibrant booking bar colors by status
@@ -91,5 +92,5 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 
 ## Critical Constraints
 - All responses in Turkish
-- Latest test report: /app/test_reports/iteration_182.json
-- Latest bug fix: HotelRunner 429 Rate Limit kapsamli duzeltme — adaptive backoff + fail-fast polling + capped push retry (Apr 2026)
+- Latest test report: /app/test_reports/iteration_184.json
+- Latest change: HotelRunner otomatik polling devre disi — event-driven + manuel senkronizasyon (Apr 2026)

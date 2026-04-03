@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## 2026-04-03 - FEATURE: HotelRunner Otomatik Polling Devre Disi (Event-Driven Mimari)
+
+### Kullanici Istegi
+Sistem surekli HotelRunner API'ye otomatik istek gondererek rate limit (429) hatasina neden oluyordu. Kullanici surekli polling yerine sadece gercek degisikliklerde ve manuel islemlerde API'ye istek gitmesini istedi.
+
+### Degisiklikler
+1. **startup.py**: HotelRunner Pull Scheduler ve Push Queue Worker otomatik baslama bloklari kaldirildi
+2. **hotelrunner_sync.py**: sync/status endpoint'ine `auto_polling_disabled: true` flagi eklendi
+3. **hr_rate_manager_router.py**: "otomatik denenecek" mesajlari "manuel deneyin" olarak guncellendi
+4. **HRRateManager.jsx**: 30 saniyede bir queue status polling (setInterval) kaldirildi, banner metni "Manuel olarak Simdi Dene butonuyla gonderebilirsiniz" olarak guncellendi
+5. **StopSalePanel.jsx**: Toast mesajlari "Simdi Dene ile gonderebilirsiniz" olarak guncellendi
+
+### Yeni Mimari
+- **Event-Driven**: Booking olusturuldugunda/guncellendginde outbox sistemi uzerinden HotelRunner'a otomatik push
+- **Manuel Pull**: POST /api/channel-manager/hotelrunner/sync/reservations/pull
+- **Manuel Queue Retry**: POST /api/channel-manager/hr-rate-manager/queue-retry + "Simdi Dene" butonu
+- **Otomatik Polling**: TAMAMEN DEVRE DISI
+
+### Test Sonuclari
+- Backend: 8/8 passed (%100)
+- Frontend: All UI tests passed (%100)
+- Dogrulama: Restart sonrasi 4+ dakika boyunca SIFIR HotelRunner API istegi yapildi
+
+---
+
+
 ## 2026-04-03 - FEATURE: HotelRunner Push Kuyruk Mekanizmasi (Otomatik Retry)
 
 ### Ozellik
