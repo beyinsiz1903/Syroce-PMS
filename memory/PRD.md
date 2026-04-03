@@ -70,6 +70,9 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - Channel Manager Dashboard — recent reservations, failed imports, connection health metrics
 - Admin UI Panel for encryption management (view status, trigger migrations, check audit logs)
 
+## Completed Refactoring
+- ~~hotelrunner_webhook.py monolith split~~ DONE (Apr 2026) — Split 1162-line file into hotelrunner_shared.py + hotelrunner_webhook.py + hotelrunner_sync.py
+
 ## Key API Endpoints
 - GET /api/security/pii/strict-mode/config
 - GET /api/security/pii/strict-mode/violations

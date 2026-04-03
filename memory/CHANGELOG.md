@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## 2026-04-03 - REFACTORING: hotelrunner_webhook.py Module Split
+
+### Motivation
+`hotelrunner_webhook.py` had grown to 1162 lines containing both webhook ingestion AND sync/polling logic, making it hard to maintain and navigate.
+
+### Changes
+Split into 3 focused modules:
+- **`hotelrunner_shared.py`** (229 lines) — Shared utilities: `explode_multi_room_reservation`, `_persist_and_process`, `_timeline_append`, `_store_raw_payload`, `_resolve_property_id`
+- **`hotelrunner_webhook.py`** (198 lines) — Webhook ingestion: `/webhooks/*`, `/logs/*`, `/sync/reservations/replay`
+- **`hotelrunner_sync.py`** (780 lines) — Sync/polling: `ReservationPullScheduler`, `_sync_reservation_update`, Phase A/B, `/sync/*` endpoints
+
+### Import Updates
+- `bootstrap/router_registry.py`: Both `router` (webhook) and `sync_router` (sync) registered
+- `startup.py`: `pull_scheduler` now imported from `hotelrunner_sync`
+- `routers/hotelrunner_compat.py`: `_persist_and_process` now imported from `hotelrunner_shared`
+
+### Verified
+- 21/21 backend tests passed (iteration_182.json)
+- All endpoints functional (webhooks, sync status, manual pull, logs)
+- Scheduler auto-starts correctly from `startup.py`
+
+---
+
 ## 2026-04-03 - BUG FIX: HotelRunner Global Cancellation Not Syncing
 
 ### Issue
