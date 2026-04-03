@@ -92,16 +92,26 @@ class DatabaseOptimizer:
         """Guests collection indexes"""
         guests = self.db.guests
 
+        # Drop legacy global unique email index if it exists (causes duplicate key error for empty emails)
+        try:
+            await guests.drop_index("email_1")
+        except Exception:
+            pass
+
         indexes = [
-            ([("email", ASCENDING)], {"unique": True}),
             ([("phone", ASCENDING)], {}),
             ([("id_number", ASCENDING)], {}),
             ([("tags", ASCENDING)], {}),
             ([("created_at", DESCENDING)], {}),
             ([("name", TEXT)], {}),
+            # Partial unique: only enforce uniqueness for non-empty emails, per tenant
+            ([("tenant_id", ASCENDING), ("email", ASCENDING)], {
+                "unique": True,
+                "name": "idx_guests_tenant_email_unique",
+                "partialFilterExpression": {"email": {"$gt": ""}},
+            }),
             # NOTE: MongoDB allows only ONE text index per collection.
             # "name" text index already covers text search needs.
-            # Removed duplicate "email" TEXT index that caused IndexOptionsConflict.
         ]
 
         created = []

@@ -3,36 +3,38 @@
 **User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın. User explicitly requires all responses in Turkish.)
 
 **what currently exists?** 
-A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. In the latest session, the agent successfully revamped the Calendar UI colors based on user feedback, replacing dull gray reservation bars with vibrant colors (blue for confirmed, green for in-house, orange for today's arrivals, red for past/checked-out). Background highlights and legends were also updated to match the new vibrant theme. 
+A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. In the latest session, the agent successfully implemented the P2 Data Encryption task, ensuring 100% AES-256-GCM encryption for the , , and  collections. Hash-based lookups were implemented for authentication flows to maintain exact-match queries (like login) on encrypted emails.
 
 **Last working item**: 
-    - Last item agent was working: Replacing dull gray reservation bar colors with a vibrant color palette in the Calendar and updating room type header backgrounds to match the cleaner look. The agent successfully implemented, visually verified, tested with the testing agent, and finished the task.
-    - Status: NONE (Task was successfully finished. Agent suggested an enhancement for OTA Channel color coding at the end of the session).
+    - Last item agent was working: P2: Complete Data Encryption. Encrypted , , and  collections. Added hash-based lookup for emails in auth and admin routers. Updated , , and  for on-the-fly encryption. Triggered a full DB migration to encrypt all existing records.
+    - Status: NONE (Task was successfully completed, tested, and finished).
     - Agent Testing Done: Y
-    - Which testing method agent to use? testing_agent_v3_fork (used  with 100% success). Use standard testing guidelines for upcoming tasks.
+    - Which testing method agent to use? testing_agent_v3_fork (used  with 100% success rate on 9/9 pytest tests). Use standard testing guidelines for upcoming tasks.
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-  *None. Calendar color styling issues have been resolved.*
+  *None. Data Encryption was successfully implemented without lingering issues.*
 
 **In progress Task List**: 
   *None.*
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - P2: Complete Data Encryption - Encrypt the  and  collections to 100% (currently 0%,  is at 99.6%).
     - P3: Add a quick toggle button at the top of the rate manager pages to easily switch between Exely and HotelRunner screens.
     
     Future Tasks:
     - P3: Complete removal/deletion of legacy HR connector once transition is 100% verified.
     - Enhancement/Backlog: Channel Manager Dashboard to view recent reservations, failed imports, and connection health metrics.
+    - Enhancement/Backlog (Suggested by Agent): Admin UI Panel for encryption management (view status, trigger migrations, check audit logs).
 
 **Completed work in this session**
-- Updated  and  to replace gray booking bars with vibrant colors (Blue, Orange, Green, Turquoise, Red). (DONE)
-- Lightened past date cell backgrounds and weekend indicators in  for better contrast. (DONE)
-- Removed amber background styling from room type headers for a cleaner look. (DONE)
-- Updated the Legend in  to match the new color definitions. (DONE)
-- Updated  and  with the latest UI improvements. (DONE)
+- Created  for hash-based email queries. (DONE)
+- Updated  and  to use encrypted lookups and decrypt responses. (DONE)
+- Updated  to encrypt initial demo data. (DONE)
+- Updated  and  to encrypt incoming bookings and guests upon creation. (DONE)
+- Updated  to decrypt booking details on read. (DONE)
+- Updated  to add a  endpoint and executed it to encrypt 100% of existing DB records. (DONE)
+- Updated  and  with encryption implementation details. (DONE)
 
 **Earlier issues found/mentioned but not fixed**
    *None*
@@ -46,34 +48,41 @@ A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. 
 
 
 **Key Technical Concepts**
-- **Calendar UI Framework**: Uses dynamic Tailwind classes heavily in . The color pipeline maps reservation statuses (and dates) to specific background/border classes defined directly in the components and helper files.
+- **Field-Level Encryption**: Uses AES-256-GCM. PII fields (like email, phone) are encrypted at rest.
+- **Hash-based Lookups**: Because emails are encrypted, exact-match queries like  will fail. The system now computes a deterministic hash of the email and queries via an indexed hash field (e.g., ) using the new  utilities.
 
 **key DB schema**
-  - , : Canonical PMS collections.
+  - : Contains , , and encrypted PII fields.
+  - , : PII fields encrypted.
   - : Stores unique night-date locks per room.
-  - : State machine tracking of ingest status.
 
 **changes in tech stack**
   - None
 
 **All files of reference** 
-  -  (Updated color schema)
-  -  (Updated styling, background row colors, removed amber headers)
-  -  (Legend text updated)
+  -  (New file for hash lookups)
+  -  (Updated auth queries)
+  -  (Updated admin user queries)
+  -  (Updated  to decrypt)
+  -  (Updated to encrypt demo data)
+  -  (Decrypts bookings on retrieval)
+  -  (Encrypts bookings on insert)
+  -  (Encrypts imported guests)
   -  (Updated)
   -  (Updated)
+  -  (Test Report)
 
 **Areas that need refactoring**: 
   - None currently.
 
 **key api endpoints**
--  (Webhook intake)
--  (Full manual resync)
+-  (Uses hash-based lookup)
+-  (Triggers DB encryption migration)
 
 **Critical Info for New Agent** 
 - **Language Constraint:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-- **Next Action Steps:** The previous agent finished the task and asked the user if they'd like an enhancement (OTA Color coding on the calendar for channels like Booking.com, Expedia, etc.). Read the user's latest message to determine if you should implement the enhancement or proceed to the next upcoming task (P2: Data Encryption). Ensure you use  before jumping into the P2 task.
-- Be careful with Tailwind JIT dynamic string interpolation; keep full class strings (e.g., ) rather than concatenated ones (e.g., ).
+- **Encryption Rules:** The system now strictly enforces AES-256-GCM encryption on , , and . If you write any new database read/write logic for these collections, you MUST use the encryption/decryption wrappers (e.g., , ).
+- **Next Action Steps:** The previous agent completed the encryption task. Your next focus should be the P3 Task: Add a quick toggle button at the top of the rate manager pages to easily switch between Exely and HotelRunner screens. Make sure to invoke  first to confirm the user's intent and present this plan.
 
 **documents and test reports created in this job** 
   -  (Updated)
@@ -81,9 +90,8 @@ A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. 
   -  (100% tests passed)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - *User:* Please use ask_human tool and confirm your plan now.
- - *User:* takvimde ki renkler göze hoş gelmiyor daha canlı renkler tercih edelim kırmızı mavi yeşil gibi, gri çok karanlık oluyor (Requested vibrant colors instead of dark gray for the calendar bookings).
- - *Agent:* (Analyzed the codebase, replaced gray booking bars with a vibrant color palette, fixed cell background contrast, tested via screenshot and testing subagent, updated documentation, and finished the task with an enhancement suggestion). -> **Pending Action**: Await user's response to the OTA channel color enhancement suggestion.
+ - *User:* 1 atla (Requested to skip the OTA channel color coding enhancement).
+ - *Agent:* (Acknowledged the skip, investigated the database, implemented field-level AES-256-GCM encryption for users/guests/bookings, added hash-based lookups to preserve login functionality, tested everything 100% successfully via testing subagent, and finished the task). -> **Pending Action**: You are starting fresh. Propose the next logical task (P3 Toggle Button) using the  tool and await user confirmation.
 
 **Project Health Check:**
   - Broken: None
@@ -104,4 +112,4 @@ A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. 
   - Found in  (Frontend: demo@hotel.com / demo123)
 
 **What agent forgot to execute**
-  - Nothing. The task was implemented efficiently and successfully finished.</analysis>
+  - Nothing. The encryption implementation was thorough, properly tested, and successfully finished.</analysis>

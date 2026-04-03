@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 2026-04-03 - BUG FIX: HotelRunner Reservation Import Failure (Empty Email Unique Index)
+### Root Cause
+- `guests` collection had a global unique index on `email` field (`email_1`)
+- When multiple guests had empty emails (HotelRunner often sends no guest email), the second insert failed with `E11000 duplicate key error`
+- This caused `imported_reservations` to be marked as `failed` while `bookings` were never created
+
+### Fixed
+- **Dropped** problematic global `email_1` unique index on `guests` collection
+- **Created** partial unique index `idx_guests_tenant_email_unique` — only enforces uniqueness for non-empty emails, scoped to `tenant_id`
+- **Updated** `/app/backend/infra/database_optimizer.py` to prevent re-creation of the bad index
+- **Updated** `/app/backend/startup.py` to drop legacy `email_1` index on startup
+- **Retried** failed imports for R676063586 and R676063586-1 — both successfully created as bookings
+
+### Impact
+- All future HotelRunner reservations with empty guest emails will import correctly
+- Existing failed imports can be retried via import retry worker
+
+
+
 ## 2026-04-02 - P2 Field Encryption Complete (users + bookings + guests)
 ### Added
 - **Hash-based email lookups**: Auth login, register, forgot-password all use `build_user_email_query()` for dual-read (hash + plaintext) queries
