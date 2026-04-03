@@ -3,17 +3,24 @@
 **User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın. User explicitly requires all responses in Turkish.)
 
 **what currently exists?** 
-A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. In the latest session, the agent successfully implemented the P2 Data Encryption task, ensuring 100% AES-256-GCM encryption for the , , and  collections. Hash-based lookups were implemented for authentication flows to maintain exact-match queries (like login) on encrypted emails.
+A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. In the latest session, the agent fixed critical issues related to HotelRunner reservation imports. The agent resolved a MongoDB unique index bug that was blocking new reservations with empty emails. Additionally, the agent implemented missing synchronization logic for reservation updates (guest name changes, room type modifications, and cancellations) via the webhook/pull mechanism.
 
 **Last working item**: 
-    - Last item agent was working: P2: Complete Data Encryption. Encrypted , , and  collections. Added hash-based lookup for emails in auth and admin routers. Updated , , and  for on-the-fly encryption. Triggered a full DB migration to encrypt all existing records.
-    - Status: NONE (Task was successfully completed, tested, and finished).
-    - Agent Testing Done: Y
-    - Which testing method agent to use? testing_agent_v3_fork (used  with 100% success rate on 9/9 pytest tests). Use standard testing guidelines for upcoming tasks.
+    - Last item agent was working: Fixing HotelRunner synchronization for reservation modifications (guest name, room type changes, and cancellations). The agent added  functionality and restarted the server.
+    - Status: USER VERIFICATION PENDING
+    - Agent Testing Done: Y (via curl/bash scripts)
+    - Which testing method agent to use? testing_agent_v3_fork (for E2E verification of the new sync flow), or manual testing via bash.
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-  *None. Data Encryption was successfully implemented without lingering issues.*
+  - Issue 1: HotelRunner Room Type Change Synchronization Validation
+     - Attempted fixes: The agent just added the room type synchronization code to  in  and restarted the server. 
+     - Next debug checklist: Check if user's room type change reflects on the PMS UI. Wait for user response from the last  call.
+     - Why fix this issue and what will be achieved with the fix? Ensures complete bidirectional consistency between HotelRunner and the PMS for any modifications made on OTAs.
+     - Status: USER VERIFICATION PENDING
+     - Is recurring issue? N
+     - Should Test frontend/backend/both after fix? backend
+     - Blocked on other issue: None
 
 **In progress Task List**: 
   *None.*
@@ -25,16 +32,13 @@ A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. 
     Future Tasks:
     - P3: Complete removal/deletion of legacy HR connector once transition is 100% verified.
     - Enhancement/Backlog: Channel Manager Dashboard to view recent reservations, failed imports, and connection health metrics.
-    - Enhancement/Backlog (Suggested by Agent): Admin UI Panel for encryption management (view status, trigger migrations, check audit logs).
+    - Enhancement/Backlog: Admin UI Panel for encryption management (view status, trigger migrations, check audit logs).
 
 **Completed work in this session**
-- Created  for hash-based email queries. (DONE)
-- Updated  and  to use encrypted lookups and decrypt responses. (DONE)
-- Updated  to encrypt initial demo data. (DONE)
-- Updated  and  to encrypt incoming bookings and guests upon creation. (DONE)
-- Updated  to decrypt booking details on read. (DONE)
-- Updated  to add a  endpoint and executed it to encrypt 100% of existing DB records. (DONE)
-- Updated  and  with encryption implementation details. (DONE)
+- Fixed global unique index issue on  collection (replaced  with partial index ) preventing empty email duplicate errors. (DONE)
+- Re-processed and successfully imported failed HotelRunner reservations. (DONE)
+- Implemented  in  to handle guest name, status (cancellations), and room type updates. (DONE)
+- Updated  and  with bug fix details. (DONE)
 
 **Earlier issues found/mentioned but not fixed**
    *None*
@@ -48,50 +52,46 @@ A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. 
 
 
 **Key Technical Concepts**
-- **Field-Level Encryption**: Uses AES-256-GCM. PII fields (like email, phone) are encrypted at rest.
-- **Hash-based Lookups**: Because emails are encrypted, exact-match queries like  will fail. The system now computes a deterministic hash of the email and queries via an indexed hash field (e.g., ) using the new  utilities.
+- **HotelRunner Sync/Pull Mechanism**: The system relies on a pull worker/webhook hybrid to fetch reservations. The system now supports updating existing reservations (modifying names, room types, cancelling) rather than just inserting new ones.
+- **MongoDB Partial Indexes**: Guests without emails caused duplicate key errors on standard unique indexes. Fixed by utilizing partial index filters: .
 
 **key DB schema**
-  - : Contains , , and encrypted PII fields.
-  - , : PII fields encrypted.
-  - : Stores unique night-date locks per room.
+  - : Uses  partial index.
+  - : Tracks the status of ingest. Expected pending status is .
 
 **changes in tech stack**
   - None
 
 **All files of reference** 
-  -  (New file for hash lookups)
-  -  (Updated auth queries)
-  -  (Updated admin user queries)
-  -  (Updated  to decrypt)
-  -  (Updated to encrypt demo data)
-  -  (Decrypts bookings on retrieval)
-  -  (Encrypts bookings on insert)
-  -  (Encrypts imported guests)
-  -  (Updated)
-  -  (Updated)
-  -  (Test Report)
+  -  (Added  logic)
+  -  (Fixed empty email handling for guests)
+  -  (Updated index creation logic)
+  -  (Updated index creation logic)
+  - 
+  - 
 
 **Areas that need refactoring**: 
   - None currently.
 
 **key api endpoints**
--  (Uses hash-based lookup)
--  (Triggers DB encryption migration)
+- HR webhook endpoints & polling mechanism handlers.
 
 **Critical Info for New Agent** 
 - **Language Constraint:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-- **Encryption Rules:** The system now strictly enforces AES-256-GCM encryption on , , and . If you write any new database read/write logic for these collections, you MUST use the encryption/decryption wrappers (e.g., , ).
-- **Next Action Steps:** The previous agent completed the encryption task. Your next focus should be the P3 Task: Add a quick toggle button at the top of the rate manager pages to easily switch between Exely and HotelRunner screens. Make sure to invoke  first to confirm the user's intent and present this plan.
+- **Current Context:** The user was actively testing the HotelRunner Live integration by creating, modifying, and cancelling reservations. The previous agent implemented the fixes for update/cancel sync and room type changes, and has just sent an  message to wait for the user to confirm if the room type change reflected properly. You should await the user's response or assist them in validating the fix.
 
 **documents and test reports created in this job** 
   -  (Updated)
   -  (Updated)
-  -  (100% tests passed)
+  *Note: No new test JSON reports were generated in this session as the agent relied on manual bash scripts.*
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - *User:* 1 atla (Requested to skip the OTA channel color coding enhancement).
- - *Agent:* (Acknowledged the skip, investigated the database, implemented field-level AES-256-GCM encryption for users/guests/bookings, added hash-based lookups to preserve login functionality, tested everything 100% successfully via testing subagent, and finished the task). -> **Pending Action**: You are starting fresh. Propose the next logical task (P3 Toggle Button) using the  tool and await user confirmation.
+ - *User:* hotelrunner üzerinden iki rezervasyon oluşturdum 3 dakika oldu hala düşmedi 30 saniye yapacaktın (Bug report)
+ - *Agent:* (Found empty email index bug, fixed it, and successfully imported pending reservations).
+ - *User:* yeni yaptığım rezervasyonlar sisteme düştü ama isim değişikliği yaptım sisteme yansımadı. daha sonra rezervasyonlardan birini iptal ettim değişiklik gelmedi (Bug report for missing updates)
+ - *Agent:* (Added  for name/status changes and verified it).
+ - *User:* oda tipi değişikliği yapılsa o yansıyacak mı
+ - *Agent:* (Added room type changes to , restarted server, and called  to confirm with the user). -> **PENDING HUMAN MESSAGE: User needs to confirm if the room type modification works as expected.**
 
 **Project Health Check:**
   - Broken: None
@@ -103,13 +103,13 @@ A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. 
   - Exely (SOAP API) — Requires Provider credentials
 
 **Testing status**
-  - Testing agent used after significant changes: YES
+  - Testing agent used after significant changes: NO (Agent only used bash scripts to verify DB state).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None
-  - Known regressions: None.
+  - Known regressions: None
 
 **Credentials to test flow:**
   - Found in  (Frontend: demo@hotel.com / demo123)
 
 **What agent forgot to execute**
-  - Nothing. The encryption implementation was thorough, properly tested, and successfully finished.</analysis>
+  - The previous agent did not call  after implementing a major feature addition (the reservation sync/update logic). You should utilize the testing agent to verify the pipeline comprehensively once the user confirms their manual test.</analysis>
