@@ -1,19 +1,19 @@
-<analysis>**original_problem_statement**: Multi-tenant SaaS PMS + Channel Manager. Restrictions and availability sent but didn't pass to HotelRunner, hitting rate limits and UI issues. PRODUCT REQUIREMENTS: Multi-tenant SaaS PMS + Channel Manager.
+<analysis>**original_problem_statement**: Multi-tenant SaaS PMS + Channel Manager. PRODUCT REQUIREMENTS: Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant isolation, PII strict mode.
 
 **User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın. User explicitly requires all responses in Turkish.)
 
 **what currently exists?** 
-A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. The Rate Manager has been upgraded with a robust Push Queue mechanism. Polling logic has been refactored to use adaptive exponential backoff to prevent 429 Rate Limit errors. Any push updates that fail due to rate limits are now automatically placed into a MongoDB queue () and a background worker retries them seamlessly every 120s without blocking the user. The UI displays real-time queue status and manual retry/cancel options.
+A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. Previously, the system was configured with an adaptive 120s background polling and queue worker to push updates to HotelRunner. However, this still caused 429 Rate Limit errors due to constant unnecessary API hits. The system has now been updated to completely disable automatic background polling for HotelRunner. It now relies exclusively on an Event-Driven Architecture (outbox events triggered on , etc.) and manual syncs triggered by the user via the frontend UI.
 
 **Last working item**: 
-    - Last item agent was working: Implementing the automatic Push Queue mechanism for HotelRunner rate limit failures and fixing the aggressive 30s polling issue that was causing constant 429 errors. A background worker was added, polling intervals were increased to 120s with adaptive backoff, and the frontend was updated to display a queue status banner.
-    - Status: USER VERIFICATION PENDING
+    - Last item agent was working: Disabling the automatic HotelRunner polling (Pull Scheduler + Push Queue Worker) that was causing continuous 429 rate limit errors. Updating the frontend UI to remove automatic retry messaging and replacing it with manual Şimdi Dene (Retry Now) button prompts. 
+    - Status: COMPLETED
     - Agent Testing Done: Y
-    - Which testing method agent to use? NA (Testing was completed successfully via  returning  with 100% frontend and expected backend results, alongside manual curl & screenshots).
+    - Which testing method agent to use? NA (Testing was completed successfully via  returning  with 100% tests passed, alongside manual bash logs & screenshots).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-  *None. All known bugs, including the recurring 429 rate limits, have been fully resolved and the fallback queue mechanism is active.*
+  *None. The recurring rate limit issue has been addressed by disabling continuous automatic polling.*
 
 **In progress Task List**: 
   *None.*
@@ -24,49 +24,48 @@ A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. 
     
     Future Tasks:
     - P3: Complete removal/deletion of legacy HR connector once the transition is 100% verified.
-    - Enhancement/Backlog: Channel Manager Dashboard to view recent reservations, failed imports, push queue status, and connection health metrics. *(Agent suggested this at the end of the last session)*
+    - Enhancement/Backlog: Channel Manager Dashboard to view recent reservations, failed imports, push queue status, and connection health metrics.
     - Enhancement/Backlog: Admin UI Panel for encryption management (view status, trigger migrations, check audit logs).
     - Enhancement/Backlog: Make unassigned reservations more prominent in the calendar (e.g., click notification to navigate directly to booking view, or drag-and-drop for room assignment).
     - Enhancement/Backlog: Real-time UI notifications for channel push results (instead of silent background processing).
     - Refactoring: Abstract or subdivide  Phase A and Phase B logic, as the file is large (~780 lines).
 
 **Completed work in this session**
-- Fixed aggressive polling rate limits by updating intervals and adding adaptive backoff in  (DONE).
-- Created  to process queued push tasks every 120s (DONE).
-- Updated  to enqueue failed pushes to  MongoDB collection and exposed , , and  endpoints (DONE).
-- Registered the new queue worker in  (DONE).
-- Added a dynamic queue status banner with retry/cancel actions in  and  (DONE).
+- Disabled HotelRunner Pull Scheduler and Push Queue Worker in  to stop automatic 120s polling (DONE).
+- Updated  and  to reflect manual retry state instead of automatic background retries (DONE).
+- Updated  to return  and remove misleading automated status (DONE).
+- Verified via backend logs that no unsolicited HotelRunner API calls are made after server restart (DONE).
 
 **Earlier issues found/mentioned but not fixed**
    *None*
 
 **Known issue recurrence from previous fork**
-  - Issue recurrence in previous fork: None
-  - Recurrence count: 0
-  - Status: RESOLVED
+  - Issue recurrence in previous fork: Rate Limit 429 (HotelRunner)
+  - Recurrence count: 2
+  - Status: RESOLVED (By moving away from constant polling to pure event-driven/manual sync).
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **Adaptive Backoff Polling**: Instead of blindly retrying and exhausting API limits, polling now backs off exponentially (e.g., 240s, 480s) when a 429 error occurs.
-- **Push Queue Background Worker**: Failed bulk updates are captured in the DB and retried by an  task () without holding up the user's HTTP request.
-- **Queue Endpoints**: Frontend manages the queue via explicit REST endpoints (, , ).
+- **Event-Driven Architecture**: The system uses an outbox pattern.  /  /  events trigger  which then pushes to HotelRunner, avoiding the need for continuous background polling.
+- **Manual Push Queue**: Failed pushes are queued, but the background worker no longer auto-retries them. Users must manually click Şimdi Dene on the frontend to process the queue.
 
 **key DB schema**
-  - : (New) Stores pending failed tasks with , , , , ,  (pending, retrying, completed, failed), and .
+  - : Stores pending failed tasks.
   - : Stores tenant-specific connection details.
+  - , : PMS internal tables.
 
 **changes in tech stack**
   - None
 
 **All files of reference** 
-  -  (Created)
-  -  (Updated)
-  -  (Updated)
-  -  (Updated)
-  -  (Updated)
-  -  (Updated)
+  -  (Updated to disable polling)
+  -  (Updated text)
+  -  (Updated text)
+  -  (Updated status endpoint)
+  -  (Investigated/referenced)
+  -  (Investigated/referenced)
 
 **Areas that need refactoring**: 
   -  (~780 lines).
@@ -75,12 +74,11 @@ A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. 
 - 
 - 
 - 
-- 
 
 **Critical Info for New Agent** 
 - **Language Constraint:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-- **Current State:** The agent just finished executing a  block with a prompt proposing a Channel Manager Dashboard as the next enhancement. Await the user's input before acting.
-- **Background Workers:** The HotelRunner push queue worker is initialized inside . Keep this in mind when debugging any background syncing issues.
+- **Architecture Constraint:** DO NOT re-enable the automatic polling scheduler or the push queue worker for HotelRunner. The user specifically requested this to be disabled to avoid 429 rate limit errors. It must remain purely event-driven and manual.
+- **Current State:** The agent successfully implemented the fix and ran the  tool. Wait for the user's next directive (likely picking up one of the P3 Upcoming tasks).
 
 **documents and test reports created in this job** 
   - 
@@ -89,11 +87,11 @@ A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. 
 
 **Last 10 User Messages and any pending HUMAN messages** 
  - *User:* Please use ask_human tool and confirm your plan now.
- - *User:* rate limit çok fazla istek hatası alıyorum (Still getting rate limit too many requests error)
- - *Agent Action:* Fixed backend polling interval (30s -> 120s), added adaptive backoff to prevent API abuse, and decreased push retries to prevent long hangs. Suggested a queue mechanism.
- - *User:* HotelRunner rate limit kotasi toparlaninca otomatik yeniden push eden bir kuyruk mekanizmasi eklemek isterim (I want to add a queue mechanism that automatically pushes again when the quota recovers)
- - *User:* eevet (Yes)
- - *Agent Action:* Implemented the , updated the backend routers and frontend UI components to support the push queue. Tested successfully with testing agent. Called finish tool.
+ - *Agent:* (Analyzed PRD and proposed plan in Turkish via ask_human).
+ - *User:* hala rate limit hatası alıyorum. sistem sürekli otomatik fiyat müsaitlik mi çekiyor bu yüzden mi oluyor ben sürekli fiyat müsaitlik çekmesini istemiyorum takvimle senkronize olsun, manuel rezervasyon yapıldığında sistem otomatik güncelleme yapsın ve manuel işlem yapılsın sürekli deneme yapmasın (Still getting rate limit errors. Is it auto-polling? I don't want it to constantly pull, I want it sync'd on manual reservation only and manual actions, stop constant retries).
+ - *Agent:* (Investigated code, found the 120s polling, proposed a plan to turn off auto-polling entirely and rely on event-driven + manual triggers).
+ - *User:* evet (Yes).
+ - *Agent:* (Disabled auto polling, updated frontend, verified via logs and screenshots, ran testing agent, and finished task).
 
 **Project Health Check:**
   - Broken: None
@@ -114,4 +112,4 @@ A Multi-tenant SaaS PMS + Channel Manager with a LIVE HotelRunner v2 connector. 
   - Found in  (Frontend: demo@hotel.com / demo123)
 
 **What agent forgot to execute**
-  - Nothing. Agent thoroughly tested the queue mechanism via bash, screenshot UI verification, and the external testing agent, then correctly updated the PRD/Changelog.</analysis>
+  - Nothing. Agent successfully shut down the background processes, updated the UI, and verified all changes thoroughly with both logs and .</analysis>
