@@ -542,19 +542,23 @@ class ReservationPullScheduler:
             except Exception as e:
                 logger.error(f"[PULL] Fire error for uid={uid}: {e}")
 
-        # ── Phase B: Catch-up — fetch ALL reservations, import missing ─
+        # ── Phase B: Catch-up — fetch ALL reservations, import missing + sync updates ─
         catchup_imported = 0
+        catchup_updated = 0
         try:
             all_page = 1
             all_total_pages = 1
             known_ext_ids = set()
+            known_ext_updated = {}  # ext_id → provider_updated_at stored in DB
 
-            # Gather already-imported external_reservation_ids
+            # Gather already-imported external_reservation_ids with their last known update time
             async for doc in db.imported_reservations.find(
                 {"tenant_id": tenant_id, "provider": "hotelrunner"},
-                {"_id": 0, "external_reservation_id": 1},
+                {"_id": 0, "external_reservation_id": 1, "provider_updated_at": 1, "created_at": 1},
             ):
-                known_ext_ids.add(doc.get("external_reservation_id", ""))
+                ext_id = doc.get("external_reservation_id", "")
+                known_ext_ids.add(ext_id)
+                known_ext_updated[ext_id] = doc.get("provider_updated_at") or doc.get("created_at", "")
 
             while all_page <= all_total_pages:
                 result = await provider.get_reservations(
@@ -571,48 +575,44 @@ class ReservationPullScheduler:
                 for res in page_reservations:
                     hr_number = res.get("hr_number", "")
                     rooms = res.get("rooms") or []
-                    # Check if ANY sub-reservation from this parent is missing
-                    if len(rooms) <= 1:
-                        if hr_number not in known_ext_ids:
-                            sub_reservations = explode_multi_room_reservation(res)
-                            for sub_res in sub_reservations:
-                                try:
-                                    await _persist_and_process(
-                                        tenant_id, _resolve_property_id(sub_res),
-                                        sub_res, "reservation_catchup",
-                                    )
-                                    catchup_imported += 1
-                                except Exception as e:
-                                    if "duplicate" not in str(e).lower():
-                                        logger.error(f"[PULL-CATCHUP] Error: {e}")
-                    else:
-                        # Multi-room: check each suffix
-                        any_missing = False
-                        for idx in range(len(rooms)):
-                            suffix_id = f"{hr_number}-{idx}" if idx > 0 else hr_number
-                            if suffix_id not in known_ext_ids:
-                                any_missing = True
-                                break
+                    hr_updated_at = res.get("updated_at", "")
+                    hr_state = res.get("state", "confirmed")
 
-                        if any_missing:
-                            sub_reservations = explode_multi_room_reservation(res)
-                            for sub_res in sub_reservations:
-                                sub_ext = sub_res.get("hr_number", "")
-                                if sub_ext not in known_ext_ids:
-                                    try:
-                                        await _persist_and_process(
-                                            tenant_id, _resolve_property_id(sub_res),
-                                            sub_res, "reservation_catchup",
-                                        )
-                                        catchup_imported += 1
-                                    except Exception as e:
-                                        if "duplicate" not in str(e).lower():
-                                            logger.error(f"[PULL-CATCHUP] Error: {e}")
+                    sub_reservations = explode_multi_room_reservation(res)
+
+                    for sub_res in sub_reservations:
+                        sub_ext = sub_res.get("hr_number", "")
+
+                        if sub_ext not in known_ext_ids:
+                            # ── New reservation: import ──
+                            try:
+                                await _persist_and_process(
+                                    tenant_id, _resolve_property_id(sub_res),
+                                    sub_res, "reservation_catchup",
+                                )
+                                catchup_imported += 1
+                            except Exception as e:
+                                if "duplicate" not in str(e).lower():
+                                    logger.error(f"[PULL-CATCHUP] Error: {e}")
+                        else:
+                            # ── Existing reservation: check for modifications/cancellations ──
+                            stored_updated = known_ext_updated.get(sub_ext, "")
+                            if hr_updated_at and hr_updated_at > stored_updated:
+                                try:
+                                    updated = await _sync_reservation_update(
+                                        tenant_id, sub_ext, sub_res, hr_state, hr_updated_at,
+                                    )
+                                    if updated:
+                                        catchup_updated += 1
+                                except Exception as e:
+                                    logger.error(f"[PULL-SYNC] Error updating {sub_ext}: {e}")
 
                 all_page += 1
 
             if catchup_imported > 0:
                 logger.info(f"[PULL-CATCHUP] Tenant {tenant_id}: {catchup_imported} missing reservations imported")
+            if catchup_updated > 0:
+                logger.info(f"[PULL-SYNC] Tenant {tenant_id}: {catchup_updated} reservations updated")
         except Exception as e:
             logger.error(f"[PULL-CATCHUP] Error during catch-up pull: {e}")
 
@@ -626,6 +626,7 @@ class ReservationPullScheduler:
                 "reservations_processed": processed,
                 "reservations_fired": fired,
                 "catchup_imported": catchup_imported,
+                "catchup_updated": catchup_updated,
                 "pages_fetched": total_pages,
             }},
             upsert=True,
@@ -634,15 +635,148 @@ class ReservationPullScheduler:
         duration_ms = int((datetime.now(UTC) - pull_start).total_seconds() * 1000)
         await _log_pull(tenant_id, "success", processed + catchup_imported, duration_ms=duration_ms)
 
-        logger.info(f"[PULL] Tenant {tenant_id}: fetched {len(all_reservations)}, processed {processed}, fired {fired}, catchup {catchup_imported}")
+        logger.info(f"[PULL] Tenant {tenant_id}: fetched {len(all_reservations)}, processed {processed}, fired {fired}, catchup {catchup_imported}, updated {catchup_updated}")
         return {
             "success": True,
             "fetched": len(all_reservations),
             "processed": processed,
             "fired": fired,
             "catchup_imported": catchup_imported,
+            "catchup_updated": catchup_updated,
             "pages": total_pages,
         }
+
+
+async def _sync_reservation_update(
+    tenant_id: str,
+    ext_reservation_id: str,
+    hr_payload: dict[str, Any],
+    hr_state: str,
+    hr_updated_at: str,
+) -> bool:
+    """
+    Sync modifications/cancellations from HotelRunner to PMS bookings.
+
+    Compares HR payload with stored booking and updates:
+    - Guest name changes
+    - Date changes
+    - Amount changes
+    - Status changes (cancelled, modified)
+    - Guest record updates
+
+    Returns True if booking was updated.
+    """
+    from domains.channel_manager.ingest.normalizer import extract_hotelrunner_identity
+
+    # Find the booking by external_reservation_id
+    booking = await db.bookings.find_one(
+        {"tenant_id": tenant_id, "external_reservation_id": ext_reservation_id},
+        {"_id": 0},
+    )
+    if not booking:
+        logger.warning(f"[PULL-SYNC] Booking not found for {ext_reservation_id}")
+        return False
+
+    # Extract normalized data from HR payload
+    identity = extract_hotelrunner_identity(hr_payload)
+    rooms = hr_payload.get("rooms") or []
+    room = rooms[0] if rooms else {}
+
+    # Build update fields
+    updates = {}
+    guest_name_hr = f"{hr_payload.get('firstname', '')} {hr_payload.get('lastname', '')}".strip()
+    if not guest_name_hr:
+        guest_name_hr = hr_payload.get("guest", "")
+
+    # Guest name change
+    if guest_name_hr and guest_name_hr != booking.get("guest_name", ""):
+        updates["guest_name"] = guest_name_hr
+        logger.info(f"[PULL-SYNC] {ext_reservation_id}: guest name '{booking.get('guest_name')}' → '{guest_name_hr}'")
+
+    # Date changes
+    checkin = hr_payload.get("checkin_date") or (room.get("checkin_date") if room else "")
+    checkout = hr_payload.get("checkout_date") or (room.get("checkout_date") if room else "")
+    if checkin and checkin != booking.get("check_in", ""):
+        updates["check_in"] = checkin
+    if checkout and checkout != booking.get("check_out", ""):
+        updates["check_out"] = checkout
+
+    # Amount change
+    total = float(hr_payload.get("total", 0) or 0)
+    if room:
+        total = float(room.get("total", room.get("price", 0)) or 0)
+    if total > 0 and abs(total - float(booking.get("total_amount", 0))) > 0.01:
+        updates["total_amount"] = total
+
+    # Status change (cancellation)
+    hr_status_map = {
+        "confirmed": "confirmed",
+        "modified": "confirmed",  # Modified but still confirmed
+        "canceled": "cancelled",
+        "cancelled": "cancelled",
+        "no_show": "no_show",
+    }
+    mapped_status = hr_status_map.get(hr_state, hr_state)
+    if mapped_status != booking.get("status", ""):
+        updates["status"] = mapped_status
+        logger.info(f"[PULL-SYNC] {ext_reservation_id}: status '{booking.get('status')}' → '{mapped_status}'")
+
+    if not updates:
+        return False
+
+    # Apply updates
+    updates["updated_at"] = datetime.now(UTC).isoformat()
+    updates["last_synced_from_provider_at"] = hr_updated_at
+
+    await db.bookings.update_one(
+        {"tenant_id": tenant_id, "external_reservation_id": ext_reservation_id},
+        {"$set": updates},
+    )
+
+    # Update imported_reservations record with new provider timestamp
+    await db.imported_reservations.update_one(
+        {"tenant_id": tenant_id, "external_reservation_id": ext_reservation_id},
+        {"$set": {
+            "provider_updated_at": hr_updated_at,
+            "updated_at": datetime.now(UTC).isoformat(),
+            "guest_name": guest_name_hr if "guest_name" in updates else booking.get("guest_name", ""),
+        }},
+    )
+
+    # Update guest record if name changed
+    if "guest_name" in updates and booking.get("guest_id"):
+        guest_parts = guest_name_hr.split(" ", 1)
+        guest_first = guest_parts[0]
+        guest_last = guest_parts[1] if len(guest_parts) > 1 else ""
+        await db.guests.update_one(
+            {"tenant_id": tenant_id, "id": booking["guest_id"]},
+            {"$set": {
+                "first_name": guest_first,
+                "last_name": guest_last,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }},
+        )
+
+    # Timeline: sync update
+    await _timeline_append(
+        tenant_id=tenant_id,
+        correlation_id=str(uuid.uuid4()),
+        entity_type="reservation",
+        external_id=ext_reservation_id,
+        stage="provider_sync_update",
+        status="success",
+        source="hotelrunner_pull",
+        provider="hotelrunner",
+        metadata={
+            "updated_fields": list(updates.keys()),
+            "hr_state": hr_state,
+            "hr_updated_at": hr_updated_at,
+        },
+    )
+
+    logger.info(f"[PULL-SYNC] {ext_reservation_id}: updated fields={list(updates.keys())}")
+    return True
+
 
 
 async def _log_pull(tenant_id: str, status: str, records: int, error: str | None = None, duration_ms: int = 0):
