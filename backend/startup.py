@@ -512,7 +512,7 @@ async def on_startup(app):
             {"is_active": True, "auto_sync_reservations": True}, {"_id": 1}
         )
         if active_hr:
-            from domains.channel_manager.providers.hotelrunner_webhook import pull_scheduler as hr_pull_scheduler
+            from domains.channel_manager.providers.hotelrunner_sync import pull_scheduler as hr_pull_scheduler
             await hr_pull_scheduler.start(interval_seconds=30, safety_window_minutes=2)
             app.state.hr_pull_scheduler = hr_pull_scheduler
             print("✅ HotelRunner Pull Scheduler started (30s interval, undelivered + fire)")

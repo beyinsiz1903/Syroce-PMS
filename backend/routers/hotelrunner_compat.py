@@ -103,7 +103,7 @@ async def hotelrunner_webhook(request: Request, background_tasks: BackgroundTask
     property_id = body.get("property_id", "prop-001")
     source_ip = request.client.host if request.client else "unknown"
 
-    from domains.channel_manager.providers.hotelrunner_webhook import (
+    from domains.channel_manager.providers.hotelrunner_shared import (
         _persist_and_process,
     )
 

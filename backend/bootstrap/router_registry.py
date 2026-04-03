@@ -119,7 +119,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("modules.incident.incident_router", "router", ["Incident Response"], None, None),
     ("domains.channel_manager.validation_router", "router", ["CM Provider Validation"], None, None),
     ("domains.channel_manager.providers.hotelrunner_router", "router", ["HotelRunner Integration"], None, None),
-    ("domains.channel_manager.providers.hotelrunner_webhook", "router", ["HotelRunner Webhooks & Sync"], None, None),
+    ("domains.channel_manager.providers.hotelrunner_webhook", "router", ["HotelRunner Webhooks"], None, None),
+    ("domains.channel_manager.providers.hotelrunner_sync", "sync_router", ["HotelRunner Sync"], None, None),
     ("domains.channel_manager.providers.exely.exely_router", "router", ["Exely Integration"], None, None),
     ("domains.channel_manager.providers.exely.exely_webhook_router", "router", ["Exely Webhooks"], None, None),
     # ARI Push Engine
