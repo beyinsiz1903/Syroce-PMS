@@ -23,9 +23,9 @@ from models.schemas import User
 logger = logging.getLogger(__name__)
 
 # ── Rate-limit aware push helper ────────────────────────────────
-MAX_RETRIES = 3
-INITIAL_BACKOFF = 5.0   # seconds — base backoff before exponential growth
-MAX_PUSH_WAIT = 30.0    # seconds — max wait per retry for user-facing operations
+MAX_RETRIES = 1           # fail-fast: tek deneme, 429'da hemen kuyruga ekle
+INITIAL_BACKOFF = 5.0    # seconds — base backoff (kullanilmiyor, fail-fast)
+MAX_PUSH_WAIT = 5.0      # seconds — max wait (kullanilmiyor, fail-fast)
 INTER_PUSH_DELAY = 2.0  # seconds between sequential room-type pushes
 
 router = APIRouter(prefix="/api/channel-manager/hr-rate-manager", tags=["HR Rate Manager"])
@@ -131,7 +131,7 @@ async def _push_with_retry(
     provider, rt_code: str, start_date: str, end_date: str,
     *, rate=None, avail=None, stop=None, minstay=None,
 ) -> dict:
-    """Push ARI update to HotelRunner with retry on rate-limit (429)."""
+    """Push ARI update to HotelRunner — fail-fast, no retries."""
     update_data = {"inv_code": rt_code, "start_date": start_date, "end_date": end_date}
     if avail is not None:
         update_data["availability"] = int(avail)
@@ -142,28 +142,15 @@ async def _push_with_retry(
     if minstay is not None:
         update_data["min_stay"] = int(minstay)
 
-    for attempt in range(MAX_RETRIES):
-        try:
-            result = await provider.update_room(**update_data)
-            return {"room_type_code": rt_code, "success": result.get("success", False), "error": result.get("error")}
-        except HotelRunnerRateLimitError as e:
-            # Respect server's Retry-After but cap for user-facing operations
-            exponential = INITIAL_BACKOFF * (2 ** attempt)
-            wait = min(max(e.retry_after_seconds, exponential), MAX_PUSH_WAIT)
-            logger.warning(
-                "[HR-BULK-UPDATE] Rate limit for %s (attempt %d/%d), waiting %.1fs (server asked %ds)",
-                rt_code, attempt + 1, MAX_RETRIES, wait, e.retry_after_seconds,
-            )
-            if attempt < MAX_RETRIES - 1:
-                await asyncio.sleep(wait)
-            else:
-                logger.error("[HR-BULK-UPDATE] Rate limit exhausted for %s after %d attempts", rt_code, MAX_RETRIES)
-                return {"room_type_code": rt_code, "success": False, "error": f"Rate limit: {e}"}
-        except Exception as e:
-            logger.error("[HR-BULK-UPDATE] push error for %s: %s", rt_code, e)
-            return {"room_type_code": rt_code, "success": False, "error": str(e)}
-
-    return {"room_type_code": rt_code, "success": False, "error": "Max retries exceeded"}
+    try:
+        result = await provider.update_room(**update_data)
+        return {"room_type_code": rt_code, "success": result.get("success", False), "error": result.get("error")}
+    except HotelRunnerRateLimitError as e:
+        logger.warning("[HR-BULK-UPDATE] Rate limit for %s — hemen kuyruga ekleniyor (server: %ds)", rt_code, e.retry_after_seconds)
+        return {"room_type_code": rt_code, "success": False, "error": f"Rate limit: {e}"}
+    except Exception as e:
+        logger.error("[HR-BULK-UPDATE] push error for %s: %s", rt_code, e)
+        return {"room_type_code": rt_code, "success": False, "error": str(e)}
 
 
 # ── Grid Endpoint ────────────────────────────────────────────────
