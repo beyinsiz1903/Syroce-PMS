@@ -11,7 +11,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://fail-fast-sync.preview.emergentagent.com')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://bulk-queue-mgr.preview.emergentagent.com')
 
 
 class TestR881632298BugFixes:

@@ -170,7 +170,7 @@ async def schedule_auto_retry(tenant_id: str, delay_seconds: int):
 
 async def start_background_batch_push(tenant_id: str):
     """Start background batch push for all pending queue items.
-    
+
     Processes items one by one with 13-second delays to respect
     HotelRunner's 5 req/min rate limit. Runs as async background task.
     """

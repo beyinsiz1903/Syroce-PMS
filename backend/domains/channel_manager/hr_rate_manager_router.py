@@ -2,7 +2,6 @@
 HotelRunner Rate Manager Router — Fiyat, Müsaitlik, Min Konaklama Yönetimi
 HotelRunner üzerinden ayarla → HR API'ye push et → OTA'lara yansısın.
 """
-import asyncio
 import logging
 import uuid
 from collections import defaultdict
@@ -21,7 +20,6 @@ from domains.channel_manager.hr_push_queue_worker import (
     enqueue_failed_push,
     get_cooldown_remaining,
     get_queue_status,
-    is_batch_push_running,
     reset_auto_retry,
     schedule_auto_retry,
     start_background_batch_push,
