@@ -701,6 +701,29 @@ async def _sync_reservation_update(
     if checkout and checkout != booking.get("check_out", ""):
         updates["check_out"] = checkout
 
+    # Room type change
+    if room:
+        hr_room_code = room.get("inv_code") or room.get("code") or ""
+        stored_room_code = booking.get("source", {}).get("provider_room_code", "") or ""
+        # Also check via room_mappings to resolve PMS room type name
+        if hr_room_code:
+            room_mapping = await db.room_mappings.find_one(
+                {
+                    "tenant_id": tenant_id,
+                    "provider": "hotelrunner",
+                    "provider_room_code": hr_room_code,
+                    "is_active": True,
+                },
+                {"_id": 0, "pms_room_type_id": 1, "pms_room_type_name": 1},
+            )
+            new_room_type = (room_mapping or {}).get("pms_room_type_name") or (room_mapping or {}).get("pms_room_type_id") or hr_room_code
+            new_room_type_id = (room_mapping or {}).get("pms_room_type_id") or hr_room_code
+
+            if new_room_type != booking.get("room_type", ""):
+                updates["room_type"] = new_room_type
+                updates["room_type_id"] = new_room_type_id
+                logger.info(f"[PULL-SYNC] {ext_reservation_id}: room type '{booking.get('room_type')}' → '{new_room_type}'")
+
     # Amount change
     total = float(hr_payload.get("total", 0) or 0)
     if room:
