@@ -12,7 +12,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://multi-tenant-pms-3.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://hotelrunner-v2.preview.emergentagent.com").rstrip("/")
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
