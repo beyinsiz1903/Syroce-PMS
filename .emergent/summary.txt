@@ -3,13 +3,13 @@
 **User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın. User explicitly requires all responses in Turkish.)
 
 **what currently exists?** 
-A Multi-tenant SaaS PMS + Channel Manager with LIVE HotelRunner v2 and Exely integrations. The HotelRunner bulk update logic has been successfully refactored to mimic Exely's non-blocking approach. The UI responds instantly (0.15s) upon bulk updates, and the updates are processed sequentially in the background. Only legitimate 429 Rate Limit responses from HotelRunner trigger the background queue worker (with exponential backoff and cooldowns).
+A Multi-tenant SaaS PMS + Channel Manager with LIVE HotelRunner v2 and Exely integrations. The background push logic returns success instantly to the UI and processes updates sequentially in the background.
 
 **Last working item**: 
-    - Last item agent was working: Investigating and fixing the HotelRunner push mechanism to match Exely's behavior. The user complained that updating 2+ room types in HotelRunner artificially triggered a rate limit UI banner and queued the tasks immediately, whereas Exely sent them instantly. The agent fixed this by removing the artificial rate limit UI block, making the  API return success instantly to the UI, and processing the updates sequentially with a 2-second delay in the background.
+    - Last item agent was working: Fixing a day-filtering bug in HotelRunner bulk updates. The user reported that selecting a specific day (e.g., Saturday) for a restriction (like 2-night minimum stay) incorrectly applied it to the entire date range. The agent fixed this by implementing  in the backend, which splits non-consecutive filtered dates into separate, targeted API push tasks instead of sending one giant date range to HotelRunner.
     - Status: USER VERIFICATION PENDING
     - Agent Testing Done: Y
-    - Which testing method agent to use? Manual testing by curl / python scripts / frontend screenshot tool.
+    - Which testing method agent to use? Manual testing by curl / python scripts / backend logs.
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
@@ -29,13 +29,12 @@ A Multi-tenant SaaS PMS + Channel Manager with LIVE HotelRunner v2 and Exely int
     - Enhancement/Backlog: Make unassigned reservations more prominent in the calendar.
     - Enhancement/Backlog: Real-time UI notifications for channel push results (instead of silent background processing).
     - Refactoring: Abstract or subdivide  Phase A and Phase B logic (~780 lines).
-    - Refactoring:  (>1000 lines).
+    - Refactoring:  (>1100 lines).
 
 **Completed work in this session**
-- Fixed backend linting errors ( unused import, whitespace) in  and  (DONE).
-- Refactored  bulk-grid-update to instantly return success to the UI and process pushes sequentially (2s interval) in the background (DONE).
-- Updated  to remove the redundant and confusing cooldown countdown UI banner, matching Exely's seamless UX (DONE).
-- Updated  to document the new background push mechanism (DONE).
+- Fixed HotelRunner day-filtering logic in  to group and push non-consecutive dates accurately (DONE).
+- Tested the fix via local backend scripts verifying proper task generation per date block (DONE).
+- Updated  with the new logic changes (DONE).
 
 **Earlier issues found/mentioned but not fixed**
    *None*
@@ -43,15 +42,15 @@ A Multi-tenant SaaS PMS + Channel Manager with LIVE HotelRunner v2 and Exely int
 **Known issue recurrence from previous fork**
   - Issue recurrence in previous fork: Rate Limit 429 (HotelRunner) side effects (Artificial locking of the UI / Manual retries failing).
   - Recurrence count: 5
-  - Status: RESOLVED (Fixed by entirely decoupling the UI response from the API push. Pushes are now processed sequentially in the background, and only real 429 errors from the HR API are queued).
+  - Status: RESOLVED
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **Event-Driven Architecture**: Outbox pattern for background sync.
-- **Asynchronous Non-Blocking UI**: De-coupling UI response from external API calls during bulk operations.
-- **Sequential Background Processing**: Processing batch pushes sequentially with slight delays to respect 3rd party API rate limits without paralyzing the frontend.
+- Event-Driven Architecture: Outbox pattern for background sync.
+- Asynchronous Non-Blocking UI: De-coupling UI response from external API calls during bulk operations.
+- Date Chunking Algorithm: Breaking non-consecutive filtered dates into separate date ranges for accurate 3rd party API restrictions pushing.
 
 **key DB schema**
   - : Stores pending failed tasks. Statuses: pending, retrying, completed, failed.
@@ -61,23 +60,19 @@ A Multi-tenant SaaS PMS + Channel Manager with LIVE HotelRunner v2 and Exely int
   - None
 
 **All files of reference** 
-  -  (Updated to implement Exely-style background processing)
-  -  (Cleaned up imports/linting)
-  -  (Cleaned up UI banners)
-  -  (Updated)
+  -  (Updated to implement date grouping for HotelRunner pushes).
+  -  (Updated).
 
 **Areas that need refactoring**: 
   -  (~780 lines)
-  -  (>1000 lines)
+  -  (>1100 lines)
 
 **key api endpoints**
-- 
-- 
 - 
 
 **Critical Info for New Agent** 
 - **Language Constraint:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-- **Architecture Note:** The HR rate manager now works exactly like Exely. Do NOT revert to the old queue blocking mechanism. Updates must return instantly to the frontend and process sequentially in the background to prevent 429s. Only legitimate API failures should end up in the queue.
+- **Architecture Note:** The Exely logic () was explicitly left untouched to prevent breaking it, per user's strict instructions. Keep the changes isolated to HotelRunner ().
 
 **documents and test reports created in this job** 
   - 
@@ -85,10 +80,9 @@ A Multi-tenant SaaS PMS + Channel Manager with LIVE HotelRunner v2 and Exely int
 **Last 10 User Messages and any pending HUMAN messages** 
  - *User:* Please use ask_human tool and confirm your plan now.
  - *Agent:* (Triggered ask_human)
- - *User:* (Shared bash outputs indicating python lint errors in the backend).
- - *Agent:* (Fixed lint errors).
- - *User:* (Uploaded screenshot of HotelRunner Rate Manager) neden tek seferde göndermiyor. exely tarafından gönderdiğim de hemen gidiyor burada neden bu limit olayı oluyor... exely tarafındaki kodlarla karşılaştır ve hatanın nedenini bul ama dikkat et exely tarafını bozma (Why doesn't it send at once? Exely goes immediately. Compare with Exely code and fix without breaking Exely).
- - *Agent:* (Investigated, discovered HR was queuing requests instantly without API attempts. Refactored the backend to return instantly and process sequentially in the background. Cleaned up the frontend UI. Performed manual bash/screenshot tests to verify both HR and Exely functionality. Updated PRD and Finished.) (Task complete, waiting for user verification and next instructions).
+ - *User:* kısıtlamalar doğru gitmiyor sadece cumartesi gününü seçtim ve 2 gece minimum şartı koydum. baktığım zaman hafta içi hafta sonu bütün tarihlerde hemen hemen 2 gece konaklama şartı var (Bug: Restrictions like min-stay are applying to all days even when only Saturdays are selected).
+ - *Agent:* (Investigated. Discovered HotelRunner push sent the full start/end date range blindly. Wrote  algorithm to split selected days into consecutive chunks and fire individual background push tasks. Verified via local execution scripts. Finished task). 
+ *No pending human messages.*
 
 **Project Health Check:**
   - Broken: None
@@ -100,7 +94,7 @@ A Multi-tenant SaaS PMS + Channel Manager with LIVE HotelRunner v2 and Exely int
   - Exely (SOAP API) — Requires Provider credentials
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Agent performed extensive manual script tests and screenshot validation).
+  - Testing agent used after significant changes: NO (Agent performed manual script tests and curl validation).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None
   - Known regressions: None
@@ -109,4 +103,4 @@ A Multi-tenant SaaS PMS + Channel Manager with LIVE HotelRunner v2 and Exely int
   - Found in  (Frontend: demo@hotel.com / demo123)
 
 **What agent forgot to execute**
-  - The agent did not run the testing subagent, opting for quick bash curl validations and screenshot tools instead due to the focused nature of the sync timing fix. The next agent should start by asking the user if they'd like to proceed with the P3 Exely/HotelRunner UI toggle switch.</analysis>
+  - The agent did not use the testing subagent, relying on local Python testing scripts to verify the algorithm chunks correctly. The next agent should ask the user if they'd like to proceed with the P3 Exely/HotelRunner UI toggle switch task.</analysis>
