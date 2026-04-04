@@ -71,6 +71,7 @@ async def enqueue_failed_push(
     avail=None,
     stop=None,
     minstay=None,
+    days=None,
     error: str = "",
     retry_after_seconds: int = DEFAULT_RATE_LIMIT_COOLDOWN,
 ) -> str:
@@ -82,13 +83,17 @@ async def enqueue_failed_push(
     set_cooldown(tenant_id, retry_after_seconds)
 
     # Check for existing pending task with same parameters — merge instead of duplicate
-    existing = await db.hr_push_queue.find_one({
+    match_query = {
         "tenant_id": tenant_id,
         "room_type_code": room_type_code,
         "start_date": start_date,
         "end_date": end_date,
         "status": "pending",
-    }, {"_id": 0, "id": 1})
+    }
+    if days is not None:
+        match_query["days"] = days
+
+    existing = await db.hr_push_queue.find_one(match_query, {"_id": 0, "id": 1})
 
     if existing:
         update_fields = {"updated_at": now, "next_retry_at": next_retry_at}
@@ -118,6 +123,7 @@ async def enqueue_failed_push(
         "avail": avail,
         "stop": stop,
         "minstay": minstay,
+        "days": days,
         "status": "pending",
         "retry_count": 0,
         "last_error": error,
@@ -353,6 +359,8 @@ class HRPushQueueWorker:
                 update_data["stop_sale"] = 1 if item["stop"] else 0
             if item.get("minstay") is not None:
                 update_data["min_stay"] = int(item["minstay"])
+            if item.get("days") is not None:
+                update_data["days"] = item["days"]
 
             try:
                 result = await provider.update_room(**update_data)

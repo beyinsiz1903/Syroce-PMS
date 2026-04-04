@@ -1,5 +1,50 @@
 # CHANGELOG
 
+## 2026-04-04 - PERF: HotelRunner Push days[] Optimizasyonu (~74x Hız Artışı)
+
+### Problem
+Kullanıcı belirli günler seçerek (örn: sadece Cumartesi+Pazar) Nisan'dan Aralık sonuna kadar minimum konaklama kısıtlaması gönderdiğinde, sistem her non-consecutive gün için ayrı bir API çağrısı yapıyordu. 74 gün × 3 oda tipi = 222 ayrı push × 2sn delay = ~7.5 dakika bekleme süresi.
+
+### Kök Neden
+HotelRunner API'nin `days[]` parametresi (gün-of-week filtresi) kullanılmıyordu. Bunun yerine `_group_consecutive_dates()` ile her non-consecutive gün ayrı date range'e bölünüyor, her biri ayrı API çağrısı olarak gönderiliyordu.
+
+### Çözüm
+HotelRunner `PUT /rooms/~` endpoint'inin `days[]` parametresini kullanarak (0=Pazar, 1=Pazartesi, ..., 6=Cumartesi) seçili günleri tek bir API çağrısında göndermek:
+
+1. **provider.py - `update_room`**: `days[]` query param desteği eklendi
+2. **hr_rate_manager_router.py - `_push_with_retry`**: `days` parametresi kabul ediyor
+3. **hr_rate_manager_router.py - `hr_bulk_grid_update`**: selected_days aktifken tek push per oda tipi (days[] ile)
+4. **hr_push_queue_worker.py - `enqueue_failed_push`**: Retry kuyruğu da `days` bilgisini saklıyor
+5. **hr_push_queue_worker.py - `_process_tenant_queue`**: Retry sırasında `days` parametresini forward ediyor
+
+### Performans
+- **Eski:** 74 push/oda tipi × 2sn = 148sn/oda tipi
+- **Yeni:** 1 push/oda tipi × ~1sn = 1sn/oda tipi
+- **İyileştirme:** ~74x hız artışı
+
+### Test
+- 3 oda tipi × Nisan-Aralık × Cmt+Paz: 222 DB kayıt, sadece 3 push → 3/3 SUCCESS (~6sn total)
+- HotelRunner LIVE API doğrulaması yapıldı
+
+---
+
+## 2026-04-04 - FIX: HotelRunner 403 Access Denied + Connection Pooling
+
+### Problem
+HotelRunner'a gönderilen fiyat ve müsaitlik push'ları `403 Access denied` hatası döndürüyordu.
+
+### Kök Neden (2 katmanlı)
+1. HotelRunner API belirli endpoint'lerde `Accept: application/json` header'ı gerektiriyor
+2. Çok sayıda eşzamanlı TCP bağlantısı açılması WAF engelini tetikliyordu
+
+### Çözüm
+1. **client.py**: `Accept: application/json` header tüm isteklere eklendi
+2. **client.py**: HTTP Connection Pooling uygulandı (max 5 bağlantı, 3 keepalive)
+3. **hr_rate_manager_router.py**: Arka plan push'larında ardışık 403 hata tespiti ve kuyruklama
+
+---
+
+
 ## 2026-04-04 - FIX: requirements.txt Bağımlılık Çakışması ve Temizlik
 
 ### Problem

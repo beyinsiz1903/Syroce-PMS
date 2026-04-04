@@ -67,11 +67,13 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
   - HİÇ denenmeden kuyruğa atma kaldırıldı — önce gerçek push denenir
   - Sadece gerçek 429 rate limit alanlar kuyruğa eklenir ve otomatik retry planlanır
   - Rate limit alınca kalan push'lar da kuyruğa eklenir (gereksiz 429 önlenir)
-- **Gün Filtrelemeli Push (Apr 2026)**: selected_days aktifken, eşleşen tarihler ardışık gruplara ayrılıp her grup ayrı push olarak gönderilir
-  - Örnek: Sadece Cumartesi seçildiğinde her Cumartesi ayrı push yapılır (tam aralık yerine)
-  - _group_consecutive_dates helper: ardışık tarihleri optimize eder (Pzt+Sal+Çar → tek push)
-  - Tüm günler seçili olduğunda eski davranış korunur (tek push, tam aralık)
+- **Gün Filtrelemeli Push (Apr 2026)**: selected_days aktifken, HotelRunner API'nin `days[]` parametresi kullanılarak tek bir API çağrısında tüm seçili günler güncellenir
+  - Eski: Her non-consecutive gün ayrı push → Nisan-Aralık arası 74+ API çağrısı
+  - Yeni: Tek push + days[]=[0,6] → 1 API çağrısı per oda tipi (~74x hız artışı)
+  - `update_room` provider metodu days[] query param desteği eklendi
+  - Push kuyruğu (retry) da days bilgisini saklıyor
 - **Otomatik Polling Devre Disi**: Surekli 120s polling yerine event-driven + manuel senkronizasyon mimarisi (Apr 2026). Booking olusturuldugunda outbox uzerinden otomatik push, diger zamanlarda sadece kullanici tetikli islemler.
+- **403 Fix + Connection Pooling** (Apr 2026): Accept: application/json header + HTTP connection pooling (max 5 conn, 3 keepalive) ile WAF/rate limit engelleri çözüldü
 
 ### Calendar Vibrant Color Update (Apr 2026)
 - Vibrant booking bar colors by status
@@ -119,4 +121,4 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 ## Critical Constraints
 - All responses in Turkish
 - Latest test report: /app/test_reports/iteration_184.json
-- Latest change: requirements.txt dependency conflict fix — litellm pinleme ve pip-audit bağımlılıkları kaldırıldı (Apr 2026)
+- Latest change: HotelRunner push days[] optimizasyonu — selected_days ile yapılan push'lar artık tek API çağrısında gönderiliyor (Apr 2026)

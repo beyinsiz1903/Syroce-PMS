@@ -593,6 +593,12 @@ class HotelRunnerProvider:
 
         HotelRunner v2 REST API expects ALL parameters as query params,
         not form/body data.
+
+        Supports optional days[] param for day-of-week filtering:
+        0=Sunday, 1=Monday, ..., 6=Saturday.
+        When days is provided, the update only applies to those weekdays
+        within the start_date→end_date range (single API call instead of
+        one call per non-consecutive date).
         """
         query_params = {}
         for key in ("inv_code", "start_date", "end_date"):
@@ -601,6 +607,12 @@ class HotelRunnerProvider:
         for key in ("availability", "price", "stop_sale", "min_stay", "cta", "ctd"):
             if key in kwargs and kwargs[key] is not None:
                 query_params[key] = str(kwargs[key])
+
+        # days[] — day-of-week filter (list of ints: 0=Sun..6=Sat)
+        days = kwargs.get("days")
+        if days is not None and len(days) < 7:
+            # httpx handles list values as repeated params: days[]=0&days[]=6
+            query_params["days[]"] = [str(d) for d in days]
 
         result = await self._client.put(ep.ROOMS_DATERANGE, params=query_params)
         if result.success:

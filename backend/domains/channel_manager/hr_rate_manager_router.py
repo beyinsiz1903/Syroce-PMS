@@ -160,7 +160,7 @@ def _group_consecutive_dates(date_strings: list[str]) -> list[tuple[str, str]]:
 
 async def _push_with_retry(
     provider, rt_code: str, start_date: str, end_date: str,
-    *, rate=None, avail=None, stop=None, minstay=None,
+    *, rate=None, avail=None, stop=None, minstay=None, days=None,
 ) -> dict:
     """Push ARI update to HotelRunner — fail-fast, no retries."""
     update_data = {"inv_code": rt_code, "start_date": start_date, "end_date": end_date}
@@ -172,6 +172,8 @@ async def _push_with_retry(
         update_data["stop_sale"] = 1 if stop else 0
     if minstay is not None:
         update_data["min_stay"] = int(minstay)
+    if days is not None:
+        update_data["days"] = days
 
     try:
         result = await provider.update_room(**update_data)
@@ -533,23 +535,30 @@ async def hr_bulk_grid_update(
                 )
                 logger.warning("[HR-BULK-UPDATE] price_update=false for %s — price will be skipped by HR", rt_code)
 
-            # Build push tasks: when day filter is active, group consecutive
-            # matching dates into sub-ranges so HR only gets those dates.
-            rt_dates = matching_dates_per_rt.get(rt_code, set())
-            if selected_days_set is not None and rt_dates:
-                date_ranges = _group_consecutive_dates(list(rt_dates))
-            else:
-                date_ranges = [(request.start_date, request.end_date)]
-
-            for range_start, range_end in date_ranges:
+            # Build push tasks: when day filter is active, use days[] param
+            # so HR only updates those weekdays in a SINGLE API call (instead
+            # of one call per non-consecutive date group).
+            if selected_days_set is not None:
                 push_tasks.append({
                     "rt": rt_code,
                     "rate": push_rate,
                     "avail": push_avail,
                     "stop": push_stop,
                     "minstay": push_min,
-                    "start_date": range_start,
-                    "end_date": range_end,
+                    "start_date": request.start_date,
+                    "end_date": request.end_date,
+                    "days": sorted(selected_days_set),
+                })
+            else:
+                push_tasks.append({
+                    "rt": rt_code,
+                    "rate": push_rate,
+                    "avail": push_avail,
+                    "stop": push_stop,
+                    "minstay": push_min,
+                    "start_date": request.start_date,
+                    "end_date": request.end_date,
+                    "days": None,
                 })
 
     if bulk_ops:
@@ -561,26 +570,9 @@ async def hr_bulk_grid_update(
         logger.warning("[HR-BULK-UPDATE] Provider is None, skipping push for tenant=%s", tenant_id)
 
     if push_tasks and provider:
-        # ── Push sıralamasını optimize et ──
-        # Gün filtrelemeli push'larda oda tiplerini interleave yap:
-        # Böylece rate limit durumunda tüm odalar adil push alır.
-        if selected_days_set is not None and len(push_tasks) > 1:
-            from itertools import zip_longest
-            by_rt = {}
-            for t in push_tasks:
-                by_rt.setdefault(t["rt"], []).append(t)
-            interleaved = []
-            for group in zip_longest(*by_rt.values()):
-                for item in group:
-                    if item is not None:
-                        interleaved.append(item)
-            push_tasks = interleaved
-            logger.info("[HR-BULK-UPDATE] Push tasks reordered: %d tasks for %d room types (interleaved)", len(push_tasks), len(by_rt))
-
         # ── Arka planda sıralı gönder, hemen yanıt dön ──
-        # Exely tarzı: UI hemen döner. Arka planda sıralı push (2s arayla).
+        # days[] parametresi ile gün filtreleme tek API çağrısında yapılır.
         # Sadece gerçek 429 rate limit alanlar kuyruğa eklenir.
-        # Her push_task kendi start_date/end_date aralığını taşır (gün filtrelemeli).
         async def _background_push(tasks, prov, t_id):
             await asyncio.sleep(0.2)  # HTTP yanıtı dönmesini bekle
             success_count = 0
@@ -591,9 +583,10 @@ async def hr_bulk_grid_update(
                 rt = task_info["rt"]
                 t_start = task_info["start_date"]
                 t_end = task_info["end_date"]
-                logger.info("[HR-BULK-UPDATE] Push [%d/%d] rt=%s dates=%s→%s rate=%s avail=%s stop=%s minstay=%s",
+                t_days = task_info.get("days")
+                logger.info("[HR-BULK-UPDATE] Push [%d/%d] rt=%s dates=%s→%s rate=%s avail=%s stop=%s minstay=%s days=%s",
                     i+1, len(tasks), rt, t_start, t_end,
-                    task_info["rate"], task_info["avail"], task_info["stop"], task_info["minstay"])
+                    task_info["rate"], task_info["avail"], task_info["stop"], task_info["minstay"], t_days)
                 try:
                     result = await _push_with_retry(
                         prov, rt, t_start, t_end,
@@ -601,6 +594,7 @@ async def hr_bulk_grid_update(
                         avail=task_info["avail"],
                         stop=task_info["stop"],
                         minstay=task_info["minstay"],
+                        days=t_days,
                     )
                     if result.get("success"):
                         clear_cooldown(t_id)
@@ -617,6 +611,7 @@ async def hr_bulk_grid_update(
                                 remaining["start_date"], remaining["end_date"],
                                 rate=remaining["rate"], avail=remaining["avail"],
                                 stop=remaining["stop"], minstay=remaining["minstay"],
+                                days=remaining.get("days"),
                                 error=result.get("error", ""),
                                 retry_after_seconds=retry_secs,
                             )
@@ -635,6 +630,7 @@ async def hr_bulk_grid_update(
                                     remaining["start_date"], remaining["end_date"],
                                     rate=remaining["rate"], avail=remaining["avail"],
                                     stop=remaining["stop"], minstay=remaining["minstay"],
+                                    days=remaining.get("days"),
                                     error="Persistent 403 — queued for retry",
                                     retry_after_seconds=120,
                                 )
@@ -655,6 +651,7 @@ async def hr_bulk_grid_update(
                                     remaining["start_date"], remaining["end_date"],
                                     rate=remaining["rate"], avail=remaining["avail"],
                                     stop=remaining["stop"], minstay=remaining["minstay"],
+                                    days=remaining.get("days"),
                                     error=f"Persistent 403: {e}",
                                     retry_after_seconds=120,
                                 )
