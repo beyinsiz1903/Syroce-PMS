@@ -103,6 +103,7 @@ jobs:
         run: |
           cd backend
           pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+          bash scripts/post_install.sh
           pip install pytest pytest-asyncio httpx pytest-cov pytest-timeout
 
       - name: Seed test database (hard gate)
@@ -202,6 +203,7 @@ jobs:
         run: |
           cd backend
           pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+          bash scripts/post_install.sh
           pip install pytest pytest-asyncio httpx pytest-timeout
 
       - name: Seed test database
@@ -325,16 +327,20 @@ jobs:
           cd frontend
           yarn install --ignore-engines
 
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+          bash scripts/post_install.sh
+
       - name: Python dependency security audit (CRITICAL — hard gate)
         run: |
           pip install pip-audit
           cd backend
-          pip-audit -r requirements.txt --desc \
-            --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ \
+          pip-audit --desc \
             2>&1 | tee security-report.txt
           echo "--- Checking for CRITICAL/HIGH vulnerabilities ---"
-          pip-audit -r requirements.txt \
-            --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ \
+          pip-audit \
             --ignore-vuln PYSEC-2024-62920 \
             --ignore-vuln PYSEC-2024-113 \
             --ignore-vuln CVE-2024-23342 \

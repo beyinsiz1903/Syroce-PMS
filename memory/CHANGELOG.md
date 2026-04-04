@@ -12,11 +12,10 @@
 `litellm>=1.83.0` (CVE fix) → `openai>=2.30.0` gerektiriyor. → Bağımlılık çakışması.
 
 ### Çözüm
-`litellm==1.83.2` `--no-deps` ile yüklendi (openai bağımlılığını çekmeden).
-CI/CD için `backend/scripts/post_install.sh` oluşturuldu:
-```bash
-pip install "litellm>=1.83.2" --no-deps
-```
+1. `backend/scripts/post_install.sh` oluşturuldu: `pip install litellm>=1.83.2 --no-deps`
+2. `ci-cd.yml` security-scan: pip-audit artık `-r requirements.txt` yerine yüklü ortamı tarıyor
+3. `ci-cd.yml` backend-test, load-test, security-scan: `post_install.sh` tüm pip install adımlarına eklendi
+4. `Dockerfile`: Builder stage'de litellm CVE fix eklendi
 
 ### Doğrulama
 - `pip-audit`: "No known vulnerabilities found" ✅
