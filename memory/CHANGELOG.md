@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## 2026-04-04 - FIX: requirements.txt Bağımlılık Çakışması ve Temizlik
+
+### Problem
+`pip install -r requirements.txt` CI/CD pipeline'da başarısız oluyordu:
+- `litellm==1.83.2` → `openai==2.30.0` gerektiriyor
+- `emergentintegrations==0.1.0` → `openai==1.99.9` gerektiriyor
+- ResolutionImpossible hatası
+
+### Kök Neden
+Önceki ajan güvenlik yaması yaparken `pip freeze` çıktısını direkt requirements.txt'e yazdı.
+Bu, `pip-audit` ve `litellm==1.83.2`'nin tüm bağımlılıklarını üretime ekledi.
+
+### Çözüm
+1. `litellm==1.83.2` pinlemesi kaldırıldı (kodda hiç kullanılmıyor, transitive dependency olarak emergentintegrations çekiyor)
+2. `pip-audit` ve 13 bağımlılığı kaldırıldı (geliştirme aracı, üretimde gereksiz)
+3. pip artık `litellm==1.80.0`'ı seçiyor (openai==1.99.9 ile uyumlu)
+4. Kaldırılan paketler: boolean.py, CacheControl, cyclonedx-python-lib, defusedxml, license-expression, litellm, packageurl-python, pip-api, pip-requirements-parser, pip_audit, py-serializable, sortedcontainers, tomli, tomli_w
+
+### CVE Notu
+litellm 1.80.0 hâlâ CVE-2026-35029 ve CVE-2026-35030 içeriyor (fix: 1.83.0+).
+CI/CD'de post-install olarak `pip install litellm==1.83.2 --no-deps` eklenebilir.
+Bu, emergentintegrations constraint'i nedeniyle requirements.txt'te doğrudan çözülemez.
+
+### Doğrulama
+- `pip install -r requirements.txt` çakışma olmadan tamamlanıyor ✅
+- openai==1.99.9, litellm==1.80.0, emergentintegrations==0.1.0 uyumlu ✅
+- Backend sağlıklı çalışıyor ✅
+
+---
+
 ## 2026-04-03 - FEATURE: HotelRunner Otomatik Polling Devre Disi (Event-Driven Mimari)
 
 ### Kullanici Istegi

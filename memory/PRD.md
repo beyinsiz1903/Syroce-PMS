@@ -110,7 +110,13 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - HotelRunner v2 — User Token active, LIVE MODE
 - Exely (SOAP) — Provider credentials required
 
+## Dependency Notes
+- `emergentintegrations==0.1.0` requires `openai==1.99.9` and pulls `litellm` as transitive dep
+- `litellm` is NOT pinned in requirements.txt — pip auto-resolves to 1.80.0 (compatible with openai 1.99.9)
+- CVE fix (litellm>=1.83.0) requires `--no-deps` install in CI/CD as post-install step
+- Never run plain `pip freeze > requirements.txt` — it will re-add dev tool dependencies
+
 ## Critical Constraints
 - All responses in Turkish
 - Latest test report: /app/test_reports/iteration_184.json
-- Latest change: HotelRunner gün filtrelemeli push düzeltmesi — selected_days aktifken her eşleşen tarih grubu ayrı push olarak gönderilir (Apr 2026)
+- Latest change: requirements.txt dependency conflict fix — litellm pinleme ve pip-audit bağımlılıkları kaldırıldı (Apr 2026)
