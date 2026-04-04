@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## 2026-04-04 - SEC: litellm CVE-2026-35029 & CVE-2026-35030 Fix
+
+### Problem
+`pip-audit` CI/CD pipeline'da litellm 1.80.0'daki 2 CRITICAL CVE nedeniyle başarısız oluyordu:
+- CVE-2026-35029: `/config/update` endpoint'inde admin rol kontrolü eksik → RCE riski
+- CVE-2026-35030: JWT cache key collision → kimlik hırsızlığı riski
+
+### Kök Neden
+`emergentintegrations==0.1.0` → `openai==1.99.9` gerektiriyor.
+`litellm>=1.83.0` (CVE fix) → `openai>=2.30.0` gerektiriyor. → Bağımlılık çakışması.
+
+### Çözüm
+`litellm==1.83.2` `--no-deps` ile yüklendi (openai bağımlılığını çekmeden).
+CI/CD için `backend/scripts/post_install.sh` oluşturuldu:
+```bash
+pip install "litellm>=1.83.2" --no-deps
+```
+
+### Doğrulama
+- `pip-audit`: "No known vulnerabilities found" ✅
+- Backend sağlıklı çalışıyor ✅
+- openai==1.99.9 + litellm==1.83.2 + emergentintegrations==0.1.0 uyumlu ✅
+
+---
+
 ## 2026-04-04 - PERF: HotelRunner Push days[] Optimizasyonu (~74x Hız Artışı)
 
 ### Problem

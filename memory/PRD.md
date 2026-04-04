@@ -114,8 +114,8 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 
 ## Dependency Notes
 - `emergentintegrations==0.1.0` requires `openai==1.99.9` and pulls `litellm` as transitive dep
-- `litellm` is NOT pinned in requirements.txt — pip auto-resolves to 1.80.0 (compatible with openai 1.99.9)
-- CVE fix (litellm>=1.83.0) requires `--no-deps` install in CI/CD as post-install step
+- `litellm==1.83.2` installed with `--no-deps` to fix CVE-2026-35029 and CVE-2026-35030
+- CI/CD: `bash backend/scripts/post_install.sh` after `pip install -r requirements.txt`
 - Never run plain `pip freeze > requirements.txt` — it will re-add dev tool dependencies
 
 ## Critical Constraints
