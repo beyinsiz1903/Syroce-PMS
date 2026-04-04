@@ -135,6 +135,29 @@ async def _get_hr_provider(tenant_id: str):
         return None, None
 
 
+def _group_consecutive_dates(date_strings: list[str]) -> list[tuple[str, str]]:
+    """Group sorted date strings into consecutive ranges.
+
+    Returns list of (range_start, range_end) tuples.
+    Example: ['2025-01-04', '2025-01-11', '2025-01-12'] ->
+             [('2025-01-04','2025-01-04'), ('2025-01-11','2025-01-12')]
+    """
+    if not date_strings:
+        return []
+    ranges: list[tuple[str, str]] = []
+    sorted_dates = sorted(date_strings)
+    range_start = sorted_dates[0]
+    prev = datetime.strptime(sorted_dates[0], "%Y-%m-%d").date()
+    for ds in sorted_dates[1:]:
+        curr = datetime.strptime(ds, "%Y-%m-%d").date()
+        if (curr - prev).days != 1:
+            ranges.append((range_start, prev.strftime("%Y-%m-%d")))
+            range_start = ds
+        prev = curr
+    ranges.append((range_start, prev.strftime("%Y-%m-%d")))
+    return ranges
+
+
 async def _push_with_retry(
     provider, rt_code: str, start_date: str, end_date: str,
     *, rate=None, avail=None, stop=None, minstay=None,
@@ -402,6 +425,7 @@ async def hr_bulk_grid_update(
     bulk_ops = []
     push_tasks = []
     pushed_room_types = set()  # Deduplicate: only push once per room type
+    matching_dates_per_rt: dict[str, set[str]] = {}  # rt_code -> set of matching date strings
 
     # Get HR provider for push
     provider, _ = await _get_hr_provider(tenant_id)
@@ -478,6 +502,12 @@ async def hr_bulk_grid_update(
                 upsert=True,
             ))
             saved += 1
+
+            # Track matching dates for push (per room type)
+            if rt_code not in matching_dates_per_rt:
+                matching_dates_per_rt[rt_code] = set()
+            matching_dates_per_rt[rt_code].add(ds)
+
             d += timedelta(days=1)
 
         # Push to HotelRunner — deduplicate per room type
@@ -503,13 +533,24 @@ async def hr_bulk_grid_update(
                 )
                 logger.warning("[HR-BULK-UPDATE] price_update=false for %s — price will be skipped by HR", rt_code)
 
-            push_tasks.append({
-                "rt": rt_code,
-                "rate": push_rate,
-                "avail": push_avail,
-                "stop": push_stop,
-                "minstay": push_min,
-            })
+            # Build push tasks: when day filter is active, group consecutive
+            # matching dates into sub-ranges so HR only gets those dates.
+            rt_dates = matching_dates_per_rt.get(rt_code, set())
+            if selected_days_set is not None and rt_dates:
+                date_ranges = _group_consecutive_dates(list(rt_dates))
+            else:
+                date_ranges = [(request.start_date, request.end_date)]
+
+            for range_start, range_end in date_ranges:
+                push_tasks.append({
+                    "rt": rt_code,
+                    "rate": push_rate,
+                    "avail": push_avail,
+                    "stop": push_stop,
+                    "minstay": push_min,
+                    "start_date": range_start,
+                    "end_date": range_end,
+                })
 
     if bulk_ops:
         await db.hr_rate_calendar.bulk_write(bulk_ops, ordered=False)
@@ -523,14 +564,17 @@ async def hr_bulk_grid_update(
         # ── Arka planda sıralı gönder, hemen yanıt dön ──
         # Exely tarzı: UI hemen döner. Arka planda sıralı push (2s arayla).
         # Sadece gerçek 429 rate limit alanlar kuyruğa eklenir.
-        async def _background_push(tasks, prov, t_id, s_date, e_date):
+        # Her push_task kendi start_date/end_date aralığını taşır (gün filtrelemeli).
+        async def _background_push(tasks, prov, t_id):
             await asyncio.sleep(0.2)  # HTTP yanıtı dönmesini bekle
             success_count = 0
             for i, task_info in enumerate(tasks):
                 rt = task_info["rt"]
+                t_start = task_info["start_date"]
+                t_end = task_info["end_date"]
                 try:
                     result = await _push_with_retry(
-                        prov, rt, s_date, e_date,
+                        prov, rt, t_start, t_end,
                         rate=task_info["rate"],
                         avail=task_info["avail"],
                         stop=task_info["stop"],
@@ -545,7 +589,8 @@ async def hr_bulk_grid_update(
                         retry_secs = result.get("retry_after_seconds", 65)
                         for remaining in tasks[i:]:
                             await enqueue_failed_push(
-                                t_id, remaining["rt"], s_date, e_date,
+                                t_id, remaining["rt"],
+                                remaining["start_date"], remaining["end_date"],
                                 rate=remaining["rate"], avail=remaining["avail"],
                                 stop=remaining["stop"], minstay=remaining["minstay"],
                                 error=result.get("error", ""),
@@ -555,7 +600,7 @@ async def hr_bulk_grid_update(
                         logger.warning("[HR-BULK-UPDATE] Rate limit at %s — %d remaining queued for retry", rt, len(tasks) - i)
                         break
                 except Exception as e:
-                    logger.error("[HR-BULK-UPDATE] Background push error for %s: %s", rt, e)
+                    logger.error("[HR-BULK-UPDATE] Background push error for %s (%s→%s): %s", rt, t_start, t_end, e)
 
                 # Kısa ara ile rate limit'e takılmayı engelle
                 if i < len(tasks) - 1:
@@ -565,7 +610,6 @@ async def hr_bulk_grid_update(
 
         asyncio.create_task(_background_push(
             push_tasks, provider, tenant_id,
-            request.start_date, request.end_date,
         ))
 
     msg = f"{saved} kayıt güncellendi"
