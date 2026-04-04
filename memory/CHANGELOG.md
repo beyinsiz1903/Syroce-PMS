@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## 2026-04-05 - FIX: Docker Build `No module named pip` (İkinci Komut)
+
+### Problem
+Dockerfile'da `python -m pip install --prefix=/install` çalışırken pip kendini 24.0→26.0.1'e upgrade ediyor ve `/install` prefix'ine kuruluyor. Sistem pip'i kaldırılıyor, ikinci komut (`litellm>=1.83.2 --no-deps`) `No module named pip` hatası veriyor.
+
+### Kök Neden
+`--prefix=/install` ile kurulum yapıldığında, yeni pip `/install/lib/python3.11/site-packages/` altına kuruluyor ama Python'un `sys.path`'inde bu yol yok. İkinci `python -m pip` komutu sistem PATH'inde pip bulamıyor.
+
+### Çözüm
+İkinci komut öncesinde `PYTHONPATH=/install/lib/python3.11/site-packages` ayarlandı:
+```dockerfile
+PYTHONPATH=/install/lib/python3.11/site-packages python -m pip install --no-cache-dir --prefix=/install "litellm>=1.83.2" --no-deps
+```
+
+### Etki
+- Docker build artık başarıyla tamamlanıyor
+- litellm CVE fix hâlâ uygulanıyor
+- Tek satır değişiklik, sıfır risk
+
+---
+
+
 ## 2026-04-04 - FIX: Push Kuyruğu Manuel Retry Kaldırıldı + Tümünü İptal Et
 
 ### Problem

@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 RUN python -m pip install --no-cache-dir --prefix=/install --timeout=300 --retries=5 -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ && \
-    python -m pip install --no-cache-dir --prefix=/install "litellm>=1.83.2" --no-deps
+    PYTHONPATH=/install/lib/python3.11/site-packages python -m pip install --no-cache-dir --prefix=/install "litellm>=1.83.2" --no-deps
 
 # Stage 2: Runtime
 FROM python:3.11-slim AS runtime
