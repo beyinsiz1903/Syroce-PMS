@@ -23,7 +23,7 @@ import pytest
 import httpx
 
 # Use the public API URL from environment
-API_URL = os.environ.get("VITE_BACKEND_URL", "https://hotel-sync-hub-3.preview.emergentagent.com")
+API_URL = os.environ.get("VITE_BACKEND_URL", "https://tenant-pms-v2.preview.emergentagent.com")
 AUTH_CREDS = {"email": "demo@hotel.com", "password": "demo123"}
 
 

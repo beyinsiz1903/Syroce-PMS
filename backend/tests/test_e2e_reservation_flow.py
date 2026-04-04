@@ -23,7 +23,7 @@ import pytest_asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 
-API_BASE = "https://hotel-sync-hub-3.preview.emergentagent.com/api/channel/hotelrunner-v2"
+API_BASE = "https://tenant-pms-v2.preview.emergentagent.com/api/channel/hotelrunner-v2"
 MOCK_BASE = "http://localhost:9999"
 TENANT_ID = "test-tenant"
 PROPERTY_ID = "default"
