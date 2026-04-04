@@ -11,7 +11,7 @@ import requests
 # Get BASE_URL from environment
 BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
 if not BASE_URL:
-    BASE_URL = "https://channel-sync-preview.preview.emergentagent.com"
+    BASE_URL = "https://saas-pms-preview.preview.emergentagent.com"
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"

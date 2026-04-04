@@ -8,7 +8,7 @@
 set -e
 
 echo "Installing litellm CVE fix (--no-deps)..."
-pip install "litellm>=1.83.2" --no-deps --quiet
+python -m pip install "litellm>=1.83.2" --no-deps --quiet
 
 echo "Verifying..."
 python3 -c "

@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 2026-04-04 - FIX: Docker Build `pip: not found` Hatası
+
+### Problem
+Dockerfile'da `pip install --prefix=/install -r requirements.txt` çalışırken pip kendini 24.0→26.0.1'e upgrade ediyor. Yeni pip `/install` prefix'ine kurulduğu için sistem PATH'indeki eski pip siliniyor ve ikinci komut (`pip install litellm --no-deps`) çalışamıyordu: `/bin/sh: 1: pip: not found`
+
+### Çözüm
+- `Dockerfile`: `pip` → `python -m pip` olarak güncellendi (PATH bağımsız)
+- `scripts/post_install.sh`: Aynı şekilde `python -m pip` kullanımına geçildi (güvenlik)
+
+### Doğrulama
+- `post_install.sh` yerel ortamda başarılı ✅
+- `python -m pip` her ortamda çalışır (PATH'e bağımlı değil) ✅
+
+---
+
 ## 2026-04-04 - SEC: litellm CVE-2026-35029 & CVE-2026-35030 Fix
 
 ### Problem

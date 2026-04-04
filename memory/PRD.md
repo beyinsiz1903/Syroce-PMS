@@ -116,9 +116,10 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - `emergentintegrations==0.1.0` requires `openai==1.99.9` and pulls `litellm` as transitive dep
 - `litellm==1.83.2` installed with `--no-deps` to fix CVE-2026-35029 and CVE-2026-35030
 - CI/CD: `bash backend/scripts/post_install.sh` after `pip install -r requirements.txt`
+- Dockerfile: `python -m pip` kullanılmalı (`pip` değil) — `--prefix=/install` ile pip kendini upgrade edince PATH'ten silinir
 - Never run plain `pip freeze > requirements.txt` — it will re-add dev tool dependencies
 
 ## Critical Constraints
 - All responses in Turkish
 - Latest test report: /app/test_reports/iteration_184.json
-- Latest change: HotelRunner push days[] optimizasyonu — selected_days ile yapılan push'lar artık tek API çağrısında gönderiliyor (Apr 2026)
+- Latest change: Dockerfile `pip: not found` hatası düzeltildi — `python -m pip` kullanımına geçildi (Apr 2026)
