@@ -1134,39 +1134,43 @@ async def get_hr_queue_status(current_user: User = Depends(get_current_user)):
     return status
 
 
-@router.post("/queue-retry")
-async def retry_queue_items(current_user: User = Depends(get_current_user)):
-    """Kuyruktaki tüm bekleyen push'ları tekrar dene — cooldown kontrolü ile."""
-    from domains.channel_manager.hr_push_queue_worker import push_queue_worker
-
+@router.delete("/queue-cancel-all")
+async def cancel_all_queue_items(current_user: User = Depends(get_current_user)):
+    """Kuyruktaki TÜM bekleyen ve retrying push'ları iptal et ve arka plan görevlerini durdur."""
     tenant_id = current_user.tenant_id
 
-    # Check cooldown
-    cooldown = get_cooldown_remaining(tenant_id)
-    if cooldown > 0:
-        status = await get_queue_status(tenant_id)
-        # Schedule auto-retry if not already scheduled
-        if not status.get("auto_retry_scheduled"):
-            await schedule_auto_retry(tenant_id, cooldown + 2)
-        return {
-            "message": f"Rate limit aktif — {cooldown} saniye sonra otomatik gonderilecek",
-            "cooldown_remaining": cooldown,
-            "auto_retry_scheduled": True,
-            **status,
-        }
+    # Stop any running batch push or auto-retry for this tenant
+    from domains.channel_manager.hr_push_queue_worker import (
+        _auto_retry_tasks,
+        _batch_push_tasks,
+    )
+    for task_dict in (_auto_retry_tasks, _batch_push_tasks):
+        task = task_dict.pop(tenant_id, None)
+        if task and not task.done():
+            task.cancel()
 
-    # Reset rate limit counter to allow immediate retry
-    push_queue_worker._consecutive_rate_limits = 0
+    clear_cooldown(tenant_id)
     reset_auto_retry(tenant_id)
 
-    # Run queue processing for this tenant
-    await push_queue_worker._process_tenant_queue(tenant_id)
+    result = await db.hr_push_queue.delete_many({
+        "tenant_id": tenant_id,
+        "status": {"$in": ["pending", "retrying"]},
+    })
+    deleted = result.deleted_count
 
-    status = await get_queue_status(tenant_id)
+    # Also clear completed items
+    completed_result = await db.hr_push_queue.delete_many({
+        "tenant_id": tenant_id,
+        "status": "completed",
+    })
+
+    logger.info("[HR-QUEUE] Tenant %s: %d pending/retrying + %d completed items cancelled/cleared",
+                tenant_id, deleted, completed_result.deleted_count)
+
     return {
-        "message": "Kuyruk isleme alindi" if status["total_in_queue"] == 0 else f"{status['total_in_queue']} push hala kuyrukta",
-        "cooldown_remaining": status.get("cooldown_remaining", 0),
-        **status,
+        "message": f"{deleted} bekleyen push iptal edildi",
+        "deleted": deleted,
+        "completed_cleared": completed_result.deleted_count,
     }
 
 

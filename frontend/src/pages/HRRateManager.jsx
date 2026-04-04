@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Layout from '@/components/Layout';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Grid3X3, CalendarDays, Ban, Eye, CheckCircle2, AlertTriangle, RefreshCw, Clock, Loader2, Timer } from 'lucide-react';
+import { Grid3X3, CalendarDays, Ban, Eye, CheckCircle2, AlertTriangle, RefreshCw, Clock, Loader2, Timer, Trash2, X } from 'lucide-react';
 
 import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
@@ -24,9 +24,7 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
   const [pricingSettings, setPricingSettings] = useState({});
   const [currency, setCurrency] = useState('TRY');
   const [queueStatus, setQueueStatus] = useState(null);
-  const [retryingQueue, setRetryingQueue] = useState(false);
-  const [cooldownSeconds, setCooldownSeconds] = useState(0);
-  const cooldownTimerRef = useRef(null);
+  const [cancellingQueue, setCancellingQueue] = useState(false);
 
   const CURRENCY_SYMBOLS = { TRY: '\u20BA', USD: '$', EUR: '\u20AC', GBP: '\u00A3', RUB: '\u20BD' };
   const currencySymbol = CURRENCY_SYMBOLS[currency] || currency;
@@ -95,51 +93,24 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
 
   useEffect(() => { fetchQueueStatus(); }, [fetchQueueStatus]);
 
-  // Countdown timer effect
+  // Auto-poll queue status when batch push is active or items exist
   useEffect(() => {
-    if (cooldownSeconds <= 0) {
-      if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
-      return;
-    }
-    cooldownTimerRef.current = setInterval(() => {
-      setCooldownSeconds(prev => {
-        if (prev <= 1) {
-          clearInterval(cooldownTimerRef.current);
-          fetchQueueStatus();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => { if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current); };
-  }, [cooldownSeconds > 0]);
-
-  // Auto-poll queue status when batch push is active
-  useEffect(() => {
-    if (!queueStatus?.batch_push_active) return;
-    const interval = setInterval(() => { fetchQueueStatus(); }, 5000);
+    if (!queueStatus?.total_in_queue) return;
+    const interval = setInterval(() => { fetchQueueStatus(); }, 10000);
     return () => clearInterval(interval);
-  }, [queueStatus?.batch_push_active, fetchQueueStatus]);
+  }, [queueStatus?.total_in_queue, fetchQueueStatus]);
 
-  const handleRetryQueue = async () => {
-    setRetryingQueue(true);
+  const handleCancelAllQueue = async () => {
+    if (!confirm('Kuyruktaki tum bekleyen push islemleri iptal edilsin mi?')) return;
+    setCancellingQueue(true);
     try {
-      const { data } = await axios.post(`${API}${HR_API_PREFIX}/queue-retry`, {}, { headers });
-      setQueueStatus(data);
-      if (data.cooldown_remaining > 0) {
-        setCooldownSeconds(data.cooldown_remaining);
-        toast.info(`Rate limit aktif — ${data.cooldown_remaining} saniye sonra otomatik gonderilecek`, { duration: 8000 });
-      } else if (data.pending === 0 && data.retrying === 0) {
-        toast.success('Kuyruktaki tum push islemleri basariyla tamamlandi');
-        setCooldownSeconds(0);
-        fetchGrid();
-      } else if (data.pending > 0 || data.retrying > 0) {
-        toast.warning(`${data.total_in_queue} push hala kuyrukta`);
-      }
+      const { data } = await axios.delete(`${API}${HR_API_PREFIX}/queue-cancel-all`, { headers });
+      toast.success(`${data.deleted} bekleyen push iptal edildi`);
+      fetchQueueStatus();
     } catch {
-      toast.error('Kuyruk yeniden deneme basarisiz');
+      toast.error('Kuyruk iptal edilemedi');
     }
-    setRetryingQueue(false);
+    setCancellingQueue(false);
   };
 
   const roomTypeTree = useMemo(() => {
@@ -379,51 +350,37 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
 
         {/* Push Queue Status Banner */}
         {queueStatus && queueStatus.total_in_queue > 0 && (
-          <div className={`flex items-center justify-between rounded-lg px-4 py-3 ${queueStatus.batch_push_active ? 'bg-blue-50 border border-blue-200' : 'bg-amber-50 border border-amber-200'}`} data-testid="hr-queue-banner">
+          <div className="flex items-center justify-between rounded-lg px-4 py-3 bg-amber-50 border border-amber-200" data-testid="hr-queue-banner">
             <div className="flex items-center gap-3">
               {queueStatus.batch_push_active ? (
-                <Loader2 className="w-5 h-5 text-blue-600 flex-shrink-0 animate-spin" />
-              ) : cooldownSeconds > 0 ? (
-                <Timer className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                <Loader2 className="w-5 h-5 text-amber-600 flex-shrink-0 animate-spin" />
               ) : (
                 <Clock className="w-5 h-5 text-amber-600 flex-shrink-0" />
               )}
               <div>
-                <p className={`text-sm font-medium ${queueStatus.batch_push_active ? 'text-blue-800' : 'text-amber-800'}`}>
-                  {queueStatus.batch_push_active
-                    ? `${queueStatus.total_in_queue} push gonderiliyor...`
-                    : `${queueStatus.total_in_queue} push kuyrukta bekliyor`
-                  }
+                <p className="text-sm font-medium text-amber-800">
+                  {queueStatus.total_in_queue} push kuyrukta
+                  {queueStatus.batch_push_active && ' — otomatik gonderiliyor'}
                 </p>
-                <p className={`text-xs ${queueStatus.batch_push_active ? 'text-blue-600' : 'text-amber-600'}`}>
+                <p className="text-xs text-amber-600">
                   {queueStatus.batch_push_active
-                    ? 'Rate limit korumasiyla sirayla isleniyor — sayfa acik kalsin'
-                    : cooldownSeconds > 0
-                      ? `Rate limit aktif — ${cooldownSeconds}sn sonra otomatik gonderilecek${queueStatus.auto_retry_count > 0 ? ` (deneme ${queueStatus.auto_retry_count}/${queueStatus.max_auto_retries})` : ''}`
-                      : queueStatus.auto_retry_scheduled
-                        ? 'Otomatik gonderim planlanmis — bekleniyor...'
-                        : 'Gondermek icin "Simdi Dene" butonuna basin'
+                    ? 'Arka planda sirayla isleniyor'
+                    : 'Arka plan worker tarafindan otomatik islenecek'
                   }
+                  {queueStatus.completed > 0 && ` | ${queueStatus.completed} tamamlandi`}
                   {queueStatus.failed > 0 && ` | ${queueStatus.failed} basarisiz`}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              {cooldownSeconds > 0 && (
-                <span className="text-xs font-mono font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded" data-testid="hr-queue-countdown">
-                  {Math.floor(cooldownSeconds / 60)}:{String(cooldownSeconds % 60).padStart(2, '0')}
-                </span>
-              )}
-              <button
-                onClick={handleRetryQueue}
-                disabled={retryingQueue || cooldownSeconds > 0 || queueStatus.batch_push_active}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${queueStatus.batch_push_active ? 'text-blue-700 bg-blue-100' : 'text-amber-700 bg-amber-100 hover:bg-amber-200'}`}
-                data-testid="hr-queue-retry-btn"
-              >
-                {retryingQueue || queueStatus.batch_push_active ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                {queueStatus.batch_push_active ? 'Gonderiliyor...' : retryingQueue ? 'Deneniyor...' : cooldownSeconds > 0 ? 'Bekleniyor...' : 'Simdi Dene'}
-              </button>
-            </div>
+            <button
+              onClick={handleCancelAllQueue}
+              disabled={cancellingQueue}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors text-red-700 bg-red-100 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              data-testid="hr-queue-cancel-all-btn"
+            >
+              {cancellingQueue ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              {cancellingQueue ? 'Iptal ediliyor...' : 'Tumunu Iptal Et'}
+            </button>
           </div>
         )}
 

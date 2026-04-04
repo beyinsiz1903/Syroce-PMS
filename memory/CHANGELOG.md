@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## 2026-04-04 - FIX: Push Kuyruğu Manuel Retry Kaldırıldı + Tümünü İptal Et
+
+### Problem
+- 200+ push kuyruğunda birikmiş, "Şimdi Dene" butonu timeout'a düşüyordu (senkron işleme ~4.3 dakika)
+- Manuel retry, arka plan worker ile çakışıyordu
+- Kullanıcı deneyimi kötüydü (başarısız retry, süresiz bekleme)
+
+### Çözüm
+1. `POST /queue-retry` endpoint kaldırıldı (senkron retry problemi)
+2. `DELETE /queue-cancel-all` endpoint eklendi — tüm pending/retrying/completed öğeleri siler, auto-retry ve batch push task'larını iptal eder
+3. Frontend: "Şimdi Dene" butonu → "Tümünü İptal Et" (kırmızı, confirm dialog ile)
+4. Banner sadeleştirildi — arka plan worker bilgisi + iptal butonu
+5. Mevcut 191 bekleyen + 40 tamamlanan kuyruk öğesi temizlendi
+
+### Doğrulama
+- `queue-cancel-all` endpoint: 191 pending + 40 completed silindi ✅
+- Kuyruk boş: pending=0, completed=0, failed=0 ✅
+- Frontend: Banner kuyruk boşken gizli, lint temiz ✅
+
+---
+
 ## 2026-04-04 - FIX: Docker Build `pip: not found` Hatası
 
 ### Problem

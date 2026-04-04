@@ -53,7 +53,7 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - Auto-un-cancel guard: cancelled reservations never auto-revert to confirmed
 - effective_state uses only state field + cancel_reason (not next_states)
 - Rate limit aware push with 30s-capped retry and fail-fast polling (fix Apr 2026)
-- **Push Retry Queue**: Automatic retry mechanism for failed pushes — enqueue, background worker, adaptive backoff, UI banner with retry button (Apr 2026)
+- **Push Retry Queue**: Automatic retry mechanism for failed pushes — enqueue, background worker, adaptive backoff. Manuel retry kaldırıldı, "Tümünü İptal Et" butonu eklendi (Apr 2026)
 - **Rate Limit Cooldown & Auto-Retry System** (Apr 2026): 429 hatası alındığında:
   - Veriler yerel olarak kaydedilir
   - Push kuyruğa eklenir ve Retry-After süresine göre cooldown başlar
