@@ -714,7 +714,7 @@ async def get_sync_status(current_user: User = Depends(get_current_user)):
 
     return {
         "scheduler_running": pull_scheduler.is_running,
-        "auto_polling_disabled": True,
+        "auto_polling_disabled": not pull_scheduler.is_running,
         "last_pull": cursor,
         "pending_events": pending_events,
         "error_events": error_events,

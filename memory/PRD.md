@@ -73,6 +73,7 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
   - `update_room` provider metodu days[] query param desteği eklendi
   - Push kuyruğu (retry) da days bilgisini saklıyor
 - **Otomatik Polling Devre Disi**: Surekli 120s polling yerine event-driven + manuel senkronizasyon mimarisi (Apr 2026). Booking olusturuldugunda outbox uzerinden otomatik push, diger zamanlarda sadece kullanici tetikli islemler.
+- **Otomatik Polling Yeniden Aktif (Apr 2026)**: 300s (5 dakika) aralikla otomatik reservation pull. Adaptive backoff ile rate limit korunmasi. Push Queue Worker 120s aralikla otomatik retry.
 - **403 Fix + Connection Pooling** (Apr 2026): Accept: application/json header + HTTP connection pooling (max 5 conn, 3 keepalive) ile WAF/rate limit engelleri çözüldü
 
 ### Calendar Vibrant Color Update (Apr 2026)
@@ -122,4 +123,4 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 ## Critical Constraints
 - All responses in Turkish
 - Latest test report: /app/test_reports/iteration_184.json
-- Latest change: Dockerfile `pip: not found` hatası düzeltildi — `python -m pip` kullanımına geçildi (Apr 2026)
+- Latest change: HotelRunner otomatik polling yeniden aktif edildi (300s aralik, adaptive backoff) (Apr 2026)

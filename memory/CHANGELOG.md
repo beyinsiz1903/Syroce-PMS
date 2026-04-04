@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 2026-04-05 - FEATURE: HotelRunner Otomatik Polling Yeniden Aktif
+
+### Kullanici Istegi
+Rezervasyonlar HotelRunner'dan otomatik olarak gelsin, manuel senkronizasyon gerekmemeli.
+
+### Degisiklikler
+1. **startup.py**: HotelRunner Pull Scheduler yeniden aktif edildi (300s = 5 dakika aralikla)
+2. **startup.py**: HotelRunner Push Queue Worker yeniden aktif edildi (120s aralikla)
+3. **hotelrunner_sync.py**: `auto_polling_disabled` flag'i artik scheduler durumuna gore dinamik
+4. **startup.py**: Shutdown handler'larina HR scheduler ve push worker graceful stop eklendi
+
+### Teknik Detaylar
+- Pull interval: 300 saniye (5 dakika) — rate limit'e neden olmayacak kadar uzun
+- Adaptive backoff: 429 rate limit alindiginda interval otomatik olarak katlanarak artiyor (max 16x = 80 dakika)
+- Push Queue Worker: 120 saniyede bir basarisiz push'lari yeniden deniyor
+- Auto-sync: `hotelrunner_connections` koleksiyonunda `is_active=true` ve `auto_sync_reservations=true` olan tenant'lar icin calisiyor
+
+### Dogrulama
+- Pull Scheduler basarili: `scheduler_running: true`, `auto_polling_disabled: false`
+- Otomatik pull calisti: `[PULL] Tenant 044f122b...: fetched 0, processed 0` (yeni rezervasyon yok, beklenen)
+- Push Queue Worker basarili: log'da `HotelRunner Push Queue Worker started (120s interval)`
+
+---
+
 ## 2026-04-05 - FIX: Docker Build `No module named pip` (İkinci Komut)
 
 ### Problem

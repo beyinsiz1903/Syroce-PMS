@@ -506,13 +506,25 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Exely Pull Scheduler init warning: {e}")
 
-    # ── HotelRunner: Otomatik polling DEVRE DISI ──────────────────────
-    # Kullanici istegi: Surekli otomatik polling rate limit'e neden oluyor.
-    # Sistem artik sadece event-driven (booking olustugunda outbox uzerinden push)
-    # ve manuel senkronizasyon ile calisiyor.
-    # Manuel pull: POST /api/channel-manager/hotelrunner/sync/reservations/pull
-    # Manuel queue retry: POST /api/channel-manager/hr-rate-manager/queue-retry
-    print("ℹ️ HotelRunner otomatik polling devre disi — sadece event-driven + manuel senkronizasyon aktif")
+    # ── HotelRunner Pull Scheduler (auto-start) ─────────────────────────
+    try:
+        active_hr = await _raw_db.hotelrunner_connections.find_one(
+            {"is_active": True, "auto_sync_reservations": True}, {"_id": 1}
+        )
+        if active_hr:
+            from domains.channel_manager.providers.hotelrunner_sync import pull_scheduler as hr_pull_scheduler
+            await hr_pull_scheduler.start(interval_seconds=300)
+            app.state.hr_pull_scheduler = hr_pull_scheduler
+            print("HotelRunner Pull Scheduler started (300s interval, adaptive backoff active)")
+            # Also start push queue worker for automatic retry of failed pushes
+            from domains.channel_manager.hr_push_queue_worker import push_queue_worker as hr_push_worker
+            await hr_push_worker.start()
+            app.state.hr_push_queue_worker = hr_push_worker
+            print("HotelRunner Push Queue Worker started (120s interval)")
+        else:
+            print("No active HotelRunner connections; pull scheduler not started")
+    except Exception as e:
+        logger.warning(f"HotelRunner Pull Scheduler init warning: {e}")
 
     # ── Cockpit Snapshot Worker ────────────────────────────────────────
     try:
@@ -616,6 +628,22 @@ async def on_shutdown(app):
             await scheduler.stop()
         except Exception as e:
             logger.warning(f"Exely Pull Scheduler shutdown warning: {e}")
+
+    # HotelRunner Pull Scheduler
+    hr_scheduler = getattr(app.state, "hr_pull_scheduler", None)
+    if hr_scheduler is not None:
+        try:
+            await hr_scheduler.stop()
+        except Exception as e:
+            logger.warning(f"HotelRunner Pull Scheduler shutdown warning: {e}")
+
+    # HotelRunner Push Queue Worker
+    hr_push = getattr(app.state, "hr_push_queue_worker", None)
+    if hr_push is not None:
+        try:
+            await hr_push.stop()
+        except Exception as e:
+            logger.warning(f"HotelRunner Push Queue Worker shutdown warning: {e}")
 
     # Night Audit Scheduler
     try:
