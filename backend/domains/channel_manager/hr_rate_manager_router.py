@@ -584,6 +584,8 @@ async def hr_bulk_grid_update(
         async def _background_push(tasks, prov, t_id):
             await asyncio.sleep(0.2)  # HTTP yanıtı dönmesini bekle
             success_count = 0
+            consecutive_auth_errors = 0
+            MAX_CONSECUTIVE_AUTH_ERRORS = 5
             logger.info("[HR-BULK-UPDATE] Background push starting: %d tasks for tenant=%s", len(tasks), t_id)
             for i, task_info in enumerate(tasks):
                 rt = task_info["rt"]
@@ -604,6 +606,7 @@ async def hr_bulk_grid_update(
                         clear_cooldown(t_id)
                         reset_auto_retry(t_id)
                         success_count += 1
+                        consecutive_auth_errors = 0
                         logger.info("[HR-BULK-UPDATE] Push [%d/%d] SUCCESS rt=%s dates=%s→%s", i+1, len(tasks), rt, t_start, t_end)
                     elif "rate limit" in str(result.get("error", "")).lower():
                         # Rate limit → kalan push'ları da dahil kuyruğa ekle
@@ -620,8 +623,45 @@ async def hr_bulk_grid_update(
                         await schedule_auto_retry(t_id, retry_secs + 5)
                         logger.warning("[HR-BULK-UPDATE] Rate limit at %s — %d remaining queued for retry", rt, len(tasks) - i)
                         break
+                    elif "403" in str(result.get("error", "")) or "access denied" in str(result.get("error", "")).lower():
+                        consecutive_auth_errors += 1
+                        if consecutive_auth_errors >= MAX_CONSECUTIVE_AUTH_ERRORS:
+                            # Ardışık 403 hataları — muhtemelen geçici IP engeli, kalan push'ları kuyruğa at
+                            logger.warning("[HR-BULK-UPDATE] %d consecutive 403 errors — queuing %d remaining tasks for retry",
+                                consecutive_auth_errors, len(tasks) - i)
+                            for remaining in tasks[i:]:
+                                await enqueue_failed_push(
+                                    t_id, remaining["rt"],
+                                    remaining["start_date"], remaining["end_date"],
+                                    rate=remaining["rate"], avail=remaining["avail"],
+                                    stop=remaining["stop"], minstay=remaining["minstay"],
+                                    error="Persistent 403 — queued for retry",
+                                    retry_after_seconds=120,
+                                )
+                            await schedule_auto_retry(t_id, 120)
+                            break
+                    else:
+                        consecutive_auth_errors = 0
                 except Exception as e:
                     logger.error("[HR-BULK-UPDATE] Background push error for %s (%s→%s): %s", rt, t_start, t_end, e)
+                    if "403" in str(e) or "access denied" in str(e).lower():
+                        consecutive_auth_errors += 1
+                        if consecutive_auth_errors >= MAX_CONSECUTIVE_AUTH_ERRORS:
+                            logger.warning("[HR-BULK-UPDATE] %d consecutive 403 exceptions — queuing %d remaining for retry",
+                                consecutive_auth_errors, len(tasks) - i)
+                            for remaining in tasks[i:]:
+                                await enqueue_failed_push(
+                                    t_id, remaining["rt"],
+                                    remaining["start_date"], remaining["end_date"],
+                                    rate=remaining["rate"], avail=remaining["avail"],
+                                    stop=remaining["stop"], minstay=remaining["minstay"],
+                                    error=f"Persistent 403: {e}",
+                                    retry_after_seconds=120,
+                                )
+                            await schedule_auto_retry(t_id, 120)
+                            break
+                    else:
+                        consecutive_auth_errors = 0
 
                 # Kısa ara ile rate limit'e takılmayı engelle
                 if i < len(tasks) - 1:
