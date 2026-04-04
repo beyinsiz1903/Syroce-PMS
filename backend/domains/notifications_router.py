@@ -1,7 +1,7 @@
 """
 Notifications Router — Bildirim endpoint'leri
 """
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends
 
@@ -40,6 +40,6 @@ async def mark_notification_read(
     tenant_id = current_user.tenant_id
     await db.notifications.update_one(
         {"tenant_id": tenant_id, "id": notification_id},
-        {"$set": {"read": True, "read_at": datetime.now(timezone.utc).isoformat()}},
+        {"$set": {"read": True, "read_at": datetime.now(datetime.UTC).isoformat()}},
     )
     return {"ok": True}

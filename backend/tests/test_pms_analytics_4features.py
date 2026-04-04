@@ -14,7 +14,7 @@ import uuid
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
-    BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://tenant-pms-v2.preview.emergentagent.com").rstrip("/")
+    BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://rate-manager-test.preview.emergentagent.com").rstrip("/")
 
 
 class TestAuth:
