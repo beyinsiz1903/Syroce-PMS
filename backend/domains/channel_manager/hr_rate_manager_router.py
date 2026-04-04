@@ -561,6 +561,22 @@ async def hr_bulk_grid_update(
         logger.warning("[HR-BULK-UPDATE] Provider is None, skipping push for tenant=%s", tenant_id)
 
     if push_tasks and provider:
+        # ── Push sıralamasını optimize et ──
+        # Gün filtrelemeli push'larda oda tiplerini interleave yap:
+        # Böylece rate limit durumunda tüm odalar adil push alır.
+        if selected_days_set is not None and len(push_tasks) > 1:
+            from itertools import zip_longest
+            by_rt = {}
+            for t in push_tasks:
+                by_rt.setdefault(t["rt"], []).append(t)
+            interleaved = []
+            for group in zip_longest(*by_rt.values()):
+                for item in group:
+                    if item is not None:
+                        interleaved.append(item)
+            push_tasks = interleaved
+            logger.info("[HR-BULK-UPDATE] Push tasks reordered: %d tasks for %d room types (interleaved)", len(push_tasks), len(by_rt))
+
         # ── Arka planda sıralı gönder, hemen yanıt dön ──
         # Exely tarzı: UI hemen döner. Arka planda sıralı push (2s arayla).
         # Sadece gerçek 429 rate limit alanlar kuyruğa eklenir.
@@ -568,10 +584,14 @@ async def hr_bulk_grid_update(
         async def _background_push(tasks, prov, t_id):
             await asyncio.sleep(0.2)  # HTTP yanıtı dönmesini bekle
             success_count = 0
+            logger.info("[HR-BULK-UPDATE] Background push starting: %d tasks for tenant=%s", len(tasks), t_id)
             for i, task_info in enumerate(tasks):
                 rt = task_info["rt"]
                 t_start = task_info["start_date"]
                 t_end = task_info["end_date"]
+                logger.info("[HR-BULK-UPDATE] Push [%d/%d] rt=%s dates=%s→%s rate=%s avail=%s stop=%s minstay=%s",
+                    i+1, len(tasks), rt, t_start, t_end,
+                    task_info["rate"], task_info["avail"], task_info["stop"], task_info["minstay"])
                 try:
                     result = await _push_with_retry(
                         prov, rt, t_start, t_end,
@@ -584,6 +604,7 @@ async def hr_bulk_grid_update(
                         clear_cooldown(t_id)
                         reset_auto_retry(t_id)
                         success_count += 1
+                        logger.info("[HR-BULK-UPDATE] Push [%d/%d] SUCCESS rt=%s dates=%s→%s", i+1, len(tasks), rt, t_start, t_end)
                     elif "rate limit" in str(result.get("error", "")).lower():
                         # Rate limit → kalan push'ları da dahil kuyruğa ekle
                         retry_secs = result.get("retry_after_seconds", 65)

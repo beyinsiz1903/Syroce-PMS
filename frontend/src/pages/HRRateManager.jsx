@@ -155,6 +155,16 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
     setRoomValues(prev => ({ ...prev, [roomTypeCode]: { ...(prev[roomTypeCode] || getDefaultValues()), [field]: value } }));
   };
 
+  const applyToAllSelected = (field, value) => {
+    setRoomValues(prev => {
+      const next = { ...prev };
+      Object.keys(selections).forEach(rtCode => {
+        next[rtCode] = { ...(next[rtCode] || getDefaultValues()), [field]: value };
+      });
+      return next;
+    });
+  };
+
   const toggleExpanded = (code) => {
     setExpandedRoomTypes(prev => { const next = new Set(prev); if (next.has(code)) next.delete(code); else next.add(code); return next; });
   };
@@ -438,7 +448,7 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
               allDays={allDays} selectedDays={selectedDays} toggleDay={toggleDay} toggleAllDays={toggleAllDays}
               selections={selections} toggleRoomType={toggleRoomType} toggleAllRoomTypes={toggleAllRoomTypes} toggleRatePlan={toggleRatePlan}
               isRoomTypeSelected={isRoomTypeSelected} isRoomTypeFullySelected={isRoomTypeFullySelected} isRatePlanSelected={isRatePlanSelected}
-              roomValues={roomValues} updateRoomValue={updateRoomValue} getDefaultValues={getDefaultValues}
+              roomValues={roomValues} updateRoomValue={updateRoomValue} getDefaultValues={getDefaultValues} applyToAllSelected={applyToAllSelected}
               expandedRoomTypes={expandedRoomTypes} toggleExpanded={toggleExpanded}
               pricingSettings={pricingSettings} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType}
               currencySymbol={currencySymbol} currency={currency}

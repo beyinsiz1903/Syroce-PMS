@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, Trash2, AlertTriangle } from 'lucide-react';
+import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, Trash2, AlertTriangle, CopyCheck } from 'lucide-react';
 import { DAYS, UPDATE_FIELDS } from './constants';
 import { ChannelList } from './ChannelList';
 
@@ -14,7 +14,7 @@ export const BulkUpdatePanel = ({
   allDays, selectedDays, toggleDay, toggleAllDays,
   selections, toggleRoomType, toggleAllRoomTypes, toggleRatePlan,
   isRoomTypeSelected, isRoomTypeFullySelected, isRatePlanSelected,
-  roomValues, updateRoomValue, getDefaultValues,
+  roomValues, updateRoomValue, getDefaultValues, applyToAllSelected,
   expandedRoomTypes, toggleExpanded,
   pricingSettings, getPricingLabel, togglePricingType, currencySymbol, currency,
   totalSelectedRoomTypes, totalSelectedPlans,
@@ -115,7 +115,7 @@ export const BulkUpdatePanel = ({
             ) : (
               <RoomTypeList
                 roomTypeTree={roomTypeTree} enabledFields={enabledFields} selections={selections}
-                roomValues={roomValues} updateRoomValue={updateRoomValue} getDefaultValues={getDefaultValues}
+                roomValues={roomValues} updateRoomValue={updateRoomValue} getDefaultValues={getDefaultValues} applyToAllSelected={applyToAllSelected}
                 expandedRoomTypes={expandedRoomTypes} toggleExpanded={toggleExpanded}
                 isRoomTypeSelected={isRoomTypeSelected} isRoomTypeFullySelected={isRoomTypeFullySelected}
                 isRatePlanSelected={isRatePlanSelected}
@@ -123,6 +123,7 @@ export const BulkUpdatePanel = ({
                 pricingSettings={pricingSettings} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType}
                 currencySymbol={currencySymbol} currency={currency}
                 handleRemoveRoomType={handleRemoveRoomType}
+                totalSelectedRoomTypes={Object.keys(selections).length}
               />
             )}
           </CardContent>
@@ -163,11 +164,26 @@ export const BulkUpdatePanel = ({
 const gridColTemplate = (enabledFields) =>
   `minmax(220px, 1fr)${enabledFields.has('rate') ? ' 150px' : ''}${enabledFields.has('availability') ? ' 130px' : ''}${enabledFields.has('min_stay') ? ' 150px' : ''}${enabledFields.has('max_stay') ? ' 150px' : ''}${enabledFields.has('stop_sell') ? ' 100px' : ''}${enabledFields.has('cta') ? ' 80px' : ''}${enabledFields.has('ctd') ? ' 80px' : ''}`;
 
+const ApplyAllButton = ({ field, value, applyToAllSelected, totalSelectedRoomTypes }) => {
+  if (totalSelectedRoomTypes < 2 || !value) return null;
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); applyToAllSelected(field, value); }}
+      className="text-orange-500 hover:text-orange-700 p-0.5 transition-colors flex-shrink-0"
+      title="Tumune uygula"
+      data-testid={`apply-all-${field}`}
+    >
+      <CopyCheck className="w-3.5 h-3.5" />
+    </button>
+  );
+};
+
 const RoomTypeList = ({
-  roomTypeTree, enabledFields, selections, roomValues, updateRoomValue, getDefaultValues,
+  roomTypeTree, enabledFields, selections, roomValues, updateRoomValue, getDefaultValues, applyToAllSelected,
   expandedRoomTypes, toggleExpanded, isRoomTypeSelected, isRoomTypeFullySelected, isRatePlanSelected,
   toggleRoomType, toggleRatePlan, pricingSettings, getPricingLabel, togglePricingType, currencySymbol, currency,
-  handleRemoveRoomType,
+  handleRemoveRoomType, totalSelectedRoomTypes,
 }) => (
   <div className="overflow-x-auto" data-testid="room-type-list">
     {/* Table Header */}
@@ -240,34 +256,47 @@ const RoomTypeList = ({
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-gray-400">{currencySymbol}</span>
                   <Input type="number" step="0.01" placeholder="Fiyat" value={rv.rate} onChange={e => updateRoomValue(rt.code, 'rate', e.target.value)} className="h-8 text-sm" data-testid={`rate-input-${rt.code}`} />
+                  <ApplyAllButton field="rate" value={rv.rate} applyToAllSelected={applyToAllSelected} totalSelectedRoomTypes={totalSelectedRoomTypes} />
                 </div>
               )}
               {enabledFields.has('availability') && (
                 <div className="flex items-center gap-1">
                   <Home className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
                   <Input type="number" min="0" placeholder="Musaitlik" value={rv.availability} onChange={e => updateRoomValue(rt.code, 'availability', e.target.value)} className="h-8 text-sm" data-testid={`avail-input-${rt.code}`} />
+                  <ApplyAllButton field="availability" value={rv.availability} applyToAllSelected={applyToAllSelected} totalSelectedRoomTypes={totalSelectedRoomTypes} />
                 </div>
               )}
               {enabledFields.has('min_stay') && (
                 <div className="flex items-center gap-1">
                   <Moon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
                   <Input type="number" min="1" placeholder="Min. konaklama" value={rv.min_stay} onChange={e => updateRoomValue(rt.code, 'min_stay', e.target.value)} className="h-8 text-sm" data-testid={`min-stay-input-${rt.code}`} />
+                  <ApplyAllButton field="min_stay" value={rv.min_stay} applyToAllSelected={applyToAllSelected} totalSelectedRoomTypes={totalSelectedRoomTypes} />
                 </div>
               )}
               {enabledFields.has('max_stay') && (
                 <div className="flex items-center gap-1">
                   <Moon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
                   <Input type="number" min="1" placeholder="Max. konaklama" value={rv.max_stay} onChange={e => updateRoomValue(rt.code, 'max_stay', e.target.value)} className="h-8 text-sm" data-testid={`max-stay-input-${rt.code}`} />
+                  <ApplyAllButton field="max_stay" value={rv.max_stay} applyToAllSelected={applyToAllSelected} totalSelectedRoomTypes={totalSelectedRoomTypes} />
                 </div>
               )}
               {enabledFields.has('stop_sell') && (
-                <div className="flex items-center justify-center"><Checkbox checked={!!rv.stop_sell} onCheckedChange={v => updateRoomValue(rt.code, 'stop_sell', v)} data-testid={`stop-sell-${rt.code}`} /></div>
+                <div className="flex items-center justify-center gap-1">
+                  <Checkbox checked={!!rv.stop_sell} onCheckedChange={v => updateRoomValue(rt.code, 'stop_sell', v)} data-testid={`stop-sell-${rt.code}`} />
+                  <ApplyAllButton field="stop_sell" value={rv.stop_sell} applyToAllSelected={applyToAllSelected} totalSelectedRoomTypes={totalSelectedRoomTypes} />
+                </div>
               )}
               {enabledFields.has('cta') && (
-                <div className="flex items-center justify-center"><Checkbox checked={!!rv.cta} onCheckedChange={v => updateRoomValue(rt.code, 'cta', v)} data-testid={`cta-${rt.code}`} /></div>
+                <div className="flex items-center justify-center gap-1">
+                  <Checkbox checked={!!rv.cta} onCheckedChange={v => updateRoomValue(rt.code, 'cta', v)} data-testid={`cta-${rt.code}`} />
+                  <ApplyAllButton field="cta" value={rv.cta} applyToAllSelected={applyToAllSelected} totalSelectedRoomTypes={totalSelectedRoomTypes} />
+                </div>
               )}
               {enabledFields.has('ctd') && (
-                <div className="flex items-center justify-center"><Checkbox checked={!!rv.ctd} onCheckedChange={v => updateRoomValue(rt.code, 'ctd', v)} data-testid={`ctd-${rt.code}`} /></div>
+                <div className="flex items-center justify-center gap-1">
+                  <Checkbox checked={!!rv.ctd} onCheckedChange={v => updateRoomValue(rt.code, 'ctd', v)} data-testid={`ctd-${rt.code}`} />
+                  <ApplyAllButton field="ctd" value={rv.ctd} applyToAllSelected={applyToAllSelected} totalSelectedRoomTypes={totalSelectedRoomTypes} />
+                </div>
               )}
             </div>
 

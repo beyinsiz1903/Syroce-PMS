@@ -325,6 +325,14 @@ try:
 except Exception as _fenc_err:
     logger.warning(f"Field Encryption router skipped: {_fenc_err}")
 
+# ── Notifications Router ────────────────────────────────────────────
+try:
+    from domains.notifications_router import router as notifications_router
+    app.include_router(notifications_router, tags=["Notifications"])
+    logger.info("  ✅ Notifications router loaded")
+except Exception as _notif_err:
+    logger.warning(f"Notifications router skipped: {_notif_err}")
+
 
 # ── Lifecycle events ────────────────────────────────────────────────
 from startup import on_shutdown, on_startup  # noqa: E402
