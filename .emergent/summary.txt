@@ -1,71 +1,68 @@
-<analysis>**original_problem_statement**: Multi-tenant SaaS PMS + Channel Manager. PRODUCT REQUIREMENTS: Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant isolation, PII strict mode. 
-*Recent Bug Report:* User reported that setting a minimum 2-night stay for Saturday across all rooms only applied to one specific room type (Corner Suite) instead of all selected rooms.
+<analysis>**original_problem_statement**: Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant isolation, PII strict mode. Recent issues included a frontend bulk update bug (now fixed) and a critical backend bug where pushed rates/availabilities to HotelRunner were returning .
 
 **User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın. User explicitly requires all responses in Turkish.)
 
 **what currently exists?** 
-A Multi-tenant SaaS PMS + Channel Manager with LIVE HotelRunner v2 and Exely integrations. The backend has background push queue logic. The frontend Rate Manager pages now include an Apply to All (Tümüne Uygula) feature to easily copy values (like min_stay, rates) from one room type to all other selected room types. A basic notifications endpoint is in place to prevent UI 404 errors.
+A Multi-tenant SaaS PMS with LIVE HotelRunner v2 and Exely integrations. The frontend rate manager includes an Apply to All functionality. The backend background push queue logic has been heavily optimized in this session to use HTTP connection pooling and proper API headers to prevent HotelRunner WAF/Rate Limit blocks (403/429 errors).
 
 **Last working item**: 
-    - Last item agent was working: Fixing a bug where bulk grid updates (like min_stay) on the frontend only applied to a single room instead of all selected rooms. The agent implemented an Apply to All Selected button in , , and  (Exely). The agent also fixed a recurring frontend 404 error by creating a mock/basic  endpoint in the backend and improved push result logging in the backend router.
+    - Last item agent was working: Fixing a critical bug where background pushes to HotelRunner failed with . The agent discovered the HotelRunner API required an  header, and that the backend was opening too many simultaneous TCP connections, triggering a WAF block. The agent implemented HTTP connection pooling in  and improved 403 error handling in .
     - Status: USER VERIFICATION PENDING
     - Agent Testing Done: Y
-    - Which testing method agent to use? screenshot tool / curl / bash logs (Verified the Apply to All button successfully copies the '2' min_stay value to all other rooms in the UI. Verified notifications API returns 200 via curl).
+    - Which testing method agent to use? bash logs / curl (Verified via backend logs that 1/1 and 3/3 bulk room updates were successfully pushed to HotelRunner without 403 errors).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-  *None at the moment, waiting for user verification on the recent bug fix.*
+  *None at the moment, waiting for user verification on the recent HotelRunner push bug fix.*
 
 **In progress Task List**: 
   *None.*
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - P3: Add a quick toggle button at the top of the rate manager pages to easily switch between Exely and HotelRunner screens. (Note: Agent was supposed to start this, but the user interrupted with the min_stay bug).
+    - P3: Add a quick toggle button at the top of the rate manager pages to easily switch between Exely and HotelRunner screens. (Note: Proceed with this once the user confirms the push bug is resolved).
     
     Future Tasks:
     - P3: Complete removal/deletion of legacy HR connector once the transition is 100% verified.
-    - Enhancement/Backlog: Channel Manager Dashboard to view recent reservations, failed imports, push queue status, and connection health metrics.
-    - Enhancement/Backlog: Admin UI Panel for encryption management (view status, trigger migrations, check audit logs).
-    - Enhancement/Backlog: Make unassigned reservations more prominent in the calendar.
-    - Enhancement/Backlog: Real-time UI notifications for channel push results (instead of silent background processing).
+    - Enhancement: Channel Manager Dashboard to view recent reservations, failed imports, push queue status, and connection health metrics.
+    - Enhancement: Admin UI Panel for encryption management (view status, trigger migrations, check audit logs).
+    - Enhancement: Make unassigned reservations more prominent in the calendar.
+    - Enhancement: Real-time UI notifications for channel push results (instead of silent background processing).
     - Refactoring: Abstract or subdivide  Phase A and Phase B logic (~780 lines).
     - Refactoring:  (>1100 lines).
 
 **Completed work in this session**
-- Added Apply to All (Tümüne Uygula) button functionality in , , and  to copy input values to all selected room types (DONE).
-- Created  with  and  endpoints and registered it in  to fix frontend 404 errors (DONE).
-- Enhanced push queue logging inside  (DONE).
+- Fixed  linting error in  (DONE).
+- Fixed HotelRunner  bug by adding  header to all requests in  (DONE).
+- Implemented HTTP Connection Pooling in   method to prevent WAF blocks caused by opening hundreds of simultaneous TCP connections (DONE).
+- Improved background push loop logic in  to gracefully pause and queue items if persistent 403/auth errors are detected (DONE).
 
 **Earlier issues found/mentioned but not fixed**
    *None*
 
 **Known issue recurrence from previous fork**
-  - Issue recurrence in previous fork: Rate Limit 429 (HotelRunner) side effects (Artificial locking of the UI / Manual retries failing).
-  - Recurrence count: 5
-  - Status: RESOLVED
+  - Issue recurrence in previous fork: Rate Limit 429 / 403 WAF blocks (HotelRunner) side effects. 
+  - Recurrence count: 6
+  - Status: RESOLVED (Addressed via connection pooling in this session).
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
 - Event-Driven Architecture: Outbox pattern for background sync.
-- Asynchronous Non-Blocking UI: De-coupling UI response from external API calls during bulk operations.
+- Connection Pooling: Reusing HTTP connections for high-volume API pushes.
 
 **key DB schema**
-  - : Stores pending failed tasks. Statuses: pending, retrying, completed, failed.
+  - : Stores pending/failed tasks.
   - : Stores tenant-specific connection details.
 
 **changes in tech stack**
-  - No changes in this session.
+  - No changes.
 
 **All files of reference** 
-  -  (Updated UI grid logic for Apply to all)
-  -  (Added state handling for Apply to all)
-  -  (Added state handling for Apply to all)
-  -  (Logging updates)
-  -  (New file for notification APIs)
-  -  (Registered notifications_router)
+  -  (Fixed lint error)
+  -  (Added headers and connection pooling)
+  -  (Improved 403 error handling in background pushes)
 
 **Areas that need refactoring**: 
   -  (~780 lines)
@@ -73,23 +70,22 @@ A Multi-tenant SaaS PMS + Channel Manager with LIVE HotelRunner v2 and Exely int
 
 **key api endpoints**
 - 
--  (New)
 
 **Critical Info for New Agent** 
 - **Language Constraint:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-- **Exely Isolation:** The Exely logic () was explicitly left untouched in earlier forks to prevent breaking it, per user's strict instructions. The agent only safely mirrored the frontend Apply to All button into Exely's frontend component (), but backend logic remains strictly isolated.
+- **HotelRunner API Quirks:** HotelRunner requires the  header to not return 403s on certain endpoints, and it has strict WAF rules that block requests if too many TCP connections are opened rapidly. DO NOT revert the connection pooling or header logic in .
+- **Exely Isolation:** The Exely backend logic remains strictly isolated.
 
 **documents and test reports created in this job** 
-  - Agent did not update  yet as they are waiting for user verification before finishing.
+  - Agent did not update  or  yet as they are waiting for user verification.
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - *User:* Please use ask_human tool and confirm your plan now.
- - *Agent:* (Triggered ask_human)
- - *User:* cumartesi günü olarak minimum 2 gece konaklama şartı yaptım tüm evler için sadece corner suit 2 gece konaklama şartını almış (Reported bug + uploaded image showing only one room received the update).
- - *Agent:* Investigated frontend. Found out that users had to enter values one by one for each room even if they were all selected. Also noticed 404s for notifications in UI.
- - *Agent:* Fixed UI (added copy/apply to all button), fixed notification 404s, tested via screenshot tool & curl, and successfully verified the behavior.
- - *Agent:* (Triggered ask_human to get confirmation from user regarding the fix).
- - *Pending HUMAN message:* You are currently waiting for the user's response to the  prompt confirming if the fixes for the bug are satisfactory. If they approve, proceed with the P3 Upcoming Task (Exely/HR toggle button) after updating the PRD.
+ - *User:* Requested to fix a linting error in .
+ - *Agent:* Fixed the lint error.
+ - *User:* gönderdiğim fiyat ve müsaitlikler hotelrunner tarafına ulaşmıyor (Reported 403 bugs on HotelRunner pushes).
+ - *Agent:* Debugged extensively, identified the missing  header and WAF blocks due to lack of connection pooling. Applied fixes and successfully verified pushes via curl.
+ - *Agent:* (Triggered  to inform user of the successful fix and ask for confirmation).
+ - *Pending HUMAN message:* You are currently waiting for the user's response to the  prompt confirming the fix. If approved, update the PRD/Changelog and proceed to the P3 Upcoming Task (Exely/HR toggle button).
 
 **Project Health Check:**
   - Broken: None
@@ -102,7 +98,7 @@ A Multi-tenant SaaS PMS + Channel Manager with LIVE HotelRunner v2 and Exely int
   - Emergent Integrations — Used for LLM features.
 
 **Testing status**
-  - Testing agent used after significant changes: NO (UI feature addition & basic API; verified with mcp_screenshot_tool and bash curl).
+  - Testing agent used after significant changes: NO (Self-tested backend pushes via bash curl and log verification).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None
   - Known regressions: None
@@ -111,4 +107,4 @@ A Multi-tenant SaaS PMS + Channel Manager with LIVE HotelRunner v2 and Exely int
   - Found in  (Frontend: demo@hotel.com / demo123)
 
 **What agent forgot to execute**
-  - Agent was interrupted by a bug report and has not updated  or  with the new Apply to All feature and notification endpoint fixes. Make sure to update the documentation files before calling the  tool at the end of the next logical step.</analysis>
+  - The agent has not updated  or  with the critical HotelRunner Push fixes (Connection pooling, headers). Ensure these files are updated when calling the  tool.</analysis>
