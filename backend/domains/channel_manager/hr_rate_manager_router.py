@@ -20,7 +20,6 @@ from domains.channel_manager.hr_push_queue_worker import (
     clear_completed,
     clear_cooldown,
     enqueue_failed_push,
-    get_cooldown_remaining,
     get_queue_status,
     reset_auto_retry,
     schedule_auto_retry,

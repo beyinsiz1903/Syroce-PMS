@@ -84,10 +84,6 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
     try {
       const { data } = await axios.get(`${API}${HR_API_PREFIX}/queue-status`, { headers });
       setQueueStatus(data);
-      // Sync cooldown from server
-      if (data.cooldown_remaining > 0) {
-        setCooldownSeconds(data.cooldown_remaining);
-      }
     } catch { /* ignore */ }
   }, []);
 
