@@ -134,11 +134,13 @@ def explode_multi_room_reservation(raw_reservation: dict[str, Any]) -> list[dict
         elif room_status in ("cancelled", "canceled"):
             sub_payload["state"] = "cancelled"
             sub_payload["_room_cancelled"] = True
-        elif room_cancel_reason or "cancel" in room_next_states:
+        elif room_cancel_reason:
+            # Only use cancel_reason for cancellation detection.
+            # next_states=['cancel'] means "cancel is an available ACTION", NOT that
+            # the room IS cancelled. HR sends this for ALL confirmed rooms.
             sub_payload["state"] = "cancelled"
             sub_payload["_room_cancelled"] = True
-            if room_cancel_reason:
-                sub_payload["cancel_reason"] = room_cancel_reason
+            sub_payload["cancel_reason"] = room_cancel_reason
         else:
             # Room is NOT cancelled — ensure top-level cancel markers don't leak
             sub_payload["_room_cancelled"] = False
