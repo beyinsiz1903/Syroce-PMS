@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## 2026-04-05 - BUGFIX: Çoklu Oda Rezervasyonunda Tek Oda İptali Tüm Odaları İptal Ediyordu
+
+### Sorun
+HotelRunner'da çoklu oda rezervasyonunda (örn. R159939488, 10 oda) tek bir oda iptal edildiğinde, PMS'te TÜM odalar iptal olarak işleniyordu.
+
+### Kök Neden
+`explode_multi_room_reservation()` fonksiyonunda (hotelrunner_shared.py) yanlış bir kontrol vardı:
+```python
+elif room_cancel_reason or "cancel" in room_next_states:
+```
+HotelRunner, TÜM aktif odalara `next_states=["cancel"]` gönderiyor — bu "iptal aksiyonu yapılabilir" anlamında, "oda iptal edildi" DEĞİL. Kod bunu yanlış yorumluyordu.
+
+### Düzeltme
+`"cancel" in room_next_states` kontrolü kaldırıldı. Artık sadece `room.state`, `room.status` ve `room.cancel_reason` alanlarına bakılıyor. Bu davranış, parent-level kontrolle (hotelrunner_sync.py L341-343) tutarlı hale getirildi.
+
+### Dosyalar
+- `backend/domains/channel_manager/providers/hotelrunner_shared.py` (explode_multi_room_reservation)
+
+---
+
 ## 2026-04-05 - FEATURE: HotelRunner Otomatik Polling Yeniden Aktif
 
 ### Kullanici Istegi

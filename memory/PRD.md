@@ -123,4 +123,4 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 ## Critical Constraints
 - All responses in Turkish
 - Latest test report: /app/test_reports/iteration_184.json
-- Latest change: HotelRunner otomatik polling yeniden aktif edildi (300s aralik, adaptive backoff) (Apr 2026)
+- Latest change: Coklu oda iptal bug'i duzeltildi — next_states=['cancel'] artik oda iptali olarak yorumlanmiyor (Apr 2026)

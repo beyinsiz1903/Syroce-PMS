@@ -126,7 +126,6 @@ def explode_multi_room_reservation(raw_reservation: dict[str, Any]) -> list[dict
         room_state = (room.get("state") or "").lower()
         room_status = (room.get("status") or "").lower()
         room_cancel_reason = room.get("cancel_reason") or ""
-        room_next_states = room.get("next_states") or []
 
         if room_state in ("cancelled", "canceled"):
             sub_payload["state"] = "cancelled"
