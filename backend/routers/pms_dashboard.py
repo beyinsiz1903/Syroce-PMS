@@ -57,16 +57,43 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
 
     room_stats = await db.rooms.aggregate(pipeline).to_list(1)
     total_rooms = room_stats[0]['total_rooms'] if room_stats else 0
-    occupied_rooms = room_stats[0]['occupied_rooms'] if room_stats else 0
+    physically_occupied = room_stats[0]['occupied_rooms'] if room_stats else 0
 
-    # Ultra-fast response - minimal queries
+    # Count bookings overlapping today (confirmed + checked_in + guaranteed)
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    booking_occupied = await db.bookings.count_documents({
+        'tenant_id': current_user.tenant_id,
+        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+        'check_in': {'$lte': today + 'T23:59:59'},
+        'check_out': {'$gt': today}
+    })
+
+    # Use the higher of physical room status or booking count
+    occupied_rooms = max(physically_occupied, booking_occupied)
+
+    # Today's check-ins
+    today_checkins = await db.bookings.count_documents({
+        'tenant_id': current_user.tenant_id,
+        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+        'check_in': {'$regex': f'^{today}'}
+    })
+
+    # Total active guests
+    total_guests = await db.bookings.count_documents({
+        'tenant_id': current_user.tenant_id,
+        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+        'check_in': {'$lte': today + 'T23:59:59'},
+        'check_out': {'$gte': today}
+    })
+
+    # Ultra-fast response
     result = {
         'total_rooms': total_rooms,
         'occupied_rooms': occupied_rooms,
-        'available_rooms': total_rooms - occupied_rooms,
+        'available_rooms': max(0, total_rooms - occupied_rooms),
         'occupancy_rate': round((occupied_rooms / total_rooms * 100), 2) if total_rooms > 0 else 0,
-        'today_checkins': 0,  # Skip for max speed
-        'total_guests': 0  # Skip for max speed
+        'today_checkins': today_checkins,
+        'total_guests': total_guests
     }
 
     # Cache in Redis for 5 seconds
@@ -218,11 +245,14 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
 
     # 5) Summary stats
     all_arrivals_count = len(arrivals_today)
+    active_statuses = ["confirmed", "guaranteed", "checked_in"]
     departures_today = await db.bookings.count_documents(
-        {"tenant_id": tenant_id, "status": "checked_in", "check_out": {"$regex": f"^{today}"}}
+        {"tenant_id": tenant_id, "status": {"$in": active_statuses}, "check_out": {"$regex": f"^{today}"}}
     )
     inhouse_count = await db.bookings.count_documents(
-        {"tenant_id": tenant_id, "status": "checked_in"}
+        {"tenant_id": tenant_id, "status": {"$in": active_statuses},
+         "check_in": {"$lte": today + "T23:59:59"},
+         "check_out": {"$gt": today}}
     )
     dirty_count = len(dirty_rooms)
 

@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## 2026-04-06 - BUGFIX: Takvim Doluluk Sayıları ve Dashboard Brifing Yanlış Bilgi Gösteriyordu
+
+### Sorun
+1. **Takvim doluluk sayıları yanlış**: Suite "1/4" gösteriyor ama 5+ aktif rezervasyon var. Doluluk çubuğu tüm sıfır.
+2. **Dashboard Günlük Brifing yanlış**: Doluluk %0, Aylık Gelir $0, İçeride 0, Bugün Çıkış 0 gösteriyordu.
+
+### Kök Nedenler
+1. **Takvim doluluk** (`CalendarGrid.jsx`): Atanmamış rezervasyonların `room_type` alanı HotelRunner Türkçe isimleri ("Corner Süit", "Deluxe Oda") kullanıyor, ama PMS oda tipleri İngilizce ("Suite", "Deluxe"). `getUnassignedBookingsForType` fonksiyonu `room_type_id` alanını da kontrol ettiği için unassigned bookinglar doğru bölümde görünüyor ama doluluk sayacı bu kontrolü yapmıyordu.
+2. **Doluluk çubuğu** (`ReservationCalendar.jsx`): `getOccupancyForDate` sadece `checked_in` durumundaki rezervasyonları sayıyordu. Hiçbir misafir check-in yapmadığı için %0 çıkıyordu.
+3. **AI Brifing** (`endpoints.py`): `occupied_rooms` sadece `checked_in` durumunu sayıyordu. Gelir `accounting_invoices`'den hesaplanıyordu ki o boştu.
+4. **Operasyonel Uyarılar** (`pms_dashboard.py`): `departures_today` ve `inhouse_count` sadece `checked_in` durumunu sayıyordu.
+5. **Cache Warmer** (`cache_warmer.py`): Dashboard cache aynı hatalı lojiği kullanıyordu.
+
+### Düzeltmeler
+- `CalendarGrid.jsx`: Doluluk sayacına `room_type_id` kontrolü eklendi
+- `ReservationCalendar.jsx`: `getOccupancyForDate` artık `confirmed`, `guaranteed`, `checked_in` durumlarını sayıyor
+- `endpoints.py`: AI brifing doluluk hesabı bugünle çakışan aktif rezervasyonları sayıyor, gelir booking tutarlarından fallback
+- `pms_dashboard.py`: PMS dashboard ve operational-alerts endpoint'leri aktif durumları sayıyor
+- `cache_warmer.py`: Cache warmer dashboard hesabı düzeltildi
+
+### Düzeltilen Dosyalar
+- `/app/frontend/src/pages/calendar/CalendarGrid.jsx`
+- `/app/frontend/src/pages/ReservationCalendar.jsx`
+- `/app/backend/domains/ai/endpoints.py`
+- `/app/backend/routers/pms_dashboard.py`
+- `/app/backend/cache_warmer.py`
+
+
+
 ## 2026-04-05 - BUGFIX: Çoklu Oda Rezervasyonunda Tek Oda İptali Tüm Odaları İptal Ediyordu
 
 ### Sorun

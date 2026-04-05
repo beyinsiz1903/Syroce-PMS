@@ -183,11 +183,13 @@ const CalendarGrid = ({
                           return isBookingOnDate(b, date);
                         });
                         // Count unassigned bookings for this room type on this date
+                        const rtLower = roomType.toLowerCase();
                         const unassignedOnDate = bookings.filter(b => {
                           if (b.status === 'cancelled' || b.status === 'checked_out' || b.status === 'no_show') return false;
                           if (b.room_id) return false;
                           const bType = (b.room_type || '').toLowerCase();
-                          if (bType !== roomType.toLowerCase()) return false;
+                          const bTypeId = (b.room_type_id || '').toLowerCase();
+                          if (bType !== rtLower && bTypeId !== rtLower) return false;
                           return isBookingOnDate(b, date);
                         });
                         const occupiedCount = assignedBookings.length + unassignedOnDate.length;

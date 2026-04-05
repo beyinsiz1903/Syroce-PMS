@@ -35,28 +35,51 @@ async def get_daily_briefing(
         }).to_list(None)
 
         total_rooms = len(rooms)
-        occupied_rooms = len([b for b in all_bookings if b.get('status') == 'checked_in'])
-        confirmed_bookings = len([b for b in all_bookings if b.get('status') == 'confirmed'])
 
-        # Count today's check-ins/outs
+        # Count today's date for overlap checks
         today = datetime.now().date()
         today_str = str(today)
+
+        # Active statuses (exclude cancelled, checked_out, no_show)
+        active_statuses = {'confirmed', 'guaranteed', 'checked_in'}
+
+        # Occupancy: count rooms occupied today (checked_in + confirmed overlapping today)
+        occupied_rooms = 0
+        for b in all_bookings:
+            if b.get('status') not in active_statuses:
+                continue
+            ci = str(b.get('check_in', ''))[:10]
+            co = str(b.get('check_out', ''))[:10]
+            if ci <= today_str and co > today_str:
+                occupied_rooms += 1
+
+        confirmed_bookings = len([b for b in all_bookings if b.get('status') == 'confirmed'])
+
+        # Count today's check-ins/outs (only active bookings)
         today_checkins = 0
         today_checkouts = 0
         for b in all_bookings:
-            ci = b.get('check_in', '')
-            co = b.get('check_out', '')
-            if isinstance(ci, str) and ci.startswith(today_str):
+            if b.get('status') in ('cancelled', 'no_show'):
+                continue
+            ci = str(b.get('check_in', ''))[:10]
+            co = str(b.get('check_out', ''))[:10]
+            if ci == today_str:
                 today_checkins += 1
-            elif hasattr(ci, 'strftime') and ci.strftime('%Y-%m-%d') == today_str:
-                today_checkins += 1
-            if isinstance(co, str) and co.startswith(today_str):
-                today_checkouts += 1
-            elif hasattr(co, 'strftime') and co.strftime('%Y-%m-%d') == today_str:
+            if co == today_str:
                 today_checkouts += 1
 
         pending_invoices = len([i for i in invoices if i.get('status') == 'pending'])
         monthly_revenue = sum(i.get('total', 0) for i in invoices)
+
+        # Fallback: if no invoice revenue, calculate from active bookings this month
+        if monthly_revenue == 0:
+            month_start = today.replace(day=1).isoformat()
+            for b in all_bookings:
+                if b.get('status') in ('cancelled', 'no_show'):
+                    continue
+                ci = str(b.get('check_in', ''))[:10]
+                if ci >= month_start:
+                    monthly_revenue += float(b.get('total_amount', 0) or 0)
 
         # Get hotel name from tenant
         tenant = await db.tenants.find_one({"id": current_user.tenant_id})

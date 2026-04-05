@@ -119,19 +119,37 @@ class CacheWarmer:
             room_stats = await self.db.rooms.aggregate(pipeline).to_list(1)
 
             total_rooms = room_stats[0]['total_rooms'] if room_stats else 0
-            occupied_rooms = room_stats[0]['occupied_rooms'] if room_stats else 0
+            physically_occupied = room_stats[0]['occupied_rooms'] if room_stats else 0
 
-            # Quick counts
-            today = datetime.now(UTC).replace(hour=0, minute=0).isoformat()
-            today_checkins = await self.db.bookings.count_documents({
-                'tenant_id': tenant_id, 'check_in': {'$gte': today}
+            # Count bookings overlapping today (confirmed + checked_in + guaranteed)
+            today = datetime.now(UTC).strftime("%Y-%m-%d")
+            booking_occupied = await self.db.bookings.count_documents({
+                'tenant_id': tenant_id,
+                'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+                'check_in': {'$lte': today + 'T23:59:59'},
+                'check_out': {'$gt': today}
             })
-            total_guests = await self.db.guests.count_documents({'tenant_id': tenant_id})
+            occupied_rooms = max(physically_occupied, booking_occupied)
+
+            # Today's check-ins (exclude cancelled/no_show)
+            today_checkins = await self.db.bookings.count_documents({
+                'tenant_id': tenant_id,
+                'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+                'check_in': {'$regex': f'^{today}'}
+            })
+
+            # Total active guests today
+            total_guests = await self.db.bookings.count_documents({
+                'tenant_id': tenant_id,
+                'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+                'check_in': {'$lte': today + 'T23:59:59'},
+                'check_out': {'$gte': today}
+            })
 
             dashboard_data = {
                 'total_rooms': total_rooms,
                 'occupied_rooms': occupied_rooms,
-                'available_rooms': total_rooms - occupied_rooms,
+                'available_rooms': max(0, total_rooms - occupied_rooms),
                 'occupancy_rate': round((occupied_rooms / total_rooms * 100), 2) if total_rooms > 0 else 0,
                 'today_checkins': today_checkins,
                 'total_guests': total_guests

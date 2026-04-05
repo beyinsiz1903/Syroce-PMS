@@ -316,8 +316,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
   // ─── Occupancy ─────────────────────────────────────────────
   const getOccupancyForDate = (date) => {
-    const occupiedCount = bookings.filter(b => isBookingOnDate(b, date) && b.status === 'checked_in').length;
-    return rooms.length > 0 ? Math.round((occupiedCount / rooms.length) * 100) : 0;
+    const activeStatuses = ['confirmed', 'guaranteed', 'checked_in'];
+    const occupiedCount = bookings.filter(b =>
+      isBookingOnDate(b, date) &&
+      activeStatuses.includes(b.status) &&
+      b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show'
+    ).length;
+    return rooms.length > 0 ? Math.min(Math.round((occupiedCount / rooms.length) * 100), 100) : 0;
   };
 
   // ─── Event Handlers ────────────────────────────────────────
