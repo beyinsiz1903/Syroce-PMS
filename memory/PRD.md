@@ -118,6 +118,17 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - Startup'ta otomatik başlatılır, shutdown'da graceful stop
 - Dosya: availability_reconciliation_worker.py
 
+### Kanal Yönetimi Sayfası (Apr 2026) — DONE
+- Birleşik kanal bağlantıları genel bakış sayfası (/channel-connections)
+- HotelRunner ve Exely bağlantı durumu tek sayfada
+- Yeni otel onboarding rehberi (5 adımlı kılavuz)
+- Bağlantı kurma/kesme/test etme işlemleri
+- Oda eşleştirme durumu göstergesi
+- PMS oda tipleri referans gösterimi
+- Her otel için ayrı credential yönetimi (multi-tenant)
+- Backend: /api/channel-manager/connections/overview endpoint
+- Frontend: ChannelConnections.jsx + navigasyona ekleme
+
 ## Prioritized Backlog
 
 ### P2 (Medium)
