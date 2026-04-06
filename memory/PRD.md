@@ -100,14 +100,12 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 ## Prioritized Backlog
 
 ### P1 (High)
-- None critical at this time
+- Rate Manager quick toggle (Exely/HotelRunner)
 
 ### P2 (Medium)
-- Sanal Kart / Kredi Kartı Bilgileri: Acente kartı bilgilerini saklama, otelci max 3 kez görebilsin, online ödeme alanında gösterilsin
 - Real-time UI notifications for channel push results
 
 ### P3 (Low)
-- Rate Manager quick toggle (Exely/HotelRunner)
 - Legacy HR v1 connector removal (after full verification)
 - Channel Manager Dashboard — recent reservations, failed imports, connection health metrics
 - Admin UI Panel for encryption management (view status, trigger migrations, check audit logs)
@@ -146,5 +144,20 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 
 ## Critical Constraints
 - All responses in Turkish
-- Latest test report: /app/test_reports/iteration_185.json
-- Latest change: Bildirim sistemi kapsamli duzeltme — is_read/read alan uyusmazligi, dedup_key ile tekrar onleme, stale update guard ile ping-pong onleme, pipeline iptal bildirimi, otomatik okundu, rezervasyon detay zamanlari (Apr 2026)
+- Latest test report: /app/test_reports/iteration_186.json
+### VCC (Virtual Credit Card) Secure View (Apr 2026) — DONE
+- OTA/Acente sanal kart bilgileri AES-256-GCM ile şifreli saklanıyor
+- Otelci kart bilgilerini maksimum 3 kez görüntüleyebilir (API seviyesinde zorunlu)
+- Atomic view counter ($lt koşulu ile race condition koruması)
+- Rezervasyon detayında "Online Ödeme" sekmesi
+- Kart ekleme formu, kart görsel kartı, kalan hak gösterimi
+- 3 hak dolunca kalıcı kilitleme + kırmızı uyarı
+- Her görüntüleme activity log'a yazılıyor (audit trail)
+
+## Key API Endpoints (VCC)
+- POST /api/pms/reservations/{id}/vcc — Kart kaydet (şifreli)
+- GET /api/pms/reservations/{id}/vcc/status — Durum sorgula (görüntüleme harcamaz)
+- POST /api/pms/reservations/{id}/vcc/reveal — Kart detay aç (1/3 hak harcar)
+- DELETE /api/pms/reservations/{id}/vcc — Kart sil
+
+- Latest change: VCC Secure View - Sanal kart 3 kez goruntuleme, Online Odeme sekmesi (Apr 2026). Onceki: Bildirim sistemi kapsamli duzeltme — is_read/read alan uyusmazligi, dedup_key ile tekrar onleme, stale update guard ile ping-pong onleme, pipeline iptal bildirimi, otomatik okundu, rezervasyon detay zamanlari (Apr 2026)

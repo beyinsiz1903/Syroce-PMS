@@ -1,6 +1,37 @@
 # CHANGELOG
 
 
+## 2026-04-06 - FEATURE: VCC (Sanal Kredi Kartı) Güvenli Görüntüleme
+
+### Özellik
+OTA/Acente sanal kart bilgileri AES-256-GCM ile şifreli saklanır. Otelci kart detaylarını **en fazla 3 kez** görüntüleyebilir. Backend seviyesinde zorunlu.
+
+### Yeni Dosyalar
+- `/app/backend/routers/vcc_router.py` — VCC CRUD + reveal (3-view limit) endpoint'leri
+- `/app/frontend/src/pages/reservation-detail/OnlinePaymentTab.jsx` — Online Ödeme sekmesi
+
+### Değişiklikler
+- `ReservationDetailModal.jsx`: "Online Odeme" sekmesi eklendi, CreditCard import düzeltildi
+- `bootstrap/router_registry.py`: VCC router kaydedildi
+
+### API Endpoint'leri
+- `POST /api/pms/reservations/{id}/vcc` — Kart kaydet (şifreli)
+- `GET /api/pms/reservations/{id}/vcc/status` — Durum sorgula
+- `POST /api/pms/reservations/{id}/vcc/reveal` — Kart aç (1/3 hak)
+- `DELETE /api/pms/reservations/{id}/vcc` — Kart sil
+
+### Güvenlik
+- AES-256-GCM şifreleme (FieldEncryptionService)
+- Atomic view counter ($lt koşulu, race condition koruması)
+- 3 hak dolunca kalıcı kilitleme
+- Her işlem activity log'a kaydedilir
+
+### Test Sonuçları
+- Backend: 13/13 test geçti (%100)
+- Frontend: Tüm UI testleri geçti (%100)
+
+---
+
 ## 2026-04-06 - BUGFIX: Bildirim Sistemi Kapsamlı Düzeltme
 
 ### Sorunlar
