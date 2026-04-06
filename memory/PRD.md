@@ -54,6 +54,14 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - **Phase B**: Full catch-up every 10th cycle (~5 min) — safety net
 - **Unified Callback**: `/api/channel-manager/hotelrunner/callback` — single endpoint for HotelRunner "Dönüş adresi"
 - Unassigned imports, notifications
+- **Bildirim Sistemi (Apr 2026)**:
+  - `read` alan normalizasyonu (is_read → read uyumluluk)
+  - `mark-all-read` endpoint (toplu okundu)
+  - `dedup_key` ile tekrarlayan bildirim önleme
+  - Stale update guard ile ping-pong önleme
+  - Pipeline'da iptal bildirimi oluşturma
+  - NotificationBell: dialog açılınca otomatik okundu
+  - Rezervasyon detayında sisteme düşme zamanı ve giriş/çıkış saatleri
 - End-to-end verified webhook pipeline
 - Per-room cancellation detection for multi-room reservations
 - ARI push via query params (fix Apr 2026)
@@ -94,12 +102,20 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 ### P1 (High)
 - None critical at this time
 
+### P2 (Medium)
+- Sanal Kart / Kredi Kartı Bilgileri: Acente kartı bilgilerini saklama, otelci max 3 kez görebilsin, online ödeme alanında gösterilsin
+- Real-time UI notifications for channel push results
+
 ### P3 (Low)
 - Rate Manager quick toggle (Exely/HotelRunner)
 - Legacy HR v1 connector removal (after full verification)
 - Channel Manager Dashboard — recent reservations, failed imports, connection health metrics
 - Admin UI Panel for encryption management (view status, trigger migrations, check audit logs)
 - Make unassigned reservations more prominent in calendar
+
+### Refactoring
+- hotelrunner_sync.py (~1000 satır) Phase A/Phase B bölünmesi
+- hr_rate_manager_router.py (>1100 satır) bölünmesi
 
 ## Completed Refactoring
 - hotelrunner_webhook.py monolith split DONE (Apr 2026)
@@ -130,5 +146,5 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 
 ## Critical Constraints
 - All responses in Turkish
-- Latest test report: /app/test_reports/iteration_184.json
-- Latest change: Coklu oda kismi iptalinde kademeli iptal yayilmasi duzeltildi — exploder state/cancel_reason sizmasi temizleniyor, Phase B cascade onlendi, Phase A.5 pagination eklendi (Apr 2026)
+- Latest test report: /app/test_reports/iteration_185.json
+- Latest change: Bildirim sistemi kapsamli duzeltme — is_read/read alan uyusmazligi, dedup_key ile tekrar onleme, stale update guard ile ping-pong onleme, pipeline iptal bildirimi, otomatik okundu, rezervasyon detay zamanlari (Apr 2026)
