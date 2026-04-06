@@ -46,8 +46,10 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - Room/rate mappings created
 - **30-second polling** with adaptive backoff (optimized from 300s)
 - **Phase A.5**: Real-time modification detection via `from_last_update_date` — every cycle
+- **Phase A.5 Cancellation Fix**: Detects `state=cancelled` and uses `reservation_cancel_pull` event_type to bypass deduplication
 - **Phase A.6**: Auto-sync detected modifications to PMS bookings — every cycle
 - **Phase B**: Full catch-up every 10th cycle (~5 min) — safety net
+- **Unified Callback**: `/api/channel-manager/hotelrunner/callback` — single endpoint for HotelRunner "Dönüş adresi"
 - Unassigned imports, notifications
 - End-to-end verified webhook pipeline
 - Per-room cancellation detection for multi-room reservations

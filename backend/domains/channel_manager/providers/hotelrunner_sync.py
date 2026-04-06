@@ -204,11 +204,21 @@ class ReservationPullScheduler:
 
                 for sub_res in sub_reservations:
                     try:
+                        # Detect cancellation state for correct event_type
+                        sub_state_a = (sub_res.get("state") or "").lower()
+                        is_cancel_a = (
+                            sub_state_a in ("cancelled", "canceled")
+                            or sub_res.get("_room_cancelled")
+                            or bool(sub_res.get("cancel_reason"))
+                        )
+                        evt_type_a = "reservation_cancel_pull" if is_cancel_a else "reservation_pull"
                         await _persist_and_process(
                             tenant_id, _resolve_property_id(sub_res),
-                            sub_res, "reservation_pull",
+                            sub_res, evt_type_a,
                         )
                         processed += 1
+                        if is_cancel_a:
+                            logger.info(f"[PULL-A] Cancellation in undelivered: {sub_res.get('hr_number')}")
                     except Exception as e:
                         logger.error(f"[PULL] Error processing sub-reservation {sub_res.get('hr_number')}: {e}")
 
@@ -259,11 +269,23 @@ class ReservationPullScheduler:
                                 sub_reservations = explode_multi_room_reservation(mod_res)
                                 for sub_res in sub_reservations:
                                     try:
+                                        # Detect cancellation from state — use different event_type
+                                        # so provider_event_id is unique and not deduped with
+                                        # the previous modification event
+                                        sub_state = (sub_res.get("state") or "").lower()
+                                        is_cancelled = (
+                                            sub_state in ("cancelled", "canceled")
+                                            or sub_res.get("_room_cancelled")
+                                            or bool(sub_res.get("cancel_reason"))
+                                        )
+                                        evt_type = "reservation_cancel_pull" if is_cancelled else "reservation_modified_pull"
                                         await _persist_and_process(
                                             tenant_id, _resolve_property_id(sub_res),
-                                            sub_res, "reservation_modified_pull",
+                                            sub_res, evt_type,
                                         )
                                         mod_processed += 1
+                                        if is_cancelled:
+                                            logger.info(f"[PULL-A5] Cancellation detected: {sub_res.get('hr_number')}")
                                     except Exception as e:
                                         if "duplicate" not in str(e).lower():
                                             logger.error(f"[PULL-A5] Error processing modified {sub_res.get('hr_number')}: {e}")
@@ -367,10 +389,10 @@ async def _sync_modified_reservations_to_pms(tenant_id: str) -> int:
         {
             "tenant_id": tenant_id,
             "provider": "hotelrunner",
-            "event_type": "reservation_modified_pull",
+            "event_type": {"$in": ["reservation_modified_pull", "reservation_cancel_pull"]},
             "received_at": {"$gte": cutoff},
         },
-        {"_id": 0, "external_reservation_id": 1, "raw_payload": 1},
+        {"_id": 0, "external_reservation_id": 1, "raw_payload": 1, "event_type": 1},
     ).to_list(50)
 
     if not recent_events:
@@ -487,9 +509,11 @@ async def _run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
                         sub_res["_room_cancelled"] = True
 
                     try:
+                        # Use correct event_type for cancellations
+                        catchup_evt = "reservation_cancel_catchup" if sub_room_cancelled or effective_state == "canceled" else "reservation_catchup"
                         await _persist_and_process(
                             tenant_id, _resolve_property_id(sub_res),
-                            sub_res, "reservation_catchup",
+                            sub_res, catchup_evt,
                         )
                         catchup_imported += 1
                     except Exception as e:

@@ -1,5 +1,37 @@
 # CHANGELOG
 
+
+## 2026-04-06 - BUGFIX: HotelRunner Iptal Tespiti Düzeltmesi
+
+### Sorun
+HotelRunner'dan yapilan iptal islemleri sisteme dusmuyor / tespit edilmiyordu.
+
+### Kok Neden
+Phase A.5 (modifikasyon tespiti) iptal edilen rezervasyonlari `reservation_modified_pull` 
+event_type'i ile pipeline'a gonderiyordu. HotelRunner iptal yaptiginda `updated_at` 
+timestamp'ini DEGISTIRMEDIĞI icin, `provider_event_id` = `{hr_number}_reservation_modified_pull_{updated_at}` 
+onceki modifikasyonla AYNI kaliyordu. Pipeline bu event'i DUPLICATE olarak atliyordu.
+
+### Duzeltme
+- Phase A, A.5 ve B'de: Rezervasyonun `state` alani kontrol ediliyor. Eger `cancelled/canceled` ise, 
+  event_type `reservation_cancel_pull` (veya `reservation_cancel_catchup`) olarak ayarlaniyor.
+- Bu sayede farkli bir `provider_event_id` olusturuluyor: `{hr_number}_reservation_cancel_pull_{updated_at}`
+- Pipeline yeni event'i DUPLICATE olarak atlamiyor, CANCEL karari veriyor ve:
+  - `reservation_lineage` status'u `cancelled` yapiliyor
+  - `bookings` ve `imported_reservations` koleksiyonlarina iptal yayiliyor
+
+### Duzeltilen Dosyalar
+- `/app/backend/domains/channel_manager/providers/hotelrunner_sync.py`
+  - Phase A: iptal tespiti + dogru event_type
+  - Phase A.5: iptal tespiti + dogru event_type 
+  - Phase A.6: iptal event'lerini de capture ediyor
+  - Phase B: iptal tespiti + dogru event_type
+
+### Dogrulama
+- R802387399-2: `decision=cancel`, booking status=cancelled ✅
+- R995286077-2: `payload_hash` duplicate (zaten iptal edilmis), booking status=cancelled ✅
+
+
 ## 2026-04-06 - PERF: HotelRunner Polling Optimizasyonu — 5 dk'dan 30 sn'ye
 
 ### Sorun
