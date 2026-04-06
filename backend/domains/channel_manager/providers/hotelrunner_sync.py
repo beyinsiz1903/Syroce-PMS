@@ -616,6 +616,15 @@ async def _sync_reservation_update(
         logger.warning(f"[PULL-SYNC] Booking not found for {ext_reservation_id}")
         return False
 
+    # Stale update guard: skip if the booking was already synced from a NEWER provider timestamp
+    existing_sync_ts = booking.get("last_synced_from_provider_at", "")
+    if existing_sync_ts and hr_updated_at and hr_updated_at <= existing_sync_ts:
+        logger.debug(
+            f"[PULL-SYNC] {ext_reservation_id}: skipping stale update "
+            f"(hr={hr_updated_at} <= existing={existing_sync_ts})"
+        )
+        return False
+
     rooms = hr_payload.get("rooms") or []
     room = rooms[0] if rooms else {}
 
@@ -741,37 +750,66 @@ async def _sync_reservation_update(
 
     logger.info(f"[PULL-SYNC] {ext_reservation_id}: updated fields={list(updates.keys())}")
 
-    # Create notifications for important changes
+    # Create notifications for important changes (with dedup)
     try:
-        notification_messages = []
+        notifications_to_create = []
         if "status" in updates and updates["status"] == "cancelled":
-            notification_messages.append(
-                f"Rezervasyon Iptali: {guest_name_hr or booking.get('guest_name', '')}, "
-                f"{ext_reservation_id}, "
-                f"Giris: {booking.get('check_in', '')}, Cikis: {booking.get('check_out', '')}"
-            )
+            notifications_to_create.append({
+                "title": f"Rezervasyon Iptali - {guest_name_hr or booking.get('guest_name', '')}",
+                "message": (
+                    f"{guest_name_hr or booking.get('guest_name', '')} adli misafirin "
+                    f"{booking.get('check_in', '')[:10]} - {booking.get('check_out', '')[:10]} "
+                    f"tarihli rezervasyonu iptal edildi."
+                ),
+                "type": "reservation_cancelled",
+                "priority": "high",
+                "category": "reservation",
+                "dedup_key": f"cancel_{ext_reservation_id}",
+            })
         if "guest_name" in updates:
-            notification_messages.append(
-                f"Misafir Adi Degisikligi: {booking.get('guest_name', '')} -> {updates['guest_name']}, "
-                f"{ext_reservation_id}"
-            )
+            notifications_to_create.append({
+                "title": f"Misafir Adi Degisikligi - {ext_reservation_id}",
+                "message": (
+                    f"Misafir adi degistirildi: {booking.get('guest_name', '')} -> {updates['guest_name']}"
+                ),
+                "type": "reservation_modified",
+                "priority": "normal",
+                "category": "reservation",
+                "dedup_key": f"name_{ext_reservation_id}_{updates['guest_name']}",
+            })
         if "check_in" in updates or "check_out" in updates:
-            notification_messages.append(
-                f"Tarih Degisikligi: {ext_reservation_id}, "
-                f"Giris: {updates.get('check_in', booking.get('check_in', ''))}, "
-                f"Cikis: {updates.get('check_out', booking.get('check_out', ''))}"
-            )
+            notifications_to_create.append({
+                "title": f"Tarih Degisikligi - {ext_reservation_id}",
+                "message": (
+                    f"Tarih degistirildi: "
+                    f"Giris: {updates.get('check_in', booking.get('check_in', ''))[:10]}, "
+                    f"Cikis: {updates.get('check_out', booking.get('check_out', ''))[:10]}"
+                ),
+                "type": "reservation_modified",
+                "priority": "normal",
+                "category": "reservation",
+                "dedup_key": f"date_{ext_reservation_id}_{updates.get('check_in', '')}_{updates.get('check_out', '')}",
+            })
 
-        for msg in notification_messages:
+        for notif_data in notifications_to_create:
+            # Dedup: check if same notification already exists in last 10 minutes
+            dedup_key = notif_data.pop("dedup_key")
+            existing = await db.notifications.find_one({
+                "tenant_id": tenant_id,
+                "external_reservation_id": ext_reservation_id,
+                "dedup_key": dedup_key,
+            })
+            if existing:
+                continue
             await db.notifications.insert_one({
                 "id": str(uuid.uuid4()),
                 "tenant_id": tenant_id,
-                "type": "reservation_update",
-                "message": msg,
                 "booking_id": booking.get("id", ""),
                 "external_reservation_id": ext_reservation_id,
-                "is_read": False,
+                "read": False,
                 "created_at": datetime.now(UTC).isoformat(),
+                "dedup_key": dedup_key,
+                **notif_data,
             })
     except Exception as e:
         logger.error(f"[PULL-SYNC] Notification creation error for {ext_reservation_id}: {e}")

@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Pencil, Check, Globe, Phone, Star, Building2, Users } from 'lucide-react';
-import { API, fmtDate, InfoField, Avatar, EmptyState, statusLabel } from './helpers';
+import { API, fmtDate, fmtDateTime, InfoField, Avatar, EmptyState, statusLabel } from './helpers';
 
 export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate }) {
   const [editing, setEditing] = useState(false);
@@ -25,11 +25,17 @@ export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate })
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" data-testid="general-info-tab">
       <div className="lg:col-span-2 space-y-4">
+        {/* Sisteme dusme / olusturulma zamani */}
+        {booking?.created_at && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-800">
+            Sisteme dusme zamani: <span className="font-semibold">{fmtDateTime(booking.created_at)}</span>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <InfoField label="Giris Tarihi" value={fmtDate(booking?.check_in)} />
-          <InfoField label="Giris Saati" value="14:00" />
+          <InfoField label="Giris Saati" value={booking?.check_in_time || booking?.checkin_time || '14:00'} />
           <InfoField label="Cikis Tarihi" value={fmtDate(booking?.check_out)} />
-          <InfoField label="Cikis Saati" value="12:00" />
+          <InfoField label="Cikis Saati" value={booking?.check_out_time || booking?.checkout_time || '12:00'} />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <InfoField label="Yetiskin" value={booking?.adults || booking?.guests_count || 1} />

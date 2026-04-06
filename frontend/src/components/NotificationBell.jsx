@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Bell, X, AlertCircle, Info, CheckCircle, AlertTriangle } from 'lucide-react';
-import { toast } from 'sonner';
+import { Bell, AlertCircle, Info, CheckCircle, AlertTriangle } from 'lucide-react';
 
 const API = import.meta.env.VITE_BACKEND_URL;
 
@@ -12,13 +11,21 @@ const NotificationBell = () => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const markingRef = useRef(false);
 
   useEffect(() => {
     loadNotifications();
     const interval = setInterval(loadNotifications, 15000);
     return () => clearInterval(interval);
   }, []);
+
+  // Auto-mark all as read when dialog opens
+  useEffect(() => {
+    if (isOpen && unreadCount > 0 && !markingRef.current) {
+      markingRef.current = true;
+      markAllAsRead().finally(() => { markingRef.current = false; });
+    }
+  }, [isOpen, unreadCount]);
 
   const loadNotifications = async () => {
     try {
@@ -34,43 +41,29 @@ const NotificationBell = () => {
     }
   };
 
-  const markAsRead = async (notificationId) => {
-    try {
-      const token = localStorage.getItem('token');
-      await axios.put(`${API}/api/notifications/${notificationId}/mark-read`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      loadNotifications();
-    } catch (error) {
-      console.error('Failed to mark as read:', error);
-    }
-  };
-
   const markAllAsRead = async () => {
     try {
       const token = localStorage.getItem('token');
-      const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
-      await Promise.all(unreadIds.map(id =>
-        axios.put(`${API}/api/notifications/${id}/mark-read`, {}, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-      ));
-      toast.success('Tüm bildirimler okundu olarak işaretlendi');
-      loadNotifications();
+      await axios.put(`${API}/api/notifications/mark-all-read`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      setUnreadCount(0);
     } catch (error) {
-      toast.error('Hata');
+      console.error('Failed to mark all as read:', error);
     }
   };
 
   const getNotificationIcon = (type) => {
     switch (type) {
-      case 'alert':
+      case 'reservation_cancelled':
         return <AlertCircle className="w-5 h-5 text-red-500" />;
       case 'warning':
         return <AlertTriangle className="w-5 h-5 text-orange-500" />;
       case 'success':
         return <CheckCircle className="w-5 h-5 text-green-500" />;
-      case 'info':
+      case 'reservation_modified':
+        return <Info className="w-5 h-5 text-blue-500" />;
       default:
         return <Info className="w-5 h-5 text-blue-500" />;
     }
@@ -99,6 +92,7 @@ const NotificationBell = () => {
           size="sm"
           onClick={() => setIsOpen(true)}
           className="relative p-2 hover:bg-white/20"
+          data-testid="notification-bell-button"
         >
           <Bell className="w-5 h-5" />
           {unreadCount > 0 && (
@@ -110,29 +104,17 @@ const NotificationBell = () => {
       </div>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto" data-testid="notification-dialog">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <span className="flex items-center">
-                <Bell className="w-5 h-5 mr-2" />
-                Bildirimler
-              </span>
-              {unreadCount > 0 && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={markAllAsRead}
-                  className="text-xs"
-                >
-                  Tümünü Okundu İşaretle
-                </Button>
-              )}
+            <DialogTitle className="flex items-center">
+              <Bell className="w-5 h-5 mr-2" />
+              Bildirimler
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-2">
             {notifications.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-500" data-testid="notification-empty">
                 <Bell className="w-12 h-12 mx-auto mb-2 opacity-50" />
                 <p className="text-sm">Bildirim yok</p>
               </div>
@@ -140,26 +122,21 @@ const NotificationBell = () => {
               notifications.map((notif) => (
                 <div
                   key={notif.id}
-                  className={`p-3 rounded-lg cursor-pointer transition-all ${
+                  className={`p-3 rounded-lg transition-all ${
                     notif.read ? 'bg-gray-50' : getPriorityColor(notif.priority)
                   }`}
-                  onClick={() => !notif.read && markAsRead(notif.id)}
+                  data-testid={`notification-item-${notif.id}`}
                 >
                   <div className="flex items-start space-x-3">
                     <div className="flex-shrink-0 mt-1">
                       {getNotificationIcon(notif.type)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between">
-                        <h4 className={`text-sm font-medium ${
-                          notif.read ? 'text-gray-700' : 'text-gray-900'
-                        }`}>
-                          {notif.title}
-                        </h4>
-                        {!notif.read && (
-                          <div className="w-2 h-2 bg-blue-500 rounded-full ml-2 flex-shrink-0" />
-                        )}
-                      </div>
+                      <h4 className={`text-sm font-medium ${
+                        notif.read ? 'text-gray-700' : 'text-gray-900'
+                      }`}>
+                        {notif.title || 'Bildirim'}
+                      </h4>
                       <p className={`text-xs mt-1 ${
                         notif.read ? 'text-gray-500' : 'text-gray-700'
                       }`}>
@@ -167,12 +144,12 @@ const NotificationBell = () => {
                       </p>
                       <div className="flex items-center justify-between mt-2">
                         <span className="text-xs text-gray-400">
-                          {new Date(notif.created_at).toLocaleString('tr-TR', {
+                          {notif.created_at ? new Date(notif.created_at).toLocaleString('tr-TR', {
                             day: 'numeric',
                             month: 'short',
                             hour: '2-digit',
                             minute: '2-digit'
-                          })}
+                          }) : ''}
                         </span>
                         {notif.category && (
                           <Badge variant="outline" className="text-xs">

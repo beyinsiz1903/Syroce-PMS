@@ -601,8 +601,15 @@ async def _cancel_lineage(existing: dict, canonical: dict) -> str:
 
 async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) -> None:
     """Propagate cancellation from lineage to bookings and imported_reservations collections."""
+    import uuid as _uuid
     from core.database import db
     now = _now()
+
+    # Get booking info before cancelling (for notification)
+    booking = await db.bookings.find_one(
+        {"tenant_id": tenant_id, "external_reservation_id": ext_res_id},
+        {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "check_out": 1, "status": 1},
+    )
 
     # Update booking status to cancelled
     result = await db.bookings.update_one(
@@ -611,6 +618,36 @@ async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) ->
     )
     if result.modified_count > 0:
         logger.info("[CANCEL-PROPAGATE] Booking %s cancelled", ext_res_id)
+
+        # Create cancellation notification (with dedup)
+        if booking and booking.get("status") != "cancelled":
+            guest_name = booking.get("guest_name", "Misafir")
+            check_in = (booking.get("check_in", "") or "")[:10]
+            check_out = (booking.get("check_out", "") or "")[:10]
+            dedup_key = f"cancel_{ext_res_id}"
+            existing_notif = await db.notifications.find_one({
+                "tenant_id": tenant_id,
+                "external_reservation_id": ext_res_id,
+                "dedup_key": dedup_key,
+            })
+            if not existing_notif:
+                try:
+                    await db.notifications.insert_one({
+                        "id": str(_uuid.uuid4()),
+                        "tenant_id": tenant_id,
+                        "type": "reservation_cancelled",
+                        "priority": "high",
+                        "category": "reservation",
+                        "title": f"Rezervasyon Iptali - {guest_name}",
+                        "message": f"{guest_name} adli misafirin {check_in} - {check_out} tarihli rezervasyonu iptal edildi.",
+                        "booking_id": booking.get("id", ""),
+                        "external_reservation_id": ext_res_id,
+                        "read": False,
+                        "dedup_key": dedup_key,
+                        "created_at": now,
+                    })
+                except Exception as e:
+                    logger.warning("[CANCEL-PROPAGATE] Notification creation failed: %s", e)
 
     # Update imported_reservations
     await db.imported_reservations.update_one(

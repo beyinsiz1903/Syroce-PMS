@@ -97,6 +97,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 <div className="flex justify-between"><span className="text-gray-500">Oda</span><span className="font-medium text-blue-600">{booking?.room_number || room?.room_number || '-'}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Giris</span><span className="font-medium">{booking?.check_in?.toString().slice(0, 10)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Cikis</span><span className="font-medium">{booking?.check_out?.toString().slice(0, 10)}</span></div>
+                {booking?.created_at && (
+                  <div className="flex justify-between"><span className="text-gray-500">Olusturulma</span><span className="font-medium text-[10px]">{new Date(booking.created_at).toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
+                )}
               </div>
 
               {/* Operational Status Panel */}
