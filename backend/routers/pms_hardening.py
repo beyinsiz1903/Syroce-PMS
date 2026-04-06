@@ -219,6 +219,7 @@ async def api_cancel_booking(req: CancellationRequest, current_user: User = Depe
     # Channel availability auto-sync: iptal sonrası müsaitlik güncelle
     try:
         import asyncio
+
         from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
         asyncio.create_task(sync_availability_after_booking(
             tenant_id=current_user.tenant_id,
@@ -245,6 +246,7 @@ async def api_no_show(req: NoShowRequest, current_user: User = Depends(get_curre
     # Channel availability auto-sync: no-show sonrası müsaitlik güncelle
     try:
         import asyncio
+
         from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
         asyncio.create_task(sync_availability_after_booking(
             tenant_id=current_user.tenant_id,

@@ -117,7 +117,7 @@ async def _do_sync(tenant_id: str, room_id: str, check_in: str, check_out: str):
     logger.info(
         "[AVAIL-AUTO-SYNC] tenant=%s room_type=%s tarih=%s→%s avail=%s",
         tenant_id, pms_room_type, ci_str, co_str,
-        {k: v for k, v in list(date_availability.items())[:5]},
+        dict(list(date_availability.items())[:5]),
     )
 
     # 6. Kanallara push et (arka planda paralel)

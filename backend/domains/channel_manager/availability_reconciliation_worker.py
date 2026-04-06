@@ -15,7 +15,7 @@ Akış:
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from core.database import db
 from core.tenant_db import clear_tenant_context, set_tenant_context
@@ -95,7 +95,7 @@ class AvailabilityReconciliationWorker:
 
     async def _reconcile_tenant(self, tenant_id: str):
         """Tek bir tenant için müsaitlik uzlaştırması."""
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         end_date = today + timedelta(days=RECONCILIATION_DAYS)
         today_str = today.strftime("%Y-%m-%d")
         end_str = end_date.strftime("%Y-%m-%d")

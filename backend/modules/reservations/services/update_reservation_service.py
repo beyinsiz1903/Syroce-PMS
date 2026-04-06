@@ -251,6 +251,7 @@ class UpdateReservationService:
             if changes and _avail_sync_fields & set(changes.keys()):
                 try:
                     import asyncio
+
                     from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
 
                     # Güncel booking tarihlerini sync et

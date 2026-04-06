@@ -1220,6 +1220,7 @@ async def cancel_reservation(
     # Channel availability auto-sync: iptal sonrası müsaitlik güncelle
     try:
         import asyncio
+
         from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
         asyncio.create_task(sync_availability_after_booking(
             tenant_id=tid,
