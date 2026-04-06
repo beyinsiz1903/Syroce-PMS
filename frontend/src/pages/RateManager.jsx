@@ -9,6 +9,7 @@ import { ArrowUpRight, CalendarDays, Grid3X3, Ban, Eye, CheckCircle2 } from 'luc
 import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
 import { StopSalePanel } from './rate-manager/StopSalePanel';
+import { ProviderToggle } from './rate-manager/ProviderToggle';
 
 const API = import.meta.env.VITE_BACKEND_URL;
 
@@ -254,6 +255,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rate_manager">
       <div className="p-4 md:p-6 space-y-4" data-testid="rate-manager-page">
+        <ProviderToggle active="exely" />
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold" style={{ fontFamily: 'Space Grotesk' }}>

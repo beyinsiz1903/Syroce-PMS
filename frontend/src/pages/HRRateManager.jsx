@@ -9,6 +9,7 @@ import { Grid3X3, CalendarDays, Ban, Eye, CheckCircle2, AlertTriangle, RefreshCw
 import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
 import { StopSalePanel } from './rate-manager/StopSalePanel';
+import { ProviderToggle } from './rate-manager/ProviderToggle';
 
 const API = import.meta.env.VITE_BACKEND_URL;
 const HR_API_PREFIX = '/api/channel-manager/hr-rate-manager';
@@ -311,6 +312,7 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="hr_rate_manager">
       <div className="p-4 md:p-6 space-y-4" data-testid="hr-rate-manager-page">
+        <ProviderToggle active="hotelrunner" />
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold" style={{ fontFamily: 'Space Grotesk' }}>
