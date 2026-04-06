@@ -21,7 +21,7 @@ BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
 
 pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
 if not BASE_URL:
-    BASE_URL = "https://hotelrunner-sync-1.preview.emergentagent.com"
+    BASE_URL = "https://hotelrunner-sync-fix.preview.emergentagent.com"
 BASE_URL = BASE_URL.rstrip('/') + "/api"
 
 CM_V2_BASE = f"{BASE_URL}/channel-manager/v2"
