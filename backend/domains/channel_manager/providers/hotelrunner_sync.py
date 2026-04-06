@@ -46,7 +46,7 @@ class ReservationPullScheduler:
         self._task = None
         self._cycle_count = 0
         self._consecutive_rate_limits = 0
-        self._base_interval = 120  # default seconds
+        self._base_interval = 30  # default seconds — match Exely speed
 
     async def start(self, interval_minutes: int = 15, safety_window_minutes: int = 5, interval_seconds: int | None = None):
         """Start the scheduled pull loop. interval_seconds overrides interval_minutes if provided."""
@@ -231,6 +231,59 @@ class ReservationPullScheduler:
             except Exception as e:
                 logger.error(f"[PULL] Fire error for uid={uid}: {e}")
 
+        # ── Phase A.5: Fetch recently MODIFIED reservations ─────────
+        # This is the KEY optimization — catches name changes, date changes, etc.
+        # within seconds instead of waiting for Phase B (catch-up)
+        mod_processed = 0
+        try:
+            cursor_doc = await db.hotelrunner_pull_cursors.find_one(
+                {"tenant_id": tenant_id}, {"_id": 0, "last_pull_at": 1},
+            )
+            if cursor_doc and cursor_doc.get("last_pull_at"):
+                from datetime import timedelta
+                last_pull_dt = datetime.fromisoformat(cursor_doc["last_pull_at"])
+                # Fetch modifications since last pull minus safety window
+                mod_since = (last_pull_dt - timedelta(minutes=safety_window_minutes)).strftime("%Y-%m-%d")
+                mod_result = await provider.get_reservations(
+                    undelivered=False,
+                    from_last_update_date=mod_since,
+                    per_page=50,
+                    page=1,
+                )
+                if mod_result["success"]:
+                    mod_reservations = mod_result["data"].get("reservations", [])
+                    if mod_reservations:
+                        logger.info(f"[PULL-A5] Found {len(mod_reservations)} recently modified reservations")
+                        for mod_res in mod_reservations:
+                            try:
+                                sub_reservations = explode_multi_room_reservation(mod_res)
+                                for sub_res in sub_reservations:
+                                    try:
+                                        await _persist_and_process(
+                                            tenant_id, _resolve_property_id(sub_res),
+                                            sub_res, "reservation_modified_pull",
+                                        )
+                                        mod_processed += 1
+                                    except Exception as e:
+                                        if "duplicate" not in str(e).lower():
+                                            logger.error(f"[PULL-A5] Error processing modified {sub_res.get('hr_number')}: {e}")
+                            except Exception as e:
+                                logger.error(f"[PULL-A5] Error: {e}")
+                else:
+                    logger.debug("[PULL-A5] Modified fetch failed (non-critical)")
+        except Exception as e:
+            logger.warning(f"[PULL-A5] Modified reservation check error: {e}")
+
+        # ── Phase A.6: Sync detected modifications to PMS bookings ──────
+        # Instead of making additional API calls, compare Phase A.5 results
+        # with existing booking data and apply updates directly
+        individual_updated = 0
+        if mod_processed > 0:
+            try:
+                individual_updated = await _sync_modified_reservations_to_pms(tenant_id)
+            except Exception as e:
+                logger.warning(f"[PULL-A6] Modification sync error: {e}")
+
         # ── Phase B: Catch-up — fetch ALL reservations, import missing + sync updates ─
         catchup_imported = 0
         catchup_updated = 0
@@ -239,11 +292,12 @@ class ReservationPullScheduler:
             run_phase_b = False
             logger.info("[PULL] Skipping Phase B — rate limit backoff active (consecutive: %d)", self._consecutive_rate_limits)
         else:
-            run_phase_b = (self._cycle_count % 3 == 0)
+            # Phase B runs every 10th cycle (~5 min at 30s interval) since
+            # Phase A.5 now handles modifications in real-time
+            run_phase_b = (self._cycle_count % 10 == 0)
         if not run_phase_b:
-            logger.debug(f"[PULL] Skipping Phase B (cycle {self._cycle_count}, runs every 3rd)")
+            logger.debug(f"[PULL] Skipping Phase B (cycle {self._cycle_count}, runs every 10th)")
         else:
-            await asyncio.sleep(10)
             logger.info(f"[PULL] Running Phase B catch-up (cycle {self._cycle_count})")
 
         if run_phase_b:
@@ -263,6 +317,8 @@ class ReservationPullScheduler:
                 "reservations_fetched": len(all_reservations),
                 "reservations_processed": processed,
                 "reservations_fired": fired,
+                "mod_processed": mod_processed,
+                "individual_updated": individual_updated,
                 "catchup_imported": catchup_imported,
                 "catchup_updated": catchup_updated,
                 "pages_fetched": total_pages,
@@ -271,18 +327,76 @@ class ReservationPullScheduler:
         )
 
         duration_ms = int((datetime.now(UTC) - pull_start).total_seconds() * 1000)
-        await _log_pull(tenant_id, "success", processed + catchup_imported, duration_ms=duration_ms)
+        total_processed = processed + mod_processed + individual_updated + catchup_imported
+        await _log_pull(tenant_id, "success", total_processed, duration_ms=duration_ms)
 
-        logger.info(f"[PULL] Tenant {tenant_id}: fetched {len(all_reservations)}, processed {processed}, fired {fired}, catchup {catchup_imported}, updated {catchup_updated}")
+        logger.info(
+            f"[PULL] Tenant {tenant_id}: fetched {len(all_reservations)}, "
+            f"processed {processed}, fired {fired}, "
+            f"mod_a5 {mod_processed}, individual_a6 {individual_updated}, "
+            f"catchup {catchup_imported}, updated {catchup_updated}"
+        )
         return {
             "success": True,
             "fetched": len(all_reservations),
             "processed": processed,
             "fired": fired,
+            "mod_processed": mod_processed,
+            "individual_updated": individual_updated,
             "catchup_imported": catchup_imported,
             "catchup_updated": catchup_updated,
             "pages": total_pages,
         }
+
+
+# ── Sync Modified Reservations to PMS (Phase A.6) ───────────────────
+
+async def _sync_modified_reservations_to_pms(tenant_id: str) -> int:
+    """After Phase A.5 persists modified reservations as raw events,
+    compare the latest raw event data with existing PMS bookings
+    and apply any detected changes (guest name, dates, status, etc.).
+
+    This runs without additional API calls — uses only local DB data.
+    Returns count of updated reservations.
+    """
+    # Find recently processed raw events from Phase A.5 (last 2 minutes)
+    from datetime import timedelta
+    cutoff = (datetime.now(UTC) - timedelta(minutes=2)).isoformat()
+
+    recent_events = await db.raw_channel_events.find(
+        {
+            "tenant_id": tenant_id,
+            "provider": "hotelrunner",
+            "event_type": "reservation_modified_pull",
+            "received_at": {"$gte": cutoff},
+        },
+        {"_id": 0, "external_reservation_id": 1, "raw_payload": 1},
+    ).to_list(50)
+
+    if not recent_events:
+        return 0
+
+    updated = 0
+    for event in recent_events:
+        ext_id = event.get("external_reservation_id", "")
+        payload = event.get("raw_payload", {})
+        if not ext_id or not payload:
+            continue
+
+        hr_updated_at = payload.get("updated_at", "")
+        hr_state = payload.get("state", "confirmed")
+
+        try:
+            was_updated = await _sync_reservation_update(
+                tenant_id, ext_id, payload, hr_state, hr_updated_at,
+            )
+            if was_updated:
+                updated += 1
+        except Exception as e:
+            if "not found" not in str(e).lower():
+                logger.warning(f"[PULL-A6] Sync error for {ext_id}: {e}")
+
+    return updated
 
 
 # ── Phase B: Catch-up Pull ───────────────────────────────────────────
@@ -715,10 +829,18 @@ async def get_sync_status(current_user: User = Depends(get_current_user)):
     return {
         "scheduler_running": pull_scheduler.is_running,
         "auto_polling_disabled": not pull_scheduler.is_running,
+        "polling_interval_seconds": pull_scheduler._base_interval,
+        "cycle_count": pull_scheduler._cycle_count,
         "last_pull": cursor,
         "pending_events": pending_events,
         "error_events": error_events,
         "total_reservations": total_reservations,
+        "optimization_notes": {
+            "phase_a": "Yeni rezervasyonlar (undelivered) - her döngüde",
+            "phase_a5": "Modifikasyon tespiti (from_last_update_date) - her döngüde",
+            "phase_a6": "Bireysel rezervasyon kontrolü - her döngüde",
+            "phase_b": "Tam catch-up (tüm rezervasyonlar) - her 10. döngüde",
+        },
     }
 
 

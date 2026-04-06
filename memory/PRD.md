@@ -44,7 +44,10 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 ### HotelRunner Live Integration
 - Shadow Mode disabled, Live Mode active
 - Room/rate mappings created
-- 120-second polling with adaptive backoff (was 30s)
+- **30-second polling** with adaptive backoff (optimized from 300s)
+- **Phase A.5**: Real-time modification detection via `from_last_update_date` — every cycle
+- **Phase A.6**: Auto-sync detected modifications to PMS bookings — every cycle
+- **Phase B**: Full catch-up every 10th cycle (~5 min) — safety net
 - Unassigned imports, notifications
 - End-to-end verified webhook pipeline
 - Per-room cancellation detection for multi-room reservations

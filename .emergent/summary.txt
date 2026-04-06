@@ -1,22 +1,21 @@
-<analysis>**original_problem_statement**: Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant isolation, PII strict mode. The system required fixes for HotelRunner automatic polling (which was disabled), a 15+ day availability bug caused by a rogue  flag, and a critical bug where cancelling a single room in a multi-room reservation incorrectly cancelled all rooms. 
+<analysis>**original_problem_statement**: Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant isolation, PII strict mode. The system required fixes for HotelRunner automatic polling (disabled), a 15+ day availability bug (stop_sell flag), and a multi-room reservation cancellation bug. Recently requested fixes included Calendar availability counts (occupancy mismatch due to language mappings) and Daily Briefing data showing wrong metrics.
 
 **User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın. User explicitly requires all responses in Turkish.)
 
-**what currently exists?** 
-A Multi-tenant SaaS PMS with LIVE HotelRunner v2 and Exely integrations. The backend has a robust CI/CD pipeline, background workers for processing queue tasks, and active polling schedulers for external channel managers. 
+**what currently exists?**: A Multi-tenant SaaS PMS with LIVE HotelRunner v2 and Exely integrations. The backend has a CI/CD pipeline, background workers, polling schedulers, a dashboard with AI briefing, and a robust frontend calendar with occupancy tracking.
 
 **Last working item**: 
-    - Last item agent was working: Fixing a multi-room reservation cancellation bug. The  function in  was misinterpreting the HotelRunner payload () as an actual cancellation, causing all rooms in a multi-room booking to be cancelled when only one was intended. The logic was corrected and tested.
+    - Last item agent was working: Fixing Dashboard Quick Stats, AI Briefing metrics, and Calendar Occupancy counts. The issue stemmed from mismatched room type strings (Turkish vs. English) mapping and logic that only counted  statuses while ignoring  reservations. The agent applied fixes to the frontend grid/occupancy calculations, backend  endpoints, and .
     - Status: USER VERIFICATION PENDING
     - Agent Testing Done: Y
-    - Which testing method agent to use? manual testing by curl/ python -c / bash execution.
+    - Which testing method agent to use?: manual testing by curl/ bash execution / screenshot tool
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
   *None actively blocking.*
 
 **In progress Task List**: 
-  *None.*
+  *None actively blocking.*
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
@@ -32,20 +31,20 @@ A Multi-tenant SaaS PMS with LIVE HotelRunner v2 and Exely integrations. The bac
     - Refactoring:  (>1100 lines).
 
 **Completed work in this session**
-- Re-activated HotelRunner automatic polling by starting the  (300s interval) and  in  (DONE).
-- Fixed 15+ day availability block in HotelRunner by removing an erroneous  flag for April 23, 2026, and pushing the correct rate plan () to HR (DONE).
-- Fixed the multi-room cancellation bug in  by removing the incorrect  evaluation check (DONE).
+- Fixed Dashboard Quick Stats, Alert count, and AI Briefing metrics counting logic in  and  (DONE).
+- Fixed Calendar occupancy mismatch (Turkish vs English room names) by checking  in  and  (DONE).
+- Fixed  and  to correctly account for  reservations (DONE).
 - Updated  and  (DONE).
 
 **Earlier issues found/mentioned but not fixed**
    - Issue 1: HotelRunner Failed Push Reservation error emails.
-     - Debug checklist: User reported getting error emails from HR when reservations are made. The agent identified this is because HotelRunner's webhook notification URL is NOT configured in the HotelRunner portal. The PMS successfully pulls the reservations 5 minutes later via the polling scheduler, but the initial HR push fails. 
-     - Why fix this issue and what will be achieved with the fix? Fixing this by configuring the webhook URL in the HR portal will stop the error emails and allow real-time push instead of waiting for the 5-minute pull cycle.
+     - Debug checklist: User reported getting error emails from HR when reservations are made. Identified that HotelRunner's webhook notification URL is NOT configured in the HotelRunner portal. The PMS successfully pulls the reservations 5 minutes later via the polling scheduler, but the initial HR push fails. 
+     - Why fix this issue and what will be achieved with the fix?: Configuring the webhook URL in the HR portal will stop error emails and allow real-time push instead of waiting for the 5-minute pull cycle.
      - Should Test frontend/backend/both after fix: Backend webhook endpoints ()
-     - Is recurring issue? Y (will happen on every HR booking until configured in the HR portal)
+     - Is recurring issue?: Y (will happen on every HR booking until configured in the HR portal)
 
 **Known issue recurrence from previous fork**
-  - Issue recurrence in previous fork: None.
+  - Issue recurrence in previous fork: None
   - Recurrence count: 0
   - Status: RESOLVED
 
@@ -55,7 +54,8 @@ A Multi-tenant SaaS PMS with LIVE HotelRunner v2 and Exely integrations. The bac
 **Key Technical Concepts**
 - Asynchronous Background Workers: Queue management for external API rate limits.
 - HotelRunner Polling vs Webhook mechanisms (Pull vs Push).
-- Multi-room reservation state explosion and tracking.
+- Dashboard and AI Briefing Caching ().
+- TenantAwareDBProxy for tenant scoping.
 
 **key DB schema**
   - No changes this session.
@@ -64,35 +64,41 @@ A Multi-tenant SaaS PMS with LIVE HotelRunner v2 and Exely integrations. The bac
   - None.
 
 **All files of reference** 
-  -  (Updated: Added scheduler and worker initializations)
-  -  (Updated: Fixed  check)
-  -  (Updated: Fixed multi-room cancellation logic)
+  -  (Updated: Fixed occupancy & alert counting logic)
+  -  (Updated: Fixed caching logic for dashboards to include confirmed reservations)
+  -  (Updated: Added correct mapping and counts using room_type_id)
+  -  (Updated)
+  -  (Updated)
+  -  (Updated)
   -  (Updated)
   -  (Updated)
 
 **Areas that need refactoring**: 
   -  (~780 lines)
   -  (>1100 lines)
+  - Dashboard/Calendar duplicated counting logic across  (React state filtering) and  (MongoDB aggregations) could be consolidated.
 
 **key api endpoints**
-- Webhook endpoints:  (and modifications/cancellations)
-- HR API: 
+- GET 
+- GET 
+- GET 
+- Webhook endpoints: 
 
 **Critical Info for New Agent** 
 - **Language Constraint:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-- The HotelRunner integration currently relies heavily on the 5-minute Pull Scheduler. Push webhooks from HR are failing because the user hasn't configured the webhook URL in the HR Admin portal. Keep this in mind if the user complains about Failed Push emails again.
-- When evaluating HotelRunner payload states, do not use  to assume a room is cancelled. Only use explicit  or  fields.
+- The system uses  for dashboard performance. When adjusting any KPI or Dashboard calculation, make sure  AND  are both updated.
+- HotelRunner pushes Turkish room names (e.g., Corner Süit, Deluxe Oda) in , while PMS expects English (, ). Always use  when linking/calculating occupancy on the frontend.
+- When evaluating reservation states for occupancy, both  and  should typically be counted to accurately reflect blocked/occupied calendar slots, avoiding a false '0 occupancy' issue.
 
 **documents and test reports created in this job** 
-  - 
-  - 
+  -  (Updated)
+  -  (Updated)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - *User:* ben bir tane oda iptal ettim, bütün odalar iptal geldi (I cancelled one room, all came cancelled).
- - *Agent:* Investigated the issue via DB queries and logs. Found that  was incorrectly using the HR  payload to mark the room as cancelled. 
- - *Agent:* Asked user to confirm test data status to see if recovery of the cancelled bookings was necessary.
- - *User:* önemli değil zaten bunlar test rezervasyonu sorunu çözdüysen sorun değil (Doesn't matter, they are test reservations, if you fixed it, no problem).
- - *Agent:* Removed the faulty logic, ran linting, updated the CHANGELOG/PRD, and used the finish tool.
+ - *User:* Please use ask_human tool and confirm your plan now.
+ - *Agent:* Used  tool to confirm plan.
+ - *User:* Uploaded 2 screenshots and stated: dolu sayısına göre müsaitlik sayısı doğru görünmüyor. takvim alanında ki dolu boş sayıları yanlış. ayrıca günlük brifing yanlış bilgi veriyor (Calendar occupancy empty/full counts are wrong. Daily briefing gives wrong info.)
+ - *Agent:* Debugged, identified root causes (language mappings and  vs  status checks), deployed fixes to frontend and backend, verified with screenshots, updated PRD/CHANGELOG, and finished.
  - *Pending HUMAN message:* None. Awaiting next user command.
 
 **Project Health Check:**
@@ -106,14 +112,14 @@ A Multi-tenant SaaS PMS with LIVE HotelRunner v2 and Exely integrations. The bac
   - Emergent Integrations — Used for LLM features.
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Self-tested via DB checks, python scripts, and linting).
+  - Testing agent used after significant changes: NO (Self-tested via bash scripts and Playwright screenshot tool extensively).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None
   - Known regressions: None
 
 **Credentials to test flow:**
-  - Found in  (Frontend: demo@hotel.com / demo123)
-  - Exely API: PMSConnect.501694 / @G,7}sguup4P
+  - Found in  (Frontend:  / )
+  - Exely API:  / 
 
 **What agent forgot to execute**
-  - The agent successfully executed all user requests, thoroughly debugging the complex HR availability mapping and cancellation logic. No overlooked tasks.</analysis>
+  - No oversights. The agent successfully addressed both data discrepancy bugs (Dashboard & Calendar) and validated the fixes via UI screenshots.</analysis>

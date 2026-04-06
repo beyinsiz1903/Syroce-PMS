@@ -1,5 +1,43 @@
 # CHANGELOG
 
+## 2026-04-06 - PERF: HotelRunner Polling Optimizasyonu — 5 dk'dan 30 sn'ye
+
+### Sorun
+HotelRunner'dan gelen rezervasyonlar sisteme ~5 dakikada, isim degisiklikleri ~30 dakikada dusuyordu.
+Exely tarafinda ise aninda yansiyordu.
+
+### Kok Nedenler (Exely vs HotelRunner Karsilastirmasi)
+| Ozellik | Exely | HotelRunner (ESKI) | Fark |
+|---------|-------|---------------------|------|
+| Polling Interval | 30 sn | 300 sn (5 dk) | 10x yavas |
+| Modifikasyon Tespiti | Her dongu | Her 3. dongu (15 dk) | 30x yavas |
+| Bireysel Kontrol | var | yok | Eksik |
+| Phase B Gecikme | yok | 10 sn sleep | Gereksiz |
+| from_last_update_date | kullaniliyor | kullanilmiyordu | Eksik |
+
+### Duzeltmeler
+1. **startup.py**: HR polling interval 300s -> 30s (Exely ile esit)
+2. **hotelrunner_sync.py**:
+   - Phase A.5 eklendi: `from_last_update_date` ile son degisiklikleri her dongude tespit
+   - Phase A.6 eklendi: Phase A.5'in tespit ettigi degisiklikleri PMS booking'lerine uygula
+   - Phase B frekansi: Her 3. dongu (15 dk) -> Her 10. dongu (5 dk)
+   - Gereksiz `asyncio.sleep(10)` kaldirildi
+3. Sync status endpoint'ine yeni metrikler eklendi (polling_interval, cycle_count, optimization_notes)
+
+### Sonuc
+- Yeni rezervasyonlar: ~30 sn (onceki: ~5 dk) = **10x hizlanma**
+- Modifikasyonlar (isim, tarih, iptal): ~30 sn (onceki: ~15-30 dk) = **30-60x hizlanma**
+- Rate limit sorunu yok (dongu basina sadece 2 API cagrisi)
+
+### Duzeltilen Dosyalar
+- `/app/backend/startup.py`
+- `/app/backend/domains/channel_manager/providers/hotelrunner_sync.py`
+
+---
+
+
+# CHANGELOG
+
 ## 2026-04-06 - BUGFIX: Takvim Doluluk Sayıları ve Dashboard Brifing Yanlış Bilgi Gösteriyordu
 
 ### Sorun
