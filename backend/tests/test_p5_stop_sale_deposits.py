@@ -6,7 +6,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://vcc-secure-view.preview.emergentagent.com')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://pms-channel-sync-1.preview.emergentagent.com')
 
 class TestAuth:
     """Authentication tests"""
