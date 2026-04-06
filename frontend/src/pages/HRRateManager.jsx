@@ -275,17 +275,6 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
     setSaving(false);
   };
 
-  const handleRemoveRoomType = async (invCode, roomName) => {
-    if (!window.confirm(`"${roomName}" oda tipini kaldirmak istediginize emin misiniz? Bu islem geri alinamaz.`)) return;
-    try {
-      await axios.delete(`${API}${HR_API_PREFIX}/room-types/${invCode}`, { headers });
-      toast.success(`"${roomName}" oda tipi kaldirildi`);
-      fetchGrid();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || 'Oda tipi kaldirilamadi');
-    }
-  };
-
   const filteredGrid = grid.filter(row => {
     if (gridRoomType !== 'all' && row.room_type_code !== gridRoomType) return false;
     if (gridRatePlan !== 'all' && row.rate_plan_code !== gridRatePlan) return false;
@@ -409,7 +398,6 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
               currencySymbol={currencySymbol} currency={currency}
               totalSelectedRoomTypes={totalSelectedRoomTypes} totalSelectedPlans={totalSelectedPlans}
               saving={saving} handleBulkUpdate={handleBulkUpdate} handleReset={handleReset} loading={loading}
-              handleRemoveRoomType={handleRemoveRoomType}
             />
           </TabsContent>
 

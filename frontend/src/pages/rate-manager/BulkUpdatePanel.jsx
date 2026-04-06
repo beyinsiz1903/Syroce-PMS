@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, Trash2, AlertTriangle, CopyCheck } from 'lucide-react';
+import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, AlertTriangle, CopyCheck } from 'lucide-react';
 import { DAYS, UPDATE_FIELDS } from './constants';
 import { ChannelList } from './ChannelList';
 
@@ -19,7 +19,6 @@ export const BulkUpdatePanel = ({
   pricingSettings, getPricingLabel, togglePricingType, currencySymbol, currency,
   totalSelectedRoomTypes, totalSelectedPlans,
   saving, handleBulkUpdate, handleReset, loading,
-  handleRemoveRoomType,
 }) => (
   <div>
     <div className="flex flex-col lg:flex-row gap-4" data-testid="bulk-update-layout">
@@ -122,7 +121,6 @@ export const BulkUpdatePanel = ({
                 toggleRoomType={toggleRoomType} toggleRatePlan={toggleRatePlan}
                 pricingSettings={pricingSettings} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType}
                 currencySymbol={currencySymbol} currency={currency}
-                handleRemoveRoomType={handleRemoveRoomType}
                 totalSelectedRoomTypes={Object.keys(selections).length}
               />
             )}
@@ -183,7 +181,7 @@ const RoomTypeList = ({
   roomTypeTree, enabledFields, selections, roomValues, updateRoomValue, getDefaultValues, applyToAllSelected,
   expandedRoomTypes, toggleExpanded, isRoomTypeSelected, isRoomTypeFullySelected, isRatePlanSelected,
   toggleRoomType, toggleRatePlan, pricingSettings, getPricingLabel, togglePricingType, currencySymbol, currency,
-  handleRemoveRoomType, totalSelectedRoomTypes,
+  totalSelectedRoomTypes,
 }) => (
   <div className="overflow-x-auto" data-testid="room-type-list">
     {/* Table Header */}
@@ -235,16 +233,6 @@ const RoomTypeList = ({
                     {getPricingLabel(rt.code)}
                   </button>
                 </div>
-                {handleRemoveRoomType && (
-                  <button
-                    onClick={() => handleRemoveRoomType(rt.code, rt.name)}
-                    className="text-gray-300 hover:text-red-500 p-0.5 transition-colors"
-                    title="Bu oda tipini kaldir"
-                    data-testid={`remove-room-type-${rt.code}`}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
                 {rt.plans.length > 0 && (
                   <button onClick={() => toggleExpanded(rt.code)} className="text-gray-400 hover:text-gray-600 p-0.5" data-testid={`expand-toggle-${rt.code}`}>
                     {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}

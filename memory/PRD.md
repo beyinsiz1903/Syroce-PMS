@@ -97,6 +97,10 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - React Router ile SPA navigasyonu
 - data-testid ile test edilebilir
 
+### Rate Manager Oda Tipi Sil Butonu Kaldırma (Apr 2026) — DONE
+- Fiyat/müsaitlik panelindeki oda tipi silme (Trash2) butonu her iki provider ekranından kaldırıldı
+- BulkUpdatePanel.jsx, HRRateManager.jsx temizlendi
+
 ## Prioritized Backlog
 
 ### P2 (Medium)
