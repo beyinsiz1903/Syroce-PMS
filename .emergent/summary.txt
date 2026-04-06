@@ -1,14 +1,14 @@
-<analysis>**original_problem_statement**: Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant isolation, PII strict mode. The system required fixes for HotelRunner automatic polling (disabled), a 15+ day availability bug (stop_sell flag), and a multi-room reservation cancellation bug. Recently requested fixes included Calendar availability counts (occupancy mismatch due to language mappings) and Daily Briefing data showing wrong metrics.
+<analysis>**original_problem_statement**: Multi-tenant SaaS PMS + Channel Manager with canonical data models. The user reported that HotelRunner reservations and modifications were taking too long (up to 5 and 30 minutes, respectively) compared to Exely, which was instantaneous. The user requested HotelRunner polling to be optimized to seconds to match Exely. Additionally, the user needed guidance on configuring HotelRunner webhooks, which led to the discovery that cancellations were not syncing due to deduplication issues in the polling logic.
 
 **User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın. User explicitly requires all responses in Turkish.)
 
-**what currently exists?**: A Multi-tenant SaaS PMS with LIVE HotelRunner v2 and Exely integrations. The backend has a CI/CD pipeline, background workers, polling schedulers, a dashboard with AI briefing, and a robust frontend calendar with occupancy tracking.
+**what currently exists?**: A Multi-tenant SaaS PMS with LIVE HotelRunner v2 and Exely integrations. The backend has a CI/CD pipeline, background workers, a 30-second polling scheduler for HotelRunner, and a unified webhook ingest pipeline capable of handling real-time OTA updates.
 
 **Last working item**: 
-    - Last item agent was working: Fixing Dashboard Quick Stats, AI Briefing metrics, and Calendar Occupancy counts. The issue stemmed from mismatched room type strings (Turkish vs. English) mapping and logic that only counted  statuses while ignoring  reservations. The agent applied fixes to the frontend grid/occupancy calculations, backend  endpoints, and .
+    - Last item agent was working: Optimizing HotelRunner polling and fixing cancellation sync issues. The agent reduced the polling interval from 300s to 30s, implemented a unified webhook callback endpoint since HotelRunner only supports a single callback URL, and fixed a bug where HR cancellations were being skipped as duplicates because HotelRunner does not change the  timestamp upon cancellation.
     - Status: USER VERIFICATION PENDING
     - Agent Testing Done: Y
-    - Which testing method agent to use?: manual testing by curl/ bash execution / screenshot tool
+    - Which testing method agent to use?: manual testing by bash execution / python scripts
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
@@ -27,21 +27,18 @@
     - Enhancement: Admin UI Panel for encryption management (view status, trigger migrations, check audit logs).
     - Enhancement: Make unassigned reservations more prominent in the calendar.
     - Enhancement: Real-time UI notifications for channel push results (instead of silent background processing).
-    - Refactoring: Abstract or subdivide  Phase A and Phase B logic (~780 lines).
+    - Refactoring: Abstract or subdivide  Phase A and Phase B logic (~1000 lines).
     - Refactoring:  (>1100 lines).
 
 **Completed work in this session**
-- Fixed Dashboard Quick Stats, Alert count, and AI Briefing metrics counting logic in  and  (DONE).
-- Fixed Calendar occupancy mismatch (Turkish vs English room names) by checking  in  and  (DONE).
-- Fixed  and  to correctly account for  reservations (DONE).
+- Changed HotelRunner polling interval from 300s to 30s in  (DONE).
+- Optimized modification detection (Phase A.5) using  while resolving HTTP 429 Rate Limit errors in  (DONE).
+- Created a unified webhook endpoint () to handle all HR event types via a single URL in  (DONE).
+- Fixed a bug where cancellations were ignored by the pipeline deduplicator (assigned  instead of  event types) in  (DONE).
 - Updated  and  (DONE).
 
 **Earlier issues found/mentioned but not fixed**
-   - Issue 1: HotelRunner Failed Push Reservation error emails.
-     - Debug checklist: User reported getting error emails from HR when reservations are made. Identified that HotelRunner's webhook notification URL is NOT configured in the HotelRunner portal. The PMS successfully pulls the reservations 5 minutes later via the polling scheduler, but the initial HR push fails. 
-     - Why fix this issue and what will be achieved with the fix?: Configuring the webhook URL in the HR portal will stop error emails and allow real-time push instead of waiting for the 5-minute pull cycle.
-     - Should Test frontend/backend/both after fix: Backend webhook endpoints ()
-     - Is recurring issue?: Y (will happen on every HR booking until configured in the HR portal)
+   - None
 
 **Known issue recurrence from previous fork**
   - Issue recurrence in previous fork: None
@@ -53,9 +50,9 @@
 
 **Key Technical Concepts**
 - Asynchronous Background Workers: Queue management for external API rate limits.
-- HotelRunner Polling vs Webhook mechanisms (Pull vs Push).
-- Dashboard and AI Briefing Caching ().
-- TenantAwareDBProxy for tenant scoping.
+- Polling Optimization: Cursor-based scheduled reservation pull from HotelRunner with 30-second cycles.
+- Unified Webhook Ingestion: Dynamically resolving payload  (confirmed, modified, cancelled) from a single HotelRunner callback.
+- Event Deduplication: Generating unique  hashes to prevent reprocessing unchanged data.
 
 **key DB schema**
   - No changes this session.
@@ -64,46 +61,44 @@
   - None.
 
 **All files of reference** 
-  -  (Updated: Fixed occupancy & alert counting logic)
-  -  (Updated: Fixed caching logic for dashboards to include confirmed reservations)
-  -  (Updated: Added correct mapping and counts using room_type_id)
-  -  (Updated)
-  -  (Updated)
-  -  (Updated)
+  -  (Updated: Adjusted HR polling interval to 30s)
+  -  (Updated: Added Phase A.5 mod check, fixed cancellation deduplicator logic)
+  -  (Updated: Added unified  endpoint)
+  -  (Updated: Verified webhook router registration)
   -  (Updated)
   -  (Updated)
 
 **Areas that need refactoring**: 
-  -  (~780 lines)
-  -  (>1100 lines)
-  - Dashboard/Calendar duplicated counting logic across  (React state filtering) and  (MongoDB aggregations) could be consolidated.
+  -  has grown to nearly 1000 lines. The Phase A/Phase B polling logic and data wrangling should be subdivided into separate service files.
+  -  (>1100 lines).
 
 **key api endpoints**
-- GET 
-- GET 
-- GET 
-- Webhook endpoints: 
+- POST  (Unified Webhook)
 
 **Critical Info for New Agent** 
 - **Language Constraint:** Yanıtlar kesinlikle Türkçe olmalı. (Responses MUST be in Turkish).
-- The system uses  for dashboard performance. When adjusting any KPI or Dashboard calculation, make sure  AND  are both updated.
-- HotelRunner pushes Turkish room names (e.g., Corner Süit, Deluxe Oda) in , while PMS expects English (, ). Always use  when linking/calculating occupancy on the frontend.
-- When evaluating reservation states for occupancy, both  and  should typically be counted to accurately reflect blocked/occupied calendar slots, avoiding a false '0 occupancy' issue.
+- **HotelRunner Cancellations:** When HR cancels a booking, it *does not* update the  field. To prevent the ingest pipeline from discarding the payload as a Duplicate modification, the polling mechanism explicitly checks for  and assigns the event type . Do not revert this logic.
+- **HotelRunner Webhooks:** HR only provides a single Return URL in their portal. Do not attempt to use separate webhook endpoints for create, modify, and cancel. Use the unified  endpoint.
+- **Rate Limits:** Aggressive individual API polling per reservation in HR causes HTTP 429 errors. Rely on  for bulk modification checks instead.
 
 **documents and test reports created in this job** 
   -  (Updated)
   -  (Updated)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - *User:* Please use ask_human tool and confirm your plan now.
- - *Agent:* Used  tool to confirm plan.
- - *User:* Uploaded 2 screenshots and stated: dolu sayısına göre müsaitlik sayısı doğru görünmüyor. takvim alanında ki dolu boş sayıları yanlış. ayrıca günlük brifing yanlış bilgi veriyor (Calendar occupancy empty/full counts are wrong. Daily briefing gives wrong info.)
- - *Agent:* Debugged, identified root causes (language mappings and  vs  status checks), deployed fixes to frontend and backend, verified with screenshots, updated PRD/CHANGELOG, and finished.
+ - *User:* yaptığım rezervasyonlar yaklaşık 5 dakika sonra sisteme düştü... exely kod tarafına dokunmadan hotelrunner tarafını düzenle
+ - *Agent:* Accelerated HR polling to 30s, resolved 429 rate limit issue.
+ - *User:* webhook url yapılandırılması nasıl olacak beni yönlendir
+ - *Agent:* Provided instructions to set up unified callback URL.
+ - *User:* Uploaded image sadece böyle bir alan var (Only one field available for callback).
+ - *Agent:* Adjusted backend to expose a unified  endpoint parsing .
+ - *User:* rezervasyon oluşturdum isim değişikliği yaptım... iptal hala düşmedi
+ - *Agent:* Debugged and fixed cancellation deduplicator issue. Verified  state hit the DB successfully, and finished the task.
  - *Pending HUMAN message:* None. Awaiting next user command.
 
 **Project Health Check:**
   - Broken: None
-  - Mocked: Legacy HotelRunner server mapped to localhost port 9999.
+  - Mocked: None
 
 **3rd Party Integrations** 
   - AWS KMS (Encryption) — requires User API Key
@@ -112,7 +107,7 @@
   - Emergent Integrations — Used for LLM features.
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Self-tested via bash scripts and Playwright screenshot tool extensively).
+  - Testing agent used after significant changes: NO (Self-tested via bash scripts reading DB statuses and logs).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None
   - Known regressions: None
@@ -122,4 +117,4 @@
   - Exely API:  / 
 
 **What agent forgot to execute**
-  - No oversights. The agent successfully addressed both data discrepancy bugs (Dashboard & Calendar) and validated the fixes via UI screenshots.</analysis>
+  - No oversights. The agent successfully accelerated the polling, implemented the unified webhook endpoint, and resolved the hidden deduplicator bug dropping HR cancellations.</analysis>
