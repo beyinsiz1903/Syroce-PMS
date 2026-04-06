@@ -215,6 +215,20 @@ async def api_cancel_booking(req: CancellationRequest, current_user: User = Depe
     result = await rsm.handle_cancellation(current_user.tenant_id, booking, current_user.id, req.reason)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
+
+    # Channel availability auto-sync: iptal sonrası müsaitlik güncelle
+    try:
+        import asyncio
+        from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
+        asyncio.create_task(sync_availability_after_booking(
+            tenant_id=current_user.tenant_id,
+            room_id=booking.get("room_id", ""),
+            check_in=booking.get("check_in", ""),
+            check_out=booking.get("check_out", ""),
+        ))
+    except Exception:
+        pass
+
     return result
 
 @router.post("/no-show", tags=["reservation"])
@@ -227,6 +241,20 @@ async def api_no_show(req: NoShowRequest, current_user: User = Depends(get_curre
     result = await rsm.handle_no_show(current_user.tenant_id, booking, current_user.id)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
+
+    # Channel availability auto-sync: no-show sonrası müsaitlik güncelle
+    try:
+        import asyncio
+        from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
+        asyncio.create_task(sync_availability_after_booking(
+            tenant_id=current_user.tenant_id,
+            room_id=booking.get("room_id", ""),
+            check_in=booking.get("check_in", ""),
+            check_out=booking.get("check_out", ""),
+        ))
+    except Exception:
+        pass
+
     return result
 
 @router.post("/late-checkout", tags=["front-desk"])

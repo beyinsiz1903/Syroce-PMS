@@ -101,6 +101,16 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - Fiyat/müsaitlik panelindeki oda tipi silme (Trash2) butonu her iki provider ekranından kaldırıldı
 - BulkUpdatePanel.jsx, HRRateManager.jsx temizlendi
 
+### Otomatik Müsaitlik Senkronizasyonu (Apr 2026) — DONE
+- Manuel rezervasyon oluşturulduğunda, güncellendiğinde veya iptal edildiğinde
+  gerçek müsaitlik (toplam oda - aktif booking) otomatik hesaplanıp kanallara push ediliyor
+- Desteklenen akışlar: booking create, booking update (tarih/oda/status değişikliği), cancel, no-show
+- Exely (SOAP) ve HotelRunner (REST) arka planda paralel push
+- Availability hesabı: takvim ekranındaki boş/dolu oda sayısına dayalı (room_type başına)
+- Tarih gruplaması: ardışık günler ve aynı müsaitlik değeri tek API çağrısında gönderiliyor
+- Duplicate mapping filtresi: aynı exely_room_code/hr_inv_code tekrar push yapılmıyor
+- Hook noktaları: create_reservation_service, update_reservation_service, hotel_services cancel, pms_hardening cancel/no-show
+
 ## Prioritized Backlog
 
 ### P2 (Medium)

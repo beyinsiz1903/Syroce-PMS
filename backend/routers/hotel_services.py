@@ -1217,6 +1217,19 @@ async def cancel_reservation(
 
     await db.bookings.update_one({"id": booking_id, "tenant_id": tid}, {"$set": update_data})
 
+    # Channel availability auto-sync: iptal sonrası müsaitlik güncelle
+    try:
+        import asyncio
+        from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
+        asyncio.create_task(sync_availability_after_booking(
+            tenant_id=tid,
+            room_id=booking.get("room_id", ""),
+            check_in=booking.get("check_in", ""),
+            check_out=booking.get("check_out", ""),
+        ))
+    except Exception:
+        pass
+
     await db.reservation_history.insert_one({
         "id": str(uuid.uuid4()),
         "tenant_id": tid,

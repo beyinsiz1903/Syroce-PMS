@@ -202,6 +202,19 @@ class CreateReservationService:
             except Exception:
                 pass
 
+            # Channel availability auto-sync: arka planda müsaitlik güncelle ve kanallara push et
+            try:
+                from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
+                import asyncio
+                asyncio.create_task(sync_availability_after_booking(
+                    tenant_id=tenant_context.tenant_id,
+                    room_id=booking_data.room_id,
+                    check_in=booking_dict['check_in'],
+                    check_out=booking_dict['check_out'],
+                ))
+            except Exception:
+                pass
+
             response_body = dict(booking_dict)
             response_body.pop('_id', None)
             await self.repository.complete_idempotency_lock(lock["lock_id"], booking_id, response_body)

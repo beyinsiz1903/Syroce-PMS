@@ -246,6 +246,37 @@ class UpdateReservationService:
                     },
                 )
 
+            # Channel availability auto-sync: müsaitlik güncelle ve kanallara push et
+            _avail_sync_fields = {"status", "room_id", "check_in", "check_out"}
+            if changes and _avail_sync_fields & set(changes.keys()):
+                try:
+                    import asyncio
+                    from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
+
+                    # Güncel booking tarihlerini sync et
+                    asyncio.create_task(sync_availability_after_booking(
+                        tenant_id=tenant_context.tenant_id,
+                        room_id=updated_booking.get("room_id", ""),
+                        check_in=updated_booking.get("check_in", ""),
+                        check_out=updated_booking.get("check_out", ""),
+                    ))
+                    # Oda veya tarih değiştiyse eski oda/tarih için de sync et
+                    old_room = existing_booking.get("room_id", "")
+                    old_ci = existing_booking.get("check_in", "")
+                    old_co = existing_booking.get("check_out", "")
+                    new_room = updated_booking.get("room_id", "")
+                    new_ci = updated_booking.get("check_in", "")
+                    new_co = updated_booking.get("check_out", "")
+                    if old_room != new_room or old_ci != new_ci or old_co != new_co:
+                        asyncio.create_task(sync_availability_after_booking(
+                            tenant_id=tenant_context.tenant_id,
+                            room_id=old_room,
+                            check_in=old_ci,
+                            check_out=old_co,
+                        ))
+                except Exception:
+                    pass
+
             response = dict(updated_booking)
             response.pop("_id", None)
             await self.repository.complete_idempotency_lock(lock["lock_id"], booking_id, response)
