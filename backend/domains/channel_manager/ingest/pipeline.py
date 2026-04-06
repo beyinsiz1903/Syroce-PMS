@@ -17,11 +17,15 @@ Unified ingest pipeline with full traceability and hardening:
 TIMELINE: Writes normalized, deduplicated, validated stages for end-to-end traceability.
 """
 import logging
+import uuid as _uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from core.database import db
 from domains.channel_manager import unified_repository as repo
 from domains.channel_manager.data_model import (
+    COLL_RAW_CHANNEL_EVENTS,
+    COLL_RESERVATION_LINEAGE,
     CaseSeverity,
     CaseStatus,
     CaseType,
@@ -432,8 +436,6 @@ async def _finalize_event(
 
     await repo.update_raw_event_status(event_id, status, result.error)
     # Also store decision trace fields
-    from core.database import db
-    from domains.channel_manager.data_model import COLL_RAW_CHANNEL_EVENTS
     await db[COLL_RAW_CHANNEL_EVENTS].update_one(
         {"id": event_id},
         {"$set": {
@@ -455,9 +457,6 @@ async def _acquire_reservation_lock(
     Acquire a reservation-scoped lock using optimistic concurrency.
     Scope: tenant_id + provider + external_reservation_id
     """
-    from core.database import db
-    from domains.channel_manager.data_model import COLL_RESERVATION_LINEAGE
-
     now = datetime.now(UTC)
     expires = (now + timedelta(seconds=LOCK_TTL_SECONDS)).isoformat()
 
@@ -490,8 +489,6 @@ async def _acquire_reservation_lock(
 
 async def _release_reservation_lock(lineage: dict) -> None:
     """Release reservation-scoped lock."""
-    from core.database import db
-    from domains.channel_manager.data_model import COLL_RESERVATION_LINEAGE
 
     await db[COLL_RESERVATION_LINEAGE].update_one(
         {"id": lineage["id"]},
@@ -601,8 +598,6 @@ async def _cancel_lineage(existing: dict, canonical: dict) -> str:
 
 async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) -> None:
     """Propagate cancellation from lineage to bookings and imported_reservations collections."""
-    import uuid as _uuid
-    from core.database import db
     now = _now()
 
     # Get booking info before cancelling (for notification)
