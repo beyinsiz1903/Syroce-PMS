@@ -13,7 +13,7 @@ BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
 
 pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
 if not BASE_URL:
-    BASE_URL = "https://pms-channel-sync-1.preview.emergentagent.com"
+    BASE_URL = "https://rate-toggle-manager.preview.emergentagent.com"
 BASE_URL = BASE_URL.rstrip('/') + "/api"
 
 CM_V2_BASE = f"{BASE_URL}/channel-manager/v2"
