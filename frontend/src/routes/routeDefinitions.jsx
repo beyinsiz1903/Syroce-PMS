@@ -159,6 +159,7 @@ const SoakTestDashboard = lazy(() => import("@/pages/SoakTestDashboard"));
 const HotelRunnerIntegration = lazy(() => import("@/pages/HotelRunnerIntegration"));
 const HRv2OpsDashboard = lazy(() => import("@/pages/HRv2OpsDashboard"));
 const ExelyIntegration = lazy(() => import("@/pages/ExelyIntegration"));
+const ChannelConnections = lazy(() => import("@/pages/ChannelConnections"));
 const ARIPushDashboard = lazy(() => import("@/pages/ARIPushDashboard"));
 const RateManager = lazy(() => import("@/pages/RateManager"));
 const HRRateManager = lazy(() => import("@/pages/HRRateManager"));
@@ -252,6 +253,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/app/settings", ...p(Settings) },
 
     // ── Channel Manager ────────────────────────────────
+    { path: "/channel-connections", ...p(ChannelConnections) },
     { path: "/channel-manager", ...p(ChannelManagerModule) },
     { path: "/app/channel-manager", ...p(ChannelManagerModule) },
     { path: "/mapping-manager", ...p(MappingManager) },

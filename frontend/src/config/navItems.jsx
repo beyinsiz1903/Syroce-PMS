@@ -207,6 +207,15 @@ export const NAV_ITEMS = [
 
   // ──── CHANNELS GROUP ───────────────────────────────
   {
+    key: "channel_connections",
+    label: "Kanal Baglantilari",
+    path: "/channel-connections",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+    navGroup: "channels",
+  },
+  {
     key: "channel_manager",
     label: "Channel Manager",
     path: "/app/channel-manager",
