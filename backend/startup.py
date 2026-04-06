@@ -552,6 +552,23 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Night Audit Scheduler init warning: {e}")
 
+    # ── Availability Reconciliation Worker ──────────────────────────────
+    try:
+        has_channels = await _raw_db.exely_connections.find_one(
+            {"is_active": True}, {"_id": 1}
+        ) or await _raw_db.hotelrunner_connections.find_one(
+            {"is_active": True}, {"_id": 1}
+        )
+        if has_channels:
+            from domains.channel_manager.availability_reconciliation_worker import availability_reconciliation_worker
+            await availability_reconciliation_worker.start(interval_seconds=900)
+            app.state.availability_reconciliation_worker = availability_reconciliation_worker
+            print("✅ Availability Reconciliation Worker started (15min interval)")
+        else:
+            print("ℹ️ No active channel connections; reconciliation worker not started")
+    except Exception as e:
+        logger.warning(f"Availability Reconciliation Worker init warning: {e}")
+
 
 async def on_shutdown(app):
     """Graceful shutdown: close connections and stop workers."""
@@ -651,6 +668,14 @@ async def on_shutdown(app):
         stop_scheduler()
     except Exception as e:
         logger.warning(f"Night Audit Scheduler shutdown warning: {e}")
+
+    # Availability Reconciliation Worker
+    recon_worker = getattr(app.state, "availability_reconciliation_worker", None)
+    if recon_worker is not None:
+        try:
+            await recon_worker.stop()
+        except Exception as e:
+            logger.warning(f"Availability Reconciliation Worker shutdown warning: {e}")
 
     # Close MongoDB client
     client.close()

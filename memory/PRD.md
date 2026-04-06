@@ -111,6 +111,13 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - Duplicate mapping filtresi: aynı exely_room_code/hr_inv_code tekrar push yapılmıyor
 - Hook noktaları: create_reservation_service, update_reservation_service, hotel_services cancel, pms_hardening cancel/no-show
 
+### Periyodik Müsaitlik Uzlaştırma Worker'ı (Apr 2026) — DONE
+- Her 15 dakikada bir PMS'deki gerçek müsaitlik ile kanal müsaitliğini otomatik eşleştirme
+- 60 günlük takvim taranıyor (bugün + 60 gün)
+- Ağ hatası, failed push ve dışarıdan gelen booking'lerin müsaitlik etkisini yakalar
+- Startup'ta otomatik başlatılır, shutdown'da graceful stop
+- Dosya: availability_reconciliation_worker.py
+
 ## Prioritized Backlog
 
 ### P2 (Medium)

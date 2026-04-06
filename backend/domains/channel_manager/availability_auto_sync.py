@@ -15,6 +15,7 @@ import logging
 from datetime import datetime, timedelta
 
 from core.database import db
+from core.tenant_db import clear_tenant_context, set_tenant_context
 
 logger = logging.getLogger("channel_manager.availability_auto_sync")
 
@@ -35,12 +36,15 @@ async def sync_availability_after_booking(
     try:
         # Booking'in DB'ye tamamen commit olmasını garantile
         await asyncio.sleep(1)
+        set_tenant_context(tenant_id)
         await _do_sync(tenant_id, room_id, check_in, check_out)
     except Exception as e:
         logger.error(
             "[AVAIL-AUTO-SYNC] Hata tenant=%s room=%s: %s",
             tenant_id, room_id, e,
         )
+    finally:
+        clear_tenant_context()
 
 
 async def _do_sync(tenant_id: str, room_id: str, check_in: str, check_out: str):
