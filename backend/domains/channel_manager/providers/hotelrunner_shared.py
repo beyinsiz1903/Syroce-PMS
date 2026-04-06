@@ -141,8 +141,16 @@ def explode_multi_room_reservation(raw_reservation: dict[str, Any]) -> list[dict
             sub_payload["_room_cancelled"] = True
             sub_payload["cancel_reason"] = room_cancel_reason
         else:
-            # Room is NOT cancelled — ensure top-level cancel markers don't leak
+            # Room is NOT cancelled — CRITICAL: clear top-level cancel markers
+            # that leaked via {**raw_reservation}. When ONE room in a multi-room
+            # reservation is cancelled, HR may set top-level state/cancel_reason.
+            # Without this cleanup, ALL rooms would be incorrectly marked as cancelled.
             sub_payload["_room_cancelled"] = False
+            top_state = (sub_payload.get("state") or "").lower()
+            if top_state in ("cancelled", "canceled"):
+                sub_payload["state"] = room_state if room_state else "confirmed"
+            # Clear top-level cancel_reason leak (room has no cancel_reason of its own)
+            sub_payload.pop("cancel_reason", None)
 
         exploded.append(sub_payload)
 

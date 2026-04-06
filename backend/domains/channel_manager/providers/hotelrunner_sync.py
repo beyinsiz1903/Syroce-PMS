@@ -254,45 +254,54 @@ class ReservationPullScheduler:
                 last_pull_dt = datetime.fromisoformat(cursor_doc["last_pull_at"])
                 # Fetch modifications since last pull minus safety window
                 mod_since = (last_pull_dt - timedelta(minutes=safety_window_minutes)).strftime("%Y-%m-%d")
-                mod_result = await provider.get_reservations(
-                    undelivered=False,
-                    from_last_update_date=mod_since,
-                    per_page=50,
-                    page=1,
-                )
-                if mod_result["success"]:
-                    mod_reservations = mod_result["data"].get("reservations", [])
-                    if mod_reservations:
-                        logger.info(f"[PULL-A5] Found {len(mod_reservations)} recently modified reservations")
-                        for mod_res in mod_reservations:
-                            try:
-                                sub_reservations = explode_multi_room_reservation(mod_res)
-                                for sub_res in sub_reservations:
-                                    try:
-                                        # Detect cancellation from state — use different event_type
-                                        # so provider_event_id is unique and not deduped with
-                                        # the previous modification event
-                                        sub_state = (sub_res.get("state") or "").lower()
-                                        is_cancelled = (
-                                            sub_state in ("cancelled", "canceled")
-                                            or sub_res.get("_room_cancelled")
-                                            or bool(sub_res.get("cancel_reason"))
-                                        )
-                                        evt_type = "reservation_cancel_pull" if is_cancelled else "reservation_modified_pull"
-                                        await _persist_and_process(
-                                            tenant_id, _resolve_property_id(sub_res),
-                                            sub_res, evt_type,
-                                        )
-                                        mod_processed += 1
-                                        if is_cancelled:
-                                            logger.info(f"[PULL-A5] Cancellation detected: {sub_res.get('hr_number')}")
-                                    except Exception as e:
-                                        if "duplicate" not in str(e).lower():
-                                            logger.error(f"[PULL-A5] Error processing modified {sub_res.get('hr_number')}: {e}")
-                            except Exception as e:
-                                logger.error(f"[PULL-A5] Error: {e}")
-                else:
-                    logger.debug("[PULL-A5] Modified fetch failed (non-critical)")
+
+                # Paginate through ALL modified reservations (not just page 1)
+                mod_page = 1
+                mod_total_pages = 1
+                all_mod_reservations = []
+                while mod_page <= mod_total_pages:
+                    mod_result = await provider.get_reservations(
+                        undelivered=False,
+                        from_last_update_date=mod_since,
+                        per_page=50,
+                        page=mod_page,
+                    )
+                    if not mod_result["success"]:
+                        break
+                    page_mods = mod_result["data"].get("reservations", [])
+                    all_mod_reservations.extend(page_mods)
+                    mod_total_pages = mod_result["data"].get("pages", 1)
+                    mod_page += 1
+
+                if all_mod_reservations:
+                    logger.info(f"[PULL-A5] Found {len(all_mod_reservations)} recently modified reservations (pages: {mod_total_pages})")
+                    for mod_res in all_mod_reservations:
+                        try:
+                            sub_reservations = explode_multi_room_reservation(mod_res)
+                            for sub_res in sub_reservations:
+                                try:
+                                    # Detect cancellation from state — use different event_type
+                                    # so provider_event_id is unique and not deduped with
+                                    # the previous modification event
+                                    sub_state = (sub_res.get("state") or "").lower()
+                                    is_cancelled = (
+                                        sub_state in ("cancelled", "canceled")
+                                        or sub_res.get("_room_cancelled")
+                                        or bool(sub_res.get("cancel_reason"))
+                                    )
+                                    evt_type = "reservation_cancel_pull" if is_cancelled else "reservation_modified_pull"
+                                    await _persist_and_process(
+                                        tenant_id, _resolve_property_id(sub_res),
+                                        sub_res, evt_type,
+                                    )
+                                    mod_processed += 1
+                                    if is_cancelled:
+                                        logger.info(f"[PULL-A5] Cancellation detected: {sub_res.get('hr_number')}")
+                                except Exception as e:
+                                    if "duplicate" not in str(e).lower():
+                                        logger.error(f"[PULL-A5] Error processing modified {sub_res.get('hr_number')}: {e}")
+                        except Exception as e:
+                            logger.error(f"[PULL-A5] Error: {e}")
         except Exception as e:
             logger.warning(f"[PULL-A5] Modified reservation check error: {e}")
 
@@ -504,9 +513,11 @@ async def _run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
                     # New reservation: import
                     if sub_room_cancelled:
                         sub_res["state"] = "cancelled"
-                    elif effective_state == "canceled" and not has_new_room_cancels:
+                    elif not is_exploded and effective_state == "canceled":
+                        # Single-room reservation — top-level state is reliable
                         sub_res["state"] = "cancelled"
                         sub_res["_room_cancelled"] = True
+                    # For multi-room (is_exploded): trust exploder's per-room state
 
                     try:
                         # Use correct event_type for cancellations
@@ -530,11 +541,13 @@ async def _run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
                         sub_effective_state = "canceled"
                     elif is_exploded and effective_state == "canceled":
                         if has_new_room_cancels:
+                            # Other rooms stay active when new partial cancellation detected
                             sub_effective_state = "confirmed"
-                        elif timestamp_changed:
-                            sub_effective_state = "canceled"
                         else:
-                            sub_effective_state = {"cancelled": "canceled"}.get(stored_status, stored_status)
+                            # Room is NOT _room_cancelled — keep stored status.
+                            # Don't cascade top-level cancel to active rooms just because
+                            # timestamp changed (e.g. name/date modification).
+                            sub_effective_state = stored_status
                     else:
                         sub_effective_state = effective_state
 

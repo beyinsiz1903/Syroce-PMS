@@ -1,7 +1,34 @@
 # CHANGELOG
 
 
-## 2026-04-06 - BUGFIX: HotelRunner Iptal Tespiti Düzeltmesi
+## 2026-04-06 - BUGFIX: Çoklu Oda Kısmi İptalinde Kademeli İptal Yayılması
+
+### Sorun
+Çoklu oda rezervasyonunda TEK bir oda iptal edildiğinde, sonraki polling döngülerinde kalan TÜM odalar da tek tek iptal ediliyordu.
+
+### Kök Neden (3 katmanlı)
+1. **`explode_multi_room_reservation`**: `{**raw_reservation}` ile üst seviye `state="cancelled"` ve `cancel_reason` TÜM odalara kopyalanıyordu. `else` dalı sadece `_room_cancelled=False` atıyordu ama sızmış `state` ve `cancel_reason` TEMİZLENMİYORDU.
+2. **Phase A/A.5**: `bool(sub_res.get("cancel_reason"))` kontrolü, üst seviyeden sızan `cancel_reason` yüzünden AKTİF odaları da iptal olarak algılıyordu.
+3. **Phase B**: `timestamp_changed` yolunda, üst seviye `effective_state="canceled"` olan rezervasyonlarda herhangi bir timestamp değişikliğinde (isim/tarih) TÜM odaları iptal ediyordu.
+
+### Düzeltmeler
+1. **`hotelrunner_shared.py` — `explode_multi_room_reservation`**: `else` dalında üst seviyeden sızan `state` ve `cancel_reason` temizleniyor:
+   - `state="cancelled"` ise `"confirmed"` olarak sıfırlanıyor
+   - `cancel_reason` tamamen kaldırılıyor (`pop`)
+2. **`hotelrunner_sync.py` — Phase B**: `elif timestamp_changed: sub_effective_state = "canceled"` yolu kaldırıldı. Aktif odalar `stored_status`'larını koruyor.
+3. **`hotelrunner_sync.py` — Phase B new import**: Çoklu oda rezlerde exploder'ın oda bazlı durumuna güveniliyor (`is_exploded` kontrolü).
+
+### Phase A.5 Paginasyon Eklendi
+Modifikasyon tespiti (Phase A.5) sadece sayfa 1 (50 kayıt) çekiyordu. Aynı gün 50'den fazla değişiklik varsa yeni modifikasyonlar kaçırılabiliyordu. Tüm sayfalar artık dolaşılıyor.
+
+### Test
+- 6 birim testi geçti (kısmi iptal, tam iptal, tekil oda, state sızması, Phase A.5 algılama)
+- Aktif odalar: `state=confirmed`, `_room_cancelled=False`, `cancel_reason=None` ✅
+- İptal odalar: `state=cancelled`, `_room_cancelled=True`, `cancel_reason=...` ✅
+
+### Düzeltilen Dosyalar
+- `/app/backend/domains/channel_manager/providers/hotelrunner_shared.py`
+- `/app/backend/domains/channel_manager/providers/hotelrunner_sync.py`
 
 ### Sorun
 HotelRunner'dan yapilan iptal islemleri sisteme dusmuyor / tespit edilmiyordu.
