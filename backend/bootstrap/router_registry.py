@@ -41,6 +41,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.pms_reservations", "router", ["pms-reservations"], None, None),
     ("routers.pms_availability", "router", ["pms-availability"], None, None),
     ("routers.reservation_detail", "router", ["reservation-detail"], None, None),
+    ("routers.vcc_router", "router", ["vcc"], None, None),
     ("routers.hotel_services", "router", ["hotel-services"], None, None),
     ("routers.finance", "router", ["finance"], None, None),
     ("routers.reports", "router", ["reports"], None, None),
