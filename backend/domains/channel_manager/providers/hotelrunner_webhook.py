@@ -7,6 +7,9 @@ Raw event logs and replay API for debugging and audit.
 
 UPDATED: Now feeds into the unified 9-collection ingest pipeline.
 TIMELINE: Every webhook writes received -> normalized -> deduplicated stages.
+
+UNIFIED CALLBACK: Single /callback endpoint for HotelRunner "Dönüş adresi" config.
+HotelRunner sends ALL events (new, modify, cancel) to one URL — auto-detected via state field.
 """
 import logging
 
@@ -48,6 +51,141 @@ async def _process_webhook_batch(
                     logger.error(f"[WEBHOOK] Error processing sub-reservation {sub_res.get('hr_number')}: {e}")
         except Exception as e:
             logger.error(f"[WEBHOOK] Error processing {event_type}: {e}")
+
+
+def _detect_event_type(body: dict) -> str:
+    """Auto-detect event type from HotelRunner callback payload.
+
+    HotelRunner sends a single callback with reservation data.
+    The event type is determined by the 'state' field:
+      - new/confirmed/guaranteed -> reservation_create
+      - modified -> reservation_modify
+      - cancelled/canceled -> reservation_cancel
+    Also checks 'action' or 'event_type' fields if present.
+    """
+    # Check explicit event_type or action field first
+    explicit = body.get("event_type") or body.get("action") or ""
+    if explicit:
+        explicit_lower = explicit.lower()
+        if "cancel" in explicit_lower:
+            return "reservation_cancel"
+        if "modif" in explicit_lower or "update" in explicit_lower:
+            return "reservation_modify"
+        if "create" in explicit_lower or "new" in explicit_lower:
+            return "reservation_create"
+
+    # Detect from reservation state
+    state = (body.get("state") or "").lower()
+    if state in ("cancelled", "canceled"):
+        return "reservation_cancel"
+    if state in ("modified",):
+        return "reservation_modify"
+
+    # Check cancel_reason presence
+    if body.get("cancel_reason"):
+        return "reservation_cancel"
+
+    # Check reservations array if present
+    reservations = body.get("reservations", [])
+    if reservations and isinstance(reservations, list):
+        first_res = reservations[0] if reservations else {}
+        res_state = (first_res.get("state") or "").lower()
+        if res_state in ("cancelled", "canceled"):
+            return "reservation_cancel"
+        if res_state in ("modified",):
+            return "reservation_modify"
+
+    # Default: new reservation
+    return "reservation_create"
+
+
+async def _resolve_tenant_from_callback(body: dict, request: Request) -> str:
+    """Resolve tenant_id from callback payload.
+
+    Priority: header > query param > body > HR connection lookup by hr_id/token
+    """
+    tenant_id = request.headers.get("X-Tenant-ID") or request.query_params.get("tenant_id")
+    if tenant_id:
+        return tenant_id
+
+    tenant_id = body.get("tenant_id", "")
+    if tenant_id:
+        return tenant_id
+
+    # Try to resolve from HR connection by hr_id
+    hr_id = body.get("hr_id") or body.get("hotel_id") or body.get("property_id") or ""
+    if hr_id:
+        conn = await db.hotelrunner_connections.find_one(
+            {"hr_id": str(hr_id), "is_active": True},
+            {"_id": 0, "tenant_id": 1},
+        )
+        if conn:
+            return conn["tenant_id"]
+
+    # Try to resolve from any active HR connection (single-tenant fallback)
+    conn = await db.hotelrunner_connections.find_one(
+        {"is_active": True},
+        {"_id": 0, "tenant_id": 1},
+    )
+    if conn:
+        return conn["tenant_id"]
+
+    return ""
+
+
+# ── UNIFIED CALLBACK — Single endpoint for HotelRunner "Dönüş adresi" ──
+
+@router.post("/callback")
+async def unified_callback(request: Request, background_tasks: BackgroundTasks):
+    """
+    Unified callback endpoint for HotelRunner webhook notifications.
+
+    This is the single URL configured in HotelRunner panel as "Dönüş adresi".
+    HotelRunner sends ALL events (new reservation, modification, cancellation)
+    to this one URL. Event type is auto-detected from the payload's state field.
+
+    Accepts: JSON payload from HotelRunner
+    Returns: {"status": "accepted", "event_type": "...", "count": N}
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
+    # Resolve tenant
+    tenant_id = await _resolve_tenant_from_callback(body, request)
+    if not tenant_id:
+        logger.error("[CALLBACK] Could not resolve tenant_id from callback payload")
+        raise HTTPException(status_code=400, detail="tenant_id could not be resolved")
+
+    # Auto-detect event type
+    event_type = _detect_event_type(body)
+
+    property_id = _resolve_property_id(body)
+    reservations = body.get("reservations", [body] if body.get("hr_number") else [])
+    source_ip = request.client.host if request.client else "unknown"
+
+    # For cancellations, ensure status is set
+    if event_type == "reservation_cancel":
+        for res in reservations:
+            if "status" not in res:
+                res["status"] = "cancelled"
+
+    logger.info(
+        f"[CALLBACK] Received {event_type}: {len(reservations)} reservation(s) "
+        f"from {source_ip}, tenant={tenant_id}"
+    )
+
+    background_tasks.add_task(
+        _process_webhook_batch, tenant_id, property_id, reservations, event_type, source_ip,
+    )
+
+    return {
+        "status": "accepted",
+        "event_type": event_type,
+        "count": len(reservations),
+        "message": f"{len(reservations)} rezervasyon alindi ({event_type})",
+    }
 
 
 # ── Webhook Endpoints ────────────────────────────────────────────────
