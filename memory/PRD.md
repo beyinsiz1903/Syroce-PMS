@@ -70,37 +70,34 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - effective_state uses only state field + cancel_reason (not next_states)
 - Rate limit aware push with 30s-capped retry and fail-fast polling (fix Apr 2026)
 - **Push Retry Queue**: Automatic retry mechanism for failed pushes — enqueue, background worker, adaptive backoff. Manuel retry kaldırıldı, "Tümünü İptal Et" butonu eklendi (Apr 2026)
-- **Rate Limit Cooldown & Auto-Retry System** (Apr 2026): 429 hatası alındığında:
-  - Veriler yerel olarak kaydedilir
-  - Push kuyruğa eklenir ve Retry-After süresine göre cooldown başlar
-  - Otomatik retry planlanır (progressive backoff ile max 5 deneme)
-  - UI'da countdown timer gösterilir
-  - "Şimdi Dene" butonu cooldown sırasında devre dışı
-  - Cooldown bitmeden API'ye istek gitmez (gereksiz 429'ları önler)
-- **Background Push (Exely tarzı)** (Apr 2026): Tüm push'lar arka planda gönderilir
-  - Kullanıcı anında yanıt alır (~0.15 saniye)
-  - Push'lar arka planda sıralı olarak 2sn aralıklarla denenir (Exely ile aynı mantık)
-  - HİÇ denenmeden kuyruğa atma kaldırıldı — önce gerçek push denenir
-  - Sadece gerçek 429 rate limit alanlar kuyruğa eklenir ve otomatik retry planlanır
-  - Rate limit alınca kalan push'lar da kuyruğa eklenir (gereksiz 429 önlenir)
-- **Gün Filtrelemeli Push (Apr 2026)**: selected_days aktifken, HotelRunner API'nin `days[]` parametresi kullanılarak tek bir API çağrısında tüm seçili günler güncellenir
-  - Eski: Her non-consecutive gün ayrı push → Nisan-Aralık arası 74+ API çağrısı
-  - Yeni: Tek push + days[]=[0,6] → 1 API çağrısı per oda tipi (~74x hız artışı)
-  - `update_room` provider metodu days[] query param desteği eklendi
-  - Push kuyruğu (retry) da days bilgisini saklıyor
-- **Otomatik Polling Devre Disi**: Surekli 120s polling yerine event-driven + manuel senkronizasyon mimarisi (Apr 2026). Booking olusturuldugunda outbox uzerinden otomatik push, diger zamanlarda sadece kullanici tetikli islemler.
-- **Otomatik Polling Yeniden Aktif (Apr 2026)**: 300s (5 dakika) aralikla otomatik reservation pull. Adaptive backoff ile rate limit korunmasi. Push Queue Worker 120s aralikla otomatik retry.
-- **403 Fix + Connection Pooling** (Apr 2026): Accept: application/json header + HTTP connection pooling (max 5 conn, 3 keepalive) ile WAF/rate limit engelleri çözüldü
+- **Rate Limit Cooldown & Auto-Retry System** (Apr 2026)
+- **Background Push (Exely tarzı)** (Apr 2026)
+- **Gün Filtrelemeli Push (Apr 2026)**
+- **Otomatik Polling Yeniden Aktif (Apr 2026)**: 300s aralikla otomatik reservation pull
+- **403 Fix + Connection Pooling** (Apr 2026)
 
 ### Calendar Vibrant Color Update (Apr 2026)
 - Vibrant booking bar colors by status
 - Blue-tinted room type headers
 - Compact grid with bold reservation names and three-state occupancy dots
 
-## Prioritized Backlog
+### VCC (Virtual Credit Card) Secure View (Apr 2026) — DONE
+- OTA/Acente sanal kart bilgileri AES-256-GCM ile şifreli saklanıyor
+- Otelci kart bilgilerini maksimum 3 kez görüntüleyebilir (API seviyesinde zorunlu)
+- Atomic view counter ($lt koşulu ile race condition koruması)
+- Rezervasyon detayında "Online Ödeme" sekmesi
+- Kart ekleme formu, kart görsel kartı, kalan hak gösterimi
+- 3 hak dolunca kalıcı kilitleme + kırmızı uyarı
+- Her görüntüleme activity log'a yazılıyor (audit trail)
 
-### P1 (High)
-- Rate Manager quick toggle (Exely/HotelRunner)
+### Rate Manager Provider Toggle (Apr 2026) — DONE
+- Exely ve HotelRunner rate manager sayfaları arasında hızlı geçiş toggle'ı
+- Her iki sayfanın üst kısmında segmented control tarzı toggle
+- Aktif provider beyaz arka plan + gölge, inaktif provider gri metin
+- React Router ile SPA navigasyonu
+- data-testid ile test edilebilir
+
+## Prioritized Backlog
 
 ### P2 (Medium)
 - Real-time UI notifications for channel push results
@@ -130,6 +127,12 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - GET /api/security/pii/strict-mode/config
 - GET /api/ops/field-encryption/status
 
+## Key API Endpoints (VCC)
+- POST /api/pms/reservations/{id}/vcc — Kart kaydet (şifreli)
+- GET /api/pms/reservations/{id}/vcc/status — Durum sorgula (görüntüleme harcamaz)
+- POST /api/pms/reservations/{id}/vcc/reveal — Kart detay aç (1/3 hak harcar)
+- DELETE /api/pms/reservations/{id}/vcc — Kart sil
+
 ## 3rd Party Integrations
 - AWS KMS (Encryption) — optional for production key management
 - HotelRunner v2 — User Token active, LIVE MODE
@@ -139,25 +142,7 @@ Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant
 - `emergentintegrations==0.1.0` requires `openai==1.99.9` and pulls `litellm` as transitive dep
 - `litellm==1.83.2` installed with `--no-deps` to fix CVE-2026-35029 and CVE-2026-35030
 - CI/CD: `bash backend/scripts/post_install.sh` after `pip install -r requirements.txt`
-- Dockerfile: `python -m pip` kullanılmalı (`pip` değil) — `--prefix=/install` ile pip kendini upgrade edince PATH'ten silinir
-- Never run plain `pip freeze > requirements.txt` — it will re-add dev tool dependencies
 
 ## Critical Constraints
 - All responses in Turkish
-- Latest test report: /app/test_reports/iteration_186.json
-### VCC (Virtual Credit Card) Secure View (Apr 2026) — DONE
-- OTA/Acente sanal kart bilgileri AES-256-GCM ile şifreli saklanıyor
-- Otelci kart bilgilerini maksimum 3 kez görüntüleyebilir (API seviyesinde zorunlu)
-- Atomic view counter ($lt koşulu ile race condition koruması)
-- Rezervasyon detayında "Online Ödeme" sekmesi
-- Kart ekleme formu, kart görsel kartı, kalan hak gösterimi
-- 3 hak dolunca kalıcı kilitleme + kırmızı uyarı
-- Her görüntüleme activity log'a yazılıyor (audit trail)
-
-## Key API Endpoints (VCC)
-- POST /api/pms/reservations/{id}/vcc — Kart kaydet (şifreli)
-- GET /api/pms/reservations/{id}/vcc/status — Durum sorgula (görüntüleme harcamaz)
-- POST /api/pms/reservations/{id}/vcc/reveal — Kart detay aç (1/3 hak harcar)
-- DELETE /api/pms/reservations/{id}/vcc — Kart sil
-
-- Latest change: VCC Secure View - Sanal kart 3 kez goruntuleme, Online Odeme sekmesi (Apr 2026). Onceki: Bildirim sistemi kapsamli duzeltme — is_read/read alan uyusmazligi, dedup_key ile tekrar onleme, stale update guard ile ping-pong onleme, pipeline iptal bildirimi, otomatik okundu, rezervasyon detay zamanlari (Apr 2026)
+- Latest test report: /app/test_reports/iteration_187.json

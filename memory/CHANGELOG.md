@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## 2026-04-06 - FEATURE: Rate Manager Provider Toggle (P1)
+
+### Özellik
+Exely ve HotelRunner rate manager sayfaları arasında hızlı geçiş toggle'ı eklendi. Her iki sayfanın üst kısmında segmented control tarzı toggle ile tek tıkla provider değiştirme.
+
+### Yeni Dosyalar
+- `/app/frontend/src/pages/rate-manager/ProviderToggle.jsx` — Provider toggle bileşeni
+
+### Değişiklikler
+- `RateManager.jsx`: ProviderToggle import + active="exely" ile eklendi
+- `HRRateManager.jsx`: ProviderToggle import + active="hotelrunner" ile eklendi
+
+### Test Sonuçları
+- Frontend: 10/10 test geçti (%100)
+
+---
+
+## 2026-04-06 - BUGFIX: pipeline.py Lint Hatası Düzeltmesi
+
+### Düzeltme
+`domains/channel_manager/ingest/pipeline.py` dosyasındaki inline import'lar (uuid, core.database, data_model) dosyanın üst kısmına taşındı. Ruff I001 lint hatası giderildi.
+
+---
+
 ## 2026-04-06 - FEATURE: VCC (Sanal Kredi Kartı) Güvenli Görüntüleme
 
 ### Özellik
