@@ -116,7 +116,7 @@ class AutoMappingService:
             try:
                 raw_creds = connector.get("credentials", {})
                 if connector.get("credentials_encrypted"):
-                    import base64
+                    import base64  # noqa: I001
                     import hashlib
                     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
                     prefix = "aes256gcm:"
