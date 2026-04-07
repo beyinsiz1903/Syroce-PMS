@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
-    BASE_URL = "https://pms-channel-mgr-2.preview.emergentagent.com"
+    BASE_URL = "https://regional-pms-demo.preview.emergentagent.com"
 
 TENANT_ID = "044f122b-87b5-480a-88b4-b9534b0c8c90"
 TEST_EMAIL = "demo@hotel.com"
