@@ -1,18 +1,24 @@
 # Test Credentials
 
-## Hotel Admin
+## Hotel Admin (super_admin)
 - Email: demo@hotel.com
 - Password: demo123
 - Role: super_admin
-- Login button: `data-testid="hotel-login-btn"`
+- Login test-id: hotel-login-email, hotel-login-btn
 
-## Front Desk Staff
+## Hotel Staff (front_desk)
 - Email: frontdesk@hotel.com
 - Password: staff123
-- Role: staff
+- Role: front_desk
 
-## Notes
-- Login response uses `access_token` field (not `token`)
-- Auth page: /auth
-- Dashboard redirect: /app/dashboard
+## Key Routes
+- Auth: /auth
+- Dashboard: /app/dashboard
+- Unified Rate Manager: /unified-rate-manager
 - Wizard route: /room-mapping-wizard
+- HR Rate Manager (admin): /hr-rate-manager
+- Exely Rate Manager (admin): /rate-manager
+
+## Test Agency IDs
+- Antalya Turizm: 1d6ebdef-b42a-40ea-8c01-f749ea96fdea (commission: 12.5%)
+- TEST_Content_Agency_093011: 6b187487-37f9-41d1-9945-0e32e4481385 (commission: 10%)
