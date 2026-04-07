@@ -15,7 +15,7 @@ import pytest
 import requests
 import uuid
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://pms-channel-cleanup.preview.emergentagent.com')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://auto-mapping.preview.emergentagent.com')
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"

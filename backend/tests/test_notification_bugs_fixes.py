@@ -11,7 +11,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://pms-channel-cleanup.preview.emergentagent.com")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://auto-mapping.preview.emergentagent.com")
 
 
 @pytest.fixture(scope="module")
