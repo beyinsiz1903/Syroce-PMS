@@ -361,6 +361,15 @@ export const NAV_ITEMS = [
     group: "core",
     navGroup: "channels",
   },
+  {
+    key: "room_mapping_wizard",
+    label: "Oda Eslestirme Sihirbazi",
+    path: "/room-mapping-wizard",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+    navGroup: "channels",
+  },
 
   // ──── REPORTS GROUP ────────────────────────────────
   {

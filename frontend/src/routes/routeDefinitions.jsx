@@ -180,6 +180,7 @@ const WakeUpCallsPage = lazy(() => import("@/pages/WakeUpCallsPage"));
 const LostFoundPage = lazy(() => import("@/pages/LostFoundPage"));
 const GroupFolioPage = lazy(() => import("@/pages/GroupFolioPage"));
 const EnhancedGMDashboard = lazy(() => import("@/pages/EnhancedGMDashboard"));
+const RoomMappingWizard = lazy(() => import("@/pages/RoomMappingWizard"));
 
 // ── Exported components for direct access ──────────────────────────
 export {
@@ -261,6 +262,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/channel-manager", ...p(ChannelManagerModule) },
     { path: "/app/channel-manager", ...p(ChannelManagerModule) },
     { path: "/mapping-manager", ...p(MappingManager) },
+    { path: "/room-mapping-wizard", ...p(RoomMappingWizard) },
     { path: "/hotelrunner", ...p(HotelRunnerIntegration) },
     { path: "/hrv2-ops", ...p(HRv2OpsDashboard) },
     { path: "/exely", ...p(ExelyIntegration) },

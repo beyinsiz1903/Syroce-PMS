@@ -11,6 +11,7 @@ from .routers.audit_router import router as audit_router
 from .routers.connector_router import router as connector_router
 from .routers.delivery_router import router as delivery_router
 from .routers.health_router import router as health_router
+from .routers.mapping_wizard_router import router as mapping_wizard_router
 from .routers.metrics_router import router as metrics_router
 from .routers.reservation_router import router as reservation_router
 from .routers.sandbox_router import router as sandbox_router
@@ -33,3 +34,4 @@ router.include_router(delivery_router)
 router.include_router(worker_router)
 router.include_router(validation_router)
 router.include_router(sandbox_router)
+router.include_router(mapping_wizard_router)
