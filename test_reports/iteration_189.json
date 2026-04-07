@@ -1,0 +1,87 @@
+{
+  "iteration": 189,
+  "date": "2026-04-07",
+  "summary": "Role-based Channel Connections page view testing complete. Super admin sees full technical view with HotelRunner/Exely provider cards, credentials, and management buttons. Hotel staff (front_desk) sees simplified view with only connected OTA channel names - no provider names or technical details visible.",
+  "features_tested": [
+    "Super Admin Login (demo@hotel.com / demo123) - PASSED",
+    "Super Admin sees 'Kanal Yonetimi' title (full technical view) - PASSED",
+    "Super Admin sees HotelRunner provider card with HR ID 373816343 - PASSED",
+    "Super Admin sees Exely provider card with Otel Kodu 501694 - PASSED",
+    "Super Admin sees onboarding guide with 5 steps - PASSED",
+    "Super Admin sees PMS Room Types section (Deluxe, Family, Junior Suite, Standard, Suite, Superior) - PASSED",
+    "Super Admin sees Test/Disconnect buttons for both providers - PASSED",
+    "Super Admin sees connected channels list (Booking.com, Expedia, etc.) - PASSED",
+    "Front Desk Login (frontdesk@hotel.com / staff123) - PASSED",
+    "Front Desk sees 'Bagli Kanallar' title (simplified view) - PASSED",
+    "Front Desk does NOT see HotelRunner provider card - PASSED",
+    "Front Desk does NOT see Exely provider card - PASSED",
+    "Front Desk does NOT see onboarding guide - PASSED",
+    "Front Desk does NOT see PMS Room Types section - PASSED",
+    "Front Desk does NOT see HR ID or Otel Kodu fields - PASSED",
+    "Front Desk does NOT see Test/Disconnect buttons - PASSED",
+    "Front Desk sees 'Kanal Baglantisi Aktif' status card with channel count - PASSED",
+    "Front Desk sees grid of 132 channel cards with green checkmarks - PASSED",
+    "Front Desk sees sync status information - PASSED"
+  ],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_189.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ChannelConnections.jsx: Role-based view correctly implemented using isSuperAdmin = user?.role === 'super_admin' check at line 31",
+    "ChannelConnections.jsx: Hotel user view (non-superadmin) shows only OTA channel names without revealing provider names (HotelRunner/Exely)",
+    "ChannelConnections.jsx: Super admin view shows full technical details including HR ID, Otel Kodu, credentials, and management buttons",
+    "Note: Channel names like 'HotelRunner Ad Network' and 'HotelRunner B2B Network' are legitimate OTA channel names (not provider names) and correctly appear in hotel user view"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend only testing)",
+    "frontend": "100% (all role-based view features working correctly)"
+  },
+  "test_credentials": {
+    "super_admin": {
+      "email": "demo@hotel.com",
+      "password": "demo123",
+      "role": "super_admin"
+    },
+    "front_desk": {
+      "email": "frontdesk@hotel.com",
+      "password": "staff123",
+      "role": "front_desk"
+    }
+  },
+  "seed_data_creation": "None required - using existing demo tenant data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Channel Connections page has role-based views. Super admin (role: super_admin) sees full technical view at /channel-connections with provider cards, credentials, and management buttons. Hotel staff (any non-super_admin role like front_desk) sees simplified view showing only connected OTA channel names without provider details. The 'HotelRunner Ad Network' and 'HotelRunner B2B Network' appearing in channel list are legitimate OTA channel names, not the provider name.",
+  "verification_summary": {
+    "super_admin_view": {
+      "page_title": "Kanal Yonetimi",
+      "hotelrunner_card": "VISIBLE - Shows HR ID, environment, room mappings, connected channels",
+      "exely_card": "VISIBLE - Shows Otel Kodu, currency, room mappings",
+      "onboarding_guide": "VISIBLE - 5-step guide",
+      "pms_room_types": "VISIBLE - 6 room types",
+      "management_buttons": "VISIBLE - Test/Disconnect for both providers"
+    },
+    "front_desk_view": {
+      "page_title": "Bagli Kanallar",
+      "hotelrunner_card": "NOT VISIBLE",
+      "exely_card": "NOT VISIBLE",
+      "onboarding_guide": "NOT VISIBLE",
+      "pms_room_types": "NOT VISIBLE",
+      "management_buttons": "NOT VISIBLE",
+      "status_card": "VISIBLE - 'Kanal Baglantisi Aktif' with 132 channels",
+      "channel_grid": "VISIBLE - 132 channel cards with green checkmarks",
+      "sync_status": "VISIBLE - Shows auto sync status"
+    }
+  }
+}

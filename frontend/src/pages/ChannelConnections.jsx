@@ -28,6 +28,8 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
   const [disconnecting, setDisconnecting] = useState(null);
   const [showPassword, setShowPassword] = useState({});
 
+  const isSuperAdmin = user?.role === 'super_admin';
+
   const [hrForm, setHrForm] = useState({
     token: '', hr_id: '', property_name: '',
     auto_sync_reservations: true, sync_interval_minutes: 15,
@@ -139,6 +141,146 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
   const hr = getProvider('hotelrunner');
   const exely = getProvider('exely');
 
+  // ── Collect all connected OTA channels across all providers ──
+  const allConnectedChannels = [];
+  if (hr?.connected && hr?.channels?.length > 0) {
+    hr.channels.forEach(ch => {
+      const name = ch.name || ch.code || ch;
+      if (name && !allConnectedChannels.includes(name)) allConnectedChannels.push(name);
+    });
+  }
+
+  // ── HOTEL USER VIEW (non-superadmin) ──
+  if (!isSuperAdmin) {
+    return (
+      <Layout user={user} tenant={tenant} onLogout={onLogout}>
+        <div className="p-4 md:p-6 space-y-6 max-w-4xl mx-auto" data-testid="channel-connections-page">
+
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900" data-testid="page-title">Bagli Kanallar</h1>
+              <p className="text-sm text-slate-500 mt-1">
+                Otelinizin bagli oldugu satis kanallari ve acenteler
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchOverview}
+              disabled={loading}
+              data-testid="refresh-btn"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Yenile
+            </Button>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+            </div>
+          ) : allConnectedChannels.length > 0 ? (
+            <>
+              {/* Connection Status Summary */}
+              <Card className="border-green-200 bg-green-50/50">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-green-800">Kanal Baglantisi Aktif</p>
+                      <p className="text-sm text-green-600">
+                        {allConnectedChannels.length} satis kanali uzerinden rezervasyon alinabiliyor
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Connected Channels Grid */}
+              <div>
+                <h2 className="text-base font-semibold text-slate-700 mb-3" data-testid="connected-channels-title">
+                  Bagli Satis Kanallari ({allConnectedChannels.length})
+                </h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {allConnectedChannels.map((channel, i) => (
+                    <Card key={i} className="border-slate-200 hover:border-green-300 transition-colors" data-testid={`channel-card-${i}`}>
+                      <CardContent className="p-3 flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+                          <CheckCircle className="w-4 h-4 text-green-600" />
+                        </div>
+                        <span className="text-sm font-medium text-slate-800 truncate">{channel}</span>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sync Status */}
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <ArrowDownUp className="w-4 h-4 text-slate-500" />
+                    <span className="text-sm font-medium text-slate-700">Senkronizasyon Durumu</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                    {hr?.connected && (
+                      <div className="flex items-center justify-between p-2 rounded bg-slate-50">
+                        <span className="text-slate-600">Otomatik Senk.</span>
+                        {hr.auto_sync_reservations ? (
+                          <span className="text-green-600 flex items-center gap-1 text-xs font-medium"><CheckCircle className="w-3 h-3" /> Aktif</span>
+                        ) : (
+                          <span className="text-slate-400 text-xs">Pasif</span>
+                        )}
+                      </div>
+                    )}
+                    {hr?.last_sync_at && (
+                      <div className="flex items-center justify-between p-2 rounded bg-slate-50">
+                        <span className="text-slate-600">Son Senkronizasyon</span>
+                        <span className="text-xs text-slate-500">{new Date(hr.last_sync_at).toLocaleDateString('tr-TR')}</span>
+                      </div>
+                    )}
+                    {exely?.connected && (
+                      <div className="flex items-center justify-between p-2 rounded bg-slate-50">
+                        <span className="text-slate-600">Otomatik Senk.</span>
+                        {exely.auto_sync_reservations ? (
+                          <span className="text-green-600 flex items-center gap-1 text-xs font-medium"><CheckCircle className="w-3 h-3" /> Aktif</span>
+                        ) : (
+                          <span className="text-slate-400 text-xs">Pasif</span>
+                        )}
+                      </div>
+                    )}
+                    {exely?.last_sync_at && (
+                      <div className="flex items-center justify-between p-2 rounded bg-slate-50">
+                        <span className="text-slate-600">Son Senkronizasyon</span>
+                        <span className="text-xs text-slate-500">{new Date(exely.last_sync_at).toLocaleDateString('tr-TR')}</span>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          ) : (
+            /* No Channels Connected */
+            <Card className="border-slate-200">
+              <CardContent className="p-8 text-center">
+                <WifiOff className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                <h3 className="text-lg font-semibold text-slate-700 mb-1">Henuz bagli kanal yok</h3>
+                <p className="text-sm text-slate-500 max-w-md mx-auto">
+                  Satis kanallari (Booking.com, Expedia vb.) uzerinden rezervasyon alabilmek icin
+                  lutfen otel yoneticinize basvurun.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </Layout>
+    );
+  }
+
+  // ── SUPER ADMIN VIEW (full technical details) ──
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout}>
       <div className="p-4 md:p-6 space-y-6 max-w-6xl mx-auto" data-testid="channel-connections-page">

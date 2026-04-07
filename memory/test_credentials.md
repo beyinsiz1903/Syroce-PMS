@@ -1,8 +1,14 @@
 # Test Credentials
 
-## Frontend Login
+## Frontend Login (Super Admin)
 - Email: `demo@hotel.com`
 - Password: `demo123`
+- Role: `super_admin`
+
+## Frontend Login (Hotel Staff - Front Desk)
+- Email: `frontdesk@hotel.com`
+- Password: `staff123`
+- Role: `front_desk`
 
 ## Exely API (PMSConnect)
 - Username: `PMSConnect.501694`
