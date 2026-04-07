@@ -8,7 +8,6 @@ Supports:
 """
 from typing import Any
 
-
 from ...domain.models.canonical import (
     CanonicalGuest,
     CanonicalReservation,

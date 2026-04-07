@@ -7,7 +7,6 @@ Covers: invalid_xml, missing_required_field, schema_mismatch,
 from typing import Any
 
 
-
 class ProviderContractError(Exception):
     """Base class for all provider contract violations."""
     error_type: str = "provider_contract_error"

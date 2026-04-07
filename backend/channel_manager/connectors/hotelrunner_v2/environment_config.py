@@ -6,7 +6,6 @@ Each environment defines its own base URLs, timeouts, and feature flags.
 """
 from typing import Any
 
-
 from pydantic import BaseModel
 
 

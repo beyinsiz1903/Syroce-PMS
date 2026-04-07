@@ -14,7 +14,6 @@ import uuid
 from typing import Any
 from xml.etree import ElementTree as ET
 
-
 from .contract_errors import (
     InvalidXmlError,
     ProviderErrorResponseError,

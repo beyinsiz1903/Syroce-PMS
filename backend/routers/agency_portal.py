@@ -22,16 +22,16 @@ Endpoints:
     GET    /api/agency-portal/reservations - List own reservations
 """
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
+import jwt as pyjwt
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 from core.database import db
 from core.security import (
-    JWT_SECRET,
     JWT_ALGORITHM,
-    JWT_EXPIRATION_HOURS,
+    JWT_SECRET,
     create_token,
     get_current_user,
     hash_password,
@@ -39,8 +39,6 @@ from core.security import (
 )
 from models.enums import UserRole
 from models.schemas import User
-
-import jwt as pyjwt
 
 router = APIRouter(prefix="/api", tags=["agency-portal"])
 

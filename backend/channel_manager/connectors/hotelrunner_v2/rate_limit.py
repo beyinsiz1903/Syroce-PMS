@@ -6,7 +6,6 @@ import asyncio
 import time
 
 
-
 class RateLimiter:
     """Token-bucket rate limiter for HotelRunner API calls."""
 

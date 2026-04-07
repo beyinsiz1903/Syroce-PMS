@@ -12,7 +12,6 @@ from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 
-
 def _xml_header(message_type: str, hr_id: str, timestamp: str | None = None) -> Element:
     """Create root OTA element with standard attributes."""
     ts = timestamp or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")

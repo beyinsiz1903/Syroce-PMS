@@ -5,7 +5,6 @@ Handles token-based auth with hr_id for all HotelRunner API calls.
 from typing import Any
 
 
-
 class HotelRunnerAuth:
     """Manages HotelRunner authentication headers and token lifecycle."""
 
