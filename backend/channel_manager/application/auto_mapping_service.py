@@ -16,6 +16,10 @@ from typing import Any
 
 from core.database import db
 
+from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
+from ..connectors.hotelrunner_v2.v1_client import HotelRunnerClient
+from ..connectors.hotelrunner_v2.v1_errors import AuthenticationError, ConnectorError
+from ..infrastructure.credential_vault import CredentialVault
 from ..infrastructure.repository import ChannelManagerRepository
 from .mapping_service import MappingService
 
@@ -87,6 +91,149 @@ class AutoMappingService:
     def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
         self._mapping_svc = MappingService(repo=self._repo)
+
+    async def fetch_external_data_from_channel(
+        self, tenant_id: str, connector_id: str,
+    ) -> dict[str, Any]:
+        """
+        Fetch real room types and rate plans from HotelRunner API
+        and persist them into cm_external_room_types / cm_external_rate_plans.
+        """
+        connector = await self._repo.get_connector(tenant_id, connector_id)
+        if not connector:
+            return {"success": False, "error": "Connector bulunamadi"}
+
+        provider = connector.get("provider", "")
+        if provider != "hotelrunner":
+            return {"success": False, "error": f"Provider '{provider}' icin otomatik veri cekme henuz desteklenmiyor"}
+
+        # Decrypt credentials
+        try:
+            vault = CredentialVault(repo=self._repo)
+            creds = await vault.retrieve_credentials(tenant_id, connector_id)
+        except Exception:
+            # Fallback: try legacy decryption with default key
+            try:
+                raw_creds = connector.get("credentials", {})
+                if connector.get("credentials_encrypted"):
+                    import base64
+                    import hashlib
+                    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+                    prefix = "aes256gcm:"
+                    creds = {}
+                    for k, v in raw_creds.items():
+                        if isinstance(v, str) and v.startswith(prefix):
+                            # Try env key first, then default
+                            import os
+                            keys_to_try = [
+                                os.environ.get("CM_CREDENTIAL_KEY", ""),
+                                "syroce-pms-default-key-change-in-production",
+                            ]
+                            decrypted = False
+                            for key_material in keys_to_try:
+                                if not key_material:
+                                    continue
+                                try:
+                                    aes_key = hashlib.sha256(key_material.encode()).digest()
+                                    raw = base64.b64decode(v[len(prefix):])
+                                    nonce, ct = raw[:12], raw[12:]
+                                    plaintext = AESGCM(aes_key).decrypt(nonce, ct, None)
+                                    creds[k] = plaintext.decode("utf-8")
+                                    decrypted = True
+                                    break
+                                except Exception:
+                                    continue
+                            if not decrypted:
+                                creds[k] = v
+                        else:
+                            creds[k] = v
+                else:
+                    creds = raw_creds
+            except Exception as e:
+                logger.error("All credential decryption failed for connector %s: %s", connector_id, e)
+                return {"success": False, "error": f"Kimlik bilgileri cozulemedi: {str(e)[:200]}"}
+
+        # Build client and fetch rooms
+        try:
+            auth = HotelRunnerAuth.from_credentials(creds)
+            client = HotelRunnerClient(auth=auth, sandbox=True)
+        except AuthenticationError as e:
+            return {"success": False, "error": f"Auth hatasi: {str(e)[:200]}"}
+
+        try:
+            # Fetch rooms from HotelRunner REST API
+            resp_text = await client._request_json("GET", "/apps/rooms", params={"per_page": "200"})
+            raw_data, _audit = resp_text
+            rooms_raw = raw_data if isinstance(raw_data, list) else raw_data.get("rooms", []) if isinstance(raw_data, dict) else []
+        except (ConnectorError, Exception) as e:
+            logger.error("Room fetch failed for connector %s: %s", connector_id, e)
+            await client.close()
+            return {"success": False, "error": f"HotelRunner'dan oda verileri cekilemedi: {str(e)[:200]}"}
+        finally:
+            await client.close()
+
+        # Parse rooms: group by inv_code to get unique room types, collect rate plans
+        room_types: dict[str, dict] = {}
+        rate_plans: dict[str, dict] = {}
+
+        for room in rooms_raw:
+            inv_code = room.get("inv_code", "")
+            rate_code = room.get("rate_code", "")
+            name = room.get("name", "")
+            description = room.get("description", "")
+            room_capacity = room.get("room_capacity", 0)
+            adult_capacity = room.get("adult_capacity", 0)
+
+            # Room type (grouped by inv_code)
+            if inv_code and inv_code not in room_types:
+                room_types[inv_code] = {
+                    "tenant_id": tenant_id,
+                    "connector_id": connector_id,
+                    "external_id": inv_code,
+                    "name": name,
+                    "description": description,
+                    "max_occupancy": room_capacity or adult_capacity or 0,
+                    "is_active": True,
+                }
+
+            # Rate plan (each rate_code is a plan)
+            if rate_code and rate_code not in rate_plans:
+                rate_plans[rate_code] = {
+                    "tenant_id": tenant_id,
+                    "connector_id": connector_id,
+                    "external_id": rate_code,
+                    "name": name if rate_code == inv_code else f"{name} ({rate_code})",
+                    "external_room_type_id": inv_code,
+                    "is_active": True,
+                }
+
+        # Clear old data and persist new
+        await db.cm_external_room_types.delete_many({"tenant_id": tenant_id, "connector_id": connector_id})
+        await db.cm_external_rate_plans.delete_many({"tenant_id": tenant_id, "connector_id": connector_id})
+
+        for doc in room_types.values():
+            await self._repo.upsert_external_room_type(doc)
+        for doc in rate_plans.values():
+            await self._repo.upsert_external_rate_plan(doc)
+
+        logger.info(
+            "Fetched %d room types and %d rate plans from HotelRunner for connector %s",
+            len(room_types), len(rate_plans), connector_id,
+        )
+
+        return {
+            "success": True,
+            "room_types_count": len(room_types),
+            "rate_plans_count": len(rate_plans),
+            "room_types": [
+                {"external_id": rt["external_id"], "name": rt["name"], "max_occupancy": rt["max_occupancy"]}
+                for rt in room_types.values()
+            ],
+            "rate_plans": [
+                {"external_id": rp["external_id"], "name": rp["name"]}
+                for rp in rate_plans.values()
+            ],
+        }
 
     async def suggest_room_mappings(
         self, tenant_id: str, connector_id: str,

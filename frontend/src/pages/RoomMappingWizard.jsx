@@ -38,6 +38,8 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
   const [connectors, setConnectors] = useState([]);
   const [selectedConnectorId, setSelectedConnectorId] = useState('');
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [fetchResult, setFetchResult] = useState(null);
 
   // Room suggestions
   const [roomData, setRoomData] = useState(null);
@@ -122,12 +124,38 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
     }
   }, [selectedConnectorId]);
 
+  // Fetch external data from channel provider
+  const fetchExternalData = useCallback(async () => {
+    if (!selectedConnectorId) return false;
+    setFetching(true);
+    setFetchResult(null);
+    try {
+      const { data } = await axios.post(
+        `/channel-manager/v2/mapping-wizard/${selectedConnectorId}/fetch-external`,
+        {},
+        { headers },
+      );
+      setFetchResult(data);
+      toast.success(`${data.room_types_count} oda tipi ve ${data.rate_plans_count} fiyat plani basariyla cekildi`);
+      return true;
+    } catch (e) {
+      const msg = e?.response?.data?.detail || 'Kanaldan veri cekilemedi';
+      setFetchResult({ success: false, error: msg });
+      // Don't block wizard - allow continuing with existing data
+      return true;
+    } finally {
+      setFetching(false);
+    }
+  }, [selectedConnectorId]);
+
   const goNext = async () => {
     if (step === 0) {
       if (!selectedConnectorId) {
         toast.warning('Lutfen bir kanal secin');
         return;
       }
+      // First fetch external data from channel, then load suggestions
+      await fetchExternalData();
       await loadRoomSuggestions();
       setStep(1);
     } else if (step === 1) {
@@ -301,6 +329,9 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                       <p className="font-medium">{selectedConnector.property_id || '-'}</p>
                     </div>
                   </div>
+                  <p className="text-xs text-slate-400 mt-3">
+                    Ileri butonuna tikladiginizda, kanal saglayicisinin API'sinden gercek oda tipleri ve fiyat planlari otomatik olarak cekilecektir.
+                  </p>
                 </div>
               )}
             </CardContent>
@@ -334,6 +365,26 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                 </div>
               ) : (
                 <div className="space-y-3">
+                  {/* Fetch result warning */}
+                  {fetchResult && !fetchResult.success && (
+                    <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-lg border border-amber-200 mb-4" data-testid="fetch-warning">
+                      <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-amber-900">Kanal verileri cekilemedi</p>
+                        <p className="text-xs text-amber-700 mt-1">{fetchResult.error}</p>
+                        <p className="text-xs text-amber-600 mt-1">Connector kimlik bilgilerini kontrol edin veya kanaldan oda tiplerini manuel olarak ekleyin.</p>
+                      </div>
+                    </div>
+                  )}
+                  {fetchResult?.success && (
+                    <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-lg border border-emerald-200 mb-4" data-testid="fetch-success">
+                      <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <p className="text-sm text-emerald-800">
+                        Kanaldan <strong>{fetchResult.room_types_count}</strong> oda tipi ve <strong>{fetchResult.rate_plans_count}</strong> fiyat plani cekildi.
+                      </p>
+                    </div>
+                  )}
+
                   {/* Already mapped */}
                   {roomData?.already_mapped?.length > 0 && (
                     <div className="mb-4">
@@ -554,7 +605,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                     </div>
                   )}
                   <Button
-                    onClick={() => { setStep(0); setResults(null); setRoomData(null); setRateData(null); }}
+                    onClick={() => { setStep(0); setResults(null); setRoomData(null); setRateData(null); setFetchResult(null); }}
                     variant="outline"
                     data-testid="wizard-restart-btn"
                   >
@@ -643,12 +694,12 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
               ) : (
                 <Button
                   onClick={goNext}
-                  disabled={loading || (step === 0 && !selectedConnectorId)}
+                  disabled={loading || fetching || (step === 0 && !selectedConnectorId)}
                   className="bg-[#C09D63] hover:bg-[#B08D55] text-white shadow-md"
                   data-testid="wizard-next-btn"
                 >
-                  {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                  Ileri
+                  {(loading || fetching) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  {fetching ? 'Kanaldan veriler cekiliyor...' : 'Ileri'}
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               )}

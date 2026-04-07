@@ -33,6 +33,19 @@ class BulkCreateRequest(BaseModel):
     pairs: list[MappingPair] = Field(default_factory=list)
 
 
+@router.post("/mapping-wizard/{connector_id}/fetch-external")
+async def fetch_external_data(
+    connector_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Fetch real room types and rate plans from the channel provider API."""
+    svc = AutoMappingService()
+    result = await svc.fetch_external_data_from_channel(current_user.tenant_id, connector_id)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Veri cekilemedi"))
+    return result
+
+
 @router.get("/mapping-wizard/{connector_id}/suggest-rooms")
 async def suggest_room_mappings(
     connector_id: str,
