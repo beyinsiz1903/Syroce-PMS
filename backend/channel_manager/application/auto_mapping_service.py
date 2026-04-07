@@ -10,6 +10,7 @@ Flow:
   3. Return suggestions with confidence scores
   4. Accept confirmed pairs and bulk-create mappings
 """
+import asyncio as _aio
 import logging
 from difflib import SequenceMatcher
 from typing import Any
@@ -18,7 +19,7 @@ from core.database import db
 
 from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
 from ..connectors.hotelrunner_v2.v1_client import HotelRunnerClient
-from ..connectors.hotelrunner_v2.v1_errors import AuthenticationError, ConnectorError
+from ..connectors.hotelrunner_v2.v1_errors import AuthenticationError, ConnectorError, RateLimitError
 from ..infrastructure.credential_vault import CredentialVault
 from ..infrastructure.repository import ChannelManagerRepository
 from .mapping_service import MappingService
@@ -163,9 +164,6 @@ class AutoMappingService:
 
         try:
             # Fetch rooms from HotelRunner REST API with retry on rate limit
-            import asyncio as _aio
-            from ..connectors.hotelrunner_v2.v1_errors import RateLimitError
-
             rooms_raw = None
             max_retries = 3
             for attempt in range(max_retries):
