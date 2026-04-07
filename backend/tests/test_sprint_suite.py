@@ -104,13 +104,13 @@ class TestEnvironmentConfig:
     """Tests for environment configuration."""
 
     def test_all_environments_present(self):
-        from channel_manager.connectors.hotelrunner.environment_config import ENVIRONMENTS
+        from channel_manager.connectors.hotelrunner_v2.environment_config import ENVIRONMENTS
         assert "mock" in ENVIRONMENTS
         assert "sandbox" in ENVIRONMENTS
         assert "production" in ENVIRONMENTS
 
     def test_sandbox_config(self):
-        from channel_manager.connectors.hotelrunner.environment_config import get_environment_config
+        from channel_manager.connectors.hotelrunner_v2.environment_config import get_environment_config
         cfg = get_environment_config("sandbox")
         assert cfg.name == "sandbox"
         assert "sandbox" in cfg.api_base_url
@@ -118,26 +118,26 @@ class TestEnvironmentConfig:
         assert cfg.credential_encryption_required is True
 
     def test_production_config(self):
-        from channel_manager.connectors.hotelrunner.environment_config import get_environment_config
+        from channel_manager.connectors.hotelrunner_v2.environment_config import get_environment_config
         cfg = get_environment_config("production")
         assert cfg.name == "production"
         assert cfg.sandbox is False
         assert cfg.enable_raw_logging is False
 
     def test_mock_config(self):
-        from channel_manager.connectors.hotelrunner.environment_config import get_environment_config
+        from channel_manager.connectors.hotelrunner_v2.environment_config import get_environment_config
         cfg = get_environment_config("mock")
         assert cfg.name == "mock"
         assert "localhost" in cfg.api_base_url
         assert cfg.credential_encryption_required is False
 
     def test_unknown_env_defaults_to_sandbox(self):
-        from channel_manager.connectors.hotelrunner.environment_config import get_environment_config
+        from channel_manager.connectors.hotelrunner_v2.environment_config import get_environment_config
         cfg = get_environment_config("nonexistent")
         assert cfg.name == "sandbox"
 
     def test_get_all_environments(self):
-        from channel_manager.connectors.hotelrunner.environment_config import get_all_environments
+        from channel_manager.connectors.hotelrunner_v2.environment_config import get_all_environments
         envs = get_all_environments()
         assert len(envs) == 3
         assert all(isinstance(v, dict) for v in envs.values())
@@ -280,7 +280,7 @@ class TestProviderContractErrors:
     """Tests for typed provider contract error classes."""
 
     def test_invalid_xml_error(self):
-        from channel_manager.connectors.hotelrunner.contract_errors import InvalidXmlError
+        from channel_manager.connectors.hotelrunner_v2.contract_errors import InvalidXmlError
         err = InvalidXmlError("Bad XML", raw_xml="<broken", parse_error="unclosed tag")
         assert err.error_type == "invalid_xml"
         d = err.to_dict()
@@ -288,31 +288,31 @@ class TestProviderContractErrors:
         assert "broken" in d["details"]["raw_xml_snippet"]
 
     def test_missing_required_field(self):
-        from channel_manager.connectors.hotelrunner.contract_errors import MissingRequiredFieldError
+        from channel_manager.connectors.hotelrunner_v2.contract_errors import MissingRequiredFieldError
         err = MissingRequiredFieldError("guest_name", entity_type="reservation", entity_id="R123")
         assert err.error_type == "missing_required_field"
         assert "guest_name" in str(err)
 
     def test_schema_mismatch_error(self):
-        from channel_manager.connectors.hotelrunner.contract_errors import SchemaMismatchError
+        from channel_manager.connectors.hotelrunner_v2.contract_errors import SchemaMismatchError
         err = SchemaMismatchError("Schema changed", expected="v1", actual="v2")
         assert err.error_type == "schema_mismatch"
         d = err.to_dict()
         assert d["details"]["expected_schema"] == "v1"
 
     def test_provider_error_response(self):
-        from channel_manager.connectors.hotelrunner.contract_errors import ProviderErrorResponseError
+        from channel_manager.connectors.hotelrunner_v2.contract_errors import ProviderErrorResponseError
         err = ProviderErrorResponseError("HotelRunner", "42", "Invalid hotel code")
         assert err.error_type == "provider_error_response"
         assert "42" in str(err)
 
     def test_unknown_response_format(self):
-        from channel_manager.connectors.hotelrunner.contract_errors import UnknownResponseFormatError
+        from channel_manager.connectors.hotelrunner_v2.contract_errors import UnknownResponseFormatError
         err = UnknownResponseFormatError(content_type="text/html", raw_response="<html>...")
         assert err.error_type == "unknown_response_format"
 
     def test_all_errors_inherit_from_base(self):
-        from channel_manager.connectors.hotelrunner.contract_errors import (
+        from channel_manager.connectors.hotelrunner_v2.contract_errors import (
             ProviderContractError, InvalidXmlError, MissingRequiredFieldError,
             SchemaMismatchError, ProviderErrorResponseError, UnknownResponseFormatError,
         )

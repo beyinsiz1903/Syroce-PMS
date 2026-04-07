@@ -2,10 +2,8 @@
 HotelRunner Authentication Manager.
 Handles token-based auth with hr_id for all HotelRunner API calls.
 """
-import warnings
 from typing import Any
 
-warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
 
 
 class HotelRunnerAuth:
@@ -39,6 +37,6 @@ class HotelRunnerAuth:
         token = credentials.get("token", "")
         hr_id = credentials.get("hr_id", "")
         if not token or not hr_id:
-            from .errors import AuthenticationError
+            from .v1_errors import AuthenticationError
             raise AuthenticationError("Missing token or hr_id in connector credentials")
         return cls(token=token, hr_id=hr_id)

@@ -20,10 +20,10 @@ from typing import Any
 
 from core.database import db
 
-from ..connectors.hotelrunner.auth import HotelRunnerAuth
-from ..connectors.hotelrunner.client import HotelRunnerClient
-from ..connectors.hotelrunner.errors import ConnectorError
-from ..connectors.hotelrunner.mapper import HotelRunnerMapper
+from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
+from ..connectors.hotelrunner_v2.v1_client import HotelRunnerClient
+from ..connectors.hotelrunner_v2.v1_errors import ConnectorError
+from ..connectors.hotelrunner_v2.v1_mapper import HotelRunnerMapper
 from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..domain.models.canonical import CanonicalReservation, ReservationStatus
 from ..domain.models.connector_account import ConnectorAccount, ConnectorProvider

@@ -686,7 +686,7 @@ class TestPhase8ProviderAdapterUnit:
 
     def test_error_categorization(self):
         from channel_manager.application.provider_adapters import _categorise_error
-        from channel_manager.connectors.hotelrunner.errors import (
+        from channel_manager.connectors.hotelrunner_v2.v1_errors import (
             AuthenticationError, RateLimitError, ProviderUnavailableError,
         )
         

@@ -1,27 +1,20 @@
 """
-[DEPRECATED] HotelRunner HTTP Client — Legacy advanced connector.
-
-This module is superseded by the production-grade adapter at:
-    domains.channel_manager.providers.hotelrunner/
-
-Removal target: Next major release.
+HotelRunner HTTP Client — V1 connector (consolidated into v2 package).
 
 Supports both XML/OTA endpoints (inventory, rates) and REST/JSON endpoints (reservations).
 """
 import logging
 import time
 import uuid as _uuid
-import warnings
 from datetime import UTC, datetime
 from typing import Any
 
-warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
 
 import httpx
 
 from . import xml_builder, xml_parser
 from .auth import HotelRunnerAuth
-from .errors import (
+from .v1_errors import (
     AcknowledgementError,
     AuthenticationError,
     ConnectorError,

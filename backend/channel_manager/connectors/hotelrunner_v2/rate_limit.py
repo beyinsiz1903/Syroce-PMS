@@ -4,9 +4,7 @@ Prevents hitting HotelRunner's API rate limits by throttling outgoing requests.
 """
 import asyncio
 import time
-import warnings
 
-warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
 
 
 class RateLimiter:

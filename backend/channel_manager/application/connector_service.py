@@ -5,9 +5,9 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from ..connectors.hotelrunner.auth import HotelRunnerAuth
-from ..connectors.hotelrunner.client import HotelRunnerClient
-from ..connectors.hotelrunner.errors import AuthenticationError
+from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
+from ..connectors.hotelrunner_v2.v1_client import HotelRunnerClient
+from ..connectors.hotelrunner_v2.v1_errors import AuthenticationError
 from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..domain.models.connector_account import ConnectorAccount, ConnectorProvider, ConnectorStatus
 from ..infrastructure.repository import ChannelManagerRepository

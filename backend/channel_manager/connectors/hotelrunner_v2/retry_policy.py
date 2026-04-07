@@ -6,7 +6,8 @@ import logging
 import random
 from typing import Any, Callable
 
-from .errors import AuthenticationError, ConnectorError, ProviderUnavailableError, RateLimitError
+
+from .v1_errors import AuthenticationError, ConnectorError, ProviderUnavailableError, RateLimitError
 
 logger = logging.getLogger("channel_manager.hotelrunner.retry")
 

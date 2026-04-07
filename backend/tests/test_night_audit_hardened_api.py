@@ -24,7 +24,7 @@ from datetime import datetime, timezone, timedelta
 BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
     # Fallback for local testing
-    BASE_URL = "https://regional-pms-demo.preview.emergentagent.com"
+    BASE_URL = "https://channel-sync-hub-1.preview.emergentagent.com"
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"

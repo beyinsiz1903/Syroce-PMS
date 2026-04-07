@@ -11,17 +11,15 @@ Contract hardening:
 import hashlib
 import logging
 import uuid
-import warnings
 from typing import Any
 from xml.etree import ElementTree as ET
 
-warnings.warn('DEPRECATED: Use hotelrunner_v2 equivalent', DeprecationWarning, stacklevel=2)
 
 from .contract_errors import (
     InvalidXmlError,
     ProviderErrorResponseError,
 )
-from .errors import XmlParseError
+from .v1_errors import XmlParseError
 
 logger = logging.getLogger("channel_manager.hotelrunner.xml_parser")
 

@@ -8,7 +8,7 @@ from core.security import get_current_user
 from models.schemas import User
 
 from ...application.scheduled_import_service import ScheduledImportService
-from ...connectors.hotelrunner.environment_config import get_all_environments, get_environment_config
+from ...connectors.hotelrunner_v2.environment_config import get_all_environments, get_environment_config
 
 logger = logging.getLogger("channel_manager.routers.scheduler")
 

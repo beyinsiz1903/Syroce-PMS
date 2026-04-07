@@ -4,6 +4,7 @@ Every error maps to a specific recovery strategy.
 """
 
 
+
 class ConnectorError(Exception):
     """Base connector error."""
     def __init__(self, message: str, provider: str = "hotelrunner", recoverable: bool = False):
