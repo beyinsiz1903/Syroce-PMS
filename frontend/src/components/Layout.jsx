@@ -55,6 +55,8 @@ const ICON_BY_KEY = {
   wake_up_calls: Calendar,
   lost_found: ShoppingCart,
   group_folio: FileText,
+  agency_management: Building2,
+  agency_content: FileText,
 };
 
 const GROUP_ICONS = {

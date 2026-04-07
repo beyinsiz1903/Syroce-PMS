@@ -108,6 +108,9 @@ const ArrivalList = lazy(() => import("@/pages/ArrivalList"));
 const AIWhatsAppConcierge = lazy(() => import("@/pages/AIWhatsAppConcierge"));
 const PredictiveAnalytics = lazy(() => import("@/pages/PredictiveAnalytics"));
 const AgencyRequests = lazy(() => import("@/pages/AgencyRequests"));
+const AgencyManagement = lazy(() => import("@/pages/AgencyManagement"));
+const AgencyContentDistribution = lazy(() => import("@/pages/AgencyContentDistribution"));
+const AgencyPortalDashboard = lazy(() => import("@/pages/AgencyPortalDashboard"));
 const SocialMediaRadar = lazy(() => import("@/pages/SocialMediaRadar"));
 const RevenueAutopilot = lazy(() => import("@/pages/RevenueAutopilot"));
 const HRComplete = lazy(() => import("@/pages/HRComplete"));
@@ -206,6 +209,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/privacy-policy", type: "public", component: PrivacyPolicy },
     { path: "/gizlilik", type: "public", component: PrivacyPolicy },
     { path: "/pms-lite", type: "public", component: PmsLiteLanding },
+    { path: "/agency-portal", type: "public", component: AgencyPortalDashboard },
     { path: "/system-status", type: "public", component: SimpleAdminPanel },
 
     // ── Core Operations ────────────────────────────────
@@ -312,6 +316,8 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/messaging-center", ...p(MessagingCenter) },
     { path: "/sales", ...p(SalesModule) },
     { path: "/agency-requests", ...p(AgencyRequests) },
+    { path: "/agency-management", ...p(AgencyManagement) },
+    { path: "/agency-content", ...p(AgencyContentDistribution) },
 
     // ── Frontdesk & Maintenance ────────────────────────
     { path: "/frontdesk/audit-checklist", ...p(FrontdeskAuditChecklist) },

@@ -190,6 +190,9 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.hotelrunner_compat", "router", ["HotelRunner External Integration"], None, None),
     # HotelRunner v2 Connector — Production-grade adapter
     ("channel_manager.connectors.hotelrunner_v2.router", "router", ["HotelRunner v2 Connector"], None, None),
+    # Agency Portal — Bolgesel Acente Yonetimi ve Portali
+    ("routers.agency_portal", "router", ["Agency Portal"], None, None),
+    ("routers.agency_content", "router", ["Agency Content"], None, None),
 ]
 
 # Optional routers with special import paths

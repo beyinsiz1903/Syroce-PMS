@@ -342,6 +342,26 @@ export const NAV_ITEMS = [
     navGroup: "channels",
   },
 
+  // ──── AGENCY GROUP (Channels altinda) ──────────────
+  {
+    key: "agency_management",
+    label: "Acente Yonetimi",
+    path: "/agency-management",
+    moduleKey: "channel_manager",
+    tier: "basic",
+    group: "core",
+    navGroup: "channels",
+  },
+  {
+    key: "agency_content",
+    label: "Icerik Dagitimi",
+    path: "/agency-content",
+    moduleKey: "channel_manager",
+    tier: "basic",
+    group: "core",
+    navGroup: "channels",
+  },
+
   // ──── REPORTS GROUP ────────────────────────────────
   {
     key: "reports_basic",
