@@ -1,82 +1,84 @@
-# Syroce PMS - Product Requirements Document
+# Syroce PMS — Product Requirements Document
 
 ## Original Problem Statement
-Multi-tenant SaaS PMS with unified channel manager, role-based access, dedicated Regional Agency Portal, and an Auto Room Mapping Wizard for new channel connections. The system integrates with HotelRunner v2 API and Exely SOAP API for channel distribution.
+Multi-tenant SaaS PMS with unified channel manager. Real HotelRunner API integration (not mock data), credential management via encrypted vault, and production-ready channel sync.
 
 ## User Personas
-- **Hotel Admin** (super_admin): Full system access, manages rooms, bookings, channel connections
-- **Front Desk Staff**: Day-to-day operations, check-in/check-out, reservations
-- **Regional Agency**: Portal access for booking creation and management
+- **Hotel Admin (super_admin):** Full access to all features including technical ops panels
+- **Front Desk Staff (front_desk):** Operational access — daily tasks, reservations, basic channel management
+- **Guest:** Self-service portal for bookings and profile
 
 ## Core Architecture
-- **Frontend**: React + Vite + Shadcn UI
-- **Backend**: FastAPI + MongoDB
-- **Channel Manager**: Modular connector architecture (HotelRunner v2, Exely)
-- **Auth**: JWT-based authentication with role-based access
+- **Frontend:** React (Vite) + Shadcn UI + Tailwind CSS
+- **Backend:** FastAPI + MongoDB
+- **Integrations:** HotelRunner v2, Exely (SOAP), AWS KMS encryption, Emergent LLM
 
 ## What's Been Implemented
 
-### PMS Core
-- Room management (6 types: Standard, Deluxe, Superior, Suite, Junior Suite, Family)
-- Booking/reservation management
-- Guest management
-- Dashboard with KPI analytics
-- Night audit system
-
 ### Channel Manager
-- Unified connector architecture (`/channel_manager/connectors/`)
-- HotelRunner v2 integration (inventory sync, reservation import, rate management)
-- Exely SOAP integration (availability, rates, reservations)
-- Auto Room Mapping Wizard with fuzzy matching
-- Entity mapping system (cm_mappings, cm_entity_mappings)
+- Unified Channel Manager with HotelRunner + Exely integration
+- Room mapping wizard with auto-suggestion (fuzzy matching)
+- ARI Push Engine for availability/rate/inventory sync
+- Wire Failure tracking dashboard
+- Lockdown Dashboard, Incident Panel, Runtime Cockpit
+- Control Plane with event timeline
+- Data Model visualization
+- Integration Hub
+- Admin Control Panel (20 tabs)
+- Rate managers for both HR and Exely
+- Agency management + content distribution
 
-### Agency Portal
-- Dedicated login/registration for agencies
-- Reservation creation and management
+### Navigation Restructure (2026-04-07)
+- Kanallar menu simplified from 18 items to 2-tier structure
+- Normal users see 6 items: Channel Manager, HR/Exely Fiyat, Oda Eslestirme, Acente, Icerik Dagitimi
+- Admin (super_admin) sees additional 12 items under "Teknik Yonetim" separator
 
-### Security
-- AES-256-GCM credential encryption
-- JWT authentication
-- Role-based access control
+### Credential Management
+- Real HotelRunner credentials extracted from DB, encrypted with AES-256-GCM
+- Stored in cm_connectors collection
+- Dynamic environment detection (sandbox vs production)
 
-## Completed Tasks (Latest Session - 2026-04-07)
-- **DB Cleanup**: Removed 30+ duplicate connectors, test mappings, mock external room types/rate plans
-- **Fetch-External Mechanism**: New POST endpoint to fetch real room types from HotelRunner API
-- **Wizard Update**: Auto-fetches channel data when clicking "İleri", shows clear error/success messages
-- **Lint Fixes**: Fixed 19 ruff lint errors across backend Python files
-- **Legacy HR Connector Removal**: Completed in previous session (2026-04-07)
-
-## Active Connectors
-1. HotelRunner Sandbox (id: c79fd9cb-d240-4344-8b2d-7d8b71d6a681)
-2. Sandbox Exely (id: sandbox-exely-sim-e1fca6dc1c5b)
-3. Sandbox HotelRunner (id: sandbox-hotelrunner-sim-e1fca6dc1c5b)
+### Background Workers
+- HR Pull Scheduler: 300s interval (was 30s, caused rate limiting)
+- Exely Pull Scheduler: 30s interval
+- Dashboard snapshot: 60s
+- Room-type inventory: 300s
+- Availability reconciliation: 900s
 
 ## Prioritized Backlog
 
-### P2 - Upcoming
-- Real-time UI notifications for channel push results (instead of silent background processing)
+### P0
+- HotelRunner 429 Rate Limit recovery — verify when rate limit resets, test mapping wizard end-to-end
 
-### P3 - Future Enhancements
-- Channel Manager Dashboard: recent reservations, failed imports, push queue status, connection health
-- Admin UI Panel for encryption management (view status, trigger migrations, check audit logs)
-- Make unassigned reservations more prominent in the calendar
-- Improve Auto Room Mapping logic: include capacity (max occupancy) and base price in fuzzy matching
+### P2
+- Real-time UI notifications for channel push results
 
-### P4 - Refactoring
-- Abstract/subdivide `hotelrunner_sync.py` (~1000 lines)
+### P3 (Future)
+- Channel Manager Dashboard (reservations, failed imports, push queue, connection health)
+- Admin UI Panel for encryption management
+- Make unassigned reservations more prominent in calendar
+- Improve Auto Room Mapping (capacity + base price matching)
+
+### Refactoring
+- `hotelrunner_sync.py` (~1000 lines) — split Phase A/B logic
 - `hr_rate_manager_router.py` (>1100 lines)
-- Migrate `v1_` prefixed modules inside `hotelrunner_v2/` to native v2 API
+- Migrate `v1_` modules to v2 API format
+
+## Key Endpoints
+- `GET /api/channel-manager/v2/mapping-wizard/{connector_id}/fetch-external`
+- `POST /api/channel-manager/hotelrunner/sync/scheduler/stop`
+- `GET /api/channel-manager/connections/overview`
+- `GET /api/channel-manager/hr-rate-manager/grid`
+- `GET /api/channel-manager/wire-failures/summary`
+
+## Key Collections
+- `cm_connectors` — encrypted channel credentials
+- `provider_secrets` / `_dev_secrets` — legacy secret stores
+- `hotelrunner_pull_cursors` — sync cursor tracking
+- `webhook_raw_payloads` — raw webhook storage
 
 ## 3rd Party Integrations
-- HotelRunner v2 API (LIVE, token active)
-- Exely SOAP API (requires provider credentials)
-- AWS KMS (encryption, requires user API key)
-- Emergent Integrations (Universal LLM Key)
-
-## Key API Endpoints
-- `POST /api/auth/login` - JWT login (returns `access_token`)
-- `GET /api/channel-manager/v2/connectors` - List connectors
-- `POST /api/channel-manager/v2/mapping-wizard/{id}/fetch-external` - Fetch real channel data
-- `GET /api/channel-manager/v2/mapping-wizard/{id}/suggest-rooms` - Room mapping suggestions
-- `GET /api/channel-manager/v2/mapping-wizard/{id}/suggest-rate-plans` - Rate plan suggestions
-- `POST /api/channel-manager/v2/mapping-wizard/{id}/confirm` - Confirm mappings
+- AWS KMS (AES-256-GCM encryption)
+- HotelRunner v2 REST API
+- Exely SOAP API
+- Emergent LLM (AI features)

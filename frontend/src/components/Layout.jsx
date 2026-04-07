@@ -7,6 +7,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
 import {
   Tooltip,
@@ -197,23 +199,56 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
           </Tooltip>
         </TooltipProvider>
         <DropdownMenuContent align="start" className="min-w-[190px]">
-          {items.map((item) => {
-            const Icon = ICON_BY_KEY[item.key] || Home;
-            const isItemActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
+          {(() => {
+            const normalItems = items.filter(i => !i.requireSuperAdmin);
+            const adminItems = items.filter(i => i.requireSuperAdmin);
             return (
-              <DropdownMenuItem
-                key={item.key}
-                onClick={() => handleNavigate(item.path)}
-                className={`flex items-center gap-2 cursor-pointer ${
-                  isItemActive ? 'bg-blue-50 text-blue-700 font-semibold' : ''
-                }`}
-                data-testid={`nav-${item.key}-button`}
-              >
-                <Icon className={`w-3.5 h-3.5 ${isItemActive ? 'text-blue-600' : 'text-gray-400'}`} />
-                <span className="text-sm">{t(`navKeys.${item.key}`, item.label)}</span>
-              </DropdownMenuItem>
+              <>
+                {normalItems.map((item) => {
+                  const Icon = ICON_BY_KEY[item.key] || Home;
+                  const isItemActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
+                  return (
+                    <DropdownMenuItem
+                      key={item.key}
+                      onClick={() => handleNavigate(item.path)}
+                      className={`flex items-center gap-2 cursor-pointer ${
+                        isItemActive ? 'bg-blue-50 text-blue-700 font-semibold' : ''
+                      }`}
+                      data-testid={`nav-${item.key}-button`}
+                    >
+                      <Icon className={`w-3.5 h-3.5 ${isItemActive ? 'text-blue-600' : 'text-gray-400'}`} />
+                      <span className="text-sm">{t(`navKeys.${item.key}`, item.label)}</span>
+                    </DropdownMenuItem>
+                  );
+                })}
+                {adminItems.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-[10px] text-gray-400 font-normal uppercase tracking-wider px-2">
+                      Teknik Yonetim
+                    </DropdownMenuLabel>
+                    {adminItems.map((item) => {
+                      const Icon = ICON_BY_KEY[item.key] || Home;
+                      const isItemActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
+                      return (
+                        <DropdownMenuItem
+                          key={item.key}
+                          onClick={() => handleNavigate(item.path)}
+                          className={`flex items-center gap-2 cursor-pointer text-gray-500 ${
+                            isItemActive ? 'bg-blue-50 text-blue-700 font-semibold' : ''
+                          }`}
+                          data-testid={`nav-${item.key}-button`}
+                        >
+                          <Icon className={`w-3.5 h-3.5 ${isItemActive ? 'text-blue-600' : 'text-gray-400'}`} />
+                          <span className="text-sm">{t(`navKeys.${item.key}`, item.label)}</span>
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </>
+                )}
+              </>
             );
-          })}
+          })()}
         </DropdownMenuContent>
       </DropdownMenu>
     );
