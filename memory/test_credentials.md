@@ -1,28 +1,15 @@
 # Test Credentials
 
-## Frontend Login (Super Admin)
-- Email: `demo@hotel.com`
-- Password: `demo123`
-- Role: `super_admin`
+## Admin Account
+- Email: demo@hotel.com
+- Password: demo123
+- Role: super_admin
 
-## Frontend Login (Hotel Staff - Front Desk)
-- Email: `frontdesk@hotel.com`
-- Password: `staff123`
-- Role: `front_desk`
+## Staff Account
+- Email: frontdesk@hotel.com
+- Password: staff123
+- Role: hotel_user
 
-## Agency User (Antalya Turizm)
-- Email: `ayse@antalyaturizm.com`
-- Password: `acente123`
-- Role: `agency_admin`
-- Agency: `Antalya Turizm`
-- Portal URL: `/agency-portal`
-
-## Exely API (PMSConnect)
-- Username: `PMSConnect.501694`
-- Password: `@G,7}sguup4P`
-- Hotel Code: `501694`
-- Endpoint: `https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc`
-- Currency: USD
-
-## Mock HotelRunner Server
-- URL: `http://localhost:9999`
+## Notes
+- Use `access_token` header key (not `token`) for API authentication
+- Agency portal login via /agency-portal endpoint

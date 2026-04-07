@@ -40,15 +40,26 @@ Multi-tenant SaaS PMS with unified channel manager and robust polling/push webho
   - Rate plan suggestions (same fuzzy matching)
   - Existing mappings shown separately
   - Accessible via Kanallar menu -> "Oda Eslestirme Sihirbazi"
+- **Legacy HR Connector Removal** (2026-04-07):
+  - Deleted `_deprecated_hotelrunner_v1/` backup directory (12 files)
+  - Deleted `connectors/hotelrunner/` deprecated wrapper directory (12 files)
+  - Deleted `router_legacy_DEPRECATED.py` (1828 lines dead code)
+  - Deleted `providers/hotelrunner_legacy.py` (286 lines dead code)
+  - Consolidated v1 modules into `hotelrunner_v2/` directory (auth, v1_client, v1_errors, v1_mapper, xml_builder, xml_parser, environment_config, etc.)
+  - Updated all imports in 5 application services + 1 router + 5 test files
+  - Verified: 28/28 backend tests passed, all API endpoints functional
 
 ## Backlog
 
 ### P2
-- Legacy HR Connector removal
 - Real-time UI notifications for channel push results
 
 ### P3
 - Channel Manager Dashboard (reservations, failed imports, push queue, health metrics)
 - Admin UI Panel (encryption management)
 - Calendar: make unassigned reservations more prominent
-- Refactoring: hotelrunner_sync.py (~1000 lines), hr_rate_manager_router.py (~1100 lines)
+- Auto Room Mapping enhancement: add capacity + base price to fuzzy matching
+
+### P4 (Refactoring)
+- hotelrunner_sync.py (~1000 lines) subdivision
+- hr_rate_manager_router.py (~1100 lines) subdivision
