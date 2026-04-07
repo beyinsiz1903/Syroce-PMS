@@ -155,16 +155,44 @@ class AutoMappingService:
 
         # Build client and fetch rooms
         try:
+            env = creds.pop("environment", "production")
             auth = HotelRunnerAuth.from_credentials(creds)
-            client = HotelRunnerClient(auth=auth, sandbox=True)
+            client = HotelRunnerClient(auth=auth, environment=env)
         except AuthenticationError as e:
             return {"success": False, "error": f"Auth hatasi: {str(e)[:200]}"}
 
         try:
-            # Fetch rooms from HotelRunner REST API
-            resp_text = await client._request_json("GET", "/apps/rooms", params={"per_page": "200"})
-            raw_data, _audit = resp_text
-            rooms_raw = raw_data if isinstance(raw_data, list) else raw_data.get("rooms", []) if isinstance(raw_data, dict) else []
+            # Fetch rooms from HotelRunner REST API with retry on rate limit
+            import asyncio as _aio
+            from ..connectors.hotelrunner_v2.v1_errors import RateLimitError
+
+            rooms_raw = None
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    raw_data, _audit = await client._request_json(
+                        "GET", "/apps/rooms", params={"per_page": "200"},
+                    )
+                    rooms_raw = (
+                        raw_data if isinstance(raw_data, list)
+                        else raw_data.get("rooms", []) if isinstance(raw_data, dict)
+                        else []
+                    )
+                    break
+                except RateLimitError as rle:
+                    wait = min(rle.retry_after_seconds, 30) if attempt < max_retries - 1 else 0
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            "Rate limited on room fetch (attempt %d/%d), waiting %ds",
+                            attempt + 1, max_retries, wait,
+                        )
+                        await _aio.sleep(wait)
+                    else:
+                        raise
+
+            if rooms_raw is None:
+                rooms_raw = []
+
         except (ConnectorError, Exception) as e:
             logger.error("Room fetch failed for connector %s: %s", connector_id, e)
             await client.close()
