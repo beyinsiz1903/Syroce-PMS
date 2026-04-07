@@ -31,11 +31,17 @@ Multi-tenant SaaS PMS with unified channel manager and robust polling/push webho
   - Agency reservation tracking
   - Content Distribution page (hotel staff selects agencies, pushes content)
   - Agency Management page in PMS (under Kanallar nav group)
+- **Auto Room Mapping Wizard** (2026-04-07):
+  - 4-step wizard: Kanal Secimi -> Oda Eslestirme -> Fiyat Plani -> Onay & Kayit
+  - Fuzzy name matching (difflib.SequenceMatcher + Turkish/English alias boosting)
+  - Confidence scores per suggestion (auto >=60%, review <60%)
+  - Greedy optimal matching to prevent duplicate external entity assignments
+  - Bulk-create confirmed mappings
+  - Rate plan suggestions (same fuzzy matching)
+  - Existing mappings shown separately
+  - Accessible via Kanallar menu -> "Oda Eslestirme Sihirbazi"
 
 ## Backlog
-
-### P1
-- Auto Room Mapping Wizard
 
 ### P2
 - Legacy HR Connector removal
