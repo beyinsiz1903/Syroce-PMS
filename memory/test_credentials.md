@@ -10,6 +10,13 @@
 - Password: `staff123`
 - Role: `front_desk`
 
+## Agency User (Antalya Turizm)
+- Email: `ayse@antalyaturizm.com`
+- Password: `acente123`
+- Role: `agency_admin`
+- Agency: `Antalya Turizm`
+- Portal URL: `/agency-portal`
+
 ## Exely API (PMSConnect)
 - Username: `PMSConnect.501694`
 - Password: `@G,7}sguup4P`

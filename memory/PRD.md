@@ -1,7 +1,7 @@
 # PMS + Channel Manager SaaS — PRD
 
 ## Problem Statement
-Multi-tenant SaaS PMS with unified channel manager and robust polling/push webhook fallbacks. Hotels connect to OTAs (Booking.com, Expedia, EtsTur, JollyTur) via HotelRunner and Exely providers.
+Multi-tenant SaaS PMS with unified channel manager and robust polling/push webhook fallbacks. Hotels connect to OTAs (Booking.com, Expedia, EtsTur, JollyTur) via HotelRunner and Exely providers. Regional agencies without APIs are integrated via Agency Portal.
 
 ## Architecture
 - **Frontend**: React (Vite) + Shadcn UI
@@ -21,6 +21,16 @@ Multi-tenant SaaS PMS with unified channel manager and robust polling/push webho
 - Rate management (HotelRunner)
 - Encryption layer for credentials
 - Security: strawberry-graphql 0.312.3 (CVE-2026-35526, CVE-2026-35523 fixed), vite 8.0.5
+- CI/CD Docker build fix (removed --frozen-lockfile from Dockerfile)
+- **Regional Agency Portal** (2026-04-07):
+  - Agency CRUD (create/edit/delete agencies, manage users)
+  - Agency user auth (JWT login via /agency-portal)
+  - Availability search for agency users
+  - Auto-drop reservations to PMS (no approval needed)
+  - Hotel content management & distribution to agencies
+  - Agency reservation tracking
+  - Content Distribution page (hotel staff selects agencies, pushes content)
+  - Agency Management page in PMS (under Kanallar nav group)
 
 ## Backlog
 
