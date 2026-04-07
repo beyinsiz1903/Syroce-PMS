@@ -15,7 +15,7 @@ import pytest
 import requests
 import uuid
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://channel-wizard.preview.emergentagent.com')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://unified-rate-mgr.preview.emergentagent.com')
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"

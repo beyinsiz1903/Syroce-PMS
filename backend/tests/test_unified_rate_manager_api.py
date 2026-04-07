@@ -22,7 +22,7 @@ import requests
 import os
 from datetime import datetime, timedelta
 
-BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://channel-wizard.preview.emergentagent.com")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://unified-rate-mgr.preview.emergentagent.com")
 UNIFIED_PREFIX = "/api/channel-manager/unified-rate-manager"
 
 # Test credentials

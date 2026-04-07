@@ -601,8 +601,8 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
         logger.warning("[UNIFIED] HR provider import hatasi: %s", e)
         return 0
 
-    from domains.channel_manager.hr_rate_manager_router import _push_with_retry
     from domains.channel_manager.hr_push_queue_worker import enqueue_failed_push, schedule_auto_retry
+    from domains.channel_manager.hr_rate_manager_router import _push_with_retry
 
     pushed_room_types = set()
     push_tasks = []
@@ -913,7 +913,6 @@ async def get_push_providers(current_user: User = Depends(get_current_user)):
 
     if detection["provider"] == "hotelrunner":
         try:
-            from domains.channel_manager.hr_rate_manager_router import router as hr_router
             # Proxy to the HR push providers endpoint
             providers = []
             conn = detection["connection"]
@@ -1026,8 +1025,8 @@ async def get_holidays(current_user: User = Depends(get_current_user)):
     """Tatil donemlerini dondurur."""
     # Import from existing router to reuse logic
     try:
-        from domains.channel_manager.hr_rate_manager_router import _get_holiday_periods
         from datetime import date
+        from domains.channel_manager.hr_rate_manager_router import _get_holiday_periods
         now = date.today()
         all_periods = []
         for y in [now.year, now.year + 1]:
