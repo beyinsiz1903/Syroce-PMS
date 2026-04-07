@@ -216,18 +216,9 @@ export const NAV_ITEMS = [
     navGroup: "channels",
   },
   {
-    key: "hr_rate_manager",
-    label: "HotelRunner - Fiyat ve Musaitlik",
-    path: "/hr-rate-manager",
-    moduleKey: "channel_manager",
-    tier: "professional",
-    group: "professional",
-    navGroup: "channels",
-  },
-  {
-    key: "rate_manager",
-    label: "Exely - Fiyat ve Musaitlik",
-    path: "/rate-manager",
+    key: "unified_rate_manager",
+    label: "Fiyat & Musaitlik",
+    path: "/unified-rate-manager",
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
@@ -262,6 +253,26 @@ export const NAV_ITEMS = [
   },
 
   // ──── CHANNELS GROUP — Sadece Admin (teknik yonetim) ───────────
+  {
+    key: "hr_rate_manager",
+    label: "HotelRunner - Fiyat ve Musaitlik",
+    path: "/hr-rate-manager",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+    navGroup: "channels",
+    requireSuperAdmin: true,
+  },
+  {
+    key: "rate_manager",
+    label: "Exely - Fiyat ve Musaitlik",
+    path: "/rate-manager",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+    navGroup: "channels",
+    requireSuperAdmin: true,
+  },
   {
     key: "channel_connections",
     label: "Kanal Baglantilari",

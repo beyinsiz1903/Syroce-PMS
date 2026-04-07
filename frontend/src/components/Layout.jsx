@@ -39,6 +39,7 @@ const ICON_BY_KEY = {
   invoices: DollarSign,
   cost_management: Layers,
   channel_manager: Layers,
+  unified_rate_manager: DollarSign,
   rate_manager: DollarSign,
   rms: TrendingUp,
   ai: Bot,

@@ -130,6 +130,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.channel_manager.rate_manager_router", "router", ["Rate Manager"], None, None),
     # HR Rate Manager — HotelRunner Fiyat/Müsaitlik Yönetimi
     ("domains.channel_manager.hr_rate_manager_router", "router", ["HR Rate Manager"], None, None),
+    # Unified Rate Manager — Birlesik Fiyat/Musaitlik Yonetimi
+    ("domains.channel_manager.unified_rate_manager_router", "router", ["Unified Rate Manager"], None, None),
     # Channel Connections Overview — Kanal Bağlantıları Genel Bakış
     ("domains.channel_manager.channel_connections_router", "router", ["Channel Connections"], None, None),
     # Auto-Map — Otomatik Oda Esleme
