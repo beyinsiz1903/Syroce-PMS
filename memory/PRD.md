@@ -1,180 +1,35 @@
-# Multi-Tenant SaaS PMS + Channel Manager — PRD
+# PMS + Channel Manager SaaS — PRD
 
-## Original Problem Statement
-Multi-tenant SaaS PMS + Channel Manager with canonical data models, multi-tenant isolation, PII strict mode tracking, and comprehensive multi-language support.
+## Problem Statement
+Multi-tenant SaaS PMS with unified channel manager and robust polling/push webhook fallbacks. Hotels connect to OTAs (Booking.com, Expedia, EtsTur, JollyTur) via HotelRunner and Exely providers.
 
 ## Architecture
-- **Backend:** FastAPI + MongoDB (MONGO_URL from .env)
-- **Frontend:** React + i18n (10 locales, 1640 keys each)
-- **Channel Manager:** HotelRunner v2 (LIVE MODE), Exely (SOAP)
-- **Security:** PII Strict Mode, AES-256-GCM field encryption
+- **Frontend**: React (Vite/CRA) + Shadcn UI
+- **Backend**: FastAPI + MongoDB
+- **Integrations**: HotelRunner v2 (LIVE), Exely SOAP API, AWS KMS (encryption), Emergent LLM Key
+- **Multi-tenancy**: Strict tenant isolation via `tenant_id` on all collections
 
-## What's Been Implemented
+## Completed Features
+- Full PMS (rooms, bookings, calendar)
+- HotelRunner v2 integration (polling + push)
+- Exely SOAP integration (polling + auto-import)
+- Unified Channel Connections dashboard (per-hotel credential management)
+- Availability auto-sync & reconciliation workers
+- Rate management (HotelRunner)
+- Encryption layer for credentials
+- Security: strawberry-graphql upgraded to 0.312.3 (CVE-2026-35526, CVE-2026-35523 fixed)
 
-### Core Platform
-- Multi-tenant isolation with tenant-scoped data
-- JWT authentication system
-- Role-based access control
-- Subscription/module management
+## Backlog
 
-### i18n System (100% Complete)
-- 10 locales: en, tr, ar, de, es, fr, it, ru, pt, zh
-- All 1640 keys synchronized across all languages
-- pt.json and zh.json fully translated to native languages
-- Static imports for guaranteed translation availability
+### P1
+- Auto Room Mapping Wizard
 
-### Channel Manager
-- HotelRunner v2 connector (LIVE MODE — shadow_mode=false, write_enabled=true)
-- HotelRunner v1 deprecated (warnings added to all files)
-- Exely SOAP API integration
-- Wire failure tracking system
-- ARI Push (availability, rate, min_stay, stop_sell) working via query params
-- **Rate limit protection**: Adaptive backoff for polling, capped retry for pushes, fail-fast strategy
-
-### Security & PII — Field Encryption (100% Complete)
-- PII Strict Mode middleware/router
-- **Guest collection: 100% encrypted** (email, phone, id_number, passport, address, etc.)
-- **Users collection: 100% encrypted** (email, phone)
-- **Bookings collection: 100% encrypted** (guest_email, guest_phone, billing_address, billing_tax_number)
-- Hash-based search indexes for encrypted fields
-- Dual-read pattern: auth/search works with both encrypted and plaintext data
-- Auto-encryption on new inserts
-- AES-256-GCM with HMAC-SHA256 search hashes
-
-### HotelRunner Live Integration
-- Shadow Mode disabled, Live Mode active
-- Room/rate mappings created
-- **30-second polling** with adaptive backoff (optimized from 300s)
-- **Phase A.5**: Real-time modification detection via `from_last_update_date` — every cycle
-- **Phase A.5 Cancellation Fix**: Detects `state=cancelled` and uses `reservation_cancel_pull` event_type to bypass deduplication
-- **Phase A.5 Pagination**: Tüm sayfalar dolaşılıyor (sadece page 1 değil), 50+ modifikasyonda da tespit çalışıyor
-- **Exploder Leak Fix**: `explode_multi_room_reservation` üst seviye `state/cancel_reason` sızmasını temizliyor — kısmi iptalde kademeli yayılma ÖNLENDI
-- **Phase B Cascade Fix**: `timestamp_changed` yolunda aktif odalar korunuyor, üst seviye iptal yayılmıyor
-- **Phase A.6**: Auto-sync detected modifications to PMS bookings — every cycle
-- **Phase B**: Full catch-up every 10th cycle (~5 min) — safety net
-- **Unified Callback**: `/api/channel-manager/hotelrunner/callback` — single endpoint for HotelRunner "Dönüş adresi"
-- Unassigned imports, notifications
-- **Bildirim Sistemi (Apr 2026)**:
-  - `read` alan normalizasyonu (is_read → read uyumluluk)
-  - `mark-all-read` endpoint (toplu okundu)
-  - `dedup_key` ile tekrarlayan bildirim önleme
-  - Stale update guard ile ping-pong önleme
-  - Pipeline'da iptal bildirimi oluşturma
-  - NotificationBell: dialog açılınca otomatik okundu
-  - Rezervasyon detayında sisteme düşme zamanı ve giriş/çıkış saatleri
-- End-to-end verified webhook pipeline
-- Per-room cancellation detection for multi-room reservations
-- ARI push via query params (fix Apr 2026)
-- Three-tier global/partial cancellation detection
-- Auto-un-cancel guard: cancelled reservations never auto-revert to confirmed
-- effective_state uses only state field + cancel_reason (not next_states)
-- Rate limit aware push with 30s-capped retry and fail-fast polling (fix Apr 2026)
-- **Push Retry Queue**: Automatic retry mechanism for failed pushes — enqueue, background worker, adaptive backoff. Manuel retry kaldırıldı, "Tümünü İptal Et" butonu eklendi (Apr 2026)
-- **Rate Limit Cooldown & Auto-Retry System** (Apr 2026)
-- **Background Push (Exely tarzı)** (Apr 2026)
-- **Gün Filtrelemeli Push (Apr 2026)**
-- **Otomatik Polling Yeniden Aktif (Apr 2026)**: 300s aralikla otomatik reservation pull
-- **403 Fix + Connection Pooling** (Apr 2026)
-
-### Calendar Vibrant Color Update (Apr 2026)
-- Vibrant booking bar colors by status
-- Blue-tinted room type headers
-- Compact grid with bold reservation names and three-state occupancy dots
-
-### VCC (Virtual Credit Card) Secure View (Apr 2026) — DONE
-- OTA/Acente sanal kart bilgileri AES-256-GCM ile şifreli saklanıyor
-- Otelci kart bilgilerini maksimum 3 kez görüntüleyebilir (API seviyesinde zorunlu)
-- Atomic view counter ($lt koşulu ile race condition koruması)
-- Rezervasyon detayında "Online Ödeme" sekmesi
-- Kart ekleme formu, kart görsel kartı, kalan hak gösterimi
-- 3 hak dolunca kalıcı kilitleme + kırmızı uyarı
-- Her görüntüleme activity log'a yazılıyor (audit trail)
-
-### Rate Manager Provider Toggle (Apr 2026) — DONE
-- Exely ve HotelRunner rate manager sayfaları arasında hızlı geçiş toggle'ı
-- Her iki sayfanın üst kısmında segmented control tarzı toggle
-- Aktif provider beyaz arka plan + gölge, inaktif provider gri metin
-- React Router ile SPA navigasyonu
-- data-testid ile test edilebilir
-
-### Rate Manager Oda Tipi Sil Butonu Kaldırma (Apr 2026) — DONE
-- Fiyat/müsaitlik panelindeki oda tipi silme (Trash2) butonu her iki provider ekranından kaldırıldı
-- BulkUpdatePanel.jsx, HRRateManager.jsx temizlendi
-
-### Otomatik Müsaitlik Senkronizasyonu (Apr 2026) — DONE
-- Manuel rezervasyon oluşturulduğunda, güncellendiğinde veya iptal edildiğinde
-  gerçek müsaitlik (toplam oda - aktif booking) otomatik hesaplanıp kanallara push ediliyor
-- Desteklenen akışlar: booking create, booking update (tarih/oda/status değişikliği), cancel, no-show
-- Exely (SOAP) ve HotelRunner (REST) arka planda paralel push
-- Availability hesabı: takvim ekranındaki boş/dolu oda sayısına dayalı (room_type başına)
-- Tarih gruplaması: ardışık günler ve aynı müsaitlik değeri tek API çağrısında gönderiliyor
-- Duplicate mapping filtresi: aynı exely_room_code/hr_inv_code tekrar push yapılmıyor
-- Hook noktaları: create_reservation_service, update_reservation_service, hotel_services cancel, pms_hardening cancel/no-show
-
-### Periyodik Müsaitlik Uzlaştırma Worker'ı (Apr 2026) — DONE
-- Her 15 dakikada bir PMS'deki gerçek müsaitlik ile kanal müsaitliğini otomatik eşleştirme
-- 60 günlük takvim taranıyor (bugün + 60 gün)
-- Ağ hatası, failed push ve dışarıdan gelen booking'lerin müsaitlik etkisini yakalar
-- Startup'ta otomatik başlatılır, shutdown'da graceful stop
-- Dosya: availability_reconciliation_worker.py
-
-### Kanal Yönetimi Sayfası (Apr 2026) — DONE
-- Birleşik kanal bağlantıları genel bakış sayfası (/channel-connections)
-- HotelRunner ve Exely bağlantı durumu tek sayfada
-- Yeni otel onboarding rehberi (5 adımlı kılavuz)
-- Bağlantı kurma/kesme/test etme işlemleri
-- Oda eşleştirme durumu göstergesi
-- PMS oda tipleri referans gösterimi
-- Her otel için ayrı credential yönetimi (multi-tenant)
-- Backend: /api/channel-manager/connections/overview endpoint
-- Frontend: ChannelConnections.jsx + navigasyona ekleme
-
-## Prioritized Backlog
-
-### P2 (Medium)
+### P2
+- Legacy HR Connector removal
 - Real-time UI notifications for channel push results
 
-### P3 (Low)
-- Legacy HR v1 connector removal (after full verification)
-- Channel Manager Dashboard — recent reservations, failed imports, connection health metrics
-- Admin UI Panel for encryption management (view status, trigger migrations, check audit logs)
-- Make unassigned reservations more prominent in calendar
-
-### Refactoring
-- hotelrunner_sync.py (~1000 satır) Phase A/Phase B bölünmesi
-- hr_rate_manager_router.py (>1100 satır) bölünmesi
-
-## Completed Refactoring
-- hotelrunner_webhook.py monolith split DONE (Apr 2026)
-
-## Key API Endpoints
-- POST /api/channel-manager/hr-rate-manager/bulk-grid-update
-- GET /api/channel-manager/hr-rate-manager/grid
-- GET /api/channel-manager/hr-rate-manager/queue-status
-- POST /api/channel-manager/hr-rate-manager/queue-retry
-- DELETE /api/channel-manager/hr-rate-manager/queue-cancel/{item_id}
-- POST /api/channel-manager/hotelrunner/sync/reservations/pull
-- GET /api/channel-manager/hotelrunner/sync/status
-- POST /api/channel-manager/hotelrunner/webhooks/reservations
-- GET /api/security/pii/strict-mode/config
-- GET /api/ops/field-encryption/status
-
-## Key API Endpoints (VCC)
-- POST /api/pms/reservations/{id}/vcc — Kart kaydet (şifreli)
-- GET /api/pms/reservations/{id}/vcc/status — Durum sorgula (görüntüleme harcamaz)
-- POST /api/pms/reservations/{id}/vcc/reveal — Kart detay aç (1/3 hak harcar)
-- DELETE /api/pms/reservations/{id}/vcc — Kart sil
-
-## 3rd Party Integrations
-- AWS KMS (Encryption) — optional for production key management
-- HotelRunner v2 — User Token active, LIVE MODE
-- Exely (SOAP) — Provider credentials required
-
-## Dependency Notes
-- `emergentintegrations==0.1.0` requires `openai==1.99.9` and pulls `litellm` as transitive dep
-- `litellm==1.83.2` installed with `--no-deps` to fix CVE-2026-35029 and CVE-2026-35030
-- CI/CD: `bash backend/scripts/post_install.sh` after `pip install -r requirements.txt`
-
-## Critical Constraints
-- All responses in Turkish
-- Latest test report: /app/test_reports/iteration_187.json
+### P3
+- Channel Manager Dashboard (reservations, failed imports, push queue, health metrics)
+- Admin UI Panel (encryption management)
+- Calendar: make unassigned reservations more prominent
+- Refactoring: hotelrunner_sync.py (~1000 lines), hr_rate_manager_router.py (~1100 lines)
