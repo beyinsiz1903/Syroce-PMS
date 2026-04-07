@@ -7,7 +7,7 @@ WORKDIR /app
 
 COPY package.json yarn.lock ./
 COPY scripts/ scripts/
-RUN yarn install --frozen-lockfile --ignore-engines --production=false
+RUN yarn install --ignore-engines --production=false
 
 COPY . .
 
