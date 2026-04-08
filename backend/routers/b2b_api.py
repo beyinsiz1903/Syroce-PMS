@@ -39,10 +39,10 @@ import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header, Query
 from pydantic import BaseModel
 
-logger = logging.getLogger(__name__)
-
 from core.database import db
 from core.security import get_current_user
+
+logger = logging.getLogger(__name__)
 from core.tenant_db import set_tenant_context
 from models.schemas import User
 
