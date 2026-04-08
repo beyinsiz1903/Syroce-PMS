@@ -446,19 +446,20 @@ async def test_automation_rule(rule_id: str, current_user: User = Depends(get_cu
 
 @router.post("/seed-demo")
 async def seed_demo_data(current_user: User = Depends(get_current_user)):
-    """Seed demo templates and sample delivery logs for testing."""
+    """Seed demo templates, delivery logs, and automation rules."""
     db = _get_db()
     tenant_id = current_user.tenant_id
-
-    # Check if already seeded
-    existing = await db.messaging_templates.count_documents({"tenant_id": tenant_id})
-    if existing > 0:
-        return {"success": True, "message": "Demo verisi zaten mevcut", "templates": existing}
+    templates_seeded = 0
+    logs_seeded = 0
+    rules_seeded = 0
 
     # ── Seed templates ──
-    templates = _get_demo_templates(tenant_id)
-    if templates:
-        await db.messaging_templates.insert_many(templates)
+    existing_templates = await db.messaging_templates.count_documents({"tenant_id": tenant_id})
+    if existing_templates == 0:
+        templates = _get_demo_templates(tenant_id)
+        if templates:
+            await db.messaging_templates.insert_many(templates)
+            templates_seeded = len(templates)
 
     # ── Seed sandbox providers ──
     providers_count = await db.messaging_provider_configs.count_documents({"tenant_id": tenant_id})
@@ -483,16 +484,17 @@ async def seed_demo_data(current_user: User = Depends(get_current_user)):
         await db.messaging_provider_configs.insert_many([email_cfg, wa_cfg])
 
     # ── Seed delivery logs ──
-    logs = _get_demo_delivery_logs(tenant_id)
-    if logs:
-        await db.messaging_delivery_logs.insert_many(logs)
+    existing_logs = await db.messaging_delivery_logs.count_documents({"tenant_id": tenant_id})
+    if existing_logs == 0:
+        logs = _get_demo_delivery_logs(tenant_id)
+        if logs:
+            await db.messaging_delivery_logs.insert_many(logs)
+            logs_seeded = len(logs)
 
     # ── Seed automation rules ──
     rules_count = await db.messaging_automation_rules.count_documents({"tenant_id": tenant_id})
-    rules_seeded = 0
     if rules_count == 0:
         from modules.messaging.automation import new_automation_rule
-        # Match templates to rules
         tmpl_list = await db.messaging_templates.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(50)
         tmpl_by_cat = {t["category"]: t for t in tmpl_list}
         default_rules = [
@@ -513,7 +515,7 @@ async def seed_demo_data(current_user: User = Depends(get_current_user)):
             await db.messaging_automation_rules.insert_many(auto_rules)
             rules_seeded = len(auto_rules)
 
-    return {"success": True, "templates": len(templates), "logs": len(logs), "automation_rules": rules_seeded}
+    return {"success": True, "templates": templates_seeded, "logs": logs_seeded, "automation_rules": rules_seeded}
 
 
 def _get_demo_templates(tenant_id: str) -> list[dict]:

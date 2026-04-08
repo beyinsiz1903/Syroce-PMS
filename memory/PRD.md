@@ -62,11 +62,18 @@ Turkish (All responses must be in Turkish)
 - **No third-party intermediaries** — Direct SMTP for email, Meta WhatsApp Business Cloud API for WhatsApp
 - **Backend**: SMTPEmailProvider + WhatsAppProvider with sandbox/live modes, settings API, template CRUD, send, delivery logs, metrics
 - **9 Pre-built Templates**: 5 WhatsApp (Hos Geldiniz, Yol Tarifi, Tesis Bilgileri, Puan/Degerlendirme, Iletisim) + 4 Email (Rezervasyon Onay, Fatura, Kampanya, Check-out Tesekkur)
-- **Frontend**: 5-tab dashboard (Mesaj Gonder, Sablonlar, Loglar, Metrikler, Ayarlar)
+- **Frontend**: 6-tab dashboard (Mesaj Gonder, Sablonlar, Otomasyon, Loglar, Metrikler, Ayarlar)
 - **Settings Panel**: SMTP (host, port, user, pass, from_email, TLS) + WhatsApp (access_token, phone_number_id) configuration
 - **Sandbox Mode**: Demo providers auto-seeded, simulated send — ready for real credentials
 - **New Endpoints**: `/api/messaging-center/settings`, `/api/messaging-center/settings/email`, `/api/messaging-center/settings/whatsapp`, `/api/messaging-center/send`, `/api/messaging-center/seed-demo`
-- **Test Result**: Backend 19/19, Frontend 100% — iteration_201.json
+
+### Messaging Automation — Event-Triggered Messaging (DONE - 2026-04-08)
+- **Booking event hooks**: check-in/check-out/confirm status changes trigger automatic messages to guests
+- **5 Default Rules**: Rez Onay (email), Check-in Oncesi Yol Tarifi (WhatsApp), Hos Geldiniz (WhatsApp), Check-out Tesekkur (email), Degerlendirme Linki (WhatsApp)
+- **Automation Engine**: `fire_booking_event()` hooked into `UpdateReservationService` and `approve_booking`
+- **Frontend**: Otomasyon tab with rule CRUD, enable/disable toggle, test trigger, summary cards, "Nasil Calisir?" guide
+- **New Endpoints**: `/api/messaging-center/automation/triggers`, `/api/messaging-center/automation/rules` (CRUD), `/api/messaging-center/automation/test/{id}`
+- **Test Result**: Backend 12/13 (1 skipped - no pending bookings), Frontend 100% — iteration_202.json
 
 ## Pending / Known Issues
 - litellm CVE-2026-35030: Suppressed in `.trivyignore`. Upgrade to >=1.83.0 blocked by emergentintegrations dependency chain.
