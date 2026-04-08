@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useCallback } from 'react';
+import Layout from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -215,26 +216,28 @@ function MetricsTab() {
   );
 }
 
-export default function MessagingDashboard() {
+export default function MessagingDashboard({ user, tenant, onLogout }) {
   const { t } = useTranslation();
   return (
-    <div data-testid="messaging-dashboard" className="p-6 space-y-6 max-w-7xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t("techDashboards.messagingDashboard")}</h1>
-        <p className="text-sm text-muted-foreground">SMS, Email ve WhatsApp provider yönetimi, teslimat logları ve metrikler</p>
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="messaging">
+      <div data-testid="messaging-dashboard" className="p-4 lg:p-6 space-y-6 max-w-7xl mx-auto">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">{t("techDashboards.messagingDashboard")}</h1>
+          <p className="text-sm text-muted-foreground">SMS, Email ve WhatsApp provider yönetimi, teslimat logları ve metrikler</p>
+        </div>
+        <Tabs defaultValue="logs">
+          <TabsList className="grid w-full grid-cols-4 max-w-2xl">
+            <TabsTrigger data-testid="tab-providers" value="providers">Providerlar</TabsTrigger>
+            <TabsTrigger data-testid="tab-templates" value="templates">Şablonlar</TabsTrigger>
+            <TabsTrigger data-testid="tab-logs" value="logs">Teslimat Logları</TabsTrigger>
+            <TabsTrigger data-testid="tab-metrics" value="metrics">Metrikler</TabsTrigger>
+          </TabsList>
+          <TabsContent value="providers"><ProvidersTab /></TabsContent>
+          <TabsContent value="templates"><TemplatesTab /></TabsContent>
+          <TabsContent value="logs"><DeliveryLogsTab /></TabsContent>
+          <TabsContent value="metrics"><MetricsTab /></TabsContent>
+        </Tabs>
       </div>
-      <Tabs defaultValue="logs">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger data-testid="tab-providers" value="providers">Providerlar</TabsTrigger>
-          <TabsTrigger data-testid="tab-templates" value="templates">Şablonlar</TabsTrigger>
-          <TabsTrigger data-testid="tab-logs" value="logs">Teslimat Logları</TabsTrigger>
-          <TabsTrigger data-testid="tab-metrics" value="metrics">Metrikler</TabsTrigger>
-        </TabsList>
-        <TabsContent value="providers"><ProvidersTab /></TabsContent>
-        <TabsContent value="templates"><TemplatesTab /></TabsContent>
-        <TabsContent value="logs"><DeliveryLogsTab /></TabsContent>
-        <TabsContent value="metrics"><MetricsTab /></TabsContent>
-      </Tabs>
-    </div>
+    </Layout>
   );
 }

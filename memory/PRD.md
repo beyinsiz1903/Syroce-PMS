@@ -54,6 +54,10 @@ Turkish (All responses must be in Turkish)
   - 6 room types, 5 yield rules, 6 seasonal calendar entries
 - **Test Result**: Backend 16/16, Frontend 100% — iteration_200.json
 
+### Messaging Dashboard Layout Fix (DONE - 2026-04-08)
+- Fixed missing Layout wrapper on MessagingDashboard — top navigation was disappearing when navigating to `/messaging-dashboard`
+- Wrapped component in `<Layout>` to match other consolidated page patterns
+
 ## Pending / Known Issues
 - litellm CVE-2026-35030: Suppressed in `.trivyignore`. Upgrade to >=1.83.0 blocked by emergentintegrations dependency chain.
 
