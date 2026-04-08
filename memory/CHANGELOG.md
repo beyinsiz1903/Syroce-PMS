@@ -1,7 +1,41 @@
 # CHANGELOG
 
 
-## 2026-04-08 - BUGFIX: RMS Module Eksik Backend Endpoint'leri & İkon Düzeltmesi
+## 2026-04-08 - REFACTOR: Gelismis (Advanced) Modül Konsolidasyonu (8 → 4)
+
+### Sorun
+Gelismis menüdeki 8 modülün çoğu aynı/benzer işleri yapıyordu:
+- Fiyat önerisi: RMS, Revenue Engine, Revenue Autopilot, AI Modülleri (4 farklı yerde)
+- Talep/doluluk tahmini: RMS, Revenue Engine, Data Intelligence, AI Modülleri (4 farklı yerde)
+- Autopilot: Revenue Autopilot (v2) ve AI Modülleri (eski v1)
+
+### Konsolidasyon
+| Yeni Modül | İçerik | Eski Modüller |
+|---|---|---|
+| **Gelir Yönetimi** | Fiyat stratejisi + gelir motoru + autopilot | RMS + Revenue Engine + Revenue Autopilot |
+| **AI & Zeka** | AI hub + veri zekası | AI Modülleri + Data Intelligence |
+| **Mesajlaşma** | SMS/Email/WhatsApp | Messaging Center (değişmedi) |
+| **Analitik & Raporlar** | Rapor dışa aktarma + ML zamanlayıcı | Analytics Export + ML Scheduler |
+
+### Yeni Dosyalar
+- `/app/frontend/src/pages/GelirYonetimiPage.jsx` — Tab wrapper (3 sekme)
+- `/app/frontend/src/pages/AIZekaPage.jsx` — Tab wrapper (2 sekme)
+- `/app/frontend/src/pages/AnalitikRaporlarPage.jsx` — Tab wrapper (2 sekme)
+
+### Değişiklikler
+- `RMSModule.jsx`: `embedded` prop desteği (Layout atlanabilir)
+- `RevenueEngineDashboard.jsx`: `embedded` prop desteği
+- `AIModule.jsx`: `embedded` prop desteği
+- `navItems.jsx`: 8 advanced item → 4 item
+- `routeDefinitions.jsx`: Yeni rotalar + legacy backward compat
+- `Layout.jsx`: Yeni nav key'ler için icon mapping
+
+### Test Sonuçları
+- Frontend: 14/14 test geçti (%100)
+- Legacy rotalar hâlâ erişilebilir
+- Çift Layout sorunu yok
+
+---
 
 ### Sorunlar
 1. **Revenue (RMS) Modülü**: Frontend'de 5 API endpoint çağrısı yapılıyor ama `enterprise_router.py`'daki basit/statik versiyonlar gerçek `rms_router.py` endpoint'lerini eziyordu

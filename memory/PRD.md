@@ -67,11 +67,28 @@ Turkish (All responses must be in Turkish)
 - Added unique icons for 5 modules that had generic Home fallback icons
 - Data Intelligence → BrainCircuit, Messaging Center → MessageSquare, ML Scheduler → Clock, Revenue Autopilot → Rocket, Analytics Export → Download
 
+### Advanced Module Consolidation (DONE - 2026-04-08)
+- Consolidated 8 Gelismis (Advanced) menu modules into 4 to eliminate overlap
+- Created 3 new wrapper pages: GelirYonetimiPage.jsx, AIZekaPage.jsx, AnalitikRaporlarPage.jsx
+- Modified RMSModule.jsx, RevenueEngineDashboard.jsx, AIModule.jsx to support embedded prop
+- Updated navItems.jsx (8 → 4 items) and routeDefinitions.jsx (new routes + legacy backward compat)
+- Updated Layout.jsx icon mappings for new nav keys
+- Test Result: 14/14 passed (100%)
+
 ## Pending / Known Issues
 - litellm CVE-2026-35030: Suppressed in `.trivyignore`. Upgrade to >=1.83.0 blocked by emergentintegrations dependency chain (openai==1.99.9 vs openai>=2.8.0). Monitor emergentintegrations releases.
 
 ## Upcoming Tasks (P1)
 - Real-time UI notifications for channel push results
+
+## Completed — Advanced Module Consolidation (2026-04-08)
+- 8 Advanced (Gelismis) modules consolidated into 4:
+  - **Gelir Yonetimi** (/app/gelir-yonetimi): RMS + Revenue Engine + Revenue Autopilot (3 tabs)
+  - **AI & Zeka** (/app/ai-zeka): AI Module + Data Intelligence (2 tabs)
+  - **Mesajlasma** (/messaging-dashboard): Messaging Center (unchanged)
+  - **Analitik & Raporlar** (/app/analitik): Analytics Export + ML Scheduler (2 tabs)
+- Legacy routes maintained for backward compatibility
+- Existing pages support `embedded` prop for Layout-free rendering
 
 ## Future / Backlog (P2+)
 - Automatic retry mechanism with exponential backoff for failed webhook deliveries
