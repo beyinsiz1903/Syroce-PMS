@@ -157,12 +157,29 @@ async def process_booking_event(tenant_id: str, event_type: str, booking: dict):
                         {"$inc": {"total_sent": 1}, "$set": {"last_triggered_at": datetime.now(UTC).isoformat()}},
                     )
                     logger.info(f"Automation sent: {rule['name']} -> {recipient} ({rule['channel']})")
+                    # Create in-app notification for success
+                    await _create_automation_notification(
+                        db, tenant_id, success=True,
+                        rule_name=rule["name"],
+                        guest_name=variables.get("misafir_adi", "Misafir"),
+                        channel=rule["channel"],
+                        event_type=event_type,
+                    )
                 else:
                     await db.messaging_automation_rules.update_one(
                         {"id": rule["id"]},
                         {"$inc": {"total_failed": 1}, "$set": {"last_triggered_at": datetime.now(UTC).isoformat()}},
                     )
                     logger.warning(f"Automation failed: {rule['name']} -> {result.get('error')}")
+                    # Create in-app notification for failure
+                    await _create_automation_notification(
+                        db, tenant_id, success=False,
+                        rule_name=rule["name"],
+                        guest_name=variables.get("misafir_adi", "Misafir"),
+                        channel=rule["channel"],
+                        event_type=event_type,
+                        error=result.get("error", ""),
+                    )
 
             except Exception as e:
                 logger.exception(f"Automation rule {rule.get('id')} failed: {e}")
@@ -221,6 +238,48 @@ def _render_subject(template: dict, variables: dict) -> str | None:
     for key, val in variables.items():
         subject = subject.replace(f"{{{{{key}}}}}", str(val))
     return subject
+
+
+async def _create_automation_notification(
+    db, tenant_id: str, success: bool,
+    rule_name: str, guest_name: str, channel: str, event_type: str,
+    error: str = "",
+):
+    """Create in-app notification for automation event results."""
+    try:
+        channel_label = "WhatsApp" if channel == "whatsapp" else "Email"
+        event_labels = {
+            "booking_confirmed": "Rez. Onay",
+            "pre_arrival": "Check-in Oncesi",
+            "checked_in": "Check-in",
+            "checked_out": "Check-out",
+        }
+        event_label = event_labels.get(event_type, event_type)
+
+        if success:
+            title = f"Otomasyon: {rule_name}"
+            message = f"{guest_name} icin {channel_label} mesaji gonderildi ({event_label})"
+            priority = "normal"
+        else:
+            title = f"Otomasyon Hatasi: {rule_name}"
+            message = f"{guest_name} icin {channel_label} gonderilemedi ({event_label}): {error[:100]}"
+            priority = "high"
+
+        doc = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "user_id": None,
+            "type": "messaging_automation",
+            "title": title,
+            "message": message,
+            "priority": priority,
+            "read": False,
+            "action_url": "/messaging-dashboard",
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        await db.notifications.insert_one(doc)
+    except Exception as e:
+        logger.warning(f"Failed to create automation notification: {e}")
 
 
 async def fire_booking_event(tenant_id: str, event_type: str, booking: dict):

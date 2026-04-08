@@ -691,3 +691,110 @@ async def update_consent(req: ConsentReq, current_user: User = Depends(get_curre
 async def get_runtime_status(current_user: User = Depends(get_current_user)):
     svc = _get_service()
     return svc.get_runtime_status()
+
+
+# ════════════════════════════════════════════════════════
+# Pre-Arrival Scheduler
+# ════════════════════════════════════════════════════════
+
+@router.get("/scheduler/status")
+async def get_scheduler_status(current_user: User = Depends(get_current_user)):
+    """Get pre-arrival scheduler status and metrics."""
+    from modules.messaging.pre_arrival_scheduler import get_pre_arrival_scheduler
+    scheduler = get_pre_arrival_scheduler()
+    return scheduler.get_status()
+
+
+@router.post("/scheduler/start")
+async def start_scheduler(current_user: User = Depends(get_current_user)):
+    """Start the pre-arrival scheduler background task."""
+    from modules.messaging.pre_arrival_scheduler import get_pre_arrival_scheduler
+    scheduler = get_pre_arrival_scheduler()
+    if scheduler.status == "running":
+        return {"success": True, "message": "Zamanlayici zaten calisiyor"}
+    await scheduler.start()
+    return {"success": True, "message": "Zamanlayici baslatildi"}
+
+
+@router.post("/scheduler/stop")
+async def stop_scheduler(current_user: User = Depends(get_current_user)):
+    """Stop the pre-arrival scheduler."""
+    from modules.messaging.pre_arrival_scheduler import get_pre_arrival_scheduler
+    scheduler = get_pre_arrival_scheduler()
+    await scheduler.stop()
+    return {"success": True, "message": "Zamanlayici durduruldu"}
+
+
+@router.post("/scheduler/run-now")
+async def run_scheduler_now(current_user: User = Depends(get_current_user)):
+    """Manually trigger a pre-arrival scan right now."""
+    from modules.messaging.pre_arrival_scheduler import get_pre_arrival_scheduler
+    scheduler = get_pre_arrival_scheduler()
+    result = await scheduler.run_scan()
+    return {"success": True, "result": result}
+
+
+# ════════════════════════════════════════════════════════
+# Activity Feed (Real-time notifications)
+# ════════════════════════════════════════════════════════
+
+@router.get("/activity")
+async def get_messaging_activity(
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+):
+    """Get recent messaging activity (automation events, delivery results) as notifications."""
+    db = _get_db()
+    notifications = await db.notifications.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "type": "messaging_automation",
+        },
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(limit)
+
+    # Also get recent delivery log events for channel push results
+    recent_logs = await db.messaging_delivery_logs.find(
+        {"tenant_id": current_user.tenant_id},
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(limit)
+
+    # Combine into a unified activity feed
+    activities = []
+    for n in notifications:
+        activities.append({
+            "id": n.get("id", ""),
+            "type": "automation",
+            "title": n.get("title", ""),
+            "message": n.get("message", ""),
+            "priority": n.get("priority", "normal"),
+            "created_at": n.get("created_at", ""),
+            "read": n.get("read", False),
+        })
+
+    for log in recent_logs[:limit]:
+        status = log.get("status", "")
+        channel_label = "WhatsApp" if log.get("channel") == "whatsapp" else "Email"
+        if status in ("sent", "delivered"):
+            title = f"{channel_label} Gonderildi"
+            priority = "normal"
+        elif status == "failed":
+            title = f"{channel_label} Basarisiz"
+            priority = "high"
+        else:
+            title = f"{channel_label} {status.title()}"
+            priority = "normal"
+
+        activities.append({
+            "id": log.get("id", ""),
+            "type": "delivery",
+            "title": title,
+            "message": f"{log.get('recipient', '')} — {log.get('use_case', '')}",
+            "priority": priority,
+            "created_at": log.get("created_at", ""),
+            "status": status,
+        })
+
+    # Sort by created_at desc and limit
+    activities.sort(key=lambda a: a.get("created_at", ""), reverse=True)
+    return {"activities": activities[:limit]}

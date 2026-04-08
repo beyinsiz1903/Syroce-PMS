@@ -26,7 +26,7 @@ import {
   Mail, MessageSquare, Phone, Shield, RefreshCw, Send,
   Settings, FileText, BarChart3, Loader2, Plus, Trash2,
   CheckCircle2, XCircle, Clock, AlertTriangle, Eye,
-  Pencil, TestTube, ArrowRight, Zap, Play, Power,
+  Pencil, TestTube, ArrowRight, Zap, Play, Power, Timer, Bell,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -977,6 +977,9 @@ function AutomationTab() {
         </CardContent>
       </Card>
 
+      {/* Pre-Arrival Scheduler */}
+      <SchedulerCard />
+
       {/* Create/Edit Dialog */}
       <Dialog open={showCreate || !!editRule} onOpenChange={v => { if (!v) { setShowCreate(false); setEditRule(null); } }}>
         <DialogContent className="max-w-lg">
@@ -1043,6 +1046,218 @@ function AutomationTab() {
 
 
 // ═══════════════════════════════════════════════
+// Scheduler Card (inside Automation Tab)
+// ═══════════════════════════════════════════════
+function SchedulerCard() {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const d = await get('/api/messaging-center/scheduler/status');
+    setStatus(d);
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const toggleScheduler = async () => {
+    setActionLoading(true);
+    if (status?.status === 'running') {
+      await post('/api/messaging-center/scheduler/stop', {});
+      toast.success('Zamanlayici durduruldu');
+    } else {
+      await post('/api/messaging-center/scheduler/start', {});
+      toast.success('Zamanlayici baslatildi');
+    }
+    await load();
+    setActionLoading(false);
+  };
+
+  const runNow = async () => {
+    setActionLoading(true);
+    const res = await post('/api/messaging-center/scheduler/run-now', {});
+    if (res.success) {
+      const r = res.result || {};
+      toast.success(`Tarama tamamlandi: ${r.events_fired || 0} mesaj tetiklendi, ${r.bookings_scanned || 0} rezervasyon tarandi`);
+    } else {
+      toast.error('Tarama hatasi');
+    }
+    await load();
+    setActionLoading(false);
+  };
+
+  if (loading) return null;
+
+  const isRunning = status?.status === 'running';
+
+  return (
+    <Card data-testid="scheduler-card" className="border-dashed">
+      <CardContent className="py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${isRunning ? 'bg-emerald-50' : 'bg-gray-100'}`}>
+              <Timer className={`h-5 w-5 ${isRunning ? 'text-emerald-600' : 'text-gray-400'}`} />
+            </div>
+            <div>
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                Pre-Arrival Zamanlayici
+                <Badge variant={isRunning ? 'default' : 'secondary'} className="text-[10px]">
+                  {isRunning ? 'Aktif' : 'Durduruldu'}
+                </Badge>
+              </h4>
+              <p className="text-xs text-muted-foreground">
+                Yarinki check-in&apos;leri tarayip otomatik yol tarifi/tesis mesaji gonderir
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button data-testid="scheduler-run-now-btn" size="sm" variant="outline" onClick={runNow} disabled={actionLoading}>
+              {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+              <span className="ml-1">Simdi Tara</span>
+            </Button>
+            <Button
+              data-testid="scheduler-toggle-btn"
+              size="sm"
+              variant={isRunning ? 'destructive' : 'default'}
+              onClick={toggleScheduler}
+              disabled={actionLoading}
+            >
+              <Power className="h-3.5 w-3.5 mr-1" />
+              {isRunning ? 'Durdur' : 'Baslat'}
+            </Button>
+          </div>
+        </div>
+        {status?.last_run_result && (
+          <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
+            <div className="bg-gray-50 rounded p-2">
+              <p className="font-bold">{status.total_runs || 0}</p>
+              <p className="text-muted-foreground">Toplam Tarama</p>
+            </div>
+            <div className="bg-emerald-50 rounded p-2">
+              <p className="font-bold text-emerald-700">{status.total_sent || 0}</p>
+              <p className="text-muted-foreground">Gonderilen</p>
+            </div>
+            <div className="bg-amber-50 rounded p-2">
+              <p className="font-bold text-amber-700">{status.total_skipped || 0}</p>
+              <p className="text-muted-foreground">Zaten Gonderilmis</p>
+            </div>
+            <div className="bg-red-50 rounded p-2">
+              <p className="font-bold text-red-700">{status.total_errors || 0}</p>
+              <p className="text-muted-foreground">Hata</p>
+            </div>
+          </div>
+        )}
+        {status?.last_run_at && (
+          <p className="text-[10px] text-muted-foreground mt-2">
+            Son tarama: {new Date(status.last_run_at).toLocaleString('tr-TR')}
+            {status.interval_hours && ` · Her ${status.interval_hours} saatte bir`}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+
+// ═══════════════════════════════════════════════
+// Activity Tab (Real-time Messaging Notifications)
+// ═══════════════════════════════════════════════
+function ActivityTab() {
+  const [activities, setActivities] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const d = await get('/api/messaging-center/activity?limit=30');
+    setActivities(d.activities || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 10000); // Poll every 10s
+    return () => clearInterval(interval);
+  }, [load]);
+
+  if (loading && activities.length === 0) return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+
+  const getIcon = (activity) => {
+    if (activity.type === 'automation') {
+      return activity.priority === 'high' ? XCircle : CheckCircle2;
+    }
+    if (activity.status === 'sent' || activity.status === 'delivered') return CheckCircle2;
+    if (activity.status === 'failed') return XCircle;
+    return Clock;
+  };
+
+  const getColor = (activity) => {
+    if (activity.priority === 'high' || activity.status === 'failed') return 'text-red-500';
+    if (activity.status === 'sent' || activity.status === 'delivered') return 'text-emerald-500';
+    if (activity.type === 'automation' && activity.priority === 'normal') return 'text-blue-500';
+    return 'text-amber-500';
+  };
+
+  const getBg = (activity) => {
+    if (activity.priority === 'high' || activity.status === 'failed') return 'bg-red-50';
+    if (activity.status === 'sent' || activity.status === 'delivered') return 'bg-emerald-50';
+    if (activity.type === 'automation' && activity.priority === 'normal') return 'bg-blue-50';
+    return 'bg-amber-50';
+  };
+
+  return (
+    <div className="space-y-3" data-testid="activity-tab">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-sm">Canli Aktivite</h3>
+        <Button size="sm" variant="ghost" onClick={load} data-testid="activity-refresh-btn">
+          <RefreshCw className="h-3.5 w-3.5 mr-1" /> Yenile
+        </Button>
+      </div>
+
+      {activities.length === 0 ? (
+        <Card><CardContent className="py-8 text-center text-muted-foreground">
+          <Bell className="h-8 w-8 mx-auto mb-2 opacity-50" />
+          <p>Henuz aktivite yok.</p>
+          <p className="text-xs mt-1">Otomasyon tetiklendikce ve mesajlar gonderildikce burada gorunecek.</p>
+        </CardContent></Card>
+      ) : (
+        <div className="space-y-1.5">
+          {activities.map((a, i) => {
+            const Icon = getIcon(a);
+            const color = getColor(a);
+            const bg = getBg(a);
+            return (
+              <Card key={`${a.id}-${i}`} className="border-0 shadow-none bg-transparent">
+                <CardContent className="py-2 px-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-1.5 rounded ${bg}`}>
+                      <Icon className={`h-3.5 w-3.5 ${color}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{a.title}</p>
+                      <p className="text-xs text-muted-foreground truncate">{a.message}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-[10px]">
+                        {a.type === 'automation' ? 'Otomasyon' : 'Gonderim'}
+                      </Badge>
+                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                        {a.created_at ? new Date(a.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : ''}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════
 // Main Dashboard
 // ═══════════════════════════════════════════════
 export default function MessagingDashboard({ user, tenant, onLogout }) {
@@ -1067,7 +1282,7 @@ export default function MessagingDashboard({ user, tenant, onLogout }) {
           <p className="text-sm text-muted-foreground">Email (SMTP) ve WhatsApp Business ile misafir iletisimi</p>
         </div>
         <Tabs defaultValue="send">
-          <TabsList className="grid w-full grid-cols-6 max-w-4xl" data-testid="messaging-tabs">
+          <TabsList className="grid w-full grid-cols-7 max-w-5xl" data-testid="messaging-tabs">
             <TabsTrigger data-testid="tab-send" value="send" className="flex items-center gap-1.5">
               <Send className="h-3.5 w-3.5" /> Mesaj Gonder
             </TabsTrigger>
@@ -1076,6 +1291,9 @@ export default function MessagingDashboard({ user, tenant, onLogout }) {
             </TabsTrigger>
             <TabsTrigger data-testid="tab-automation" value="automation" className="flex items-center gap-1.5">
               <Zap className="h-3.5 w-3.5" /> Otomasyon
+            </TabsTrigger>
+            <TabsTrigger data-testid="tab-activity" value="activity" className="flex items-center gap-1.5">
+              <Bell className="h-3.5 w-3.5" /> Aktivite
             </TabsTrigger>
             <TabsTrigger data-testid="tab-logs" value="logs" className="flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5" /> Loglar
@@ -1090,6 +1308,7 @@ export default function MessagingDashboard({ user, tenant, onLogout }) {
           <TabsContent value="send"><SendTab /></TabsContent>
           <TabsContent value="templates"><TemplatesTab /></TabsContent>
           <TabsContent value="automation"><AutomationTab /></TabsContent>
+          <TabsContent value="activity"><ActivityTab /></TabsContent>
           <TabsContent value="logs"><DeliveryLogsTab /></TabsContent>
           <TabsContent value="metrics"><MetricsTab /></TabsContent>
           <TabsContent value="settings"><SettingsTab /></TabsContent>
