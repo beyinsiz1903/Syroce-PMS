@@ -12,6 +12,11 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import Layout from '@/components/Layout';
 
 const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
@@ -21,6 +26,8 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [distributing, setDistributing] = useState(false);
+
+  const canDelete = ['super_admin', 'admin'].includes(user?.role);
 
   useEffect(() => {
     const load = async () => {
@@ -211,9 +218,33 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
                   <CardContent className="pt-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <h4 className="font-medium text-sm text-slate-700 flex items-center gap-2"><Bed size={14} /> Oda Tipi {idx + 1}</h4>
-                      <Button size="sm" variant="ghost" className="text-red-500 h-7" onClick={() => removeRoomType(idx)}>
-                        <Trash2 size={13} />
-                      </Button>
+                      {canDelete && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="sm" variant="ghost" className="text-red-500 h-7" data-testid={`delete-room-type-${idx}`}>
+                              <Trash2 size={13} />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Oda Tipini Siliyorsunuz</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                <strong>{rt.name || rt.room_type || `Oda Tipi ${idx + 1}`}</strong> oda tipini silmek istediginize emin misiniz? Bu islem geri alinamaz.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Vazgec</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => removeRoomType(idx)}
+                                className="bg-red-600 hover:bg-red-700"
+                                data-testid={`confirm-delete-room-type-${idx}`}
+                              >
+                                Evet, Sil
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
@@ -266,9 +297,33 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
                   <CardContent className="pt-4">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-medium text-sm text-slate-700">Hizmet {idx + 1}</h4>
-                      <Button size="sm" variant="ghost" className="text-red-500 h-7" onClick={() => removeService(idx)}>
-                        <Trash2 size={13} />
-                      </Button>
+                      {canDelete && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="sm" variant="ghost" className="text-red-500 h-7" data-testid={`delete-service-${idx}`}>
+                              <Trash2 size={13} />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Hizmeti Siliyorsunuz</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                <strong>{svc.name || `Hizmet ${idx + 1}`}</strong> hizmetini silmek istediginize emin misiniz? Bu islem geri alinamaz.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Vazgec</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => removeService(idx)}
+                                className="bg-red-600 hover:bg-red-700"
+                                data-testid={`confirm-delete-service-${idx}`}
+                              >
+                                Evet, Sil
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
