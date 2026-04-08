@@ -75,11 +75,27 @@ Turkish (All responses must be in Turkish)
 - **New Endpoints**: `/api/messaging-center/automation/triggers`, `/api/messaging-center/automation/rules` (CRUD), `/api/messaging-center/automation/test/{id}`
 - **Test Result**: Backend 12/13 (1 skipped - no pending bookings), Frontend 100% — iteration_202.json
 
+### Pre-Arrival Daily Scheduler (DONE - 2026-04-08)
+- **Background Worker**: `PreArrivalScheduler` runs every 6h (configurable), scans confirmed bookings with tomorrow's check-in date
+- **Deduplication**: Checks `delivery_logs` to avoid re-sending `pre_arrival` messages for same booking
+- **In-App Notifications**: Creates notifications on successful/failed automation sends (visible in NotificationBell)
+- **Frontend**: Scheduler card at bottom of Otomasyon tab with Start/Stop/Simdi Tara controls and metrics
+- **New Endpoints**: `/api/messaging-center/scheduler/status`, `/scheduler/start`, `/scheduler/stop`, `/scheduler/run-now`
+- **Test Result**: Backend 13/13, Frontend 100% — iteration_203.json
+
+### Real-time Messaging Activity Feed (DONE - 2026-04-08)
+- **Unified Activity Feed**: Combines automation notifications + delivery logs into single timeline
+- **Auto-Refresh**: Frontend polls every 10 seconds for near-real-time updates
+- **7-Tab Dashboard**: Added "Aktivite" tab showing color-coded delivery statuses
+- **Automation Notifications**: Every automation trigger (success/failure) creates in-app notification
+- **New Endpoint**: `/api/messaging-center/activity?limit=N`
+- **Test Result**: Backend 13/13, Frontend 100% — iteration_203.json
+
 ## Pending / Known Issues
 - litellm CVE-2026-35030: Suppressed in `.trivyignore`. Upgrade to >=1.83.0 blocked by emergentintegrations dependency chain.
 
 ## Upcoming Tasks (P1)
-- Real-time UI notifications for channel push results
+- (All P1 items completed)
 
 ## Future / Backlog (P2+)
 - Automatic retry mechanism with exponential backoff for failed webhook deliveries
@@ -119,3 +135,5 @@ Turkish (All responses must be in Turkish)
 - `GET/POST/PUT/DELETE /api/messaging-center/templates`
 - `POST /api/messaging-center/send` / `GET /api/messaging-center/delivery-logs`
 - `GET /api/messaging-center/metrics` / `POST /api/messaging-center/seed-demo`
+- `GET/POST /api/messaging-center/scheduler/status` / `/scheduler/start` / `/scheduler/stop` / `/scheduler/run-now`
+- `GET /api/messaging-center/activity`
