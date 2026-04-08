@@ -13,19 +13,27 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import pytest_asyncio
 
-from core.database import db
+from core.database import _raw_db as raw_db, db
+from core.tenant_db import set_tenant_context, clear_tenant_context
 
 TENANT_ID = "test-sprint2-tenant"
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def cleanup():
-    """Clean up test data before and after each test."""
-    await db.room_night_locks.delete_many({"tenant_id": TENANT_ID})
-    await db.bookings.delete_many({"tenant_id": TENANT_ID})
+    """Clean up test data before and after each test.
+
+    Uses raw_db for cleanup (bypasses TenantAwareDBProxy) and sets
+    tenant context for the test body so service functions and direct
+    db access via the proxy both work correctly.
+    """
+    await raw_db.room_night_locks.delete_many({"tenant_id": TENANT_ID})
+    await raw_db.bookings.delete_many({"tenant_id": TENANT_ID})
+    set_tenant_context(TENANT_ID)
     yield
-    await db.room_night_locks.delete_many({"tenant_id": TENANT_ID})
-    await db.bookings.delete_many({"tenant_id": TENANT_ID})
+    clear_tenant_context()
+    await raw_db.room_night_locks.delete_many({"tenant_id": TENANT_ID})
+    await raw_db.bookings.delete_many({"tenant_id": TENANT_ID})
 
 
 # ── Hold Creation Tests ──────────────────────────────────────────────

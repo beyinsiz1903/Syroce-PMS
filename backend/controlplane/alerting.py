@@ -72,8 +72,8 @@ class AlertingEngine:
 
     def _get_db(self):
         if self._db is None:
-            from core.database import db
-            self._db = db
+            from core.tenant_db import get_system_db
+            self._db = get_system_db()
         return self._db
 
     async def fire(

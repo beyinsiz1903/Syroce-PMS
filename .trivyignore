@@ -1,0 +1,7 @@
+# CVE-2026-35030: litellm OIDC userinfo cache key authentication bypass
+# Status: Not exploitable in this context
+# Reason: litellm is used as a CLIENT library (via emergentintegrations) for LLM API calls,
+#         NOT as a proxy server. The vulnerability affects litellm's proxy/server OIDC auth flow.
+# Blocked by: emergentintegrations==0.1.0 pins openai==1.99.9, litellm>=1.83.0 requires openai>=2.8.0
+# Action: Upgrade when emergentintegrations releases a compatible version
+CVE-2026-35030

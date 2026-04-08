@@ -20,7 +20,7 @@ import requests
 
 # API URLs
 MOCK_SERVER_URL = "http://localhost:9999"
-API_URL = os.environ.get("VITE_BACKEND_URL", "https://syroce-b2b-api.preview.emergentagent.com")
+API_URL = os.environ.get("VITE_BACKEND_URL", "https://channel-sync-hub-2.preview.emergentagent.com")
 
 # Mock server credentials
 MOCK_TOKEN = "mock-hr-token-001"

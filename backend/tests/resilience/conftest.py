@@ -53,16 +53,27 @@ def event_loop():
 
 @pytest.fixture
 def db():
-    from core.database import db
-    return db
+    """Return raw (unproxied) DB for resilience tests.
+
+    Resilience tests always include tenant_id explicitly in documents
+    and queries, so the TenantAwareDBProxy scoping is unnecessary.
+    Using _raw_db avoids TenantViolationError when STRICT_TENANT_MODE=true.
+    """
+    from core.database import _raw_db
+    return _raw_db
 
 
 # ── Cleanup ────────────────────────────────────────────────────────
 
 @pytest.fixture(autouse=True)
 async def cleanup_chaos_data(db):
-    """Automatically clean up all chaos test data after each test."""
+    """Automatically clean up all chaos test data after each test.
+
+    Uses _raw_db directly to bypass TenantAwareDBProxy, since cleanup
+    is a system-level operation that targets test data across tenants.
+    """
     yield
+    from core.database import _raw_db
     chaos_filter = {"tenant_id": {"$regex": f"^{CHAOS_TENANT_PREFIX}"}}
     collections_to_clean = [
         "cp_failures",
@@ -80,7 +91,7 @@ async def cleanup_chaos_data(db):
     ]
     for coll_name in collections_to_clean:
         try:
-            await db[coll_name].delete_many(chaos_filter)
+            await _raw_db[coll_name].delete_many(chaos_filter)
         except Exception:
             pass
 

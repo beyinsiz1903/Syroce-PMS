@@ -14,7 +14,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://syroce-b2b-api.preview.emergentagent.com")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://channel-sync-hub-2.preview.emergentagent.com")
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"

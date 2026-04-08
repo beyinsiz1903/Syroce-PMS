@@ -146,6 +146,8 @@ class TestProviderTimeoutClassification:
         self, db, import_record_factory, tenant_factory
     ):
         """Import failure from timeout should set status=retry with backoff."""
+        from core.tenant_db import tenant_context
+
         tenant_id = tenant_factory("timeout-001")
         record = import_record_factory(tenant_id=tenant_id)
 
@@ -153,8 +155,10 @@ class TestProviderTimeoutClassification:
         await db.imported_reservations.insert_one(record)
 
         # Simulate failure handling (mimics _handle_import_failure logic)
+        # _handle_import_failure uses the proxy db, so needs tenant context
         from core.import_bridge_service import _handle_import_failure
-        await _handle_import_failure(record, "Connection timed out after 30s")
+        with tenant_context(tenant_id):
+            await _handle_import_failure(record, "Connection timed out after 30s")
 
         # Verify state
         updated = await db.imported_reservations.find_one(
