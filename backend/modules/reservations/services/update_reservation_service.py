@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -12,6 +13,8 @@ from shared_kernel.audit_helper import audit_log
 from shared_kernel.event_envelope import build_event_envelope
 from shared_kernel.idempotency import ensure_idempotent_request
 from shared_kernel.tenancy_context import build_property_context, build_tenant_context
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_EMPTY_FIELDS = {
     "source_channel": "direct",
@@ -280,6 +283,22 @@ class UpdateReservationService:
 
             response = dict(updated_booking)
             response.pop("_id", None)
+
+            # ── Messaging Automation: fire event on status change ──
+            if new_status and new_status != old_status:
+                try:
+                    from modules.messaging.automation import fire_booking_event
+                    event_map = {
+                        "confirmed": "booking_confirmed",
+                        "checked_in": "checked_in",
+                        "checked_out": "checked_out",
+                    }
+                    event_type = event_map.get(new_status)
+                    if event_type:
+                        await fire_booking_event(tenant_context.tenant_id, event_type, response)
+                except Exception as msg_err:
+                    logger.warning(f"Messaging automation fire failed: {msg_err}")
+
             await self.repository.complete_idempotency_lock(lock["lock_id"], booking_id, response)
             return response
         except HTTPException as exc:

@@ -346,6 +346,15 @@ async def approve_booking(
         print(f"audit log failed (approve_booking): {e}")
 
     final = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
+
+    # ── Messaging Automation: booking confirmed ──
+    try:
+        from modules.messaging.automation import fire_booking_event
+        if final:
+            await fire_booking_event(tenant_id, "booking_confirmed", final)
+    except Exception:
+        pass
+
     return {"status": "ok", "booking": final, "booking_id": booking_id}
 
 

@@ -347,6 +347,100 @@ async def get_messaging_metrics(days: int = Query(7, ge=1, le=90),
 
 
 # ════════════════════════════════════════════════════════
+# Automation Rules
+# ════════════════════════════════════════════════════════
+
+class AutomationRuleReq(BaseModel):
+    trigger_event: str
+    template_id: str
+    channel: str
+    name: str
+    enabled: bool = True
+    delay_minutes: int = 0
+
+
+@router.get("/automation/triggers")
+async def list_trigger_events(current_user: User = Depends(get_current_user)):
+    """List available trigger events with defaults."""
+    from modules.messaging.automation import TRIGGER_EVENTS
+    return {"triggers": TRIGGER_EVENTS}
+
+
+@router.get("/automation/rules")
+async def list_automation_rules(current_user: User = Depends(get_current_user)):
+    db = _get_db()
+    rules = await db.messaging_automation_rules.find(
+        {"tenant_id": current_user.tenant_id}, {"_id": 0}
+    ).to_list(50)
+    return {"rules": rules}
+
+
+@router.post("/automation/rules")
+async def create_automation_rule(req: AutomationRuleReq, current_user: User = Depends(get_current_user)):
+    from modules.messaging.automation import TRIGGER_EVENTS, new_automation_rule
+    if req.trigger_event not in TRIGGER_EVENTS:
+        raise HTTPException(status_code=400, detail=f"Gecersiz tetikleme olayi: {req.trigger_event}")
+    db = _get_db()
+    doc = new_automation_rule(
+        current_user.tenant_id, req.trigger_event, req.template_id,
+        req.channel, req.name, req.enabled, req.delay_minutes,
+    )
+    await db.messaging_automation_rules.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@router.put("/automation/rules/{rule_id}")
+async def update_automation_rule(rule_id: str, req: dict, current_user: User = Depends(get_current_user)):
+    db = _get_db()
+    allowed = ["name", "template_id", "channel", "enabled", "delay_minutes", "trigger_event"]
+    updates = {k: v for k, v in req.items() if k in allowed}
+    updates["updated_at"] = datetime.now(UTC).isoformat()
+    result = await db.messaging_automation_rules.update_one(
+        {"id": rule_id, "tenant_id": current_user.tenant_id}, {"$set": updates}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Kural bulunamadi")
+    return {"success": True}
+
+
+@router.delete("/automation/rules/{rule_id}")
+async def delete_automation_rule(rule_id: str, current_user: User = Depends(get_current_user)):
+    db = _get_db()
+    result = await db.messaging_automation_rules.delete_one(
+        {"id": rule_id, "tenant_id": current_user.tenant_id}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Kural bulunamadi")
+    return {"success": True}
+
+
+@router.post("/automation/test/{rule_id}")
+async def test_automation_rule(rule_id: str, current_user: User = Depends(get_current_user)):
+    """Simulate a rule trigger with a fake booking for testing."""
+    db = _get_db()
+    rule = await db.messaging_automation_rules.find_one(
+        {"id": rule_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+    )
+    if not rule:
+        raise HTTPException(status_code=404, detail="Kural bulunamadi")
+
+    fake_booking = {
+        "id": "test-" + str(uuid.uuid4())[:8],
+        "guest_name": "Test Misafir",
+        "guest_id": None,
+        "room_id": None,
+        "room_number": "101",
+        "check_in": datetime.now(UTC).isoformat(),
+        "check_out": datetime.now(UTC).isoformat(),
+        "total_amount": 1500,
+    }
+    from modules.messaging.automation import process_booking_event
+    await process_booking_event(current_user.tenant_id, rule["trigger_event"], fake_booking)
+    return {"success": True, "message": f"Test tetiklendi: {rule['name']}"}
+
+
+# ════════════════════════════════════════════════════════
 # Seed Demo Data (for sandbox mode)
 # ════════════════════════════════════════════════════════
 
@@ -393,7 +487,33 @@ async def seed_demo_data(current_user: User = Depends(get_current_user)):
     if logs:
         await db.messaging_delivery_logs.insert_many(logs)
 
-    return {"success": True, "templates": len(templates), "logs": len(logs)}
+    # ── Seed automation rules ──
+    rules_count = await db.messaging_automation_rules.count_documents({"tenant_id": tenant_id})
+    rules_seeded = 0
+    if rules_count == 0:
+        from modules.messaging.automation import new_automation_rule
+        # Match templates to rules
+        tmpl_list = await db.messaging_templates.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(50)
+        tmpl_by_cat = {t["category"]: t for t in tmpl_list}
+        default_rules = [
+            ("booking_confirmed", "rezervasyon_onay", "email", "Rezervasyon Onay Emaili"),
+            ("pre_arrival", "yol_tarifi", "whatsapp", "Check-in Oncesi Yol Tarifi"),
+            ("checked_in", "hosgeldiniz", "whatsapp", "Hos Geldiniz Mesaji"),
+            ("checked_out", "checkout", "email", "Check-out Tesekkur Emaili"),
+            ("checked_out", "puan_degerlendirme", "whatsapp", "Degerlendirme Linki"),
+        ]
+        auto_rules = []
+        for trigger, category, channel, name in default_rules:
+            tmpl = tmpl_by_cat.get(category)
+            if tmpl:
+                auto_rules.append(new_automation_rule(
+                    tenant_id, trigger, tmpl["id"], channel, name, enabled=True,
+                ))
+        if auto_rules:
+            await db.messaging_automation_rules.insert_many(auto_rules)
+            rules_seeded = len(auto_rules)
+
+    return {"success": True, "templates": len(templates), "logs": len(logs), "automation_rules": rules_seeded}
 
 
 def _get_demo_templates(tenant_id: str) -> list[dict]:

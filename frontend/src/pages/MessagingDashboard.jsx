@@ -26,7 +26,7 @@ import {
   Mail, MessageSquare, Phone, Shield, RefreshCw, Send,
   Settings, FileText, BarChart3, Loader2, Plus, Trash2,
   CheckCircle2, XCircle, Clock, AlertTriangle, Eye,
-  Pencil, TestTube, ArrowRight,
+  Pencil, TestTube, ArrowRight, Zap, Play, Power,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -781,6 +781,268 @@ function MetricsTab() {
 
 
 // ═══════════════════════════════════════════════
+// Automation Tab
+// ═══════════════════════════════════════════════
+const TRIGGER_LABELS = {
+  booking_confirmed: 'Rezervasyon Onaylandi',
+  pre_arrival: 'Check-in Oncesi',
+  checked_in: 'Check-in Yapildi',
+  checked_out: 'Check-out Yapildi',
+};
+const TRIGGER_COLORS = {
+  booking_confirmed: 'bg-blue-50 text-blue-700',
+  pre_arrival: 'bg-amber-50 text-amber-700',
+  checked_in: 'bg-green-50 text-green-700',
+  checked_out: 'bg-purple-50 text-purple-700',
+};
+
+function AutomationTab() {
+  const [rules, setRules] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [triggers, setTriggers] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editRule, setEditRule] = useState(null);
+  const [form, setForm] = useState({
+    trigger_event: 'checked_in', template_id: '', channel: 'whatsapp', name: '', enabled: true, delay_minutes: 0,
+  });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [rulesRes, tmplRes, trigRes] = await Promise.all([
+      get('/api/messaging-center/automation/rules'),
+      get('/api/messaging-center/templates'),
+      get('/api/messaging-center/automation/triggers'),
+    ]);
+    setRules(rulesRes.rules || []);
+    setTemplates(tmplRes.templates || []);
+    setTriggers(trigRes.triggers || {});
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const filteredTemplates = templates.filter(t => t.channel === form.channel);
+  const tmplMap = Object.fromEntries(templates.map(t => [t.id, t]));
+
+  const handleCreate = async () => {
+    if (!form.name || !form.template_id) { toast.error('Ad ve sablon gerekli'); return; }
+    const res = await post('/api/messaging-center/automation/rules', form);
+    if (res.id) { toast.success('Otomasyon kurali olusturuldu'); setShowCreate(false); load(); }
+  };
+
+  const handleUpdate = async () => {
+    if (!editRule) return;
+    await put(`/api/messaging-center/automation/rules/${editRule.id}`, form);
+    toast.success('Kural guncellendi');
+    setEditRule(null);
+    load();
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Bu kurali silmek istediginizden emin misiniz?')) return;
+    await del(`/api/messaging-center/automation/rules/${id}`);
+    toast.success('Kural silindi');
+    load();
+  };
+
+  const toggleEnabled = async (rule) => {
+    await put(`/api/messaging-center/automation/rules/${rule.id}`, { enabled: !rule.enabled });
+    load();
+  };
+
+  const testRule = async (rule) => {
+    const res = await post(`/api/messaging-center/automation/test/${rule.id}`, {});
+    if (res.success) toast.success(`Test tetiklendi: ${rule.name}`);
+    else toast.error('Test hatasi');
+  };
+
+  const openEdit = (r) => {
+    setForm({ trigger_event: r.trigger_event, template_id: r.template_id, channel: r.channel, name: r.name, enabled: r.enabled, delay_minutes: r.delay_minutes || 0 });
+    setEditRule(r);
+  };
+
+  const openCreate = () => {
+    setForm({ trigger_event: 'checked_in', template_id: '', channel: 'whatsapp', name: '', enabled: true, delay_minutes: 0 });
+    setShowCreate(true);
+  };
+
+  if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+
+  return (
+    <div className="space-y-4" data-testid="automation-tab">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card><CardContent className="py-4 text-center">
+          <p className="text-2xl font-bold">{rules.length}</p>
+          <p className="text-xs text-muted-foreground">Toplam Kural</p>
+        </CardContent></Card>
+        <Card><CardContent className="py-4 text-center">
+          <p className="text-2xl font-bold text-emerald-600">{rules.filter(r => r.enabled).length}</p>
+          <p className="text-xs text-muted-foreground">Aktif</p>
+        </CardContent></Card>
+        <Card><CardContent className="py-4 text-center">
+          <p className="text-2xl font-bold text-blue-600">{rules.reduce((a, r) => a + (r.total_sent || 0), 0)}</p>
+          <p className="text-xs text-muted-foreground">Toplam Gonderim</p>
+        </CardContent></Card>
+        <Card><CardContent className="py-4 text-center">
+          <p className="text-2xl font-bold text-red-600">{rules.reduce((a, r) => a + (r.total_failed || 0), 0)}</p>
+          <p className="text-xs text-muted-foreground">Basarisiz</p>
+        </CardContent></Card>
+      </div>
+
+      <div className="flex justify-between items-center">
+        <h3 className="font-semibold">Otomasyon Kurallari</h3>
+        <Button data-testid="create-automation-btn" size="sm" onClick={openCreate}>
+          <Plus className="h-4 w-4 mr-1" /> Yeni Kural
+        </Button>
+      </div>
+
+      {rules.length === 0 ? (
+        <Card><CardContent className="py-8 text-center text-muted-foreground">
+          <Zap className="h-8 w-8 mx-auto mb-2 opacity-50" />
+          <p>Henuz otomasyon kurali yok.</p>
+          <p className="text-xs mt-1">Yeni kural ekleyerek check-in/check-out olaylarinda otomatik mesaj gonderimi baslatin.</p>
+        </CardContent></Card>
+      ) : (
+        <div className="space-y-2">
+          {rules.map(r => {
+            const tmpl = tmplMap[r.template_id];
+            const Icon = CHANNEL_ICONS[r.channel] || Mail;
+            return (
+              <Card key={r.id} data-testid={`automation-rule-${r.id}`} className={!r.enabled ? 'opacity-60' : ''}>
+                <CardContent className="py-4">
+                  <div className="flex items-center gap-3">
+                    {/* Trigger Badge */}
+                    <div className={`px-2 py-1 rounded text-xs font-medium ${TRIGGER_COLORS[r.trigger_event] || 'bg-gray-100'}`}>
+                      {TRIGGER_LABELS[r.trigger_event] || r.trigger_event}
+                    </div>
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                    {/* Channel + Template */}
+                    <div className={`p-1.5 rounded ${r.channel === 'whatsapp' ? 'bg-green-50' : 'bg-blue-50'}`}>
+                      <Icon className={`h-4 w-4 ${r.channel === 'whatsapp' ? 'text-green-600' : 'text-blue-600'}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm">{r.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        Sablon: {tmpl?.name || 'Bilinmiyor'}
+                        {r.delay_minutes > 0 && ` · ${r.delay_minutes} dk gecikme`}
+                      </p>
+                    </div>
+                    {/* Stats */}
+                    <div className="text-right text-xs text-muted-foreground hidden md:block">
+                      <span className="text-emerald-600 font-medium">{r.total_sent || 0}</span> gonderim
+                      {(r.total_failed || 0) > 0 && <span className="text-red-500 ml-2">{r.total_failed} basarisiz</span>}
+                    </div>
+                    {/* Actions */}
+                    <div className="flex items-center gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => toggleEnabled(r)} title={r.enabled ? 'Devre disi birak' : 'Aktif et'}>
+                        <Power className={`h-3.5 w-3.5 ${r.enabled ? 'text-emerald-600' : 'text-gray-400'}`} />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => testRule(r)} title="Test et">
+                        <Play className="h-3.5 w-3.5 text-blue-500" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => openEdit(r)}><Pencil className="h-3.5 w-3.5" /></Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleDelete(r.id)}><Trash2 className="h-3.5 w-3.5 text-red-500" /></Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* How it works */}
+      <Card>
+        <CardContent className="py-4">
+          <h4 className="text-sm font-semibold mb-2">Nasil Calisir?</h4>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs text-muted-foreground">
+            <div className="flex items-start gap-2">
+              <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 text-blue-700 font-bold">1</div>
+              <div><strong>Rezervasyon Onaylandi</strong><br/>Misafire onay emaili gonderilir</div>
+            </div>
+            <div className="flex items-start gap-2">
+              <div className="w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0 text-amber-700 font-bold">2</div>
+              <div><strong>Check-in Oncesi</strong><br/>Yol tarifi ve tesis bilgileri WhatsApp ile paylasilir</div>
+            </div>
+            <div className="flex items-start gap-2">
+              <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0 text-green-700 font-bold">3</div>
+              <div><strong>Check-in</strong><br/>Hos geldiniz mesaji, WiFi sifresi, restoran bilgileri</div>
+            </div>
+            <div className="flex items-start gap-2">
+              <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0 text-purple-700 font-bold">4</div>
+              <div><strong>Check-out</strong><br/>Tesekkur emaili ve degerlendirme linki</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Create/Edit Dialog */}
+      <Dialog open={showCreate || !!editRule} onOpenChange={v => { if (!v) { setShowCreate(false); setEditRule(null); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editRule ? 'Kurali Duzenle' : 'Yeni Otomasyon Kurali'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Kural Adi</Label>
+              <Input data-testid="automation-name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Hos Geldiniz Mesaji" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Tetikleme Olayi</Label>
+                <Select value={form.trigger_event} onValueChange={v => setForm(p => ({ ...p, trigger_event: v }))}>
+                  <SelectTrigger data-testid="automation-trigger"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(TRIGGER_LABELS).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Kanal</Label>
+                <Select value={form.channel} onValueChange={v => setForm(p => ({ ...p, channel: v, template_id: '' }))}>
+                  <SelectTrigger data-testid="automation-channel"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                    <SelectItem value="email">Email</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label>Sablon</Label>
+              <Select value={form.template_id} onValueChange={v => setForm(p => ({ ...p, template_id: v }))}>
+                <SelectTrigger data-testid="automation-template"><SelectValue placeholder="Sablon secin" /></SelectTrigger>
+                <SelectContent>
+                  {filteredTemplates.map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.name} ({CATEGORY_LABELS[t.category] || t.category})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Switch checked={form.enabled} onCheckedChange={v => setForm(p => ({ ...p, enabled: v }))} />
+                <Label>Aktif</Label>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowCreate(false); setEditRule(null); }}>Iptal</Button>
+            <Button data-testid="automation-save-btn" onClick={editRule ? handleUpdate : handleCreate}>
+              {editRule ? 'Guncelle' : 'Olustur'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════
 // Main Dashboard
 // ═══════════════════════════════════════════════
 export default function MessagingDashboard({ user, tenant, onLogout }) {
@@ -805,12 +1067,15 @@ export default function MessagingDashboard({ user, tenant, onLogout }) {
           <p className="text-sm text-muted-foreground">Email (SMTP) ve WhatsApp Business ile misafir iletisimi</p>
         </div>
         <Tabs defaultValue="send">
-          <TabsList className="grid w-full grid-cols-5 max-w-3xl" data-testid="messaging-tabs">
+          <TabsList className="grid w-full grid-cols-6 max-w-4xl" data-testid="messaging-tabs">
             <TabsTrigger data-testid="tab-send" value="send" className="flex items-center gap-1.5">
               <Send className="h-3.5 w-3.5" /> Mesaj Gonder
             </TabsTrigger>
             <TabsTrigger data-testid="tab-templates" value="templates" className="flex items-center gap-1.5">
               <FileText className="h-3.5 w-3.5" /> Sablonlar
+            </TabsTrigger>
+            <TabsTrigger data-testid="tab-automation" value="automation" className="flex items-center gap-1.5">
+              <Zap className="h-3.5 w-3.5" /> Otomasyon
             </TabsTrigger>
             <TabsTrigger data-testid="tab-logs" value="logs" className="flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5" /> Loglar
@@ -824,6 +1089,7 @@ export default function MessagingDashboard({ user, tenant, onLogout }) {
           </TabsList>
           <TabsContent value="send"><SendTab /></TabsContent>
           <TabsContent value="templates"><TemplatesTab /></TabsContent>
+          <TabsContent value="automation"><AutomationTab /></TabsContent>
           <TabsContent value="logs"><DeliveryLogsTab /></TabsContent>
           <TabsContent value="metrics"><MetricsTab /></TabsContent>
           <TabsContent value="settings"><SettingsTab /></TabsContent>
