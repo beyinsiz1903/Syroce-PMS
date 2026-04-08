@@ -195,6 +195,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     # Agency Portal — Bolgesel Acente Yonetimi ve Portali
     ("routers.agency_portal", "router", ["Agency Portal"], None, None),
     ("routers.agency_content", "router", ["Agency Content"], None, None),
+    # Syroce B2B API — Acente Otomasyon Sistemi Entegrasyonu
+    ("routers.b2b_api", "router", ["B2B API - Syroce"], None, None),
 ]
 
 # Optional routers with special import paths

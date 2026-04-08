@@ -3,7 +3,8 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import {
   Building2, Plus, Edit2, Trash2, Users, UserPlus, ChevronDown, ChevronRight,
-  Phone, Mail, Percent, FileText, Loader2, Eye, EyeOff, ToggleLeft, ToggleRight
+  Phone, Mail, Percent, FileText, Loader2, Eye, EyeOff, ToggleLeft, ToggleRight,
+  Key, Copy, RefreshCw, ShieldCheck, XCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,6 +36,11 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
 
   const [saving, setSaving] = useState(false);
 
+  // API Key state
+  const [apiKeyInfo, setApiKeyInfo] = useState({});
+  const [generatedKey, setGeneratedKey] = useState(null);
+  const [apiKeyLoading, setApiKeyLoading] = useState({});
+
   const fetchAgencies = async () => {
     try {
       const { data } = await axios.get('/agencies');
@@ -63,7 +69,66 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
     } else {
       setExpandedAgency(agencyId);
       if (!agencyUsers[agencyId]) fetchAgencyUsers(agencyId);
+      if (!apiKeyInfo[agencyId]) fetchApiKeyInfo(agencyId);
     }
+  };
+
+  const fetchApiKeyInfo = async (agencyId) => {
+    try {
+      const { data } = await axios.get(`/b2b/api-keys/${agencyId}`);
+      setApiKeyInfo(prev => ({ ...prev, [agencyId]: data }));
+    } catch {
+      setApiKeyInfo(prev => ({ ...prev, [agencyId]: { has_key: false } }));
+    }
+  };
+
+  const handleCreateApiKey = async (agencyId) => {
+    setApiKeyLoading(prev => ({ ...prev, [agencyId]: true }));
+    try {
+      const { data } = await axios.post(`/b2b/api-keys?agency_id=${agencyId}`);
+      setGeneratedKey({ agencyId, key: data.api_key });
+      toast.success('API key olusturuldu');
+      fetchApiKeyInfo(agencyId);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'API key olusturulamadi');
+    } finally {
+      setApiKeyLoading(prev => ({ ...prev, [agencyId]: false }));
+    }
+  };
+
+  const handleRegenerateApiKey = async (agencyId) => {
+    if (!confirm('Mevcut API key iptal edilecek ve yeni key olusturulacak. Devam etmek istiyor musunuz?')) return;
+    setApiKeyLoading(prev => ({ ...prev, [agencyId]: true }));
+    try {
+      const { data } = await axios.post(`/b2b/api-keys/${agencyId}/regenerate`);
+      setGeneratedKey({ agencyId, key: data.api_key });
+      toast.success('API key yenilendi');
+      fetchApiKeyInfo(agencyId);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'API key yenilenemedi');
+    } finally {
+      setApiKeyLoading(prev => ({ ...prev, [agencyId]: false }));
+    }
+  };
+
+  const handleRevokeApiKey = async (agencyId) => {
+    if (!confirm('API key iptal edilecek. Acente artik B2B API erisimi yapamayacak. Devam?')) return;
+    setApiKeyLoading(prev => ({ ...prev, [agencyId]: true }));
+    try {
+      await axios.delete(`/b2b/api-keys/${agencyId}`);
+      toast.success('API key iptal edildi');
+      setApiKeyInfo(prev => ({ ...prev, [agencyId]: { has_key: false } }));
+      setGeneratedKey(null);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'API key iptal edilemedi');
+    } finally {
+      setApiKeyLoading(prev => ({ ...prev, [agencyId]: false }));
+    }
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    toast.success('Panoya kopyalandi');
   };
 
   const openAgencyForm = (agency = null) => {
@@ -239,6 +304,68 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
                     <Button size="sm" variant="destructive" onClick={(e) => { e.stopPropagation(); handleDeleteAgency(agency); }}>
                       <Trash2 size={14} className="mr-1" /> Sil
                     </Button>
+                  </div>
+
+                  {/* B2B API Key */}
+                  <div>
+                    <h4 className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                      <Key size={14} /> Syroce B2B API Entegrasyonu
+                    </h4>
+                    {(() => {
+                      const info = apiKeyInfo[agency.id];
+                      const isLoading = apiKeyLoading[agency.id];
+                      const showKey = generatedKey?.agencyId === agency.id;
+
+                      if (!info) return <p className="text-xs text-slate-400">Yukleniyor...</p>;
+
+                      return (
+                        <div className="bg-white rounded-lg border p-3 space-y-2">
+                          {showKey && (
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-2" data-testid={`api-key-display-${agency.id}`}>
+                              <p className="text-xs text-amber-700 font-medium mb-1">API Key (sadece bir kez gosterilir):</p>
+                              <div className="flex items-center gap-2">
+                                <code className="text-xs bg-white px-2 py-1 rounded border flex-1 break-all font-mono">{generatedKey.key}</code>
+                                <Button size="sm" variant="outline" className="h-7 shrink-0" onClick={() => copyToClipboard(generatedKey.key)} data-testid={`copy-api-key-${agency.id}`}>
+                                  <Copy size={12} className="mr-1" /> Kopyala
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+
+                          {info.has_key ? (
+                            <div className="flex items-center justify-between">
+                              <div className="text-xs text-slate-600 space-y-0.5">
+                                <div className="flex items-center gap-2">
+                                  <ShieldCheck size={13} className="text-emerald-500" />
+                                  <span>API Key aktif</span>
+                                  <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{info.key_prefix}</code>
+                                </div>
+                                <div className="text-slate-400 ml-5">
+                                  Kullanim: {info.usage_count || 0} istek
+                                  {info.last_used_at && <> &middot; Son: {new Date(info.last_used_at).toLocaleDateString('tr-TR')}</>}
+                                </div>
+                              </div>
+                              <div className="flex gap-1">
+                                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={(e) => { e.stopPropagation(); handleRegenerateApiKey(agency.id); }} disabled={isLoading} data-testid={`regenerate-key-${agency.id}`}>
+                                  <RefreshCw size={12} className="mr-1" /> Yenile
+                                </Button>
+                                <Button size="sm" variant="outline" className="h-7 text-xs text-red-500 hover:text-red-700" onClick={(e) => { e.stopPropagation(); handleRevokeApiKey(agency.id); }} disabled={isLoading} data-testid={`revoke-key-${agency.id}`}>
+                                  <XCircle size={12} className="mr-1" /> Iptal
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs text-slate-400">Henuz API key olusturulmamis</p>
+                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={(e) => { e.stopPropagation(); handleCreateApiKey(agency.id); }} disabled={isLoading} data-testid={`create-key-${agency.id}`}>
+                                {isLoading ? <Loader2 size={12} className="animate-spin mr-1" /> : <Key size={12} className="mr-1" />}
+                                API Key Olustur
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Users */}

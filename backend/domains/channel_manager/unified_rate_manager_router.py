@@ -908,27 +908,42 @@ async def get_push_providers(current_user: User = Depends(get_current_user)):
     tenant_id = current_user.tenant_id
     detection = await _detect_active_provider(tenant_id)
 
-    if not detection["provider"]:
-        return {"providers": []}
+    providers = []
 
-    if detection["provider"] == "hotelrunner":
-        try:
-            # Proxy to the HR push providers endpoint
-            providers = []
+    if detection["provider"]:
+        if detection["provider"] == "hotelrunner":
+            try:
+                conn = detection["connection"]
+                push_mode = conn.get("push_mode", "shadow")
+                providers.append({
+                    "slug": "hotelrunner",
+                    "name": "HotelRunner",
+                    "mode": push_mode,
+                })
+            except Exception:
+                providers.append({"slug": "hotelrunner", "name": "HotelRunner", "mode": "shadow"})
+        else:
             conn = detection["connection"]
-            push_mode = conn.get("push_mode", "shadow")
-            providers.append({
-                "slug": "hotelrunner",
-                "name": "HotelRunner",
-                "mode": push_mode,
-            })
-            return {"providers": providers}
-        except Exception:
-            return {"providers": [{"slug": "hotelrunner", "name": "HotelRunner", "mode": "shadow"}]}
-    else:
-        conn = detection["connection"]
-        push_mode = conn.get("push_mode", "live")
-        return {"providers": [{"slug": "exely", "name": "Exely", "mode": push_mode}]}
+            push_mode = conn.get("push_mode", "live")
+            providers.append({"slug": "exely", "name": "Exely", "mode": push_mode})
+
+    # Syroce B2B provider — aktif acente varsa ekle
+    active_agency_count = await db.agencies.count_documents(
+        {"tenant_id": tenant_id, "status": "active"}
+    )
+    if active_agency_count > 0:
+        api_key_count = await db.agency_api_keys.count_documents(
+            {"tenant_id": tenant_id, "is_active": True}
+        )
+        providers.append({
+            "slug": "syroce_b2b",
+            "name": "Syroce B2B",
+            "mode": "live",
+            "agency_count": active_agency_count,
+            "api_key_count": api_key_count,
+        })
+
+    return {"providers": providers}
 
 
 # ── Pricing Settings ─────────────────────────────────────────────
