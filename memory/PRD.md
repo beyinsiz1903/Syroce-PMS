@@ -58,6 +58,16 @@ Turkish (All responses must be in Turkish)
 - Fixed missing Layout wrapper on MessagingDashboard — top navigation was disappearing when navigating to `/messaging-dashboard`
 - Wrapped component in `<Layout>` to match other consolidated page patterns
 
+### Messaging Center — Email (SMTP) & WhatsApp (Meta Business API) Integration (DONE - 2026-04-08)
+- **No third-party intermediaries** — Direct SMTP for email, Meta WhatsApp Business Cloud API for WhatsApp
+- **Backend**: SMTPEmailProvider + WhatsAppProvider with sandbox/live modes, settings API, template CRUD, send, delivery logs, metrics
+- **9 Pre-built Templates**: 5 WhatsApp (Hos Geldiniz, Yol Tarifi, Tesis Bilgileri, Puan/Degerlendirme, Iletisim) + 4 Email (Rezervasyon Onay, Fatura, Kampanya, Check-out Tesekkur)
+- **Frontend**: 5-tab dashboard (Mesaj Gonder, Sablonlar, Loglar, Metrikler, Ayarlar)
+- **Settings Panel**: SMTP (host, port, user, pass, from_email, TLS) + WhatsApp (access_token, phone_number_id) configuration
+- **Sandbox Mode**: Demo providers auto-seeded, simulated send — ready for real credentials
+- **New Endpoints**: `/api/messaging-center/settings`, `/api/messaging-center/settings/email`, `/api/messaging-center/settings/whatsapp`, `/api/messaging-center/send`, `/api/messaging-center/seed-demo`
+- **Test Result**: Backend 19/19, Frontend 100% — iteration_201.json
+
 ## Pending / Known Issues
 - litellm CVE-2026-35030: Suppressed in `.trivyignore`. Upgrade to >=1.83.0 blocked by emergentintegrations dependency chain.
 
@@ -98,3 +108,7 @@ Turkish (All responses must be in Turkish)
 - `POST /api/rms/generate-pricing` / `POST /api/rms/apply-recommendations`
 - `GET/POST/PUT/DELETE /api/rms/yield-rules`
 - `GET/POST/PUT/DELETE /api/rms/seasonal-calendar`
+- `GET /api/messaging-center/settings` / `POST .../settings/email` / `POST .../settings/whatsapp`
+- `GET/POST/PUT/DELETE /api/messaging-center/templates`
+- `POST /api/messaging-center/send` / `GET /api/messaging-center/delivery-logs`
+- `GET /api/messaging-center/metrics` / `POST /api/messaging-center/seed-demo`
