@@ -15,7 +15,7 @@ import requests
 
 BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
-    BASE_URL = "https://dynamic-rates-3.preview.emergentagent.com"
+    BASE_URL = "https://direct-smtp-whatsapp.preview.emergentagent.com"
 
 
 @pytest.fixture(scope="module")

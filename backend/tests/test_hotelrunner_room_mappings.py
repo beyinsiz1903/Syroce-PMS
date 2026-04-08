@@ -7,7 +7,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://dynamic-rates-3.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://direct-smtp-whatsapp.preview.emergentagent.com').rstrip('/')
 
 
 class TestHotelRunnerRoomMappingsAPI:
