@@ -17,78 +17,48 @@ Turkish (All responses must be in Turkish)
 ## What's Been Implemented
 
 ### Unified Rate Manager (DONE)
-- Backend: `/app/backend/domains/channel_manager/unified_rate_manager_router.py`
-- Frontend: `/app/frontend/src/pages/UnifiedRateManager.jsx`
-- Auto-detects active provider (HR/Exely), agency pricing side-panel
-- Push providers: HotelRunner, Exely, Syroce B2B
-
 ### Role-Based Delete Protection on Content Distribution (DONE - 2026-04-08)
-- File: `/app/frontend/src/pages/AgencyContentDistribution.jsx`
-- Receptionist/front_desk: Delete buttons hidden
-- Admin/super_admin: AlertDialog confirmation before deletion
-
 ### Syroce B2B API (DONE - 2026-04-08)
-- Backend: `/app/backend/routers/b2b_api.py`
-- Frontend: `/app/frontend/src/pages/AgencyManagement.jsx` (API Key management UI)
-- Admin + B2B Endpoints
-
 ### B2B API Documentation Page (DONE - 2026-04-08)
-- Frontend: `/app/frontend/src/pages/B2BApiDocs.jsx`
-- Route: `/b2b/docs` (public, no auth required, standalone layout)
-
 ### Webhook System (DONE - 2026-04-08)
-- Backend: `/app/backend/routers/b2b_api.py` (webhook endpoints)
-- Events: reservation.created, reservation.cancelled, reservation.updated
-
 ### Deployment Fixes (DONE - 2026-04-08)
-- `.gitignore` cleaned (1553 → 83 lines)
-- CORS: Added production domain
-- Import sorting fixed in `b2b_api.py`
-
 ### CI Test Fixes — TenantViolationError (DONE - 2026-04-09)
-- Fixed 18 FAILED + 10 ERROR tests caused by `STRICT_TENANT_MODE=true`
-- **Root causes & fixes:**
-  - `tests/resilience/conftest.py`: `db` fixture now returns `_raw_db` (bypasses TenantAwareDBProxy); cleanup uses `_raw_db` directly
-  - `tests/battle/test_sprint2_hold_ooo.py`: Cleanup uses `raw_db`; test body gets `set_tenant_context(TENANT_ID)` via fixture
-  - `tests/resilience/test_provider_failures.py`: `_handle_import_failure` call wrapped with `tenant_context()`
-  - `controlplane/alerting.py` (APP BUG): `AlertingEngine._get_db()` now uses `get_system_db()` instead of proxy (cross-tenant system operation)
-- **Trivy CVE-2026-35030**: Added `.trivyignore` (litellm used as client, not proxy; upgrade blocked by emergentintegrations pinning openai==1.99.9)
-
 ### RMS Module — Backend Endpoint Fixes (DONE - 2026-04-08)
-- Removed 5 simplified duplicate endpoints from `enterprise_router.py` that were overriding enhanced `rms_router.py` versions
-- Added `GET /rms/pricing-strategy` — computes current ADR from bookings, recommended from ML, market position from comp-set
-- Added `PUT /rms/pricing-strategy` — updates auto_pricing_enabled in DB
-- Added `GET /rms/price-adjustments` — returns applied recommendations history
-- Added `POST /rms/apply-recommendations` — applies all pending pricing recommendations with audit trail
-- Enhanced `GET /rms/demand-forecast` — now supports `days` param, generates forecasts from live booking data
-- Enhanced `GET /rms/comp-set` — enriches competitors with avg_rate, occupancy_rate, revpar from comp_pricing
-
 ### Advanced Menu Icon Fix (DONE - 2026-04-08)
-- Added unique icons for 5 modules that had generic Home fallback icons
-- Data Intelligence → BrainCircuit, Messaging Center → MessageSquare, ML Scheduler → Clock, Revenue Autopilot → Rocket, Analytics Export → Download
-
 ### Advanced Module Consolidation (DONE - 2026-04-08)
-- Consolidated 8 Gelismis (Advanced) menu modules into 4 to eliminate overlap
-- Created 3 new wrapper pages: GelirYonetimiPage.jsx, AIZekaPage.jsx, AnalitikRaporlarPage.jsx
-- Modified RMSModule.jsx, RevenueEngineDashboard.jsx, AIModule.jsx to support embedded prop
-- Updated navItems.jsx (8 → 4 items) and routeDefinitions.jsx (new routes + legacy backward compat)
-- Updated Layout.jsx icon mappings for new nav keys
-- Test Result: 14/14 passed (100%)
+
+### RMS Module — Complete Rewrite to Internal-Data-Driven System (DONE - 2026-04-08)
+- **Motivation**: User decided not to rely on competitor pricing (web scraping is fragile, OTA rate shopping services cost $75-400/mo). RMS now uses only internal hotel data.
+- **7-Factor Pricing Algorithm**:
+  1. Doluluk Orani (Occupancy) — 25% weight
+  2. Rezervasyon Hizi / Pickup — 20% weight
+  3. Lead Time (Days to arrival) — 15% weight
+  4. Haftanin Gunu & Mevsimsellik — 15% weight
+  5. Iptal Orani (Cancellation Rate) — 10% weight
+  6. Kanal Bazli Performans (Channel Performance) — 10% weight
+  7. Gecmis Yil Karsilastirma (YoY) — 5% weight
+- **New Backend Endpoints**:
+  - `GET /api/rms/dashboard-kpis` — Comprehensive KPIs (doluluk, ADR, RevPAR, pickup, cancel rate, channels, daily trend)
+  - `POST /api/rms/generate-pricing` — New 7-factor pricing engine
+  - `GET/POST/PUT/DELETE /api/rms/yield-rules` — Yield rules CRUD
+  - `GET/POST/PUT/DELETE /api/rms/seasonal-calendar` — Seasonal calendar CRUD
+  - `GET /api/rms/channel-performance` — Monthly channel breakdown
+- **New Frontend Components**:
+  - `RMSModule.jsx` — Complete rewrite: KPI cards (TRY), doluluk trendi chart, kanal dagilimi doughnut, oda tipi performansi bar chart, fiyat onerileri table, kanal detay tablosu
+  - `YieldRulesPanel.jsx` — Yield rules CRUD UI with priority, conditions, actions
+  - `SeasonCalendarPanel.jsx` — Seasonal calendar with visual timeline + CRUD
+  - `GelirYonetimiPage.jsx` — 4 tabs: Dashboard, Yield Kurallari, Sezon Takvimi, Autopilot
+- **Seed Data**: auto_seed.py updated with:
+  - TRY prices (Standard: 4500, Deluxe: 6800, Superior: 9200, Suite: 14000)
+  - 265 bookings (6 months history with channel distribution)
+  - 6 room types, 5 yield rules, 6 seasonal calendar entries
+- **Test Result**: Backend 16/16, Frontend 100% — iteration_200.json
 
 ## Pending / Known Issues
-- litellm CVE-2026-35030: Suppressed in `.trivyignore`. Upgrade to >=1.83.0 blocked by emergentintegrations dependency chain (openai==1.99.9 vs openai>=2.8.0). Monitor emergentintegrations releases.
+- litellm CVE-2026-35030: Suppressed in `.trivyignore`. Upgrade to >=1.83.0 blocked by emergentintegrations dependency chain.
 
 ## Upcoming Tasks (P1)
 - Real-time UI notifications for channel push results
-
-## Completed — Advanced Module Consolidation (2026-04-08)
-- 8 Advanced (Gelismis) modules consolidated into 4:
-  - **Gelir Yonetimi** (/app/gelir-yonetimi): RMS + Revenue Engine + Revenue Autopilot (3 tabs)
-  - **AI & Zeka** (/app/ai-zeka): AI Module + Data Intelligence (2 tabs)
-  - **Mesajlasma** (/messaging-dashboard): Messaging Center (unchanged)
-  - **Analitik & Raporlar** (/app/analitik): Analytics Export + ML Scheduler (2 tabs)
-- Legacy routes maintained for backward compatibility
-- Existing pages support `embedded` prop for Layout-free rendering
 
 ## Future / Backlog (P2+)
 - Automatic retry mechanism with exponential backoff for failed webhook deliveries
@@ -99,6 +69,7 @@ Turkish (All responses must be in Turkish)
 - Improve Auto Room Mapping (capacity + base price matching)
 - Refactor: hotelrunner_sync.py (~1000 lines)
 - Refactor: Evaluate deprecation of legacy hr_rate_manager_router.py and rate_manager_router.py
+- Real competitor price integration via SerpApi or OTA Insight (when budget allows)
 
 ## Key DB Collections
 - `cm_connectors` — Encrypted channel credentials
@@ -106,9 +77,11 @@ Turkish (All responses must be in Turkish)
 - `users` — User accounts with roles
 - `agency_api_keys` — B2B API keys (SHA256 hashed)
 - `agency_rate_calendar` — Agency-specific rate data
-- `agencies` — Agency profiles
-- `agency_webhooks` — Webhook registrations
-- `webhook_deliveries` — Webhook delivery logs
+- `room_types` — Room type definitions with TRY base/min/max rates
+- `yield_rules` — Automatic pricing rules (condition-action pairs)
+- `seasonal_calendar` — Season definitions with rate multipliers
+- `rms_pricing_recommendations` — Generated pricing recommendations
+- `bookings` — Reservations with channel, room_type, base_rate fields
 
 ## Key API Endpoints
 - `GET /api/channel-manager/unified-rate-manager/grid`
@@ -117,3 +90,7 @@ Turkish (All responses must be in Turkish)
 - `GET /api/b2b/content` / `GET /api/b2b/availability` / `GET /api/b2b/rates`
 - `POST /api/b2b/reservations` / `GET /api/b2b/reservations`
 - `POST /api/b2b/webhooks` / `GET /api/b2b/webhooks` / `DELETE /api/b2b/webhooks/{id}`
+- `GET /api/rms/dashboard-kpis` / `GET /api/rms/channel-performance`
+- `POST /api/rms/generate-pricing` / `POST /api/rms/apply-recommendations`
+- `GET/POST/PUT/DELETE /api/rms/yield-rules`
+- `GET/POST/PUT/DELETE /api/rms/seasonal-calendar`
