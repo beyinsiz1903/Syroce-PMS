@@ -66,6 +66,9 @@ const ICON_BY_KEY = {
   ml_scheduler: Clock,
   revenue_autopilot_v2: Rocket,
   analytics_export: Download,
+  gelir_yonetimi: DollarSign,
+  ai_zeka: BrainCircuit,
+  analitik_raporlar: Download,
   no_show_analytics: BarChart3,
   report_builder: FileText,
 };

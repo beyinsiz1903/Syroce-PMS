@@ -35,7 +35,7 @@ const MODULE_COMPONENTS = {
   'social-media-radar': SocialMediaRadar,
 };
 
-const AIModule = ({ user, tenant, onLogout }) => {
+const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
@@ -462,9 +462,12 @@ const AIModule = ({ user, tenant, onLogout }) => {
     );
   };
 
-  return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="ai">
-      <div className="p-6 max-w-[1400px] mx-auto">
+  const wrap = (content) => embedded ? content : (
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="ai">{content}</Layout>
+  );
+
+  return wrap(
+    <div className="p-6 max-w-[1400px] mx-auto">
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-3xl font-bold flex items-center gap-3">
@@ -499,7 +502,6 @@ const AIModule = ({ user, tenant, onLogout }) => {
         {activeTab === 'chatbot' && renderChatbot()}
         {activeTab === 'modules' && renderModules()}
       </div>
-    </Layout>
   );
 };
 

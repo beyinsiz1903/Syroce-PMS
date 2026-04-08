@@ -33,7 +33,7 @@ ChartJS.register(
   Legend,
 );
 
-const RMSModule = ({ user, tenant, onLogout }) => {
+const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
   const { t } = useTranslation();
   const [compSet, setCompSet] = useState([]);
   const [pricingStrategy, setPricingStrategy] = useState(null);
@@ -41,6 +41,10 @@ const RMSModule = ({ user, tenant, onLogout }) => {
   const [autoPricingEnabled, setAutoPricingEnabled] = useState(false);
   const [priceAdjustments, setPriceAdjustments] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const wrap = (content) => embedded ? content : (
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rms">{content}</Layout>
+  );
 
   useEffect(() => {
     loadRMSData();
@@ -91,12 +95,10 @@ const RMSModule = ({ user, tenant, onLogout }) => {
   };
 
   if (loading) {
-    return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rms">
-        <div className="flex items-center justify-center h-screen">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
-        </div>
-      </Layout>
+    return wrap(
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
+      </div>
     );
   }
 
@@ -130,10 +132,9 @@ const RMSModule = ({ user, tenant, onLogout }) => {
     ]
   };
 
-  return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rms">
-      <div className="p-6 space-y-6">
-        <div className="flex justify-between items-center">
+  return wrap(
+    <div className="p-6 space-y-6">
+      <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold">Gelir Yönetim Sistemi (RMS)</h1>
             <p className="text-gray-600">Yapay zeka destekli fiyatlama ve talep tahmini</p>
@@ -305,7 +306,6 @@ const RMSModule = ({ user, tenant, onLogout }) => {
           </CardContent>
         </Card>
       </div>
-    </Layout>
   );
 };
 

@@ -18,7 +18,7 @@ import Layout from '@/components/Layout';
 const API = import.meta.env.VITE_BACKEND_URL;
 const COLORS = ['#0f766e', '#0ea5e9', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981'];
 
-export default function RevenueEngineDashboard({ user, tenant, onLogout }) {
+export default function RevenueEngineDashboard({ user, tenant, onLogout, embedded = false }) {
   const { t } = useTranslation();
   const [dashboard, setDashboard] = useState(null);
   const [forecast, setForecast] = useState(null);
@@ -31,6 +31,10 @@ export default function RevenueEngineDashboard({ user, tenant, onLogout }) {
 
   const token = localStorage.getItem('token');
   const headers = { Authorization: `Bearer ${token}` };
+
+  const wrap = (content) => embedded ? content : (
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rms">{content}</Layout>
+  );
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -77,20 +81,17 @@ export default function RevenueEngineDashboard({ user, tenant, onLogout }) {
   };
 
   if (loading) {
-    return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rms">
-        <div className="flex items-center justify-center h-64" data-testid="revenue-loading">
-          <RefreshCw className="w-8 h-8 animate-spin text-teal-600" />
-        </div>
-      </Layout>
+    return wrap(
+      <div className="flex items-center justify-center h-64" data-testid="revenue-loading">
+        <RefreshCw className="w-8 h-8 animate-spin text-teal-600" />
+      </div>
     );
   }
 
   const p30 = dashboard?.period_30d || {};
 
-  return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rms">
-      <div className="space-y-6 p-4 lg:p-6" data-testid="revenue-engine-dashboard">
+  return wrap(
+    <div className="space-y-6 p-4 lg:p-6" data-testid="revenue-engine-dashboard">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -442,6 +443,5 @@ export default function RevenueEngineDashboard({ user, tenant, onLogout }) {
           </div>
         )}
       </div>
-    </Layout>
   );
 }
