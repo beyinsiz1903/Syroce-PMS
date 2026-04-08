@@ -22,7 +22,7 @@ import requests
 import os
 from datetime import datetime, timedelta
 
-BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://agency-portal-77.preview.emergentagent.com")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://syroce-b2b-api.preview.emergentagent.com")
 UNIFIED_PREFIX = "/api/channel-manager/unified-rate-manager"
 
 # Test credentials

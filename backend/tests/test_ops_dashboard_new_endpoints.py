@@ -14,7 +14,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://agency-portal-77.preview.emergentagent.com")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://syroce-b2b-api.preview.emergentagent.com")
 
 
 class TestInventoryAlignmentEndpoint:

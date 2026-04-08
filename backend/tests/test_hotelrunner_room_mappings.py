@@ -7,7 +7,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://agency-portal-77.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://syroce-b2b-api.preview.emergentagent.com').rstrip('/')
 
 
 class TestHotelRunnerRoomMappingsAPI:
