@@ -34,7 +34,6 @@ import logging
 import secrets
 import uuid
 from datetime import UTC, datetime
-from typing import Optional
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header, Query
@@ -124,7 +123,7 @@ class B2BReservationCreate(BaseModel):
 class WebhookRegister(BaseModel):
     url: str
     events: list[str]
-    secret: Optional[str] = None
+    secret: str | None = None
 
 
 # ── Webhook Delivery Helper ─────────────────────────────────────
@@ -424,7 +423,7 @@ async def b2b_get_availability(
         rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
         del rt_data["room_ids"]
 
-    results = [v for v in room_types.values()]
+    results = list(room_types.values())
     return {
         "check_in": check_in,
         "check_out": check_out,

@@ -67,10 +67,9 @@ Turkish (All responses must be in Turkish)
 - Test report: `/app/test_reports/iteration_197.json` - 100% pass
 
 ## Pending / Known Issues
-- P0: HotelRunner 429 Rate Limit (testing pending if timeout expired)
+- P0: HotelRunner 429 Rate Limit — **RESOLVED** (2026-04-08, fetch-external returns 4 room types successfully)
 
 ## Upcoming Tasks (P1)
-- Retest HR Room Mapping Wizard after 429 timeout
 - Real-time UI notifications for channel push results
 
 ## Future / Backlog (P2+)
