@@ -55,11 +55,11 @@ const RMSModule = ({ user, tenant, onLogout }) => {
         axios.get('/rms/price-adjustments')
       ]);
 
-      setCompSet(compSetRes.data.competitors || []);
+      setCompSet(compSetRes.data.competitors || compSetRes.data.comp_set || []);
       setPricingStrategy(strategyRes.data);
-      setDemandForecast(forecastRes.data.forecast || []);
+      setDemandForecast(forecastRes.data.forecast || forecastRes.data.forecasts || []);
       setPriceAdjustments(adjustmentsRes.data.adjustments || []);
-      setAutoPricingEnabled(strategyRes.data.auto_pricing_enabled || false);
+      setAutoPricingEnabled(strategyRes.data?.auto_pricing_enabled || false);
     } catch (error) {
       console.error('Failed to load RMS data:', error);
       toast.error('Failed to load RMS data');

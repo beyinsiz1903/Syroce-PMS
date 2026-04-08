@@ -144,56 +144,8 @@ async def pull_reservations_from_booking(current_user: User = Depends(get_curren
     return {'message': 'Reservation pull queued', 'log_id': log_entry['id']}
 
 # 2. RMS
-@router.get("/rms/comp-set")
-async def get_comp_set(current_user: User = Depends(get_current_user)):
-    competitors = await db.rms_competitors.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(100)
-    return {'competitors': competitors}
-
-@router.get("/rms/pricing-strategy")
-async def get_pricing_strategy(current_user: User = Depends(get_current_user)):
-    strategy = await db.rms_strategy.find_one({'tenant_id': current_user.tenant_id}, {'_id': 0})
-    return strategy or {'current_rate': 100, 'recommended_rate': 110, 'auto_pricing_enabled': False}
-
-@router.put("/rms/pricing-strategy")
-async def update_pricing_strategy(
-    strategy_data: dict,
-    current_user: User = Depends(get_current_user)
-):
-    await db.rms_strategy.update_one(
-        {'tenant_id': current_user.tenant_id},
-        {'$set': strategy_data},
-        upsert=True
-    )
-    return {'message': 'Strategy updated'}
-
-@router.get("/rms/demand-forecast")
-async def get_demand_forecast(
-    days: int = 30,
-    current_user: User = Depends(get_current_user)
-):
-    # Generate forecast data
-    forecast = []
-    today = datetime.now(UTC).date()
-    for i in range(days):
-        date = today + timedelta(days=i)
-        forecast.append({
-            'date': date.isoformat(),
-            'demand_index': 70 + (i % 10) * 3,
-            'predicted_occupancy': 65 + (i % 15) * 2
-        })
-    return {'forecast': forecast}
-
-@router.get("/rms/price-adjustments")
-async def get_price_adjustments(current_user: User = Depends(get_current_user)):
-    adjustments = await db.rms_price_adjustments.find(
-        {'tenant_id': current_user.tenant_id},
-        {'_id': 0}
-    ).sort('date', -1).limit(20).to_list(20)
-    return {'adjustments': adjustments}
-
-@router.post("/rms/apply-recommendations")
-async def apply_pricing_recommendations(current_user: User = Depends(get_current_user)):
-    return {'message': 'Recommendations applied'}
+# NOTE: /rms/comp-set, /rms/pricing-strategy, /rms/demand-forecast, /rms/price-adjustments,
+# /rms/apply-recommendations are handled by domains.revenue.rms_router (enhanced versions with real DB queries)
 
 # 3. Housekeeping Mobile
 @router.get("/housekeeping/rooms")

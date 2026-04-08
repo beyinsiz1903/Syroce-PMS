@@ -20,7 +20,8 @@ import {
   Home, Hotel, FileText, TrendingUp, ShoppingCart,
   User, LogOut, Menu, Calendar, DollarSign, Settings as SettingsIcon,
   Layers, BarChart3, Bot, Building2, Zap, Crown, Shield, Users, ClipboardCheck,
-  ChevronDown, Server, CalendarCheck, X
+  ChevronDown, Server, CalendarCheck, X,
+  BrainCircuit, MessageSquare, Clock, Rocket, Download
 } from 'lucide-react';
 import LanguageSelector from '@/components/LanguageSelector';
 import NotificationBell from '@/components/NotificationBell';
@@ -60,6 +61,13 @@ const ICON_BY_KEY = {
   group_folio: FileText,
   agency_management: Building2,
   agency_content: FileText,
+  data_intelligence: BrainCircuit,
+  messaging_dashboard: MessageSquare,
+  ml_scheduler: Clock,
+  revenue_autopilot_v2: Rocket,
+  analytics_export: Download,
+  no_show_analytics: BarChart3,
+  report_builder: FileText,
 };
 
 const GROUP_ICONS = {

@@ -27,13 +27,31 @@ router = APIRouter(prefix="/api", tags=["rms-revenue"])
 
 @router.get("/rms/comp-set")
 async def get_comp_set(current_user: User = Depends(get_current_user)):
-    """Get competitor set data"""
+    """Get competitor set data with pricing metrics"""
     comp_set = await db.comp_set.find(
         {'tenant_id': current_user.tenant_id},
         {'_id': 0}
     ).to_list(100)
 
-    return {'comp_set': comp_set, 'count': len(comp_set)}
+    # Enrich with latest pricing data
+    for comp in comp_set:
+        latest_pricing = await db.comp_pricing.find_one(
+            {'tenant_id': current_user.tenant_id, 'competitor_id': comp.get('id')},
+            {'_id': 0},
+            sort=[('date', -1)]
+        )
+        if latest_pricing:
+            comp['avg_rate'] = latest_pricing.get('standard_rate', 0)
+        if 'avg_rate' not in comp:
+            comp['avg_rate'] = 0
+        if 'occupancy_rate' not in comp:
+            comp['occupancy_rate'] = 0
+        if 'revpar' not in comp:
+            comp['revpar'] = round(comp['avg_rate'] * comp['occupancy_rate'] / 100, 2) if comp['avg_rate'] else 0
+        if 'distance_km' not in comp:
+            comp['distance_km'] = 0
+
+    return {'competitors': comp_set, 'comp_set': comp_set, 'count': len(comp_set)}
 
 @router.post("/rms/comp-set")
 async def add_competitor(
@@ -105,6 +123,182 @@ async def scrape_competitor_prices(
         'message': f'Scraped prices for {len(scraped_prices)} competitors',
         'prices': scraped_prices
     }
+
+
+# ── PRICING STRATEGY ──
+
+@router.get("/rms/pricing-strategy")
+async def get_pricing_strategy(current_user: User = Depends(get_current_user)):
+    """Get current pricing strategy with computed metrics"""
+    strategy = await db.rms_pricing_strategy.find_one(
+        {'tenant_id': current_user.tenant_id}, {'_id': 0}
+    )
+
+    # Compute current ADR from recent bookings
+    recent_bookings = await db.bookings.find(
+        {
+            'tenant_id': current_user.tenant_id,
+            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+        },
+        {'_id': 0, 'total_price': 1, 'nights': 1}
+    ).sort('created_at', -1).to_list(100)
+
+    total_revenue = sum(b.get('total_price', 0) for b in recent_bookings)
+    total_nights = sum(b.get('nights', 1) for b in recent_bookings)
+    current_adr = round(total_revenue / total_nights, 2) if total_nights > 0 else 0
+
+    # Get pending recommendations for suggested rate
+    pending_recs = await db.rms_pricing_recommendations.find(
+        {'tenant_id': current_user.tenant_id, 'status': 'pending'},
+        {'_id': 0, 'suggested_rate': 1}
+    ).to_list(50)
+    avg_suggested = round(
+        sum(r.get('suggested_rate', 0) for r in pending_recs) / len(pending_recs), 2
+    ) if pending_recs else current_adr
+
+    # Compute market position from comp-set
+    comp_avg = 0
+    comp_set = await db.comp_pricing.find(
+        {'tenant_id': current_user.tenant_id},
+        {'_id': 0, 'standard_rate': 1}
+    ).sort('date', -1).to_list(20)
+    if comp_set:
+        comp_avg = round(sum(c.get('standard_rate', 0) for c in comp_set) / len(comp_set), 2)
+
+    if comp_avg > 0 and current_adr > 0:
+        ratio = current_adr / comp_avg
+        if ratio > 1.15:
+            market_position = "Premium"
+        elif ratio > 0.95:
+            market_position = "Mid-Range"
+        elif ratio > 0.75:
+            market_position = "Economy"
+        else:
+            market_position = "Budget"
+    else:
+        market_position = "N/A"
+
+    auto_enabled = strategy.get('auto_pricing_enabled', False) if strategy else False
+
+    return {
+        'current_rate': current_adr,
+        'recommended_rate': avg_suggested,
+        'auto_pricing_enabled': auto_enabled,
+        'market_position': market_position,
+        'comp_avg_rate': comp_avg,
+        'pending_recommendations': len(pending_recs),
+    }
+
+
+class PricingStrategyUpdateRequest(BaseModel):
+    auto_pricing_enabled: bool
+
+
+@router.put("/rms/pricing-strategy")
+async def update_pricing_strategy(
+    request: PricingStrategyUpdateRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Update pricing strategy settings"""
+    await db.rms_pricing_strategy.update_one(
+        {'tenant_id': current_user.tenant_id},
+        {'$set': {
+            'tenant_id': current_user.tenant_id,
+            'auto_pricing_enabled': request.auto_pricing_enabled,
+            'updated_at': datetime.now(UTC).isoformat(),
+            'updated_by': current_user.id,
+        }},
+        upsert=True
+    )
+    return {'message': 'Pricing strategy updated', 'auto_pricing_enabled': request.auto_pricing_enabled}
+
+
+@router.get("/rms/price-adjustments")
+async def get_price_adjustments(
+    limit: int = 20,
+    current_user: User = Depends(get_current_user)
+):
+    """Get recent price adjustments history"""
+    adjustments = await db.rms_price_adjustments.find(
+        {'tenant_id': current_user.tenant_id},
+        {'_id': 0}
+    ).sort('date', -1).to_list(limit)
+
+    # If no dedicated adjustments, pull from applied recommendations
+    if not adjustments:
+        applied = await db.rms_pricing_recommendations.find(
+            {'tenant_id': current_user.tenant_id, 'status': 'applied'},
+            {'_id': 0}
+        ).sort('applied_at', -1).to_list(limit)
+        adjustments = [
+            {
+                'id': a.get('id', ''),
+                'date': a.get('date', ''),
+                'reason': a.get('reasoning', a.get('reason', 'Otomatik fiyat önerisi uygulandı')),
+                'old_rate': a.get('current_rate', 0),
+                'new_rate': a.get('suggested_rate', 0),
+                'room_type': a.get('room_type', ''),
+                'applied_at': a.get('applied_at', ''),
+            }
+            for a in applied
+        ]
+
+    return {'adjustments': adjustments, 'count': len(adjustments)}
+
+
+@router.post("/rms/apply-recommendations")
+async def apply_all_recommendations(current_user: User = Depends(get_current_user)):
+    """Apply all pending pricing recommendations"""
+    pending = await db.rms_pricing_recommendations.find(
+        {'tenant_id': current_user.tenant_id, 'status': 'pending'},
+        {'_id': 0}
+    ).to_list(100)
+
+    if not pending:
+        return {'message': 'Uygulanacak öneri bulunamadı', 'applied_count': 0}
+
+    applied_count = 0
+    now = datetime.now(UTC).isoformat()
+
+    for rec in pending:
+        # Update rate calendar
+        await db.rate_calendar.update_one(
+            {
+                'tenant_id': current_user.tenant_id,
+                'date': rec.get('date'),
+                'room_type': rec.get('room_type', 'Standard')
+            },
+            {'$set': {
+                'rate': rec.get('suggested_rate'),
+                'updated_at': now,
+                'updated_by': current_user.id
+            }},
+            upsert=True
+        )
+
+        # Mark recommendation as applied
+        await db.rms_pricing_recommendations.update_one(
+            {'id': rec.get('id'), 'tenant_id': current_user.tenant_id},
+            {'$set': {'status': 'applied', 'applied_at': now, 'applied_by': current_user.id}}
+        )
+
+        # Save to price adjustments history
+        await db.rms_price_adjustments.insert_one({
+            'id': str(uuid.uuid4()),
+            'tenant_id': current_user.tenant_id,
+            'date': rec.get('date', now),
+            'reason': rec.get('reasoning', 'Toplu öneri uygulaması'),
+            'old_rate': rec.get('current_rate', 0),
+            'new_rate': rec.get('suggested_rate', 0),
+            'room_type': rec.get('room_type', ''),
+            'applied_at': now,
+            'applied_by': current_user.id,
+        })
+
+        applied_count += 1
+
+    return {'message': f'{applied_count} öneri uygulandı', 'applied_count': applied_count}
+
 
 @router.post("/rms/auto-pricing")
 async def generate_auto_pricing(
@@ -342,10 +536,16 @@ async def generate_auto_pricing(
 async def get_demand_forecast(
     start_date: str = None,
     end_date: str = None,
+    days: int = None,
     current_user: User = Depends(get_current_user)
 ):
-    """Get demand forecast"""
+    """Get demand forecast (supports days param or start_date/end_date)"""
     query = {'tenant_id': current_user.tenant_id}
+
+    if days and not start_date:
+        start_date = datetime.now(UTC).date().isoformat()
+        end_date = (datetime.now(UTC) + timedelta(days=days)).date().isoformat()
+
     if start_date and end_date:
         query['date'] = {'$gte': start_date, '$lte': end_date}
 
@@ -354,7 +554,29 @@ async def get_demand_forecast(
         {'_id': 0}
     ).sort('date', 1).to_list(365)
 
-    return {'forecasts': forecasts, 'count': len(forecasts)}
+    # If no stored forecasts, generate basic ones from bookings
+    if not forecasts and days:
+        total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+        if total_rooms == 0:
+            total_rooms = 50
+        for d in range(days):
+            cur_date = (datetime.now(UTC) + timedelta(days=d)).date()
+            booked = await db.bookings.count_documents({
+                'tenant_id': current_user.tenant_id,
+                'check_in_date': {'$lte': cur_date.isoformat()},
+                'check_out_date': {'$gt': cur_date.isoformat()},
+                'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
+            })
+            occ = round(booked / total_rooms * 100, 1) if total_rooms else 0
+            dow = cur_date.weekday()
+            base_demand = 50 + (15 if dow in [4, 5] else 0) + (occ * 0.3)
+            forecasts.append({
+                'date': cur_date.isoformat(),
+                'demand_index': round(min(base_demand, 100), 1),
+                'occupancy_pct': occ
+            })
+
+    return {'forecast': forecasts, 'forecasts': forecasts, 'count': len(forecasts)}
 
 @router.post("/rms/demand-forecast")
 async def generate_demand_forecast(
