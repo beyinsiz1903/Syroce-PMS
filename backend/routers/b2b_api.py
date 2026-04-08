@@ -36,15 +36,15 @@ import uuid
 from datetime import UTC, datetime
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user
-
-logger = logging.getLogger(__name__)
 from core.tenant_db import set_tenant_context
 from models.schemas import User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/b2b", tags=["B2B API - Syroce"])
 
