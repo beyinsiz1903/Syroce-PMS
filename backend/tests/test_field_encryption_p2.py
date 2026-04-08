@@ -17,7 +17,7 @@ import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
-    BASE_URL = "https://unified-rate-mgr-1.preview.emergentagent.com"
+    BASE_URL = "https://agency-portal-77.preview.emergentagent.com"
 
 
 class TestAuthLoginEncryption:

@@ -1,14 +1,14 @@
-<analysis>**original_problem_statement**: Multi-tenant SaaS PMS with unified channel manager. Build a unified Rate & Availability Manager that handles both HotelRunner and Exely. Recently requested: Implement a direct Syroce B2B API integration so that agencies using the Syroce automation system can automatically check availability, fetch prices, and create reservations natively alongside other channel managers (HotelRunner/Exely).
+<analysis>**original_problem_statement**: Multi-tenant SaaS PMS with a unified channel manager. Implement a direct Syroce B2B API integration so that agencies using the Syroce automation system can automatically check availability, fetch prices, and create reservations natively alongside other channel managers (HotelRunner/Exely). Recently requested: Build a Webhook system for real-time reservation updates and create a standalone API documentation page with a TR/EN language toggle.
 
 **User's preferred language**: Turkish (INSTRUCT NEXT AGENT: Yanıtlarda kesinlikle TÜRKÇE kullanın. All responses, plans, and communications with the user MUST be in Turkish.)
 
-**what currently exists?**: A Multi-tenant SaaS PMS with a unified Channel Manager. A Unified Rate Manager dynamically detects the active provider (HotelRunner/Exely). The application now supports a native Syroce B2B API integration, allowing external agencies to authenticate via API Keys generated in the Agency Management dashboard, fetch live content, availability, rates, and push reservations directly into the PMS.
+**what currently exists?**: A Multi-tenant SaaS PMS with a unified Channel Manager. The application supports a native Syroce B2B API integration allowing external agencies to authenticate via API Keys. Recently, a Webhook system has been added to push real-time updates for reservation creation and cancellation to agency endpoints. Additionally, a standalone, public B2B API Documentation page () with English and Turkish language support is available.
 
 **Last working item**:
-    - Last item agent was working: Implementing the Syroce B2B API infrastructure (content, availability, rates, reservations CRUD) and the Frontend API Key management UI in . Also included fixing a strict Tenant DB isolation issue () by properly injecting tenant context during API Key authentication.
+    - Last item agent was working: Implementing the B2B API Webhook system (registration, triggers on create/cancel, testing endpoint) and creating the standalone B2B API Documentation UI with a TR/EN language toggle. Also added an API Docs Link Copy button in the Agency Management dashboard.
     - Status: USER VERIFICATION PENDING
     - Agent Testing Done: Y
-    - Which testing method agent to use?: NA (Testing completed via , bash CURL, and screenshot tool).
+    - Which testing method agent to use?: NA (Testing completed via , bash CURL, and screenshot tool with 100% pass rate).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:
@@ -16,7 +16,7 @@
   
   Issues Detail:
   - Issue 1: 
-     - Attempted fixes: The background worker  interval was changed previously. We are currently waiting for the external provider's time-based rate limit to expire.
+     - Attempted fixes: The background worker  interval was changed previously. Waited for the external provider's time-based rate limit to expire.
      - Next debug checklist: Check if the 429 error has cleared by calling the  mapping wizard endpoint.
      - Why fix this issue and what will be achieved with the fix?: Prevents the mapping wizard from fetching the real room list.
      - Status: TESTING PENDING
@@ -33,7 +33,8 @@
     - P2: Real-time UI notifications for channel push results (instead of silent background processing).
     
     Future Tasks:
-    - Enhancement: Add a B2B Analytics Dashboard to track agency API key usage, booking rates, and top queries (Suggested in previous finish).
+    - Enhancement: Automatic retry mechanism with exponential backoff for failed webhook deliveries.
+    - Enhancement: Add a B2B Analytics Dashboard to track agency API key usage, booking rates, and top queries.
     - Enhancement: Channel Manager Dashboard to view recent reservations, failed imports, push queue status, and connection health metrics.
     - Enhancement: Admin UI Panel for encryption management (view status, trigger migrations, check audit logs).
     - Enhancement: Make unassigned reservations more prominent in the calendar.
@@ -42,11 +43,10 @@
     - Refactoring: Evaluate if the legacy  (>1100 lines) and  (>1000 lines) can be fully deprecated/removed to reduce technical debt.
 
 **Completed work in this session**
-- Created Syroce B2B API endpoints in  (DONE)
-- Added API Key Management UI (Create, Regenerate, Revoke, Copy) in  (DONE)
-- Registered Syroce B2B as a valid push provider in  (DONE)
-- Fixed  in B2B API by ensuring  is correctly called in the authentication dependency (DONE)
-- Registered  router in  (DONE)
+- Created B2B API Documentation page in  with EN/TR toggle (DONE)
+- Implemented Webhook CRUD endpoints and BackgroundTask triggers for  and  in  (DONE)
+- Added API Docs Linkini Kopyala button in  (DONE)
+- Registered  route in  and  (DONE)
 
 **Earlier issues found/mentioned but not fixed**
    *None*
@@ -60,24 +60,23 @@
 
 
 **Key Technical Concepts**
+- BackgroundTasks (FastAPI) for asynchronous webhook dispatching.
 - B2B API Key Authentication & Prefixing
 - Tenant DB Isolation ( prevention via )
-- Unified API design pattern (Facade) handling multiple external channel providers
 
 **key DB schema**
   - : {agency_id, tenant_id, key_hash, prefix, is_active, usage_count, last_used_at}
   - : {id, tenant_id, name, status}
-  -  (Agency data and rates mapping)
-  - ,  (Tenant-scoped collections)
+  - : {id, agency_id, tenant_id, url, events, is_active}
 
 **changes in tech stack**
   - None
 
 **All files of reference** 
-  -  (Created for B2B API endpoints)
-  -  (Updated to include API Key UI)
-  -  (Updated to include Syroce B2B in push providers)
-  -  (Registered B2B API router)
+  -  (Created for public API documentation)
+  -  (Updated to handle webhook routing and execution)
+  -  (Updated to include Docs URL copy button)
+  -  (Updated to register docs route)
   -  (Updated)
   -  (New test report)
 
@@ -86,28 +85,24 @@
   - Legacy routing files:  and .
 
 **key api endpoints**
-  - 
-  - 
-  - 
-  - 
-  - 
+  - Webhooks: , , , 
+  - Reservations: , 
 
 **Critical Info for New Agent** 
 - **Language Constraint:** Yanıtlar kesinlikle Türkçe olmalı. (All responses MUST be in Turkish).
-- **Tenant Isolation Context:** Any backend endpoint querying collections like , , or  MUST have  executed within its lifecycle (usually in the dependency injection). The agent fixed a  in  by ensuring the authentication dependency explicitly sets the context. Do not bypass the tenant proxy.
-- **Syroce B2B:** Operates as a native provider alongside Exely and HotelRunner for outbound rate/availability pushes.
+- **Webhooks:** Triggered asynchronously using FastAPI's . The models and logic reside in .
+- **Tenant Isolation Context:** Any backend endpoint querying collections MUST have  executed within its lifecycle. B2B dependencies handle this natively.
 
 **documents and test reports created in this job** 
   - 
   - 
-  - 
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - *User:* acente yönetiminde acente ekliyoruz aktif edince içerik dağıtımı ekranında görünür oluyor ve paylaş dediğinde içerikler paylaşılıyor ama bunları nasıl entegre ediyoruz gönder diyince nasıl gönderecek o acente için entegrasyonu nasıl yapıyor
- - *User:* tamam bu durum şimdilik uygun ama benim isteğim şu. yapmış olduğumuz syroce agente otomasyon sistemimiz var. bu programı kullanan acenteler otomatik syroce acente sisteminden kontrol edebilsinler. rezervasyonları oraya gönderebilsin müsaitlik fiyat kontrolü yapabilsin kısaca hotelrunner exely gibi kullanabilsin syroce acente otomasyon sistemini bunun için yapmamız gereken alt yapı işlemleri varsa yapalım
- - *User:* normal hr ve exelye gönderdiğimiz yerden gönderince aynı anda syroce acente sistemine de gitsin ayrı bir ekran olmasın
- - *User:* evet (Confirming to start implementation of B2B API infrastructure)
- - *Pending HUMAN message:* Await user feedback/testing on the newly integrated B2B API and Agency Management UI. Also pending validation if the HotelRunner 429 error has cleared.
+ - *User:* Please use ask_human tool and confirm your plan now.
+ - *User:* B2B API: Webhook sistemi, acente API dokümantasyon sayfası bunu ayrı bir subdomain içine eklemek daha mantıklı olmaz mı veya butonlarda olmasın ayrı bir link ile yönlendirme olsun
+ - *User:* a ile b arasında ki farkı anlamadım ikisi de aynı değil mi
+ - *User:* dökümantasyon dili ingilizce olsun ama üstte tr işareti de olsun türkçe ingilizce yeterli.ikisi de yapılacak
+ - *Pending HUMAN message:* Await user feedback/testing on the newly integrated Webhook system and API documentation page. Also pending validation if the HotelRunner 429 error has cleared.
 
 **Project Health Check:**
   - Broken: Potential HotelRunner 429 Rate Limit error (pending testing if timeout cleared).
@@ -129,7 +124,7 @@
   - Admin (Full Access):  / 
 
 **What agent forgot to execute**
-  - Nothing. The B2B infrastructure was perfectly implemented and successfully passed all e2e tests via script and .
+  - Nothing. The webhook system and documentation page were perfectly implemented and tested successfully.
 
 **Debugging checklist for current issue**
     Issue: HotelRunner API Rate Limit Exceeded (429) Wait Block
