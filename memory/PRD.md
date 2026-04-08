@@ -66,9 +66,17 @@ Turkish (All responses must be in Turkish)
 - DB: `agency_webhooks`, `webhook_deliveries` collections
 - Test report: `/app/test_reports/iteration_197.json` - 100% pass
 
+### Deployment Fixes (DONE - 2026-04-08)
+- `.gitignore` cleaned: removed `.env` blocking rules and 1500+ duplicate lines (1553 → 83 lines)
+- ML dependencies removed from `requirements.txt` (scikit-learn, scipy, xgboost, nltk, textblob, tokenizers, tiktoken)
+- CORS: Added `syroce-b2b-api.emergent.host` production domain
+- `test_credentials.md` added to `.gitignore` for security
+- Import sorting fixed in `b2b_api.py`
+
 ## Pending / Known Issues
 - ~~P0: HotelRunner 429 Rate Limit~~ — **RESOLVED** (2026-04-08)
 - ~~P0: super_admin plan/module restriction~~ — **RESOLVED** (2026-04-08, PlanRouteGuard bypass + DB modules update)
+- ~~P0: Deployment blockers~~ — **RESOLVED** (2026-04-08, .gitignore, ML deps, CORS, credentials)
 
 ## Upcoming Tasks (P1)
 - Real-time UI notifications for channel push results
