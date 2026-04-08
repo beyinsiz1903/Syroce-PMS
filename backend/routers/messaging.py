@@ -1,8 +1,11 @@
 """
-Messaging Router - Provider management, template CRUD, sending, delivery logs.
+Messaging Router — SMTP Email + WhatsApp Business API.
+Provider settings, template CRUD, sending, delivery logs, metrics.
 """
 import logging
-from datetime import UTC
+import uuid
+from datetime import UTC, datetime, timedelta
+import random
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -17,71 +20,189 @@ _db = None
 _service = None
 
 
-def _get_service():
-    global _service, _db
-    if _service is None:
+def _get_db():
+    global _db
+    if _db is None:
         from server import db
         _db = db
+    return _db
+
+
+def _get_service():
+    global _service
+    if _service is None:
         from modules.messaging.service import MessagingService
-        _service = MessagingService(db)
+        _service = MessagingService(_get_db())
     return _service
 
 
-# ── Provider Config ──
+# ════════════════════════════════════════════════════════
+# Provider Settings (SMTP + WhatsApp configuration)
+# ════════════════════════════════════════════════════════
 
-@router.get("/providers")
-async def list_providers(current_user: User = Depends(get_current_user)):
-    svc = _get_service()
-    configs = await svc.db.messaging_provider_configs.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0, "credentials_encrypted": 0}
-    ).to_list(20)
-    return {"providers": configs}
-
-
-class ProviderConfigReq(BaseModel):
-    provider_type: str
-    credentials: dict
+class SMTPSettingsReq(BaseModel):
+    smtp_host: str
+    smtp_port: int = 587
+    smtp_username: str
+    smtp_password: str
+    from_email: str
+    from_name: str = "Otel"
+    use_tls: bool = True
     is_sandbox: bool = False
     enabled: bool = True
 
 
-@router.post("/providers")
-async def create_provider(req: ProviderConfigReq, current_user: User = Depends(get_current_user)):
-    from modules.messaging.models import new_provider_config
-    doc = new_provider_config(current_user.tenant_id, req.provider_type, req.credentials, req.is_sandbox, req.enabled)
-    svc = _get_service()
-    await svc.db.messaging_provider_configs.insert_one(doc)
-    doc.pop("_id", None)
-    doc.pop("credentials_encrypted", None)
-    return doc
+class WhatsAppSettingsReq(BaseModel):
+    access_token: str
+    phone_number_id: str
+    business_name: str = ""
+    is_sandbox: bool = False
+    enabled: bool = True
 
 
-class ProviderUpdateReq(BaseModel):
-    credentials: dict | None = None
-    is_sandbox: bool | None = None
-    enabled: bool | None = None
+@router.get("/settings")
+async def get_messaging_settings(current_user: User = Depends(get_current_user)):
+    """Get current email and WhatsApp configuration (credentials masked)."""
+    db = _get_db()
+    configs = await db.messaging_provider_configs.find(
+        {"tenant_id": current_user.tenant_id}, {"_id": 0}
+    ).to_list(10)
+
+    result = {"email": None, "whatsapp": None}
+    for cfg in configs:
+        pt = cfg.get("provider_type")
+        creds = cfg.get("credentials_encrypted", {})
+        masked = {}
+
+        if pt == "smtp_email":
+            masked = {
+                "smtp_host": creds.get("smtp_host", ""),
+                "smtp_port": creds.get("smtp_port", 587),
+                "smtp_username": _mask(creds.get("smtp_username", "")),
+                "smtp_password": "********" if creds.get("smtp_password") else "",
+                "from_email": creds.get("from_email", ""),
+                "from_name": creds.get("from_name", "Otel"),
+                "use_tls": creds.get("use_tls", True),
+            }
+            result["email"] = {
+                "id": cfg["id"],
+                "provider_type": pt,
+                "is_sandbox": cfg.get("is_sandbox", False),
+                "enabled": cfg.get("enabled", True),
+                "health_status": cfg.get("health_status", "unknown"),
+                "credentials": masked,
+            }
+        elif pt == "whatsapp":
+            masked = {
+                "access_token": _mask(creds.get("access_token", ""), show=8),
+                "phone_number_id": creds.get("phone_number_id", ""),
+                "business_name": creds.get("business_name", ""),
+            }
+            result["whatsapp"] = {
+                "id": cfg["id"],
+                "provider_type": pt,
+                "is_sandbox": cfg.get("is_sandbox", False),
+                "enabled": cfg.get("enabled", True),
+                "health_status": cfg.get("health_status", "unknown"),
+                "credentials": masked,
+            }
+
+    return result
 
 
-@router.put("/providers/{config_id}")
-async def update_provider(config_id: str, req: ProviderUpdateReq,
-                           current_user: User = Depends(get_current_user)):
-    svc = _get_service()
-    updates = {}
-    if req.credentials is not None:
-        updates["credentials_encrypted"] = req.credentials
-    if req.is_sandbox is not None:
-        updates["is_sandbox"] = req.is_sandbox
-    if req.enabled is not None:
-        updates["enabled"] = req.enabled
-    from datetime import datetime
-    updates["updated_at"] = datetime.now(UTC).isoformat()
-    result = await svc.db.messaging_provider_configs.update_one(
-        {"id": config_id, "tenant_id": current_user.tenant_id},
-        {"$set": updates},
+def _mask(value: str, show: int = 4) -> str:
+    if not value or len(value) <= show:
+        return "****"
+    return value[:show] + "****"
+
+
+@router.post("/settings/email")
+async def save_email_settings(req: SMTPSettingsReq, current_user: User = Depends(get_current_user)):
+    """Save or update SMTP email configuration."""
+    db = _get_db()
+    creds = {
+        "smtp_host": req.smtp_host,
+        "smtp_port": req.smtp_port,
+        "smtp_username": req.smtp_username,
+        "smtp_password": req.smtp_password,
+        "from_email": req.from_email,
+        "from_name": req.from_name,
+        "use_tls": req.use_tls,
+    }
+    existing = await db.messaging_provider_configs.find_one(
+        {"tenant_id": current_user.tenant_id, "provider_type": "smtp_email"}, {"_id": 0}
     )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Provider config not found")
-    return {"success": True}
+    now = datetime.now(UTC).isoformat()
+    if existing:
+        await db.messaging_provider_configs.update_one(
+            {"id": existing["id"]},
+            {"$set": {
+                "credentials_encrypted": creds,
+                "is_sandbox": req.is_sandbox,
+                "enabled": req.enabled,
+                "updated_at": now,
+            }},
+        )
+        return {"success": True, "action": "updated", "id": existing["id"]}
+    else:
+        from modules.messaging.models import new_provider_config
+        doc = new_provider_config(current_user.tenant_id, "smtp_email", creds, req.is_sandbox, req.enabled)
+        await db.messaging_provider_configs.insert_one(doc)
+        doc.pop("_id", None)
+        return {"success": True, "action": "created", "id": doc["id"]}
+
+
+@router.post("/settings/whatsapp")
+async def save_whatsapp_settings(req: WhatsAppSettingsReq, current_user: User = Depends(get_current_user)):
+    """Save or update WhatsApp Business API configuration."""
+    db = _get_db()
+    creds = {
+        "access_token": req.access_token,
+        "phone_number_id": req.phone_number_id,
+        "business_name": req.business_name,
+    }
+    existing = await db.messaging_provider_configs.find_one(
+        {"tenant_id": current_user.tenant_id, "provider_type": "whatsapp"}, {"_id": 0}
+    )
+    now = datetime.now(UTC).isoformat()
+    if existing:
+        await db.messaging_provider_configs.update_one(
+            {"id": existing["id"]},
+            {"$set": {
+                "credentials_encrypted": creds,
+                "is_sandbox": req.is_sandbox,
+                "enabled": req.enabled,
+                "updated_at": now,
+            }},
+        )
+        return {"success": True, "action": "updated", "id": existing["id"]}
+    else:
+        from modules.messaging.models import new_provider_config
+        doc = new_provider_config(current_user.tenant_id, "whatsapp", creds, req.is_sandbox, req.enabled)
+        await db.messaging_provider_configs.insert_one(doc)
+        doc.pop("_id", None)
+        return {"success": True, "action": "created", "id": doc["id"]}
+
+
+@router.post("/settings/test-connection")
+async def test_connection(current_user: User = Depends(get_current_user)):
+    """Test all configured providers."""
+    svc = _get_service()
+    results = await svc.check_all_providers(current_user.tenant_id)
+    return {"results": results}
+
+
+# ════════════════════════════════════════════════════════
+# Provider List (backward compat)
+# ════════════════════════════════════════════════════════
+
+@router.get("/providers")
+async def list_providers(current_user: User = Depends(get_current_user)):
+    db = _get_db()
+    configs = await db.messaging_provider_configs.find(
+        {"tenant_id": current_user.tenant_id}, {"_id": 0, "credentials_encrypted": 0}
+    ).to_list(20)
+    return {"providers": configs}
 
 
 @router.post("/providers/health-check")
@@ -91,14 +212,23 @@ async def check_provider_health(current_user: User = Depends(get_current_user)):
     return {"results": results}
 
 
-# ── Templates ──
+# ════════════════════════════════════════════════════════
+# Templates
+# ════════════════════════════════════════════════════════
 
 @router.get("/templates")
-async def list_templates(current_user: User = Depends(get_current_user)):
-    svc = _get_service()
-    templates = await svc.db.messaging_templates.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).to_list(100)
+async def list_templates(
+    channel: str | None = None,
+    category: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    db = _get_db()
+    q = {"tenant_id": current_user.tenant_id}
+    if channel:
+        q["channel"] = channel
+    if category:
+        q["category"] = category
+    templates = await db.messaging_templates.find(q, {"_id": 0}).to_list(100)
     return {"templates": templates}
 
 
@@ -118,28 +248,40 @@ async def create_template(req: TemplateReq, current_user: User = Depends(get_cur
         current_user.tenant_id, req.name, req.category, req.channel,
         req.subject, req.body_template, req.variables,
     )
-    svc = _get_service()
-    await svc.db.messaging_templates.insert_one(doc)
+    db = _get_db()
+    await db.messaging_templates.insert_one(doc)
     doc.pop("_id", None)
     return doc
 
 
 @router.put("/templates/{template_id}")
 async def update_template(template_id: str, req: dict, current_user: User = Depends(get_current_user)):
-    svc = _get_service()
-    allowed = ["subject", "body_template", "variables", "is_active"]
-    from datetime import datetime
+    db = _get_db()
+    allowed = ["name", "subject", "body_template", "variables", "is_active", "category"]
     updates = {k: v for k, v in req.items() if k in allowed}
     updates["updated_at"] = datetime.now(UTC).isoformat()
-    result = await svc.db.messaging_templates.update_one(
+    result = await db.messaging_templates.update_one(
         {"id": template_id, "tenant_id": current_user.tenant_id}, {"$set": updates}
     )
     if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise HTTPException(status_code=404, detail="Sablon bulunamadi")
     return {"success": True}
 
 
-# ── Send ──
+@router.delete("/templates/{template_id}")
+async def delete_template(template_id: str, current_user: User = Depends(get_current_user)):
+    db = _get_db()
+    result = await db.messaging_templates.delete_one(
+        {"id": template_id, "tenant_id": current_user.tenant_id}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Sablon bulunamadi")
+    return {"success": True}
+
+
+# ════════════════════════════════════════════════════════
+# Send Message
+# ════════════════════════════════════════════════════════
 
 class SendReq(BaseModel):
     channel: str
@@ -172,7 +314,9 @@ async def retry_delivery(delivery_id: str, current_user: User = Depends(get_curr
     return await svc.retry_failed(current_user.tenant_id, delivery_id)
 
 
-# ── Delivery Logs ──
+# ════════════════════════════════════════════════════════
+# Delivery Logs
+# ════════════════════════════════════════════════════════
 
 @router.get("/delivery-logs")
 async def get_delivery_logs(
@@ -181,17 +325,19 @@ async def get_delivery_logs(
     limit: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
 ):
-    svc = _get_service()
+    db = _get_db()
     q = {"tenant_id": current_user.tenant_id}
     if status:
         q["status"] = status
     if channel:
         q["channel"] = channel
-    logs = await svc.db.messaging_delivery_logs.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    logs = await db.messaging_delivery_logs.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
     return {"logs": logs, "total": len(logs)}
 
 
-# ── Metrics ──
+# ════════════════════════════════════════════════════════
+# Metrics
+# ════════════════════════════════════════════════════════
 
 @router.get("/metrics")
 async def get_messaging_metrics(days: int = Query(7, ge=1, le=90),
@@ -200,20 +346,207 @@ async def get_messaging_metrics(days: int = Query(7, ge=1, le=90),
     return await svc.get_delivery_metrics(current_user.tenant_id, days)
 
 
-# ── Consent ──
+# ════════════════════════════════════════════════════════
+# Seed Demo Data (for sandbox mode)
+# ════════════════════════════════════════════════════════
+
+@router.post("/seed-demo")
+async def seed_demo_data(current_user: User = Depends(get_current_user)):
+    """Seed demo templates and sample delivery logs for testing."""
+    db = _get_db()
+    tenant_id = current_user.tenant_id
+
+    # Check if already seeded
+    existing = await db.messaging_templates.count_documents({"tenant_id": tenant_id})
+    if existing > 0:
+        return {"success": True, "message": "Demo verisi zaten mevcut", "templates": existing}
+
+    # ── Seed templates ──
+    templates = _get_demo_templates(tenant_id)
+    if templates:
+        await db.messaging_templates.insert_many(templates)
+
+    # ── Seed sandbox providers ──
+    providers_count = await db.messaging_provider_configs.count_documents({"tenant_id": tenant_id})
+    if providers_count == 0:
+        from modules.messaging.models import new_provider_config
+        email_cfg = new_provider_config(tenant_id, "smtp_email", {
+            "smtp_host": "sandbox.smtp.demo",
+            "smtp_port": 587,
+            "smtp_username": "demo",
+            "smtp_password": "demo",
+            "from_email": "info@demo-otel.com",
+            "from_name": "Demo Otel",
+            "use_tls": True,
+        }, is_sandbox=True, enabled=True)
+        email_cfg["health_status"] = "healthy"
+        wa_cfg = new_provider_config(tenant_id, "whatsapp", {
+            "access_token": "demo_sandbox_token",
+            "phone_number_id": "000000000000",
+            "business_name": "Demo Otel WhatsApp",
+        }, is_sandbox=True, enabled=True)
+        wa_cfg["health_status"] = "healthy"
+        await db.messaging_provider_configs.insert_many([email_cfg, wa_cfg])
+
+    # ── Seed delivery logs ──
+    logs = _get_demo_delivery_logs(tenant_id)
+    if logs:
+        await db.messaging_delivery_logs.insert_many(logs)
+
+    return {"success": True, "templates": len(templates), "logs": len(logs)}
+
+
+def _get_demo_templates(tenant_id: str) -> list[dict]:
+    from modules.messaging.models import new_message_template
+    templates_data = [
+        # ── WhatsApp Templates ──
+        {
+            "name": "Hos Geldiniz",
+            "category": "hosgeldiniz",
+            "channel": "whatsapp",
+            "subject": None,
+            "body_template": "Merhaba {{misafir_adi}}, {{otel_adi}}'a hos geldiniz! Odaniz {{oda_no}} numarali odadir. WiFi sifresi: {{wifi_sifre}}. Iyi tatiller dileriz!",
+            "variables": ["misafir_adi", "otel_adi", "oda_no", "wifi_sifre"],
+        },
+        {
+            "name": "Yol Tarifi",
+            "category": "yol_tarifi",
+            "channel": "whatsapp",
+            "subject": None,
+            "body_template": "Merhaba {{misafir_adi}}, {{otel_adi}}'a ulasim bilgileri:\n\nAdres: {{adres}}\nGoogle Maps: {{harita_link}}\n\nHavaalanından transfer: {{transfer_bilgi}}\n\nGorusmek uzere!",
+            "variables": ["misafir_adi", "otel_adi", "adres", "harita_link", "transfer_bilgi"],
+        },
+        {
+            "name": "Tesis Bilgileri",
+            "category": "tesis_bilgi",
+            "channel": "whatsapp",
+            "subject": None,
+            "body_template": "{{otel_adi}} Tesis Bilgileri:\n\nRestoran: {{restoran_saatleri}}\nHavuz: {{havuz_saatleri}}\nSpa: {{spa_saatleri}}\nResepsiyon: 7/24\n\nWiFi: {{wifi_sifre}}\n\nIyi tatiller!",
+            "variables": ["otel_adi", "restoran_saatleri", "havuz_saatleri", "spa_saatleri", "wifi_sifre"],
+        },
+        {
+            "name": "Puan ve Degerlendirme",
+            "category": "puan_degerlendirme",
+            "channel": "whatsapp",
+            "subject": None,
+            "body_template": "Merhaba {{misafir_adi}}, {{otel_adi}}'daki konaklamaniz nasil gecti? Bizi degerlendirmeniz bizim icin cok onemli!\n\n{{degerlendirme_link}}\n\nTesekkur ederiz!",
+            "variables": ["misafir_adi", "otel_adi", "degerlendirme_link"],
+        },
+        {
+            "name": "Iletisim Bilgileri",
+            "category": "iletisim",
+            "channel": "whatsapp",
+            "subject": None,
+            "body_template": "{{otel_adi}} Iletisim:\n\nTelefon: {{telefon}}\nEmail: {{email}}\nAdres: {{adres}}\n\nResepsiyon 7/24 hizmetinizdedir.",
+            "variables": ["otel_adi", "telefon", "email", "adres"],
+        },
+        # ── Email Templates ──
+        {
+            "name": "Rezervasyon Onay",
+            "category": "rezervasyon_onay",
+            "channel": "email",
+            "subject": "Rezervasyon Onayiniz - {{otel_adi}}",
+            "body_template": "<h2>Rezervasyon Onay</h2><p>Sayin {{misafir_adi}},</p><p>Rezervasyonunuz onaylanmistir.</p><ul><li>Giris: {{giris_tarihi}}</li><li>Cikis: {{cikis_tarihi}}</li><li>Oda: {{oda_tipi}}</li><li>Konfirmasyon No: {{konfirmasyon_no}}</li></ul><p>Iyi tatiller dileriz!</p><p>{{otel_adi}}</p>",
+            "variables": ["misafir_adi", "otel_adi", "giris_tarihi", "cikis_tarihi", "oda_tipi", "konfirmasyon_no"],
+        },
+        {
+            "name": "Fatura / Folio Gonderimi",
+            "category": "fatura",
+            "channel": "email",
+            "subject": "Faturaniz - {{otel_adi}} #{{fatura_no}}",
+            "body_template": "<h2>Fatura Bilgileri</h2><p>Sayin {{misafir_adi}},</p><p>Konaklamaniza ait fatura bilgileri asagidadir:</p><table><tr><td>Fatura No:</td><td>{{fatura_no}}</td></tr><tr><td>Toplam:</td><td>{{toplam_tutar}} TL</td></tr><tr><td>Konaklama:</td><td>{{giris_tarihi}} - {{cikis_tarihi}}</td></tr></table><p>Detayli faturaniz ekte yer almaktadir.</p><p>{{otel_adi}}</p>",
+            "variables": ["misafir_adi", "otel_adi", "fatura_no", "toplam_tutar", "giris_tarihi", "cikis_tarihi"],
+        },
+        {
+            "name": "Kampanya / Promosyon",
+            "category": "kampanya",
+            "channel": "email",
+            "subject": "{{otel_adi}} - Ozel Firsat!",
+            "body_template": "<h2>{{kampanya_baslik}}</h2><p>Sayin {{misafir_adi}},</p><p>{{kampanya_aciklama}}</p><p><strong>Indirim: %{{indirim_oran}}</strong></p><p>Gecerlilik: {{gecerlilik_tarihi}}</p><p><a href='{{rezervasyon_link}}'>Hemen Rezervasyon Yap</a></p><p>{{otel_adi}}</p>",
+            "variables": ["misafir_adi", "otel_adi", "kampanya_baslik", "kampanya_aciklama", "indirim_oran", "gecerlilik_tarihi", "rezervasyon_link"],
+        },
+        {
+            "name": "Check-out Tesekkur",
+            "category": "checkout",
+            "channel": "email",
+            "subject": "Tesekkurler - {{otel_adi}}",
+            "body_template": "<h2>Tekrar Gorusmek Uzere!</h2><p>Sayin {{misafir_adi}},</p><p>{{otel_adi}}'da bizi tercih ettiginiz icin tesekkur ederiz.</p><p>Deneyiminizi bizimle paylasmak ister misiniz?</p><p><a href='{{degerlendirme_link}}'>Degerlendirme Yap</a></p><p>Tekrar bekleriz!</p>",
+            "variables": ["misafir_adi", "otel_adi", "degerlendirme_link"],
+        },
+    ]
+
+    return [
+        new_message_template(
+            tenant_id, t["name"], t["category"], t["channel"],
+            t["subject"], t["body_template"], t["variables"],
+        )
+        for t in templates_data
+    ]
+
+
+def _get_demo_delivery_logs(tenant_id: str) -> list[dict]:
+    """Generate sample delivery logs for demo."""
+    from modules.messaging.models import new_delivery_log
+    logs = []
+    now = datetime.now(UTC)
+    names = ["Ahmet Yilmaz", "Mehmet Demir", "Ayse Kaya", "Fatma Ozturk", "Ali Celik",
+             "Zeynep Arslan", "Mustafa Sahin", "Elif Dogan", "Hasan Kilic", "Merve Aydin"]
+    channels = ["email", "whatsapp"]
+    statuses = ["sent", "sent", "sent", "sent", "delivered", "delivered", "failed", "queued"]
+    use_cases_email = ["fatura", "rezervasyon_onay", "kampanya", "checkout"]
+    use_cases_wa = ["hosgeldiniz", "yol_tarifi", "tesis_bilgi", "puan_degerlendirme"]
+
+    for i in range(25):
+        channel = channels[i % 2]
+        name = names[i % len(names)]
+        status = statuses[i % len(statuses)]
+        minutes_ago = random.randint(10, 10000)
+        created = (now - timedelta(minutes=minutes_ago)).isoformat()
+
+        if channel == "email":
+            recipient = f"{name.lower().replace(' ', '.')}@gmail.com"
+            use_case = use_cases_email[i % len(use_cases_email)]
+            provider_type = "smtp_email"
+            subject = f"Otel Bilgilendirme - {use_case}"
+        else:
+            recipient = f"+9053{random.randint(10000000, 99999999)}"
+            use_case = use_cases_wa[i % len(use_cases_wa)]
+            provider_type = "whatsapp"
+            subject = None
+
+        log = new_delivery_log(
+            tenant_id=tenant_id, property_id=None, channel=channel,
+            provider_type=provider_type, recipient=recipient,
+            template_id=None, subject=subject,
+            body=f"Demo mesaj - {use_case} - {name}",
+            use_case=use_case,
+        )
+        log["status"] = status
+        log["created_at"] = created
+        if status in ("sent", "delivered"):
+            log["delivered_at"] = created
+            log["provider_message_id"] = f"demo_{uuid.uuid4().hex[:8]}"
+        elif status == "failed":
+            log["error_message"] = "Sandbox modunda simule edildi"
+        logs.append(log)
+
+    return logs
+
+
+# ════════════════════════════════════════════════════════
+# Consent & Runtime
+# ════════════════════════════════════════════════════════
 
 class ConsentReq(BaseModel):
     recipient: str
     channel: str
-    status: str  # opt_in / opt_out
+    status: str
 
 
 @router.post("/consent")
 async def update_consent(req: ConsentReq, current_user: User = Depends(get_current_user)):
-    svc = _get_service()
-    import uuid
-    from datetime import datetime
-    await svc.db.messaging_consents.update_one(
+    db = _get_db()
+    await db.messaging_consents.update_one(
         {"tenant_id": current_user.tenant_id, "recipient": req.recipient, "channel": req.channel},
         {"$set": {
             "status": req.status,
@@ -232,16 +565,7 @@ async def update_consent(req: ConsentReq, current_user: User = Depends(get_curre
     return {"success": True}
 
 
-# ── Runtime Status ──
-
 @router.get("/runtime-status")
 async def get_runtime_status(current_user: User = Depends(get_current_user)):
     svc = _get_service()
     return svc.get_runtime_status()
-
-
-@router.get("/retry-queue")
-async def get_retry_queue_size(current_user: User = Depends(get_current_user)):
-    svc = _get_service()
-    size = await svc.get_retry_queue_size(current_user.tenant_id)
-    return {"retry_queue_size": size}

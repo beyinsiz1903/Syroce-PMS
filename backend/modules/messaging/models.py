@@ -1,5 +1,6 @@
 """
 Data models for the messaging module.
+Channels: Email (SMTP) and WhatsApp (Meta Business API).
 """
 import uuid
 from datetime import UTC, datetime
@@ -9,8 +10,7 @@ from pydantic import BaseModel
 
 
 class ProviderType(str, Enum):
-    TWILIO_SMS = "twilio_sms"
-    SENDGRID_EMAIL = "sendgrid_email"
+    SMTP_EMAIL = "smtp_email"
     WHATSAPP = "whatsapp"
 
 
@@ -25,7 +25,6 @@ class DeliveryStatus(str, Enum):
 
 
 class MessageChannel(str, Enum):
-    SMS = "sms"
     EMAIL = "email"
     WHATSAPP = "whatsapp"
 
@@ -37,14 +36,16 @@ class ConsentStatus(str, Enum):
 
 
 class TemplateCategory(str, Enum):
-    PRE_ARRIVAL = "pre_arrival"
-    CHECK_IN = "check_in"
-    ROOM_READY = "room_ready"
-    GUEST_REQUEST_ACK = "guest_request_ack"
-    CHECKOUT_THANKYOU = "checkout_thankyou"
-    REVIEW_REQUEST = "review_request"
-    MARKETING = "marketing"
-    ALERT = "alert"
+    HOSGELDINIZ = "hosgeldiniz"
+    YOL_TARIFI = "yol_tarifi"
+    TESIS_BILGI = "tesis_bilgi"
+    FATURA = "fatura"
+    KAMPANYA = "kampanya"
+    PUAN_DEGERLENDIRME = "puan_degerlendirme"
+    CHECKOUT = "checkout"
+    REZERVASYON_ONAY = "rezervasyon_onay"
+    ILETISIM = "iletisim"
+    GENEL = "genel"
 
 
 # ── Document shapes for MongoDB ──
@@ -133,43 +134,3 @@ def new_message_template(
         "created_at": datetime.now(UTC).isoformat(),
         "updated_at": datetime.now(UTC).isoformat(),
     }
-
-
-# ── Pydantic request/response models ──
-
-class ProviderConfigCreate(BaseModel):
-    provider_type: ProviderType
-    credentials: dict[str, str]
-    is_sandbox: bool = False
-    enabled: bool = True
-
-class ProviderConfigUpdate(BaseModel):
-    credentials: dict[str, str] | None = None
-    is_sandbox: bool | None = None
-    enabled: bool | None = None
-
-class TemplateCreate(BaseModel):
-    name: str
-    category: TemplateCategory
-    channel: MessageChannel
-    subject: str | None = None
-    body_template: str
-    variables: list[str] = []
-
-class TemplateUpdate(BaseModel):
-    subject: str | None = None
-    body_template: str | None = None
-    variables: list[str] | None = None
-    is_active: bool | None = None
-
-class SendMessageRequest(BaseModel):
-    channel: MessageChannel
-    recipient: str
-    template_id: str | None = None
-    subject: str | None = None
-    body: str | None = None
-    variables: dict[str, str] = {}
-    booking_id: str | None = None
-    guest_id: str | None = None
-    property_id: str | None = None
-    use_case: str | None = None
