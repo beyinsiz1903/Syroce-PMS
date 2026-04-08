@@ -1024,8 +1024,8 @@ async def get_stop_sale_summary(
 async def get_holidays(current_user: User = Depends(get_current_user)):
     """Tatil donemlerini dondurur."""
     # Import from existing router to reuse logic
+    from datetime import date
     try:
-        from datetime import date
         from domains.channel_manager.hr_rate_manager_router import _get_holiday_periods
         now = date.today()
         all_periods = []
