@@ -20,7 +20,7 @@ import requests
 
 # API URLs
 MOCK_SERVER_URL = "http://localhost:9999"
-API_URL = os.environ.get("VITE_BACKEND_URL", "https://rms-consolidation.preview.emergentagent.com")
+API_URL = os.environ.get("VITE_BACKEND_URL", "https://dynamic-rates-3.preview.emergentagent.com")
 
 # Mock server credentials
 MOCK_TOKEN = "mock-hr-token-001"

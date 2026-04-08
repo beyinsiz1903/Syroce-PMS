@@ -15,7 +15,7 @@ import pytest
 import requests
 import uuid
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://rms-consolidation.preview.emergentagent.com')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://dynamic-rates-3.preview.emergentagent.com')
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
