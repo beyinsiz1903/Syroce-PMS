@@ -1,6 +1,37 @@
 # CHANGELOG
 
 
+## 2026-04-08 - BUGFIX: RMS Module Eksik Backend Endpoint'leri & İkon Düzeltmesi
+
+### Sorunlar
+1. **Revenue (RMS) Modülü**: Frontend'de 5 API endpoint çağrısı yapılıyor ama `enterprise_router.py`'daki basit/statik versiyonlar gerçek `rms_router.py` endpoint'lerini eziyordu
+2. **İkon Tutarsızlığı**: Gelismis menüdeki 5 modül (Data Intelligence, Messaging Center, ML Scheduler, Revenue Autopilot, Analytics Export) genel Home ikonu kullanıyordu
+
+### Düzeltmeler
+1. **`domains/pms/enterprise_router.py`**: 6 çakışan endpoint kaldırıldı (comp-set, pricing-strategy GET/PUT, demand-forecast, price-adjustments, apply-recommendations)
+2. **`domains/revenue/rms_router.py`**: 
+   - `GET /rms/pricing-strategy` — Gerçek ADR hesaplama, ML önerileri, pazar pozisyonu
+   - `PUT /rms/pricing-strategy` — auto_pricing_enabled DB'de güncelleme
+   - `GET /rms/price-adjustments` — Uygulanan öneri geçmişi
+   - `POST /rms/apply-recommendations` — Toplu öneri uygulama + audit trail
+   - `GET /rms/demand-forecast` — `days` parametresi desteği + canlı booking verisi
+   - `GET /rms/comp-set` — Zenginleştirilmiş yanıt (avg_rate, revpar, occupancy_rate)
+3. **`pages/RMSModule.jsx`**: Response key uyumsuzlukları düzeltildi (competitors/comp_set, forecast/forecasts)
+4. **`components/Layout.jsx`**: 5 yeni ikon eklendi (BrainCircuit, MessageSquare, Clock, Rocket, Download)
+
+### Test Sonuçları
+- Backend: 17/17 test geçti (%100)
+- Frontend: Tüm UI testleri geçti (%100)
+
+### Düzeltilen Dosyalar
+- `/app/backend/domains/revenue/rms_router.py`
+- `/app/backend/domains/pms/enterprise_router.py`
+- `/app/frontend/src/pages/RMSModule.jsx`
+- `/app/frontend/src/components/Layout.jsx`
+
+---
+
+
 ## 2026-04-06 - FEATURE: Rate Manager Provider Toggle (P1)
 
 ### Özellik

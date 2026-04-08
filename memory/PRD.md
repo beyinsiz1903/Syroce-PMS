@@ -54,6 +54,19 @@ Turkish (All responses must be in Turkish)
   - `controlplane/alerting.py` (APP BUG): `AlertingEngine._get_db()` now uses `get_system_db()` instead of proxy (cross-tenant system operation)
 - **Trivy CVE-2026-35030**: Added `.trivyignore` (litellm used as client, not proxy; upgrade blocked by emergentintegrations pinning openai==1.99.9)
 
+### RMS Module — Backend Endpoint Fixes (DONE - 2026-04-08)
+- Removed 5 simplified duplicate endpoints from `enterprise_router.py` that were overriding enhanced `rms_router.py` versions
+- Added `GET /rms/pricing-strategy` — computes current ADR from bookings, recommended from ML, market position from comp-set
+- Added `PUT /rms/pricing-strategy` — updates auto_pricing_enabled in DB
+- Added `GET /rms/price-adjustments` — returns applied recommendations history
+- Added `POST /rms/apply-recommendations` — applies all pending pricing recommendations with audit trail
+- Enhanced `GET /rms/demand-forecast` — now supports `days` param, generates forecasts from live booking data
+- Enhanced `GET /rms/comp-set` — enriches competitors with avg_rate, occupancy_rate, revpar from comp_pricing
+
+### Advanced Menu Icon Fix (DONE - 2026-04-08)
+- Added unique icons for 5 modules that had generic Home fallback icons
+- Data Intelligence → BrainCircuit, Messaging Center → MessageSquare, ML Scheduler → Clock, Revenue Autopilot → Rocket, Analytics Export → Download
+
 ## Pending / Known Issues
 - litellm CVE-2026-35030: Suppressed in `.trivyignore`. Upgrade to >=1.83.0 blocked by emergentintegrations dependency chain (openai==1.99.9 vs openai>=2.8.0). Monitor emergentintegrations releases.
 
