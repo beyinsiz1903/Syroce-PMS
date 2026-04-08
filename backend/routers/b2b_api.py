@@ -5,6 +5,7 @@ Acenteler API key ile bu endpoint'leri kullanarak:
   - Otel icerigi (oda tipi, hizmet) cekebilir
   - Musaitlik ve fiyat sorgulayabilir
   - Rezervasyon olusturup takip edebilir
+  - Webhook ile bildirim alabilir
 
 Admin (Hotel) Endpoints:
   POST   /api/b2b/api-keys                  - Acente icin API key olustur
@@ -20,14 +21,26 @@ B2B (Agency) Endpoints (API Key Auth):
   GET    /api/b2b/reservations              - Rezervasyon listesi
   GET    /api/b2b/reservations/{id}         - Rezervasyon detay
   PUT    /api/b2b/reservations/{id}/cancel  - Rezervasyon iptali
+
+Webhook Endpoints (API Key Auth):
+  POST   /api/b2b/webhooks                  - Webhook kaydet
+  GET    /api/b2b/webhooks                  - Webhook listesi
+  DELETE /api/b2b/webhooks/{webhook_id}     - Webhook sil
+  POST   /api/b2b/webhooks/{webhook_id}/test - Webhook test
 """
 import hashlib
+import hmac
+import logging
 import secrets
 import uuid
 from datetime import UTC, datetime
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Header, Query
+import httpx
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header, Query
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from core.database import db
 from core.security import get_current_user
@@ -106,6 +119,80 @@ class B2BReservationCreate(BaseModel):
     children: int = 0
     special_requests: str = ""
     total_amount: float = 0
+
+
+class WebhookRegister(BaseModel):
+    url: str
+    events: list[str]
+    secret: Optional[str] = None
+
+
+# ── Webhook Delivery Helper ─────────────────────────────────────
+
+async def _deliver_webhook(webhook_doc: dict, event: str, data: dict):
+    """Fire-and-forget webhook delivery with signature."""
+    delivery_id = _uuid()
+    payload = {
+        "event": event,
+        "timestamp": _now_iso(),
+        "delivery_id": delivery_id,
+        "data": data,
+    }
+    import json
+    body = json.dumps(payload, default=str)
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-Webhook-Event": event,
+        "X-Webhook-Delivery": delivery_id,
+    }
+
+    secret = webhook_doc.get("secret")
+    if secret:
+        sig = hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
+        headers["X-Webhook-Signature"] = f"sha256={sig}"
+
+    status_code = 0
+    error_msg = None
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(webhook_doc["url"], content=body, headers=headers)
+            status_code = resp.status_code
+    except Exception as exc:
+        error_msg = str(exc)
+        logger.warning("Webhook delivery failed for %s: %s", webhook_doc["url"], exc)
+
+    from core.tenant_db import get_system_db
+    sysdb = get_system_db()
+    await sysdb.webhook_deliveries.insert_one({
+        "id": delivery_id,
+        "webhook_id": webhook_doc["id"],
+        "agency_id": webhook_doc["agency_id"],
+        "tenant_id": webhook_doc["tenant_id"],
+        "event": event,
+        "url": webhook_doc["url"],
+        "status_code": status_code,
+        "error": error_msg,
+        "created_at": _now_iso(),
+    })
+
+
+async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
+    """Find all active webhooks for agency subscribed to event and deliver."""
+    from core.tenant_db import get_system_db
+    sysdb = get_system_db()
+    webhooks = await sysdb.agency_webhooks.find({
+        "tenant_id": tenant_id,
+        "agency_id": agency_id,
+        "is_active": True,
+        "events": event,
+    }, {"_id": 0}).to_list(50)
+
+    for wh in webhooks:
+        try:
+            await _deliver_webhook(wh, event, data)
+        except Exception as exc:
+            logger.error("Webhook fire error: %s", exc)
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -406,6 +493,7 @@ async def b2b_get_rates(
 @router.post("/reservations")
 async def b2b_create_reservation(
     data: B2BReservationCreate,
+    background_tasks: BackgroundTasks,
     agency: dict = Depends(get_b2b_agency),
 ):
     """Rezervasyon olustur — otomatik PMS'e duser."""
@@ -499,6 +587,19 @@ async def b2b_create_reservation(
     await db.bookings.insert_one(booking_doc)
     booking_doc.pop("_id", None)
 
+    # Fire webhook: reservation.created
+    res_data = {
+        "reservation_id": booking_id,
+        "confirmation_code": confirmation_code,
+        "status": "confirmed",
+        "room_type": available_room.get("room_type", ""),
+        "check_in": data.check_in,
+        "check_out": data.check_out,
+        "guest_name": data.guest_name,
+        "total_amount": total,
+    }
+    background_tasks.add_task(fire_webhooks, tenant_id, agency_id, "reservation.created", res_data)
+
     return {
         "ok": True,
         "reservation": {
@@ -580,6 +681,7 @@ async def b2b_get_reservation(
 @router.put("/reservations/{reservation_id}/cancel")
 async def b2b_cancel_reservation(
     reservation_id: str,
+    background_tasks: BackgroundTasks,
     agency: dict = Depends(get_b2b_agency),
 ):
     """Rezervasyon iptal et."""
@@ -613,10 +715,192 @@ async def b2b_cancel_reservation(
         }},
     )
 
+    # Fire webhook: reservation.cancelled
+    cancel_data = {
+        "reservation_id": doc["id"],
+        "confirmation_code": doc.get("confirmation_code", ""),
+        "status": "cancelled",
+        "room_type": doc.get("room_type", ""),
+        "check_in": doc.get("check_in", ""),
+        "check_out": doc.get("check_out", ""),
+        "guest_name": doc.get("guest_name", ""),
+    }
+    background_tasks.add_task(fire_webhooks, tenant_id, agency_id, "reservation.cancelled", cancel_data)
+
     return {
         "ok": True,
         "reservation_id": doc["id"],
         "confirmation_code": doc.get("confirmation_code", ""),
         "status": "cancelled",
         "message": "Rezervasyon iptal edildi",
+    }
+
+
+# ═════════════════════════════════════════════════════════════════
+# WEBHOOK ENDPOINTS — (API Key Auth)
+# ═════════════════════════════════════════════════════════════════
+
+VALID_WEBHOOK_EVENTS = {"reservation.created", "reservation.cancelled", "reservation.updated"}
+
+
+@router.post("/webhooks")
+async def b2b_register_webhook(
+    data: WebhookRegister,
+    agency: dict = Depends(get_b2b_agency),
+):
+    """Webhook URL kaydet."""
+    tenant_id = agency["tenant_id"]
+    agency_id = agency["agency_id"]
+
+    if not data.url.startswith("https://"):
+        raise HTTPException(status_code=400, detail="Webhook URL must use HTTPS")
+
+    invalid_events = set(data.events) - VALID_WEBHOOK_EVENTS
+    if invalid_events:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid events: {', '.join(invalid_events)}. Valid: {', '.join(sorted(VALID_WEBHOOK_EVENTS))}",
+        )
+
+    from core.tenant_db import get_system_db
+    sysdb = get_system_db()
+
+    existing = await sysdb.agency_webhooks.count_documents({
+        "agency_id": agency_id, "tenant_id": tenant_id, "is_active": True,
+    })
+    if existing >= 5:
+        raise HTTPException(status_code=400, detail="Maximum 5 active webhooks per agency")
+
+    webhook_id = _uuid()
+    doc = {
+        "id": webhook_id,
+        "tenant_id": tenant_id,
+        "agency_id": agency_id,
+        "url": data.url,
+        "events": list(set(data.events)),
+        "secret": data.secret or "",
+        "is_active": True,
+        "created_at": _now_iso(),
+    }
+    await sysdb.agency_webhooks.insert_one(doc)
+    doc.pop("_id", None)
+    doc.pop("secret", None)
+
+    return {
+        "ok": True,
+        "webhook": {
+            "id": webhook_id,
+            "url": data.url,
+            "events": doc["events"],
+            "is_active": True,
+            "created_at": doc["created_at"],
+        },
+        "message": "Webhook kaydedildi",
+    }
+
+
+@router.get("/webhooks")
+async def b2b_list_webhooks(agency: dict = Depends(get_b2b_agency)):
+    """Acente webhook'larini listele."""
+    tenant_id = agency["tenant_id"]
+    agency_id = agency["agency_id"]
+
+    from core.tenant_db import get_system_db
+    sysdb = get_system_db()
+
+    docs = await sysdb.agency_webhooks.find(
+        {"agency_id": agency_id, "tenant_id": tenant_id, "is_active": True},
+        {"_id": 0, "secret": 0, "tenant_id": 0},
+    ).to_list(50)
+
+    return {"webhooks": docs, "count": len(docs)}
+
+
+@router.delete("/webhooks/{webhook_id}")
+async def b2b_delete_webhook(
+    webhook_id: str,
+    agency: dict = Depends(get_b2b_agency),
+):
+    """Webhook sil."""
+    tenant_id = agency["tenant_id"]
+    agency_id = agency["agency_id"]
+
+    from core.tenant_db import get_system_db
+    sysdb = get_system_db()
+
+    result = await sysdb.agency_webhooks.update_one(
+        {"id": webhook_id, "agency_id": agency_id, "tenant_id": tenant_id, "is_active": True},
+        {"$set": {"is_active": False, "deleted_at": _now_iso()}},
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Webhook bulunamadi")
+
+    return {"ok": True, "message": "Webhook silindi"}
+
+
+@router.post("/webhooks/{webhook_id}/test")
+async def b2b_test_webhook(
+    webhook_id: str,
+    agency: dict = Depends(get_b2b_agency),
+):
+    """Webhook'a test olayi gonder."""
+    tenant_id = agency["tenant_id"]
+    agency_id = agency["agency_id"]
+
+    from core.tenant_db import get_system_db
+    sysdb = get_system_db()
+
+    wh = await sysdb.agency_webhooks.find_one(
+        {"id": webhook_id, "agency_id": agency_id, "tenant_id": tenant_id, "is_active": True},
+        {"_id": 0},
+    )
+    if not wh:
+        raise HTTPException(status_code=404, detail="Webhook bulunamadi")
+
+    test_data = {
+        "reservation_id": "test-00000000",
+        "confirmation_code": "B2B-TEST0000",
+        "status": "confirmed",
+        "room_type": "Test Room",
+        "check_in": "2026-01-01",
+        "check_out": "2026-01-03",
+        "guest_name": "Test Guest",
+        "total_amount": 100.00,
+    }
+
+    delivery_id = _uuid()
+    import json
+    payload = {
+        "event": "test",
+        "timestamp": _now_iso(),
+        "delivery_id": delivery_id,
+        "data": test_data,
+    }
+    body = json.dumps(payload, default=str)
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-Webhook-Event": "test",
+        "X-Webhook-Delivery": delivery_id,
+    }
+    secret = wh.get("secret")
+    if secret:
+        sig = hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
+        headers["X-Webhook-Signature"] = f"sha256={sig}"
+
+    status_code = 0
+    error_msg = None
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(wh["url"], content=body, headers=headers)
+            status_code = resp.status_code
+    except Exception as exc:
+        error_msg = str(exc)
+
+    return {
+        "ok": error_msg is None and 200 <= status_code < 300,
+        "delivery_id": delivery_id,
+        "status_code": status_code,
+        "error": error_msg,
+        "message": "Test olayi gonderildi" if not error_msg else f"Teslimat hatasi: {error_msg}",
     }

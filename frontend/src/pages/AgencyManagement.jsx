@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import {
   Building2, Plus, Edit2, Trash2, Users, UserPlus, ChevronDown, ChevronRight,
   Phone, Mail, Percent, FileText, Loader2, Eye, EyeOff, ToggleLeft, ToggleRight,
-  Key, Copy, RefreshCw, ShieldCheck, XCircle
+  Key, Copy, RefreshCw, ShieldCheck, XCircle, ExternalLink
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -308,9 +308,25 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
 
                   {/* B2B API Key */}
                   <div>
-                    <h4 className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
-                      <Key size={14} /> Syroce B2B API Entegrasyonu
-                    </h4>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                        <Key size={14} /> Syroce B2B API Entegrasyonu
+                      </h4>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs gap-1"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const url = `${window.location.origin}/b2b/docs`;
+                          navigator.clipboard.writeText(url);
+                          toast.success('API Dokumantasyon linki kopyalandi');
+                        }}
+                        data-testid={`copy-docs-link-${agency.id}`}
+                      >
+                        <ExternalLink size={12} /> API Docs Linki Kopyala
+                      </Button>
+                    </div>
                     {(() => {
                       const info = apiKeyInfo[agency.id];
                       const isLoading = apiKeyLoading[agency.id];

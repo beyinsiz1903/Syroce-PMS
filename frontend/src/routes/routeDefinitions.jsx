@@ -182,6 +182,7 @@ const LostFoundPage = lazy(() => import("@/pages/LostFoundPage"));
 const GroupFolioPage = lazy(() => import("@/pages/GroupFolioPage"));
 const EnhancedGMDashboard = lazy(() => import("@/pages/EnhancedGMDashboard"));
 const RoomMappingWizard = lazy(() => import("@/pages/RoomMappingWizard"));
+const B2BApiDocs = lazy(() => import("@/pages/B2BApiDocs"));
 
 // ── Exported components for direct access ──────────────────────────
 export {
@@ -212,6 +213,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/gizlilik", type: "public", component: PrivacyPolicy },
     { path: "/pms-lite", type: "public", component: PmsLiteLanding },
     { path: "/agency-portal", type: "public", component: AgencyPortalDashboard },
+    { path: "/b2b/docs", type: "public", component: B2BApiDocs },
     { path: "/system-status", type: "public", component: SimpleAdminPanel },
 
     // ── Core Operations ────────────────────────────────
