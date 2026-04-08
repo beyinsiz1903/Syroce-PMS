@@ -72,6 +72,12 @@ export default function PlanRouteGuard({ tenant, user, children }) {
 
   if (!tenant) return children;
 
+  // Super admin and admin bypass all plan/module restrictions
+  const userRole = user?.role;
+  if (userRole === "super_admin" || userRole === "admin" || userRole === "owner") {
+    return children;
+  }
+
   const plan =
     tenant.subscription_plan ||
     tenant.plan ||
@@ -80,6 +86,11 @@ export default function PlanRouteGuard({ tenant, user, children }) {
 
   const _features = normalizeFeatures(tenant.features || {});
   const modules = tenant.modules || {};
+
+  // Enterprise plan has access to all modules
+  if (plan === "enterprise" || plan === "professional") {
+    return children;
+  }
 
   // PMS Lite plan restriction
   if (plan === "pms_lite") {

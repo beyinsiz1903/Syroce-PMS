@@ -67,7 +67,8 @@ Turkish (All responses must be in Turkish)
 - Test report: `/app/test_reports/iteration_197.json` - 100% pass
 
 ## Pending / Known Issues
-- P0: HotelRunner 429 Rate Limit — **RESOLVED** (2026-04-08, fetch-external returns 4 room types successfully)
+- ~~P0: HotelRunner 429 Rate Limit~~ — **RESOLVED** (2026-04-08)
+- ~~P0: super_admin plan/module restriction~~ — **RESOLVED** (2026-04-08, PlanRouteGuard bypass + DB modules update)
 
 ## Upcoming Tasks (P1)
 - Real-time UI notifications for channel push results
