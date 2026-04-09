@@ -137,11 +137,19 @@ Turkish (All responses must be in Turkish)
 - **Problem**: Reports dropdown had 3 confusing tabs (Reports, Advanced Reports, Report Builder) with duplicate Maliye Raporu appearing in both BasicReports sidebar and the Excel download page (Reports.jsx)
 - **Solution**: 
   1. Removed "Advanced Reports" (Reports.jsx) from navigation — it was a redundant Excel download page with confusing naming
-  2. Updated "Maliye Listesi" section in BasicReports sidebar to show redirect card with "Maliye Listesini Aç" button → navigates to OfficialGuestList page (the correct one with date picker + CSV export)
-  3. Simplified navigation to just 2 items: "Raporlar" (BasicReports) + "Rapor Oluşturucu" (ReportBuilder)
-  4. Old /app/gelismis-raporlar URL now redirects to BasicReports
+  2. Simplified navigation to just 2 items: "Raporlar" (BasicReports) + "Rapor Oluşturucu" (ReportBuilder)
+  3. Old /app/gelismis-raporlar URL now redirects to BasicReports
 - **Files Modified**: navItems.jsx, BasicReports.jsx (renderOfficial), routeDefinitions.jsx
 - **Test Result**: Frontend 8/8 tests passed (100%) — iteration_206.json
+
+### Maliye Listesi Inline Entegrasyon (DONE - 2026-04-09)
+- **Problem**: Maliye Listesi bölümü ayrı bir sayfaya yönlendiriyordu. Kullanıcı tüm işlevselliğin aynı rapor sayfasında inline olarak görünmesini istedi.
+- **Solution**: 
+  1. `renderOfficial()` fonksiyonu tamamen yeniden yazıldı — artık tarih seçimi, veri çekme, filtreleme, CSV indirme, yazdırma ve tam tablo doğrudan inline olarak gösteriliyor
+  2. Özet kartları (Toplam Kayıt, Toplam Kişi, Toplam Tutar, Seçili Tarih) veri yüklendikten sonra görünüyor
+  3. Ayrı sayfa yönlendirmesi kaldırıldı, OfficialGuestList.jsx'deki tüm işlevsellik BasicReports.jsx içine taşındı
+- **Files Modified**: BasicReports.jsx (renderOfficial, state variables, fetch/export/print functions)
+- **Test Result**: Frontend 8/8 tests passed (100%) — iteration_207.json
 
 ## Pending / Known Issues
 - litellm CVE-2026-35030: Suppressed in `.trivyignore`. Upgrade to >=1.83.0 blocked by emergentintegrations dependency chain.
