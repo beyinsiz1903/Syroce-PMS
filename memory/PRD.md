@@ -251,17 +251,68 @@ Turkish (All responses must be in Turkish)
 - **Modified Frontend**: `ChannelOpsPage.jsx` (Dashboard v2 with drilldown, health scoring, prioritized feed), `IncidentDrilldownDrawer.jsx` (new component)
 - **Test Result**: Backend 21/21 (100%), Frontend 100%
 
+### Sprint 3: Security Operations + Key Lifecycle (DONE - 2026-04-09)
+
+#### Key Registry (DONE)
+- **Centralized Key Management**: `encryption_keys` collection with full metadata tracking
+- **Key Types**: master, connector, webhook, api, pii
+- **Registration**: `POST /api/ops/encryption/keys/register` — Register new keys with rotation policy
+- **Query**: `GET /api/ops/encryption/keys`, `GET /api/ops/encryption/keys/{key_id}`, `GET /api/ops/encryption/keys/active/{key_type}`
+- **Safe Summary**: `GET /api/ops/encryption/keys/{key_id}/summary` — No sensitive details exposed
+
+#### Key State Management (DONE)
+- **State Machine**: active → pending_rotation → retired / revoked (terminal)
+- **Initiate Rotation**: `POST /api/ops/encryption/keys/rotation/initiate` — Move to pending_rotation
+- **Complete Rotation**: `POST /api/ops/encryption/keys/rotation/complete` — Move to retired
+- **Cancel Rotation**: `POST /api/ops/encryption/keys/rotation/cancel` — Return to active
+- **Emergency Revoke**: `POST /api/ops/encryption/keys/emergency-revoke` — Immediate revocation (requires detailed reason)
+
+#### Re-encryption Worker (DONE)
+- **Background Jobs**: Batch re-encryption with progress tracking and checkpointing
+- **Job States**: pending → running → paused → completed/failed/cancelled
+- **Endpoints**:
+  - `POST /api/ops/encryption/reencryption/create` — Create new job
+  - `POST /api/ops/encryption/reencryption/start` — Start/resume job
+  - `POST /api/ops/encryption/reencryption/pause` — Pause running job
+  - `POST /api/ops/encryption/reencryption/cancel` — Cancel job
+  - `GET /api/ops/encryption/reencryption/jobs` — List jobs
+  - `GET /api/ops/encryption/reencryption/jobs/{job_id}` — Job status
+
+#### Dashboard & Audit (DONE)
+- **Main Dashboard**: `GET /api/ops/encryption/dashboard` — Combined keys + jobs view
+- **Keys Dashboard**: `GET /api/ops/encryption/dashboard/keys` — Overdue rotations, warnings, summary
+- **Jobs Dashboard**: `GET /api/ops/encryption/dashboard/jobs` — Running jobs, statistics
+- **Key Audit**: `GET /api/ops/encryption/audit/keys` — All key operations
+- **Job Audit**: `GET /api/ops/encryption/audit/jobs` — All job operations
+- **Index Setup**: `POST /api/ops/encryption/setup-indexes` — Create MongoDB indexes
+
+#### Frontend Admin Panel (DONE)
+- **Route**: `/encryption-management`
+- **Navigation**: Infrastructure → Sifreleme Yonetimi
+- **4 Tabs**:
+  1. **Genel Bakis**: Summary cards (aktif, rotasyonda, emekli, iptal, geciken, isler), Aktif Anahtarlar, Aktif Isler
+  2. **Anahtarlar**: Full key list with state badges, rotation days, action buttons (Rotasyon, Tamamla, Iptal, Acil Iptal)
+  3. **Yeniden Sifreleme**: Job list with progress bars, Baslat/Durdur/Iptal buttons
+  4. **Denetim Gunlugu**: Key audit log + Job audit log timelines
+- **Dialogs**: Register Key, Emergency Revoke, Create Re-encryption Job
+
+- **New Backend Files**: `key_registry.py`, `reencryption_worker.py`, `encryption_management_router.py`
+- **New Frontend**: `EncryptionManagementPage.jsx`
+- **Test Result**: Backend 36/36 (100%), Frontend 100% — iteration_211.json
+
 ## Future / Backlog (P2+)
 - ~~Automatic retry mechanism with exponential backoff for failed webhook deliveries~~ → DONE (2026-04-09)
 - ~~Correlation timeline + drilldown for root cause analysis~~ → DONE (Sprint 2, 2026-04-09)
 - ~~Unified connector health contract~~ → DONE (Sprint 2, 2026-04-09)
 - ~~Auto-remediation rules v1~~ → DONE (Sprint 2, 2026-04-09)
+- ~~Encryption Management Backend (key registry, rotation, re-encryption)~~ → DONE (Sprint 3, 2026-04-09)
+- ~~Encryption Admin Panel v1~~ → DONE (Sprint 3, 2026-04-09)
+- Predictive Alerting / Early Warning v1 (trend-based degradation detection) — Sprint 4 candidate
 - B2B Analytics Dashboard (agency API key usage, booking rates, top queries)
 - ~~Channel Manager Dashboard (reservations, failed imports, push queue, health)~~ → DONE (2026-04-09)
-- Admin UI Panel for encryption management (P2 — deferred per user request)
 - Make unassigned reservations more prominent in calendar
 - Improve Auto Room Mapping (capacity + base price matching)
-- Refactor: BasicReports.jsx (>1200 lines) — component extraction
+- Refactor: BasicReports.jsx (>1200 lines) — component extraction (P2/P3 teknik borç)
 - Refactor: hotelrunner_sync.py (~1000 lines)
 - Refactor: Evaluate deprecation of legacy hr_rate_manager_router.py and rate_manager_router.py
 - Real competitor price integration via SerpApi or OTA Insight (when budget allows)
