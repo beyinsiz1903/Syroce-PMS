@@ -5,7 +5,7 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import {
-  Activity, Wifi, WifiOff, Send, Mail, MessageSquare, Phone,
+  Activity, Wifi, WifiOff, Send, Mail, MessageSquare,
   DollarSign, TrendingUp, TrendingDown, AlertTriangle, CheckCircle,
   XCircle, RotateCcw, Shield, Clock, Users, BedDouble, Zap,
   ArrowUpDown, Globe, RefreshCw, ChevronRight
@@ -213,112 +213,7 @@ function LiveOperationsPanel({ data, wsConnected, onRefresh }) {
   );
 }
 
-// ── Messaging Panel ──
-
-function MessagingPanel() {
-  const [health, setHealth] = useState(null);
-  const [analytics, setAnalytics] = useState(null);
-  const [history, setHistory] = useState([]);
-  const [sending, setSending] = useState(false);
-  const [form, setForm] = useState({ channel: "email", to: "", subject: "", body: "" });
-
-  useEffect(() => {
-    apiFetch("/api/enterprise/messaging/provider-health").then(setHealth).catch(console.error);
-    apiFetch("/api/enterprise/messaging/analytics?days=7").then(setAnalytics).catch(console.error);
-    apiFetch("/api/enterprise/messaging/history?limit=10").then(d => setHistory(d.deliveries || [])).catch(console.error);
-  }, []);
-
-  const handleSend = async () => {
-    if (!form.to || !form.body) return;
-    setSending(true);
-    try {
-      await apiFetch("/api/enterprise/messaging/send", {
-        method: "POST", body: JSON.stringify(form),
-      });
-      apiFetch("/api/enterprise/messaging/history?limit=10").then(d => setHistory(d.deliveries || []));
-    } catch (e) { console.error(e); }
-    setSending(false);
-  };
-
-  return (
-    <div className="space-y-4">
-      {/* Provider Health */}
-      <div className="grid grid-cols-3 gap-3">
-        {health && Object.entries(health.providers || {}).map(([ch, info]) => (
-          <Card key={ch} className="bg-slate-800/60 border-slate-700" data-testid={`provider-${ch}`}>
-            <CardContent className="p-3 flex items-center gap-2">
-              {ch === "sms" ? <Phone className="h-4 w-4 text-green-400" /> :
-               ch === "email" ? <Mail className="h-4 w-4 text-blue-400" /> :
-               <MessageSquare className="h-4 w-4 text-emerald-400" />}
-              <div>
-                <p className="text-xs text-white font-medium capitalize">{info.provider}</p>
-                <StatusBadge status={info.status} />
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Analytics */}
-      {analytics && (
-        <div className="grid grid-cols-4 gap-3">
-          <StatCard title="Toplam Mesaj" value={analytics.total_messages} icon={Send} color="text-blue-400" />
-          <StatCard title="Iletildi" value={analytics.delivered} icon={CheckCircle} color="text-green-400" />
-          <StatCard title="Basarisiz" value={analytics.failed} icon={XCircle} color="text-red-400" />
-          <StatCard title="Basari Orani" value={`%${analytics.delivery_rate}`} icon={TrendingUp} color="text-emerald-400" />
-        </div>
-      )}
-
-      {/* Quick Send */}
-      <Card className="bg-slate-800/60 border-slate-700">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-slate-300">Hizli Mesaj Gonder</CardTitle>
-        </CardHeader>
-        <CardContent className="p-3 space-y-2">
-          <div className="flex gap-2">
-            {["email", "sms", "whatsapp"].map(ch => (
-              <button key={ch} onClick={() => setForm(f => ({ ...f, channel: ch }))}
-                className={`px-3 py-1 rounded text-xs transition ${
-                  form.channel === ch ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-400"
-                }`}>{ch.toUpperCase()}</button>
-            ))}
-          </div>
-          <input className="w-full bg-slate-700 text-white text-sm rounded px-3 py-2 outline-none"
-            placeholder="Alici (email/telefon)" value={form.to} onChange={e => setForm(f => ({ ...f, to: e.target.value }))} />
-          {form.channel === "email" && (
-            <input className="w-full bg-slate-700 text-white text-sm rounded px-3 py-2 outline-none"
-              placeholder="Konu" value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} />
-          )}
-          <textarea className="w-full bg-slate-700 text-white text-sm rounded px-3 py-2 outline-none resize-none h-16"
-            placeholder="Mesaj icerigi" value={form.body} onChange={e => setForm(f => ({ ...f, body: e.target.value }))} />
-          <Button size="sm" onClick={handleSend} disabled={sending} data-testid="send-message-btn"
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
-            <Send className="h-3 w-3 mr-1" /> {sending ? "Gonderiliyor..." : "Gonder"}
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* Recent Deliveries */}
-      <Card className="bg-slate-800/60 border-slate-700">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-slate-300">Son Mesajlar</CardTitle>
-        </CardHeader>
-        <CardContent className="p-3 space-y-1 max-h-48 overflow-y-auto">
-          {history.map((d, i) => (
-            <div key={i} className="flex justify-between items-center text-xs p-2 rounded bg-slate-700/40">
-              <div className="flex items-center gap-2">
-                <span className="text-white">{d.to}</span>
-                <span className="text-slate-500">{d.channel}</span>
-              </div>
-              <StatusBadge status={d.status} />
-            </div>
-          ))}
-          {history.length === 0 && <p className="text-xs text-slate-500">Mesaj gecmisi bos</p>}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
+// ── Messaging Panel removed — use full MessagingDashboard instead ──
 
 // ── Auto-Pricing Panel ──
 
@@ -657,9 +552,6 @@ export default function EnterpriseLiveDashboard({ user }) {
             <TabsTrigger value="live" data-testid="tab-live" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 text-xs">
               <Activity className="h-3 w-3 mr-1" /> Canli Operasyon
             </TabsTrigger>
-            <TabsTrigger value="messaging" data-testid="tab-messaging" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 text-xs">
-              <Send className="h-3 w-3 mr-1" /> Mesajlasma
-            </TabsTrigger>
             <TabsTrigger value="autopricing" data-testid="tab-autopricing" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 text-xs">
               <DollarSign className="h-3 w-3 mr-1" /> Oto-Fiyatlama
             </TabsTrigger>
@@ -670,9 +562,6 @@ export default function EnterpriseLiveDashboard({ user }) {
 
           <TabsContent value="live">
             <LiveOperationsPanel data={liveData} wsConnected={wsConnected} onRefresh={loadLiveData} />
-          </TabsContent>
-          <TabsContent value="messaging">
-            <MessagingPanel />
           </TabsContent>
           <TabsContent value="autopricing">
             <AutoPricingPanel />

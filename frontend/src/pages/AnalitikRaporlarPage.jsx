@@ -1,10 +1,11 @@
 import React, { useState, lazy, Suspense } from 'react';
 import Layout from '@/components/Layout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Download, Clock, Loader2 } from 'lucide-react';
+import { Download, Clock, Loader2, Brain } from 'lucide-react';
 
 const AnalyticsExportDashboard = lazy(() => import('@/pages/AnalyticsExportDashboard'));
 const MLSchedulerDashboard = lazy(() => import('@/pages/MLSchedulerDashboard'));
+const RevenueMLPanel = lazy(() => import('@/pages/RevenueMLPanel'));
 
 function TabLoading() {
   return (
@@ -23,11 +24,14 @@ export default function AnalitikRaporlarPage({ user, tenant, onLogout }) {
       <div className="p-4 lg:p-6 space-y-4" data-testid="analitik-raporlar-page">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Analitik & Raporlar</h1>
-          <p className="text-sm text-muted-foreground">Rapor disa aktarma ve ML model zamanlayicisi</p>
+          <p className="text-sm text-muted-foreground">ML tahminleri, rapor disa aktarma ve model zamanlayicisi</p>
         </div>
 
         <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="grid w-full grid-cols-2 max-w-md" data-testid="analitik-tabs">
+          <TabsList className="grid w-full grid-cols-3 max-w-xl" data-testid="analitik-tabs">
+            <TabsTrigger value="revenue-ml" data-testid="tab-revenue-ml" className="flex items-center gap-2">
+              <Brain className="h-4 w-4" /> Revenue ML
+            </TabsTrigger>
             <TabsTrigger value="rapor-export" data-testid="tab-rapor-export" className="flex items-center gap-2">
               <Download className="h-4 w-4" /> Rapor Disa Aktarma
             </TabsTrigger>
@@ -35,6 +39,12 @@ export default function AnalitikRaporlarPage({ user, tenant, onLogout }) {
               <Clock className="h-4 w-4" /> ML Zamanlayici
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="revenue-ml">
+            <Suspense fallback={<TabLoading />}>
+              <RevenueMLPanel />
+            </Suspense>
+          </TabsContent>
 
           <TabsContent value="rapor-export">
             <Suspense fallback={<TabLoading />}>

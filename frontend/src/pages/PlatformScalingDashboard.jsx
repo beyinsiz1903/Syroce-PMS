@@ -6,7 +6,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
 import {
-  Activity, Bell, Building2, TrendingUp, Brain, Target,
+  Activity, Bell, Building2, TrendingUp, Brain,
   AlertTriangle, Globe, Zap, Shield, RefreshCw, ChevronRight,
   ArrowUp, ArrowDown, Minus, Users, DollarSign, BarChart3,
   Radio, Layers, Eye, Crosshair
@@ -60,7 +60,6 @@ export default function PlatformScalingDashboard({ user, tenant, onLogout }) {
     { id: 'overview', label: 'Genel Bakis', icon: Layers },
     { id: 'events', label: 'Event Mimari', icon: Radio },
     { id: 'multi_property', label: 'Multi-Property', icon: Building2 },
-    { id: 'revenue_ml', label: 'Revenue ML', icon: Brain },
     { id: 'competitive', label: 'CompSet Analiz', icon: Crosshair },
   ];
 
@@ -116,7 +115,6 @@ export default function PlatformScalingDashboard({ user, tenant, onLogout }) {
         {activeModule === 'overview' && <OverviewPanel eventData={eventData} multiPropData={multiPropData} mlData={mlData} compData={compData} />}
         {activeModule === 'events' && <EventArchitecturePanel data={eventData} headers={headers} fetchAll={fetchAll} />}
         {activeModule === 'multi_property' && <MultiPropertyPanel data={multiPropData} />}
-        {activeModule === 'revenue_ml' && <RevenueMLPanel data={mlData} />}
         {activeModule === 'competitive' && <CompetitivePanel data={compData} headers={headers} fetchAll={fetchAll} />}
       </div>
     </Layout>
@@ -566,151 +564,6 @@ function MultiPropertyPanel({ data }) {
           </CardContent>
         </Card>
       </div>
-    </div>
-  );
-}
-
-/* ════════════════════════════════════════════════ */
-/* REVENUE ML PANEL                               */
-/* ════════════════════════════════════════════════ */
-function RevenueMLPanel({ data }) {
-  const forecast = data?.demand_forecast?.forecast || [];
-  const priceOpt = data?.price_optimization?.price_points || [];
-  const convRates = data?.conversion_rates?.by_source || [];
-  const atRisk = data?.cancellation_risk?.bookings || [];
-
-  return (
-    <div className="space-y-6" data-testid="revenue-ml-panel">
-      {/* Demand Forecast Chart */}
-      <Card data-testid="demand-forecast-card">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-blue-600" /> Talep Tahmini ({data?.demand_forecast?.model || 'ML'})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {forecast.length > 0 ? (
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={forecast.slice(0, 14).map(f => ({
-                  date: f.date?.slice(5),
-                  doluluk: f.predicted_occupancy_pct,
-                  otb: Math.round((f.on_the_books / (data?.demand_forecast?.total_rooms || 1)) * 100),
-                  guven: Math.round(f.confidence * 100),
-                }))}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                  <YAxis domain={[0, 100]} />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="doluluk" name="Tahmini Doluluk %" stroke="#0f766e" fill="#0f766e" fillOpacity={0.2} />
-                  <Area type="monotone" dataKey="otb" name="OTB %" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.1} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          ) : <p className="text-sm text-slate-400 text-center py-8">Tahmin verisi yok</p>}
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Price Optimization */}
-        <Card data-testid="price-optimization-card">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Target className="w-4 h-4 text-teal-600" /> Fiyat Optimizasyonu
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {priceOpt.map((pp, i) => (
-                <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                  <div>
-                    <div className="font-medium text-sm">{pp.room_type}</div>
-                    <div className="text-xs text-slate-500">Esneklik: {pp.elasticity}</div>
-                  </div>
-                  <div className="flex items-center gap-3 text-right">
-                    <div>
-                      <div className="text-xs text-slate-500">Mevcut</div>
-                      <div className="text-sm font-medium">{pp.current_avg_price} TL</div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                    <div>
-                      <div className="text-xs text-slate-500">Onerilen</div>
-                      <div className="text-sm font-bold text-teal-700">{pp.suggested_price} TL</div>
-                    </div>
-                    <ActionBadge action={pp.action} />
-                  </div>
-                </div>
-              ))}
-              {priceOpt.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Optimizasyon verisi yok</p>}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Conversion Rates */}
-        <Card data-testid="conversion-rates-card">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Users className="w-4 h-4 text-blue-600" /> Donusum Oranlari (Kaynak)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {convRates.length > 0 ? (
-              <div className="h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={convRates.map(c => ({ name: c.source, rate: Math.round(c.conversion_rate * 100), total: c.total_bookings }))}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                    <YAxis domain={[0, 100]} />
-                    <Tooltip />
-                    <Bar dataKey="rate" name="Donusum %" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            ) : <p className="text-sm text-slate-400 text-center py-8">Donusum verisi yok</p>}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* At-Risk Bookings */}
-      <Card data-testid="at-risk-bookings-card">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-red-500" /> Iptal Riski Yuksek Rezervasyonlar
-            <Badge variant="destructive" className="ml-2">{atRisk.length}</Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left">
-                  <th className="pb-2 text-slate-500 font-medium">Misafir</th>
-                  <th className="pb-2 text-slate-500 font-medium">Giris</th>
-                  <th className="pb-2 text-slate-500 font-medium">Kaynak</th>
-                  <th className="pb-2 text-slate-500 font-medium text-right">Tutar</th>
-                  <th className="pb-2 text-slate-500 font-medium text-right">Risk</th>
-                </tr>
-              </thead>
-              <tbody>
-                {atRisk.slice(0, 10).map((b, i) => (
-                  <tr key={i} className="border-b last:border-0">
-                    <td className="py-2">{b.guest_name || 'N/A'}</td>
-                    <td className="py-2">{b.check_in?.slice(0, 10)}</td>
-                    <td className="py-2">{b.source || 'direct'}</td>
-                    <td className="py-2 text-right">{(b.total_amount || 0).toLocaleString()} TL</td>
-                    <td className="py-2 text-right">
-                      <Badge variant={b.risk_level === 'high' ? 'destructive' : 'secondary'}>
-                        {Math.round(b.cancellation_probability * 100)}%
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {atRisk.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Riskli rezervasyon yok</p>}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
