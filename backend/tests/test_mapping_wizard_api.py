@@ -11,7 +11,7 @@ import pytest
 import requests
 import uuid
 
-BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://tenant-infra-stable.preview.emergentagent.com")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://pms-channel-ui-fix.preview.emergentagent.com")
 TEST_CONNECTOR_ID = "27cc2aa6-68c8-4f62-95e0-076ef2c2f634"
 
 

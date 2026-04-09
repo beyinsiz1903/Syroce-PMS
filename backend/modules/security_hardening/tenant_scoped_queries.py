@@ -6,7 +6,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from core.database import _raw_db, db
+from core.database import _raw_db
 
 logger = logging.getLogger("security.tenant_queries")
 
