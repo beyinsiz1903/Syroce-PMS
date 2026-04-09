@@ -103,6 +103,36 @@ Turkish (All responses must be in Turkish)
 - **Files Modified**: CommandCenter.jsx, PushSubscriptionManager.jsx, Dashboard.jsx, navItems.jsx (labels used as fallback), endpoints.py, service.py, all 10 locale JSON files
 - **Test Result**: Frontend 100% — iteration_204.json
 
+
+### Comprehensive Report Center (DONE - 2026-04-09)
+- **Motivation**: User requested 5-star hotel quality reporting center with easy navigation and access to every possible report
+- **Complete redesign of BasicReports.jsx** as professional Report Center with categorized sidebar
+- **19 report sections across 11 categories**:
+  1. Genel Bakış (Executive Overview) — KPI summary, daily movement, mini charts, period comparison
+  2. Gelir Raporu — Revenue trend (30 days), room type revenue, daily/weekly/monthly KPIs
+  3. ADR & RevPAR Analizi — ADR/RevPAR detail cards, 14-day performance chart
+  4. Dönem Karşılaştırma — Period cards (7d/30d/prev30d/YoY), revenue change metrics
+  5. Doluluk Raporu — Occupancy trend with dual-axis chart (% + rooms)
+  6. Oda Tipi Analizi — Room type distribution pie, occupancy bar chart, detail table
+  7. Misafir Listesi — Full guest list with search functionality
+  8. Milliyet Dağılımı — Nationality pie chart + country details list
+  9. Giriş / Çıkış — Today's arrivals/departures tables, in-house guest count
+  10. No-Show & İptaller — No-show and cancellation lists with KPIs
+  11. Oda Durumu — Live room status pie chart with colored stat boxes
+  12. Housekeeping — HK performance bars (completed/pending/in-progress)
+  13. Kanal Dağılımı — Channel source pie + revenue bar + detail table
+  14. Kaynak Analizi — Source comparison cards and chart
+  15. Ödemeler — Payment method pie chart + payment details
+  16. Maliye Listesi — Official guest list with TC/Passport column
+  17. Polis Bildirimi — Police report list with ID details
+  18. Departman Özeti — Multi-department summary (Front Office, HK, Technical, Finance)
+  19. F&B Raporu — Food & Beverage revenue and share metrics
+- **New shared component library**: `/app/frontend/src/pages/reports/ReportHelpers.jsx`
+  - KPICard, StatBox, SectionHeader, EmptyState, CustomTooltip components
+  - formatCurrency, formatNumber, formatPercent, calcChange utilities
+- **Professional sidebar navigation** with category headers, active state highlighting, mobile dropdown fallback
+- **Test Result**: Frontend 95% pass — iteration_205.json (all 19 sections navigable and functional)
+
 ## Pending / Known Issues
 - litellm CVE-2026-35030: Suppressed in `.trivyignore`. Upgrade to >=1.83.0 blocked by emergentintegrations dependency chain.
 

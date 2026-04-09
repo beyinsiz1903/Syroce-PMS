@@ -27,35 +27,35 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const REPORT_MENU = [
   { type: 'header', label: 'GENEL' },
-  { id: 'overview', label: 'Genel Bak\u0131\u015f', icon: LayoutDashboard, desc: 'Y\u00f6netici \u00f6zet raporu' },
-  { type: 'header', label: 'GEL\u0130R & F\u0130NANS' },
+  { id: 'overview', label: 'Genel Bakış', icon: LayoutDashboard, desc: 'Yönetici özet raporu' },
+  { type: 'header', label: 'GELİR & FİNANS' },
   { id: 'revenue', label: 'Gelir Raporu', icon: DollarSign, desc: 'Gelir analizi ve trend' },
   { id: 'adr_revpar', label: 'ADR & RevPAR', icon: TrendingUp, desc: 'Performans metrikleri' },
-  { id: 'period', label: 'D\u00f6nem Kar\u015f\u0131la\u015ft\u0131rma', icon: Calendar, desc: 'Periyodik kar\u015f\u0131la\u015ft\u0131rma' },
-  { type: 'header', label: 'DOLULUK & KAPAS\u0130TE' },
-  { id: 'occupancy', label: 'Doluluk Raporu', icon: BedDouble, desc: 'Doluluk oranlar\u0131' },
-  { id: 'room_types', label: 'Oda Tipi Analizi', icon: Hotel, desc: 'Oda tipi k\u0131r\u0131l\u0131m\u0131' },
-  { type: 'header', label: 'M\u0130SAF\u0130R' },
-  { id: 'guests', label: 'Misafir Listesi', icon: Users, desc: 'T\u00fcm misafirler' },
-  { id: 'nationality', label: 'Milliyet Da\u011f\u0131l\u0131m\u0131', icon: Globe, desc: '\u00dclke bazl\u0131 analiz' },
-  { type: 'header', label: '\u00d6N B\u00dcRO' },
-  { id: 'front_office', label: 'Giri\u015f / \u00c7\u0131k\u0131\u015f', icon: ArrowLeftRight, desc: 'G\u00fcnl\u00fck hareketler' },
-  { id: 'noshow', label: 'No-Show & \u0130ptaller', icon: AlertTriangle, desc: '\u0130ptal ve no-show' },
+  { id: 'period', label: 'Dönem Karşılaştırma', icon: Calendar, desc: 'Periyodik karşılaştırma' },
+  { type: 'header', label: 'DOLULUK & KAPASİTE' },
+  { id: 'occupancy', label: 'Doluluk Raporu', icon: BedDouble, desc: 'Doluluk oranları' },
+  { id: 'room_types', label: 'Oda Tipi Analizi', icon: Hotel, desc: 'Oda tipi kırılımı' },
+  { type: 'header', label: 'MİSAFİR' },
+  { id: 'guests', label: 'Misafir Listesi', icon: Users, desc: 'Tüm misafirler' },
+  { id: 'nationality', label: 'Milliyet Dağılımı', icon: Globe, desc: 'Ülke bazlı analiz' },
+  { type: 'header', label: 'ÖN BÜRO' },
+  { id: 'front_office', label: 'Giriş / Çıkış', icon: ArrowLeftRight, desc: 'Günlük hareketler' },
+  { id: 'noshow', label: 'No-Show & İptaller', icon: AlertTriangle, desc: 'İptal ve no-show' },
   { type: 'header', label: 'OPERASYON' },
-  { id: 'room_status', label: 'Oda Durumu', icon: Hotel, desc: 'Canl\u0131 oda durumu' },
-  { id: 'housekeeping', label: 'Housekeeping', icon: CheckCircle2, desc: 'Temizlik raporlar\u0131' },
+  { id: 'room_status', label: 'Oda Durumu', icon: Hotel, desc: 'Canlı oda durumu' },
+  { id: 'housekeeping', label: 'Housekeeping', icon: CheckCircle2, desc: 'Temizlik raporları' },
   { type: 'header', label: 'KANAL & PAZAR' },
-  { id: 'channels', label: 'Kanal Da\u011f\u0131l\u0131m\u0131', icon: Activity, desc: 'Kanal performans\u0131' },
-  { id: 'sources', label: 'Kaynak Analizi', icon: BarChart3, desc: 'Rezervasyon kaynaklar\u0131' },
-  { type: 'header', label: 'F\u0130NANS & MUHASEBE' },
-  { id: 'payments', label: '\u00d6demeler', icon: CreditCard, desc: '\u00d6deme y\u00f6ntemleri' },
-  { type: 'header', label: 'RESM\u0130 RAPORLAR' },
-  { id: 'official', label: 'Maliye Listesi', icon: FileText, desc: 'Resmi m\u00fc\u015fteri listesi' },
+  { id: 'channels', label: 'Kanal Dağılımı', icon: Activity, desc: 'Kanal performansı' },
+  { id: 'sources', label: 'Kaynak Analizi', icon: BarChart3, desc: 'Rezervasyon kaynakları' },
+  { type: 'header', label: 'FİNANS & MUHASEBE' },
+  { id: 'payments', label: 'Ödemeler', icon: CreditCard, desc: 'Ödeme yöntemleri' },
+  { type: 'header', label: 'RESMİ RAPORLAR' },
+  { id: 'official', label: 'Maliye Listesi', icon: FileText, desc: 'Resmi müşteri listesi' },
   { id: 'police', label: 'Polis Bildirimi', icon: Shield, desc: 'Emniyet bildirimi' },
   { type: 'header', label: 'DEPARTMANLAR' },
-  { id: 'departments', label: 'Departman \u00d6zeti', icon: Building2, desc: 'Departman raporlar\u0131' },
+  { id: 'departments', label: 'Departman Özeti', icon: Building2, desc: 'Departman raporları' },
   { type: 'header', label: 'F&B' },
-  { id: 'fnb', label: 'F&B Raporu', icon: Utensils, desc: 'Yiyecek & i\u00e7ecek' },
+  { id: 'fnb', label: 'F&B Raporu', icon: Utensils, desc: 'Yiyecek & içecek' },
 ];
 
 const BasicReports = ({ user, tenant, onLogout }) => {
@@ -158,26 +158,26 @@ const BasicReports = ({ user, tenant, onLogout }) => {
 
   const renderOverview = () => (
     <div className="space-y-6" data-testid="section-overview">
-      <SectionHeader title="Genel Bak\u0131\u015f - Y\u00f6netici \u00d6zeti" description="Temel KPI'lar ve g\u00fcnl\u00fck operasyonel \u00f6zet" actions={<Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Canl\u0131</Badge>} />
+      <SectionHeader title="Genel Bakış - Yönetici Özeti" description="Temel KPI'lar ve günlük operasyonel özet" actions={<Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Canlı</Badge>} />
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        <KPICard title="Toplam Gelir (30 G\u00fcn)" value={pc.month_revenue} prevValue={pc.prev_month_revenue} prevLabel={'\u00d6nceki ay: ' + formatCurrency(pc.prev_month_revenue)} icon={DollarSign} color="green" />
-        <KPICard title="Ortalama ADR" value={s.adr} prevValue={pc.prev_month_adr} prevLabel={'\u00d6nceki ay: ' + formatCurrency(pc.prev_month_adr)} icon={TrendingUp} color="blue" />
+        <KPICard title="Toplam Gelir (30 Gün)" value={pc.month_revenue} prevValue={pc.prev_month_revenue} prevLabel={'Önceki ay: ' + formatCurrency(pc.prev_month_revenue)} icon={DollarSign} color="green" />
+        <KPICard title="Ortalama ADR" value={s.adr} prevValue={pc.prev_month_adr} prevLabel={'Önceki ay: ' + formatCurrency(pc.prev_month_adr)} icon={TrendingUp} color="blue" />
         <KPICard title="RevPAR" value={s.revpar} icon={BarChart3} color="amber" />
-        <KPICard title="Doluluk Oran\u0131" value={formatPercent(s.occupancy_percentage)} icon={Hotel} color="purple" />
-        <KPICard title="Toplam Rezervasyon" value={pc.month_bookings} prevValue={pc.prev_month_bookings} prevLabel={'\u00d6nceki ay: ' + (pc.prev_month_bookings || 0)} icon={BookOpen} color="cyan" />
-        <KPICard title="F&B Geliri (Bug\u00fcn)" value={s.fnb_revenue} icon={Utensils} color="teal" />
+        <KPICard title="Doluluk Oranı" value={formatPercent(s.occupancy_percentage)} icon={Hotel} color="purple" />
+        <KPICard title="Toplam Rezervasyon" value={pc.month_bookings} prevValue={pc.prev_month_bookings} prevLabel={'Önceki ay: ' + (pc.prev_month_bookings || 0)} icon={BookOpen} color="cyan" />
+        <KPICard title="F&B Geliri (Bugün)" value={s.fnb_revenue} icon={Utensils} color="teal" />
       </div>
 
       {/* Gunluk Hareket */}
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">G\u00fcnl\u00fck Hareket \u00d6zeti</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Günlük Hareket Özeti</CardTitle></CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <StatBox label="Giri\u015f" value={s.arrivals || 0} color="blue" icon={ArrowUpRight} />
-            <StatBox label="\u00c7\u0131k\u0131\u015f" value={s.departures || 0} color="amber" icon={ArrowDownRight} />
+            <StatBox label="Giriş" value={s.arrivals || 0} color="blue" icon={ArrowUpRight} />
+            <StatBox label="Çıkış" value={s.departures || 0} color="amber" icon={ArrowDownRight} />
             <StatBox label="Otelde" value={s.in_house || 0} color="green" icon={Users} />
             <StatBox label="No-Show" value={s.no_shows || 0} color="red" icon={AlertTriangle} />
-            <StatBox label="\u0130ptal" value={s.cancellations || 0} color="gray" icon={Calendar} />
+            <StatBox label="İptal" value={s.cancellations || 0} color="gray" icon={Calendar} />
           </div>
         </CardContent>
       </Card>

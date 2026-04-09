@@ -4,7 +4,7 @@ import { ArrowUpRight, ArrowDownRight } from 'lucide-react';
 export const COLORS = ['#2563EB', '#059669', '#D97706', '#DC2626', '#7C3AED', '#DB2777', '#0891B2', '#65A30D', '#EA580C', '#0D9488'];
 
 export const formatCurrency = (val) => {
-  if (val === undefined || val === null || isNaN(val)) return '\u20BA0';
+  if (val === undefined || val === null || isNaN(val)) return '₺0';
   return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val);
 };
 
@@ -29,7 +29,7 @@ export const KPICard = ({ title, value, prevValue, prevLabel, icon: Icon, color 
     cyan: 'from-cyan-500 to-cyan-600', red: 'from-rose-500 to-rose-600',
     indigo: 'from-indigo-500 to-indigo-600', teal: 'from-teal-500 to-teal-600',
   };
-  const isCurrency = /gelir|adr|rev|ciro|\u00f6deme|tutar/i.test(title);
+  const isCurrency = /gelir|adr|rev|ciro|ödeme|tutar/i.test(title);
   const displayVal = typeof value === 'number' ? (isCurrency ? formatCurrency(value) : formatNumber(value)) : value;
 
   return (
@@ -104,4 +104,4 @@ export const StatBox = ({ label, value, color = 'blue', icon: Icon }) => {
 };
 
 export const ROOM_STATUS_COLORS = { available: '#059669', occupied: '#2563EB', dirty: '#D97706', maintenance: '#DC2626', out_of_order: '#6B7280' };
-export const ROOM_STATUS_LABELS = { available: 'M\u00fcsait', occupied: 'Dolu', dirty: 'Kirli', maintenance: 'Bak\u0131m', out_of_order: 'Devre D\u0131\u015f\u0131' };
+export const ROOM_STATUS_LABELS = { available: 'Müsait', occupied: 'Dolu', dirty: 'Kirli', maintenance: 'Bakım', out_of_order: 'Devre Dışı' };
