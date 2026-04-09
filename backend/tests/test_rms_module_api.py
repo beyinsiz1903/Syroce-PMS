@@ -8,7 +8,7 @@ import requests
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 if not BASE_URL:
-    BASE_URL = "https://raporlar-cleanup.preview.emergentagent.com"
+    BASE_URL = "https://guest-list-hub.preview.emergentagent.com"
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
