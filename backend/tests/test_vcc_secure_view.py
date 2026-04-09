@@ -15,7 +15,7 @@ import pytest
 import requests
 import uuid
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://pms-channel-ui-fix.preview.emergentagent.com')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://ops-resilience-gaps.preview.emergentagent.com')
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"

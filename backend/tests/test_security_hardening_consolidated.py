@@ -12,7 +12,7 @@ import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
-    BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://pms-channel-ui-fix.preview.emergentagent.com").rstrip("/")
+    BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://ops-resilience-gaps.preview.emergentagent.com").rstrip("/")
 
 
 class TestSecurityHardeningAPIs:

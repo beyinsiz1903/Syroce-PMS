@@ -9,7 +9,7 @@ import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
-    BASE_URL = "https://pms-channel-ui-fix.preview.emergentagent.com"
+    BASE_URL = "https://ops-resilience-gaps.preview.emergentagent.com"
 
 
 class TestMessagingCenterAPI:
