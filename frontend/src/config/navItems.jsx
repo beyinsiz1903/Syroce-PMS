@@ -284,6 +284,15 @@ export const NAV_ITEMS = [
     requireSuperAdmin: true,
   },
   {
+    key: "channel_ops",
+    label: "Operasyon Merkezi",
+    path: "/channel-ops",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+    navGroup: "channels",
+  },
+  {
     key: "hotelrunner",
     label: "HotelRunner",
     path: "/hotelrunner",

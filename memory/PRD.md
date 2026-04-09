@@ -178,10 +178,41 @@ Turkish (All responses must be in Turkish)
 - **Files Modified**: EnterpriseLiveDashboard.jsx, PlatformScalingDashboard.jsx, AnalitikRaporlarPage.jsx, RevenueMLPanel.jsx (new)
 - **Test Result**: Frontend 7/7 (100%) — iteration_209.json
 
+### Operational Reliability — Webhook Retry + Ops Telemetry + Channel Ops Dashboard (DONE - 2026-04-09)
+- **Program 1: Delivery Reliability**
+  - **Webhook Automatic Retry**: Replaced fire-and-forget `_deliver_webhook` with exponential backoff retry (max 5 attempts: 2s, 4s, 8s, 16s, 32s)
+  - **DLQ (Dead Letter Queue)**: Terminal failures → `webhook_dlq` collection for manual retry
+  - **Delivery Tracking**: Each delivery records `attempt_count`, `next_retry_at`, `last_error`, `idempotency_key`, full attempt history
+  - **Idempotency Key**: SHA256-based deduplication per webhook+event+delivery
+  - **New Service**: `webhook_retry_service.py` — `deliver_webhook_with_retry()`, `fire_webhooks_with_retry()`, `retry_dlq_item()`
+- **Program 2: Operational Observability**
+  - **Ops Event Model**: `ops_events` collection stores all operational lifecycle events
+  - **Event Types**: `webhook.delivery.started/succeeded/retrying/terminal_failure/dlq`, `push.started/queued/throttled/succeeded/failed_terminal`, `rate_limit.active/cooldown`, `import.started/completed/failed`, `channel.health_changed`
+  - **In-App Notifications**: Critical/warning ops events auto-create notifications (appear in NotificationBell)
+  - **HotelRunner 429 Visibility**: Rate limit status endpoint exposes throttle state, events count, last 429 timestamp, impacted pushes
+  - **Channel Health**: Per-connector health calculation (healthy/degraded/critical) based on push success rate and import failures
+- **Thin Channel Ops Dashboard v1** — 4-tab frontend (`/channel-ops`):
+  - **Genel Bakış**: KPI cards (total/succeeded/failed/retrying/DLQ/throttle), channel status grid, recent failures, last successful pushes, recent imports
+  - **Webhook Teslimat**: DLQ with manual retry buttons, full delivery history table
+  - **Kanal Sağlığı**: HotelRunner rate limit status panel, per-connector health detail cards
+  - **Olay Akışı**: Operational event timeline with severity badges, expandable details, correlation IDs
+  - Auto-refresh every 15 seconds
+- **New Backend Files**: `ops_event_emitter.py`, `webhook_retry_service.py`, `ops_events_router.py`
+- **Modified**: `b2b_api.py` (webhook delivery replaced with retry service), `server.py` (router registration), `NotificationBell.jsx` (ops_event icon), `navItems.jsx`, `routeDefinitions.jsx`, locale files
+- **New Endpoints**:
+  - `GET /api/ops-events/list` — Query ops events with severity/type/channel filters
+  - `GET /api/ops-events/webhook-deliveries` — Delivery status with summary stats
+  - `GET /api/ops-events/webhook-dlq` — DLQ items with counts
+  - `POST /api/ops-events/webhook-dlq/{id}/retry` — Manual DLQ retry
+  - `GET /api/ops-events/rate-limit-status` — HotelRunner rate limit info
+  - `GET /api/ops-events/channel-health` — Per-connector health summary
+  - `GET /api/ops-events/dashboard-summary` — Full dashboard data in single call
+- **Test Result**: Backend 8/8 (100%)
+
 ## Future / Backlog (P2+)
-- Automatic retry mechanism with exponential backoff for failed webhook deliveries
+- ~~Automatic retry mechanism with exponential backoff for failed webhook deliveries~~ → DONE (2026-04-09)
 - B2B Analytics Dashboard (agency API key usage, booking rates, top queries)
-- Channel Manager Dashboard (reservations, failed imports, push queue, health)
+- ~~Channel Manager Dashboard (reservations, failed imports, push queue, health)~~ → DONE (2026-04-09)
 - Admin UI Panel for encryption management
 - Make unassigned reservations more prominent in calendar
 - Improve Auto Room Mapping (capacity + base price matching)
@@ -203,6 +234,9 @@ Turkish (All responses must be in Turkish)
 - `seasonal_calendar` — Season definitions with rate multipliers
 - `rms_pricing_recommendations` — Generated pricing recommendations
 - `bookings` — Reservations with channel, room_type, base_rate fields
+- `ops_events` — Operational telemetry events (webhook lifecycle, push status, rate limits)
+- `webhook_deliveries` — Webhook delivery records with retry state and attempt history
+- `webhook_dlq` — Dead letter queue for terminal webhook delivery failures
 
 ## Key API Endpoints
 - `GET /api/channel-manager/unified-rate-manager/grid`
@@ -221,3 +255,6 @@ Turkish (All responses must be in Turkish)
 - `GET /api/messaging-center/metrics` / `POST /api/messaging-center/seed-demo`
 - `GET/POST /api/messaging-center/scheduler/status` / `/scheduler/start` / `/scheduler/stop` / `/scheduler/run-now`
 - `GET /api/messaging-center/activity`
+- `GET /api/ops-events/list` / `GET .../webhook-deliveries` / `GET .../webhook-dlq`
+- `POST /api/ops-events/webhook-dlq/{id}/retry`
+- `GET /api/ops-events/rate-limit-status` / `GET .../channel-health` / `GET .../dashboard-summary`

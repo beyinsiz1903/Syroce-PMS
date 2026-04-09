@@ -186,6 +186,7 @@ const GroupFolioPage = lazy(() => import("@/pages/GroupFolioPage"));
 const EnhancedGMDashboard = lazy(() => import("@/pages/EnhancedGMDashboard"));
 const RoomMappingWizard = lazy(() => import("@/pages/RoomMappingWizard"));
 const B2BApiDocs = lazy(() => import("@/pages/B2BApiDocs"));
+const ChannelOpsPage = lazy(() => import("@/pages/ChannelOpsPage"));
 
 // ── Exported components for direct access ──────────────────────────
 export {
@@ -267,6 +268,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/channel-connections", ...p(ChannelConnections) },
     { path: "/channel-manager", ...p(ChannelManagerModule) },
     { path: "/app/channel-manager", ...p(ChannelManagerModule) },
+    { path: "/channel-ops", ...p(ChannelOpsPage) },
     { path: "/mapping-manager", ...p(MappingManager) },
     { path: "/room-mapping-wizard", ...p(RoomMappingWizard) },
     { path: "/hotelrunner", ...p(HotelRunnerIntegration) },

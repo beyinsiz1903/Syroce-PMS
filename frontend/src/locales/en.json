@@ -224,6 +224,7 @@
     "hr_rate_manager": "HotelRunner - Rates & Availability",
     "rate_manager": "Exely - Rates & Availability",
     "channel_connections": "Channel Connections",
+    "channel_ops": "Operations Center",
     "hotelrunner": "HotelRunner",
     "exely": "Exely",
     "wire_failures": "Wire Failure Tracking",

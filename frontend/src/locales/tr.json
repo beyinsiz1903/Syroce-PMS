@@ -224,6 +224,7 @@
     "hr_rate_manager": "HotelRunner - Fiyat ve Müsaitlik",
     "rate_manager": "Exely - Fiyat ve Müsaitlik",
     "channel_connections": "Kanal Bağlantıları",
+    "channel_ops": "Operasyon Merkezi",
     "hotelrunner": "HotelRunner",
     "exely": "Exely",
     "wire_failures": "Wire Failure Takibi",
