@@ -209,7 +209,7 @@ Turkish (All responses must be in Turkish)
   - `GET /api/ops-events/dashboard-summary` — Full dashboard data in single call
 - **Test Result**: Backend 8/8 (100%)
 
-### Sprint 2: Operational Control + Root Cause Clarity (IN PROGRESS - 2026-04-09)
+### Sprint 2: Operational Control + Root Cause Clarity (DONE - 2026-04-09)
 
 #### P0: Correlation Timeline + Drilldown (DONE)
 - **Correlation Chain**: `correlation_id` tracked across webhook → import → push → retry → DLQ/success lifecycle
@@ -249,6 +249,7 @@ Turkish (All responses must be in Turkish)
 
 - **New Backend Files**: `ops_timeline_router.py`, `auto_remediation_engine.py`
 - **Modified Frontend**: `ChannelOpsPage.jsx` (Dashboard v2 with drilldown, health scoring, prioritized feed), `IncidentDrilldownDrawer.jsx` (new component)
+- **Test Result**: Backend 21/21 (100%), Frontend 100%
 
 ## Future / Backlog (P2+)
 - ~~Automatic retry mechanism with exponential backoff for failed webhook deliveries~~ → DONE (2026-04-09)
