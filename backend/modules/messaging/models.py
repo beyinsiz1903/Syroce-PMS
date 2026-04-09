@@ -6,8 +6,6 @@ import uuid
 from datetime import UTC, datetime
 from enum import Enum
 
-from pydantic import BaseModel
-
 
 class ProviderType(str, Enum):
     SMTP_EMAIL = "smtp_email"

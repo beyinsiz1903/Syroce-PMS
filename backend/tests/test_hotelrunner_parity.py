@@ -20,7 +20,7 @@ import requests
 
 # API URLs
 MOCK_SERVER_URL = "http://localhost:9999"
-API_URL = os.environ.get("VITE_BACKEND_URL", "https://direct-smtp-whatsapp.preview.emergentagent.com")
+API_URL = os.environ.get("VITE_BACKEND_URL", "https://channel-sync-15.preview.emergentagent.com")
 
 # Mock server credentials
 MOCK_TOKEN = "mock-hr-token-001"

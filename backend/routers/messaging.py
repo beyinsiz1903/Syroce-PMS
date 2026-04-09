@@ -3,9 +3,9 @@ Messaging Router — SMTP Email + WhatsApp Business API.
 Provider settings, template CRUD, sending, delivery logs, metrics.
 """
 import logging
+import random
 import uuid
 from datetime import UTC, datetime, timedelta
-import random
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel

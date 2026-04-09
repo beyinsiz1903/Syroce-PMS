@@ -11,7 +11,7 @@ import requests
 # Get BASE_URL from environment
 BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
 if not BASE_URL:
-    BASE_URL = "https://direct-smtp-whatsapp.preview.emergentagent.com"
+    BASE_URL = "https://channel-sync-15.preview.emergentagent.com"
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"

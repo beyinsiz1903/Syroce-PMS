@@ -69,7 +69,6 @@ class PreArrivalScheduler:
     async def run_scan(self) -> dict:
         """Scan all tenants for tomorrow's check-ins and fire pre_arrival events."""
         from server import db
-        from modules.messaging.automation import process_booking_event
 
         now = datetime.now(UTC)
         self._last_run_at = now.isoformat()
