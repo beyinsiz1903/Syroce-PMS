@@ -534,6 +534,15 @@ export const NAV_ITEMS = [
     group: "enterprise",
     navGroup: "infrastructure",
   },
+  {
+    key: "encryption_management",
+    label: "Sifreleme Yonetimi",
+    path: "/encryption-management",
+    moduleKey: "advanced_analytics",
+    tier: "enterprise",
+    group: "enterprise",
+    navGroup: "infrastructure",
+  },
 
   // ──── STANDALONE: Settings ─────────────────────────
   {

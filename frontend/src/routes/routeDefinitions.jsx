@@ -187,6 +187,7 @@ const EnhancedGMDashboard = lazy(() => import("@/pages/EnhancedGMDashboard"));
 const RoomMappingWizard = lazy(() => import("@/pages/RoomMappingWizard"));
 const B2BApiDocs = lazy(() => import("@/pages/B2BApiDocs"));
 const ChannelOpsPage = lazy(() => import("@/pages/ChannelOpsPage"));
+const EncryptionManagementPage = lazy(() => import("@/pages/EncryptionManagementPage"));
 
 // ── Exported components for direct access ──────────────────────────
 export {
@@ -428,6 +429,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/security-center", ...p(SecurityCenter) },
     { path: "/app/guvenlik", ...p(SecurityDashboard) },
     { path: "/gdpr-compliance", ...p(GDPRCompliance) },
+    { path: "/encryption-management", ...p(EncryptionManagementPage) },
     { path: "/central-office", ...p(CentralOfficeDashboard) },
     { path: "/central-pricing", ...p(CentralPricingManager) },
     { path: "/cross-property-guests", ...p(CrossPropertyGuests) },

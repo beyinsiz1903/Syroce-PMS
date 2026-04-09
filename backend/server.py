@@ -350,6 +350,14 @@ try:
 except Exception as _timeline_err:
     logger.warning(f"Ops Timeline router skipped: {_timeline_err}")
 
+# ── Encryption Management Router ─────────────────────────────────────
+try:
+    from security.encryption_management_router import router as encryption_mgmt_router
+    app.include_router(encryption_mgmt_router, tags=["Encryption Management"])
+    logger.info("  ✅ Encryption Management router loaded")
+except Exception as _enc_mgmt_err:
+    logger.warning(f"Encryption Management router skipped: {_enc_mgmt_err}")
+
 
 # ── Lifecycle events ────────────────────────────────────────────────
 from startup import on_shutdown, on_startup  # noqa: E402

@@ -18,7 +18,7 @@ import aiohttp
 class OpsEventsAPITester:
     def __init__(self):
         # Use the actual backend URL from frontend/.env
-        self.base_url = "https://ops-dashboard-148.preview.emergentagent.com"
+        self.base_url = "https://correlation-trace.preview.emergentagent.com"
         self.api_base = f"{self.base_url}/api"
         self.session = None
         self.auth_token = None
