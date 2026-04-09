@@ -170,6 +170,14 @@ Turkish (All responses must be in Turkish)
 - **Result**: Infrastructure dropdown: 11 → 8 items. Direct URLs still work standalone.
 - **Test Result**: Backend 7/7, Frontend 100% — iteration_208.json
 
+### Enterprise Live & Platform Scaling Overlap Resolution (DONE - 2026-04-09)
+- **Problem 1**: Enterprise Live had a "Mesajlasma" tab (simple provider health + quick send) that overlapped with the full MessagingDashboard (7 tabs: send, templates, automation, activity, logs, metrics, settings).
+- **Solution 1**: Removed MessagingPanel and messaging tab from EnterpriseLiveDashboard.jsx. Enterprise Live now has 3 tabs: Canli Operasyon, Oto-Fiyatlama, Entegrasyonlar.
+- **Problem 2**: Platform Scaling had a "Revenue ML" tab (demand forecast, price optimization, conversion rates, at-risk bookings) that overlapped with Analitik & Raporlar (ML scheduler + report export).
+- **Solution 2**: Extracted RevenueMLPanel into standalone component (RevenueMLPanel.jsx). Added as 1st tab in AnalitikRaporlarPage. Removed Revenue ML tab from PlatformScalingDashboard. Platform Scaling now has 4 tabs: Genel Bakis, Event Mimari, Multi-Property, CompSet Analiz. Analitik & Raporlar now has 3 tabs: Revenue ML, Rapor Disa Aktarma, ML Zamanlayici.
+- **Files Modified**: EnterpriseLiveDashboard.jsx, PlatformScalingDashboard.jsx, AnalitikRaporlarPage.jsx, RevenueMLPanel.jsx (new)
+- **Test Result**: Frontend 7/7 (100%) — iteration_209.json
+
 ## Future / Backlog (P2+)
 - Automatic retry mechanism with exponential backoff for failed webhook deliveries
 - B2B Analytics Dashboard (agency API key usage, booking rates, top queries)
@@ -182,8 +190,7 @@ Turkish (All responses must be in Turkish)
 - Refactor: Evaluate deprecation of legacy hr_rate_manager_router.py and rate_manager_router.py
 - Real competitor price integration via SerpApi or OTA Insight (when budget allows)
 - Automated Email Scheduler for Reports (daily/weekly report dispatch)
-- Enterprise Live messaging overlap with MessagingDashboard — consider merging
-- Platform Scaling ML dashboard overlap with Analitik & Raporlar — consider merging
+- Similar audit/consolidation for Operations, Channels Admin navigation groups
 
 ## Key DB Collections
 - `cm_connectors` — Encrypted channel credentials
