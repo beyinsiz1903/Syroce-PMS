@@ -17,7 +17,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://guest-insights-6.preview.emergentagent.com")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://hotel-raporlar.preview.emergentagent.com")
 
 # Connector IDs from the cleanup (actual IDs from DB)
 HOTELRUNNER_SANDBOX_ID = "c79fd9cb-d240-4344-8b2d-7d8b71d6a681"
