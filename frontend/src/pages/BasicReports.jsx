@@ -502,7 +502,16 @@ const BasicReports = ({ user, tenant, onLogout }) => {
         <SectionHeader title={title} />
         <Badge variant="outline" className="h-6">{guests.length} kayit</Badge>
       </div>
-      <div className="relative"><Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" /><Input placeholder="Misafir, oda veya e-posta ara..." value={searchGuest} onChange={e => setSearchGuest(e.target.value)} className="pl-9" data-testid="guest-search-input" /></div>
+      <div className="relative">
+        <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400 z-10" />
+        <Input
+          placeholder="Misafir, oda veya e-posta ara..."
+          value={searchGuest}
+          onChange={e => setSearchGuest(e.target.value)}
+          className="pl-9 bg-white border-gray-300 text-gray-900 placeholder:text-gray-400 focus:border-blue-400 focus:ring-blue-200"
+          data-testid="guest-search-input"
+        />
+      </div>
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto"><table className="w-full text-sm" data-testid="guest-table">
@@ -1030,11 +1039,11 @@ const BasicReports = ({ user, tenant, onLogout }) => {
               ))}
             </select>
           </div>
-          <div className="p-4">{renderContent()}</div>
+          <div className="p-4" data-testid="reports-mobile-content">{renderContent()}</div>
         </div>
 
         {/* ── MAIN CONTENT (Desktop) ─────────────────── */}
-        <main className="flex-1 hidden lg:block overflow-y-auto">
+        <main className="flex-1 hidden lg:block overflow-y-auto" data-testid="reports-desktop-content">
           <div className="p-6 max-w-6xl">
             {/* Breadcrumb + Actions */}
             <div className="flex items-center justify-between mb-5">

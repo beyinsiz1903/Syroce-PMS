@@ -14,7 +14,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://saas-pms-direct.preview.emergentagent.com")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://guest-insights-6.preview.emergentagent.com")
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"

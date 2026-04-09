@@ -139,6 +139,11 @@ Turkish (All responses must be in Turkish)
 ## Upcoming Tasks (P1)
 - (All P1 items completed)
 
+### Guest Search Input Visibility Fix (DONE - 2026-04-09)
+- Fixed search input in Misafir Listesi (Guest List) section of Reports module - added `bg-white`, `border-gray-300`, `text-gray-900` for clear visibility
+- Resolved duplicate `data-testid` issue caused by dual mobile/desktop rendering - added `data-testid="reports-mobile-content"` and `data-testid="reports-desktop-content"` wrappers
+- Search filtering verified working (tested with "Deniz" query, correctly returned 6 filtered results)
+
 ## Future / Backlog (P2+)
 - Automatic retry mechanism with exponential backoff for failed webhook deliveries
 - B2B Analytics Dashboard (agency API key usage, booking rates, top queries)

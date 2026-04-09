@@ -15,7 +15,7 @@ import pytest
 import requests
 import time
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://saas-pms-direct.preview.emergentagent.com")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://guest-insights-6.preview.emergentagent.com")
 
 
 class TestHRAutoPollingDisabled:
