@@ -863,13 +863,40 @@ const BasicReports = ({ user, tenant, onLogout }) => {
       <Card className="mb-5 border-amber-200 bg-amber-50/30">
         <CardContent className="p-4 flex items-start gap-3">
           <FileText className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div>
+          <div className="flex-1">
             <h4 className="font-semibold text-gray-900 text-sm">Resmi Müşteri Listesi (Maliye Raporu)</h4>
             <p className="text-xs text-gray-600 mt-0.5">Maliye veya resmi denetim geldiğinde, seçtiğiniz gün için otelde konaklayan tüm misafirlerin resmi listesini bu ekrandan alabilirsiniz. Liste TCKN/pasaport, oda, giriş-çıkış ve toplam tutarı içerir.</p>
+            <p className="text-xs text-gray-500 mt-1">Tarih seçerek belirli bir güne ait resmi listeyi görüntüleyebilir ve CSV olarak dışa aktarabilirsiniz.</p>
+          </div>
+          <Button
+            size="sm"
+            className="bg-amber-600 hover:bg-amber-700 text-white flex-shrink-0"
+            onClick={() => window.location.href = '/reports/official-guest-list'}
+            data-testid="go-to-official-guest-list"
+          >
+            <Eye className="w-3.5 h-3.5 mr-1.5" />
+            Maliye Listesini Aç
+          </Button>
+        </CardContent>
+      </Card>
+      <Card className="border-blue-200 bg-blue-50/30">
+        <CardContent className="p-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+            <div className="p-3 bg-white rounded-lg border">
+              <p className="text-xs text-gray-500">Otelde Konaklayan</p>
+              <p className="text-xl font-bold text-gray-900">{s.in_house || 0}</p>
+            </div>
+            <div className="p-3 bg-white rounded-lg border">
+              <p className="text-xs text-gray-500">Bugün Giriş</p>
+              <p className="text-xl font-bold text-blue-700">{s.arrivals || 0}</p>
+            </div>
+            <div className="p-3 bg-white rounded-lg border">
+              <p className="text-xs text-gray-500">Bugün Çıkış</p>
+              <p className="text-xl font-bold text-amber-700">{s.departures || 0}</p>
+            </div>
           </div>
         </CardContent>
       </Card>
-      {renderGuestTable(filteredGuests, 'Resmi Müşteri Listesi', true)}
     </div>
   );
 

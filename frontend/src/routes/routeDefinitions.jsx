@@ -284,10 +284,10 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/control-plane", ...p(ControlPlane) },
 
     // ── Reports ────────────────────────────────────────
-    { path: "/reports", ...p(Reports) },
-    { path: "/app/reports", ...p(Reports) },
     { path: "/app/raporlar", ...p(BasicReports) },
-    { path: "/app/gelismis-raporlar", ...p(Reports) },
+    { path: "/app/gelismis-raporlar", ...p(BasicReports) },
+    { path: "/reports", ...p(BasicReports) },
+    { path: "/app/reports", ...p(BasicReports) },
     { path: "/reports/builder", ...p(ReportBuilder) },
     { path: "/app/rapor-olusturucu", ...p(ReportBuilder) },
     { path: "/reports/official-guest-list", ...p(OfficialGuestList) },

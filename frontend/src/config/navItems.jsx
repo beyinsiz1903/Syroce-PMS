@@ -405,15 +405,6 @@ export const NAV_ITEMS = [
     navGroup: "reports",
   },
   {
-    key: "reports",
-    label: "Gelismis Raporlar",
-    path: "/app/gelismis-raporlar",
-    moduleKey: "reports",
-    tier: "professional",
-    group: "professional",
-    navGroup: "reports",
-  },
-  {
     key: "report_builder",
     label: "Rapor Olusturucu",
     path: "/app/rapor-olusturucu",
