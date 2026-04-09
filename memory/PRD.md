@@ -209,11 +209,55 @@ Turkish (All responses must be in Turkish)
   - `GET /api/ops-events/dashboard-summary` — Full dashboard data in single call
 - **Test Result**: Backend 8/8 (100%)
 
+### Sprint 2: Operational Control + Root Cause Clarity (IN PROGRESS - 2026-04-09)
+
+#### P0: Correlation Timeline + Drilldown (DONE)
+- **Correlation Chain**: `correlation_id` tracked across webhook → import → push → retry → DLQ/success lifecycle
+- **Timeline Endpoint**: `GET /api/ops-events/timeline/{correlation_id}` — Full event chain with summary
+- **Incident Summary**: `GET /api/ops-events/incident/{event_id}/summary` — Quick incident overview with impact analysis
+- **Drilldown Drawer**: Frontend `IncidentDrilldownDrawer.jsx` — Side panel shows timeline visualization, retry attempts, DLQ status, affected entities
+- Root cause visible in 15 seconds via single click
+
+#### P1: Dashboard v2 — Health Scoring + Prioritized Feed (DONE)
+- **Health Score**: 0-100 score per connector based on failure rate, DLQ count, throttle state, retry backlog, staleness
+- **Prioritized Incident Feed**: `GET /api/ops-events/incidents/prioritized` — Sorted by priority (DLQ > throttle > terminal > warning > resolved)
+- **Dashboard v2 Features**:
+  - Priority-based incident cards with action buttons (Retry, View Timeline)
+  - Filter by severity (Tümü, Kritik, Uyarı, Çözülen)
+  - Connector health badges with score visualization
+  - Quick actions from incident cards
+
+#### P1: Unified Connector Health Contract (DONE)
+- **Standard Schema**: `{provider, status, health_score, last_success_at, last_failure_at, failure_rate_1h, retry_backlog, dlq_count, throttle_active, next_available_at, metrics_1h}`
+- **Endpoint**: `GET /api/ops-events/connectors/health` — All connectors with standardized health data
+- **Impact Analysis**: `GET /api/ops-events/impact-analysis` — Channels impacted by severity over time window
+
+#### P1.5: Auto-Remediation Rules v1 (DONE)
+- **Engine**: `auto_remediation_engine.py` — Background rule evaluator (60s cycle)
+- **Rules**:
+  1. **Connector Degradation**: 3+ failures in 10min → auto-degrade connector status
+  2. **Alert Escalation**: 5+ terminal failures in 10min → escalate severity to critical
+  3. **Rate Limit Queueing**: On active throttle → enable controlled queueing
+  4. **Recovery Drain**: On rate limit cleared → start backlog drain
+  5. **DLQ Auto-Resolve**: On successful DLQ retry → emit incident.auto_resolved event
+- **Control Endpoints**:
+  - `GET /api/ops-events/remediation/status` — Engine status and rule config
+  - `POST /api/ops-events/remediation/start` — Start engine
+  - `POST /api/ops-events/remediation/stop` — Stop engine
+  - `POST /api/ops-events/connectors/{id}/recover` — Manual recover
+  - `POST /api/ops-events/connectors/{id}/degrade` — Manual degrade
+
+- **New Backend Files**: `ops_timeline_router.py`, `auto_remediation_engine.py`
+- **Modified Frontend**: `ChannelOpsPage.jsx` (Dashboard v2 with drilldown, health scoring, prioritized feed), `IncidentDrilldownDrawer.jsx` (new component)
+
 ## Future / Backlog (P2+)
 - ~~Automatic retry mechanism with exponential backoff for failed webhook deliveries~~ → DONE (2026-04-09)
+- ~~Correlation timeline + drilldown for root cause analysis~~ → DONE (Sprint 2, 2026-04-09)
+- ~~Unified connector health contract~~ → DONE (Sprint 2, 2026-04-09)
+- ~~Auto-remediation rules v1~~ → DONE (Sprint 2, 2026-04-09)
 - B2B Analytics Dashboard (agency API key usage, booking rates, top queries)
 - ~~Channel Manager Dashboard (reservations, failed imports, push queue, health)~~ → DONE (2026-04-09)
-- Admin UI Panel for encryption management
+- Admin UI Panel for encryption management (P2 — deferred per user request)
 - Make unassigned reservations more prominent in calendar
 - Improve Auto Room Mapping (capacity + base price matching)
 - Refactor: BasicReports.jsx (>1200 lines) — component extraction
@@ -258,3 +302,11 @@ Turkish (All responses must be in Turkish)
 - `GET /api/ops-events/list` / `GET .../webhook-deliveries` / `GET .../webhook-dlq`
 - `POST /api/ops-events/webhook-dlq/{id}/retry`
 - `GET /api/ops-events/rate-limit-status` / `GET .../channel-health` / `GET .../dashboard-summary`
+- `GET /api/ops-events/timeline/{correlation_id}` — Full event chain timeline
+- `GET /api/ops-events/incident/{event_id}/summary` — Incident summary with impact
+- `GET /api/ops-events/incidents/prioritized` — Priority-sorted incident feed
+- `GET /api/ops-events/connectors/health` — Unified health contract for all connectors
+- `GET /api/ops-events/impact-analysis` — Impact analysis by channel
+- `GET /api/ops-events/remediation/status` — Auto-remediation engine status
+- `POST /api/ops-events/remediation/start` / `.../stop` — Engine control
+- `POST /api/ops-events/connectors/{id}/recover` / `.../degrade` — Manual connector control

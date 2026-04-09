@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import IncidentDrilldownDrawer from '@/components/ops/IncidentDrilldownDrawer';
 import {
   Activity,
   AlertTriangle,
@@ -24,6 +25,11 @@ import {
   TrendingUp,
   AlertCircle,
   Inbox,
+  ChevronRight,
+  Filter,
+  Gauge,
+  Target,
+  BarChart3,
 } from 'lucide-react';
 
 const API = import.meta.env.VITE_BACKEND_URL;
@@ -35,7 +41,7 @@ const getAuthHeaders = () => {
 
 // ── Helper components ──────────────────────────────────────────────
 
-const StatCard = ({ title, value, subtitle, icon: Icon, color = 'blue', badge }) => {
+const StatCard = ({ title, value, subtitle, icon: Icon, color = 'blue', badge, onClick }) => {
   const colorMap = {
     blue: 'bg-blue-50 text-blue-700 border-blue-200',
     green: 'bg-green-50 text-green-700 border-green-200',
@@ -45,7 +51,11 @@ const StatCard = ({ title, value, subtitle, icon: Icon, color = 'blue', badge })
     gray: 'bg-gray-50 text-gray-700 border-gray-200',
   };
   return (
-    <div className={`rounded-lg border p-4 ${colorMap[color] || colorMap.blue}`} data-testid={`stat-${title?.replace(/\s+/g, '-')?.toLowerCase()}`}>
+    <div 
+      className={`rounded-lg border p-4 ${colorMap[color] || colorMap.blue} ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`} 
+      onClick={onClick}
+      data-testid={`stat-${title?.replace(/\s+/g, '-')?.toLowerCase()}`}
+    >
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-medium uppercase tracking-wider opacity-75">{title}</span>
         {Icon && <Icon className="w-4 h-4 opacity-60" />}
@@ -101,6 +111,29 @@ const StatusBadge = ({ status }) => {
   );
 };
 
+const HealthScoreBadge = ({ score, size = 'md' }) => {
+  const getColor = (s) => {
+    if (s >= 80) return 'bg-green-500';
+    if (s >= 50) return 'bg-orange-500';
+    return 'bg-red-500';
+  };
+  const getLabel = (s) => {
+    if (s >= 80) return 'Sağlıklı';
+    if (s >= 50) return 'Düşük';
+    return 'Kritik';
+  };
+  const sizeClass = size === 'lg' ? 'w-14 h-14 text-lg' : 'w-10 h-10 text-sm';
+  
+  return (
+    <div className="flex items-center gap-2">
+      <div className={`${sizeClass} ${getColor(score)} rounded-full flex items-center justify-center text-white font-bold`}>
+        {score}
+      </div>
+      <span className="text-sm font-medium text-gray-700">{getLabel(score)}</span>
+    </div>
+  );
+};
+
 const HealthIndicator = ({ health }) => {
   const map = {
     healthy: { color: 'bg-green-500', label: 'Sağlıklı' },
@@ -113,6 +146,21 @@ const HealthIndicator = ({ health }) => {
       <div className={`w-2.5 h-2.5 rounded-full ${h.color} animate-pulse`} />
       <span className="text-sm font-medium">{h.label}</span>
     </div>
+  );
+};
+
+const PriorityBadge = ({ priority, label }) => {
+  const map = {
+    1: 'bg-red-600 text-white',
+    2: 'bg-red-500 text-white',
+    3: 'bg-orange-500 text-white',
+    4: 'bg-yellow-500 text-gray-900',
+    5: 'bg-green-500 text-white',
+  };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${map[priority] || map[4]}`}>
+      {label || `P${priority}`}
+    </span>
   );
 };
 
@@ -134,6 +182,163 @@ const TimeAgo = ({ timestamp }) => {
   return <span className="text-xs text-gray-500" title={then.toLocaleString('tr-TR')}>{text}</span>;
 };
 
+// ── Prioritized Incident Card ──────────────────────────────────────
+
+const IncidentCard = ({ incident, onOpenTimeline, onRetry }) => {
+  const getIcon = () => {
+    if (incident.type === 'dlq') return <Inbox className="w-4 h-4" />;
+    if (incident.priority <= 2) return <AlertCircle className="w-4 h-4" />;
+    if (incident.priority <= 4) return <AlertTriangle className="w-4 h-4" />;
+    return <CheckCircle2 className="w-4 h-4" />;
+  };
+
+  const getBorderColor = () => {
+    if (incident.priority === 1) return 'border-red-400 bg-red-50/70';
+    if (incident.priority === 2) return 'border-red-300 bg-red-50/50';
+    if (incident.priority === 3) return 'border-orange-300 bg-orange-50/50';
+    if (incident.priority === 4) return 'border-yellow-300 bg-yellow-50/50';
+    return 'border-green-300 bg-green-50/50';
+  };
+
+  return (
+    <div 
+      className={`border rounded-lg p-3 ${getBorderColor()} hover:shadow-md transition-shadow cursor-pointer`}
+      onClick={() => incident.correlation_id && onOpenTimeline(incident.correlation_id)}
+      data-testid={`incident-card-${incident.id}`}
+    >
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex items-center gap-2">
+          {getIcon()}
+          <PriorityBadge priority={incident.priority} label={incident.priority_label} />
+        </div>
+        <TimeAgo timestamp={incident.created_at} />
+      </div>
+      
+      <h4 className="font-medium text-sm text-gray-900 mb-1 line-clamp-1">{incident.title}</h4>
+      
+      {incident.description && (
+        <p className="text-xs text-gray-600 line-clamp-2 mb-2">{incident.description}</p>
+      )}
+      
+      <div className="flex items-center justify-between mt-2">
+        <div className="flex items-center gap-2">
+          {incident.event_type && (
+            <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded">{incident.event_type}</span>
+          )}
+          {incident.status && <StatusBadge status={incident.status} />}
+        </div>
+        
+        <div className="flex items-center gap-1">
+          {incident.actionable && incident.action_type === 'retry' && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 text-xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRetry(incident.id);
+              }}
+              data-testid={`incident-retry-${incident.id}`}
+            >
+              <RotateCcw className="w-3 h-3 mr-1" />
+              Retry
+            </Button>
+          )}
+          {incident.correlation_id && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 text-xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenTimeline(incident.correlation_id);
+              }}
+              data-testid={`incident-timeline-${incident.id}`}
+            >
+              <Eye className="w-3 h-3 mr-1" />
+              Timeline
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Connector Health Card (Unified Contract) ───────────────────────
+
+const ConnectorHealthCard = ({ connector, onOpenTimeline }) => {
+  const getStatusBg = () => {
+    if (connector.status === 'critical') return 'border-red-300 bg-red-50';
+    if (connector.status === 'degraded') return 'border-orange-300 bg-orange-50';
+    return 'border-green-300 bg-green-50';
+  };
+
+  return (
+    <Card className={`${getStatusBg()} hover:shadow-md transition-shadow`} data-testid={`connector-health-${connector.provider}`}>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            {connector.status === 'healthy' ? (
+              <Wifi className="w-5 h-5 text-green-600" />
+            ) : connector.status === 'degraded' ? (
+              <Wifi className="w-5 h-5 text-orange-600" />
+            ) : (
+              <WifiOff className="w-5 h-5 text-red-600" />
+            )}
+            <div>
+              <h3 className="font-semibold text-sm capitalize">{connector.provider}</h3>
+              {connector.property_name && (
+                <p className="text-xs text-gray-500">{connector.property_name}</p>
+              )}
+            </div>
+          </div>
+          <HealthScoreBadge score={connector.health_score} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 text-xs mb-3">
+          <div className="flex justify-between">
+            <span className="text-gray-500">Failure Rate (1s):</span>
+            <span className={`font-medium ${connector.failure_rate_1h > 10 ? 'text-red-600' : 'text-gray-700'}`}>
+              %{connector.failure_rate_1h}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-500">DLQ:</span>
+            <span className={`font-medium ${connector.dlq_count > 0 ? 'text-red-600' : 'text-gray-700'}`}>
+              {connector.dlq_count}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-500">Retry Backlog:</span>
+            <span className={`font-medium ${connector.retry_backlog > 5 ? 'text-orange-600' : 'text-gray-700'}`}>
+              {connector.retry_backlog}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-500">Throttle:</span>
+            <span className={`font-medium ${connector.throttle_active ? 'text-orange-600' : 'text-gray-700'}`}>
+              {connector.throttle_active ? 'Aktif' : 'Normal'}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between text-xs border-t pt-2">
+          <div>
+            <span className="text-gray-500">Son Başarılı:</span>
+            <TimeAgo timestamp={connector.last_success_at} />
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-gray-500">1s Ops:</span>
+            <span className="font-medium">{connector.metrics_1h?.total_operations || 0}</span>
+            <span className={`text-green-600`}>(%{connector.metrics_1h?.success_rate || 0})</span>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
 // ── Main Component ─────────────────────────────────────────────────
 
 const ChannelOpsPage = () => {
@@ -146,6 +351,14 @@ const ChannelOpsPage = () => {
   const [deliveries, setDeliveries] = useState([]);
   const [opsEvents, setOpsEvents] = useState([]);
   const [retryingDlq, setRetryingDlq] = useState(null);
+  
+  // Sprint 2: New state
+  const [prioritizedIncidents, setPrioritizedIncidents] = useState({ incidents: [], counts: {} });
+  const [connectorsHealth, setConnectorsHealth] = useState({ connectors: [], summary: {} });
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedCorrelationId, setSelectedCorrelationId] = useState(null);
+  const [selectedEventId, setSelectedEventId] = useState(null);
+  const [incidentFilter, setIncidentFilter] = useState('all');
 
   const fetchDashboard = useCallback(async () => {
     try {
@@ -189,11 +402,36 @@ const ChannelOpsPage = () => {
     } catch {}
   }, []);
 
+  // Sprint 2: Fetch prioritized incidents
+  const fetchPrioritizedIncidents = useCallback(async () => {
+    try {
+      const resp = await axios.get(`${API}/api/ops-events/incidents/prioritized?include_resolved=true`, {
+        headers: getAuthHeaders(),
+      });
+      setPrioritizedIncidents(resp.data);
+    } catch {}
+  }, []);
+
+  // Sprint 2: Fetch connectors health
+  const fetchConnectorsHealth = useCallback(async () => {
+    try {
+      const resp = await axios.get(`${API}/api/ops-events/connectors/health`, {
+        headers: getAuthHeaders(),
+      });
+      setConnectorsHealth(resp.data);
+    } catch {}
+  }, []);
+
   useEffect(() => {
     fetchDashboard();
-    const interval = setInterval(fetchDashboard, 15000); // 15s auto-refresh
+    fetchPrioritizedIncidents();
+    fetchConnectorsHealth();
+    const interval = setInterval(() => {
+      fetchDashboard();
+      fetchPrioritizedIncidents();
+    }, 15000); // 15s auto-refresh
     return () => clearInterval(interval);
-  }, [fetchDashboard]);
+  }, [fetchDashboard, fetchPrioritizedIncidents, fetchConnectorsHealth]);
 
   useEffect(() => {
     if (activeTab === 'webhooks') {
@@ -201,12 +439,16 @@ const ChannelOpsPage = () => {
       fetchDlq();
     } else if (activeTab === 'events') {
       fetchOpsEvents();
+    } else if (activeTab === 'channels') {
+      fetchConnectorsHealth();
     }
-  }, [activeTab, fetchDeliveries, fetchDlq, fetchOpsEvents]);
+  }, [activeTab, fetchDeliveries, fetchDlq, fetchOpsEvents, fetchConnectorsHealth]);
 
   const handleRefresh = () => {
     setRefreshing(true);
     fetchDashboard();
+    fetchPrioritizedIncidents();
+    fetchConnectorsHealth();
     if (activeTab === 'webhooks') {
       fetchDeliveries();
       fetchDlq();
@@ -223,12 +465,40 @@ const ChannelOpsPage = () => {
       fetchDlq();
       fetchDeliveries();
       fetchDashboard();
+      fetchPrioritizedIncidents();
     } catch (err) {
       alert(err.response?.data?.detail || 'Retry başarısız');
     } finally {
       setRetryingDlq(null);
     }
   };
+
+  const openTimelineDrawer = (correlationId) => {
+    setSelectedCorrelationId(correlationId);
+    setSelectedEventId(null);
+    setDrawerOpen(true);
+  };
+
+  const openEventDrawer = (eventId) => {
+    setSelectedEventId(eventId);
+    setSelectedCorrelationId(null);
+    setDrawerOpen(true);
+  };
+
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    setSelectedCorrelationId(null);
+    setSelectedEventId(null);
+  };
+
+  // Filter incidents
+  const filteredIncidents = prioritizedIncidents.incidents.filter(inc => {
+    if (incidentFilter === 'all') return true;
+    if (incidentFilter === 'critical') return inc.priority <= 2;
+    if (incidentFilter === 'warning') return inc.priority === 3 || inc.priority === 4;
+    if (incidentFilter === 'resolved') return inc.priority === 5;
+    return true;
+  });
 
   if (loading) {
     return (
@@ -247,6 +517,7 @@ const ChannelOpsPage = () => {
   const recentEvents = data?.recent_events || [];
   const recentImports = data?.recent_imports || [];
   const lastPushes = data?.last_successful_pushes || [];
+  const healthSummary = connectorsHealth.summary || {};
 
   return (
     <Layout>
@@ -259,13 +530,19 @@ const ChannelOpsPage = () => {
               Kanal Operasyon Merkezi
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              Webhook teslimat, rate limit, kanal sağlığı ve operasyonel olaylar
+              Operasyonel kontrol, kök neden analizi ve aksiyon yönetimi
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {/* Overall Health Badge */}
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-100">
+              <Gauge className="w-4 h-4" />
+              <span className="text-sm font-medium">Genel Sağlık:</span>
+              <StatusBadge status={healthSummary.overall_health || 'healthy'} />
+            </div>
             {data?.generated_at && (
-              <span className="text-xs text-gray-400">
-                Son güncelleme: <TimeAgo timestamp={data.generated_at} />
+              <span className="text-xs text-gray-400 hidden md:block">
+                Son: <TimeAgo timestamp={data.generated_at} />
               </span>
             )}
             <Button
@@ -291,8 +568,16 @@ const ChannelOpsPage = () => {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList className="bg-gray-100">
             <TabsTrigger value="overview" data-testid="tab-overview">Genel Bakış</TabsTrigger>
-            <TabsTrigger value="webhooks" data-testid="tab-webhooks">Webhook Teslimat</TabsTrigger>
-            <TabsTrigger value="channels" data-testid="tab-channels">Kanal Sağlığı</TabsTrigger>
+            <TabsTrigger value="incidents" data-testid="tab-incidents">
+              Öncelikli Olaylar
+              {prioritizedIncidents.counts?.dlq_pending > 0 && (
+                <Badge className="ml-1.5 bg-red-500 text-white text-[10px] px-1.5">
+                  {prioritizedIncidents.counts.dlq_pending}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="webhooks" data-testid="tab-webhooks">Webhook</TabsTrigger>
+            <TabsTrigger value="channels" data-testid="tab-channels">Connector Sağlığı</TabsTrigger>
             <TabsTrigger value="events" data-testid="tab-events">Olay Akışı</TabsTrigger>
           </TabsList>
 
@@ -318,6 +603,7 @@ const ChannelOpsPage = () => {
                 value={wh.failed || 0}
                 icon={XCircle}
                 color="red"
+                onClick={() => setActiveTab('incidents')}
               />
               <StatCard
                 title="Retry Bekliyor"
@@ -330,6 +616,7 @@ const ChannelOpsPage = () => {
                 value={wh.dlq_pending || 0}
                 icon={Inbox}
                 color={wh.dlq_pending > 0 ? 'red' : 'gray'}
+                onClick={() => setActiveTab('incidents')}
               />
               <StatCard
                 title="Throttle (24s)"
@@ -354,148 +641,167 @@ const ChannelOpsPage = () => {
               </div>
             )}
 
-            {/* Channels Grid */}
+            {/* Connector Health Overview */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Wifi className="w-4 h-4" />
-                  Kanal Durumu
+                <CardTitle className="text-base flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Gauge className="w-4 h-4" />
+                    Connector Sağlık Özeti
+                  </span>
+                  <div className="flex items-center gap-2 text-sm font-normal">
+                    <span className="flex items-center gap-1">
+                      <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
+                      {healthSummary.healthy || 0}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <div className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                      {healthSummary.degraded || 0}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                      {healthSummary.critical || 0}
+                    </span>
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {channels.length === 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-4">Bağlı kanal bulunamadı</p>
+                {(connectorsHealth.connectors || []).length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-4">Bağlı connector bulunamadı</p>
                 ) : (
                   <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {channels.map((ch, i) => (
-                      <div
-                        key={ch.connector_id || i}
-                        className="border rounded-lg p-4 space-y-3"
-                        data-testid={`channel-card-${ch.provider}`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            {ch.health === 'healthy' ? (
-                              <Wifi className="w-4 h-4 text-green-600" />
-                            ) : (
-                              <WifiOff className="w-4 h-4 text-red-600" />
-                            )}
-                            <span className="font-medium text-sm capitalize">{ch.provider}</span>
-                          </div>
-                          <HealthIndicator health={ch.health} />
-                        </div>
-                        {ch.property_name && (
-                          <p className="text-xs text-gray-500">{ch.property_name}</p>
-                        )}
-                        <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div>
-                            <span className="text-gray-500">Push (24s):</span>
-                            <span className="ml-1 font-medium">{ch.total_pushes_24h}</span>
-                          </div>
-                          <div>
-                            <span className="text-gray-500">Başarısız:</span>
-                            <span className="ml-1 font-medium text-red-600">{ch.failed_pushes_24h}</span>
-                          </div>
-                          <div>
-                            <span className="text-gray-500">Başarı:</span>
-                            <span className="ml-1 font-medium">%{ch.push_success_rate_24h}</span>
-                          </div>
-                          <div>
-                            <span className="text-gray-500">Son sync:</span>
-                            <TimeAgo timestamp={ch.last_sync_at} />
-                          </div>
-                        </div>
-                      </div>
+                    {(connectorsHealth.connectors || []).map((conn) => (
+                      <ConnectorHealthCard
+                        key={conn.connector_id}
+                        connector={conn}
+                        onOpenTimeline={openTimelineDrawer}
+                      />
                     ))}
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* Recent Events + Last Pushes */}
-            <div className="grid md:grid-cols-2 gap-4">
-              {/* Recent Failures */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <XCircle className="w-4 h-4 text-red-500" />
-                    Son Başarısız Teslimatlar
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {(wh.recent_failures || []).length === 0 ? (
-                    <p className="text-sm text-gray-500 text-center py-4">Başarısız teslimat yok</p>
-                  ) : (
-                    <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                      {(wh.recent_failures || []).map((f, i) => (
-                        <div key={f.id || i} className="border rounded p-3 text-xs space-y-1 bg-red-50/50">
-                          <div className="flex items-center justify-between">
-                            <StatusBadge status={f.status} />
-                            <TimeAgo timestamp={f.created_at} />
-                          </div>
-                          <p className="text-gray-700 font-medium">{f.event}</p>
-                          <p className="text-gray-500 truncate">{f.url}</p>
-                          <p className="text-red-600">{f.last_error}</p>
-                          <p className="text-gray-400">Deneme: {f.attempt_count}/{5}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Last Successful Pushes */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-green-500" />
-                    Son Başarılı Push'lar
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {lastPushes.length === 0 ? (
-                    <p className="text-sm text-gray-500 text-center py-4">Henüz push kaydı yok</p>
-                  ) : (
-                    <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                      {lastPushes.map((p, i) => (
-                        <div key={i} className="border rounded p-3 text-xs space-y-1 bg-green-50/50">
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium capitalize">{p.provider}</span>
-                            <TimeAgo timestamp={p.last_success_at} />
-                          </div>
-                          <p className="text-gray-500">Latency: {p.latency_ms}ms</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Recent Imports */}
-            {recentImports.length > 0 && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <ArrowRight className="w-4 h-4" />
-                    Son Import İşlemleri
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                    {recentImports.map((ev, i) => (
-                      <div key={ev.id || i} className="border rounded p-3 text-xs flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <SeverityBadge severity={ev.severity} />
-                          <span className="font-medium">{ev.title}</span>
-                        </div>
-                        <TimeAgo timestamp={ev.created_at} />
-                      </div>
+            {/* Recent Incidents Quick View */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Target className="w-4 h-4 text-red-500" />
+                    Öncelikli Olaylar (Son)
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('incidents')}>
+                    Tümünü Gör <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {filteredIncidents.length === 0 ? (
+                  <div className="text-center py-6 text-gray-500">
+                    <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-green-500 opacity-50" />
+                    <p className="text-sm">Bekleyen kritik olay yok</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                    {filteredIncidents.slice(0, 5).map((inc) => (
+                      <IncidentCard
+                        key={inc.id}
+                        incident={inc}
+                        onOpenTimeline={openTimelineDrawer}
+                        onRetry={handleDlqRetry}
+                      />
                     ))}
                   </div>
-                </CardContent>
-              </Card>
-            )}
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ═══════ INCIDENTS TAB (Sprint 2 P1) ═══════ */}
+          <TabsContent value="incidents" className="space-y-6" data-testid="tab-content-incidents">
+            {/* Incident Counts */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <StatCard
+                title="DLQ Bekliyor"
+                value={prioritizedIncidents.counts?.dlq_pending || 0}
+                icon={Inbox}
+                color="red"
+              />
+              <StatCard
+                title="Throttle Aktif"
+                value={prioritizedIncidents.counts?.throttle_active || 0}
+                icon={Timer}
+                color="orange"
+              />
+              <StatCard
+                title="Terminal Failure"
+                value={prioritizedIncidents.counts?.terminal_failures || 0}
+                icon={XCircle}
+                color="red"
+              />
+              <StatCard
+                title="Uyarılar"
+                value={prioritizedIncidents.counts?.warnings || 0}
+                icon={AlertTriangle}
+                color="orange"
+              />
+              <StatCard
+                title="Çözülen"
+                value={prioritizedIncidents.counts?.resolved || 0}
+                icon={CheckCircle2}
+                color="green"
+              />
+            </div>
+
+            {/* Filter */}
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-gray-500" />
+              <span className="text-sm text-gray-500">Filtre:</span>
+              {['all', 'critical', 'warning', 'resolved'].map((filter) => (
+                <Button
+                  key={filter}
+                  variant={incidentFilter === filter ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setIncidentFilter(filter)}
+                  data-testid={`filter-${filter}`}
+                >
+                  {filter === 'all' && 'Tümü'}
+                  {filter === 'critical' && 'Kritik'}
+                  {filter === 'warning' && 'Uyarı'}
+                  {filter === 'resolved' && 'Çözülen'}
+                </Button>
+              ))}
+            </div>
+
+            {/* Prioritized Incident List */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Target className="w-4 h-4" />
+                  Öncelikli Olay Listesi
+                  <Badge variant="outline" className="ml-2">{filteredIncidents.length} olay</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {filteredIncidents.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-green-500 opacity-50" />
+                    <p className="text-sm">Seçili filtreye göre olay bulunamadı</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                    {filteredIncidents.map((inc) => (
+                      <IncidentCard
+                        key={inc.id}
+                        incident={inc}
+                        onOpenTimeline={openTimelineDrawer}
+                        onRetry={handleDlqRetry}
+                      />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* ═══════ WEBHOOKS TAB ═══════ */}
@@ -522,7 +828,12 @@ const ChannelOpsPage = () => {
                 ) : (
                   <div className="space-y-3 max-h-[400px] overflow-y-auto">
                     {dlqItems.map((item) => (
-                      <div key={item.id} className="border border-red-200 bg-red-50/50 rounded-lg p-4 space-y-2" data-testid={`dlq-item-${item.id}`}>
+                      <div 
+                        key={item.id} 
+                        className="border border-red-200 bg-red-50/50 rounded-lg p-4 space-y-2 cursor-pointer hover:shadow-md transition-shadow" 
+                        onClick={() => item.correlation_id && openTimelineDrawer(item.correlation_id)}
+                        data-testid={`dlq-item-${item.id}`}
+                      >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <StatusBadge status={item.status} />
@@ -535,7 +846,10 @@ const ChannelOpsPage = () => {
                                 size="sm"
                                 variant="outline"
                                 className="text-xs h-7"
-                                onClick={() => handleDlqRetry(item.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDlqRetry(item.id);
+                                }}
                                 disabled={retryingDlq === item.id}
                                 data-testid={`dlq-retry-${item.id}`}
                               >
@@ -545,6 +859,20 @@ const ChannelOpsPage = () => {
                                   <RotateCcw className="w-3 h-3 mr-1" />
                                 )}
                                 Retry
+                              </Button>
+                            )}
+                            {item.correlation_id && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-xs h-7"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openTimelineDrawer(item.correlation_id);
+                                }}
+                              >
+                                <Eye className="w-3 h-3 mr-1" />
+                                Timeline
                               </Button>
                             )}
                           </div>
@@ -583,7 +911,8 @@ const ChannelOpsPage = () => {
                           <th className="pb-2 pr-3">URL</th>
                           <th className="pb-2 pr-3">Deneme</th>
                           <th className="pb-2 pr-3">Son Hata</th>
-                          <th className="pb-2">Zaman</th>
+                          <th className="pb-2 pr-3">Zaman</th>
+                          <th className="pb-2">Aksiyon</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -594,7 +923,19 @@ const ChannelOpsPage = () => {
                             <td className="py-2 pr-3 text-gray-500 max-w-[200px] truncate">{d.url}</td>
                             <td className="py-2 pr-3">{d.attempt_count}/{d.max_attempts || 5}</td>
                             <td className="py-2 pr-3 text-red-600 max-w-[200px] truncate">{d.last_error || '—'}</td>
-                            <td className="py-2"><TimeAgo timestamp={d.created_at} /></td>
+                            <td className="py-2 pr-3"><TimeAgo timestamp={d.created_at} /></td>
+                            <td className="py-2">
+                              {d.correlation_id && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 text-xs"
+                                  onClick={() => openTimelineDrawer(d.correlation_id)}
+                                >
+                                  <Eye className="w-3 h-3" />
+                                </Button>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -605,7 +946,7 @@ const ChannelOpsPage = () => {
             </Card>
           </TabsContent>
 
-          {/* ═══════ CHANNELS TAB ═══════ */}
+          {/* ═══════ CHANNELS TAB (Sprint 2 P1 - Unified Health Contract) ═══════ */}
           <TabsContent value="channels" className="space-y-6" data-testid="tab-content-channels">
             {/* Rate Limit Status */}
             <Card>
@@ -639,46 +980,49 @@ const ChannelOpsPage = () => {
               </CardContent>
             </Card>
 
-            {/* Detailed Channel Cards */}
-            {channels.length === 0 ? (
-              <Card>
-                <CardContent className="py-8 text-center text-gray-500">
-                  <WifiOff className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">Bağlı kanal bulunamadı</p>
-                </CardContent>
-              </Card>
-            ) : (
-              channels.map((ch, i) => (
-                <Card key={ch.connector_id || i} data-testid={`channel-detail-${ch.provider}`}>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-base flex items-center gap-2 capitalize">
-                        {ch.health === 'healthy' ? (
-                          <Wifi className="w-4 h-4 text-green-600" />
-                        ) : (
-                          <WifiOff className="w-4 h-4 text-red-600" />
-                        )}
-                        {ch.provider}
-                        {ch.property_name && <span className="text-gray-400 font-normal">— {ch.property_name}</span>}
-                      </CardTitle>
-                      <HealthIndicator health={ch.health} />
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                      <StatCard title="Push (24s)" value={ch.total_pushes_24h} icon={Send} color="blue" />
-                      <StatCard title="Başarısız" value={ch.failed_pushes_24h} icon={XCircle} color={ch.failed_pushes_24h > 0 ? 'red' : 'gray'} />
-                      <StatCard title="Başarı Oranı" value={`%${ch.push_success_rate_24h}`} icon={TrendingUp} color="green" />
-                      <StatCard title="Durum" value={ch.status || 'N/A'} icon={Zap} color="purple" />
-                      <div className="rounded-lg border p-4 bg-gray-50 text-gray-700">
-                        <p className="text-xs font-medium uppercase tracking-wider opacity-75 mb-2">Son Sync</p>
-                        <TimeAgo timestamp={ch.last_sync_at} />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
+            {/* Unified Connector Health Cards */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Gauge className="w-4 h-4" />
+                    Connector Sağlık Durumu (Standart Şema)
+                  </span>
+                  <div className="flex items-center gap-2 text-sm font-normal">
+                    <span className="flex items-center gap-1">
+                      <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
+                      {healthSummary.healthy || 0} Sağlıklı
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <div className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                      {healthSummary.degraded || 0} Düşük
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                      {healthSummary.critical || 0} Kritik
+                    </span>
+                  </div>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {(connectorsHealth.connectors || []).length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <WifiOff className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">Bağlı connector bulunamadı</p>
+                  </div>
+                ) : (
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {(connectorsHealth.connectors || []).map((conn) => (
+                      <ConnectorHealthCard
+                        key={conn.connector_id}
+                        connector={conn}
+                        onOpenTimeline={openTimelineDrawer}
+                      />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* ═══════ EVENTS TAB ═══════ */}
@@ -703,12 +1047,13 @@ const ChannelOpsPage = () => {
                     {opsEvents.map((ev) => (
                       <div
                         key={ev.id}
-                        className={`border rounded-lg p-3 text-xs space-y-1 ${
+                        className={`border rounded-lg p-3 text-xs space-y-1 cursor-pointer hover:shadow-md transition-shadow ${
                           ev.severity === 'critical' ? 'border-red-200 bg-red-50/50' :
                           ev.severity === 'warning' ? 'border-orange-200 bg-orange-50/50' :
                           ev.severity === 'success' ? 'border-green-200 bg-green-50/50' :
                           'border-gray-200 bg-gray-50/50'
                         }`}
+                        onClick={() => ev.correlation_id ? openTimelineDrawer(ev.correlation_id) : openEventDrawer(ev.id)}
                         data-testid={`event-${ev.id}`}
                       >
                         <div className="flex items-center justify-between">
@@ -716,12 +1061,27 @@ const ChannelOpsPage = () => {
                             <SeverityBadge severity={ev.severity} />
                             <span className="font-medium text-gray-900">{ev.title}</span>
                           </div>
-                          <TimeAgo timestamp={ev.created_at} />
+                          <div className="flex items-center gap-2">
+                            <TimeAgo timestamp={ev.created_at} />
+                            {ev.correlation_id && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 text-[10px] px-1"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openTimelineDrawer(ev.correlation_id);
+                                }}
+                              >
+                                <Eye className="w-3 h-3" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
                         <div className="flex items-center gap-3 text-gray-500">
                           <span className="bg-gray-100 px-2 py-0.5 rounded">{ev.event_type}</span>
                           {ev.channel && <span>Kanal: {ev.channel}</span>}
-                          {ev.correlation_id && <span className="truncate max-w-[120px]">Corr: {ev.correlation_id}</span>}
+                          {ev.correlation_id && <span className="truncate max-w-[120px]">Corr: {ev.correlation_id.slice(0, 8)}...</span>}
                         </div>
                         {ev.details && Object.keys(ev.details).length > 0 && (
                           <details className="mt-1">
@@ -740,6 +1100,19 @@ const ChannelOpsPage = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Drilldown Drawer */}
+      <IncidentDrilldownDrawer
+        open={drawerOpen}
+        onClose={closeDrawer}
+        correlationId={selectedCorrelationId}
+        eventId={selectedEventId}
+        onRetryDlq={() => {
+          fetchDlq();
+          fetchDashboard();
+          fetchPrioritizedIncidents();
+        }}
+      />
     </Layout>
   );
 };

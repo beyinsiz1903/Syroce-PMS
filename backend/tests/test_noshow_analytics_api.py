@@ -8,7 +8,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://ops-resilience-gaps.preview.emergentagent.com')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://ops-dashboard-148.preview.emergentagent.com')
 if not BASE_URL.endswith('/api'):
     BASE_URL = BASE_URL.rstrip('/') + '/api'
 

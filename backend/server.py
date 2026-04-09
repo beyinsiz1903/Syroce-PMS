@@ -342,6 +342,14 @@ try:
 except Exception as _ops_err:
     logger.warning(f"Ops Events router skipped: {_ops_err}")
 
+# ── Ops Timeline & Incident Correlation Router ──────────────────────
+try:
+    from routers.ops_timeline_router import router as ops_timeline_router
+    app.include_router(ops_timeline_router, tags=["Ops Timeline & Incidents"])
+    logger.info("  ✅ Ops Timeline & Incidents router loaded")
+except Exception as _timeline_err:
+    logger.warning(f"Ops Timeline router skipped: {_timeline_err}")
+
 
 # ── Lifecycle events ────────────────────────────────────────────────
 from startup import on_shutdown, on_startup  # noqa: E402
