@@ -159,6 +159,17 @@ Turkish (All responses must be in Turkish)
 - Resolved duplicate `data-testid` issue caused by dual mobile/desktop rendering - added `data-testid="reports-mobile-content"` and `data-testid="reports-desktop-content"` wrappers
 - Search filtering verified working (tested with "Deniz" query, correctly returned 6 filtered results)
 
+### Infrastructure Tab Audit & Consolidation (DONE - 2026-04-09)
+- **Audit**: All 11 Infrastructure tabs analyzed — live data connectivity, completeness, API status, functional overlap
+- **Bug Fix 1**: Security Hardening backend HTTP 500 — `tenant_scoped_queries.py` used tenant-proxied `db` for admin isolation check → `TenantViolationError`. Fixed with `_raw_db`.
+- **Bug Fix 2**: PII Strict Mode frontend URL bug — missing `/api` prefix and base URL in axios calls. Fixed.
+- **Consolidation**: Removed 3 overlapping tabs from nav:
+  - `Observability` → System Health already covers it
+  - `PII Strict Mode` → Merged as "PII Koruma" tab in Security Hardening
+  - `Infrastructure Hardening` → Merged as "Altyapı" tab in Security Hardening
+- **Result**: Infrastructure dropdown: 11 → 8 items. Direct URLs still work standalone.
+- **Test Result**: Backend 7/7, Frontend 100% — iteration_208.json
+
 ## Future / Backlog (P2+)
 - Automatic retry mechanism with exponential backoff for failed webhook deliveries
 - B2B Analytics Dashboard (agency API key usage, booking rates, top queries)
@@ -166,9 +177,13 @@ Turkish (All responses must be in Turkish)
 - Admin UI Panel for encryption management
 - Make unassigned reservations more prominent in calendar
 - Improve Auto Room Mapping (capacity + base price matching)
+- Refactor: BasicReports.jsx (>1200 lines) — component extraction
 - Refactor: hotelrunner_sync.py (~1000 lines)
 - Refactor: Evaluate deprecation of legacy hr_rate_manager_router.py and rate_manager_router.py
 - Real competitor price integration via SerpApi or OTA Insight (when budget allows)
+- Automated Email Scheduler for Reports (daily/weekly report dispatch)
+- Enterprise Live messaging overlap with MessagingDashboard — consider merging
+- Platform Scaling ML dashboard overlap with Analitik & Raporlar — consider merging
 
 ## Key DB Collections
 - `cm_connectors` — Encrypted channel credentials
