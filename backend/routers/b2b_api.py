@@ -126,72 +126,24 @@ class WebhookRegister(BaseModel):
     secret: str | None = None
 
 
-# ── Webhook Delivery Helper ─────────────────────────────────────
+# ── Webhook Delivery Helper (with retry + DLQ) ──────────────────
+
+from routers.webhook_retry_service import (
+    deliver_webhook_with_retry,
+    fire_webhooks_with_retry,
+)
+
 
 async def _deliver_webhook(webhook_doc: dict, event: str, data: dict):
-    """Fire-and-forget webhook delivery with signature."""
-    delivery_id = _uuid()
-    payload = {
-        "event": event,
-        "timestamp": _now_iso(),
-        "delivery_id": delivery_id,
-        "data": data,
-    }
-    import json
-    body = json.dumps(payload, default=str)
-
-    headers = {
-        "Content-Type": "application/json",
-        "X-Webhook-Event": event,
-        "X-Webhook-Delivery": delivery_id,
-    }
-
-    secret = webhook_doc.get("secret")
-    if secret:
-        sig = hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
-        headers["X-Webhook-Signature"] = f"sha256={sig}"
-
-    status_code = 0
-    error_msg = None
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(webhook_doc["url"], content=body, headers=headers)
-            status_code = resp.status_code
-    except Exception as exc:
-        error_msg = str(exc)
-        logger.warning("Webhook delivery failed for %s: %s", webhook_doc["url"], exc)
-
-    from core.tenant_db import get_system_db
-    sysdb = get_system_db()
-    await sysdb.webhook_deliveries.insert_one({
-        "id": delivery_id,
-        "webhook_id": webhook_doc["id"],
-        "agency_id": webhook_doc["agency_id"],
-        "tenant_id": webhook_doc["tenant_id"],
-        "event": event,
-        "url": webhook_doc["url"],
-        "status_code": status_code,
-        "error": error_msg,
-        "created_at": _now_iso(),
-    })
+    """Webhook delivery with exponential backoff retry + DLQ.
+    Replaces the old fire-and-forget approach.
+    """
+    return await deliver_webhook_with_retry(webhook_doc, event, data)
 
 
 async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
-    """Find all active webhooks for agency subscribed to event and deliver."""
-    from core.tenant_db import get_system_db
-    sysdb = get_system_db()
-    webhooks = await sysdb.agency_webhooks.find({
-        "tenant_id": tenant_id,
-        "agency_id": agency_id,
-        "is_active": True,
-        "events": event,
-    }, {"_id": 0}).to_list(50)
-
-    for wh in webhooks:
-        try:
-            await _deliver_webhook(wh, event, data)
-        except Exception as exc:
-            logger.error("Webhook fire error: %s", exc)
+    """Find all active webhooks for agency subscribed to event and deliver with retry."""
+    return await fire_webhooks_with_retry(tenant_id, agency_id, event, data)
 
 
 # ═════════════════════════════════════════════════════════════════

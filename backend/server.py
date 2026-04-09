@@ -334,6 +334,14 @@ try:
 except Exception as _notif_err:
     logger.warning(f"Notifications router skipped: {_notif_err}")
 
+# ── Ops Events & Telemetry Router ───────────────────────────────────
+try:
+    from routers.ops_events_router import router as ops_events_router
+    app.include_router(ops_events_router, tags=["Ops Events & Telemetry"])
+    logger.info("  ✅ Ops Events & Telemetry router loaded")
+except Exception as _ops_err:
+    logger.warning(f"Ops Events router skipped: {_ops_err}")
+
 
 # ── Lifecycle events ────────────────────────────────────────────────
 from startup import on_shutdown, on_startup  # noqa: E402
