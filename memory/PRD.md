@@ -91,6 +91,18 @@ Turkish (All responses must be in Turkish)
 - **New Endpoint**: `/api/messaging-center/activity?limit=N`
 - **Test Result**: Backend 13/13, Frontend 100% — iteration_203.json
 
+### i18n (Internationalization) Fix — Dashboard & Navigation (DONE - 2026-04-09)
+- **Problem**: Selecting any language other than Turkish still showed Turkish text everywhere
+- **Root Causes Fixed**:
+  1. `navGroups` translations were completely missing from all locale files — navigation groups fell back to hardcoded Turkish labels
+  2. Many `navKeys` were missing from en.json/tr.json — 30+ keys added
+  3. `CommandCenter.jsx` had all text hardcoded in Turkish — converted to use `useTranslation()` with 15+ translation keys
+  4. `PushSubscriptionManager.jsx` had hardcoded Turkish status labels and toast messages — converted to i18n
+  5. `Dashboard.jsx` Migration Observability card had hardcoded Turkish — converted to `t()` calls
+  6. AI Briefing endpoint (`/ai/dashboard/briefing`) always generated Turkish content — added `lang` query parameter, updated AI service prompts and fallback text to be language-aware
+- **Files Modified**: CommandCenter.jsx, PushSubscriptionManager.jsx, Dashboard.jsx, navItems.jsx (labels used as fallback), endpoints.py, service.py, all 10 locale JSON files
+- **Test Result**: Frontend 100% — iteration_204.json
+
 ## Pending / Known Issues
 - litellm CVE-2026-35030: Suppressed in `.trivyignore`. Upgrade to >=1.83.0 blocked by emergentintegrations dependency chain.
 
