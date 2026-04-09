@@ -90,7 +90,7 @@ jsonschema-specifications==2025.9.1
 kombu==5.6.2
 librt==0.8.1
 license-expression==30.4.4
-litellm==1.83.0
+litellm==1.80.0
 locust==2.43.3
 lxml==6.0.2
 markdown-it-py==4.0.0

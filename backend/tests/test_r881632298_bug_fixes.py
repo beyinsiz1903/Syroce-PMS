@@ -11,7 +11,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://channel-sync-15.preview.emergentagent.com')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://pms-messaging-hub.preview.emergentagent.com')
 
 
 class TestR881632298BugFixes:
