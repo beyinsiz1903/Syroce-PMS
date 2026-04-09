@@ -63,7 +63,7 @@ const QueueRow = ({ name, data }) => (
   </div>
 );
 
-export default function InfraHardeningDashboard({ user, tenant, onLogout }) {
+export default function InfraHardeningDashboard({ user, tenant, onLogout, embedded = false }) {
   const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -108,6 +108,7 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout }) {
   };
 
   if (loading) {
+    if (embedded) return <div data-testid="infra-loading" className="flex items-center justify-center min-h-[40vh]"><div className="text-zinc-400 animate-pulse text-lg">Altyapi durumu yukleniyor...</div></div>;
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="infra_hardening">
         <div data-testid="infra-loading" className="flex items-center justify-center min-h-[60vh]">
@@ -118,6 +119,7 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout }) {
   }
 
   if (error) {
+    if (embedded) return <div data-testid="infra-error" className="flex items-center justify-center min-h-[40vh]"><div className="text-red-400">Hata: {error}</div></div>;
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="infra_hardening">
         <div data-testid="infra-error" className="flex items-center justify-center min-h-[60vh]">
@@ -136,10 +138,10 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout }) {
   const container = data?.container || {};
   const locks = data?.distributed_locks || {};
 
-  return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="infra_hardening">
-      <div data-testid="infra-hardening-dashboard" className="space-y-6 p-4">
-        {/* Header */}
+  const dashboardContent = (
+    <div data-testid="infra-hardening-dashboard" className="space-y-6 p-4">
+      {/* Header */}
+      {!embedded && (
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-zinc-100">{t("techDashboards.infraHardening")}</h1>
@@ -155,6 +157,12 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout }) {
             Yenile
           </button>
         </div>
+      )}
+      {embedded && (
+        <div className="flex items-center justify-end">
+          <button data-testid="refresh-btn" onClick={fetchData} className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-300 hover:bg-zinc-700 transition">Yenile</button>
+        </div>
+      )}
 
         {/* Top Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
@@ -320,6 +328,13 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout }) {
           )}
         </Section>
       </div>
+  );
+
+  if (embedded) return dashboardContent;
+
+  return (
+    <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="infra_hardening">
+      {dashboardContent}
     </Layout>
   );
 }

@@ -25,7 +25,9 @@ import {
   Route,
 } from "lucide-react";
 
-function PIIStrictModeDashboard({ user, tenant, onLogout }) {
+const API = import.meta.env.VITE_BACKEND_URL;
+
+function PIIStrictModeDashboard({ user, tenant, onLogout, embedded = false }) {
   const navigate = useNavigate();
   const [config, setConfig] = useState(null);
   const [summary, setSummary] = useState(null);
@@ -35,15 +37,18 @@ function PIIStrictModeDashboard({ user, tenant, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
 
+  const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+  const headers = { Authorization: `Bearer ${token}` };
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
       const [cfgRes, sumRes, violRes, encRes, polRes] = await Promise.allSettled([
-        axios.get("/security/pii-strict-mode/config"),
-        axios.get("/security/pii-strict-mode/summary"),
-        axios.get("/security/pii-strict-mode/violations?limit=20"),
-        axios.get("/security/pii-strict-mode/encryption-status"),
-        axios.get("/security/pii-strict-mode/policy"),
+        axios.get(`${API}/api/security/pii-strict-mode/config`, { headers }),
+        axios.get(`${API}/api/security/pii-strict-mode/summary`, { headers }),
+        axios.get(`${API}/api/security/pii-strict-mode/violations?limit=20`, { headers }),
+        axios.get(`${API}/api/security/pii-strict-mode/encryption-status`, { headers }),
+        axios.get(`${API}/api/security/pii-strict-mode/policy`, { headers }),
       ]);
       if (cfgRes.status === "fulfilled") setConfig(cfgRes.value.data.config);
       if (sumRes.status === "fulfilled") setSummary(sumRes.value.data.summary);
@@ -62,7 +67,7 @@ function PIIStrictModeDashboard({ user, tenant, onLogout }) {
   const handleToggle = async (enabled) => {
     setToggling(true);
     try {
-      const res = await axios.post("/security/pii-strict-mode/toggle", { enabled });
+      const res = await axios.post(`${API}/api/security/pii-strict-mode/toggle`, { enabled }, { headers });
       setConfig(res.data.config);
       toast.success(enabled ? "Strict Mode AKTIF edildi" : "Strict Mode DEVRE DISI birakildi");
       fetchAll();
@@ -83,30 +88,8 @@ function PIIStrictModeDashboard({ user, tenant, onLogout }) {
 
   const isEnabled = config?.enabled || false;
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100" data-testid="pii-strict-mode-dashboard">
-      {/* Header */}
-      <div className="border-b border-slate-800 bg-slate-950/80 backdrop-blur sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="sm" onClick={() => navigate("/app/dashboard")} data-testid="back-btn">
-              <ArrowLeft className="w-4 h-4 mr-1" /> Geri
-            </Button>
-            <div className="flex items-center gap-3">
-              <Shield className="w-6 h-6 text-emerald-400" />
-              <h1 className="text-xl font-semibold">PII Strict Mode</h1>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <Button variant="outline" size="sm" onClick={fetchAll} data-testid="refresh-btn">
-              <RefreshCw className="w-4 h-4 mr-1" /> Yenile
-            </Button>
-            <span className="text-sm text-slate-400">{user?.email}</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+  const content = (
+    <div className="space-y-8">
         {/* Strict Mode Toggle Card */}
         <Card className="bg-slate-900 border-slate-800">
           <CardContent className="p-6">
@@ -341,6 +324,34 @@ function PIIStrictModeDashboard({ user, tenant, onLogout }) {
             </CardContent>
           </Card>
         )}
+      </div>
+  );
+
+  if (embedded) return <div data-testid="pii-strict-mode-dashboard" className="text-slate-100">{content}</div>;
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100" data-testid="pii-strict-mode-dashboard">
+      <div className="border-b border-slate-800 bg-slate-950/80 backdrop-blur sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="sm" onClick={() => navigate("/app/dashboard")} data-testid="back-btn">
+              <ArrowLeft className="w-4 h-4 mr-1" /> Geri
+            </Button>
+            <div className="flex items-center gap-3">
+              <Shield className="w-6 h-6 text-emerald-400" />
+              <h1 className="text-xl font-semibold">PII Strict Mode</h1>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <Button variant="outline" size="sm" onClick={fetchAll} data-testid="refresh-btn">
+              <RefreshCw className="w-4 h-4 mr-1" /> Yenile
+            </Button>
+            <span className="text-sm text-slate-400">{user?.email}</span>
+          </div>
+        </div>
+      </div>
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        {content}
       </div>
     </div>
   );

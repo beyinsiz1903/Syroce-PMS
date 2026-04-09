@@ -6,7 +6,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from core.database import db
+from core.database import _raw_db, db
 
 logger = logging.getLogger("security.tenant_queries")
 
@@ -68,12 +68,11 @@ class TenantQueryGuard:
         return query
 
     async def check_isolation(self, tenant_id: str) -> dict[str, Any]:
-        """Run isolation checks for a tenant."""
+        """Run isolation checks for a tenant. Uses raw DB to bypass tenant guard."""
         results = []
         for coll_name in TENANT_SCOPED_COLLECTIONS:
-            coll = db[coll_name]
+            coll = _raw_db[coll_name]
             total = await coll.count_documents({"tenant_id": tenant_id})
-            # Check for documents without tenant_id
             unscoped = await coll.count_documents({"tenant_id": {"$exists": False}})
             results.append({
                 "collection": coll_name,
