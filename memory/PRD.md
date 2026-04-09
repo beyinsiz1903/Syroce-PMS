@@ -133,11 +133,18 @@ Turkish (All responses must be in Turkish)
 - **Professional sidebar navigation** with category headers, active state highlighting, mobile dropdown fallback
 - **Test Result**: Frontend 95% pass — iteration_205.json (all 19 sections navigable and functional)
 
+### Reports Navigation Cleanup & Maliye Raporu Consolidation (DONE - 2026-04-09)
+- **Problem**: Reports dropdown had 3 confusing tabs (Reports, Advanced Reports, Report Builder) with duplicate Maliye Raporu appearing in both BasicReports sidebar and the Excel download page (Reports.jsx)
+- **Solution**: 
+  1. Removed "Advanced Reports" (Reports.jsx) from navigation — it was a redundant Excel download page with confusing naming
+  2. Updated "Maliye Listesi" section in BasicReports sidebar to show redirect card with "Maliye Listesini Aç" button → navigates to OfficialGuestList page (the correct one with date picker + CSV export)
+  3. Simplified navigation to just 2 items: "Raporlar" (BasicReports) + "Rapor Oluşturucu" (ReportBuilder)
+  4. Old /app/gelismis-raporlar URL now redirects to BasicReports
+- **Files Modified**: navItems.jsx, BasicReports.jsx (renderOfficial), routeDefinitions.jsx
+- **Test Result**: Frontend 8/8 tests passed (100%) — iteration_206.json
+
 ## Pending / Known Issues
 - litellm CVE-2026-35030: Suppressed in `.trivyignore`. Upgrade to >=1.83.0 blocked by emergentintegrations dependency chain.
-
-## Upcoming Tasks (P1)
-- (All P1 items completed)
 
 ### Guest Search Input Visibility Fix (DONE - 2026-04-09)
 - Fixed search input in Misafir Listesi (Guest List) section of Reports module - added `bg-white`, `border-gray-300`, `text-gray-900` for clear visibility
