@@ -22,7 +22,7 @@ import requests
 BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
     # Fallback for local testing
-    BASE_URL = "https://hotel-raporlar.preview.emergentagent.com"
+    BASE_URL = "https://raporlar-cleanup.preview.emergentagent.com"
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"

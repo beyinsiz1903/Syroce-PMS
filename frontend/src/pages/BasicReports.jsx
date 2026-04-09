@@ -10,7 +10,8 @@ import {
   Shield, FileText, Building2, Utensils, TrendingUp, AlertTriangle,
   ArrowLeftRight, Loader2, RefreshCw, ChevronRight, Search, Star,
   LayoutDashboard, Calendar, ArrowUpRight, ArrowDownRight, CheckCircle2,
-  Clock, Activity, Wrench, Download, ListChecks, Eye, BookOpen, Receipt
+  Clock, Activity, Wrench, Download, ListChecks, Eye, BookOpen, Receipt,
+  Printer
 } from 'lucide-react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -66,6 +67,13 @@ const BasicReports = ({ user, tenant, onLogout }) => {
   const [activeSection, setActiveSection] = useState('overview');
   const [searchGuest, setSearchGuest] = useState('');
 
+  // Official guest list inline state
+  const [officialDate, setOfficialDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [officialRows, setOfficialRows] = useState([]);
+  const [officialLoading, setOfficialLoading] = useState(false);
+  const [officialError, setOfficialError] = useState(null);
+  const [officialSearch, setOfficialSearch] = useState('');
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -80,6 +88,64 @@ const BasicReports = ({ user, tenant, onLogout }) => {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Official Guest List fetch
+  const fetchOfficialGuests = useCallback(async (dateParam) => {
+    setOfficialLoading(true);
+    setOfficialError(null);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(BACKEND_URL + '/api/reports/official-guest-list?date=' + (dateParam || officialDate), {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (!res.ok) throw new Error('Resmi misafir listesi yüklenemedi');
+      const result = await res.json();
+      setOfficialRows(result?.rows || []);
+    } catch (err) {
+      setOfficialError(err.message);
+    } finally {
+      setOfficialLoading(false);
+    }
+  }, [officialDate]);
+
+  const handleOfficialExportCsv = () => {
+    if (!officialRows.length) return;
+    const headers = ['booking_id','guest_name','national_id','passport_number','country','city','date_of_birth','room_number','check_in','check_out','adults','children','total_amount','billing_tax_number','billing_address','company_id','market_segment'];
+    const lines = [headers.join(',')];
+    officialRows.forEach(r => {
+      lines.push([
+        r.booking_id || '', (r.guest_name || '').replace(/,/g, ' '), r.national_id || '', r.passport_number || '',
+        (r.country || '').replace(/,/g, ' '), (r.city || '').replace(/,/g, ' '), r.date_of_birth || '',
+        r.room_number || '', r.check_in || '', r.check_out || '', String(r.adults ?? ''), String(r.children ?? ''),
+        String(r.total_amount ?? ''), r.billing_tax_number || '', (r.billing_address || '').replace(/,/g, ' '),
+        r.company_id || '', r.market_segment || ''
+      ].join(','));
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `maliye_listesi_${officialDate}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleOfficialPrint = () => {
+    const tableEl = document.querySelector('[data-testid="official-guest-table"]');
+    if (!tableEl) return;
+    const w = window.open('', '_blank', 'width=900,height=700');
+    w.document.write('<html><head><title>Maliye Listesi - ' + officialDate + '</title>');
+    w.document.write('<style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}th{background:#f5f5f5;font-weight:600}h1{font-size:18px;margin:0 0 4px}p{color:#666;margin:0 0 16px;font-size:12px}</style>');
+    w.document.write('</head><body>');
+    w.document.write('<h1>Resmi Müşteri Listesi</h1>');
+    w.document.write('<p>Tarih: ' + new Date(officialDate).toLocaleDateString('tr-TR') + ' | Toplam kayıt: ' + filteredOfficialRows.length + ' | Toplam kişi: ' + officialTotalGuests + ' | Toplam tutar: ' + officialTotalRevenue.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' }) + '</p>');
+    w.document.write(tableEl.outerHTML);
+    w.document.write('</body></html>');
+    w.document.close();
+    setTimeout(() => w.print(), 300);
+  };
 
   // Loading state
   if (loading) return (
@@ -858,45 +924,172 @@ const BasicReports = ({ user, tenant, onLogout }) => {
     </div>
   );
 
+  const officialTotalGuests = officialRows.reduce((a, r) => a + (r.adults || 0) + (r.children || 0), 0);
+  const officialTotalRevenue = officialRows.reduce((a, r) => a + (r.total_amount || 0), 0);
+  const filteredOfficialRows = officialRows.filter(r => {
+    if (!officialSearch) return true;
+    const term = officialSearch.toLowerCase();
+    return (r.guest_name || '').toLowerCase().includes(term) ||
+      (r.room_number || '').toString().includes(term) ||
+      (r.national_id || '').includes(term) ||
+      (r.passport_number || '').toLowerCase().includes(term);
+  });
+
   const renderOfficial = () => (
-    <div data-testid="section-official">
-      <Card className="mb-5 border-amber-200 bg-amber-50/30">
-        <CardContent className="p-4 flex items-start gap-3">
-          <FileText className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <h4 className="font-semibold text-gray-900 text-sm">Resmi Müşteri Listesi (Maliye Raporu)</h4>
-            <p className="text-xs text-gray-600 mt-0.5">Maliye veya resmi denetim geldiğinde, seçtiğiniz gün için otelde konaklayan tüm misafirlerin resmi listesini bu ekrandan alabilirsiniz. Liste TCKN/pasaport, oda, giriş-çıkış ve toplam tutarı içerir.</p>
-            <p className="text-xs text-gray-500 mt-1">Tarih seçerek belirli bir güne ait resmi listeyi görüntüleyebilir ve CSV olarak dışa aktarabilirsiniz.</p>
-          </div>
-          <Button
-            size="sm"
-            className="bg-amber-600 hover:bg-amber-700 text-white flex-shrink-0"
-            onClick={() => window.location.href = '/reports/official-guest-list'}
-            data-testid="go-to-official-guest-list"
-          >
-            <Eye className="w-3.5 h-3.5 mr-1.5" />
-            Maliye Listesini Aç
-          </Button>
-        </CardContent>
-      </Card>
-      <Card className="border-blue-200 bg-blue-50/30">
+    <div className="space-y-4" data-testid="section-official">
+      <SectionHeader title="Resmi Müşteri Listesi (Maliye Raporu)" description="Maliye ve resmi denetimler için seçtiğiniz tarihte otelde konaklayan tüm misafirlerin listesi" />
+
+      {/* Controls: Date, Fetch, Export, Print */}
+      <Card>
         <CardContent className="p-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-            <div className="p-3 bg-white rounded-lg border">
-              <p className="text-xs text-gray-500">Otelde Konaklayan</p>
-              <p className="text-xl font-bold text-gray-900">{s.in_house || 0}</p>
+          <div className="flex flex-col md:flex-row md:items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-gray-500" />
+              <Input
+                type="date"
+                value={officialDate}
+                onChange={e => setOfficialDate(e.target.value)}
+                className="h-9 text-sm w-[170px] bg-white border-gray-300 text-gray-900"
+                data-testid="official-date-input"
+              />
             </div>
-            <div className="p-3 bg-white rounded-lg border">
-              <p className="text-xs text-gray-500">Bugün Giriş</p>
-              <p className="text-xl font-bold text-blue-700">{s.arrivals || 0}</p>
-            </div>
-            <div className="p-3 bg-white rounded-lg border">
-              <p className="text-xs text-gray-500">Bugün Çıkış</p>
-              <p className="text-xl font-bold text-amber-700">{s.departures || 0}</p>
+            <Button
+              size="sm"
+              onClick={() => fetchOfficialGuests(officialDate)}
+              disabled={officialLoading}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              data-testid="official-fetch-btn"
+            >
+              {officialLoading ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Search className="w-3.5 h-3.5 mr-1.5" />}
+              Listeyi Getir
+            </Button>
+            <div className="flex items-center gap-2 md:ml-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleOfficialExportCsv}
+                disabled={officialLoading || !officialRows.length}
+                data-testid="official-csv-btn"
+              >
+                <Download className="w-3.5 h-3.5 mr-1.5" />
+                CSV İndir
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleOfficialPrint}
+                disabled={officialLoading || !officialRows.length}
+                data-testid="official-print-btn"
+              >
+                <Printer className="w-3.5 h-3.5 mr-1.5" />
+                Yazdır
+              </Button>
             </div>
           </div>
         </CardContent>
       </Card>
+
+      {officialError && (
+        <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{officialError}</div>
+      )}
+
+      {/* Summary Stats */}
+      {officialRows.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 text-center">
+            <p className="text-xs text-blue-600 font-medium">Toplam Kayıt</p>
+            <p className="text-xl font-bold text-blue-800">{officialRows.length}</p>
+          </div>
+          <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-100 text-center">
+            <p className="text-xs text-emerald-600 font-medium">Toplam Kişi</p>
+            <p className="text-xl font-bold text-emerald-800">{officialTotalGuests}</p>
+          </div>
+          <div className="p-3 bg-amber-50 rounded-lg border border-amber-100 text-center">
+            <p className="text-xs text-amber-600 font-medium">Toplam Tutar</p>
+            <p className="text-xl font-bold text-amber-800">{officialTotalRevenue.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}</p>
+          </div>
+          <div className="p-3 bg-violet-50 rounded-lg border border-violet-100 text-center">
+            <p className="text-xs text-violet-600 font-medium">Seçili Tarih</p>
+            <p className="text-xl font-bold text-violet-800">{new Date(officialDate).toLocaleDateString('tr-TR')}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Filter */}
+      {officialRows.length > 0 && (
+        <div className="relative">
+          <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400 z-10" />
+          <Input
+            placeholder="İsim, oda no, TCKN veya pasaport ile filtrele..."
+            value={officialSearch}
+            onChange={e => setOfficialSearch(e.target.value)}
+            className="pl-9 bg-white border-gray-300 text-gray-900 placeholder:text-gray-400 focus:border-blue-400 focus:ring-blue-200"
+            data-testid="official-search-input"
+          />
+        </div>
+      )}
+
+      {/* Table */}
+      <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+              <span>{officialDate} tarihi için konaklayan misafirler</span>
+              {officialRows.length > 0 && (
+                <span className="text-xs text-gray-500 flex gap-3 flex-wrap">
+                  <span>{filteredOfficialRows.length} kayıt gösteriliyor</span>
+                </span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-xs border-t" data-testid="official-guest-table">
+                <thead className="bg-gray-50 border-b">
+                  <tr className="text-left whitespace-nowrap">
+                    <th className="px-3 py-2.5 font-semibold text-gray-600">Misafir</th>
+                    <th className="px-3 py-2.5 font-semibold text-gray-600">TCKN / Pasaport</th>
+                    <th className="px-3 py-2.5 font-semibold text-gray-600">Ülke / Şehir</th>
+                    <th className="px-3 py-2.5 font-semibold text-gray-600">Oda</th>
+                    <th className="px-3 py-2.5 font-semibold text-gray-600">Giriş / Çıkış</th>
+                    <th className="px-3 py-2.5 font-semibold text-gray-600">Kişi</th>
+                    <th className="px-3 py-2.5 font-semibold text-gray-600 text-right">Tutar</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {officialLoading ? (
+                    <tr><td colSpan={7} className="py-12 text-center"><Loader2 className="w-5 h-5 animate-spin text-blue-500 mx-auto mb-2" /><span className="text-gray-400 text-xs">Yükleniyor...</span></td></tr>
+                  ) : filteredOfficialRows.length > 0 ? filteredOfficialRows.map((r, i) => (
+                    <tr key={r.booking_id || i} className="border-b hover:bg-blue-50/30 transition-colors">
+                      <td className="px-3 py-2">
+                        <div className="font-medium text-gray-800">{r.guest_name || 'Misafir'}</div>
+                        <div className="text-[10px] text-gray-400">Rez: {r.booking_id}</div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="text-[11px] text-gray-700">TCKN: {r.national_id || '-'}</div>
+                        <div className="text-[11px] text-gray-500">Pasaport: {r.passport_number || '-'}</div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="text-[11px] text-gray-700">{r.country || '-'}</div>
+                        <div className="text-[11px] text-gray-500">{r.city || ''}</div>
+                      </td>
+                      <td className="px-3 py-2 font-medium">{r.room_number || '-'}</td>
+                      <td className="px-3 py-2 text-[11px] text-gray-700">
+                        <div>{r.check_in ? new Date(r.check_in).toLocaleDateString('tr-TR') : '-'}</div>
+                        <div>{r.check_out ? new Date(r.check_out).toLocaleDateString('tr-TR') : '-'}</div>
+                      </td>
+                      <td className="px-3 py-2 text-center">{(r.adults || 0)} + {(r.children || 0)}</td>
+                      <td className="px-3 py-2 text-right font-medium">{Number(r.total_amount || 0).toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}</td>
+                    </tr>
+                  )) : (
+                    <tr><td colSpan={7} className="py-10 text-center text-gray-400 text-xs">
+                      {officialRows.length === 0 ? 'Listeyi getirmek için tarih seçip "Listeyi Getir" butonuna tıklayın.' : 'Arama kriterlerine uygun kayıt bulunamadı.'}
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
     </div>
   );
 
