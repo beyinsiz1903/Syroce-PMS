@@ -1754,5 +1754,30 @@
     "exceptionResolved": "Исключение решено",
     "exceptionResolveFailed": "Не удалось решить",
     "exc": "искл"
+  },
+  "navGroups": {
+    "operations": "Операции",
+    "reservations": "Бронирование",
+    "finance": "Финансы",
+    "channels": "Каналы",
+    "reports": "Отчёты",
+    "advanced": "Расширенные",
+    "infrastructure": "Инфраструктура"
+  },
+  "commandCenter": {
+    "loadingStatus": "Загрузка операционного статуса...",
+    "todayArrivals": "Заезды сегодня",
+    "todayDepartures": "Выезды сегодня",
+    "inHouse": "В отеле",
+    "dirtyRooms": "Грязные номера",
+    "attentionNeeded": "Требует внимания",
+    "refresh": "Обновить",
+    "urgent": "Срочно",
+    "medium": "Средне",
+    "info": "Инфо",
+    "room": "Номер",
+    "more": "ещё",
+    "allClear": "Все операции проходят гладко",
+    "noUrgent": "Срочного внимания не требуется"
   }
 }

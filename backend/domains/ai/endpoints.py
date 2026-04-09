@@ -4,7 +4,7 @@ AI Intelligence API Endpoints
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from domains.ai.service import get_ai_service
 from server import User, get_current_user
@@ -14,6 +14,7 @@ api_router = APIRouter()
 
 @api_router.get("/ai/dashboard/briefing")
 async def get_daily_briefing(
+    lang: str = Query("tr", description="Language code for briefing"),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -100,32 +101,53 @@ async def get_daily_briefing(
                     today_checkouts=today_checkouts,
                     pending_invoices=pending_invoices,
                     monthly_revenue=monthly_revenue,
-                    weather="clear"
+                    weather="clear",
+                    lang=lang
                 )
         except Exception as ai_err:
             print(f"AI briefing generation failed: {ai_err}")
 
         # Fallback briefing
         if not briefing_text:
-            briefing_text = (
-                f"Günaydın! {hotel_name} için günlük özet: "
-                f"Toplam {total_rooms} odadan {occupied_rooms} tanesi dolu (%{occupancy_rate:.0f} doluluk). "
-                f"Bugün {today_checkins} giriş ve {today_checkouts} çıkış bekleniyor. "
-                f"{pending_invoices} bekleyen fatura mevcut."
-            )
+            if lang == "tr":
+                briefing_text = (
+                    f"Günaydın! {hotel_name} için günlük özet: "
+                    f"Toplam {total_rooms} odadan {occupied_rooms} tanesi dolu (%{occupancy_rate:.0f} doluluk). "
+                    f"Bugün {today_checkins} giriş ve {today_checkouts} çıkış bekleniyor. "
+                    f"{pending_invoices} bekleyen fatura mevcut."
+                )
+            else:
+                briefing_text = (
+                    f"Good morning! Daily summary for {hotel_name}: "
+                    f"{occupied_rooms} out of {total_rooms} rooms occupied ({occupancy_rate:.0f}% occupancy). "
+                    f"{today_checkins} check-ins and {today_checkouts} check-outs expected today. "
+                    f"{pending_invoices} pending invoices."
+                )
 
         # Build insights
         insights = []
-        if occupancy_rate > 80:
-            insights.append("Doluluk oranı yüksek! Fiyat artışı değerlendirilebilir.")
-        elif occupancy_rate < 40:
-            insights.append("Doluluk düşük. Promosyon kampanyası başlatmayı düşünün.")
-        if today_checkins > 5:
-            insights.append(f"Bugün {today_checkins} giriş var, resepsiyon ekibini bilgilendirin.")
-        if pending_invoices > 3:
-            insights.append(f"{pending_invoices} bekleyen fatura var, muhasebe takibi önerilir.")
-        if confirmed_bookings > 0:
-            insights.append(f"{confirmed_bookings} onaylı rezervasyon aktif.")
+        if lang == "tr":
+            if occupancy_rate > 80:
+                insights.append("Doluluk oranı yüksek! Fiyat artışı değerlendirilebilir.")
+            elif occupancy_rate < 40:
+                insights.append("Doluluk düşük. Promosyon kampanyası başlatmayı düşünün.")
+            if today_checkins > 5:
+                insights.append(f"Bugün {today_checkins} giriş var, resepsiyon ekibini bilgilendirin.")
+            if pending_invoices > 3:
+                insights.append(f"{pending_invoices} bekleyen fatura var, muhasebe takibi önerilir.")
+            if confirmed_bookings > 0:
+                insights.append(f"{confirmed_bookings} onaylı rezervasyon aktif.")
+        else:
+            if occupancy_rate > 80:
+                insights.append("Occupancy is high! Consider a rate increase.")
+            elif occupancy_rate < 40:
+                insights.append("Occupancy is low. Consider launching a promotional campaign.")
+            if today_checkins > 5:
+                insights.append(f"{today_checkins} check-ins today, notify the front desk team.")
+            if pending_invoices > 3:
+                insights.append(f"{pending_invoices} pending invoices, accounting follow-up recommended.")
+            if confirmed_bookings > 0:
+                insights.append(f"{confirmed_bookings} confirmed bookings active.")
 
         return {
             "summary": briefing_text,
@@ -146,10 +168,11 @@ async def get_daily_briefing(
         }
     except Exception:
         # Even on failure, return a basic response so frontend doesn't break
+        err_msg = "AI briefing is currently unavailable. Please try again later." if lang != "tr" else "AI brifing şu an yüklenemiyor. Lütfen daha sonra tekrar deneyin."
         return {
-            "summary": "AI brifing şu an yüklenemiyor. Lütfen daha sonra tekrar deneyin.",
-            "text": "AI brifing şu an yüklenemiyor.",
-            "briefing": "AI brifing şu an yüklenemiyor.",
+            "summary": err_msg,
+            "text": err_msg,
+            "briefing": err_msg,
             "generated_at": datetime.now().isoformat(),
             "insights": [],
             "metrics": {}

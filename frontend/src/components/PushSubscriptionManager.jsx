@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -34,6 +35,7 @@ const getDeviceId = () => {
 };
 
 const PushSubscriptionManager = () => {
+  const { t } = useTranslation();
   const [status, setStatus] = useState('loading'); // loading | enabled | disabled | unsupported
   const [subscriptions, setSubscriptions] = useState(CHANNEL_OPTIONS.map((c) => c.id));
   const [devices, setDevices] = useState([]);
@@ -67,7 +69,7 @@ const PushSubscriptionManager = () => {
 
   const handleRequestPermission = async () => {
     if (!supportPush) {
-      toast.error('Tarayıcı push bildirimlerini desteklemiyor');
+      toast.error(t('push.notSupported'));
       return;
     }
 
@@ -102,7 +104,7 @@ const PushSubscriptionManager = () => {
       await loadStatus();
     } catch (error) {
       console.error('Push registration failed', error);
-      toast.error('Push kaydı başarısız');
+      toast.error(t('push.registerFailed'));
     } finally {
       setRegistering(false);
     }
@@ -117,10 +119,10 @@ const PushSubscriptionManager = () => {
     try {
       setSaving(true);
       await axios.post('/notifications/push/subscriptions', { channels: next });
-      toast.success('Bildirim tercihleri güncellendi');
+      toast.success(t('push.prefsUpdated'));
     } catch (error) {
       console.error('Subscription update failed', error);
-      toast.error('Tercihler güncellenemedi');
+      toast.error(t('push.prefsFailed'));
     } finally {
       setSaving(false);
     }
@@ -129,17 +131,17 @@ const PushSubscriptionManager = () => {
   const statusLabel = useMemo(() => {
     switch (status) {
       case 'enabled':
-        return 'Push aktif';
+        return t('push.enabled');
       case 'disabled':
-        return 'Push kapalı';
+        return t('push.disabled');
       case 'unsupported':
-        return 'Desteklenmiyor';
+        return t('push.unsupported');
       case 'error':
-        return 'Hata';
+        return t('push.error');
       default:
-        return 'Kontrol ediliyor';
+        return t('push.checking');
     }
-  }, [status]);
+  }, [status, t]);
 
   return (
     <Popover>
@@ -168,7 +170,7 @@ const PushSubscriptionManager = () => {
             </p>
           </div>
           <Badge variant={status === 'enabled' ? 'default' : 'secondary'}>
-            {status === 'enabled' ? 'AKTİF' : 'PASİF'}
+            {status === 'enabled' ? t('push.active') : t('push.inactive')}
           </Badge>
         </div>
 
@@ -216,7 +218,7 @@ const PushSubscriptionManager = () => {
           onClick={handleRequestPermission}
           disabled={!supportPush || registering}
         >
-          {status === 'enabled' ? 'Cihazı Yenile' : 'Push Bildirimlerini Aç'}
+          {status === 'enabled' ? t('push.refreshDevice') : t('push.enablePush')}
         </Button>
         {!supportPush && (
           <p className="text-[11px] text-red-500">

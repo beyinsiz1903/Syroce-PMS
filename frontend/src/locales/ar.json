@@ -1754,5 +1754,30 @@
     "exceptionResolved": "تم حل الاستثناء",
     "exceptionResolveFailed": "فشل في حل الاستثناء",
     "exc": "استثن"
+  },
+  "navGroups": {
+    "operations": "العمليات",
+    "reservations": "الحجوزات",
+    "finance": "المالية",
+    "channels": "القنوات",
+    "reports": "التقارير",
+    "advanced": "متقدم",
+    "infrastructure": "البنية التحتية"
+  },
+  "commandCenter": {
+    "loadingStatus": "جاري تحميل الحالة التشغيلية...",
+    "todayArrivals": "الوصول اليوم",
+    "todayDepartures": "المغادرة اليوم",
+    "inHouse": "في الفندق",
+    "dirtyRooms": "غرف غير نظيفة",
+    "attentionNeeded": "يحتاج انتباه",
+    "refresh": "تحديث",
+    "urgent": "عاجل",
+    "medium": "متوسط",
+    "info": "معلومات",
+    "room": "غرفة",
+    "more": "المزيد",
+    "allClear": "جميع العمليات تسير بسلاسة",
+    "noUrgent": "لا يوجد أمر عاجل"
   }
 }

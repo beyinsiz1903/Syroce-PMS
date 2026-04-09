@@ -59,21 +59,29 @@ class AIService:
         today_checkouts: int,
         pending_invoices: int,
         monthly_revenue: float,
-        weather: str = "clear"
+        weather: str = "clear",
+        lang: str = "tr"
     ) -> str:
         """
         Generate a natural language daily briefing for the dashboard
         """
-        system_message = """Sen bir otel yönetimi AI asistanısın.
-        Otel müdürlerine kısa, samimi ve uygulanabilir günlük brifingleri TÜRKÇE olarak sunarsan.
-        Ana metriklere, trendlere ve uygulanabilir içgörülere odaklan.
-        Yanıtlarını 100 kelimeyi geçmeyecek şekilde tut. Her zaman Türkçe yanıt ver."""
+        if lang == "tr":
+            system_message = """Sen bir otel yönetimi AI asistanısın.
+            Otel müdürlerine kısa, samimi ve uygulanabilir günlük brifingleri TÜRKÇE olarak sunarsan.
+            Ana metriklere, trendlere ve uygulanabilir içgörülere odaklan.
+            Yanıtlarını 100 kelimeyi geçmeyecek şekilde tut. Her zaman Türkçe yanıt ver."""
+        else:
+            system_message = f"""You are a hotel management AI assistant.
+            You provide short, friendly, and actionable daily briefings in {lang.upper()} language.
+            Focus on key metrics, trends, and actionable insights.
+            Keep your response under 100 words. Always respond in {lang.upper()} language."""
 
         chat = self._create_chat(system_message, session_id=f"briefing_{datetime.now().strftime('%Y%m%d')}")
 
         occupancy_rate = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
 
-        prompt = f"""{hotel_name} için sabah brifingini oluştur:
+        if lang == "tr":
+            prompt = f"""{hotel_name} için sabah brifingini oluştur:
 
 Mevcut Durum:
 - Toplam Oda: {total_rooms}
@@ -85,6 +93,19 @@ Mevcut Durum:
 - Hava: {weather}
 
 Samimi bir karşılama yap, önemli metrikleri vurgula ve bugün için 1-2 uygulanabilir içgörü ver. Türkçe yanıt ver."""
+        else:
+            prompt = f"""Generate a morning briefing for {hotel_name}:
+
+Current Status:
+- Total Rooms: {total_rooms}
+- Occupied: {occupied_rooms} ({occupancy_rate:.1f}% occupancy)
+- Today's Check-ins: {today_checkins}
+- Today's Check-outs: {today_checkouts}
+- Pending Invoices: {pending_invoices}
+- Monthly Revenue: ${monthly_revenue:,.2f}
+- Weather: {weather}
+
+Give a friendly greeting, highlight key metrics, and provide 1-2 actionable insights for today."""
 
         user_message = UserMessage(text=prompt)
         response = await chat.send_message(user_message)

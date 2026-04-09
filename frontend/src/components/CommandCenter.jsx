@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,7 @@ const ALERT_ICONS = {
 
 export const CommandCenter = ({ className = '' }) => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -45,7 +47,7 @@ export const CommandCenter = ({ className = '' }) => {
       <Card className={`${className}`}>
         <CardContent className="flex items-center justify-center py-8">
           <Loader2 className="w-5 h-5 animate-spin text-slate-400 mr-2" />
-          <span className="text-sm text-slate-500">Operasyonel durum yukleniyor...</span>
+          <span className="text-sm text-slate-500">{t('commandCenter.loadingStatus')}</span>
         </CardContent>
       </Card>
     );
@@ -62,6 +64,24 @@ export const CommandCenter = ({ className = '' }) => {
     else if (alert.action === 'frontdesk') navigate('/pms');
   };
 
+  const getAlertTitle = (alert) => {
+    const key = `commandCenter.alerts.${alert.type}.title`;
+    const translated = t(key, { count: alert.count || 0 });
+    return translated !== key ? translated : alert.title;
+  };
+
+  const getAlertDescription = (alert) => {
+    const key = `commandCenter.alerts.${alert.type}.description`;
+    const translated = t(key, { amount: alert.total_amount ? alert.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '' });
+    return translated !== key ? translated : alert.description;
+  };
+
+  const getAlertActionLabel = (alert) => {
+    const key = `commandCenter.alerts.${alert.type}.action`;
+    const translated = t(key);
+    return translated !== key ? translated : alert.action_label;
+  };
+
   return (
     <div className={`space-y-4 ${className}`} data-testid="command-center">
       {/* Summary Stats Row */}
@@ -74,7 +94,7 @@ export const CommandCenter = ({ className = '' }) => {
               </div>
               <div>
                 <div className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'Manrope' }}>{summary?.arrivals_today || 0}</div>
-                <div className="text-xs text-slate-500">Bugun Gelis</div>
+                <div className="text-xs text-slate-500">{t('commandCenter.todayArrivals')}</div>
               </div>
             </div>
           </CardContent>
@@ -87,7 +107,7 @@ export const CommandCenter = ({ className = '' }) => {
               </div>
               <div>
                 <div className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'Manrope' }}>{summary?.departures_today || 0}</div>
-                <div className="text-xs text-slate-500">Bugun Cikis</div>
+                <div className="text-xs text-slate-500">{t('commandCenter.todayDepartures')}</div>
               </div>
             </div>
           </CardContent>
@@ -100,7 +120,7 @@ export const CommandCenter = ({ className = '' }) => {
               </div>
               <div>
                 <div className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'Manrope' }}>{summary?.inhouse || 0}</div>
-                <div className="text-xs text-slate-500">Iceride</div>
+                <div className="text-xs text-slate-500">{t('commandCenter.inHouse')}</div>
               </div>
             </div>
           </CardContent>
@@ -113,7 +133,7 @@ export const CommandCenter = ({ className = '' }) => {
               </div>
               <div>
                 <div className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'Manrope' }}>{summary?.dirty_rooms || 0}</div>
-                <div className="text-xs text-slate-500">Kirli Oda</div>
+                <div className="text-xs text-slate-500">{t('commandCenter.dirtyRooms')}</div>
               </div>
             </div>
           </CardContent>
@@ -126,10 +146,10 @@ export const CommandCenter = ({ className = '' }) => {
           <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-800" style={{ fontFamily: 'Manrope' }}>
               <AlertTriangle className="w-4 h-4 inline mr-1.5 text-amber-500" />
-              Dikkat Gerektiren ({alerts.length})
+              {t('commandCenter.attentionNeeded')} ({alerts.length})
             </h3>
             <Button variant="ghost" size="sm" onClick={load} className="h-7 text-xs text-slate-500" data-testid="cc-refresh">
-              <RefreshCw className="w-3.5 h-3.5 mr-1" /> Yenile
+              <RefreshCw className="w-3.5 h-3.5 mr-1" /> {t('commandCenter.refresh')}
             </Button>
           </div>
           <CardContent className="p-0">
@@ -146,20 +166,20 @@ export const CommandCenter = ({ className = '' }) => {
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-slate-800">{alert.title}</span>
-                            <Badge className={`text-[10px] px-1.5 py-0 ${style.badge}`}>{alert.severity === 'high' ? 'Acil' : alert.severity === 'medium' ? 'Orta' : 'Bilgi'}</Badge>
+                            <span className="text-sm font-semibold text-slate-800">{getAlertTitle(alert)}</span>
+                            <Badge className={`text-[10px] px-1.5 py-0 ${style.badge}`}>{alert.severity === 'high' ? t('commandCenter.urgent') : alert.severity === 'medium' ? t('commandCenter.medium') : t('commandCenter.info')}</Badge>
                           </div>
-                          <p className="text-xs text-slate-500 mt-0.5">{alert.description}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{getAlertDescription(alert)}</p>
                           {alert.items && alert.items.length > 0 && (
                             <div className="flex flex-wrap gap-1.5 mt-2">
                               {alert.items.slice(0, 3).map((item, j) => (
                                 <span key={j} className="inline-flex items-center text-[11px] bg-white/70 border border-slate-200 rounded-md px-2 py-0.5 text-slate-600">
-                                  {item.room_number && <span className="font-semibold mr-1">Oda {item.room_number}</span>}
+                                  {item.room_number && <span className="font-semibold mr-1">{t('commandCenter.room')} {item.room_number}</span>}
                                   {item.guest_name}
                                   {item.balance > 0 && <span className="ml-1 font-semibold text-red-600">{item.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL</span>}
                                 </span>
                               ))}
-                              {alert.items.length > 3 && <span className="text-[11px] text-slate-400">+{alert.items.length - 3} daha</span>}
+                              {alert.items.length > 3 && <span className="text-[11px] text-slate-400">+{alert.items.length - 3} {t('commandCenter.more')}</span>}
                             </div>
                           )}
                         </div>
@@ -171,7 +191,7 @@ export const CommandCenter = ({ className = '' }) => {
                         onClick={() => handleAction(alert)}
                         data-testid={`cc-action-${alert.type}`}
                       >
-                        {alert.action_label} <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                        {getAlertActionLabel(alert)} <ArrowRight className="w-3.5 h-3.5 ml-1" />
                       </Button>
                     </div>
                   </div>
@@ -186,8 +206,8 @@ export const CommandCenter = ({ className = '' }) => {
             <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-2">
               <span className="text-emerald-600 text-lg font-bold">&#10003;</span>
             </div>
-            <p className="text-sm font-medium text-emerald-700">Tum operasyonlar yolunda</p>
-            <p className="text-xs text-emerald-500 mt-0.5">Acil dikkat gerektiren durum yok</p>
+            <p className="text-sm font-medium text-emerald-700">{t('commandCenter.allClear')}</p>
+            <p className="text-xs text-emerald-500 mt-0.5">{t('commandCenter.noUrgent')}</p>
           </CardContent>
         </Card>
       )}

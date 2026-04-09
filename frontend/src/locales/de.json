@@ -1754,5 +1754,30 @@
     "exceptionResolved": "Ausnahme gelöst",
     "exceptionResolveFailed": "Ausnahme konnte nicht gelöst werden",
     "exc": "Aus"
+  },
+  "navGroups": {
+    "operations": "Betrieb",
+    "reservations": "Reservierungen",
+    "finance": "Finanzen",
+    "channels": "Kanäle",
+    "reports": "Berichte",
+    "advanced": "Erweitert",
+    "infrastructure": "Infrastruktur"
+  },
+  "commandCenter": {
+    "loadingStatus": "Betriebsstatus wird geladen...",
+    "todayArrivals": "Anreisen heute",
+    "todayDepartures": "Abreisen heute",
+    "inHouse": "Im Haus",
+    "dirtyRooms": "Schmutzige Zimmer",
+    "attentionNeeded": "Aufmerksamkeit erforderlich",
+    "refresh": "Aktualisieren",
+    "urgent": "Dringend",
+    "medium": "Mittel",
+    "info": "Info",
+    "room": "Zimmer",
+    "more": "mehr",
+    "allClear": "Alle Abläufe laufen reibungslos",
+    "noUrgent": "Keine dringende Aufmerksamkeit erforderlich"
   }
 }

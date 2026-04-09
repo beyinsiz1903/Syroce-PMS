@@ -22,7 +22,7 @@ const dashboardCache = {
 
 const Dashboard = ({ user, tenant, modules, onLogout }) => {
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [stats, setStats] = useState(dashboardCache.stats);
   const [loading, setLoading] = useState(!dashboardCache.stats);
   const [aiBriefing, setAiBriefing] = useState(dashboardCache.aiBriefing);
@@ -47,7 +47,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
   const loadAIBriefing = useCallback(async () => {
     setLoadingAI(true);
     try {
-      const response = await axios.get('/ai/dashboard/briefing');
+      const response = await axios.get(`/ai/dashboard/briefing?lang=${i18n.language}`);
       const data = response.data;
       setAiBriefing(data);
       dashboardCache.aiBriefing = data;
@@ -760,10 +760,10 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                   <Badge className="w-fit bg-white/15 text-white hover:bg-white/15" data-testid="migration-observability-dashboard-badge">Migration Observability</Badge>
                   <div>
                     <h2 className="text-2xl font-bold" style={{ fontFamily: 'Space Grotesk' }} data-testid="migration-observability-dashboard-title">
-                      Semantic çekirdek geçişini canlı panelden izleyin.
+                      {t('dashboard.migrationObservability')}
                     </h2>
                     <p className="mt-2 max-w-2xl text-sm leading-7 text-white/80" data-testid="migration-observability-dashboard-description">
-                      Outbox event breakdown, audit stream ve shadow mismatch oranlarını ayrı bir kontrol yüzeyinde görün. Bu panel yeni write-path açmadan önce operasyonel güvenlik sinyallerini toplar.
+                      {t('dashboard.migrationObservabilityDesc')}
                     </p>
                   </div>
                 </div>
@@ -773,14 +773,14 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                       <Monitor className="h-4 w-4" />
                       Outbox + Audit + Shadow
                     </div>
-                    <p className="text-sm text-white/70">Observability önce, sonra yeni write-path — mevcut migration stratejisi için önerilen güvenlik katmanı.</p>
+                    <p className="text-sm text-white/70">{t('dashboard.migrationObservabilitySide')}</p>
                   </div>
                   <Button
                     onClick={() => navigate('/app/migration-observability')}
                     className="rounded-full bg-white text-slate-900 hover:bg-amber-50"
                     data-testid="migration-observability-dashboard-open-button"
                   >
-                    Paneli aç
+                    {t('dashboard.openPanel')}
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </div>

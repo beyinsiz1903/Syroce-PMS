@@ -208,7 +208,37 @@
     "marketplace": "Pazar Yeri",
     "admin_tenants": "Otel Yönetimi",
     "admin_module_report": "Modül Raporu",
-    "admin_leads": "Potansiyel Müşteriler"
+    "admin_leads": "Potansiyel Müşteriler",
+    "housekeeping_status": "Housekeeping",
+    "wake_up_calls": "Uyandırma Çağrısı",
+    "lost_found": "Kayıp Eşya",
+    "group_bookings": "Grup Rezervasyonları",
+    "deposit_tracking": "Depozito Takibi",
+    "group_folio": "Grup Folio",
+    "no_show_analytics": "No-Show Analitik",
+    "night_audit": "Gece Denetimi",
+    "unified_rate_manager": "Fiyat & Müsaitlik",
+    "room_mapping_wizard": "Oda Eşleştirme Sihirbazı",
+    "agency_management": "Acente Yönetimi",
+    "agency_content": "İçerik Dağıtımı",
+    "hr_rate_manager": "HotelRunner - Fiyat ve Müsaitlik",
+    "rate_manager": "Exely - Fiyat ve Müsaitlik",
+    "channel_connections": "Kanal Bağlantıları",
+    "hotelrunner": "HotelRunner",
+    "exely": "Exely",
+    "wire_failures": "Wire Failure Takibi",
+    "ari_push": "ARI Push Engine",
+    "lockdown_dashboard": "Lockdown Dashboard",
+    "incident_panel": "Incident Panel",
+    "runtime_cockpit": "Runtime Cockpit",
+    "control_plane": "Control Plane",
+    "data_model": "Data Model",
+    "gelir_yonetimi": "Gelir Yönetimi",
+    "ai_zeka": "AI & Zeka",
+    "analitik_raporlar": "Analitik & Raporlar",
+    "system_health": "System Health",
+    "pii_strict_mode": "PII Strict Mode",
+    "governance": "Governance"
   },
   "auth": {
     "signIn": "Hesabınıza giriş yapın veya yeni bir hesap oluşturun",
@@ -701,7 +731,11 @@
     "chartFnB": "F&B",
     "chartOther": "Diğer",
     "chartOccupancy": "Doluluk",
-    "chartBookings": "Rezervasyonlar"
+    "chartBookings": "Rezervasyonlar",
+    "migrationObservability": "Semantic çekirdek geçişini canlı panelden izleyin.",
+    "migrationObservabilityDesc": "Outbox event breakdown, audit stream ve shadow mismatch oranlarını ayrı bir kontrol yüzeyinde görün. Bu panel yeni write-path açmadan önce operasyonel güvenlik sinyallerini toplar.",
+    "migrationObservabilitySide": "Observability önce, sonra yeni write-path — mevcut migration stratejisi için önerilen güvenlik katmanı.",
+    "openPanel": "Paneli aç"
   },
   "pms": {
     "title": "Otel Yönetim Sistemi",
@@ -1754,5 +1788,68 @@
     "exceptionResolved": "İstisna çözüldü",
     "exceptionResolveFailed": "İstisna çözülemedi",
     "exc": "ist"
+  },
+  "navGroups": {
+    "operations": "Operasyon",
+    "reservations": "Rezervasyon",
+    "finance": "Finans",
+    "channels": "Kanallar",
+    "reports": "Raporlar",
+    "advanced": "Gelişmiş",
+    "infrastructure": "Altyapı"
+  },
+  "commandCenter": {
+    "loadingStatus": "Operasyonel durum yükleniyor...",
+    "todayArrivals": "Bugün Geliş",
+    "todayDepartures": "Bugün Çıkış",
+    "inHouse": "İçeride",
+    "dirtyRooms": "Kirli Oda",
+    "attentionNeeded": "Dikkat Gerektiren",
+    "refresh": "Yenile",
+    "urgent": "Acil",
+    "medium": "Orta",
+    "info": "Bilgi",
+    "room": "Oda",
+    "more": "daha",
+    "allClear": "Tüm operasyonlar yolunda",
+    "noUrgent": "Acil dikkat gerektiren durum yok",
+    "goToPayments": "Ödemelere Git",
+    "alerts": {
+      "dirty_rooms_blocking": {
+        "title": "{{count}} oda hazır değil",
+        "description": "Check-in bekleyen misafirlerin odaları henüz temizlenmedi",
+        "action": "Kat Hizmetlerine Git"
+      },
+      "pending_payments": {
+        "title": "{{count}} ödenmemiş hesap",
+        "description": "Toplam {{amount}} tahsil edilmedi",
+        "action": "Ödemelere Git"
+      },
+      "vip_arrivals": {
+        "title": "{{count}} VIP geliş",
+        "description": "Bugün VIP misafir gelişi bekleniyor",
+        "action": "Resepsiyona Git"
+      },
+      "departures_with_balance": {
+        "title": "{{count}} çıkış bakiyeli",
+        "description": "Bugün çıkış yapacak misafirlerin açık bakiyesi var",
+        "action": "Çıkışlara Git"
+      }
+    }
+  },
+  "push": {
+    "enabled": "Push aktif",
+    "disabled": "Push kapalı",
+    "unsupported": "Desteklenmiyor",
+    "error": "Hata",
+    "checking": "Kontrol ediliyor",
+    "notSupported": "Tarayıcı push bildirimlerini desteklemiyor",
+    "registerFailed": "Push kaydı başarısız",
+    "prefsUpdated": "Bildirim tercihleri güncellendi",
+    "prefsFailed": "Tercihler güncellenemedi",
+    "active": "AKTİF",
+    "inactive": "PASİF",
+    "refreshDevice": "Cihazı Yenile",
+    "enablePush": "Push Bildirimlerini Aç"
   }
 }

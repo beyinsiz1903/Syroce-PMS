@@ -1754,5 +1754,30 @@
     "exceptionResolved": "Exceção resolvida",
     "exceptionResolveFailed": "Falha ao resolver exceção",
     "exc": "exc"
+  },
+  "navGroups": {
+    "operations": "Operações",
+    "reservations": "Reservas",
+    "finance": "Finanças",
+    "channels": "Canais",
+    "reports": "Relatórios",
+    "advanced": "Avançado",
+    "infrastructure": "Infraestrutura"
+  },
+  "commandCenter": {
+    "loadingStatus": "Carregando status operacional...",
+    "todayArrivals": "Chegadas hoje",
+    "todayDepartures": "Saídas hoje",
+    "inHouse": "No hotel",
+    "dirtyRooms": "Quartos sujos",
+    "attentionNeeded": "Atenção necessária",
+    "refresh": "Atualizar",
+    "urgent": "Urgente",
+    "medium": "Médio",
+    "info": "Info",
+    "room": "Quarto",
+    "more": "mais",
+    "allClear": "Todas as operações funcionando normalmente",
+    "noUrgent": "Nenhuma atenção urgente necessária"
   }
 }

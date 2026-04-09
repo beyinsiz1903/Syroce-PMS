@@ -1754,5 +1754,30 @@
     "exceptionResolved": "异常已解决",
     "exceptionResolveFailed": "解决异常失败",
     "exc": "异常"
+  },
+  "navGroups": {
+    "operations": "运营",
+    "reservations": "预订",
+    "finance": "财务",
+    "channels": "渠道",
+    "reports": "报告",
+    "advanced": "高级",
+    "infrastructure": "基础设施"
+  },
+  "commandCenter": {
+    "loadingStatus": "加载运营状态...",
+    "todayArrivals": "今日入住",
+    "todayDepartures": "今日退房",
+    "inHouse": "在店",
+    "dirtyRooms": "脏房",
+    "attentionNeeded": "需要关注",
+    "refresh": "刷新",
+    "urgent": "紧急",
+    "medium": "中等",
+    "info": "信息",
+    "room": "房间",
+    "more": "更多",
+    "allClear": "所有运营正常运行",
+    "noUrgent": "无紧急事项需要关注"
   }
 }

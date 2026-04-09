@@ -208,7 +208,37 @@
     "marketplace": "Marketplace",
     "admin_tenants": "Hotel Management",
     "admin_module_report": "Module Report",
-    "admin_leads": "Leads"
+    "admin_leads": "Leads",
+    "housekeeping_status": "Housekeeping",
+    "wake_up_calls": "Wake-up Calls",
+    "lost_found": "Lost & Found",
+    "group_bookings": "Group Reservations",
+    "deposit_tracking": "Deposit Tracking",
+    "group_folio": "Group Folio",
+    "no_show_analytics": "No-Show Analytics",
+    "night_audit": "Night Audit",
+    "unified_rate_manager": "Rates & Availability",
+    "room_mapping_wizard": "Room Mapping Wizard",
+    "agency_management": "Agency Management",
+    "agency_content": "Content Distribution",
+    "hr_rate_manager": "HotelRunner - Rates & Availability",
+    "rate_manager": "Exely - Rates & Availability",
+    "channel_connections": "Channel Connections",
+    "hotelrunner": "HotelRunner",
+    "exely": "Exely",
+    "wire_failures": "Wire Failure Tracking",
+    "ari_push": "ARI Push Engine",
+    "lockdown_dashboard": "Lockdown Dashboard",
+    "incident_panel": "Incident Panel",
+    "runtime_cockpit": "Runtime Cockpit",
+    "control_plane": "Control Plane",
+    "data_model": "Data Model",
+    "gelir_yonetimi": "Revenue Management",
+    "ai_zeka": "AI & Intelligence",
+    "analitik_raporlar": "Analytics & Reports",
+    "system_health": "System Health",
+    "pii_strict_mode": "PII Strict Mode",
+    "governance": "Governance"
   },
   "auth": {
     "signIn": "Sign in to your account or create a new one",
@@ -701,7 +731,11 @@
     "chartFnB": "F&B",
     "chartOther": "Other",
     "chartOccupancy": "Occupancy",
-    "chartBookings": "Bookings"
+    "chartBookings": "Bookings",
+    "migrationObservability": "Monitor the semantic core migration from the live panel.",
+    "migrationObservabilityDesc": "View outbox event breakdown, audit stream, and shadow mismatch rates in a dedicated control surface. This panel collects operational safety signals before opening new write-paths.",
+    "migrationObservabilitySide": "Observability first, then new write-path — the recommended safety layer for the current migration strategy.",
+    "openPanel": "Open Panel"
   },
   "pms": {
     "title": "Property Management System",
@@ -1754,5 +1788,68 @@
     "exceptionResolved": "Exception resolved",
     "exceptionResolveFailed": "Failed to resolve exception",
     "exc": "exc"
+  },
+  "navGroups": {
+    "operations": "Operations",
+    "reservations": "Reservations",
+    "finance": "Finance",
+    "channels": "Channels",
+    "reports": "Reports",
+    "advanced": "Advanced",
+    "infrastructure": "Infrastructure"
+  },
+  "commandCenter": {
+    "loadingStatus": "Loading operational status...",
+    "todayArrivals": "Today Arrivals",
+    "todayDepartures": "Today Departures",
+    "inHouse": "In-House",
+    "dirtyRooms": "Dirty Rooms",
+    "attentionNeeded": "Attention Needed",
+    "refresh": "Refresh",
+    "urgent": "Urgent",
+    "medium": "Medium",
+    "info": "Info",
+    "room": "Room",
+    "more": "more",
+    "allClear": "All operations running smoothly",
+    "noUrgent": "No urgent attention needed",
+    "goToPayments": "Go to Payments",
+    "alerts": {
+      "dirty_rooms_blocking": {
+        "title": "{{count}} rooms not ready",
+        "description": "Rooms for arriving guests have not been cleaned yet",
+        "action": "Go to Housekeeping"
+      },
+      "pending_payments": {
+        "title": "{{count}} unpaid accounts",
+        "description": "Total {{amount}} outstanding",
+        "action": "Go to Payments"
+      },
+      "vip_arrivals": {
+        "title": "{{count}} VIP arrivals",
+        "description": "VIP guests expected today",
+        "action": "Go to Front Desk"
+      },
+      "departures_with_balance": {
+        "title": "{{count}} departures with balance",
+        "description": "Departing guests have outstanding balances",
+        "action": "Go to Departures"
+      }
+    }
+  },
+  "push": {
+    "enabled": "Push active",
+    "disabled": "Push off",
+    "unsupported": "Not supported",
+    "error": "Error",
+    "checking": "Checking",
+    "notSupported": "Browser does not support push notifications",
+    "registerFailed": "Push registration failed",
+    "prefsUpdated": "Notification preferences updated",
+    "prefsFailed": "Preferences could not be updated",
+    "active": "ACTIVE",
+    "inactive": "INACTIVE",
+    "refreshDevice": "Refresh Device",
+    "enablePush": "Enable Push Notifications"
   }
 }
