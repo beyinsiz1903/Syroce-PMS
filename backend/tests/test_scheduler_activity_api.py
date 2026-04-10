@@ -18,7 +18,7 @@ import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
-    BASE_URL = "https://correlation-trace.preview.emergentagent.com"
+    BASE_URL = "https://secure-key-registry.preview.emergentagent.com"
 
 
 class TestSchedulerAPI:

@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import IncidentDrilldownDrawer from '@/components/ops/IncidentDrilldownDrawer';
+import EarlyWarningPanel from '@/components/ops/EarlyWarningPanel';
 import {
   Activity,
   AlertTriangle,
@@ -30,6 +31,7 @@ import {
   Gauge,
   Target,
   BarChart3,
+  Sparkles,
 } from 'lucide-react';
 
 const API = import.meta.env.VITE_BACKEND_URL;
@@ -568,6 +570,10 @@ const ChannelOpsPage = () => {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList className="bg-gray-100">
             <TabsTrigger value="overview" data-testid="tab-overview">Genel Bakış</TabsTrigger>
+            <TabsTrigger value="early-warning" data-testid="tab-early-warning">
+              <Sparkles className="w-3 h-3 mr-1" />
+              Erken Uyarı
+            </TabsTrigger>
             <TabsTrigger value="incidents" data-testid="tab-incidents">
               Öncelikli Olaylar
               {prioritizedIncidents.counts?.dlq_pending > 0 && (
@@ -715,6 +721,16 @@ const ChannelOpsPage = () => {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* ═══════ EARLY WARNING TAB (Sprint 4) ═══════ */}
+          <TabsContent value="early-warning" className="space-y-6" data-testid="tab-content-early-warning">
+            <EarlyWarningPanel 
+              onViewConnector={(provider) => {
+                // Switch to channels tab and highlight the connector
+                setActiveTab('channels');
+              }}
+            />
           </TabsContent>
 
           {/* ═══════ INCIDENTS TAB (Sprint 2 P1) ═══════ */}

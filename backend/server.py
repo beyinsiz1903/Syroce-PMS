@@ -358,6 +358,14 @@ try:
 except Exception as _enc_mgmt_err:
     logger.warning(f"Encryption Management router skipped: {_enc_mgmt_err}")
 
+# ── Early Warning & Predictive Alerting Router ───────────────────────
+try:
+    from routers.early_warning_router import router as early_warning_router
+    app.include_router(early_warning_router, tags=["Early Warning & Predictive"])
+    logger.info("  ✅ Early Warning router loaded")
+except Exception as _ew_err:
+    logger.warning(f"Early Warning router skipped: {_ew_err}")
+
 
 # ── Lifecycle events ────────────────────────────────────────────────
 from startup import on_shutdown, on_startup  # noqa: E402

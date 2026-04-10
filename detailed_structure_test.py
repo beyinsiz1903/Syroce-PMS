@@ -15,7 +15,7 @@ import aiohttp
 
 async def examine_response_structures():
     """Examine actual response structures from the API"""
-    base_url = "https://correlation-trace.preview.emergentagent.com"
+    base_url = "https://secure-key-registry.preview.emergentagent.com"
     api_base = f"{base_url}/api"
     
     # Authenticate first

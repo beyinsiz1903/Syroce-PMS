@@ -52,6 +52,13 @@ NOTIFIABLE_EVENTS = {
     "rate_limit.active": (SEVERITY_WARNING, "Rate limit aktif"),
     "import.failed": (SEVERITY_WARNING, "Kanal import islemi basarisiz"),
     "channel.health_changed": (SEVERITY_WARNING, "Kanal sagligi degisti"),
+    # Early Warning / Predictive events (Sprint 4)
+    "predictive.warning.degradation_likely": (SEVERITY_WARNING, "Bozulma riski tespit edildi"),
+    "predictive.warning.failure_rate_rising": (SEVERITY_WARNING, "Hata orani yukseliyor"),
+    "predictive.warning.backlog_growth": (SEVERITY_WARNING, "Retry backlog buyuyor"),
+    "predictive.warning.dlq_spike": (SEVERITY_CRITICAL, "DLQ ani artis"),
+    "predictive.warning.throttle_risk": (SEVERITY_WARNING, "Throttle riski"),
+    "predictive.warning.staleness_risk": (SEVERITY_WARNING, "Connector sessiz kaldi"),
 }
 
 
@@ -157,5 +164,36 @@ def _build_notification_message(
         old_state = details.get("old_status", "?")
         new_state = details.get("new_status", "?")
         return f"{ch}: Kanal sagligi degisti: {old_state} → {new_state}"
+
+    # Early Warning / Predictive messages (Sprint 4)
+    if event_type == "predictive.warning.degradation_likely":
+        reason = details.get("reason", "Health score dusus egilimnide")
+        confidence = details.get("confidence", "?")
+        return f"ERKEN UYARI ({confidence}% guven): {ch} — {reason[:150]}"
+
+    if event_type == "predictive.warning.failure_rate_rising":
+        reason = details.get("reason", "Hata orani artis trendinde")
+        confidence = details.get("confidence", "?")
+        return f"ERKEN UYARI ({confidence}% guven): {ch} — {reason[:150]}"
+
+    if event_type == "predictive.warning.backlog_growth":
+        reason = details.get("reason", "Retry backlog buyuyor")
+        return f"ERKEN UYARI: {reason[:150]}"
+
+    if event_type == "predictive.warning.dlq_spike":
+        reason = details.get("reason", "DLQ ani artis")
+        return f"ERKEN UYARI (KRITIK): {reason[:150]}"
+
+    if event_type == "predictive.warning.throttle_risk":
+        reason = details.get("reason", "Throttle riski yuksek")
+        return f"ERKEN UYARI: {ch} — {reason[:150]}"
+
+    if event_type == "predictive.warning.staleness_risk":
+        reason = details.get("reason", "Connector sessiz kaldi")
+        return f"ERKEN UYARI: {ch} — {reason[:150]}"
+
+    if event_type == "predictive.warning.recovery_expected":
+        reason = details.get("reason", "Iyilesme bekleniyor")
+        return f"IYILESME SINYALI: {ch} — {reason[:150]}"
 
     return f"{event_type}: {ch}"
