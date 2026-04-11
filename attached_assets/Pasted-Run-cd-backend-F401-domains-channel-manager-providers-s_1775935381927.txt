@@ -1,0 +1,88 @@
+Run cd backend
+F401 [*] `domains.channel_manager.providers.sync_engine.log_pull` imported but unused
+  --> domains/channel_manager/providers/hotelrunner_sync.py:23:5
+   |
+21 | )
+22 | from domains.channel_manager.providers.sync_engine import (
+23 |     log_pull,
+   |     ^^^^^^^^
+24 |     run_phase_a,
+25 |     run_phase_a5,
+   |
+help: Remove unused import
+
+F401 [*] `domains.channel_manager.providers.sync_engine.run_phase_a` imported but unused
+  --> domains/channel_manager/providers/hotelrunner_sync.py:24:5
+   |
+22 | from domains.channel_manager.providers.sync_engine import (
+23 |     log_pull,
+24 |     run_phase_a,
+   |     ^^^^^^^^^^^
+25 |     run_phase_a5,
+26 |     run_phase_a6,
+   |
+help: Remove unused import
+
+F401 [*] `domains.channel_manager.providers.sync_engine.run_phase_a5` imported but unused
+  --> domains/channel_manager/providers/hotelrunner_sync.py:25:5
+   |
+23 |     log_pull,
+24 |     run_phase_a,
+25 |     run_phase_a5,
+   |     ^^^^^^^^^^^^
+26 |     run_phase_a6,
+27 |     run_phase_b,
+   |
+help: Remove unused import
+
+F401 [*] `domains.channel_manager.providers.sync_engine.run_phase_a6` imported but unused
+  --> domains/channel_manager/providers/hotelrunner_sync.py:26:5
+   |
+24 |     run_phase_a,
+25 |     run_phase_a5,
+26 |     run_phase_a6,
+   |     ^^^^^^^^^^^^
+27 |     run_phase_b,
+28 |     sync_reservation_update,
+   |
+help: Remove unused import
+
+F401 [*] `domains.channel_manager.providers.sync_engine.run_phase_b` imported but unused
+  --> domains/channel_manager/providers/hotelrunner_sync.py:27:5
+   |
+25 |     run_phase_a5,
+26 |     run_phase_a6,
+27 |     run_phase_b,
+   |     ^^^^^^^^^^^
+28 |     sync_reservation_update,
+29 | )
+   |
+help: Remove unused import
+
+F401 [*] `domains.channel_manager.providers.sync_engine.sync_reservation_update` imported but unused
+  --> domains/channel_manager/providers/hotelrunner_sync.py:28:5
+   |
+26 |     run_phase_a6,
+27 |     run_phase_b,
+28 |     sync_reservation_update,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+29 | )
+30 | from domains.channel_manager.providers.sync_scheduler import (
+   |
+help: Remove unused import
+
+F401 [*] `domains.channel_manager.providers.sync_scheduler.ReservationPullScheduler` imported but unused
+  --> domains/channel_manager/providers/hotelrunner_sync.py:31:5
+   |
+29 | )
+30 | from domains.channel_manager.providers.sync_scheduler import (
+31 |     ReservationPullScheduler,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+32 |     pull_scheduler,
+33 | )
+   |
+help: Remove unused import: `domains.channel_manager.providers.sync_scheduler.ReservationPullScheduler`
+
+Found 7 errors.
+[*] 7 fixable with the `--fix` option.
+Error: Process completed with exit code 1.

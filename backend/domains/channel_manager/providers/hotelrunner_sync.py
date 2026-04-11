@@ -19,7 +19,7 @@ from domains.channel_manager.providers.hotelrunner_shared import (
     _resolve_property_id,
     explode_multi_room_reservation,
 )
-from domains.channel_manager.providers.sync_engine import (
+from domains.channel_manager.providers.sync_engine import (  # noqa: F401
     log_pull,
     run_phase_a,
     run_phase_a5,
@@ -27,7 +27,7 @@ from domains.channel_manager.providers.sync_engine import (
     run_phase_b,
     sync_reservation_update,
 )
-from domains.channel_manager.providers.sync_scheduler import (
+from domains.channel_manager.providers.sync_scheduler import (  # noqa: F401
     ReservationPullScheduler,
     pull_scheduler,
 )
