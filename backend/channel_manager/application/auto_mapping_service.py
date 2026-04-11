@@ -1,13 +1,14 @@
 """
-Auto Room Mapping Wizard Service.
+Auto Room Mapping Wizard Service v2.
 
 Provides intelligent auto-suggestion for PMS <-> External entity mappings
-using fuzzy string matching. Supports bulk creation of confirmed mappings.
+using multi-signal matching: name similarity, capacity, base price, and
+provider-aware weighting. Includes conflict detection and review queue.
 
 Flow:
   1. Fetch PMS room types + external room types for a connector
-  2. Run fuzzy matching (difflib.SequenceMatcher) to suggest pairs
-  3. Return suggestions with confidence scores
+  2. Run multi-signal matching to suggest pairs with score breakdowns
+  3. Separate auto-apply vs needs-review vs conflict suggestions
   4. Accept confirmed pairs and bulk-create mappings
 """
 import asyncio as _aio
@@ -28,16 +29,13 @@ logger = logging.getLogger("channel_manager.application.auto_mapping")
 
 
 def _normalize(name: str) -> str:
-    """Normalize a name for fuzzy comparison."""
     return name.lower().strip().replace("-", " ").replace("_", " ")
 
 
 def _similarity(a: str, b: str) -> float:
-    """Compute similarity ratio between two strings."""
     return SequenceMatcher(None, _normalize(a), _normalize(b)).ratio()
 
 
-# Common Turkish/English room type aliases for better matching
 _ALIASES = {
     "standart": ["standard", "std"],
     "standard": ["standart", "std"],
@@ -64,7 +62,6 @@ _ALIASES = {
 
 
 def _alias_boost(a: str, b: str) -> float:
-    """Check if names are known aliases and return a boost score."""
     na = _normalize(a)
     nb = _normalize(b)
     for key, aliases in _ALIASES.items():
@@ -79,11 +76,91 @@ def _alias_boost(a: str, b: str) -> float:
     return 0.0
 
 
+def _capacity_similarity(pms_cap: int, ext_cap: int) -> float:
+    if pms_cap <= 0 or ext_cap <= 0:
+        return 0.0
+    if pms_cap == ext_cap:
+        return 1.0
+    diff = abs(pms_cap - ext_cap)
+    max_cap = max(pms_cap, ext_cap)
+    return max(0.0, 1.0 - (diff / max_cap))
+
+
+def _price_proximity(pms_price: float, ext_price: float) -> float:
+    if pms_price <= 0 or ext_price <= 0:
+        return 0.0
+    if pms_price == ext_price:
+        return 1.0
+    diff = abs(pms_price - ext_price)
+    avg = (pms_price + ext_price) / 2
+    ratio = diff / avg
+    return max(0.0, 1.0 - ratio)
+
+
+_PROVIDER_WEIGHTS = {
+    "hotelrunner": {"name": 0.50, "capacity": 0.25, "price": 0.15, "alias": 0.10},
+    "exely":       {"name": 0.60, "capacity": 0.15, "price": 0.10, "alias": 0.15},
+    "default":     {"name": 0.55, "capacity": 0.20, "price": 0.15, "alias": 0.10},
+}
+
+
 def _compute_match_score(pms_name: str, ext_name: str) -> float:
-    """Compute overall match score with alias boosting."""
     base = _similarity(pms_name, ext_name)
     boost = _alias_boost(pms_name, ext_name)
     return min(base + boost, 1.0)
+
+
+def _compute_match_score_v2(
+    pms_name: str,
+    ext_name: str,
+    pms_capacity: int = 0,
+    ext_capacity: int = 0,
+    pms_price: float = 0.0,
+    ext_price: float = 0.0,
+    provider: str = "default",
+) -> dict[str, Any]:
+    weights = _PROVIDER_WEIGHTS.get(provider, _PROVIDER_WEIGHTS["default"])
+
+    name_score = _similarity(pms_name, ext_name)
+    alias_score = _alias_boost(pms_name, ext_name)
+    cap_score = _capacity_similarity(pms_capacity, ext_capacity)
+    price_score = _price_proximity(pms_price, ext_price)
+
+    has_capacity = pms_capacity > 0 and ext_capacity > 0
+    has_price = pms_price > 0 and ext_price > 0
+
+    active_signals = {"name": name_score, "alias": alias_score}
+    if has_capacity:
+        active_signals["capacity"] = cap_score
+    if has_price:
+        active_signals["price"] = price_score
+
+    active_weight_sum = sum(weights[k] for k in active_signals)
+    if active_weight_sum > 0:
+        final = sum(
+            active_signals[k] * (weights[k] / active_weight_sum)
+            for k in active_signals
+        )
+    else:
+        final = 0.0
+
+    final = min(final, 1.0)
+
+    warnings = []
+    if has_capacity and cap_score < 0.5:
+        warnings.append(f"Kapasite uyumsuz: PMS={pms_capacity}, Kanal={ext_capacity}")
+    if has_price and price_score < 0.3:
+        warnings.append(f"Fiyat farki yuksek: PMS={pms_price:.0f}, Kanal={ext_price:.0f}")
+
+    return {
+        "final_score": round(final, 4),
+        "name_similarity": round(name_score * 100),
+        "alias_boost": round(alias_score * 100),
+        "capacity_match": round(cap_score * 100) if has_capacity else None,
+        "price_proximity": round(price_score * 100) if has_price else None,
+        "provider_weights": provider,
+        "warnings": warnings,
+    }
 
 
 class AutoMappingService:
@@ -264,106 +341,182 @@ class AutoMappingService:
     async def suggest_room_mappings(
         self, tenant_id: str, connector_id: str,
     ) -> dict[str, Any]:
-        """Suggest room type mappings based on fuzzy name matching."""
+        """Suggest room type mappings using multi-signal v2 scoring."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
         if not connector:
             return {"error": "Connector bulunamadi", "suggestions": []}
 
         property_id = connector.get("property_id", "")
+        provider = connector.get("provider", "default")
 
-        # Fetch PMS room types (distinct) — try with property_id first, fallback to tenant only
         room_query = {"tenant_id": tenant_id, "status": {"$ne": "out_of_service"}}
+        projection = {
+            "_id": 0, "room_type": 1, "room_number": 1,
+            "capacity": 1, "base_price": 1, "max_occupancy": 1,
+        }
         if property_id:
             pms_rooms_raw = await db.rooms.find(
-                {**room_query, "property_id": property_id},
-                {"_id": 0, "room_type": 1, "room_number": 1},
+                {**room_query, "property_id": property_id}, projection,
             ).to_list(500)
             if not pms_rooms_raw:
-                pms_rooms_raw = await db.rooms.find(
-                    room_query, {"_id": 0, "room_type": 1, "room_number": 1},
-                ).to_list(500)
+                pms_rooms_raw = await db.rooms.find(room_query, projection).to_list(500)
         else:
-            pms_rooms_raw = await db.rooms.find(
-                room_query, {"_id": 0, "room_type": 1, "room_number": 1},
-            ).to_list(500)
+            pms_rooms_raw = await db.rooms.find(room_query, projection).to_list(500)
+
         pms_types: dict[str, dict] = {}
         room_counts: dict[str, int] = {}
         for r in pms_rooms_raw:
             rt = r.get("room_type", "")
             if rt:
                 if rt not in pms_types:
-                    pms_types[rt] = {"id": rt, "name": rt}
+                    pms_types[rt] = {
+                        "id": rt,
+                        "name": rt,
+                        "capacity": r.get("capacity") or r.get("max_occupancy") or 0,
+                        "base_price": r.get("base_price") or 0,
+                    }
                 room_counts[rt] = room_counts.get(rt, 0) + 1
 
-        # Fetch external room types
         ext_rooms = await self._repo.get_external_room_types(tenant_id, connector_id)
         active_ext = [r for r in ext_rooms if r.get("is_active", True)]
 
-        # Fetch existing active mappings to exclude already-mapped
         existing_mappings = await self._repo.get_active_mappings(tenant_id, connector_id, "room_type")
         mapped_pms = {m["pms_entity_id"] for m in existing_mappings}
         mapped_ext = {m["external_entity_id"] for m in existing_mappings}
 
-        # Build suggestions using optimal matching (avoid duplicate assignments)
-        suggestions = []
         available_ext = [e for e in active_ext if e.get("external_id") not in mapped_ext]
         available_pms = [p for p in pms_types.values() if p["id"] not in mapped_pms]
 
-        # Build full score matrix: (pms_idx, ext_idx) -> score
-        score_matrix: list[tuple[float, int, int]] = []
+        score_matrix: list[tuple[float, int, int, dict]] = []
         for pi, pms in enumerate(available_pms):
             for ei, ext in enumerate(available_ext):
                 ext_name = ext.get("name", ext.get("external_id", ""))
-                score = _compute_match_score(pms["name"], ext_name)
-                if score > 0.0:
-                    score_matrix.append((score, pi, ei))
+                ext_cap = ext.get("max_occupancy") or 0
+                ext_price = ext.get("base_price") or 0
+                breakdown = _compute_match_score_v2(
+                    pms["name"], ext_name,
+                    pms_capacity=pms.get("capacity", 0),
+                    ext_capacity=ext_cap,
+                    pms_price=pms.get("base_price", 0),
+                    ext_price=ext_price,
+                    provider=provider,
+                )
+                if breakdown["final_score"] > 0.0:
+                    score_matrix.append((breakdown["final_score"], pi, ei, breakdown))
 
-        # Greedy assign: best scores first, no duplicates
         score_matrix.sort(key=lambda x: -x[0])
+
+        conflicts = []
+        conflicted_ext: set[int] = set()
+        conflicted_pms: set[int] = set()
+
+        ext_top_candidates: dict[int, list[tuple[int, float]]] = {}
+        threshold = 0.3
+        for score, pi, ei, _bd in score_matrix:
+            if score >= threshold:
+                ext_top_candidates.setdefault(ei, []).append((pi, score))
+
+        for ei, candidates in ext_top_candidates.items():
+            if len(candidates) > 1:
+                top_score = candidates[0][1]
+                close = [c for c in candidates if c[1] >= top_score * 0.85]
+                if len(close) > 1:
+                    ext = available_ext[ei]
+                    ext_name = ext.get("name", ext.get("external_id", ""))
+                    pms_names = [available_pms[pi]["name"] for pi, _ in close]
+                    conflicts.append({
+                        "type": "duplicate_external",
+                        "external_entity_id": ext.get("external_id", ""),
+                        "external_entity_name": ext_name,
+                        "pms_entities": pms_names,
+                        "message": f"Kanal oda tipi '{ext_name}' birden fazla PMS tipine benziyor: {', '.join(pms_names)}",
+                    })
+                    conflicted_ext.add(ei)
+                    for pi, _ in close:
+                        conflicted_pms.add(pi)
+
         assigned_pms: set[int] = set()
         assigned_ext: set[int] = set()
-        pms_to_ext: dict[int, tuple[int, float]] = {}
+        pms_to_ext: dict[int, tuple[int, float, dict]] = {}
 
-        for score, pi, ei in score_matrix:
+        for score, pi, ei, breakdown in score_matrix:
             if pi not in assigned_pms and ei not in assigned_ext:
-                pms_to_ext[pi] = (ei, score)
+                pms_to_ext[pi] = (ei, score, breakdown)
                 assigned_pms.add(pi)
                 assigned_ext.add(ei)
 
+        suggestions = []
+
         for pi, pms in enumerate(available_pms):
             if pi in pms_to_ext:
-                ei, best_score = pms_to_ext[pi]
+                ei, best_score, breakdown = pms_to_ext[pi]
                 ext = available_ext[ei]
+
+                has_warnings = len(breakdown.get("warnings", [])) > 0
+                is_conflicted = pi in conflicted_pms or ei in conflicted_ext
+                if is_conflicted:
+                    status = "review"
+                elif best_score >= 0.6 and not has_warnings:
+                    status = "auto"
+                else:
+                    status = "review"
+
+                item_warnings = list(breakdown.get("warnings", []))
+                if is_conflicted:
+                    item_warnings.append("Cakisma: ayni kanal tipi birden fazla PMS tipine benziyor — onay gerekli")
+
                 suggestions.append({
                     "pms_entity_id": pms["id"],
                     "pms_entity_name": pms["name"],
                     "pms_room_count": room_counts.get(pms["id"], 0),
+                    "pms_capacity": pms.get("capacity", 0),
+                    "pms_base_price": pms.get("base_price", 0),
                     "external_entity_id": ext.get("external_id", ""),
                     "external_entity_name": ext.get("name", ext.get("external_id", "")),
+                    "external_capacity": ext.get("max_occupancy") or 0,
+                    "external_base_price": ext.get("base_price") or 0,
                     "confidence": round(best_score * 100),
-                    "status": "auto" if best_score >= 0.6 else "review",
+                    "status": status,
+                    "score_breakdown": {
+                        "name_similarity": breakdown["name_similarity"],
+                        "alias_boost": breakdown["alias_boost"],
+                        "capacity_match": breakdown["capacity_match"],
+                        "price_proximity": breakdown["price_proximity"],
+                    },
+                    "warnings": item_warnings,
                 })
             else:
                 suggestions.append({
                     "pms_entity_id": pms["id"],
                     "pms_entity_name": pms["name"],
                     "pms_room_count": room_counts.get(pms["id"], 0),
+                    "pms_capacity": pms.get("capacity", 0),
+                    "pms_base_price": pms.get("base_price", 0),
                     "external_entity_id": "",
                     "external_entity_name": "",
+                    "external_capacity": 0,
+                    "external_base_price": 0,
                     "confidence": 0,
                     "status": "unmatched",
+                    "score_breakdown": {
+                        "name_similarity": 0,
+                        "alias_boost": 0,
+                        "capacity_match": None,
+                        "price_proximity": None,
+                    },
+                    "warnings": [],
                 })
 
-        # Sort: auto first, then review, then unmatched
         order = {"auto": 0, "review": 1, "unmatched": 2}
         suggestions.sort(key=lambda s: (order.get(s["status"], 3), -s["confidence"]))
 
         return {
             "connector_id": connector_id,
             "connector_name": connector.get("display_name", ""),
-            "provider": connector.get("provider", ""),
+            "provider": provider,
             "property_id": property_id,
             "suggestions": suggestions,
+            "conflicts": conflicts,
             "already_mapped": [
                 {
                     "pms_entity_id": m["pms_entity_id"],
@@ -378,6 +531,7 @@ class AutoMappingService:
                 {
                     "id": e.get("external_id", ""),
                     "name": e.get("name", e.get("external_id", "")),
+                    "max_occupancy": e.get("max_occupancy", 0),
                     "is_active": e.get("is_active", True),
                 }
                 for e in active_ext
@@ -389,6 +543,7 @@ class AutoMappingService:
                 "auto_matched": sum(1 for s in suggestions if s["status"] == "auto"),
                 "needs_review": sum(1 for s in suggestions if s["status"] == "review"),
                 "unmatched": sum(1 for s in suggestions if s["status"] == "unmatched"),
+                "conflicts": len(conflicts),
             },
         }
 

@@ -64,6 +64,37 @@ Configured as a static deployment:
 - Multi-tenant architecture
 - 8-language internationalization
 
+## Sprint 10 Changes (Auto Room Mapping v2)
+
+### Backend
+- **`backend/channel_manager/application/auto_mapping_service.py`** — Multi-signal matching engine v2:
+  - `_compute_match_score_v2()` — Weighted scoring with 4 signals: name similarity, alias boost, capacity match, price proximity
+  - `_capacity_similarity()` — Compares PMS vs external room max occupancy (0-100%)
+  - `_price_proximity()` — Compares PMS vs external base price using average ratio (0-100%)
+  - `_PROVIDER_WEIGHTS` — Provider-aware weighting profiles:
+    - HotelRunner: name 50%, capacity 25%, price 15%, alias 10%
+    - Exely: name 60%, capacity 15%, price 10%, alias 15%
+    - Default: name 55%, capacity 20%, price 15%, alias 10%
+  - Graceful degradation when capacity/price data unavailable (redistributes weights)
+  - Per-suggestion `score_breakdown` with individual signal percentages
+  - Per-suggestion `warnings` array for capacity mismatches and price gaps
+  - Conflict detection: identifies when same external type is suggested for multiple PMS types
+  - Status categories: `auto` (≥60% + no warnings), `review` (30-60% or has warnings), `unmatched`
+  - `conflicts` array in response with duplicate-mapping details
+  - PMS room data now fetches `capacity` and `base_price` fields alongside `room_type`
+
+### Frontend
+- **`frontend/src/pages/RoomMappingWizard.jsx`** — Enhanced wizard UI:
+  - `ScoreBar` component: horizontal bar visualizing each signal score
+  - `ConfidenceBadge` v2: click-to-expand score breakdown popup showing name/alias/capacity/price bars + final score + warnings
+  - Sectioned suggestion layout: "Otomatik Eslestirmeler" (auto-apply), "Inceleme Gerektiren" (review queue), "Eslesmedi" (unmatched)
+  - Review items default to disabled (operator must explicitly enable)
+  - Conflict warnings panel with `ShieldAlert` icon at top of suggestions
+  - Per-row warning display for capacity/price mismatches
+  - PMS metadata inline: capacity (K:X) and base price (₺) shown per room type
+  - External room dropdown shows capacity info (K:X) per option
+  - Summary badges include conflict count with pulse animation
+
 ## Sprint 9 Changes (Calendar Assignment Clarity)
 
 ### Frontend

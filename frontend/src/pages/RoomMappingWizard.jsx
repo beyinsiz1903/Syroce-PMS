@@ -11,19 +11,73 @@ import {
 import {
   ArrowLeftRight, CheckCircle, AlertTriangle, Loader2, Wand2,
   ArrowRight, ArrowLeft, Save, XCircle, ChevronDown, RotateCcw,
+  Info, ShieldAlert, Eye,
 } from 'lucide-react';
 
-const ConfidenceBadge = ({ confidence, status }) => {
+const ScoreBar = ({ label, value, color }) => {
+  if (value === null || value === undefined) return null;
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="w-20 text-slate-500 shrink-0">{label}</span>
+      <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(value, 100)}%` }} />
+      </div>
+      <span className="w-8 text-right font-medium text-slate-600">{value}%</span>
+    </div>
+  );
+};
+
+const ConfidenceBadge = ({ confidence, status, breakdown, warnings }) => {
+  const [expanded, setExpanded] = useState(false);
   if (status === 'unmatched') {
     return <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200" data-testid="confidence-unmatched">Eslestirilmedi</Badge>;
   }
-  if (confidence >= 80) {
-    return <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300" data-testid="confidence-high">{confidence}%</Badge>;
-  }
-  if (confidence >= 60) {
-    return <Badge className="bg-amber-100 text-amber-800 border-amber-300" data-testid="confidence-medium">{confidence}%</Badge>;
-  }
-  return <Badge className="bg-orange-100 text-orange-800 border-orange-300" data-testid="confidence-low">{confidence}%</Badge>;
+
+  const badgeClass = confidence >= 80
+    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+    : confidence >= 60
+      ? 'bg-amber-100 text-amber-800 border-amber-300'
+      : 'bg-orange-100 text-orange-800 border-orange-300';
+
+  const hasBreakdown = breakdown && (breakdown.name_similarity > 0 || breakdown.capacity_match !== null || breakdown.price_proximity !== null);
+
+  return (
+    <div className="relative">
+      <Badge
+        className={`${badgeClass} cursor-pointer`}
+        data-testid={`confidence-${confidence >= 80 ? 'high' : confidence >= 60 ? 'medium' : 'low'}`}
+        onClick={() => hasBreakdown && setExpanded(!expanded)}
+      >
+        {confidence}%
+        {hasBreakdown && <Info className="w-3 h-3 ml-1 opacity-60" />}
+      </Badge>
+      {expanded && hasBreakdown && (
+        <div className="absolute right-0 top-full mt-1 z-20 w-64 bg-white rounded-lg shadow-xl border p-3 space-y-2" data-testid="score-breakdown">
+          <div className="text-xs font-semibold text-slate-700 mb-2">Skor Detayi</div>
+          <ScoreBar label="Isim" value={breakdown.name_similarity} color="bg-blue-500" />
+          {breakdown.alias_boost > 0 && (
+            <ScoreBar label="Alias" value={breakdown.alias_boost} color="bg-indigo-400" />
+          )}
+          <ScoreBar label="Kapasite" value={breakdown.capacity_match} color="bg-emerald-500" />
+          <ScoreBar label="Fiyat" value={breakdown.price_proximity} color="bg-amber-500" />
+          <div className="pt-1 border-t text-xs">
+            <span className="text-slate-500">Final:</span>
+            <span className="font-bold ml-1 text-slate-800">{confidence}%</span>
+          </div>
+          {warnings && warnings.length > 0 && (
+            <div className="pt-1 space-y-1">
+              {warnings.map((w, i) => (
+                <div key={i} className="flex items-start gap-1 text-[10px] text-orange-600">
+                  <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                  <span>{w}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 };
 
 const STEPS = [
@@ -82,11 +136,16 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
         data.suggestions.map((s) => ({
           pms_entity_id: s.pms_entity_id,
           pms_entity_name: s.pms_entity_name,
+          pms_room_count: s.pms_room_count || 0,
+          pms_capacity: s.pms_capacity || 0,
+          pms_base_price: s.pms_base_price || 0,
           external_entity_id: s.external_entity_id,
           external_entity_name: s.external_entity_name,
           confidence: s.confidence,
           status: s.status,
-          enabled: s.status !== 'unmatched',
+          score_breakdown: s.score_breakdown || null,
+          warnings: s.warnings || [],
+          enabled: s.status === 'auto',
         })),
       );
     } catch {
@@ -346,14 +405,17 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                   Oda Tipi Eslestirme
                 </CardTitle>
                 <p className="text-sm text-slate-500 mt-1">
-                  Sistem, isim benzerligine gore otomatik eslestirme onerdi. Onerilerden emin olmadiklarinizi duzenleyebilirsiniz.
+                  Sistem, isim benzerligi, kapasite ve fiyat sinyallerine gore otomatik eslestirme onerdi. Dusuk guvenli oneriler inceleme bolumunde listelenir.
                 </p>
               </div>
               {roomData?.summary && (
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <Badge className="bg-emerald-100 text-emerald-800">{roomData.summary.auto_matched} Otomatik</Badge>
                   <Badge className="bg-amber-100 text-amber-800">{roomData.summary.needs_review} Inceleme</Badge>
                   <Badge className="bg-red-100 text-red-800">{roomData.summary.unmatched} Eslesmedi</Badge>
+                  {(roomData.summary.conflicts || 0) > 0 && (
+                    <Badge className="bg-red-500 text-white animate-pulse">{roomData.summary.conflicts} Cakisma</Badge>
+                  )}
                 </div>
               )}
             </CardHeader>
@@ -402,54 +464,139 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                     </div>
                   )}
 
-                  {/* Suggestions */}
                   {roomSelections.length === 0 && !loading && (
                     <p className="text-center text-slate-400 py-8">Eslestirme onerisi bulunamadi</p>
                   )}
-                  {roomSelections.map((sel, idx) => (
-                    <div
-                      key={idx}
-                      className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
-                        sel.enabled ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'
-                      }`}
-                      data-testid={`room-suggestion-${idx}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={sel.enabled}
-                        onChange={(e) => updateRoomSelection(idx, 'enabled', e.target.checked)}
-                        className="w-4 h-4 rounded border-slate-300 text-[#C09D63] accent-[#C09D63]"
-                        data-testid={`room-toggle-${idx}`}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm truncate">{sel.pms_entity_name}</span>
-                          {sel.pms_room_count > 0 && (
-                            <Badge variant="outline" className="text-xs">{sel.pms_room_count} oda</Badge>
+
+                  {roomData?.conflicts?.length > 0 && (
+                    <div className="mb-4 p-3 bg-red-50 rounded-lg border border-red-200" data-testid="conflict-warnings">
+                      <div className="flex items-center gap-2 mb-2">
+                        <ShieldAlert className="w-4 h-4 text-red-600" />
+                        <span className="text-sm font-semibold text-red-800">Cakisma Uyarilari</span>
+                      </div>
+                      {roomData.conflicts.map((c, i) => (
+                        <div key={i} className="text-xs text-red-700 ml-6 mb-1">• {c.message}</div>
+                      ))}
+                    </div>
+                  )}
+
+                  {(() => {
+                    const autoItems = roomSelections.filter((s) => s.status === 'auto');
+                    const reviewItems = roomSelections.filter((s) => s.status === 'review');
+                    const unmatchedItems = roomSelections.filter((s) => s.status === 'unmatched');
+
+                    const renderRow = (sel, idx) => {
+                      const hasWarnings = sel.warnings && sel.warnings.length > 0;
+                      return (
+                        <div
+                          key={idx}
+                          className={`p-3 rounded-lg border transition-all ${
+                            hasWarnings
+                              ? 'bg-orange-50/50 border-orange-200'
+                              : sel.enabled ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'
+                          }`}
+                          data-testid={`room-suggestion-${idx}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={sel.enabled}
+                              onChange={(e) => updateRoomSelection(idx, 'enabled', e.target.checked)}
+                              className="w-4 h-4 rounded border-slate-300 text-[#C09D63] accent-[#C09D63]"
+                              data-testid={`room-toggle-${idx}`}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-sm truncate">{sel.pms_entity_name}</span>
+                                {sel.pms_room_count > 0 && (
+                                  <Badge variant="outline" className="text-xs">{sel.pms_room_count} oda</Badge>
+                                )}
+                                {sel.pms_capacity > 0 && (
+                                  <span className="text-[10px] text-slate-400">K:{sel.pms_capacity}</span>
+                                )}
+                                {sel.pms_base_price > 0 && (
+                                  <span className="text-[10px] text-slate-400">{sel.pms_base_price.toLocaleString('tr-TR')}₺</span>
+                                )}
+                              </div>
+                            </div>
+                            <ArrowLeftRight className="w-4 h-4 text-slate-400 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <Select
+                                value={sel.external_entity_id || '__none__'}
+                                onValueChange={(v) => updateRoomSelection(idx, 'external_entity_id', v === '__none__' ? '' : v)}
+                                disabled={!sel.enabled}
+                              >
+                                <SelectTrigger className="w-full text-sm" data-testid={`room-ext-select-${idx}`}>
+                                  <SelectValue placeholder="Kanal oda tipi secin..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__none__">-- Secim yapilmadi --</SelectItem>
+                                  {roomData?.external_room_types?.map((e) => (
+                                    <SelectItem key={e.id} value={e.id}>
+                                      {e.name}{e.max_occupancy > 0 ? ` (K:${e.max_occupancy})` : ''}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <ConfidenceBadge
+                              confidence={sel.confidence}
+                              status={sel.external_entity_id ? 'matched' : 'unmatched'}
+                              breakdown={sel.score_breakdown}
+                              warnings={sel.warnings}
+                            />
+                          </div>
+                          {hasWarnings && (
+                            <div className="mt-2 ml-7 space-y-0.5">
+                              {sel.warnings.map((w, wi) => (
+                                <div key={wi} className="flex items-center gap-1.5 text-[11px] text-orange-600">
+                                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                                  <span>{w}</span>
+                                </div>
+                              ))}
+                            </div>
                           )}
                         </div>
-                      </div>
-                      <ArrowLeftRight className="w-4 h-4 text-slate-400 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <Select
-                          value={sel.external_entity_id || '__none__'}
-                          onValueChange={(v) => updateRoomSelection(idx, 'external_entity_id', v === '__none__' ? '' : v)}
-                          disabled={!sel.enabled}
-                        >
-                          <SelectTrigger className="w-full text-sm" data-testid={`room-ext-select-${idx}`}>
-                            <SelectValue placeholder="Kanal oda tipi secin..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">-- Secim yapilmadi --</SelectItem>
-                            {roomData?.external_room_types?.map((e) => (
-                              <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <ConfidenceBadge confidence={sel.confidence} status={sel.external_entity_id ? 'matched' : 'unmatched'} />
-                    </div>
-                  ))}
+                      );
+                    };
+
+                    return (
+                      <>
+                        {autoItems.length > 0 && (
+                          <div className="space-y-2" data-testid="auto-section">
+                            <div className="flex items-center gap-2 py-1">
+                              <CheckCircle className="w-4 h-4 text-emerald-600" />
+                              <span className="text-sm font-semibold text-emerald-800">Otomatik Eslestirmeler ({autoItems.length})</span>
+                              <span className="text-[10px] text-slate-400">Yuksek guven — otomatik uygulanabilir</span>
+                            </div>
+                            {autoItems.map((sel) => renderRow(sel, roomSelections.indexOf(sel)))}
+                          </div>
+                        )}
+
+                        {reviewItems.length > 0 && (
+                          <div className="space-y-2 mt-4" data-testid="review-section">
+                            <div className="flex items-center gap-2 py-1">
+                              <Eye className="w-4 h-4 text-amber-600" />
+                              <span className="text-sm font-semibold text-amber-800">Inceleme Gerektiren ({reviewItems.length})</span>
+                              <span className="text-[10px] text-slate-400">Dusuk guven — operator onayi gerekli</span>
+                            </div>
+                            {reviewItems.map((sel) => renderRow(sel, roomSelections.indexOf(sel)))}
+                          </div>
+                        )}
+
+                        {unmatchedItems.length > 0 && (
+                          <div className="space-y-2 mt-4" data-testid="unmatched-section">
+                            <div className="flex items-center gap-2 py-1">
+                              <XCircle className="w-4 h-4 text-red-500" />
+                              <span className="text-sm font-semibold text-red-700">Eslesmedi ({unmatchedItems.length})</span>
+                              <span className="text-[10px] text-slate-400">Kanal oda tipi bulunamadi — manuel secim yapin</span>
+                            </div>
+                            {unmatchedItems.map((sel) => renderRow(sel, roomSelections.indexOf(sel)))}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               )}
             </CardContent>
