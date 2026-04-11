@@ -310,6 +310,44 @@ export const computeUnassignedLanes = (unassignedBookings) => {
   return { lanes, maxLane };
 };
 
+// Unassigned booking urgency classification
+export const getUnassignedUrgency = (booking) => {
+  const today = toDateStringUTC(new Date());
+  const tomorrow = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return toDateStringUTC(d);
+  })();
+  const checkIn = toDateStringUTC(booking.check_in);
+
+  if (checkIn < today) return { level: 'overdue', label: 'Gecikmiş', days: -1, color: 'red' };
+  if (checkIn === today) return { level: 'today', label: 'Bugün!', days: 0, color: 'orange' };
+  if (checkIn === tomorrow) return { level: 'tomorrow', label: 'Yarın', days: 1, color: 'amber' };
+  const diffMs = new Date(checkIn) - new Date(today);
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  return { level: 'future', label: `${diffDays} gün`, days: diffDays, color: 'blue' };
+};
+
+export const getUrgencyBarColors = (urgency) => {
+  const map = {
+    overdue:  { bg: '#fecaca', border: '#ef4444', stripe: '#dc2626', text: '#991b1b', badge: 'bg-red-600' },
+    today:    { bg: '#fed7aa', border: '#f97316', stripe: '#ea580c', text: '#9a3412', badge: 'bg-orange-500' },
+    tomorrow: { bg: '#fde68a', border: '#f59e0b', stripe: '#d97706', text: '#92400e', badge: 'bg-amber-500' },
+    future:   { bg: '#bfdbfe', border: '#3b82f6', stripe: '#2563eb', text: '#1e40af', badge: 'bg-blue-500' },
+  };
+  return map[urgency?.level] || map.future;
+};
+
+export const sortByUrgency = (bookings) => {
+  const order = { overdue: 0, today: 1, tomorrow: 2, future: 3 };
+  return [...bookings].sort((a, b) => {
+    const ua = getUnassignedUrgency(a);
+    const ub = getUnassignedUrgency(b);
+    if (order[ua.level] !== order[ub.level]) return order[ua.level] - order[ub.level];
+    return new Date(a.check_in) - new Date(b.check_in);
+  });
+};
+
 // Generate date range
 export const getDateRange = (currentDate, daysToShow) => {
   const dates = [];

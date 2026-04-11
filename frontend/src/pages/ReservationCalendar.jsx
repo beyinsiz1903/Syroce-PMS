@@ -25,6 +25,8 @@ import {
   getSegmentColor,
   getStatusLabel,
   getRateTypeInfo,
+  getUnassignedUrgency,
+  sortByUrgency,
 } from './calendar';
 
 const ReservationSidebar = lazy(() => import('@/components/ReservationSidebar'));
@@ -68,6 +70,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [detailModalBookingId, setDetailModalBookingId] = useState(null);
   const [showUnassignedPanel, setShowUnassignedPanel] = useState(false);
+  const [unassignedFilter, setUnassignedFilter] = useState('all');
 
   // No-Show Reason Dialog
   const [showNoShowDialog, setShowNoShowDialog] = useState(false);
@@ -869,71 +872,131 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         </Suspense>
       )}
 
-      {/* Unassigned Bookings Panel */}
-      {showUnassignedPanel && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/40 z-50 transition-opacity"
-            onClick={() => setShowUnassignedPanel(false)}
-            data-testid="unassigned-panel-backdrop"
-          />
-          <div className="fixed top-0 right-0 h-full w-[520px] max-w-[90vw] bg-white z-50 shadow-2xl overflow-y-auto animate-in slide-in-from-right" data-testid="unassigned-panel">
-            <div className="sticky top-0 z-10 bg-white border-b px-5 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center">
-                  <CalendarIcon className="w-4 h-4 text-orange-600" />
+      {/* Unassigned Bookings Panel — Enhanced with urgency + quick assign */}
+      {showUnassignedPanel && (() => {
+        const allUnassigned = bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
+        const overdueList = allUnassigned.filter(b => getUnassignedUrgency(b).level === 'overdue');
+        const todayList = allUnassigned.filter(b => getUnassignedUrgency(b).level === 'today');
+        const tomorrowList = allUnassigned.filter(b => getUnassignedUrgency(b).level === 'tomorrow');
+        const futureList = allUnassigned.filter(b => getUnassignedUrgency(b).level === 'future');
+
+        const activeFilter = unassignedFilter;
+        const filteredList = activeFilter === 'all' ? allUnassigned
+          : activeFilter === 'overdue' ? overdueList
+          : activeFilter === 'today' ? todayList
+          : activeFilter === 'tomorrow' ? tomorrowList
+          : futureList;
+        const sorted = sortByUrgency(filteredList);
+
+        const urgencyBorderColors = {
+          overdue: 'border-l-red-500',
+          today: 'border-l-orange-500',
+          tomorrow: 'border-l-amber-400',
+          future: 'border-l-blue-400',
+        };
+        const urgencyBadgeColors = {
+          overdue: 'bg-red-100 text-red-700',
+          today: 'bg-orange-100 text-orange-700',
+          tomorrow: 'bg-amber-100 text-amber-700',
+          future: 'bg-blue-100 text-blue-700',
+        };
+
+        return (
+          <>
+            <div className="fixed inset-0 bg-black/40 z-50 transition-opacity" onClick={() => { setShowUnassignedPanel(false); setUnassignedFilter('all'); }} data-testid="unassigned-panel-backdrop" />
+            <div className="fixed top-0 right-0 h-full w-[560px] max-w-[90vw] bg-white z-50 shadow-2xl overflow-y-auto animate-in slide-in-from-right" data-testid="unassigned-panel">
+              <div className="sticky top-0 z-10 bg-white border-b">
+                <div className="px-5 py-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${overdueList.length > 0 ? 'bg-red-100' : todayList.length > 0 ? 'bg-orange-100' : 'bg-blue-100'}`}>
+                      <CalendarIcon className={`w-4 h-4 ${overdueList.length > 0 ? 'text-red-600' : todayList.length > 0 ? 'text-orange-600' : 'text-blue-600'}`} />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-800 text-sm" data-testid="unassigned-panel-title">Atanmamis Rezervasyonlar</h3>
+                      <p className="text-xs text-gray-500">{allUnassigned.length} aktif rezervasyon</p>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => { setShowUnassignedPanel(false); setUnassignedFilter('all'); }} className="h-8 w-8 p-0" data-testid="close-unassigned-panel-btn">
+                    <X className="w-4 h-4" />
+                  </Button>
                 </div>
-                <div>
-                  <h3 className="font-semibold text-gray-800 text-sm" data-testid="unassigned-panel-title">Atanmamis Rezervasyonlar</h3>
-                  <p className="text-xs text-gray-500">
-                    {bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out').length} aktif rezervasyon
-                  </p>
-                </div>
+
+                {allUnassigned.length > 0 && (
+                  <>
+                    <div className="px-5 pb-3 grid grid-cols-4 gap-2">
+                      <div className={`rounded-lg p-2 text-center cursor-pointer transition-colors ${overdueList.length > 0 ? 'bg-red-50 hover:bg-red-100' : 'bg-gray-50'}`} onClick={() => setUnassignedFilter('overdue')}>
+                        <div className={`text-lg font-bold ${overdueList.length > 0 ? 'text-red-600' : 'text-gray-400'}`}>{overdueList.length}</div>
+                        <div className="text-[10px] text-gray-500">Gecikmiş</div>
+                      </div>
+                      <div className={`rounded-lg p-2 text-center cursor-pointer transition-colors ${todayList.length > 0 ? 'bg-orange-50 hover:bg-orange-100' : 'bg-gray-50'}`} onClick={() => setUnassignedFilter('today')}>
+                        <div className={`text-lg font-bold ${todayList.length > 0 ? 'text-orange-600' : 'text-gray-400'}`}>{todayList.length}</div>
+                        <div className="text-[10px] text-gray-500">Bugün</div>
+                      </div>
+                      <div className={`rounded-lg p-2 text-center cursor-pointer transition-colors ${tomorrowList.length > 0 ? 'bg-amber-50 hover:bg-amber-100' : 'bg-gray-50'}`} onClick={() => setUnassignedFilter('tomorrow')}>
+                        <div className={`text-lg font-bold ${tomorrowList.length > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{tomorrowList.length}</div>
+                        <div className="text-[10px] text-gray-500">Yarın</div>
+                      </div>
+                      <div className={`rounded-lg p-2 text-center cursor-pointer transition-colors bg-blue-50 hover:bg-blue-100`} onClick={() => setUnassignedFilter('future')}>
+                        <div className="text-lg font-bold text-blue-600">{futureList.length}</div>
+                        <div className="text-[10px] text-gray-500">Gelecek</div>
+                      </div>
+                    </div>
+
+                    <div className="px-5 pb-3 flex gap-1.5">
+                      {['all', 'overdue', 'today', 'tomorrow', 'future'].map((f) => {
+                        const labels = { all: 'Tümü', overdue: 'Gecikmiş', today: 'Bugün', tomorrow: 'Yarın', future: 'Gelecek' };
+                        return (
+                          <button
+                            key={f}
+                            onClick={() => setUnassignedFilter(f)}
+                            className={`text-[11px] px-2.5 py-1 rounded-full font-medium transition-colors ${
+                              activeFilter === f ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            }`}
+                          >
+                            {labels[f]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
-              <Button variant="ghost" size="sm" onClick={() => setShowUnassignedPanel(false)} className="h-8 w-8 p-0" data-testid="close-unassigned-panel-btn">
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-            <div className="p-4 space-y-3">
-              {bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out').length === 0 ? (
-                <div className="text-center py-12 text-gray-400" data-testid="no-unassigned-msg">
-                  <CalendarIcon className="w-10 h-10 mx-auto mb-3 opacity-40" />
-                  <p className="text-sm font-medium">Atanmamis rezervasyon yok</p>
-                  <p className="text-xs mt-1">Tum rezervasyonlar odalara atanmis</p>
-                </div>
-              ) : (
-                bookings
-                  .filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out')
-                  .sort((a, b) => new Date(a.check_in) - new Date(b.check_in))
-                  .map((booking, idx) => {
+
+              <div className="p-4 space-y-3">
+                {sorted.length === 0 ? (
+                  <div className="text-center py-12 text-gray-400" data-testid="no-unassigned-msg">
+                    <CalendarIcon className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                    <p className="text-sm font-medium">{activeFilter === 'all' ? 'Atanmamis rezervasyon yok' : 'Bu filtrede sonuc yok'}</p>
+                    <p className="text-xs mt-1">{activeFilter === 'all' ? 'Tum rezervasyonlar odalara atanmis' : 'Diger filtreleri deneyin'}</p>
+                  </div>
+                ) : (
+                  sorted.map((booking, idx) => {
                     const checkIn = booking.check_in ? new Date(booking.check_in).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) : '-';
                     const checkOut = booking.check_out ? new Date(booking.check_out).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) : '-';
-                    const statusColors = {
-                      confirmed: 'bg-blue-100 text-blue-700',
-                      checked_in: 'bg-green-100 text-green-700',
-                      no_show: 'bg-amber-100 text-amber-700',
-                    };
-                    const statusLabels = {
-                      confirmed: 'Onaylandi',
-                      checked_in: 'Iceride',
-                      no_show: 'Gelmedi',
-                    };
-                    const isNoShow = booking.status === 'no_show';
+                    const urgency = getUnassignedUrgency(booking);
+                    const borderColor = urgencyBorderColors[urgency.level] || 'border-l-blue-400';
+                    const badgeColor = urgencyBadgeColors[urgency.level] || 'bg-blue-100 text-blue-700';
+                    const bCheckIn = new Date(booking.check_in);
+                    const bCheckOut = new Date(booking.check_out);
+                    const matchingRooms = rooms.filter(r =>
+                      (r.room_type || '').toLowerCase() === (booking.room_type || '').toLowerCase() &&
+                      !bookings.some(ob =>
+                        ob.room_id === r.id &&
+                        ob.id !== booking.id &&
+                        ob.status !== 'cancelled' && ob.status !== 'checked_out' && ob.status !== 'no_show' &&
+                        new Date(ob.check_in) < bCheckOut && new Date(ob.check_out) > bCheckIn
+                      )
+                    );
                     return (
                       <div
                         key={booking.id || idx}
-                        className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow"
+                        className={`bg-white border rounded-lg p-4 hover:shadow-md transition-shadow border-l-4 ${borderColor} ${urgency.level === 'overdue' ? 'ring-1 ring-red-200' : ''}`}
                         data-testid={`unassigned-item-${idx}`}
                       >
                         <div className="flex items-start justify-between mb-2">
                           <div
                             className="flex items-center gap-2 cursor-pointer flex-1"
-                            onClick={() => {
-                              if (booking.id) {
-                                setDetailModalBookingId(booking.id);
-                                setShowDetailModal(true);
-                              }
-                            }}
+                            onClick={() => { if (booking.id) { setDetailModalBookingId(booking.id); setShowDetailModal(true); }}}
                           >
                             <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
                               <User className="w-3.5 h-3.5 text-gray-500" />
@@ -942,11 +1005,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                               <p className="text-sm font-semibold text-gray-800" data-testid={`unassigned-guest-${idx}`}>
                                 {booking.guest_name || 'Bilinmeyen Misafir'}
                               </p>
-                              <p className="text-xs text-gray-400">{booking.id || ''}</p>
+                              <p className="text-xs text-gray-400">{booking.room_type || ''}</p>
                             </div>
                           </div>
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[booking.status] || 'bg-gray-100 text-gray-600'}`} data-testid={`unassigned-status-${idx}`}>
-                            {statusLabels[booking.status] || booking.status}
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${badgeColor}`}>
+                            {urgency.label}
                           </span>
                         </div>
                         <div className="flex items-center gap-4 text-xs text-gray-500 mt-2">
@@ -956,68 +1019,67 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                             <ArrowRight className="w-3 h-3 mx-0.5" />
                             <span>{checkOut}</span>
                           </div>
-                          {booking.room_type && (
-                            <div className="flex items-center gap-1">
-                              <MapPin className="w-3 h-3" />
-                              <span>{booking.room_type}</span>
-                            </div>
-                          )}
                           {booking.total_amount > 0 && (
-                            <span className="font-medium text-gray-700">{booking.total_amount} TL</span>
+                            <span className="font-medium text-gray-700">{booking.total_amount.toLocaleString('tr-TR')} TL</span>
                           )}
                         </div>
-                        {/* No-Show / Virtual Room Button */}
-                        <div className="mt-3 flex gap-2">
-                          {!isNoShow && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-xs h-7 border-amber-300 text-amber-700 hover:bg-amber-50"
-                              data-testid={`no-show-btn-${idx}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setNoShowBookingId(booking.id);
-                                setNoShowReason('misafir_gelmedi');
-                                setShowNoShowDialog(true);
-                              }}
-                            >
-                              <Ban className="w-3 h-3 mr-1" />
-                              No-Show (Sanal Odaya Ata)
-                            </Button>
+
+                        <div className="mt-3 flex items-center gap-2">
+                          {matchingRooms.length > 0 ? (
+                            <div className="flex items-center gap-1.5 flex-1">
+                              <select
+                                className="border rounded px-2 py-1 text-xs h-7 flex-1 max-w-[160px]"
+                                defaultValue=""
+                                data-testid={`quick-assign-select-${idx}`}
+                                onChange={async (e) => {
+                                  const roomId = e.target.value;
+                                  if (!roomId) return;
+                                  try {
+                                    await axios.put(`/pms/bookings/${booking.id}`, { room_id: roomId });
+                                    toast.success(`${booking.guest_name || 'Misafir'} odaya atandi`);
+                                    loadCalendarData();
+                                  } catch (err) {
+                                    toast.error(err.response?.data?.detail || 'Atama basarisiz');
+                                  }
+                                }}
+                              >
+                                <option value="">Oda sec...</option>
+                                {matchingRooms.map(r => (
+                                  <option key={r.id} value={r.id}>
+                                    {r.room_number} - {r.room_type}
+                                  </option>
+                                ))}
+                              </select>
+                              <span className="text-[10px] text-green-600 font-medium">{matchingRooms.length} musait</span>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-red-500 font-medium">Musait oda yok</span>
                           )}
-                          {isNoShow && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-xs h-7 border-gray-300 text-gray-600 hover:bg-gray-50"
-                              data-testid={`assign-virtual-btn-${idx}`}
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                try {
-                                  await axios.post('/pms/bookings/no-show-virtual', {
-                                    booking_id: booking.id,
-                                    charge_first_night: false,
-                                  });
-                                  toast.success('Sanal odaya atandi');
-                                  loadCalendarData();
-                                } catch (err) {
-                                  toast.error(err.response?.data?.detail || 'Atama basarisiz');
-                                }
-                              }}
-                            >
-                              <MapPin className="w-3 h-3 mr-1" />
-                              Sanal Odaya Ata
-                            </Button>
-                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-7 border-amber-300 text-amber-700 hover:bg-amber-50"
+                            data-testid={`no-show-btn-${idx}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setNoShowBookingId(booking.id);
+                              setNoShowReason('misafir_gelmedi');
+                              setShowNoShowDialog(true);
+                            }}
+                          >
+                            <Ban className="w-3 h-3 mr-1" />
+                            No-Show
+                          </Button>
                         </div>
                       </div>
                     );
                   })
-              )}
+                )}
+              </div>
             </div>
-          </div>
-        </>
-      )}
+          </>
+        );
+      })()}
 
       {/* No-Show Reason Dialog */}
       <Dialog open={showNoShowDialog} onOpenChange={(open) => { if (!open) { setShowNoShowDialog(false); setNoShowBookingId(null); } }}>

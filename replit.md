@@ -64,6 +64,33 @@ Configured as a static deployment:
 - Multi-tenant architecture
 - 8-language internationalization
 
+## Sprint 9 Changes (Calendar Assignment Clarity)
+
+### Frontend
+- **`frontend/src/pages/calendar/calendarHelpers.jsx`** — New urgency helpers:
+  - `getUnassignedUrgency(booking)` — Returns `{ level, label, daysUntil }` where level is overdue/today/tomorrow/future
+  - `getUrgencyBarColors(level)` — Tailwind color classes for urgency-colored booking bars
+  - `sortByUrgency(bookings)` — Sorts bookings by urgency (overdue first → today → tomorrow → future)
+- **`frontend/src/pages/calendar/CalendarGrid.jsx`** — Enhanced unassigned rows:
+  - Urgency-colored booking bars (red=overdue, orange-pulse=today, amber=tomorrow, blue=future)
+  - Left priority stripe on each bar
+  - Countdown badge ("Gecikmiş!", "Bugün!", "Yarın", "2 gün")
+  - Ring highlights for overdue/today bookings
+  - Row background tinted by urgency level
+- **`frontend/src/pages/calendar/CalendarHeader.jsx`** — Enhanced unassigned button:
+  - Urgency breakdown text ("3 atanmamis (1 gecikmiş!)" or "(2 bugün)")
+  - AlertTriangle icon when urgent bookings exist
+  - Pulse animation when overdue bookings present
+  - Color shifts: red border for overdue, orange for today
+- **`frontend/src/pages/ReservationCalendar.jsx`** — Enhanced UnassignedPanel:
+  - Summary cards: 4-column grid showing Gecikmiş/Bugün/Yarın/Gelecek counts with color coding
+  - Filter tabs: Tümü/Gecikmiş/Bugün/Yarın/Gelecek (uses showUnassignedPanel state as filter key)
+  - Bookings sorted by urgency within each filter
+  - Left border color stripe per urgency level + urgency badge per card
+  - Quick room assign: inline dropdown showing available rooms matching booking's room type
+  - Room availability check against existing bookings on check-in date
+  - No-show button retained per card
+
 ## Sprint 8 Changes (Automated Email Scheduler for Reports)
 
 ### Backend

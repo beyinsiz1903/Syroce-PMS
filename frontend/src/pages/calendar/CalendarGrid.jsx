@@ -6,6 +6,7 @@ import {
   isBlockStart, calculateBlockSpan, calculateBookingSpan,
   getBookingStatusColor, getBookingStatus,
   getUnassignedBookingsForType, computeUnassignedLanes,
+  getUnassignedUrgency, getUrgencyBarColors,
 } from "./calendarHelpers";
 
 // Compact grid constants
@@ -225,20 +226,26 @@ const CalendarGrid = ({
                     </div>
                   </div>
 
-                  {/* Unassigned Bookings Row */}
+                  {/* Unassigned Bookings Row — urgency-colored */}
                   {unassignedForType.length > 0 && (() => {
                     const { lanes, maxLane } = computeUnassignedLanes(unassignedForType);
                     const rowHeight = (maxLane + 1) * LANE_H + 6;
+                    const hasOverdue = unassignedForType.some(b => getUnassignedUrgency(b).level === 'overdue');
+                    const hasToday = unassignedForType.some(b => getUnassignedUrgency(b).level === 'today');
+                    const labelColor = hasOverdue ? 'text-red-700' : hasToday ? 'text-orange-700' : 'text-blue-700';
+                    const dotColor = hasOverdue ? 'bg-red-500' : hasToday ? 'bg-orange-500' : 'bg-blue-500';
+                    const rowBg = hasOverdue ? 'bg-red-50/30' : hasToday ? 'bg-orange-50/30' : 'bg-blue-50/20';
+                    const sidebarBg = hasOverdue ? 'bg-red-50/60' : hasToday ? 'bg-orange-50/60' : 'bg-blue-50/40';
                     return (
-                      <div className="flex border-b border-dashed border-blue-200 bg-blue-50/20">
-                        <div className="w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 bg-blue-50/40" style={{ height: `${rowHeight}px` }}>
+                      <div className={`flex border-b border-dashed border-blue-200 ${rowBg}`}>
+                        <div className={`w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 ${sidebarBg}`} style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-1">
-                            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
-                            <div className="font-bold text-[9px] text-blue-700">Atanmamis</div>
+                            <div className={`w-2 h-2 ${dotColor} rounded-full ${hasOverdue || hasToday ? 'animate-pulse' : ''}`}></div>
+                            <div className={`font-bold text-[9px] ${labelColor}`}>Atanmamis</div>
                           </div>
-                          {unassignedForType.length > 1 && (
-                            <div className="text-[8px] text-blue-500 ml-3">{unassignedForType.length} rez.</div>
-                          )}
+                          <div className={`text-[8px] ml-3 ${hasOverdue ? 'text-red-500 font-semibold' : hasToday ? 'text-orange-500 font-semibold' : 'text-blue-500'}`}>
+                            {unassignedForType.length} rez.
+                          </div>
                         </div>
                         <div className="flex relative" style={{ width: `${daysToShow * CELL_W}px`, height: `${rowHeight}px` }}>
                           {dateRange.map((date, idx) => {
@@ -264,7 +271,8 @@ const CalendarGrid = ({
                             const visibleEndIdx = dateRange.findIndex(d => toDateStringUTC(d) >= checkOutStr);
                             const endIdx = visibleEndIdx >= 0 ? visibleEndIdx : dateRange.length;
                             const span = Math.max(endIdx - startIdx, 1);
-                            const statusColor = getBookingStatusColor(booking);
+                            const urgency = getUnassignedUrgency(booking);
+                            const uColors = getUrgencyBarColors(urgency);
                             return (
                               <div
                                 key={booking.id}
@@ -272,24 +280,29 @@ const CalendarGrid = ({
                                 onDragStart={(e) => onDragStart(e, booking)}
                                 onDragEnd={onDragEnd}
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
-                                className="absolute rounded text-white text-[10px] shadow-sm hover:shadow-md transition-all cursor-move z-20 border"
+                                className={`absolute rounded text-[10px] shadow-sm hover:shadow-lg transition-all cursor-move z-20 border-2 ${urgency.level === 'overdue' ? 'ring-1 ring-red-400 ring-offset-1' : ''} ${urgency.level === 'today' ? 'ring-1 ring-orange-300' : ''}`}
                                 style={{
                                   left: `${startIdx * CELL_W + 2}px`,
                                   top: `${lane * LANE_H + 3}px`,
                                   width: `${span * CELL_W - 4}px`,
                                   height: `${LANE_H - 6}px`,
-                                  backgroundColor: statusColor.bg,
-                                  borderColor: statusColor.border,
+                                  backgroundColor: uColors.bg,
+                                  borderColor: uColors.border,
                                 }}
                                 data-testid={`unassigned-booking-${booking.id}`}
-                                title={`${booking.guest_name} - Odaya surukleyin`}
+                                title={`${booking.guest_name} — ${urgency.label} — Odaya surukleyin`}
                               >
-                                <div className="px-1.5 py-0.5 h-full relative overflow-hidden">
-                                  <div className="font-extrabold text-[10px] truncate text-white leading-tight">
-                                    {booking.guest_name || 'Misafir'}
-                                  </div>
-                                  <div className="text-[8px] text-white/80 truncate">
-                                    Oda ata
+                                <div className="flex h-full overflow-hidden">
+                                  <div className="w-[3px] rounded-l shrink-0" style={{ backgroundColor: uColors.stripe }}></div>
+                                  <div className="px-1 py-0.5 flex-1 min-w-0 flex items-center justify-between">
+                                    <div className="min-w-0">
+                                      <div className="font-extrabold text-[10px] truncate leading-tight" style={{ color: uColors.text }}>
+                                        {booking.guest_name || 'Misafir'}
+                                      </div>
+                                    </div>
+                                    <div className={`${uColors.badge} text-white text-[7px] font-bold px-1 py-0 rounded shrink-0 ml-0.5 leading-tight`}>
+                                      {urgency.label}
+                                    </div>
                                   </div>
                                 </div>
                               </div>

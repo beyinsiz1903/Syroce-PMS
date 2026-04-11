@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight,
-  Plus, RefreshCw, Loader2
+  Plus, RefreshCw, Loader2, AlertTriangle
 } from "lucide-react";
+import { getUnassignedUrgency } from "./calendarHelpers";
 
 const CalendarHeader = ({
   dateRange,
@@ -27,7 +28,11 @@ const CalendarHeader = ({
   onShowUnassigned,
 }) => {
   const navigate = useNavigate();
-  const unassignedCount = bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out').length;
+  const unassignedList = bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
+  const unassignedCount = unassignedList.length;
+  const overdueCount = unassignedList.filter(b => getUnassignedUrgency(b).level === 'overdue').length;
+  const todayCount = unassignedList.filter(b => getUnassignedUrgency(b).level === 'today').length;
+  const hasUrgent = overdueCount > 0 || todayCount > 0;
   const [showDatePicker, setShowDatePicker] = useState(false);
   const datePickerRef = useRef(null);
 
@@ -55,11 +60,20 @@ const CalendarHeader = ({
           {unassignedCount > 0 && (
             <Button
               variant="outline"
-              className="border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 font-medium text-sm px-3 py-2 rounded-md cursor-pointer"
+              className={`font-medium text-sm px-3 py-2 rounded-md cursor-pointer ${
+                overdueCount > 0
+                  ? 'border-red-400 text-red-700 bg-red-50 hover:bg-red-100 animate-pulse'
+                  : todayCount > 0
+                    ? 'border-orange-400 text-orange-700 bg-orange-50 hover:bg-orange-100'
+                    : 'border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100'
+              }`}
               data-testid="unassigned-count-btn"
               onClick={() => onShowUnassigned?.()}
             >
-              {unassignedCount} atanmamis oda
+              {hasUrgent && <AlertTriangle className="w-3.5 h-3.5 mr-1" />}
+              {unassignedCount} atanmamis
+              {overdueCount > 0 && <span className="ml-1 text-red-600 font-bold">({overdueCount} gecikmiş!)</span>}
+              {overdueCount === 0 && todayCount > 0 && <span className="ml-1 text-orange-600 font-bold">({todayCount} bugün)</span>}
             </Button>
           )}
           {conflicts.length > 0 && (
