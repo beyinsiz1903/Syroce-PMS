@@ -5,13 +5,9 @@ HotelRunner üzerinden ayarla → HR API'ye push et → OTA'lara yansısın.
 import asyncio
 import logging
 import uuid
-from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 
-import holidays as holidays_lib
-from dateutil.easter import easter
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from pymongo import UpdateOne
 
 from core.database import db
@@ -25,61 +21,26 @@ from domains.channel_manager.hr_push_queue_worker import (
     schedule_auto_retry,
 )
 from domains.channel_manager.providers.hotelrunner.errors import HotelRunnerRateLimitError
+from domains.channel_manager.rate_utils import (
+    BulkGridUpdateRequest,
+    PricingSettingsRequest,
+    RoomTypeValuesItem,
+    StopSaleScheduleCreate,
+    StopSaleScheduleUpdate,
+)
+from domains.channel_manager.rate_utils import (
+    get_holiday_periods as _get_holiday_periods,
+)
 from models.schemas import User
 
 logger = logging.getLogger(__name__)
 
-# ── Rate-limit aware push helper ────────────────────────────────
-MAX_RETRIES = 1           # fail-fast: tek deneme, 429'da hemen kuyruga ekle
-INITIAL_BACKOFF = 5.0    # seconds — base backoff (kullanilmiyor, fail-fast)
-MAX_PUSH_WAIT = 5.0      # seconds — max wait (kullanilmiyor, fail-fast)
-INTER_PUSH_DELAY = 2.0  # seconds between sequential room-type pushes
+MAX_RETRIES = 1
+INITIAL_BACKOFF = 5.0
+MAX_PUSH_WAIT = 5.0
+INTER_PUSH_DELAY = 2.0
 
 router = APIRouter(prefix="/api/channel-manager/hr-rate-manager", tags=["HR Rate Manager"])
-
-
-class RoomTypeValuesItem(BaseModel):
-    room_type_code: str
-    rate_plan_codes: list[str]
-    rate: float | None = None
-    availability: int | None = None
-    min_stay: int | None = None
-    max_stay: int | None = None
-    stop_sell: bool | None = None
-    cta: bool | None = None
-    ctd: bool | None = None
-
-
-class RoomTypeSelection(BaseModel):
-    room_type_code: str
-    rate_plan_codes: list[str]
-
-
-class BulkGridUpdateRequest(BaseModel):
-    room_type_codes: list[str] | None = None
-    rate_plan_codes: list[str] | None = None
-    selections: list[RoomTypeSelection] | None = None
-    per_room_values: list[RoomTypeValuesItem] | None = None
-    start_date: str
-    end_date: str
-    selected_days: list[int] | None = None
-    rate: float | None = None
-    availability: int | None = None
-    min_stay: int | None = None
-    max_stay: int | None = None
-    stop_sell: bool | None = None
-    cta: bool | None = None
-    ctd: bool | None = None
-    update_fields: list[str] = []
-
-
-class PricingSettingItem(BaseModel):
-    room_type_code: str
-    pricing_type: str
-
-
-class PricingSettingsRequest(BaseModel):
-    settings: list[PricingSettingItem]
 
 
 # ── Helpers ──────────────────────────────────────────────────────
@@ -134,27 +95,6 @@ async def _get_hr_provider(tenant_id: str):
         return None, None
 
 
-def _group_consecutive_dates(date_strings: list[str]) -> list[tuple[str, str]]:
-    """Group sorted date strings into consecutive ranges.
-
-    Returns list of (range_start, range_end) tuples.
-    Example: ['2025-01-04', '2025-01-11', '2025-01-12'] ->
-             [('2025-01-04','2025-01-04'), ('2025-01-11','2025-01-12')]
-    """
-    if not date_strings:
-        return []
-    ranges: list[tuple[str, str]] = []
-    sorted_dates = sorted(date_strings)
-    range_start = sorted_dates[0]
-    prev = datetime.strptime(sorted_dates[0], "%Y-%m-%d").date()
-    for ds in sorted_dates[1:]:
-        curr = datetime.strptime(ds, "%Y-%m-%d").date()
-        if (curr - prev).days != 1:
-            ranges.append((range_start, prev.strftime("%Y-%m-%d")))
-            range_start = ds
-        prev = curr
-    ranges.append((range_start, prev.strftime("%Y-%m-%d")))
-    return ranges
 
 
 async def _push_with_retry(
@@ -791,63 +731,6 @@ async def update_hr_pricing_settings(
 # ── Holidays (shared logic) ─────────────────────────────────────
 
 
-def _get_holiday_periods(year: int) -> list:
-    tr = holidays_lib.Turkey(years=[year])
-    groups = defaultdict(list)
-    for d, name in sorted(tr.items()):
-        parts = [n.strip() for n in name.split(";")]
-        for part in parts:
-            groups[part].append(d)
-
-    periods = []
-    tr_names = {
-        "New Year's Day": "Yilbasi",
-        "Eid al-Fitr": "Ramazan Bayrami",
-        "Eid al-Adha": "Kurban Bayrami",
-        "National Sovereignty and Children's Day": "23 Nisan Ulusal Egemenlik ve Cocuk Bayrami",
-        "Labour and Solidarity Day": "1 Mayis Isci Bayrami",
-        "Commemoration of Atatürk, Youth and Sports Day": "19 Mayis Ataturk'u Anma",
-        "Democracy and National Unity Day": "15 Temmuz Demokrasi Bayrami",
-        "Victory Day": "30 Agustos Zafer Bayrami",
-        "Republic Day": "29 Ekim Cumhuriyet Bayrami",
-    }
-
-    for en_name, dates in groups.items():
-        sorted_dates = sorted(dates)
-        tr_name = tr_names.get(en_name, en_name)
-        key = en_name.lower().replace(" ", "_").replace("'", "")
-        periods.append({
-            "key": f"tr_{key}_{year}",
-            "name": tr_name,
-            "category": "turkey",
-            "start_date": sorted_dates[0].isoformat(),
-            "end_date": sorted_dates[-1].isoformat(),
-            "days": len(sorted_dates),
-            "year": year,
-        })
-
-    easter_date = easter(year)
-    orthodox_easter = easter(year, method=2)
-
-    intl = [
-        {"key": f"easter_{year}", "name": "Paskalya (Bati)", "category": "international",
-         "start_date": (easter_date - timedelta(days=2)).isoformat(),
-         "end_date": (easter_date + timedelta(days=1)).isoformat(), "days": 4, "year": year},
-        {"key": f"orthodox_easter_{year}", "name": "Ortodoks Paskalya", "category": "international",
-         "start_date": (orthodox_easter - timedelta(days=2)).isoformat(),
-         "end_date": (orthodox_easter + timedelta(days=1)).isoformat(), "days": 4, "year": year},
-        {"key": f"christmas_{year}", "name": "Noel Tatili", "category": "international",
-         "start_date": f"{year}-12-23", "end_date": f"{year}-12-26", "days": 4, "year": year},
-        {"key": f"russian_newyear_{year}", "name": "Rus Yilbasi Tatili", "category": "international",
-         "start_date": f"{year}-01-01", "end_date": f"{year}-01-08", "days": 8, "year": year},
-        {"key": f"summer_peak_{year}", "name": "Yaz Sezonu (Yuksek)", "category": "season",
-         "start_date": f"{year}-07-01", "end_date": f"{year}-08-31", "days": 62, "year": year},
-        {"key": f"winter_break_{year}", "name": "Soemestr Tatili", "category": "season",
-         "start_date": f"{year}-01-20", "end_date": f"{year}-02-03", "days": 15, "year": year},
-    ]
-    periods.extend(intl)
-    periods.sort(key=lambda x: x["start_date"])
-    return periods
 
 
 @router.get("/holidays")
@@ -866,21 +749,6 @@ async def get_hr_holidays(current_user: User = Depends(get_current_user)):
 # ── Stop Sale Schedules ──────────────────────────────────────────
 
 
-class StopSaleScheduleCreate(BaseModel):
-    name: str
-    holiday_key: str | None = None
-    start_date: str
-    end_date: str
-    room_type_codes: list[str]
-    auto_apply: bool = True
-
-
-class StopSaleScheduleUpdate(BaseModel):
-    name: str | None = None
-    start_date: str | None = None
-    end_date: str | None = None
-    room_type_codes: list[str] | None = None
-    auto_apply: bool | None = None
 
 
 @router.get("/stop-sale-schedules")

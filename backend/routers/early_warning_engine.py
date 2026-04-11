@@ -45,41 +45,97 @@ logger = logging.getLogger("early_warning_engine")
 # Configuration — Thresholds & Weights
 # ══════════════════════════════════════════════════════════════════════
 
-# Trend analysis windows
-TREND_WINDOW_SHORT = 30    # minutes
-TREND_WINDOW_MEDIUM = 90   # minutes
-TREND_WINDOW_LONG = 180    # minutes
 
-# Failure rate thresholds
-FAILURE_RATE_WARNING_THRESHOLD = 15   # %
-FAILURE_RATE_CRITICAL_THRESHOLD = 30  # %
-FAILURE_RATE_TREND_THRESHOLD = 10     # % increase between windows
+class EarlyWarningConfig:
+    """Centralised threshold configuration for the Early Warning Engine.
 
-# DLQ thresholds
-DLQ_SPIKE_THRESHOLD = 3               # new DLQ items in short window
-DLQ_GROWTH_THRESHOLD = 5              # total pending DLQ items
+    All values have sensible defaults matching the original hardcoded constants.
+    Per-connector overrides can be registered via ``register_connector_override``.
+    """
 
-# Retry backlog thresholds
-BACKLOG_WARNING_THRESHOLD = 10        # items
-BACKLOG_GROWTH_RATE_THRESHOLD = 5     # items/hour
+    _DEFAULTS: dict[str, int | float] = {
+        "trend_window_short": 30,
+        "trend_window_medium": 90,
+        "trend_window_long": 180,
+        "failure_rate_warning": 15,
+        "failure_rate_critical": 30,
+        "failure_rate_trend": 10,
+        "dlq_spike": 3,
+        "dlq_growth": 5,
+        "backlog_warning": 10,
+        "backlog_growth_rate": 5,
+        "staleness_warning_minutes": 60,
+        "staleness_critical_minutes": 180,
+        "health_score_warning": 70,
+        "health_score_critical": 50,
+        "health_score_drop": 15,
+        "throttle_frequency": 3,
+        "confidence_base": 50,
+        "confidence_trend_bonus": 20,
+        "confidence_severity_bonus": 15,
+        "confidence_history_bonus": 15,
+        "dedup_window_minutes": 30,
+    }
 
-# Staleness thresholds (minutes since last success)
-STALENESS_WARNING_MINUTES = 60
-STALENESS_CRITICAL_MINUTES = 180
+    def __init__(self, overrides: dict[str, int | float] | None = None):
+        self._values = dict(self._DEFAULTS)
+        if overrides:
+            self._values.update(overrides)
+        self._connector_overrides: dict[str, dict[str, int | float]] = {}
 
-# Health score thresholds
-HEALTH_SCORE_WARNING_THRESHOLD = 70
-HEALTH_SCORE_CRITICAL_THRESHOLD = 50
-HEALTH_SCORE_DROP_THRESHOLD = 15      # points drop triggers warning
+    def register_connector_override(
+        self, connector: str, overrides: dict[str, int | float]
+    ) -> None:
+        self._connector_overrides[connector] = overrides
 
-# Throttle risk thresholds
-THROTTLE_FREQUENCY_THRESHOLD = 3      # events in 1 hour
+    def get(self, key: str, connector: str | None = None) -> int | float:
+        if connector and connector in self._connector_overrides:
+            val = self._connector_overrides[connector].get(key)
+            if val is not None:
+                return val
+        return self._values.get(key, self._DEFAULTS.get(key, 0))
 
-# Confidence weights
-CONFIDENCE_BASE = 50
-CONFIDENCE_TREND_BONUS = 20           # add if trend is consistent
-CONFIDENCE_SEVERITY_BONUS = 15        # add if multiple signals
-CONFIDENCE_HISTORY_BONUS = 15         # add if pattern matches history
+    def update(self, overrides: dict[str, int | float]) -> None:
+        self._values.update(overrides)
+
+    def snapshot(self, connector: str | None = None) -> dict[str, int | float]:
+        result = dict(self._values)
+        if connector and connector in self._connector_overrides:
+            result.update(self._connector_overrides[connector])
+        return result
+
+
+ew_config = EarlyWarningConfig()
+
+TREND_WINDOW_SHORT = ew_config.get("trend_window_short")
+TREND_WINDOW_MEDIUM = ew_config.get("trend_window_medium")
+TREND_WINDOW_LONG = ew_config.get("trend_window_long")
+
+FAILURE_RATE_WARNING_THRESHOLD = ew_config.get("failure_rate_warning")
+FAILURE_RATE_CRITICAL_THRESHOLD = ew_config.get("failure_rate_critical")
+FAILURE_RATE_TREND_THRESHOLD = ew_config.get("failure_rate_trend")
+
+DLQ_SPIKE_THRESHOLD = ew_config.get("dlq_spike")
+DLQ_GROWTH_THRESHOLD = ew_config.get("dlq_growth")
+
+BACKLOG_WARNING_THRESHOLD = ew_config.get("backlog_warning")
+BACKLOG_GROWTH_RATE_THRESHOLD = ew_config.get("backlog_growth_rate")
+
+STALENESS_WARNING_MINUTES = ew_config.get("staleness_warning_minutes")
+STALENESS_CRITICAL_MINUTES = ew_config.get("staleness_critical_minutes")
+
+HEALTH_SCORE_WARNING_THRESHOLD = ew_config.get("health_score_warning")
+HEALTH_SCORE_CRITICAL_THRESHOLD = ew_config.get("health_score_critical")
+HEALTH_SCORE_DROP_THRESHOLD = ew_config.get("health_score_drop")
+
+THROTTLE_FREQUENCY_THRESHOLD = ew_config.get("throttle_frequency")
+
+CONFIDENCE_BASE = ew_config.get("confidence_base")
+CONFIDENCE_TREND_BONUS = ew_config.get("confidence_trend_bonus")
+CONFIDENCE_SEVERITY_BONUS = ew_config.get("confidence_severity_bonus")
+CONFIDENCE_HISTORY_BONUS = ew_config.get("confidence_history_bonus")
+
+DEDUP_WINDOW_MINUTES = ew_config.get("dedup_window_minutes")
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -140,9 +196,9 @@ async def get_failure_rate_trend(
     now = datetime.now(UTC)
 
     windows = {
-        "short": (now - timedelta(minutes=TREND_WINDOW_SHORT)).isoformat(),
-        "medium": (now - timedelta(minutes=TREND_WINDOW_MEDIUM)).isoformat(),
-        "long": (now - timedelta(minutes=TREND_WINDOW_LONG)).isoformat(),
+        "short": (now - timedelta(minutes=ew_config.get("trend_window_short", provider))).isoformat(),
+        "medium": (now - timedelta(minutes=ew_config.get("trend_window_medium", provider))).isoformat(),
+        "long": (now - timedelta(minutes=ew_config.get("trend_window_long", provider))).isoformat(),
     }
 
     results = {}
@@ -194,36 +250,34 @@ async def get_dlq_trend(tenant_id: str) -> dict[str, Any]:
     sysdb = get_system_db()
 
     now = datetime.now(UTC)
-    short_since = (now - timedelta(minutes=TREND_WINDOW_SHORT)).isoformat()
-    medium_since = (now - timedelta(minutes=TREND_WINDOW_MEDIUM)).isoformat()
+    tw_short = ew_config.get("trend_window_short")
+    short_since = (now - timedelta(minutes=tw_short)).isoformat()
+    medium_since = (now - timedelta(minutes=ew_config.get("trend_window_medium"))).isoformat()
 
-    # Current pending count
     pending_count = await sysdb.webhook_dlq.count_documents({
         "tenant_id": tenant_id,
         "status": "pending",
     })
 
-    # Recent additions (short window)
     recent_additions = await sysdb.webhook_dlq.count_documents({
         "tenant_id": tenant_id,
         "created_at": {"$gte": short_since},
     })
 
-    # Medium term additions
     medium_additions = await sysdb.webhook_dlq.count_documents({
         "tenant_id": tenant_id,
         "created_at": {"$gte": medium_since},
     })
 
-    growth_rate = recent_additions  # items per short window
+    growth_rate = recent_additions
 
     return {
         "pending_count": pending_count,
         "recent_additions": recent_additions,
         "medium_additions": medium_additions,
         "growth_rate_per_30min": growth_rate,
-        "is_spiking": recent_additions >= DLQ_SPIKE_THRESHOLD,
-        "is_growing": pending_count >= DLQ_GROWTH_THRESHOLD,
+        "is_spiking": recent_additions >= ew_config.get("dlq_spike"),
+        "is_growing": pending_count >= ew_config.get("dlq_growth"),
     }
 
 
@@ -233,15 +287,13 @@ async def get_backlog_trend(tenant_id: str) -> dict[str, Any]:
     sysdb = get_system_db()
 
     now = datetime.now(UTC)
-    short_since = (now - timedelta(minutes=TREND_WINDOW_SHORT)).isoformat()
+    short_since = (now - timedelta(minutes=ew_config.get("trend_window_short"))).isoformat()
 
-    # Current backlog
     current_backlog = await sysdb.webhook_deliveries.count_documents({
         "tenant_id": tenant_id,
         "status": "retrying",
     })
 
-    # Recent additions to backlog
     recent_retrying = await sysdb.webhook_deliveries.count_documents({
         "tenant_id": tenant_id,
         "status": "retrying",
@@ -251,7 +303,7 @@ async def get_backlog_trend(tenant_id: str) -> dict[str, Any]:
     return {
         "current_backlog": current_backlog,
         "recent_additions": recent_retrying,
-        "is_growing": current_backlog >= BACKLOG_WARNING_THRESHOLD,
+        "is_growing": current_backlog >= ew_config.get("backlog_warning"),
         "growth_rate_per_30min": recent_retrying,
     }
 
@@ -298,7 +350,7 @@ async def get_throttle_trend(tenant_id: str, provider: str) -> dict[str, Any]:
         "avg_per_hour_6h": round(avg_6h, 2),
         "avg_per_hour_24h": round(avg_24h, 2),
         "is_increasing": is_increasing,
-        "is_frequent": throttle_1h >= THROTTLE_FREQUENCY_THRESHOLD,
+        "is_frequent": throttle_1h >= ew_config.get("throttle_frequency", provider),
     }
 
 
@@ -335,16 +387,18 @@ async def get_staleness_data(
     except Exception:
         age_minutes = 999
 
+    stale_warn = ew_config.get("staleness_warning_minutes", provider)
+    stale_crit = ew_config.get("staleness_critical_minutes", provider)
     staleness_level = "normal"
-    if age_minutes >= STALENESS_CRITICAL_MINUTES:
+    if age_minutes >= stale_crit:
         staleness_level = "critical"
-    elif age_minutes >= STALENESS_WARNING_MINUTES:
+    elif age_minutes >= stale_warn:
         staleness_level = "warning"
 
     return {
         "last_success_at": last_ts_str,
         "age_minutes": round(age_minutes, 1),
-        "is_stale": age_minutes >= STALENESS_WARNING_MINUTES,
+        "is_stale": age_minutes >= stale_warn,
         "staleness_level": staleness_level,
     }
 
@@ -415,11 +469,12 @@ async def get_health_score_trend(
     current_score = await calc_health(since_1h)
     historical_score = await calc_health(since_6h)
 
+    hs_drop = ew_config.get("health_score_drop", provider)
     score_delta = current_score - historical_score
     trend_direction = "stable"
-    if score_delta <= -HEALTH_SCORE_DROP_THRESHOLD:
+    if score_delta <= -hs_drop:
         trend_direction = "dropping"
-    elif score_delta >= HEALTH_SCORE_DROP_THRESHOLD:
+    elif score_delta >= hs_drop:
         trend_direction = "improving"
     elif score_delta < 0:
         trend_direction = "slight_drop"
@@ -431,8 +486,8 @@ async def get_health_score_trend(
         "historical_score": historical_score,
         "score_delta": score_delta,
         "trend_direction": trend_direction,
-        "is_dropping": score_delta <= -HEALTH_SCORE_DROP_THRESHOLD,
-        "is_improving": score_delta >= HEALTH_SCORE_DROP_THRESHOLD,
+        "is_dropping": score_delta <= -hs_drop,
+        "is_improving": score_delta >= hs_drop,
     }
 
 
@@ -452,22 +507,27 @@ async def check_failure_rate_warning(
     delta = trend["short_vs_long_delta"]
     direction = trend["trend_direction"]
 
-    # Skip if failure rate is low and stable
-    if short_rate < FAILURE_RATE_WARNING_THRESHOLD and delta < FAILURE_RATE_TREND_THRESHOLD:
+    fr_warn = ew_config.get("failure_rate_warning", provider)
+    fr_crit = ew_config.get("failure_rate_critical", provider)
+    fr_trend = ew_config.get("failure_rate_trend", provider)
+    c_base = ew_config.get("confidence_base", provider)
+    c_trend = ew_config.get("confidence_trend_bonus", provider)
+    c_sev = ew_config.get("confidence_severity_bonus", provider)
+    c_hist = ew_config.get("confidence_history_bonus", provider)
+
+    if short_rate < fr_warn and delta < fr_trend:
         return None
 
-    # Calculate confidence
-    confidence = CONFIDENCE_BASE
+    confidence = c_base
     if direction in ("rising", "rising_recent"):
-        confidence += CONFIDENCE_TREND_BONUS
-    if short_rate >= FAILURE_RATE_CRITICAL_THRESHOLD:
-        confidence += CONFIDENCE_SEVERITY_BONUS
-    if delta >= FAILURE_RATE_TREND_THRESHOLD * 2:
-        confidence += CONFIDENCE_HISTORY_BONUS
+        confidence += c_trend
+    if short_rate >= fr_crit:
+        confidence += c_sev
+    if delta >= fr_trend * 2:
+        confidence += c_hist
 
-    # Generate warning
-    if direction in ("rising", "rising_recent") or short_rate >= FAILURE_RATE_WARNING_THRESHOLD:
-        severity = "critical" if short_rate >= FAILURE_RATE_CRITICAL_THRESHOLD else "warning"
+    if direction in ("rising", "rising_recent") or short_rate >= fr_warn:
+        severity = "critical" if short_rate >= fr_crit else "warning"
 
         return EarlyWarning(
             warning_type="predictive.warning.failure_rate_rising",
@@ -491,13 +551,16 @@ async def check_dlq_warning(tenant_id: str) -> EarlyWarning | None:
     if not trend["is_spiking"] and not trend["is_growing"]:
         return None
 
-    confidence = CONFIDENCE_BASE
+    c_base = ew_config.get("confidence_base")
+    c_sev = ew_config.get("confidence_severity_bonus")
+    c_trend = ew_config.get("confidence_trend_bonus")
+    confidence = c_base
     if trend["is_spiking"] and trend["is_growing"]:
-        confidence += CONFIDENCE_SEVERITY_BONUS + CONFIDENCE_TREND_BONUS
+        confidence += c_sev + c_trend
     elif trend["is_spiking"]:
-        confidence += CONFIDENCE_TREND_BONUS
+        confidence += c_trend
     elif trend["is_growing"]:
-        confidence += CONFIDENCE_SEVERITY_BONUS
+        confidence += c_sev
 
     reason_parts = []
     if trend["is_spiking"]:
@@ -514,7 +577,7 @@ async def check_dlq_warning(tenant_id: str) -> EarlyWarning | None:
         recommended_action="DLQ öğelerini inceleyin ve manuel retry uygulayın. Webhook endpoint'lerinin durumunu kontrol edin.",
         impacted_scope="Webhook teslimatları",
         trend_data=trend,
-        severity="critical" if trend["pending_count"] >= DLQ_GROWTH_THRESHOLD * 2 else "warning",
+        severity="critical" if trend["pending_count"] >= ew_config.get("dlq_growth") * 2 else "warning",
     )
 
 
@@ -525,11 +588,11 @@ async def check_backlog_warning(tenant_id: str) -> EarlyWarning | None:
     if not trend["is_growing"]:
         return None
 
-    confidence = CONFIDENCE_BASE
-    if trend["current_backlog"] >= BACKLOG_WARNING_THRESHOLD * 2:
-        confidence += CONFIDENCE_SEVERITY_BONUS
-    if trend["recent_additions"] >= BACKLOG_GROWTH_RATE_THRESHOLD:
-        confidence += CONFIDENCE_TREND_BONUS
+    confidence = ew_config.get("confidence_base")
+    if trend["current_backlog"] >= ew_config.get("backlog_warning") * 2:
+        confidence += ew_config.get("confidence_severity_bonus")
+    if trend["recent_additions"] >= ew_config.get("backlog_growth_rate"):
+        confidence += ew_config.get("confidence_trend_bonus")
 
     return EarlyWarning(
         warning_type="predictive.warning.backlog_growth",
@@ -554,11 +617,11 @@ async def check_throttle_warning(
     if not trend["is_frequent"] and not trend["is_increasing"]:
         return None
 
-    confidence = CONFIDENCE_BASE
+    confidence = ew_config.get("confidence_base", provider)
     if trend["is_frequent"]:
-        confidence += CONFIDENCE_SEVERITY_BONUS
+        confidence += ew_config.get("confidence_severity_bonus", provider)
     if trend["is_increasing"]:
-        confidence += CONFIDENCE_TREND_BONUS
+        confidence += ew_config.get("confidence_trend_bonus", provider)
 
     return EarlyWarning(
         warning_type="predictive.warning.throttle_risk",
@@ -584,11 +647,11 @@ async def check_staleness_warning(
     if not data["is_stale"]:
         return None
 
-    confidence = CONFIDENCE_BASE
+    confidence = ew_config.get("confidence_base", provider)
     if data["staleness_level"] == "critical":
-        confidence += CONFIDENCE_SEVERITY_BONUS + CONFIDENCE_TREND_BONUS
+        confidence += ew_config.get("confidence_severity_bonus", provider) + ew_config.get("confidence_trend_bonus", provider)
     elif data["staleness_level"] == "warning":
-        confidence += CONFIDENCE_TREND_BONUS
+        confidence += ew_config.get("confidence_trend_bonus", provider)
 
     age_text = f"{data['age_minutes']:.0f} dakika" if data["age_minutes"] else "hiç"
 
@@ -614,18 +677,22 @@ async def check_health_score_warning(
     trend = await get_health_score_trend(tenant_id, connector_id, provider)
 
     # Generate warning for significant drops or low scores
-    if not trend["is_dropping"] and trend["current_score"] >= HEALTH_SCORE_WARNING_THRESHOLD:
+    hs_warn = ew_config.get("health_score_warning", provider)
+    hs_crit = ew_config.get("health_score_critical", provider)
+    hs_drop = ew_config.get("health_score_drop", provider)
+
+    if not trend["is_dropping"] and trend["current_score"] >= hs_warn:
         return None
 
-    confidence = CONFIDENCE_BASE
+    confidence = ew_config.get("confidence_base", provider)
     if trend["is_dropping"]:
-        confidence += CONFIDENCE_TREND_BONUS
-    if trend["current_score"] <= HEALTH_SCORE_CRITICAL_THRESHOLD:
-        confidence += CONFIDENCE_SEVERITY_BONUS
-    if abs(trend["score_delta"]) >= HEALTH_SCORE_DROP_THRESHOLD * 2:
-        confidence += CONFIDENCE_HISTORY_BONUS
+        confidence += ew_config.get("confidence_trend_bonus", provider)
+    if trend["current_score"] <= hs_crit:
+        confidence += ew_config.get("confidence_severity_bonus", provider)
+    if abs(trend["score_delta"]) >= hs_drop * 2:
+        confidence += ew_config.get("confidence_history_bonus", provider)
 
-    severity = "critical" if trend["current_score"] <= HEALTH_SCORE_CRITICAL_THRESHOLD else "warning"
+    severity = "critical" if trend["current_score"] <= hs_crit else "warning"
 
     return EarlyWarning(
         warning_type="predictive.warning.degradation_likely",
@@ -657,14 +724,14 @@ async def check_recovery_signal(
         return None
 
     # Only emit if score was previously low
-    if health_trend["historical_score"] >= HEALTH_SCORE_WARNING_THRESHOLD:
+    if health_trend["historical_score"] >= ew_config.get("health_score_warning", provider):
         return None
 
-    confidence = CONFIDENCE_BASE
+    confidence = ew_config.get("confidence_base", provider)
     if is_health_improving and is_failure_falling:
-        confidence += CONFIDENCE_TREND_BONUS + CONFIDENCE_SEVERITY_BONUS
+        confidence += ew_config.get("confidence_trend_bonus", provider) + ew_config.get("confidence_severity_bonus", provider)
     elif is_health_improving:
-        confidence += CONFIDENCE_TREND_BONUS
+        confidence += ew_config.get("confidence_trend_bonus", provider)
 
     return EarlyWarning(
         warning_type="predictive.warning.recovery_expected",
@@ -773,12 +840,11 @@ async def emit_warning_events(tenant_id: str, warnings: list[dict[str, Any]]) ->
         if warning["severity"] == "info":
             continue
 
-        # Check if we recently emitted the same warning (dedup within 30 min)
         recent_same = await db.ops_events.find_one({
             "tenant_id": tenant_id,
             "event_type": warning["warning_type"],
             "connector_id": warning.get("connector_id", ""),
-            "created_at": {"$gte": (datetime.now(UTC) - timedelta(minutes=30)).isoformat()},
+            "created_at": {"$gte": (datetime.now(UTC) - timedelta(minutes=DEDUP_WINDOW_MINUTES)).isoformat()},
         })
 
         if recent_same:

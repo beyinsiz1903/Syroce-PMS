@@ -63,3 +63,19 @@ Configured as a static deployment:
 - WebSocket real-time updates
 - Multi-tenant architecture
 - 8-language internationalization
+
+## Sprint 5 Changes (Technical Debt + Hardening)
+
+### Backend
+- **`backend/domains/channel_manager/rate_utils.py`** — Shared rate manager utilities: Pydantic models (RoomTypeValuesItem, BulkGridUpdateRequest, StopSaleScheduleCreate/Update, PricingSettingItem/Request, RoomTypeSelection), `group_consecutive_dates()`, `get_holiday_periods()`. Used by both hr_rate_manager_router.py and rate_manager_router.py.
+- **`backend/routers/early_warning_engine.py`** — `EarlyWarningConfig` class with 21 configurable thresholds, per-connector overrides via `ew_config.register_connector_override()`, configurable dedup window.
+- **`backend/domains/channel_manager/providers/sync_engine.py`** — Extracted sync phases from hotelrunner_sync.py
+- **`backend/domains/channel_manager/providers/sync_scheduler.py`** — Extracted ReservationPullScheduler
+
+### Frontend
+- **`frontend/src/pages/reports/`** — Extracted 11 report section components from BasicReports.jsx:
+  - OverviewSection, RevenueSection, AdrRevparSection, PeriodSection, OccupancySection
+  - RoomTypesSection, GuestSection, NationalitySection, FrontOfficeSection
+  - OperationsSection (NoShow, RoomStatus, Housekeeping, Payments, Departments, FnB)
+  - ChannelsSection (Channels, Sources), OfficialSection (Official, Police)
+- **`frontend/src/pages/reports/ReportHelpers.jsx`** — Shared constants, formatters, and reusable UI atoms

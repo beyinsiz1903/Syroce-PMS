@@ -1041,7 +1041,7 @@ async def get_holidays(current_user: User = Depends(get_current_user)):
     # Import from existing router to reuse logic
     from datetime import date
     try:
-        from domains.channel_manager.hr_rate_manager_router import _get_holiday_periods
+        from domains.channel_manager.rate_utils import get_holiday_periods as _get_holiday_periods
         now = date.today()
         all_periods = []
         for y in [now.year, now.year + 1]:

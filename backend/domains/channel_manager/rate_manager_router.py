@@ -5,11 +5,8 @@ PMS üzerinden ayarla → Exely'ye push et → OTA'lara yansısın.
 import asyncio
 import logging
 import uuid
-from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 
-import holidays as holidays_lib
-from dateutil.easter import easter
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from pymongo import UpdateOne
@@ -17,6 +14,16 @@ from pymongo import UpdateOne
 from core.database import db
 from core.security import get_current_user
 from domains.channel_manager.credential_vault import get_decrypted_credentials
+from domains.channel_manager.rate_utils import (
+    BulkGridUpdateRequest,
+    PricingSettingsRequest,
+    RoomTypeValuesItem,
+    StopSaleScheduleCreate,
+    StopSaleScheduleUpdate,
+)
+from domains.channel_manager.rate_utils import (
+    get_holiday_periods as _get_holiday_periods,
+)
 from models.schemas import User
 
 logger = logging.getLogger(__name__)
@@ -27,68 +34,21 @@ router = APIRouter(prefix="/api/channel-manager/rate-manager", tags=["Rate Manag
 class RateUpdateRequest(BaseModel):
     room_type_code: str
     rate_plan_code: str
-    start_date: str  # YYYY-MM-DD
-    end_date: str    # YYYY-MM-DD
+    start_date: str
+    end_date: str
     rate: float | None = None
     availability: int | None = None
     min_stay: int | None = None
     max_stay: int | None = None
     stop_sell: bool | None = None
-    cta: bool | None = None  # Close to Arrival
-    ctd: bool | None = None  # Close to Departure
+    cta: bool | None = None
+    ctd: bool | None = None
 
 
 class BulkRateUpdateRequest(BaseModel):
     updates: list[RateUpdateRequest]
 
 
-class RoomTypeSelection(BaseModel):
-    """Per-room-type rate plan selection."""
-    room_type_code: str
-    rate_plan_codes: list[str]
-
-
-class RoomTypeValuesItem(BaseModel):
-    """Per-room-type values for bulk update."""
-    room_type_code: str
-    rate_plan_codes: list[str]
-    rate: float | None = None
-    availability: int | None = None
-    min_stay: int | None = None
-    max_stay: int | None = None
-    stop_sell: bool | None = None
-    cta: bool | None = None
-    ctd: bool | None = None
-
-
-class BulkGridUpdateRequest(BaseModel):
-    """HotelRunner-style bulk update: apply same values to multiple room types at once."""
-    room_type_codes: list[str] | None = None  # Legacy: cross-product mode
-    rate_plan_codes: list[str] | None = None   # Legacy: cross-product mode
-    selections: list[RoomTypeSelection] | None = None  # Per-room-type selections
-    per_room_values: list[RoomTypeValuesItem] | None = None  # Per-room-type values
-    start_date: str                     # YYYY-MM-DD
-    end_date: str                       # YYYY-MM-DD
-    selected_days: list[int] | None = None  # 0=Sun..6=Sat, None=all days
-    # Fields to update (only non-None fields get applied) — used with global values
-    rate: float | None = None
-    availability: int | None = None
-    min_stay: int | None = None
-    max_stay: int | None = None
-    stop_sell: bool | None = None
-    cta: bool | None = None
-    ctd: bool | None = None
-    # Which update fields are enabled
-    update_fields: list[str] = []       # e.g. ["rate", "availability", "min_stay"]
-
-
-class PricingSettingItem(BaseModel):
-    room_type_code: str
-    pricing_type: str  # "per_person" or "per_room"
-
-
-class PricingSettingsRequest(BaseModel):
-    settings: list[PricingSettingItem]
 
 
 @router.get("/grid")
@@ -675,115 +635,6 @@ async def update_pricing_settings(
 # ─── Holiday & Scheduler ────────────────────────────────────────
 
 
-def _get_holiday_periods(year: int) -> list:
-    """
-    Build grouped holiday periods for given year.
-    Includes Turkish public holidays + international tourism holidays.
-    """
-    tr = holidays_lib.Turkey(years=[year])
-
-    # Group consecutive days of the same holiday
-    # holidays lib may return combined names like "Holiday A; Holiday B" for overlapping dates
-    groups = defaultdict(list)
-    for d, name in sorted(tr.items()):
-        # Split combined holiday names and assign date to each
-        parts = [n.strip() for n in name.split(";")]
-        for part in parts:
-            groups[part].append(d)
-
-    periods = []
-    # Turkish holiday name map
-    tr_names = {
-        "New Year's Day": "Yilbasi",
-        "Eid al-Fitr": "Ramazan Bayrami",
-        "Eid al-Adha": "Kurban Bayrami",
-        "National Sovereignty and Children's Day": "23 Nisan Ulusal Egemenlik ve Cocuk Bayrami",
-        "Labour and Solidarity Day": "1 Mayis Isci Bayrami",
-        "Commemoration of Atatürk, Youth and Sports Day": "19 Mayis Ataturk'u Anma",
-        "Democracy and National Unity Day": "15 Temmuz Demokrasi Bayrami",
-        "Victory Day": "30 Agustos Zafer Bayrami",
-        "Republic Day": "29 Ekim Cumhuriyet Bayrami",
-    }
-
-    for en_name, dates in groups.items():
-        sorted_dates = sorted(dates)
-        tr_name = tr_names.get(en_name, en_name)
-        key = en_name.lower().replace(" ", "_").replace("'", "")
-        periods.append({
-            "key": f"tr_{key}_{year}",
-            "name": tr_name,
-            "category": "turkey",
-            "start_date": sorted_dates[0].isoformat(),
-            "end_date": sorted_dates[-1].isoformat(),
-            "days": len(sorted_dates),
-            "year": year,
-        })
-
-    # International tourism holidays
-    easter_date = easter(year)
-    orthodox_easter = easter(year, method=2)
-
-    intl = [
-        {
-            "key": f"easter_{year}",
-            "name": "Paskalya (Bati)",
-            "category": "international",
-            "start_date": (easter_date - timedelta(days=2)).isoformat(),
-            "end_date": (easter_date + timedelta(days=1)).isoformat(),
-            "days": 4,
-            "year": year,
-        },
-        {
-            "key": f"orthodox_easter_{year}",
-            "name": "Ortodoks Paskalya",
-            "category": "international",
-            "start_date": (orthodox_easter - timedelta(days=2)).isoformat(),
-            "end_date": (orthodox_easter + timedelta(days=1)).isoformat(),
-            "days": 4,
-            "year": year,
-        },
-        {
-            "key": f"christmas_{year}",
-            "name": "Noel Tatili",
-            "category": "international",
-            "start_date": f"{year}-12-23",
-            "end_date": f"{year}-12-26",
-            "days": 4,
-            "year": year,
-        },
-        {
-            "key": f"russian_newyear_{year}",
-            "name": "Rus Yilbasi Tatili",
-            "category": "international",
-            "start_date": f"{year}-01-01",
-            "end_date": f"{year}-01-08",
-            "days": 8,
-            "year": year,
-        },
-        {
-            "key": f"summer_peak_{year}",
-            "name": "Yaz Sezonu (Yuksek)",
-            "category": "season",
-            "start_date": f"{year}-07-01",
-            "end_date": f"{year}-08-31",
-            "days": 62,
-            "year": year,
-        },
-        {
-            "key": f"winter_break_{year}",
-            "name": "Soemestr Tatili",
-            "category": "season",
-            "start_date": f"{year}-01-20",
-            "end_date": f"{year}-02-03",
-            "days": 15,
-            "year": year,
-        },
-    ]
-    periods.extend(intl)
-
-    # Sort by start date
-    periods.sort(key=lambda x: x["start_date"])
-    return periods
 
 
 @router.get("/holidays")
@@ -811,21 +662,6 @@ async def get_holidays(
 
 # ─── Stop Sale Scheduler ────────────────────────────────────────
 
-class StopSaleScheduleCreate(BaseModel):
-    name: str
-    holiday_key: str | None = None
-    start_date: str  # YYYY-MM-DD
-    end_date: str    # YYYY-MM-DD
-    room_type_codes: list[str]
-    auto_apply: bool = True
-
-
-class StopSaleScheduleUpdate(BaseModel):
-    name: str | None = None
-    start_date: str | None = None
-    end_date: str | None = None
-    room_type_codes: list[str] | None = None
-    auto_apply: bool | None = None
 
 
 @router.get("/stop-sale-schedules")
