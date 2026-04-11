@@ -18,7 +18,7 @@ from .contract_errors import (
     InvalidXmlError,
     ProviderErrorResponseError,
 )
-from .v1_errors import XmlParseError
+from .connector_errors import XmlParseError
 
 logger = logging.getLogger("channel_manager.hotelrunner.xml_parser")
 

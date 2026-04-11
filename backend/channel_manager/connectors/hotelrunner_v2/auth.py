@@ -36,6 +36,6 @@ class HotelRunnerAuth:
         token = credentials.get("token", "")
         hr_id = credentials.get("hr_id", "")
         if not token or not hr_id:
-            from .v1_errors import AuthenticationError
+            from .connector_errors import AuthenticationError
             raise AuthenticationError("Missing token or hr_id in connector credentials")
         return cls(token=token, hr_id=hr_id)

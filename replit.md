@@ -64,6 +64,30 @@ Configured as a static deployment:
 - Multi-tenant architecture
 - 8-language internationalization
 
+## Sprint 12 Changes (v1_ Module Migration / Cleanup)
+
+### Backend — Module Renaming
+- **`v1_client.py` → `hr_client.py`**: HotelRunnerClient HTTP connector (XML/OTA + REST/JSON). Updated docstring. Internal import changed from `v1_errors` → `connector_errors`.
+- **`v1_errors.py` → `connector_errors.py`**: ConnectorError hierarchy (17 exception classes). No content changes.
+- **`v1_mapper.py` → `reservation_mapper.py`**: HotelRunnerMapper (reservation to canonical model transformation). No content changes.
+- All files live in `backend/channel_manager/connectors/hotelrunner_v2/`
+- Existing v2 files (`client.py`/`errors.py`/`mapper.py`) untouched — different classes (HRv2Client, HRv2Error) for the newer v2 adapter pattern
+
+### Compatibility Aliases
+- `v1_client.py`, `v1_errors.py`, `v1_mapper.py` retained as thin re-export stubs
+- Any external code importing from old paths will continue working
+
+### Import Path Updates (14 files)
+- **Application services** (6): `connector_service.py`, `auto_mapping_service.py`, `inventory_sync_service.py`, `sandbox_validation_service.py`, `provider_adapters.py`, `reservation_import_service.py`
+- **Internal modules** (3): `retry_policy.py`, `xml_parser.py`, `auth.py`
+- **Test files** (3): `test_hr_reservation_adapter.py`, `test_production_hardening_v3.py`, `test_legacy_hr_removal.py`
+- Legacy test file updated with both new-path tests and compatibility-alias tests
+
+### Verification
+- Zero `v1_` imports remain in production `channel_manager/` package
+- All 14 changed files pass `py_compile`
+- Compatibility aliases verified: old import paths still resolve correctly
+
 ## Sprint 11 Changes (Channel Manager Dashboard)
 
 ### Backend

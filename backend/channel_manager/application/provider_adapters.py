@@ -16,8 +16,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
-from ..connectors.hotelrunner_v2.v1_client import HotelRunnerClient
-from ..connectors.hotelrunner_v2.v1_errors import (
+from ..connectors.hotelrunner_v2.hr_client import HotelRunnerClient
+from ..connectors.hotelrunner_v2.connector_errors import (
     AuthenticationError,
     ProviderUnavailableError,
     ProviderValidationError,

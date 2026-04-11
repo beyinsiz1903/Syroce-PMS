@@ -19,8 +19,8 @@ from typing import Any
 from core.database import db
 
 from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
-from ..connectors.hotelrunner_v2.v1_client import HotelRunnerClient
-from ..connectors.hotelrunner_v2.v1_errors import AuthenticationError, ConnectorError, RateLimitError
+from ..connectors.hotelrunner_v2.hr_client import HotelRunnerClient
+from ..connectors.hotelrunner_v2.connector_errors import AuthenticationError, ConnectorError, RateLimitError
 from ..infrastructure.credential_vault import CredentialVault
 from ..infrastructure.repository import ChannelManagerRepository
 from .mapping_service import MappingService

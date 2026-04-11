@@ -67,14 +67,19 @@ class TestHotelRunnerV2ModuleImports:
         from channel_manager.connectors.hotelrunner_v2.auth import HotelRunnerAuth
         assert HotelRunnerAuth is not None
 
-    def test_v1_client_module_import(self):
-        """v1_client.py (moved from old hotelrunner/client.py) should import."""
+    def test_hr_client_module_import(self):
+        """hr_client.py (renamed from v1_client.py) should import."""
+        from channel_manager.connectors.hotelrunner_v2.hr_client import HotelRunnerClient
+        assert HotelRunnerClient is not None
+
+    def test_v1_client_compat_alias(self):
+        """v1_client.py compatibility alias should still work."""
         from channel_manager.connectors.hotelrunner_v2.v1_client import HotelRunnerClient
         assert HotelRunnerClient is not None
 
-    def test_v1_errors_module_import(self):
-        """v1_errors.py (moved from old hotelrunner/errors.py) should import."""
-        from channel_manager.connectors.hotelrunner_v2.v1_errors import (
+    def test_connector_errors_module_import(self):
+        """connector_errors.py (renamed from v1_errors.py) should import."""
+        from channel_manager.connectors.hotelrunner_v2.connector_errors import (
             ConnectorError,
             AuthenticationError,
             RateLimitError,
@@ -85,8 +90,18 @@ class TestHotelRunnerV2ModuleImports:
         assert RateLimitError is not None
         assert XmlParseError is not None
 
-    def test_v1_mapper_module_import(self):
-        """v1_mapper.py (moved from old hotelrunner/mapper.py) should import."""
+    def test_v1_errors_compat_alias(self):
+        """v1_errors.py compatibility alias should still work."""
+        from channel_manager.connectors.hotelrunner_v2.v1_errors import ConnectorError
+        assert ConnectorError is not None
+
+    def test_reservation_mapper_module_import(self):
+        """reservation_mapper.py (renamed from v1_mapper.py) should import."""
+        from channel_manager.connectors.hotelrunner_v2.reservation_mapper import HotelRunnerMapper
+        assert HotelRunnerMapper is not None
+
+    def test_v1_mapper_compat_alias(self):
+        """v1_mapper.py compatibility alias should still work."""
         from channel_manager.connectors.hotelrunner_v2.v1_mapper import HotelRunnerMapper
         assert HotelRunnerMapper is not None
 
