@@ -1,0 +1,14 @@
+Method,Name,Error,Occurrences
+GET,[DASH] Maturity Score,HTTPError('401 Client Error: Unauthorized for url: [DASH] Maturity Score'),23
+GET,[PROD] Canary Status,HTTPError('401 Client Error: Unauthorized for url: [PROD] Canary Status'),9
+GET,[FD] Departures,HTTPError('404 Client Error: Not Found for url: [FD] Departures'),171
+GET,[DASH] Health,HTTPError('404 Client Error: Not Found for url: [DASH] Health'),78
+GET,[PROD] Tenant Isolation,HTTPError('401 Client Error: Unauthorized for url: [PROD] Tenant Isolation'),9
+POST,/api/auth/login,HTTPError('401 Client Error: Unauthorized for url: /api/auth/login'),6
+GET,[DASH] Audit Timeline,HTTPError('401 Client Error: Unauthorized for url: [DASH] Audit Timeline'),63
+GET,[PROD] Monitor Dashboard,HTTPError('401 Client Error: Unauthorized for url: [PROD] Monitor Dashboard'),8
+GET,[DASH] Ops Metrics,HTTPError('401 Client Error: Unauthorized for url: [DASH] Ops Metrics'),63
+GET,[HK] SLA Delayed,HTTPError('500 Server Error: Internal Server Error for url: [HK] SLA Delayed'),63
+GET,[DASH] Audit Summary,HTTPError('401 Client Error: Unauthorized for url: [DASH] Audit Summary'),34
+GET,[PROD] Incident Readiness,HTTPError('401 Client Error: Unauthorized for url: [PROD] Incident Readiness'),6
+GET,[PROD] Post-Launch Status,HTTPError('401 Client Error: Unauthorized for url: [PROD] Post-Launch Status'),7

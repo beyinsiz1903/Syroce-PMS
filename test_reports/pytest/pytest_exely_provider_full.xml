@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="19" failures="0" skipped="0" tests="208" time="12.026" timestamp="2026-03-15T18:57:07.506457+00:00" hostname="agent-env-060cbe91-dc07-4cf5-bd00-c7b79a243ef9"><testcase classname="tests.unit.test_exely_provider.TestExelyErrors" name="test_base_error" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelyErrors" name="test_auth_error_not_recoverable" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyErrors" name="test_soap_fault_error" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyErrors" name="test_soap_fault_recoverable" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyErrors" name="test_temporary_error_is_recoverable" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyErrors" name="test_rate_limit_error" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyErrors" name="test_payload_error" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyErrors" name="test_parse_error_truncates" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyErrors" name="test_mapping_error" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyErrors" name="test_validation_error" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyErrors" name="test_error_inheritance" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyRetry" name="test_non_retryable_errors" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyRetry" name="test_retryable_errors" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyRetry" name="test_max_retries_respected" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyRetry" name="test_backoff_increases" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyRetry" name="test_rate_limit_uses_retry_after" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyRetry" name="test_max_delay_cap" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyRetry" name="test_execute_success_no_retry" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelyRetry" name="test_execute_retries_on_temporary" time="1.002" /><testcase classname="tests.unit.test_exely_provider.TestExelyRetry" name="test_execute_raises_on_non_retryable" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelyValidators" name="test_validate_credentials_ok" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyValidators" name="test_validate_credentials_missing_username" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyValidators" name="test_validate_credentials_missing_password" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyValidators" name="test_validate_credentials_missing_hotel_code" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyValidators" name="test_extract_credentials" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyValidators" name="test_extract_credentials_fallback_hotel_id" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyValidators" name="test_validate_ari_payload_ok" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyValidators" name="test_validate_ari_missing_room_type" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyValidators" name="test_validate_ari_date_range_invalid" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyValidators" name="test_validate_date_range_ok" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyValidators" name="test_validate_date_range_invalid" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyObservability" name="test_record_success" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyObservability" name="test_record_error" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyObservability" name="test_record_failure_auth" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyObservability" name="test_record_failure_soap_fault" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyObservability" name="test_reset_metrics" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyObservability" name="test_health_provider_name" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestSoapBuilder" name="test_build_read_rq_by_date" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestSoapBuilder" name="test_build_read_rq_by_id" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestSoapBuilder" name="test_build_hotel_avail_rq" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestSoapBuilder" name="test_build_notif_report_rq" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestSoapBuilder" name="test_build_ari_update_with_availability" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestSoapBuilder" name="test_build_ari_update_with_rate" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestSoapBuilder" name="test_build_ari_update_with_stop_sell" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestSoapBuilder" name="test_build_ari_update_with_min_stay" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestSoapBuilder" name="test_wsse_security_header" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestResponseParser" name="test_parse_soap_fault" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestResponseParser" name="test_parse_invalid_xml" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestResponseParser" name="test_parse_hotel_avail_rs" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestResponseParser" name="test_parse_read_rs" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestResponseParser" name="test_parse_notif_report_success" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestResponseParser" name="test_parse_ari_update_error" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyNormalizer" name="test_normalize_basic" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelyNormalizer" name="test_normalize_cancelled" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyNormalizer" name="test_normalize_modified" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_init_with_direct_credentials" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_init_with_credentials_dict" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_init_validation_error" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_test_connection_success" time="0.003" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_test_connection_auth_failure" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_discover_rooms_success" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_pull_reservations_success" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_push_ari_success" time="0.002" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_push_ari_validation_error" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_confirm_delivery_success" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_confirm_delivery_soap_error" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_legacy_test_connection" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_legacy_pull_reservations" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_legacy_discover_rooms" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_temporary_error_triggers_retry" time="1.003" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_normalize_to_canonical" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelyProvider" name="test_usage_stats" time="0.000" /><testcase classname="tests.unit.test_exely_provider.TestExelySoapTransport" name="test_raise_for_401" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelySoapTransport" name="test_raise_for_429" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelySoapTransport" name="test_raise_for_500" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelySoapTransport" name="test_raise_for_400" time="0.001" /><testcase classname="tests.unit.test_exely_provider.TestExelySoapTransport" name="test_200_no_raise" time="0.001" /><testcase classname="tests.integration.test_exely_provider_flows.TestProviderFacadeIntegration" name="test_full_connection_flow" time="0.002" /><testcase classname="tests.integration.test_exely_provider_flows.TestProviderFacadeIntegration" name="test_full_ari_push_flow" time="0.001" /><testcase classname="tests.integration.test_exely_provider_flows.TestLegacyCompatibility" name="test_legacy_test_connection_dict_format" time="0.001" /><testcase classname="tests.integration.test_exely_provider_flows.TestLegacyCompatibility" name="test_legacy_pull_reservations_dict_format" time="0.001" /><testcase classname="tests.integration.test_exely_provider_flows.TestLegacyCompatibility" name="test_legacy_discover_rooms_dict_format" time="0.001" /><testcase classname="tests.integration.test_exely_provider_flows.TestLegacyCompatibility" name="test_legacy_push_ari_dict_format" time="0.001" /><testcase classname="tests.integration.test_exely_provider_flows.TestLegacyCompatibility" name="test_legacy_confirm_delivery_dict_format" time="0.001" /><testcase classname="tests.integration.test_exely_provider_flows.TestErrorPropagation" name="test_auth_error_no_retry" time="0.001" /><testcase classname="tests.integration.test_exely_provider_flows.TestErrorPropagation" name="test_temporary_error_retries" time="1.003" /><testcase classname="tests.integration.test_exely_provider_flows.TestErrorPropagation" name="test_rate_limit_error_retries" time="0.001" /><testcase classname="tests.integration.test_exely_provider_flows.TestObservabilityIntegration" name="test_success_recorded" time="0.001" /><testcase classname="tests.integration.test_exely_provider_flows.TestObservabilityIntegration" name="test_failure_recorded" time="0.001" /><testcase classname="tests.integration.test_exely_provider_flows.TestCredentialsIntegration" name="test_init_from_config_router_format" time="0.000" /><testcase classname="tests.integration.test_exely_provider_flows.TestCredentialsIntegration" name="test_init_from_snapshot_collector_format" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestAuth" name="test_build_auth_params" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestAuth" name="test_validate_credentials_valid" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestAuth" name="test_validate_credentials_empty_token" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestAuth" name="test_validate_credentials_empty_hr_id" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestAuth" name="test_extract_credentials_standard" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestAuth" name="test_extract_credentials_aliases" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestAuth" name="test_extract_credentials_strips_whitespace" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestEndpoints" name="test_rooms_path" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestEndpoints" name="test_reservations_path" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestEndpoints" name="test_channels_path" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestEndpoints" name="test_rooms_daily" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestEndpoints" name="test_base_url" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestErrors" name="test_base_error" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestErrors" name="test_auth_error_not_recoverable" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestErrors" name="test_rate_limit_error_recoverable" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestErrors" name="test_temporary_error_recoverable" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestErrors" name="test_payload_error_not_recoverable" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestErrors" name="test_parse_error_stores_raw" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestErrors" name="test_mapping_error" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestErrors" name="test_pagination_error" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestErrors" name="test_error_hierarchy" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestRetry" name="test_should_retry_auth_error" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestRetry" name="test_should_retry_rate_limit" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestRetry" name="test_should_retry_temporary" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestRetry" name="test_should_not_retry_payload_error" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestRetry" name="test_should_not_retry_parse_error" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestRetry" name="test_should_not_retry_mapping_error" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestRetry" name="test_max_retries_exceeded" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestRetry" name="test_backoff_exponential" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestRetry" name="test_backoff_rate_limit_uses_retry_after" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestRetry" name="test_backoff_max_delay" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestValidators" name="test_valid_credentials" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestValidators" name="test_empty_token" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestValidators" name="test_short_token" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestValidators" name="test_valid_inventory_payload" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestValidators" name="test_missing_inv_code" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestValidators" name="test_missing_date" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestValidators" name="test_no_update_fields" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestValidators" name="test_valid_room_mapping" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestValidators" name="test_missing_room_mapping" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestValidators" name="test_empty_external_code" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestValidators" name="test_valid_pull_params" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestValidators" name="test_invalid_per_page" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestParser" name="test_parse_rooms_response" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestParser" name="test_parse_rooms_empty" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestParser" name="test_parse_rooms_not_list" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestParser" name="test_parse_channels_response" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestParser" name="test_parse_connected_channels" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestParser" name="test_parse_reservations_response" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestParser" name="test_parse_reservations_empty" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestMapper" name="test_map_reservation_to_canonical" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestMapper" name="test_map_raw_payload_cancelled" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestMapper" name="test_map_raw_payload_modified" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestMapper" name="test_map_ari_daily_payload" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestMapper" name="test_map_ari_daterange_payload" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestPaginator" name="test_single_page" time="0.001" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestPaginator" name="test_multiple_pages" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestPaginator" name="test_empty_page_stops" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestPaginator" name="test_duplicate_page_detection" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestPaginator" name="test_max_pages_safety" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestObservability" name="test_record_success" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestObservability" name="test_record_failure" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestObservability" name="test_mixed_calls" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestSchemas" name="test_provider_result_success" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestSchemas" name="test_provider_result_failure" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestSchemas" name="test_hotel_runner_room" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_hotelrunner_adapter.TestSchemas" name="test_inventory_payload" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_integration.TestProviderConfigIntegration" name="test_connection_success" time="0.001" /><testcase classname="tests.hotelrunner_adapter.test_integration.TestProviderConfigIntegration" name="test_connection_auth_failure" time="0.001" /><testcase classname="tests.hotelrunner_adapter.test_integration.TestProviderConfigIntegration" name="test_fetch_rooms" time="0.001" /><testcase classname="tests.hotelrunner_adapter.test_integration.TestReservationPullIntegration" name="test_get_reservations_legacy" time="0.001" /><testcase classname="tests.hotelrunner_adapter.test_integration.TestReservationPullIntegration" name="test_sync_reservations" time="0.001" /><testcase classname="tests.hotelrunner_adapter.test_integration.TestReservationPullIntegration" name="test_multi_page_pull" time="0.001" /><testcase classname="tests.hotelrunner_adapter.test_integration.TestARIPushIntegration" name="test_update_room_legacy" time="0.001" /><testcase classname="tests.hotelrunner_adapter.test_integration.TestARIPushIntegration" name="test_push_daily_inventory" time="0.001" /><testcase classname="tests.hotelrunner_adapter.test_integration.TestARIPushIntegration" name="test_push_date_range_inventory" time="0.001" /><testcase classname="tests.hotelrunner_adapter.test_integration.TestSnapshotCollectorIntegration" name="test_canonical_mapping" time="0.000" /><testcase classname="tests.hotelrunner_adapter.test_integration.TestErrorRecoveryIntegration" name="test_temporary_error_retries" time="6.332" /><testcase classname="tests.hotelrunner_adapter.test_integration.TestErrorRecoveryIntegration" name="test_auth_error_no_retry" time="0.001" /><testcase classname="tests.hotelrunner_adapter.test_integration.TestErrorRecoveryIntegration" name="test_get_usage_stats" time="0.000" /><testcase classname="tests.test_exely_versioning_wsse.TestSoapBuilderWSSE" name="test_soap_envelope_contains_timestamp_element" time="0.001" /><testcase classname="tests.test_exely_versioning_wsse.TestSoapBuilderWSSE" name="test_soap_envelope_contains_nonce_with_base64" time="0.000" /><testcase classname="tests.test_exely_versioning_wsse.TestSoapBuilderWSSE" name="test_soap_envelope_password_type_passwordtext" time="0.000" /><testcase classname="tests.test_exely_versioning_wsse.TestSoapBuilderWSSE" name="test_soap_envelope_must_understand_attribute" time="0.000" /><testcase classname="tests.test_exely_versioning_wsse.TestSoapBuilderWSSE" name="test_soap_envelope_all_wsse_elements_present" time="0.000" /><testcase classname="tests.test_exely_versioning_wsse.TestPayloadHash" name="test_same_payload_produces_same_hash" time="0.316" /><testcase classname="tests.test_exely_versioning_wsse.TestPayloadHash" name="test_different_payload_produces_different_hash" time="0.000" /><testcase classname="tests.test_exely_versioning_wsse.TestPayloadHash" name="test_payload_hash_order_independent" time="0.000" /><testcase classname="tests.test_exely_versioning_wsse.TestPayloadHash" name="test_payload_hash_length" time="0.000" /><testcase classname="tests.test_exely_versioning_wsse.TestExelyNormalizerLineageFields" name="test_exely_normalizer_outputs_provider_last_modified_at" time="0.000" /><testcase classname="tests.test_exely_versioning_wsse.TestExelyNormalizerLineageFields" name="test_exely_normalizer_outputs_provider_created_at" time="0.000" /><testcase classname="tests.test_exely_versioning_wsse.TestExelyNormalizerLineageFields" name="test_exely_normalizer_outputs_provider_version" time="0.000" /><testcase classname="tests.test_exely_versioning_wsse.TestHotelRunnerNormalizerLineageFields" name="test_hotelrunner_normalizer_outputs_provider_last_modified_at" time="0.001" /><testcase classname="tests.test_exely_versioning_wsse.TestHotelRunnerNormalizerLineageFields" name="test_hotelrunner_normalizer_outputs_provider_created_at" time="0.000" /><testcase classname="tests.test_exely_versioning_wsse.TestHotelRunnerNormalizerLineageFields" name="test_hotelrunner_normalizer_outputs_provider_version" time="0.000" /><testcase classname="tests.test_exely_versioning_wsse.TestHotelRunnerNormalizerLineageFields" name="test_hotelrunner_normalizer_fallback_modified_at" time="0.000" /><testcase classname="tests.test_exely_versioning_wsse.TestExelyConnectionAPI" name="test_get_connection_returns_correct_shape" time="0.323" /><testcase classname="tests.test_exely_versioning_wsse.TestExelySyncStatusAPI" name="test_get_sync_status_returns_correct_fields" time="0.277" /><testcase classname="tests.test_exely_versioning_wsse.TestExelyRoomMappingsAPI" name="test_create_mapping_returns_correct_response" time="0.129"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601098,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_versioning_wsse.TestExelyRoomMappingsAPI object at 0xfae3e3257a50&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601098,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_versioning_wsse.py:472: AssertionError</error></testcase><testcase classname="tests.test_exely_versioning_wsse.TestExelyRoomMappingsAPI" name="test_get_mappings_returns_list" time="0.000"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601098,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_versioning_wsse.TestExelyRoomMappingsAPI object at 0xfae3e3257a50&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601098,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_versioning_wsse.py:472: AssertionError</error></testcase><testcase classname="tests.test_exely_versioning_wsse.TestExelyRoomMappingsAPI" name="test_delete_mapping_works" time="0.000"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601098,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_versioning_wsse.TestExelyRoomMappingsAPI object at 0xfae3e3257a50&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601098,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_versioning_wsse.py:472: AssertionError</error></testcase><testcase classname="tests.test_exely_versioning_wsse.TestExelySyncLogsAPI" name="test_get_sync_logs_returns_logs" time="0.131"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601098,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_versioning_wsse.TestExelySyncLogsAPI object at 0xfae3e325c910&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601098,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_versioning_wsse.py:472: AssertionError</error></testcase><testcase classname="tests.test_exely_versioning_wsse.TestExelyReservationsAPI" name="test_get_local_reservations_returns_list" time="0.144"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601098,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_versioning_wsse.TestExelyReservationsAPI object at 0xfae3e325d050&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601098,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_versioning_wsse.py:472: AssertionError</error></testcase><testcase classname="tests.test_exely_api.TestExelyConnection" name="test_get_connection_status_disconnected" time="0.159"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601098,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_api.TestExelyConnection object at 0xfae3e325f450&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601098,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_api.py:37: AssertionError</error></testcase><testcase classname="tests.test_exely_api.TestExelyConnection" name="test_connect_invalid_credentials_returns_error" time="0.000"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601098,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_api.TestExelyConnection object at 0xfae3e325f450&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601098,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_api.py:37: AssertionError</error></testcase><testcase classname="tests.test_exely_api.TestExelySyncStatus" name="test_get_sync_status" time="0.132"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601098,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_api.TestExelySyncStatus object at 0xfae3e32686d0&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601098,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_api.py:37: AssertionError</error></testcase><testcase classname="tests.test_exely_api.TestExelyRoomMappings" name="test_get_room_mappings_empty" time="0.134"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601098,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_api.TestExelyRoomMappings object at 0xfae3e3269090&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601098,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_api.py:37: AssertionError</error></testcase><testcase classname="tests.test_exely_api.TestExelyRoomMappings" name="test_create_room_mapping" time="0.000"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601098,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_api.TestExelyRoomMappings object at 0xfae3e3269090&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601098,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_api.py:37: AssertionError</error></testcase><testcase classname="tests.test_exely_api.TestExelyRoomMappings" name="test_create_and_delete_room_mapping" time="0.000"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601098,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_api.TestExelyRoomMappings object at 0xfae3e3269090&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601098,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_api.py:37: AssertionError</error></testcase><testcase classname="tests.test_exely_api.TestExelyRoomMappings" name="test_delete_nonexistent_mapping_returns_404" time="0.000"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601098,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_api.TestExelyRoomMappings object at 0xfae3e3269090&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601098,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_api.py:37: AssertionError</error></testcase><testcase classname="tests.test_exely_api.TestExelySyncLogs" name="test_get_sync_logs" time="0.133"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601099,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_api.TestExelySyncLogs object at 0xfae3e326add0&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601099,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_api.py:37: AssertionError</error></testcase><testcase classname="tests.test_exely_api.TestExelyReservations" name="test_get_local_reservations" time="0.123"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601099,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_api.TestExelyReservations object at 0xfae3e32ed950&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601099,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_api.py:37: AssertionError</error></testcase><testcase classname="tests.test_exely_api.TestExelyRawEvents" name="test_get_raw_events" time="0.135"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601099,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_api.TestExelyRawEvents object at 0xfae3e5c65d90&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601099,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_api.py:37: AssertionError</error></testcase><testcase classname="tests.test_exely_api.TestExelyRequireConnection" name="test_rooms_discover_requires_connection" time="0.135"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601099,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_api.TestExelyRequireConnection object at 0xfae3e326bc10&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601099,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_api.py:37: AssertionError</error></testcase><testcase classname="tests.test_exely_api.TestExelyRequireConnection" name="test_manual_pull_requires_connection" time="0.000"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601099,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_api.TestExelyRequireConnection object at 0xfae3e326bc10&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601099,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_api.py:37: AssertionError</error></testcase><testcase classname="tests.test_exely_api.TestExelyRequireConnection" name="test_test_connection_requires_existing" time="0.000"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601099,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_api.TestExelyRequireConnection object at 0xfae3e326bc10&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601099,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_api.py:37: AssertionError</error></testcase><testcase classname="tests.test_exely_api.TestExelyRequireConnection" name="test_disconnect_requires_existing" time="0.001"><error message="failed on setup with &quot;AssertionError: Login failed: {&quot;detail&quot;:&quot;Rate limit exceeded. Lutfen daha sonra tekrar deneyin.&quot;,&quot;limit&quot;:15,&quot;remaining&quot;:0,&quot;reset&quot;:1773601099,&quot;retry_after&quot;:60}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">self = &lt;tests.test_exely_api.TestExelyRequireConnection object at 0xfae3e326bc10&gt;
+
+    @pytest.fixture(scope="class")
+    def auth_token(self):
+        """Login and get auth token"""
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            headers={"Content-Type": "application/json"}
+        )
+&gt;       assert response.status_code == 200, f"Login failed: {response.text}"
+E       AssertionError: Login failed: {"detail":"Rate limit exceeded. Lutfen daha sonra tekrar deneyin.","limit":15,"remaining":0,"reset":1773601099,"retry_after":60}
+E       assert 429 == 200
+E        +  where 429 = &lt;Response [429]&gt;.status_code
+
+tests/test_exely_api.py:37: AssertionError</error></testcase></testsuite></testsuites>

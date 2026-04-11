@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body>
+    <h1>Login Test</h1>
+    <button onclick="testLogin()">Test Super Admin Login</button>
+    <button onclick="testDemoLogin()">Test Demo Login</button>
+    <pre id="result"></pre>
+
+    <script>
+        axios.defaults.baseURL = 'http://localhost:8001/api';
+        
+        async function testLogin() {
+            const result = document.getElementById('result');
+            try {
+                result.textContent = 'Testing super admin login...';
+                const response = await axios.post('/auth/login', {
+                    email: 'superadmin@syroce.com',
+                    password: 'SuperAdmin123!'
+                });
+                result.textContent = 'SUCCESS!\n' + JSON.stringify(response.data, null, 2);
+            } catch (error) {
+                result.textContent = 'ERROR!\n' + error.message + '\n' + 
+                    (error.response ? JSON.stringify(error.response.data, null, 2) : '');
+            }
+        }
+        
+        async function testDemoLogin() {
+            const result = document.getElementById('result');
+            try {
+                result.textContent = 'Testing demo login...';
+                const response = await axios.post('/auth/login', {
+                    email: 'demo@hotel.com',
+                    password: 'demo123'
+                });
+                result.textContent = 'SUCCESS!\n' + JSON.stringify(response.data, null, 2);
+            } catch (error) {
+                result.textContent = 'ERROR!\n' + error.message + '\n' + 
+                    (error.response ? JSON.stringify(error.response.data, null, 2) : '');
+            }
+        }
+    </script>
+</body>
+</html>

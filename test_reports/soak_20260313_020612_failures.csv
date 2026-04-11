@@ -1,0 +1,9 @@
+Method,Name,Error,Occurrences
+GET,[FD] Ops Metrics,HTTPError('401 Client Error: Unauthorized for url: [FD] Ops Metrics'),5
+GET,[FD] In-House,HTTPError('401 Client Error: Unauthorized for url: [FD] In-House'),20
+GET,[FD] Arrivals,HTTPError('401 Client Error: Unauthorized for url: [FD] Arrivals'),28
+GET,[FD] Rooms,HTTPError('401 Client Error: Unauthorized for url: [FD] Rooms'),18
+GET,[FD] Rooms,"ConnectionRefusedError(111, 'Connection refused')",1
+GET,[FD] Audit Checklist,HTTPError('401 Client Error: Unauthorized for url: [FD] Audit Checklist'),11
+GET,[FD] Departures,HTTPError('401 Client Error: Unauthorized for url: [FD] Departures'),16
+POST,/api/auth/login,"ConnectionRefusedError(111, 'Connection refused')",1

@@ -1,0 +1,9 @@
+RESERVATION_CREATED_EVENT = "reservation.created.v1"
+RESERVATION_MODIFIED_EVENT = "reservation.modified.v1"
+RESERVATION_CANCELLED_EVENT = "reservation.cancelled.v1"
+
+__all__ = [
+    "RESERVATION_CREATED_EVENT",
+    "RESERVATION_MODIFIED_EVENT",
+    "RESERVATION_CANCELLED_EVENT",
+]

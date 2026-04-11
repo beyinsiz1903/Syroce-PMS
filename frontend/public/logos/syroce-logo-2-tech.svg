@@ -1,0 +1,33 @@
+<svg width="200" height="60" viewBox="0 0 200 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Teknolojik & Dinamik - Dijital görünüm -->
+  <defs>
+    <linearGradient id="gradient2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#8b5cf6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ec4899;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Dijital ikon -->
+  <g transform="translate(5, 12)">
+    <!-- Dış çerçeve -->
+    <rect x="0" y="0" width="35" height="35" rx="6" stroke="url(#gradient2)" stroke-width="2.5" fill="none"/>
+    
+    <!-- İç grid pattern -->
+    <circle cx="10" cy="10" r="2" fill="url(#gradient2)"/>
+    <circle cx="17.5" cy="10" r="2" fill="url(#gradient2)"/>
+    <circle cx="25" cy="10" r="2" fill="url(#gradient2)"/>
+    
+    <circle cx="10" cy="17.5" r="2" fill="url(#gradient2)"/>
+    <circle cx="17.5" cy="17.5" r="3.5" fill="url(#gradient2)"/>
+    <circle cx="25" cy="17.5" r="2" fill="url(#gradient2)"/>
+    
+    <circle cx="10" cy="25" r="2" fill="url(#gradient2)"/>
+    <circle cx="17.5" cy="25" r="2" fill="url(#gradient2)"/>
+    <circle cx="25" cy="25" r="2" fill="url(#gradient2)"/>
+  </g>
+  
+  <!-- Syroce yazısı - tech style -->
+  <text x="50" y="32" font-family="'Courier New', monospace" font-size="26" font-weight="700" fill="url(#gradient2)">SYROCE</text>
+  <text x="50" y="45" font-family="Arial, sans-serif" font-size="8" font-weight="400" fill="#64748b" letter-spacing="1.5">NEXT-GEN PMS</text>
+</svg>

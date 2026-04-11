@@ -1,0 +1,147 @@
+{
+  "summary": "Iteration 149: SEC-001/SEC-002 Rollout APIs, Sandbox Dashboard Visualization, Admin Guard, and KPI Correlation - All 21 backend tests passed, frontend components verified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Control Plane - Sandbox Dashboard",
+        "issues": ["Minor: Recharts console warning about chart width/height being -1 during initial render - cosmetic only, charts render correctly"]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/pytest_sec_sandbox_ops_api.xml",
+    "/app/backend/tests/test_sec_sandbox_ops_api.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "SEC-001 Secrets Management APIs correctly return health, config, audit stats, rotation plan with severity levels, and tenant/provider scoping",
+    "SEC-002 Crypto Migration APIs correctly return dual-read/write status, cutover metrics with format distribution, dry-run migration check, and key versioning with rotation/rollback plans",
+    "Sandbox Dashboard APIs return provider cards with pass/fail data, trend data for charting, regression detection, and deploy/drift correlation",
+    "Admin Guard correctly protects all /api/ops/* endpoints - returns 401 without token, accepts valid Bearer tokens",
+    "KPI Correlation API correctly maps alerts to business impact (revenue_risk, rate_parity_risk, security_risk, data_protection_risk)",
+    "Frontend SandboxDashboard and SecurityOpsDashboard components load correctly on /control-plane route",
+    "All data-testid attributes present for testing: sandbox-dashboard, security-ops-dashboard, secrets-health-card, crypto-status-card, crypto-cutover-card, rotation-plan-card, sandbox-provider-card-*, sandbox-trend-chart, sandbox-correlation"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sec_sandbox_ops_api.py"
+  ],
+  "success_rate": {
+    "backend": "100% - 21/21 tests passed",
+    "frontend": "100% - All components loaded and verified"
+  },
+  "test_credentials": "demo@hotel.com / demo123 (role: super_admin)",
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 149 verified SEC-001/SEC-002 rollout APIs, Sandbox Dashboard visualization, Admin Guard, and KPI Correlation. Key endpoints tested: GET /api/ops/secrets/status, GET /api/ops/secrets/rotation-plan, GET /api/ops/secrets/scoping, GET /api/ops/crypto/status, GET /api/ops/crypto/cutover-metrics, POST /api/ops/crypto/migrate-check, GET /api/ops/crypto/key-info, GET /api/ops/sandbox/dashboard, GET /api/ops/sandbox/trends, GET /api/ops/sandbox/regressions, GET /api/ops/sandbox/correlation, GET /api/ops/alerts/kpi-correlation. All /api/ops/* endpoints require Bearer token auth. Frontend control plane at /control-plane shows SandboxDashboard and SecurityOpsDashboard components.",
+  "verified_features": {
+    "admin_guard": {
+      "status": "PASS",
+      "notes": "All /api/ops/* endpoints return 401 without token, accept valid Bearer tokens"
+    },
+    "sec_001_secrets_management": {
+      "GET /api/ops/secrets/status": {
+        "status": "PASS",
+        "notes": "Returns health, config (provider, environment, legacy_fallback, audit_enabled), audit_24h stats, anomalies_24h"
+      },
+      "GET /api/ops/secrets/rotation-plan": {
+        "status": "PASS",
+        "notes": "Returns items with severity (info/warning/critical), recommendation (OK/ROTATE_RECOMMENDED/ROTATE_URGENT), summary, rotation_policy"
+      },
+      "GET /api/ops/secrets/scoping": {
+        "status": "PASS",
+        "notes": "Returns scoping array, isolation_model=tenant/provider/property, cross_tenant_access=DENIED, policy_enforcement=active"
+      }
+    },
+    "sec_002_crypto_migration": {
+      "GET /api/ops/crypto/status": {
+        "status": "PASS",
+        "notes": "Returns health, config (v2_enabled, bypass_allowed, key_version, has_master_key), dual_read_write (status, write_format, read_formats), fallback_strategy"
+      },
+      "GET /api/ops/crypto/cutover-metrics": {
+        "status": "PASS",
+        "notes": "Returns collections breakdown, totals (syr1, aes_gcm_legacy, other_legacy), cutover (migration_percentage, cutover_ready, recommended_action)"
+      },
+      "POST /api/ops/crypto/migrate-check": {
+        "status": "PASS",
+        "notes": "Returns dry_run=true, would_migrate count, already_current count, total_scanned, action recommendation"
+      },
+      "GET /api/ops/crypto/key-info": {
+        "status": "PASS",
+        "notes": "Returns current_version, has_current_key, has_previous_key, rotation_ready, rotation_steps array, rollback_plan (immediate, break_glass, key_rollback)"
+      }
+    },
+    "sandbox_dashboard": {
+      "GET /api/ops/sandbox/dashboard": {
+        "status": "PASS",
+        "notes": "Returns has_data, provider_cards with pass/fail/total/pass_rate/scenarios, last_run info, label=sandbox_pass"
+      },
+      "GET /api/ops/sandbox/trends": {
+        "status": "PASS",
+        "notes": "Returns overall_trend, provider_trends, scenario_trends, most_failing_scenarios, total_runs"
+      },
+      "GET /api/ops/sandbox/regressions": {
+        "status": "PASS",
+        "notes": "Returns has_regression, regressions array with provider/scenario/severity/runbook_link/alert_type, label=sandbox_regression"
+      },
+      "GET /api/ops/sandbox/correlation": {
+        "status": "PASS",
+        "notes": "Returns correlations, drift_alerts_active, insight, label=prod_health"
+      }
+    },
+    "kpi_correlation": {
+      "GET /api/ops/alerts/kpi-correlation": {
+        "status": "PASS",
+        "notes": "Returns kpi_impact (revenue_risk, rate_parity_risk, security_risk, data_protection_risk with level/alert_count/drivers), alert_summary (total_alerts, by_severity, by_provider, time_window_hours)"
+      }
+    },
+    "frontend_components": {
+      "SandboxDashboard": {
+        "status": "PASS",
+        "notes": "Component loads on /control-plane, shows provider cards (HotelRunner 100%, Exely 100%), trend chart, most failing scenarios, deploy/drift correlation"
+      },
+      "SecurityOpsDashboard": {
+        "status": "PASS",
+        "notes": "Component loads on /control-plane, shows SEC-001 Secrets Health Card (SAGLIKLI, local_dev provider), SEC-002 Crypto Engine Card (V1 LEGACY, aes256gcm write format), Migration Cutover (0%), Rotation Plan"
+      }
+    }
+  },
+  "test_execution_summary": {
+    "api_tests": {
+      "file": "/app/backend/tests/test_sec_sandbox_ops_api.py",
+      "total": 21,
+      "passed": 21,
+      "failed": 0,
+      "test_classes": [
+        "TestAdminGuard (5 tests) - Verifies 401 without auth",
+        "TestSEC001SecretsManagement (3 tests) - Secrets status, rotation plan, scoping",
+        "TestSEC002CryptoMigration (4 tests) - Crypto status, cutover metrics, migrate check, key info",
+        "TestSandboxDashboard (4 tests) - Dashboard, trends, regressions, correlation",
+        "TestKPICorrelation (1 test) - KPI correlation mapping",
+        "TestAuthenticatedAccess (4 tests) - Verifies endpoints work with auth"
+      ]
+    },
+    "frontend_tests": {
+      "status": "PASS",
+      "verified_elements": [
+        "sandbox-dashboard",
+        "security-ops-dashboard",
+        "secrets-health-card",
+        "crypto-status-card",
+        "crypto-cutover-card",
+        "rotation-plan-card",
+        "sandbox-provider-card-hotelrunner",
+        "sandbox-provider-card-exely",
+        "sandbox-trend-chart",
+        "sandbox-correlation"
+      ]
+    }
+  },
+  "mocked_api_note": "No APIs are mocked. All endpoints are backed by real MongoDB queries and real simulation data."
+}

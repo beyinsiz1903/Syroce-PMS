@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="7" time="6.481" timestamp="2026-03-19T23:28:23.838349+00:00" hostname="agent-env-3e82cdd2-b0b2-44ad-9a0f-5e18cee8509e"><testcase classname="tests.test_quick_booking.TestQuickBookingAPI" name="test_quick_booking_success" time="2.920" /><testcase classname="tests.test_quick_booking.TestQuickBookingAPI" name="test_quick_booking_missing_guest_name" time="0.617"><failure message="AssertionError: Expected 400/422 for empty guest name, got 200&#10;assert 200 in [400, 422]&#10; +  where 200 = &lt;Response [200]&gt;.status_code">backend/tests/test_quick_booking.py:103: in test_quick_booking_missing_guest_name
+    assert response.status_code in [400, 422], f"Expected 400/422 for empty guest name, got {response.status_code}"
+E   AssertionError: Expected 400/422 for empty guest name, got 200
+E   assert 200 in [400, 422]
+E    +  where 200 = &lt;Response [200]&gt;.status_code</failure></testcase><testcase classname="tests.test_quick_booking.TestQuickBookingAPI" name="test_quick_booking_invalid_room" time="0.112" /><testcase classname="tests.test_quick_booking.TestQuickBookingAPI" name="test_quick_booking_checkout_before_checkin" time="0.580"><failure message="AssertionError: Expected 400/422 for invalid dates, got 200&#10;assert 200 in [400, 422]&#10; +  where 200 = &lt;Response [200]&gt;.status_code">backend/tests/test_quick_booking.py:152: in test_quick_booking_checkout_before_checkin
+    assert response.status_code in [400, 422], f"Expected 400/422 for invalid dates, got {response.status_code}"
+E   AssertionError: Expected 400/422 for invalid dates, got 200
+E   assert 200 in [400, 422]
+E    +  where 200 = &lt;Response [200]&gt;.status_code</failure></testcase><testcase classname="tests.test_quick_booking.TestQuickBookingAPI" name="test_quick_booking_zero_price" time="0.566" /><testcase classname="tests.test_quick_booking.TestQuickBookingAPI" name="test_quick_booking_negative_price" time="0.625" /><testcase classname="tests.test_quick_booking.TestQuickBookingCreatesGuest" name="test_quick_booking_creates_guest_and_booking" time="0.958"><failure message="assert 500 == 200&#10; +  where 500 = &lt;Response [500]&gt;.status_code">backend/tests/test_quick_booking.py:278: in test_quick_booking_creates_guest_and_booking
+    assert guests_response.status_code == 200
+E   assert 500 == 200
+E    +  where 500 = &lt;Response [500]&gt;.status_code</failure></testcase></testsuite></testsuites>

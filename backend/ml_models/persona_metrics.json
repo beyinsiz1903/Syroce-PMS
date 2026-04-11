@@ -1,0 +1,91 @@
+{
+  "accuracy": 0.95,
+  "classification_report": {
+    "complainer": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 13.0
+    },
+    "experience_seeker": {
+      "precision": 0.875,
+      "recall": 0.875,
+      "f1-score": 0.875,
+      "support": 16.0
+    },
+    "high_ltv": {
+      "precision": 0.9333333333333333,
+      "recall": 1.0,
+      "f1-score": 0.9655172413793104,
+      "support": 14.0
+    },
+    "ota_to_direct": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 11.0
+    },
+    "price_sensitive": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 13.0
+    },
+    "upsell_candidate": {
+      "precision": 0.9166666666666666,
+      "recall": 0.8461538461538461,
+      "f1-score": 0.88,
+      "support": 13.0
+    },
+    "accuracy": 0.95,
+    "macro avg": {
+      "precision": 0.9541666666666667,
+      "recall": 0.953525641025641,
+      "f1-score": 0.9534195402298851,
+      "support": 80.0
+    },
+    "weighted avg": {
+      "precision": 0.9497916666666667,
+      "recall": 0.95,
+      "f1-score": 0.9494655172413793,
+      "support": 80.0
+    }
+  },
+  "feature_importance": {
+    "avg_spend": 0.17909198740077473,
+    "total_spent": 0.1419644204548635,
+    "upsells_accepted": 0.1370225749307037,
+    "direct_bookings": 0.1282910255300486,
+    "negative_reviews": 0.12365746465948668,
+    "positive_reviews": 0.08945764800444447,
+    "days_since_last_visit": 0.05370052408242181,
+    "booking_frequency": 0.0432882641870777,
+    "avg_lead_time": 0.04103729241234222,
+    "total_stays": 0.03395467255365878,
+    "ota_bookings": 0.02853412578417785
+  },
+  "training_samples": 400,
+  "features": [
+    "total_stays",
+    "avg_spend",
+    "total_spent",
+    "avg_lead_time",
+    "ota_bookings",
+    "direct_bookings",
+    "upsells_accepted",
+    "negative_reviews",
+    "positive_reviews",
+    "days_since_last_visit",
+    "booking_frequency"
+  ],
+  "persona_types": [
+    "complainer",
+    "experience_seeker",
+    "high_ltv",
+    "ota_to_direct",
+    "price_sensitive",
+    "upsell_candidate"
+  ],
+  "trained_at": "2025-11-20T07:01:28.043228",
+  "model_version": "1.0"
+}

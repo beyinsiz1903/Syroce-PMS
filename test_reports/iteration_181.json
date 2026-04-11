@@ -1,0 +1,71 @@
+{
+  "iteration": 181,
+  "date": "2026-04-03",
+  "summary": "R881632298 Bug Fixes Verified - All 3 reported bugs are fixed: 1) 7 reservations now appear on calendar in 'Atanmamis' rows, 2) Name change synced (murat sutay), 3) R881632298-1 correctly shows cancelled status",
+  "features_tested": [
+    "Backend: R881632298 bookings have correct status (R881632298 confirmed, R881632298-1 cancelled, R881632298-2 to R881632298-6 confirmed) - PASSED",
+    "Backend: All bookings have room_type_id field set correctly (Suite, Standard, Deluxe) - PASSED",
+    "Backend: Guest name is 'murat sutay' for all R881632298 bookings (name change synced) - PASSED",
+    "Backend: /api/pms/bookings endpoint returns room_type_id field for OTA bookings - PASSED",
+    "Frontend: Login with demo@hotel.com / demo123 - PASSED",
+    "Frontend: Calendar page at /app/reservation-calendar loads correctly - PASSED",
+    "Frontend: 4 'Atanmamis' (unassigned) rows visible for each room type - PASSED",
+    "Frontend: 19 'murat sutay' booking elements found on calendar - PASSED",
+    "Frontend: Suite, Standard, Deluxe sections all display correctly - PASSED"
+  ],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_r881632298_bug_fixes.py",
+    "/app/test_reports/pytest/pytest_r881632298_bug_fixes.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "explode_multi_room_reservation correctly detects per-room cancellation state via _room_cancelled flag",
+    "Phase B pull logic uses per-room effective_state instead of top-level state",
+    "getUnassignedBookingsForType in calendarHelpers.jsx correctly checks both room_type and room_type_id",
+    "_sync_reservation_update properly syncs guest name changes and creates notifications",
+    "All R881632298 bookings have correct room_type_id mapping (Suite, Standard, Deluxe)"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_r881632298_bug_fixes.py"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "100%"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123"
+  },
+  "seed_data_creation": "None - R881632298 bookings already exist in database",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "R881632298 multi-room reservation bug fixes verified. All 7 sub-reservations (R881632298, R881632298-1 through R881632298-6) are in the database with correct status (R881632298-1 cancelled, rest confirmed). Guest name 'murat sutay' synced correctly. Calendar shows unassigned bookings in 'Atanmamis' rows for each room type. Test file at /app/backend/tests/test_r881632298_bug_fixes.py covers all verification scenarios.",
+  "rca_of_the_issue": {
+    "original_bugs": [
+      "7 reservations from HotelRunner appeared in notifications but not on calendar",
+      "Name change (cengizhan sutay → Murat Sutay) didn't sync",
+      "1 room cancellation (R881632298-1) didn't reflect in the system"
+    ],
+    "root_causes": [
+      "Calendar getUnassignedBookingsForType was only checking room_type, not room_type_id (OTA imports use provider room names)",
+      "Phase B pull logic was using top-level state instead of per-room effective_state",
+      "explode_multi_room_reservation wasn't detecting per-room cancellation markers"
+    ],
+    "fixes_applied": [
+      "getUnassignedBookingsForType now checks both room_type and room_type_id",
+      "Phase B uses _room_cancelled flag and per-room effective_state",
+      "explode_multi_room_reservation sets _room_cancelled flag based on room-level state/status/cancel_reason",
+      "_sync_reservation_update syncs guest name changes and creates notifications"
+    ],
+    "verification": "All 6 pytest tests passed. Frontend shows 19 'murat sutay' elements and 4 'Atanmamis' rows. R881632298-1 correctly shows cancelled status."
+  }
+}

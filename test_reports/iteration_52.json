@@ -1,0 +1,186 @@
+{
+  "summary": "Enterprise Hotel Operating System Hardening - ALL TESTS PASSED. Backend: 30/30 pytest tests passed (100%). All runtime services (CMRuntime, WorkerRuntime, SecurityRuntime) return real DB data. Normalized health APIs return enriched contracts. Frontend: SystemHealthDashboard fully functional with all elements verified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/push/status",
+        "issue": "Returns 500 error (Push notification service - not related to hardening)",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "System Health Dashboard",
+        "issues": ["WebSocket shows 'Polling' - expected behavior since WS not configured in test env"]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_hardening_comprehensive.py",
+    "/app/test_reports/pytest/pytest_hardening_comprehensive.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "CMRuntimeService correctly queries MongoDB for drift_scan_results, channel_sync_logs, channel_connections, reconciliation_results",
+    "WorkerRuntimeService correctly queries task_queue, dead_letter_tasks collections with per_queue breakdown",
+    "SecurityRuntimeService correctly implements audit_validator, rate_limiter, tenant_guard, log_sanitizer",
+    "Normalized health APIs return enriched contract: data_freshness='real-time', evidence_summary, degraded_reason, critical_blockers, live_capable=true",
+    "All 5 subsystems in overview: channel_manager, workers, security, observability, alerts",
+    "Role-based dashboard correctly shapes panels by role (admin gets all 6 panels)",
+    "WebSocket broadcast_system_health_event and broadcast_health_metric_update functions exist and work",
+    "ErrorBoundary wraps routes in App.js"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (30/30 tests passed)",
+    "frontend": "100% (all dashboard elements verified)"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123",
+    "auth_field": "access_token",
+    "localStorage_key": "token"
+  },
+  "seed_data_creation": "No new seed data - using existing demo data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All hardening features complete. CMRuntimeService, WorkerRuntimeService, SecurityRuntimeService now use real MongoDB queries. Workers show 'critical' because no Celery worker is running (expected in dev env). Frontend dashboard at /system-health shows real data with WebSocket in Polling mode (expected when WS not connected).",
+  "passed_tests": {
+    "backend_cm_runtime": [
+      "test_cm_runtime_status_real_fields - health, severity, sync_stats, drift, reconciliation, providers, circuit_breakers",
+      "test_cm_sync_stats_structure - total_24h, failed_24h, success_rate, retry_backlog",
+      "test_cm_drift_data - active_drifts, critical_drifts",
+      "test_cm_providers_data - total, healthy"
+    ],
+    "backend_worker_runtime": [
+      "test_queue_health_real_fields - health, severity, per_queue, dead_letter, worker_heartbeat, retry_pressure, recommendations",
+      "test_worker_per_queue_breakdown - queue, health, pending for each queue type",
+      "test_dead_letter_structure - total, today, replay_candidates",
+      "test_stuck_tasks_grouping - stuck_tasks, count, by_type",
+      "test_worker_severity_on_no_activity - severity='critical' when no workers"
+    ],
+    "backend_security_runtime": [
+      "test_audit_status_real_fields - completeness, completeness_score, severity",
+      "test_rate_limit_real_fields - enforcement, burst_detected, severity, rejection_rate",
+      "test_tenant_guard_status - severity, enforcement",
+      "test_log_sanitization_coverage - coverage_pct, all_patterns_working",
+      "test_security_severity_no_violations - severity='info' when no violations"
+    ],
+    "backend_normalized_health": [
+      "test_normalized_cm_enriched_contract - data_freshness='real-time', evidence_summary, live_capable=true, degraded_reason, critical_blockers",
+      "test_normalized_workers_contract - worker_responding in detail",
+      "test_normalized_security_contract - audit_completeness_score in detail",
+      "test_normalized_overview_all_subsystems - channel_manager, workers, security, observability, alerts",
+      "test_normalized_alerts - total_active, critical_active",
+      "test_normalized_observability - unresolved_errors"
+    ],
+    "backend_role_dashboard": [
+      "test_role_dashboard_admin_panels - queue_health, security, workers, drift_summary, sync_summary",
+      "test_role_dashboard_drift_data - drift_count, critical_drifts, status",
+      "test_role_dashboard_queue_health - severity, stuck_tasks"
+    ],
+    "backend_audit_live": [
+      "test_audit_metrics_endpoint - drift, reconciliation, queue, security, dead_letter",
+      "test_audit_metrics_recon - total_runs, success_count, success_rate",
+      "test_live_status - ws_available, ws_connected_clients",
+      "test_live_events - events, count"
+    ],
+    "backend_websocket": [
+      "test_connected_clients_has_health_room",
+      "test_broadcast_system_health_event",
+      "test_broadcast_health_metric_update"
+    ],
+    "frontend_system_health": [
+      "Login successful with demo@hotel.com/demo123",
+      "data-testid='system-health-dashboard' found",
+      "data-testid='ws-status-badge' shows 'Polling'",
+      "data-testid='normalized-overview-bar' found",
+      "All 4 metric cards found: metric-cm-health, metric-queue-health, metric-alerts, metric-stuck-tasks",
+      "All 5 subsystem cards found: normalized-channel_manager, normalized-workers, normalized-security, normalized-observability, normalized-alerts",
+      "data-testid='refresh-all-btn' found",
+      "data-testid='action-drift-scan' found",
+      "data-testid='run-reconciliation-btn' found"
+    ]
+  },
+  "verified_api_responses": {
+    "cm_runtime_status": {
+      "endpoint": "GET /api/channel-manager/runtime/status",
+      "verified_fields": ["tenant_id", "health", "severity", "issues", "active_connections", "providers", "sync_stats", "drift", "reconciliation", "circuit_breakers", "checked_at"],
+      "health": "healthy"
+    },
+    "queue_health": {
+      "endpoint": "GET /api/workers/queues/health",
+      "verified_fields": ["health", "severity", "per_queue", "dead_letter", "worker_heartbeat", "retry_pressure", "recommendations"],
+      "health": "critical",
+      "note": "Critical because no Celery worker running - expected in dev"
+    },
+    "stuck_tasks": {
+      "endpoint": "GET /api/workers/tasks/stuck",
+      "verified_fields": ["stuck_tasks", "count", "by_type"]
+    },
+    "audit_status": {
+      "endpoint": "GET /api/security/audit/status",
+      "verified_fields": ["completeness", "summary", "completeness_score", "severity", "total_entries_period", "gaps_found"]
+    },
+    "rate_limit_status": {
+      "endpoint": "GET /api/security/rate-limit/status",
+      "verified_fields": ["tenant_id", "enforcement", "stats", "burst_detected", "severity", "rejection_rate"]
+    },
+    "tenant_guard_status": {
+      "endpoint": "GET /api/security/tenant-guard/status",
+      "verified_fields": ["enforcement", "total_violations", "violations_last_24h", "severity"]
+    },
+    "log_sanitization_status": {
+      "endpoint": "GET /api/security/log-sanitization/status",
+      "verified_fields": ["enforcement", "patterns_active", "all_patterns_working", "coverage_pct", "sample_results"]
+    },
+    "normalized_channel_manager": {
+      "endpoint": "GET /api/system-health/normalized/channel-manager",
+      "verified_fields": ["status", "severity", "live_capable", "data_freshness", "evidence_summary", "degraded_reason", "critical_blockers", "detail"],
+      "live_capable": true,
+      "data_freshness": "real-time"
+    },
+    "normalized_workers": {
+      "endpoint": "GET /api/system-health/normalized/workers",
+      "verified_fields": ["status", "severity", "detail.worker_responding"],
+      "status": "critical"
+    },
+    "normalized_security": {
+      "endpoint": "GET /api/system-health/normalized/security",
+      "verified_fields": ["status", "severity", "detail.audit_completeness_score"]
+    },
+    "normalized_overview": {
+      "endpoint": "GET /api/system-health/normalized/overview",
+      "verified_fields": ["overall_status", "overall_severity", "live_capable", "data_freshness", "subsystems"],
+      "subsystems": ["channel_manager", "workers", "security", "observability", "alerts"]
+    },
+    "role_dashboard": {
+      "endpoint": "GET /api/system-health/role-dashboard",
+      "verified_fields": ["role", "tenant_id", "scope", "panels"],
+      "panels_for_admin": ["queue_health", "security", "workers", "drift_summary", "sync_summary", "night_audit"]
+    },
+    "audit_metrics": {
+      "endpoint": "GET /api/system-health/audit/metrics",
+      "verified_fields": ["period_hours", "drift", "reconciliation", "queue", "security", "dead_letter"]
+    },
+    "live_status": {
+      "endpoint": "GET /api/system-health/live/status",
+      "verified_fields": ["ws_connected_clients", "last_event", "ws_available"]
+    },
+    "live_events": {
+      "endpoint": "GET /api/system-health/live/events",
+      "verified_fields": ["events", "count"]
+    }
+  },
+  "error_boundary_check": {
+    "component": "/app/frontend/src/components/ErrorBoundary.js",
+    "imported_in": "/app/frontend/src/App.js",
+    "wraps_routes": true
+  },
+  "mocked_apis_note": "No APIs are mocked. All runtime services now use real DB queries as verified by pytest."
+}

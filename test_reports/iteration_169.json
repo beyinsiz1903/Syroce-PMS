@@ -1,0 +1,60 @@
+{
+  "iteration": 169,
+  "date": "2026-03-31",
+  "summary": "Frontend testing for unassigned bookings panel feature and test data cleanup verification. All 8 tests passed successfully.",
+  "features_tested": [
+    "Calendar page loads at /reservation-calendar with login",
+    "Unassigned bookings count button shows '3 atanmamis oda' (test data cleaned from 113)",
+    "Clicking unassigned button opens slide-in panel from right",
+    "Panel shows 'Atanmamis Rezervasyonlar' title and '3 aktif rezervasyon' subtitle",
+    "Each booking shows guest name (Muhammed Sutay), dates, room type, status badge (Gelmedi)",
+    "X button closes the panel",
+    "Backdrop click closes the panel",
+    "Clicking booking item opens reservation detail modal"
+  ],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Auth page",
+        "issues": ["i18n translation keys showing as raw text (common.welcome, auth.signIn, common.email, etc.) when language not loaded properly"]
+      }
+    ]
+  },
+  "test_results": {
+    "test_1_unassigned_button": "PASSED - Button shows '3 atanmamis oda' (not 113)",
+    "test_2_open_panel": "PASSED - Panel opens on button click",
+    "test_3_panel_title": "PASSED - Title shows 'Atanmamis Rezervasyonlar'",
+    "test_4_booking_items": "PASSED - 3 items found with guest name 'Muhammed Sutay' and status 'Gelmedi'",
+    "test_5_close_x_button": "PASSED - Panel closes with X button",
+    "test_6_close_backdrop": "PASSED - Panel closes with backdrop click",
+    "test_7_booking_click": "PASSED - Clicking booking opens detail modal",
+    "test_8_calendar_grid": "PASSED - Calendar legend and date range bar visible"
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend only test)",
+    "frontend": "100%"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123"
+  },
+  "seed_data_creation": "None - used existing 3 unassigned bookings (Muhammed Sutay, no_show status)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Unassigned bookings panel feature is fully functional. 138 test bookings were cleaned from database, leaving 3 real unassigned bookings. The unassigned count button at data-testid='unassigned-count-btn' opens a slide-in panel at data-testid='unassigned-panel'. All booking items have data-testid='unassigned-item-{index}' pattern.",
+  "verification_screenshots": [
+    ".screenshots/unassigned_panel_open.png",
+    ".screenshots/booking_detail_modal.png",
+    ".screenshots/final_state.png"
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "iteration": 185,
+  "date": "2026-04-06",
+  "summary": "Notification Bug Fixes Testing Complete - All 8 backend tests passed. Frontend tests verified: NotificationBell works correctly, no duplicate NotificationCenter at bottom of page, notification dialog opens with 20 items. Reservation detail API returns created_at timestamp correctly.",
+  "features_tested": [
+    "Backend: GET /api/notifications/list returns 'read' field (not 'is_read') - PASSED",
+    "Backend: PUT /api/notifications/mark-all-read endpoint marks all as read - PASSED",
+    "Backend: Notification unread_count correctly counts unread using {'$ne': True} query - PASSED",
+    "Backend: PUT /api/notifications/{id}/mark-read marks single notification - PASSED",
+    "Backend: Reservation full-detail endpoint returns created_at timestamp - PASSED",
+    "Frontend: NotificationBell button found in header - PASSED",
+    "Frontend: No duplicate NotificationCenter at bottom of page - PASSED",
+    "Frontend: Notification dialog opens correctly with notifications - PASSED",
+    "Frontend: Auto-mark-as-read when dialog opens (via useEffect hook) - VERIFIED by code review"
+  ],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_notification_bugs_fixes.py",
+    "/app/test_reports/pytest/pytest_notification_bugs_fixes.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "notifications_router.py lines 27-30: Correctly normalizes legacy 'is_read' field to 'read' in list response",
+    "notifications_router.py lines 32-34: unread_count uses {'$ne': True} to catch both missing 'read' field and legacy is_read",
+    "notifications_router.py lines 54-66: mark-all-read endpoint correctly updates all unread notifications",
+    "NotificationBell.jsx lines 23-27: Auto-marks all as read when dialog opens via useEffect with markingRef guard",
+    "App.jsx: NotificationCenter component removed (was duplicate at bottom of page)",
+    "InfoTabs.jsx lines 29-32: Shows 'Sisteme dusme zamani' (created_at) with fmtDateTime formatting",
+    "InfoTabs.jsx lines 35-38: Shows Giris Saati/Cikis Saati with defaults (14:00/12:00)",
+    "ReservationDetailModal.jsx lines 100-101: Sidebar shows 'Olusturulma' (created_at) timestamp",
+    "hotelrunner_sync.py lines 754-792: Notification dedup_key prevents duplicate notifications for same event"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_notification_bugs_fixes.py"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 tests passed)",
+    "frontend": "100% (all UI tests passed)"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123"
+  },
+  "seed_data_creation": "None - used existing data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Notification system has been fixed: 1) 'read' field is now used consistently (not 'is_read'), 2) mark-all-read endpoint works, 3) unread_count correctly counts unread, 4) NotificationBell auto-marks as read when dialog opens, 5) No duplicate NotificationCenter at bottom of page. Reservation detail shows created_at timestamp. The PMS Bookings tab uses a quick view dialog (eye icon) with Edit button to open full detail modal.",
+  "verification_summary": {
+    "notifications_list_read_field": "PASS - returns 'read' not 'is_read'",
+    "mark_all_read_endpoint": "PASS - returns {ok: true}",
+    "unread_count_query": "PASS - uses {'$ne': True}",
+    "notification_bell_in_header": "PASS - found with data-testid",
+    "no_duplicate_notification_center": "PASS - removed from App.jsx",
+    "auto_mark_read_on_open": "PASS - verified by code review",
+    "reservation_created_at": "PASS - API returns created_at timestamp",
+    "reservation_checkin_checkout_times": "PASS - code shows times with defaults"
+  },
+  "api_verification": {
+    "GET /api/notifications/list": "200 OK - returns notifications with 'read' field and unread_count",
+    "PUT /api/notifications/mark-all-read": "200 OK - returns {ok: true}",
+    "PUT /api/notifications/{id}/mark-read": "200 OK - returns {message, notification_id}",
+    "GET /api/pms/reservations/{id}/full-detail": "200 OK - returns booking with created_at"
+  }
+}

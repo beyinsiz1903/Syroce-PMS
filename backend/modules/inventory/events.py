@@ -1,0 +1,9 @@
+INVENTORY_BLOCKED_EVENT = "inventory.blocked.v1"
+INVENTORY_RELEASED_EVENT = "inventory.released.v1"
+INVENTORY_ADJUSTED_EVENT = "inventory.adjusted.v1"
+
+__all__ = [
+    "INVENTORY_BLOCKED_EVENT",
+    "INVENTORY_RELEASED_EVENT",
+    "INVENTORY_ADJUSTED_EVENT",
+]

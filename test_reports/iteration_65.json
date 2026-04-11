@@ -1,0 +1,112 @@
+{
+  "summary": "Reservation Ingest Pipeline Testing Complete. Backend: 24/24 tests pass (100%). Frontend: All 5 tabs working (Ingest Pipeline, Lineage, Connections, Mappings, Reconciliation). Full 8-stage pipeline verified: duplicate detection, payload hash check, stale event detection, normalization, mapping resolution, decision engine, lineage update, reconciliation case creation.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ingest_pipeline.py",
+    "/app/test_reports/pytest/pytest_ingest_pipeline.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "pipeline.py: Clean 8-stage pipeline implementation with proper duplicate/stale/hash detection",
+    "decision_engine.py: Comprehensive decision logic - CREATE/UPDATE/CANCEL/SKIP/PENDING_MAPPING/MANUAL_REVIEW",
+    "normalizer.py: HotelRunner + Exely payload normalization with identity extraction",
+    "workers.py: 4 workers properly implemented - HR pull, Exely pull, ingest processor, replay (pull workers are MOCKED stubs)",
+    "unified_repository.py: All CRUD operations properly exclude _id, tenant isolation enforced",
+    "DataModelDashboard.jsx: New Ingest Pipeline tab with worker controls, raw events table, and processing stats badges",
+    "Loop prevention: external_write_protected=True for provider-originated reservations"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ingest_pipeline.py"
+  ],
+  "success_rate": {
+    "backend": "100% (24/24 tests pass)",
+    "frontend": "100% (all tabs, worker buttons, integration working)"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123"
+  },
+  "seed_data_creation": "Created test reservation events with prefixes HR-TEST-, HR-MOD-, HR-CXL-, HR-NEW-, HR-DUP-, HR-STALE-, HR-UPD-, HR-E2E-, EX-NEW- during testing",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Full ingest pipeline tested and working. All 8 stages verified: duplicate detection (same provider_event_id skipped), payload hash check, stale event detection (older version skipped), normalization (HotelRunner + Exely), mapping resolution, decision engine (create/update/cancel/skip/pending_mapping), lineage update with version tracking, reconciliation case creation. Pull workers are MOCKED - they log but don't fetch real provider data. Events enter via webhooks or inject-and-process endpoint.",
+  "mocked_apis_note": "Pull workers (hotelrunner_pull_once, exely_pull_once) are stubs - they don't call real provider APIs. They log the pull window but don't fetch data. Real events enter via webhooks or the inject-and-process endpoint.",
+  "tests_executed": {
+    "backend_api_tests": [
+      "TestHotelRunnerWebhooks: reservation_webhook_with_tenant_header - PASSED",
+      "TestHotelRunnerWebhooks: modification_webhook - PASSED",
+      "TestHotelRunnerWebhooks: cancellation_webhook - PASSED",
+      "TestHotelRunnerWebhooks: webhook_requires_tenant_id - PASSED",
+      "TestInjectAndProcess: inject_hotelrunner_create_decision - PASSED",
+      "TestInjectAndProcess: inject_exely_create_decision - PASSED",
+      "TestInjectAndProcess: reject_invalid_provider - PASSED",
+      "TestDuplicateAndStaleDetection: duplicate_provider_event_id_skipped - PASSED",
+      "TestDuplicateAndStaleDetection: stale_version_skipped - PASSED",
+      "TestDuplicateAndStaleDetection: update_with_newer_version - PASSED",
+      "TestCancellationHandling: cancellation_always_wins - PASSED",
+      "TestMissingMappingHandling: missing_room_mapping_creates_case - PASSED",
+      "TestWorkerControls: trigger_process_pending - PASSED",
+      "TestWorkerControls: trigger_replay_failed - PASSED",
+      "TestWorkerControls: trigger_hotelrunner_pull - PASSED (MOCKED)",
+      "TestWorkerControls: trigger_exely_pull - PASSED (MOCKED)",
+      "TestWorkerControls: invalid_provider_pull_rejected - PASSED",
+      "TestStatusAndStatsAPIs: get_ingest_status - PASSED",
+      "TestStatusAndStatsAPIs: get_ingest_events - PASSED",
+      "TestStatusAndStatsAPIs: get_event_stats - PASSED",
+      "TestStatusAndStatsAPIs: get_workers_status - PASSED",
+      "TestLineageAPI: get_lineage_list - PASSED",
+      "TestLineageAPI: lineage_has_loop_prevention_flag - PASSED",
+      "TestEndToEndFlow: full_ingest_flow - PASSED"
+    ],
+    "frontend_tests": [
+      "Login flow: demo@hotel.com / demo123 - SUCCESS",
+      "Navigation to /data-model - SUCCESS",
+      "Dashboard loaded with data-testid='data-model-dashboard' - SUCCESS",
+      "Dashboard header 'Channel Manager v2.0 — 9 collections' - SUCCESS",
+      "Collection overview cards (raw_events:22, processed:17, pending:0/1, lineage:12, connections:2, recon_cases:6) - SUCCESS",
+      "Ingest Pipeline tab - Visible with worker controls - SUCCESS",
+      "Worker buttons: Process Pending, Replay Failed, HR Pull, Exely Pull - ALL VISIBLE & CLICKABLE",
+      "Raw Channel Events table - Shows 22 events with statuses (17 processed, 1 failed, 2 dup, 2 stale) - SUCCESS",
+      "Lineage tab - Shows 12 lineage records with version, decision, source_system fields - SUCCESS",
+      "Connections tab - HotelRunner (active), Exely (draft) with Activate/Delete buttons - SUCCESS",
+      "Mappings tab - 3 room mappings + 3 rate plan mappings with provider badges - SUCCESS",
+      "Reconciliation tab - Shows summary (6 open cases) with case details and Resolve buttons - SUCCESS",
+      "Refresh button - Working correctly - SUCCESS"
+    ]
+  },
+  "api_endpoints_tested": [
+    "POST /api/channel-manager/hotelrunner/webhooks/reservations - 200 OK (with X-Tenant-ID header)",
+    "POST /api/channel-manager/hotelrunner/webhooks/modifications - 200 OK",
+    "POST /api/channel-manager/hotelrunner/webhooks/cancellations - 200 OK",
+    "POST /api/channel-manager/ingest/inject-and-process - 200 OK (HotelRunner + Exely payloads)",
+    "POST /api/channel-manager/ingest/inject-and-process - 400 BAD REQUEST (invalid provider)",
+    "POST /api/channel-manager/ingest/workers/process - 200 OK",
+    "POST /api/channel-manager/ingest/workers/replay - 200 OK",
+    "POST /api/channel-manager/ingest/workers/pull/hotelrunner - 200 OK (MOCKED)",
+    "POST /api/channel-manager/ingest/workers/pull/exely - 200 OK (MOCKED)",
+    "POST /api/channel-manager/ingest/workers/pull/channex - 400 BAD REQUEST (invalid provider)",
+    "GET /api/channel-manager/ingest/status - 200 OK (pipeline stats, worker states)",
+    "GET /api/channel-manager/ingest/events - 200 OK (raw events list)",
+    "GET /api/channel-manager/ingest/events/stats - 200 OK (event processing stats)",
+    "GET /api/channel-manager/ingest/workers/status - 200 OK (4 workers)",
+    "GET /api/channel-manager/model/lineage - 200 OK (includes version, last_decision, source_system, external_write_protected)"
+  ],
+  "pipeline_stages_verified": {
+    "stage1_persist_raw_event": "Events persisted to raw_channel_events collection",
+    "stage2_duplicate_detection": "Same provider_event_id correctly skipped",
+    "stage3_payload_hash_check": "Same payload hash correctly skipped",
+    "stage4_stale_detection": "Older provider_version correctly skipped",
+    "stage5_normalize": "HotelRunner + Exely payloads normalized to canonical format",
+    "stage6_mapping_resolution": "Room and rate mappings resolved, missing mappings create cases",
+    "stage7_decision_engine": "CREATE/UPDATE/CANCEL/SKIP/PENDING_MAPPING/MANUAL_REVIEW decisions working",
+    "stage8_lineage_update": "Lineage created/updated with version tracking, external_write_protected=True"
+  }
+}

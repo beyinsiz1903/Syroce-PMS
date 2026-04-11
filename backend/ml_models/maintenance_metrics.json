@@ -1,0 +1,79 @@
+{
+  "risk_model": {
+    "accuracy": 0.98,
+    "classification_report": {
+      "high": {
+        "precision": 0.9622641509433962,
+        "recall": 0.9807692307692307,
+        "f1-score": 0.9714285714285714,
+        "support": 52.0
+      },
+      "low": {
+        "precision": 0.967741935483871,
+        "recall": 1.0,
+        "f1-score": 0.9836065573770492,
+        "support": 30.0
+      },
+      "medium": {
+        "precision": 0.9913793103448276,
+        "recall": 0.9745762711864406,
+        "f1-score": 0.9829059829059829,
+        "support": 118.0
+      },
+      "accuracy": 0.98,
+      "macro avg": {
+        "precision": 0.973795132257365,
+        "recall": 0.9851151673185572,
+        "f1-score": 0.9793137039038678,
+        "support": 200.0
+      },
+      "weighted avg": {
+        "precision": 0.980263762671312,
+        "recall": 0.98,
+        "f1-score": 0.9800269420925158,
+        "support": 200.0
+      }
+    }
+  },
+  "days_model": {
+    "rmse": 44.27081658015969,
+    "mae": 26.513301513041796,
+    "r2_score": 0.6509667833954353
+  },
+  "feature_importance": {
+    "error_count_24h": 0.3488236367702484,
+    "pressure": 0.1592426747083664,
+    "days_since_maintenance": 0.10297184437513351,
+    "age_years": 0.09615673869848251,
+    "humidity": 0.07637863606214523,
+    "equipment_type_encoded": 0.06883488595485687,
+    "usage_hours": 0.06797961890697479,
+    "vibration_level": 0.05304832011461258,
+    "temperature": 0.02656364068388939
+  },
+  "training_samples": 1000,
+  "features": [
+    "equipment_type_encoded",
+    "temperature",
+    "vibration_level",
+    "error_count_24h",
+    "usage_hours",
+    "days_since_maintenance",
+    "humidity",
+    "pressure",
+    "age_years"
+  ],
+  "risk_levels": [
+    "high",
+    "low",
+    "medium"
+  ],
+  "equipment_types": [
+    "electrical",
+    "elevator",
+    "hvac",
+    "plumbing"
+  ],
+  "trained_at": "2025-11-20T07:01:28.844526",
+  "model_version": "1.0"
+}

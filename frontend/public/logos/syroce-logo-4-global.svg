@@ -1,0 +1,32 @@
+<svg width="200" height="60" viewBox="0 0 200 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Global Modern - Dünya çapında otel yönetimi -->
+  <defs>
+    <linearGradient id="gradient4" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#06b6d4;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Global ikon -->
+  <g transform="translate(10, 12)">
+    <!-- Globe -->
+    <circle cx="18" cy="18" r="16" stroke="url(#gradient4)" stroke-width="2.5" fill="none"/>
+    
+    <!-- Meridian lines -->
+    <ellipse cx="18" cy="18" rx="7" ry="16" stroke="url(#gradient4)" stroke-width="1.5" fill="none"/>
+    <line x1="2" y1="18" x2="34" y2="18" stroke="url(#gradient4)" stroke-width="1.5"/>
+    <line x1="18" y1="2" x2="18" y2="34" stroke="url(#gradient4)" stroke-width="1.5"/>
+    
+    <!-- Location pins -->
+    <circle cx="12" cy="12" r="2" fill="url(#gradient4)"/>
+    <circle cx="24" cy="12" r="2" fill="url(#gradient4)"/>
+    <circle cx="18" cy="24" r="2" fill="url(#gradient4)"/>
+  </g>
+  
+  <!-- Syroce yazısı -->
+  <text x="55" y="28" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#1e293b">Syroce</text>
+  <text x="55" y="42" font-family="Arial, sans-serif" font-size="9" font-weight="400" fill="#64748b" letter-spacing="2">GLOBAL HOTEL PMS</text>
+  
+  <!-- Accent -->
+  <circle cx="165" cy="25" r="3" fill="url(#gradient4)"/>
+</svg>

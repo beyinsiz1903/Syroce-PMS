@@ -1,0 +1,207 @@
+x-backend-env: &backend-env
+  MONGO_URL: mongodb://mongo:27017/${DB_NAME}
+  DB_NAME: ${DB_NAME}
+  REDIS_URL: redis://redis:6379/0
+  REDIS_MODE: standalone
+  EVENT_BUS_MODE: redis
+  MESSAGING_MODE: ${MESSAGING_MODE:-sandbox}
+  SECRETS_PROVIDER: ${SECRETS_PROVIDER:-env}
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  OTEL_EXPORTER_ENDPOINT: ${OTEL_EXPORTER_ENDPOINT:-}
+  BACKUP_ENABLED: "true"
+  BACKUP_CRON: "0 2 * * *"
+  JWT_SECRET: ${JWT_SECRET}
+  CORS_ORIGINS: ${CORS_ORIGINS}
+  APP_ENV: production
+  STRICT_TENANT_MODE: "true"
+  SECRET_ACCESS_AUDIT_ENABLED: "true"
+  CM_CREDENTIAL_KEY: ${CM_CREDENTIAL_KEY}
+  CM_MASTER_KEY_CURRENT: ${CM_MASTER_KEY_CURRENT}
+  CM_KEY_VERSION: ${CM_KEY_VERSION:-v1}
+  CELERY_BROKER_URL: redis://redis:6379/1
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+    tag: "{{.Name}}"
+
+x-restart: &restart-policy
+  restart: unless-stopped
+
+services:
+  mongo:
+    image: mongo:7
+    <<: *restart-policy
+    volumes:
+      - mongo_data:/data/db
+      - mongo_config:/data/configdb
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    logging: *default-logging
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    <<: *restart-policy
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --save 60 1000
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging: *default-logging
+    networks:
+      - internal
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    <<: *restart-policy
+    environment:
+      <<: *backend-env
+      INSTANCE_ID: backend-1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/health/liveness"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    logging: *default-logging
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+
+  worker:
+    build:
+      context: ..
+      dockerfile: ./worker/Dockerfile
+    <<: *restart-policy
+    environment:
+      <<: *backend-env
+      INSTANCE_ID: worker-1
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "celery", "-A", "celery_app", "inspect", "ping", "--timeout", "5"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging: *default-logging
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+
+  beat:
+    build:
+      context: ..
+      dockerfile: ./worker/Dockerfile
+    <<: *restart-policy
+    environment:
+      <<: *backend-env
+    command: ["celery", "-A", "celery_app", "beat", "--loglevel=info", "--pidfile=/tmp/celerybeat.pid"]
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/celerybeat.pid && kill -0 $$(cat /tmp/celerybeat.pid)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+    logging: *default-logging
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+
+  nginx:
+    image: nginx:1.25-alpine
+    <<: *restart-policy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/api.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+    networks:
+      - internal
+      - web
+
+volumes:
+  mongo_data:
+  mongo_config:
+  redis_data:
+
+networks:
+  internal:
+    driver: bridge
+    internal: true
+  web:
+    driver: bridge

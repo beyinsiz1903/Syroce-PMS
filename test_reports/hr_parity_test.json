@@ -1,0 +1,145 @@
+{
+  "suite": "hotelrunner_provider_parity",
+  "timestamp": "2026-03-25T15:56:39",
+  "total": 27,
+  "passed": 27,
+  "failed": 0,
+  "pass_rate": "100.0%",
+  "results": [
+    {
+      "name": "1.1 Valid connection",
+      "success": true,
+      "detail": "channels=7"
+    },
+    {
+      "name": "1.2 Invalid token rejected",
+      "success": true,
+      "detail": "error=Invalid credentials (401) [03005f8f-653]"
+    },
+    {
+      "name": "1.3 Invalid HR ID rejected",
+      "success": true,
+      "detail": "error=Invalid credentials (401) [69fe7d7b-796]"
+    },
+    {
+      "name": "1.4 Env 'mock' resolves correctly",
+      "success": true,
+      "detail": "url=http://localhost:9999"
+    },
+    {
+      "name": "1.4 Env 'sandbox' resolves correctly",
+      "success": true,
+      "detail": "url=https://sandbox.hotelrunner.com"
+    },
+    {
+      "name": "1.4 Env 'production' resolves correctly",
+      "success": true,
+      "detail": "url=https://app.hotelrunner.com"
+    },
+    {
+      "name": "2.1 Fetch rooms",
+      "success": true,
+      "detail": "rooms=4"
+    },
+    {
+      "name": "2.1a Room has inv_code",
+      "success": true,
+      "detail": "inv_code=STD"
+    },
+    {
+      "name": "2.1b Room has rate_plans",
+      "success": true,
+      "detail": "plans=2"
+    },
+    {
+      "name": "2.2 Fetch channels",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "name": "2.3 Fetch connected channels",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "name": "3.1 Fetch undelivered reservations",
+      "success": true,
+      "detail": "count=5"
+    },
+    {
+      "name": "3.2 Reservation has all required fields",
+      "success": true,
+      "detail": "all present"
+    },
+    {
+      "name": "3.2a guest_email parsed",
+      "success": true,
+      "detail": "email=guest2@example.com"
+    },
+    {
+      "name": "3.2b room_type_code parsed",
+      "success": true,
+      "detail": "room=STD"
+    },
+    {
+      "name": "3.2c amount > 0",
+      "success": true,
+      "detail": "amount=3315.77"
+    },
+    {
+      "name": "3.3 Pagination (per_page=3)",
+      "success": true,
+      "detail": "returned=3"
+    },
+    {
+      "name": "4.1 Confirm delivery (first)",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "name": "4.2 Duplicate ACK (idempotent)",
+      "success": true,
+      "detail": "should succeed without error"
+    },
+    {
+      "name": "5.1 Availability push",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "name": "5.2 Rate push",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "name": "5.3 Stop sale push",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "name": "5.4 Restrictions push (min/max stay + CTA/CTD)",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "name": "5.5 Invalid room code rejected",
+      "success": true,
+      "detail": "error=Bad request (400) [0faa86b6-527]: {\"status\":\"error\",\"error\":\"Unknown inv_code: NONEXISTENT. Valid: ['DLX', 'FAM', 'STD', 'SUI']\"}"
+    },
+    {
+      "name": "5.6 Legacy update_room (full restrictions)",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "name": "6.1a First requests pass under limit",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "name": "6.2 Partial server errors with retry recovery",
+      "success": true,
+      "detail": "successes=3/3"
+    }
+  ]
+}

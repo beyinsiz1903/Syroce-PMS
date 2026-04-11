@@ -1,0 +1,45 @@
+{
+  "occupancy_model": {
+    "rmse": 0.044220485860292764,
+    "mae": 0.03461710230455007,
+    "r2_score": 0.939905274431986,
+    "mean_error_percentage": 4.982005559073032
+  },
+  "pricing_model": {
+    "rmse": 6.516429320484095,
+    "mae": 5.062868439138751,
+    "r2_score": 0.9909721097975112,
+    "mean_error_percentage": 3.1228501579838706
+  },
+  "training_samples": 730,
+  "features": {
+    "occupancy": [
+      "day_of_week",
+      "month",
+      "season",
+      "is_weekend",
+      "is_holiday",
+      "days_until_event",
+      "competitor_avg_rate",
+      "competitor_occupancy",
+      "historical_occupancy_7d",
+      "historical_occupancy_30d",
+      "lead_time_bookings",
+      "current_price"
+    ],
+    "pricing": [
+      "day_of_week",
+      "month",
+      "season",
+      "is_weekend",
+      "is_holiday",
+      "days_until_event",
+      "competitor_avg_rate",
+      "occupancy_rate",
+      "historical_occupancy_7d",
+      "historical_occupancy_30d"
+    ]
+  },
+  "trained_at": "2025-11-20T07:01:27.867710",
+  "model_version": "1.0"
+}

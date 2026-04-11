@@ -1,0 +1,30 @@
+{
+  "test_type": "staging_soak_test",
+  "start_time": "2026-03-13T02:06:14.734976",
+  "end_time": "2026-03-13T02:36:14.779905",
+  "duration_minutes": 30.00074845,
+  "total_requests": 9934,
+  "success_count": 9834,
+  "error_count": 100,
+  "error_rate_pct": 1.00664384940608,
+  "latency_p50": 6.682801002170891,
+  "latency_p95": 16.20450703194365,
+  "latency_p99": 26.322708989027888,
+  "latency_avg": 22.428160774805736,
+  "memory_rss_mb": 50.890625,
+  "thresholds": {
+    "error_rate_max_pct": 2.0,
+    "p95_max_ms": 3000,
+    "p99_max_ms": 5000
+  },
+  "issues": [],
+  "verdict": "PASS",
+  "scenarios_tested": [
+    "ota_reservation_burst",
+    "ari_storm",
+    "dashboard_polling",
+    "night_audit",
+    "general_pms_ops",
+    "queue_monitoring"
+  ]
+}

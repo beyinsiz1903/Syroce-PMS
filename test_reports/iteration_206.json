@@ -1,0 +1,72 @@
+{
+  "summary": "Frontend testing for Reports navigation cleanup and Maliye Listesi feature. All 8 test cases passed successfully.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_206.json"],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "test_credentials": "demo@hotel.com / demo123",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reports navigation cleanup verified. Reports dropdown shows only 2 items (Reports, Report Builder). Maliye Listesi section in BasicReports now shows redirect card with 'Maliye Listesini Aç' button that navigates to /reports/official-guest-list. OfficialGuestList page has date picker, Listeyi Getir button, CSV export, and guest table.",
+  "test_cases_executed": [
+    {
+      "test": "Reports dropdown items",
+      "expected": "Only 2 items: Reports and Report Builder (NO Advanced Reports)",
+      "result": "PASS",
+      "details": "Dropdown shows 'Reports' and 'Report Builder' only"
+    },
+    {
+      "test": "BasicReports sidebar",
+      "expected": "19 report sections in sidebar",
+      "result": "PASS",
+      "details": "Sidebar has 19 buttons for different report sections"
+    },
+    {
+      "test": "Maliye Listesi section content",
+      "expected": "Amber info card + 'Maliye Listesini Aç' button + summary stats",
+      "result": "PASS",
+      "details": "Shows amber card with title 'Resmi Müşteri Listesi (Maliye Raporu)', button, and stats (Otelde Konaklayan: 10, Bugün Giriş: 0, Bugün Çıkış: 6)"
+    },
+    {
+      "test": "Maliye Listesini Aç button navigation",
+      "expected": "Navigate to /reports/official-guest-list",
+      "result": "PASS",
+      "details": "Button successfully navigates to OfficialGuestList page"
+    },
+    {
+      "test": "OfficialGuestList page elements",
+      "expected": "Date picker, Listeyi Getir button, CSV Dışa Aktar button, guest table",
+      "result": "PASS",
+      "details": "All elements present. Table shows 16+ guest records with TCKN/Passport, room, dates, amounts"
+    },
+    {
+      "test": "/app/gelismis-raporlar redirect",
+      "expected": "Redirect to BasicReports",
+      "result": "PASS",
+      "details": "URL stays at /app/gelismis-raporlar but shows BasicReports content (sidebar visible)"
+    },
+    {
+      "test": "Report Builder functionality",
+      "expected": "Report Builder page loads with data sources",
+      "result": "PASS",
+      "details": "Page shows 6 data sources: Rezervasyonlar, Gelir, Misafirler, Odalar, Kat Hizmetleri, Foliolar"
+    },
+    {
+      "test": "Other sidebar sections",
+      "expected": "Sections like Misafir Listesi work correctly",
+      "result": "PASS",
+      "details": "Misafir Listesi shows 53 records with guest data"
+    }
+  ]
+}

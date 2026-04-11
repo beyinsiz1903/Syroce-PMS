@@ -1,0 +1,72 @@
+{
+  "iteration": 184,
+  "date": "2026-04-03",
+  "summary": "HotelRunner Auto-Polling Disabled Feature Testing Complete - All 8 backend tests passed, all frontend tests passed. The automatic polling has been successfully disabled. System now only syncs via event-driven (booking outbox) and manual user actions.",
+  "features_tested": [
+    "Backend: GET /api/channel-manager/hotelrunner/sync/status returns scheduler_running=false and auto_polling_disabled=true - PASSED",
+    "Backend: POST /api/channel-manager/hotelrunner/sync/reservations/pull (manual pull) still works - PASSED",
+    "Backend: GET /api/channel-manager/hr-rate-manager/queue-status works - PASSED",
+    "Backend: POST /api/channel-manager/hr-rate-manager/queue-retry (manual retry) works - PASSED",
+    "Backend: No HR-PULL or HR-QUEUE loop messages in logs - VERIFIED",
+    "Backend: Startup message shows 'HotelRunner otomatik polling devre disi' - VERIFIED",
+    "Frontend: HRRateManager page loads correctly - PASSED",
+    "Frontend: Queue banner shows 'Manuel olarak Simdi Dene butonuyla gonderebilirsiniz' (not 'otomatik') - PASSED",
+    "Frontend: 'Simdi Dene' retry button present and clickable - PASSED",
+    "Frontend: Auto-polling removed from HRRateManager.jsx (lines 92-93) - VERIFIED by code review",
+    "Frontend: StopSalePanel toast message updated to 'Simdi Dene ile gonderebilirsiniz' (line 191) - VERIFIED by code review"
+  ],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_hr_auto_polling_disabled.py",
+    "/app/test_reports/pytest/pytest_hr_auto_polling_disabled.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "startup.py lines 509-515: HotelRunner auto-polling disabled section correctly implemented - only prints info message, no scheduler/worker start",
+    "hotelrunner_sync.py line 716-717: sync/status endpoint correctly returns auto_polling_disabled=true flag",
+    "hr_push_queue_worker.py: Push queue worker exists but is NOT auto-started in startup.py",
+    "hr_rate_manager_router.py lines 543,585: Messages correctly updated from 'otomatik denenecek' to 'manuel deneyin' / 'Simdi Dene ile gonderebilirsiniz'",
+    "HRRateManager.jsx lines 92-93: setInterval for auto-polling removed, queue status only fetched on page load",
+    "HRRateManager.jsx line 363: Queue banner text correctly shows 'Manuel olarak Simdi Dene butonuyla gonderebilirsiniz'",
+    "StopSalePanel.jsx line 191: Toast message correctly updated to 'Simdi Dene ile gonderebilirsiniz'"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_hr_auto_polling_disabled.py"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 tests passed)",
+    "frontend": "100% (all UI tests passed)"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123"
+  },
+  "seed_data_creation": "None - used existing data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "HotelRunner auto-polling has been successfully disabled. The system now only syncs via: 1) Event-driven outbox (when bookings are created), 2) Manual pull via POST /api/channel-manager/hotelrunner/sync/reservations/pull, 3) Manual queue retry via POST /api/channel-manager/hr-rate-manager/queue-retry. The queue currently has 2 pending items. Frontend auto-polling (setInterval 30s) has been removed - queue status only fetches on page load.",
+  "verification_summary": {
+    "scheduler_running": false,
+    "auto_polling_disabled": true,
+    "push_queue_worker_auto_started": false,
+    "frontend_auto_polling_removed": true,
+    "messages_updated_to_manual": true,
+    "manual_endpoints_working": true
+  },
+  "code_changes_verified": {
+    "startup.py_lines_509_515": "HotelRunner auto-polling disabled section - only prints info message",
+    "hotelrunner_sync.py_line_716_717": "auto_polling_disabled=True flag added to sync/status response",
+    "hr_rate_manager_router.py_lines_543_585": "Messages updated from 'otomatik' to 'manuel'",
+    "HRRateManager.jsx_lines_92_93": "Auto polling removed (no setInterval)",
+    "HRRateManager.jsx_line_363": "Banner text updated to 'Manuel olarak Simdi Dene butonuyla gonderebilirsiniz'",
+    "StopSalePanel.jsx_line_191": "Toast message updated to 'Simdi Dene ile gonderebilirsiniz'"
+  }
+}

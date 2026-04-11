@@ -1,0 +1,1 @@
+# HotelRunner Adapter Test Package

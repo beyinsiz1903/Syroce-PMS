@@ -1,0 +1,145 @@
+{
+  "summary": "Sprint 3 Regression Guard Tests fully verified. All 28 battle tests pass (10 Sprint 1 booking integrity + 10 Sprint 2 hold/OOO + 8 Sprint 3 regression guards). Past-date booking rejection, navigation visibility, and date validation bugs are now permanently guarded.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/battle/test_regression_guards.py",
+    "/app/backend/tests/battle/test_booking_integrity.py",
+    "/app/backend/tests/battle/test_sprint2_hold_ooo.py",
+    "/app/test_reports/pytest/pytest_sprint3_regression_guards.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Regression Guards (test_regression_guards.py) correctly test 8 historical bug fixes as release blockers",
+    "REG-1: Past date booking rejection via quick-booking endpoint returns 400 with Turkish error message",
+    "REG-2: Deeply past date (30 days) also correctly rejected",
+    "REG-3: Future date booking succeeds (200) - ensures fix didn't break valid bookings",
+    "REG-4: Checkout before checkin correctly rejected (400)",
+    "REG-5: Login returns user role and tenant_id for navigation module visibility",
+    "REG-6: Same-day checkin succeeds (200 or 409 if room already booked)",
+    "REG-7: Core PMS endpoints (dashboard, rooms, bookings, guests) accessible after login",
+    "Past date validation in create_reservation_service.py (lines 65-80) uses effective_min_date = max(business_date, today)",
+    "Rate limiter in apm_middleware.py correctly checks TESTING=1 or APP_ENV=development for relaxed limits",
+    "CI/CD pipeline (ci-cd.yml) includes all 3 battle test files in curated suite",
+    "ADR-002 Test Quarantine Strategy document provides clear T0/T1/T2 tier classification"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% - 28/28 battle tests passed (10 Sprint 1 + 10 Sprint 2 + 8 Sprint 3)",
+    "frontend": "N/A - backend only testing"
+  },
+  "test_credentials": "demo@hotel.com / demo123",
+  "seed_data_creation": "Tests use unique year ranges (2050-2090) to avoid date collisions",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sprint 3 Regression Guards fully implemented and tested. Key features: (1) 8 regression guard tests for past-date booking, navigation visibility, and date validation bugs, (2) CI/CD pipeline includes all battle tests as hard gates, (3) Rate limiter uses TESTING=1 or APP_ENV=development for relaxed limits during tests, (4) ADR-002 documents test quarantine strategy with T0/T1/T2 tiers. All 28 battle tests pass.",
+  "verified_features": {
+    "regression_guards": {
+      "test_past_date_booking_rejected_quick_booking": {
+        "status": "PASS",
+        "notes": "REG-1: Yesterday's check-in returns 400 with 'gecmis' in error message"
+      },
+      "test_deeply_past_date_rejected": {
+        "status": "PASS",
+        "notes": "REG-2: 30 days past check-in returns 400"
+      },
+      "test_future_date_booking_succeeds": {
+        "status": "PASS",
+        "notes": "REG-3: Future date booking returns 200, cleanup via cancel"
+      },
+      "test_checkout_before_checkin_rejected": {
+        "status": "PASS",
+        "notes": "REG-4: Checkout before checkin returns 400"
+      },
+      "test_login_returns_user_role_and_modules": {
+        "status": "PASS",
+        "notes": "REG-5: Login response includes access_token, user.role, user.tenant_id"
+      },
+      "test_pms_module_accessible_after_login": {
+        "status": "PASS",
+        "notes": "REG-5: PMS dashboard, rooms, bookings endpoints return 200"
+      },
+      "test_same_day_checkin_succeeds": {
+        "status": "PASS",
+        "notes": "REG-6: Today's check-in returns 200 or 409 (if room booked)"
+      },
+      "test_core_endpoints_accessible": {
+        "status": "PASS",
+        "notes": "REG-7: All core PMS endpoints return 200 with valid auth"
+      }
+    },
+    "sprint1_regression": {
+      "test_concurrent_same_room_exactly_one_wins": "PASS",
+      "test_multi_night_partial_contention_all_or_nothing": "PASS",
+      "test_cancel_then_rebook_same_dates": "PASS",
+      "test_idempotency_key_no_duplicate_inventory": "PASS",
+      "test_ooo_room_blocks_booking": "PASS",
+      "test_lock_events_appear_in_timeline": "PASS",
+      "test_double_cancel_idempotent": "PASS",
+      "test_adjacent_dates_no_conflict": "PASS",
+      "test_different_rooms_both_succeed": "PASS",
+      "test_lock_conflict_recorded_in_timeline": "PASS"
+    },
+    "sprint2_regression": {
+      "test_hold_create_basic": "PASS",
+      "test_hold_blocks_booking": "PASS",
+      "test_hold_blocks_regular_booking": "PASS",
+      "test_hold_confirm": "PASS",
+      "test_hold_manual_release": "PASS",
+      "test_hold_sweep_expired": "PASS",
+      "test_hold_sweep_does_not_touch_confirmed": "PASS",
+      "test_ooo_block_writes_to_room_night_locks": "PASS",
+      "test_ooo_block_prevents_booking": "PASS",
+      "test_ooo_release_frees_room": "PASS"
+    },
+    "ci_cd_security": {
+      "regression_guards_in_ci": {
+        "status": "VERIFIED",
+        "notes": "tests/battle/test_regression_guards.py added to ci-cd.yml curated suite"
+      },
+      "security_scan_tightening": {
+        "status": "VERIFIED",
+        "notes": "pip-audit, yarn audit, Trivy CRITICAL scan, hardcoded secrets check all configured"
+      },
+      "rate_limiter_test_mode": {
+        "status": "VERIFIED",
+        "notes": "TESTING=1 or APP_ENV=development triggers 10000 req/min limits"
+      }
+    },
+    "test_quarantine_strategy": {
+      "adr_document": {
+        "status": "VERIFIED",
+        "path": "/app/backend/docs/ADR_TEST_QUARANTINE_STRATEGY.md",
+        "notes": "T0 (battle tests), T1 (curated CI), T2 (quarantine) tiers defined"
+      }
+    }
+  },
+  "test_execution_summary": {
+    "sprint3_regression_guards": {
+      "file": "test_regression_guards.py",
+      "total": 8,
+      "passed": 8,
+      "failed": 0
+    },
+    "sprint2_hold_ooo": {
+      "file": "test_sprint2_hold_ooo.py",
+      "total": 10,
+      "passed": 10,
+      "failed": 0
+    },
+    "sprint1_booking_integrity": {
+      "file": "test_booking_integrity.py",
+      "total": 10,
+      "passed": 10,
+      "failed": 0
+    },
+    "combined_duration": "9.58s"
+  }
+}

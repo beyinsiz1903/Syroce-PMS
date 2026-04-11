@@ -1,0 +1,112 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
+  color: #1a202c;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.loading-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  font-size: 1.5rem;
+  color: #4a5568;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+/* Optimize animations */
+* {
+  will-change: auto;
+}
+
+.hover\:shadow-lg {
+  transition: box-shadow 0.2s ease-in-out, transform 0.2s ease-in-out;
+}
+
+/* GPU acceleration for smooth animations */
+.transform {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+.App {
+  min-height: 100vh;
+}
+
+/* Smooth transitions for interactive elements */
+button {
+  transition: background-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+input, select, textarea {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Card hover effects */
+.card-hover {
+  transition: box-shadow 0.3s ease, transform 0.2s ease;
+}
+
+.card-hover:hover {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a0aec0;
+}
+
+
+/* Hide scrollbar for nav */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}

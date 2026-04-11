@@ -1,0 +1,41 @@
+{
+  "staff_model": {
+    "rmse": 0.32618441148146227,
+    "mae": 0.23530549872501924,
+    "r2_score": 0.9657078913515118,
+    "mean_error_percentage": 3.60769271797668
+  },
+  "hours_model": {
+    "rmse": 0.7674992354712231,
+    "mae": 0.5983623733382307,
+    "r2_score": 0.992688583139746,
+    "mean_error_percentage": 1.9753359529666563
+  },
+  "feature_importance": {
+    "occupancy_rate": 0.5827671762748363,
+    "occupied_rooms": 0.1761750953318173,
+    "avg_room_type_points": 0.13913010448840094,
+    "checkout_rooms": 0.08882212714696193,
+    "stayover_rooms": 0.006468276250973231,
+    "vip_rooms": 0.0033559805055635053,
+    "day_of_week": 0.00231552850550972,
+    "season": 0.0007012160384194408,
+    "is_weekend": 0.00026449545751760064,
+    "total_rooms": 0.0
+  },
+  "training_samples": 365,
+  "features": [
+    "day_of_week",
+    "is_weekend",
+    "season",
+    "total_rooms",
+    "occupied_rooms",
+    "checkout_rooms",
+    "stayover_rooms",
+    "vip_rooms",
+    "occupancy_rate",
+    "avg_room_type_points"
+  ],
+  "trained_at": "2025-11-20T07:01:29.216132",
+  "model_version": "1.0"
+}
