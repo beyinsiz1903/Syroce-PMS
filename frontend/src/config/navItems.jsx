@@ -261,6 +261,15 @@ export const NAV_ITEMS = [
     group: "professional",
     navGroup: "reports",
   },
+  {
+    key: "report_scheduler",
+    label: "Rapor Zamanlayici",
+    path: "/report-scheduler",
+    moduleKey: "basic_reporting",
+    tier: "professional",
+    group: "professional",
+    navGroup: "reports",
+  },
 
   // ──── CHANNELS GROUP — Admin (kanal operasyonlari) ────────────
   {

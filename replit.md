@@ -64,6 +64,37 @@ Configured as a static deployment:
 - Multi-tenant architecture
 - 8-language internationalization
 
+## Sprint 8 Changes (Automated Email Scheduler for Reports)
+
+### Backend
+- **`backend/routers/report_scheduler.py`** — Report Email Scheduler API with 11 endpoints:
+  - `GET /api/report-scheduler/report-types` — Available report types, frequencies, formats
+  - `POST /api/report-scheduler/schedules` — Create new schedule
+  - `GET /api/report-scheduler/schedules` — List all schedules (tenant-scoped)
+  - `GET /api/report-scheduler/schedules/{id}` — Get schedule detail
+  - `PUT /api/report-scheduler/schedules/{id}` — Update schedule
+  - `DELETE /api/report-scheduler/schedules/{id}` — Delete schedule + history
+  - `POST /api/report-scheduler/schedules/{id}/toggle` — Enable/disable schedule
+  - `POST /api/report-scheduler/schedules/{id}/send-now` — Manual trigger
+  - `GET /api/report-scheduler/history` — Send history with status/schedule filters
+  - `GET /api/report-scheduler/history/{id}` — Single send detail
+  - `POST /api/report-scheduler/history/{id}/retry` — Retry failed sends
+  - Manager+ role required for create/update/delete/toggle/send/retry
+  - Staff+ role for read-only (list, history)
+  - Uses existing `email_service.py` for SMTP/mock delivery
+  - 11 report types: daily_summary, revenue, occupancy, reservations, guest_analytics, adr_revpar, channel_performance, b2b_analytics, housekeeping, financial, flash_report
+  - Registered in `bootstrap/router_registry.py`
+
+### Frontend
+- **`frontend/src/pages/ReportScheduler.jsx`** — Full scheduler dashboard:
+  - 4 KPI cards (total, active, sent, failed)
+  - 2 tabs: Schedules list + Send History
+  - Schedule cards with status badges, toggle, edit, delete, send-now actions
+  - Create/Edit modal with report type, frequency, recipients, format, schedule params
+  - Send history table with status icons, retry for failed, detail modal
+  - History filter by status (all/sent/failed/partial)
+  - Route: `/report-scheduler`, nav: "Raporlar" group as "Rapor Zamanlayici"
+
 ## Sprint 7 Changes (Navigation / Surface Consolidation)
 
 ### Channels Group (21 → 10 visible)
