@@ -64,6 +64,31 @@ Configured as a static deployment:
 - Multi-tenant architecture
 - 8-language internationalization
 
+## Sprint 6 Changes (B2B Analytics Dashboard)
+
+### Backend
+- **`backend/routers/b2b_analytics.py`** — B2B Analytics API with 6 endpoints:
+  - `/api/b2b-analytics/summary` — KPI overview (bookings, revenue, active agencies, API calls)
+  - `/api/b2b-analytics/agency-breakdown` — Per-agency metrics table
+  - `/api/b2b-analytics/booking-trends` — Time-series booking data for charts
+  - `/api/b2b-analytics/api-usage` — API call volume by event type
+  - `/api/b2b-analytics/top-endpoints` — Most-used event types ranked
+  - `/api/b2b-analytics/export` — CSV download (bookings/agencies/usage)
+  - All endpoints require hotel staff role (403 for agency users)
+  - Date range filtering with proper end-of-day boundary handling
+  - Registered in `bootstrap/router_registry.py`
+
+### Frontend
+- **`frontend/src/pages/B2BAnalyticsDashboard.jsx`** — Full analytics dashboard:
+  - 6 KPI cards (bookings, approved, conversion %, revenue, active agencies, API calls)
+  - 4 tab sections: Booking Trends, Agency Performance, API Usage, Top Endpoints
+  - Recharts visualizations (BarChart, AreaChart, PieChart, LineChart)
+  - Date range selector (7d/30d/90d/6mo/1y), agency filter dropdown
+  - Agency breakdown table with sortable columns
+  - 3 CSV export buttons (bookings, agencies, usage)
+  - Error state handling with user-visible warning banner
+  - Route: `/b2b-analytics`, nav: "Raporlar" group as "B2B Analitik"
+
 ## Sprint 5 Changes (Technical Debt + Hardening)
 
 ### Backend

@@ -197,6 +197,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.agency_content", "router", ["Agency Content"], None, None),
     # Syroce B2B API — Acente Otomasyon Sistemi Entegrasyonu
     ("routers.b2b_api", "router", ["B2B API - Syroce"], None, None),
+    # B2B Analytics Dashboard — Acente & API Kullanım Analitikleri
+    ("routers.b2b_analytics", "router", ["B2B Analytics"], None, None),
 ]
 
 # Optional routers with special import paths

@@ -111,6 +111,7 @@ const AgencyRequests = lazy(() => import("@/pages/AgencyRequests"));
 const AgencyManagement = lazy(() => import("@/pages/AgencyManagement"));
 const AgencyContentDistribution = lazy(() => import("@/pages/AgencyContentDistribution"));
 const AgencyPortalDashboard = lazy(() => import("@/pages/AgencyPortalDashboard"));
+const B2BAnalyticsDashboard = lazy(() => import("@/pages/B2BAnalyticsDashboard"));
 const SocialMediaRadar = lazy(() => import("@/pages/SocialMediaRadar"));
 const RevenueAutopilot = lazy(() => import("@/pages/RevenueAutopilot"));
 const HRComplete = lazy(() => import("@/pages/HRComplete"));
@@ -335,6 +336,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/agency-requests", ...p(AgencyRequests) },
     { path: "/agency-management", ...p(AgencyManagement) },
     { path: "/agency-content", ...p(AgencyContentDistribution) },
+    { path: "/b2b-analytics", ...p(B2BAnalyticsDashboard) },
 
     // ── Frontdesk & Maintenance ────────────────────────
     { path: "/frontdesk/audit-checklist", ...p(FrontdeskAuditChecklist) },

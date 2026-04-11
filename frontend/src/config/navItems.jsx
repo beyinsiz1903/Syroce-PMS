@@ -251,6 +251,15 @@ export const NAV_ITEMS = [
     group: "core",
     navGroup: "channels",
   },
+  {
+    key: "b2b_analytics",
+    label: "B2B Analitik",
+    path: "/b2b-analytics",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+    navGroup: "reports",
+  },
 
   // ──── CHANNELS GROUP — Sadece Admin (teknik yonetim) ───────────
   {
