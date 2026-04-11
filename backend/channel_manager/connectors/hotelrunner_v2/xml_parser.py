@@ -14,11 +14,11 @@ import uuid
 from typing import Any
 from xml.etree import ElementTree as ET
 
+from .connector_errors import XmlParseError
 from .contract_errors import (
     InvalidXmlError,
     ProviderErrorResponseError,
 )
-from .connector_errors import XmlParseError
 
 logger = logging.getLogger("channel_manager.hotelrunner.xml_parser")
 

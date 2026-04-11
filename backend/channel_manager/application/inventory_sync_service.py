@@ -23,7 +23,6 @@ from typing import Any
 from core.database import db
 
 from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
-from ..connectors.hotelrunner_v2.hr_client import HotelRunnerClient
 from ..connectors.hotelrunner_v2.connector_errors import (
     AuthenticationError,
     ConnectorError,
@@ -32,6 +31,7 @@ from ..connectors.hotelrunner_v2.connector_errors import (
     ValidationError,
     XmlParseError,
 )
+from ..connectors.hotelrunner_v2.hr_client import HotelRunnerClient
 from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..domain.models.connector_account import ConnectorAccount, ConnectorProvider
 from ..domain.models.sync import (

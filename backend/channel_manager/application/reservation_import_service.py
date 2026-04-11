@@ -21,8 +21,8 @@ from typing import Any
 from core.database import db
 
 from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
-from ..connectors.hotelrunner_v2.hr_client import HotelRunnerClient
 from ..connectors.hotelrunner_v2.connector_errors import ConnectorError
+from ..connectors.hotelrunner_v2.hr_client import HotelRunnerClient
 from ..connectors.hotelrunner_v2.reservation_mapper import HotelRunnerMapper
 from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..domain.models.canonical import CanonicalReservation, ReservationStatus

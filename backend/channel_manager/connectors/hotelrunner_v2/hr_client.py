@@ -13,8 +13,6 @@ import httpx
 
 from . import xml_builder, xml_parser
 from .auth import HotelRunnerAuth
-from .rate_limit import RateLimiter
-from .retry_policy import RetryPolicy
 from .connector_errors import (
     AcknowledgementError,
     AuthenticationError,
@@ -24,6 +22,8 @@ from .connector_errors import (
     RateLimitError,
     ResponseParseError,
 )
+from .rate_limit import RateLimiter
+from .retry_policy import RetryPolicy
 
 logger = logging.getLogger("channel_manager.hotelrunner.client")
 

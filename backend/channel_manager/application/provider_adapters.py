@@ -16,7 +16,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
-from ..connectors.hotelrunner_v2.hr_client import HotelRunnerClient
 from ..connectors.hotelrunner_v2.connector_errors import (
     AuthenticationError,
     ProviderUnavailableError,
@@ -26,6 +25,7 @@ from ..connectors.hotelrunner_v2.connector_errors import (
     UnknownResponseFormatError,
     XmlParseError,
 )
+from ..connectors.hotelrunner_v2.hr_client import HotelRunnerClient
 from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..infrastructure.repository import ChannelManagerRepository
 

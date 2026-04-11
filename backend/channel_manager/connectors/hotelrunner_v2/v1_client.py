@@ -11,7 +11,7 @@ from .hr_client import (  # noqa: F401
     VALID_ENVIRONMENTS,
     _mask_params,
     _truncate,
-)
+)  # isort: skip
 
 __all__ = [
     "HotelRunnerClient",

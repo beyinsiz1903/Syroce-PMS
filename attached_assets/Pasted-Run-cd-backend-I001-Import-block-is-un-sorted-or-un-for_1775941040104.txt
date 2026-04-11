@@ -1,0 +1,257 @@
+Run cd backend
+I001 [*] Import block is un-sorted or un-formatted
+  --> channel_manager/application/auto_mapping_service.py:14:1
+   |
+12 |     4. Accept confirmed pairs and bulk-create mappings
+13 |   """
+14 | / import asyncio as _aio
+15 | | import logging
+16 | | from difflib import SequenceMatcher
+17 | | from typing import Any
+18 | |
+19 | | from core.database import db
+20 | |
+21 | | from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
+22 | | from ..connectors.hotelrunner_v2.hr_client import HotelRunnerClient
+23 | | from ..connectors.hotelrunner_v2.connector_errors import AuthenticationError, ConnectorError, RateLimitError
+24 | | from ..infrastructure.credential_vault import CredentialVault
+25 | | from ..infrastructure.repository import ChannelManagerRepository
+26 | | from .mapping_service import MappingService
+   | |___________________________________________^
+27 |
+28 |   logger = logging.getLogger("channel_manager.application.auto_mapping")
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> channel_manager/application/connector_service.py:4:1
+   |
+ 2 |   Connector Service - Manages connector account lifecycle (CRUD, activation, credential validation).
+ 3 |   """
+ 4 | / import logging
+ 5 | | from datetime import UTC, datetime
+ 6 | | from typing import Any
+ 7 | |
+ 8 | | from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
+ 9 | | from ..connectors.hotelrunner_v2.hr_client import HotelRunnerClient
+10 | | from ..connectors.hotelrunner_v2.connector_errors import AuthenticationError
+11 | | from ..domain.models.audit import AuditAction, IntegrationAuditLog
+12 | | from ..domain.models.connector_account import ConnectorAccount, ConnectorProvider, ConnectorStatus
+13 | | from ..infrastructure.repository import ChannelManagerRepository
+   | |________________________________________________________________^
+14 |
+15 |   logger = logging.getLogger("channel_manager.application.connector_service")
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> channel_manager/application/inventory_sync_service.py:17:1
+   |
+15 |     - rate_changed
+16 |   """
+17 | / import logging
+18 | | import time
+19 | | from collections import defaultdict
+20 | | from datetime import UTC, datetime, timedelta
+21 | | from typing import Any
+22 | |
+23 | | from core.database import db
+24 | |
+25 | | from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
+26 | | from ..connectors.hotelrunner_v2.hr_client import HotelRunnerClient
+27 | | from ..connectors.hotelrunner_v2.connector_errors import (
+28 | |     AuthenticationError,
+29 | |     ConnectorError,
+30 | |     ProviderUnavailableError,
+31 | |     RateLimitError,
+32 | |     ValidationError,
+33 | |     XmlParseError,
+34 | | )
+35 | | from ..domain.models.audit import AuditAction, IntegrationAuditLog
+36 | | from ..domain.models.connector_account import ConnectorAccount, ConnectorProvider
+37 | | from ..domain.models.sync import (
+38 | |     ChangeType,
+39 | |     PushReceipt,
+40 | |     SyncDirection,
+41 | |     SyncEvent,
+42 | |     SyncJob,
+43 | |     SyncJobStatus,
+44 | |     SyncType,
+45 | | )
+46 | | from ..infrastructure.repository import ChannelManagerRepository
+   | |________________________________________________________________^
+47 |
+48 |   logger = logging.getLogger("channel_manager.inventory_sync_engine")
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> channel_manager/application/provider_adapters.py:12:1
+   |
+10 |     - Reconciliation issue creation on failure
+11 |   """
+12 | / import logging
+13 | | import time
+14 | | import uuid as _uuid
+15 | | from datetime import UTC, datetime
+16 | | from typing import Any
+17 | |
+18 | | from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
+19 | | from ..connectors.hotelrunner_v2.hr_client import HotelRunnerClient
+20 | | from ..connectors.hotelrunner_v2.connector_errors import (
+21 | |     AuthenticationError,
+22 | |     ProviderUnavailableError,
+23 | |     ProviderValidationError,
+24 | |     RateLimitError,
+25 | |     SchemaMismatchError,
+26 | |     UnknownResponseFormatError,
+27 | |     XmlParseError,
+28 | | )
+29 | | from ..domain.models.audit import AuditAction, IntegrationAuditLog
+30 | | from ..infrastructure.repository import ChannelManagerRepository
+   | |________________________________________________________________^
+31 |
+32 |   logger = logging.getLogger("channel_manager.application.provider_adapters")
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> channel_manager/application/reservation_import_service.py:15:1
+   |
+13 |     - Full audit trail
+14 |   """
+15 | / import logging
+16 | | import time
+17 | | import uuid
+18 | | from datetime import UTC, datetime
+19 | | from typing import Any
+20 | |
+21 | | from core.database import db
+22 | |
+23 | | from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
+24 | | from ..connectors.hotelrunner_v2.hr_client import HotelRunnerClient
+25 | | from ..connectors.hotelrunner_v2.connector_errors import ConnectorError
+26 | | from ..connectors.hotelrunner_v2.reservation_mapper import HotelRunnerMapper
+27 | | from ..domain.models.audit import AuditAction, IntegrationAuditLog
+28 | | from ..domain.models.canonical import CanonicalReservation, ReservationStatus
+29 | | from ..domain.models.connector_account import ConnectorAccount, ConnectorProvider
+30 | | from ..domain.models.reservation_import import (
+31 | |     AckStatus,
+32 | |     ImportedReservation,
+33 | |     ImportStatus,
+34 | |     ReservationImportBatch,
+35 | |     ReviewReasonCode,
+36 | | )
+37 | | from ..infrastructure.repository import ChannelManagerRepository
+   | |________________________________________________________________^
+38 |
+39 |   logger = logging.getLogger("channel_manager.application.reservation_import_service")
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> channel_manager/application/sandbox_validation_service.py:19:1
+   |
+17 |     10. Audit logging verification
+18 |   """
+19 | / import logging
+20 | | import time
+21 | | from datetime import UTC, datetime
+22 | | from typing import Any
+23 | |
+24 | | from ..connectors.hotelrunner_v2 import xml_parser
+25 | | from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
+26 | | from ..connectors.hotelrunner_v2.retry_policy import RetryPolicy
+27 | | from ..connectors.hotelrunner_v2.hr_client import HotelRunnerClient
+28 | | from ..connectors.hotelrunner_v2.connector_errors import (
+29 | |     AuthenticationError,
+30 | |     ProviderUnavailableError,
+31 | | )
+32 | | from ..domain.models.audit import AuditAction, IntegrationAuditLog
+33 | | from ..infrastructure.repository import ChannelManagerRepository
+   | |________________________________________________________________^
+34 |
+35 |   logger = logging.getLogger("channel_manager.application.sandbox_validation")
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> channel_manager/connectors/hotelrunner_v2/hr_client.py:6:1
+   |
+ 4 |   Supports both XML/OTA endpoints (inventory, rates) and REST/JSON endpoints (reservations).
+ 5 |   """
+ 6 | / import logging
+ 7 | | import time
+ 8 | | import uuid as _uuid
+ 9 | | from datetime import UTC, datetime
+10 | | from typing import Any
+11 | |
+12 | | import httpx
+13 | |
+14 | | from . import xml_builder, xml_parser
+15 | | from .auth import HotelRunnerAuth
+16 | | from .rate_limit import RateLimiter
+17 | | from .retry_policy import RetryPolicy
+18 | | from .connector_errors import (
+19 | |     AcknowledgementError,
+20 | |     AuthenticationError,
+21 | |     ConnectorError,
+22 | |     PaginationExhaustedError,
+23 | |     ProviderUnavailableError,
+24 | |     RateLimitError,
+25 | |     ResponseParseError,
+26 | | )
+   | |_^
+27 |
+28 |   logger = logging.getLogger("channel_manager.hotelrunner.client")
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> channel_manager/connectors/hotelrunner_v2/v1_client.py:2:1
+   |
+ 1 |   """Compatibility alias — use hr_client instead."""
+ 2 | / from .hr_client import (  # noqa: F401
+ 3 | |     AUDIT_TRUNCATE_LEN,
+ 4 | |     DEFAULT_PER_PAGE,
+ 5 | |     HOTELRUNNER_API_BASE,
+ 6 | |     HOTELRUNNER_MOCK_BASE,
+ 7 | |     HOTELRUNNER_SANDBOX_BASE,
+ 8 | |     HotelRunnerClient,
+ 9 | |     MASK_KEYS,
+10 | |     MAX_PAGINATION_PAGES,
+11 | |     VALID_ENVIRONMENTS,
+12 | |     _mask_params,
+13 | |     _truncate,
+14 | | )
+   | |_^
+15 |
+16 |   __all__ = [
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> channel_manager/connectors/hotelrunner_v2/xml_parser.py:11:1
+   |
+ 9 |     - Raw payload audit with masking, truncation, correlation_id
+10 |   """
+11 | / import hashlib
+12 | | import logging
+13 | | import uuid
+14 | | from typing import Any
+15 | | from xml.etree import ElementTree as ET
+16 | |
+17 | | from .contract_errors import (
+18 | |     InvalidXmlError,
+19 | |     ProviderErrorResponseError,
+20 | | )
+21 | | from .connector_errors import XmlParseError
+   | |___________________________________________^
+22 |
+23 |   logger = logging.getLogger("channel_manager.hotelrunner.xml_parser")
+   |
+help: Organize imports
+
+Found 9 errors.
+[*] 9 fixable with the `--fix` option.
+Error: Process completed with exit code 1.
