@@ -64,6 +64,24 @@ Configured as a static deployment:
 - Multi-tenant architecture
 - 8-language internationalization
 
+## Sprint 7 Changes (Navigation / Surface Consolidation)
+
+### Channels Group (21 → 10 visible)
+- **Hidden (7)**: `hr_rate_manager`, `rate_manager`, `hotelrunner`, `exely`, `data_model`, `integration_hub`, `admin_control_panel` — superseded by unified Channel Manager / Control Plane
+- **Kept visible (5 admin)**: Channel Connections, Wire Failures, ARI Push, Lockdown Dashboard, Channel Ops
+- **Kept visible (5 user-facing)**: Channel Manager, Unified Rate Manager, Room Mapping Wizard, Agency Manager, Early Warning
+
+### Infrastructure Group (gained 3 items)
+- **Moved from channels**: Control Plane, Runtime Cockpit, Incident Panel — these are platform-level ops, not channel-specific
+- **moduleKey fix**: `platform_scaling` + `enterprise_live` changed from `"pms"` to `"advanced_analytics"` for consistency
+
+### Operations Group
+- **Hidden**: `pms_operations` (duplicate of PMS dashboard)
+
+### Backward Compatibility
+- All hidden items retain routes in `routeDefinitions.jsx` — direct URLs still work
+- `hidden: true` flag filtered by `Layout.jsx` line 130: `if (item.hidden) return;`
+
 ## Sprint 6 Changes (B2B Analytics Dashboard)
 
 ### Backend
